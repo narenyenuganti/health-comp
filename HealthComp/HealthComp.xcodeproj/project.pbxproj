@@ -219,6 +219,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = HealthComp/Resources/HealthComp.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "HealthComp reads your activity data to score competitions with friends.";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "HealthComp does not write health data.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
@@ -395,6 +396,7 @@
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_ENTITLEMENTS = HealthComp/Resources/HealthComp.entitlements;
 				CODE_SIGN_IDENTITY = "iPhone Developer";
+				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "HealthComp reads your activity data to score competitions with friends.";
 				INFOPLIST_KEY_NSHealthUpdateUsageDescription = "HealthComp does not write health data.";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
