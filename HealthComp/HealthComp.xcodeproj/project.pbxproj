@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		026BC27D8A89262270E78565 /* HealthMetricTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09FF3C40395A80635C205A3A /* HealthMetricTests.swift */; };
+		1E677D5B9D0BBC6F7A873642 /* HealthDataProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC8F09779188D9A1FE1C4BF7 /* HealthDataProvider.swift */; };
 		1F1E059933150A061C760DD6 /* HealthCompApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D01015283BC66E2ECA9609D /* HealthCompApp.swift */; };
 		27E47B5E68C28C7499A58D39 /* User.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88A907F391D88210DA76D5BE /* User.swift */; };
 		2FB5D882D2DDE3EDDAEA88F0 /* OnboardingFeatureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27DC1FD2CA6CF3568223F17A /* OnboardingFeatureTests.swift */; };
@@ -63,6 +64,7 @@
 		C1D8B3EF060D8C52F2299C95 /* MainTabFeature.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabFeature.swift; sourceTree = "<group>"; };
 		C3DFF07C8F1DAF91F666CE2C /* MainTabFeatureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabFeatureTests.swift; sourceTree = "<group>"; };
 		CCA8D457DBB22C462F9D5398 /* AuthClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthClient.swift; sourceTree = "<group>"; };
+		DC8F09779188D9A1FE1C4BF7 /* HealthDataProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthDataProvider.swift; sourceTree = "<group>"; };
 		EC90AB3B1EDF7C788EF0A48F /* AppFeature.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppFeature.swift; sourceTree = "<group>"; };
 		F81AE20C21E083ABAC279310 /* HealthCompTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = HealthCompTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
@@ -120,6 +122,7 @@
 		29B00DE592B70298ECE97410 /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				DC8F09779188D9A1FE1C4BF7 /* HealthDataProvider.swift */,
 				4FAB0D437C5192232ECB516C /* SupabaseService.swift */,
 			);
 			path = Services;
@@ -289,6 +292,7 @@
 				F10EA0DA20BBFF2513C25DCF /* AuthFeature.swift in Sources */,
 				38E3876A419311BBE9BB03CD /* AuthView.swift in Sources */,
 				1F1E059933150A061C760DD6 /* HealthCompApp.swift in Sources */,
+				1E677D5B9D0BBC6F7A873642 /* HealthDataProvider.swift in Sources */,
 				68146909378E552F35D6697F /* HealthMetric.swift in Sources */,
 				68E7EF63C482B3C302F04EBD /* MainTabFeature.swift in Sources */,
 				3E9AFCB2C2C40C2F0662D72E /* MainTabView.swift in Sources */,
