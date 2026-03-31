@@ -18,6 +18,7 @@
 		75D39A881B6BCE6ACD99671C /* ComposableArchitecture in Frameworks */ = {isa = PBXBuildFile; productRef = C19E50C9B46A4490A6CFAAEE /* ComposableArchitecture */; };
 		79790AD6AC415A28379343B6 /* OnboardingFeature.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BA82316352389B8CC56F1EE /* OnboardingFeature.swift */; };
 		A78F387E9D4960F45BE80CFC /* UserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21E3B30775F10AEB23D0AB73 /* UserTests.swift */; };
+		B20EE4719A220107DFC472EA /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 409E8BC595F04524A1654693 /* OnboardingView.swift */; };
 		C54701A98B898044996270F7 /* AuthFeatureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DDFB7F7664B7E4DF4A8155D /* AuthFeatureTests.swift */; };
 		D78CD7062992AB79AC42BC9F /* AuthClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCA8D457DBB22C462F9D5398 /* AuthClient.swift */; };
 		F10EA0DA20BBFF2513C25DCF /* AuthFeature.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2294A1E5A75ACA21BAC53567 /* AuthFeature.swift */; };
@@ -41,6 +42,7 @@
 		27DC1FD2CA6CF3568223F17A /* OnboardingFeatureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingFeatureTests.swift; sourceTree = "<group>"; };
 		2C354371C37EF4C38C7654EC /* AuthView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthView.swift; sourceTree = "<group>"; };
 		34A5923143DFA055544421F5 /* Secrets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Secrets.swift; sourceTree = "<group>"; };
+		409E8BC595F04524A1654693 /* OnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingView.swift; sourceTree = "<group>"; };
 		4D01015283BC66E2ECA9609D /* HealthCompApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthCompApp.swift; sourceTree = "<group>"; };
 		4FAB0D437C5192232ECB516C /* SupabaseService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupabaseService.swift; sourceTree = "<group>"; };
 		6DDFB7F7664B7E4DF4A8155D /* AuthFeatureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthFeatureTests.swift; sourceTree = "<group>"; };
@@ -142,6 +144,7 @@
 			isa = PBXGroup;
 			children = (
 				8BA82316352389B8CC56F1EE /* OnboardingFeature.swift */,
+				409E8BC595F04524A1654693 /* OnboardingView.swift */,
 				1BB02E662408B41CEDDCEA66 /* ProfileClient.swift */,
 			);
 			path = Onboarding;
@@ -257,6 +260,7 @@
 				38E3876A419311BBE9BB03CD /* AuthView.swift in Sources */,
 				1F1E059933150A061C760DD6 /* HealthCompApp.swift in Sources */,
 				79790AD6AC415A28379343B6 /* OnboardingFeature.swift in Sources */,
+				B20EE4719A220107DFC472EA /* OnboardingView.swift in Sources */,
 				6C1A40BDCB937639BA172A26 /* ProfileClient.swift in Sources */,
 				646F6136A343E955403BD427 /* Secrets.swift in Sources */,
 				62FB1CDB78DEE949DD50833E /* SupabaseService.swift in Sources */,
