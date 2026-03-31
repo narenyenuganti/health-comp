@@ -9,11 +9,14 @@
 /* Begin PBXBuildFile section */
 		1F1E059933150A061C760DD6 /* HealthCompApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D01015283BC66E2ECA9609D /* HealthCompApp.swift */; };
 		27E47B5E68C28C7499A58D39 /* User.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88A907F391D88210DA76D5BE /* User.swift */; };
+		2FB5D882D2DDE3EDDAEA88F0 /* OnboardingFeatureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 27DC1FD2CA6CF3568223F17A /* OnboardingFeatureTests.swift */; };
 		34375EA0795DBFCC09E7D120 /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = 765098240911111A6F629AE3 /* Supabase */; };
 		38E3876A419311BBE9BB03CD /* AuthView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2C354371C37EF4C38C7654EC /* AuthView.swift */; };
 		62FB1CDB78DEE949DD50833E /* SupabaseService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4FAB0D437C5192232ECB516C /* SupabaseService.swift */; };
 		646F6136A343E955403BD427 /* Secrets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34A5923143DFA055544421F5 /* Secrets.swift */; };
+		6C1A40BDCB937639BA172A26 /* ProfileClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1BB02E662408B41CEDDCEA66 /* ProfileClient.swift */; };
 		75D39A881B6BCE6ACD99671C /* ComposableArchitecture in Frameworks */ = {isa = PBXBuildFile; productRef = C19E50C9B46A4490A6CFAAEE /* ComposableArchitecture */; };
+		79790AD6AC415A28379343B6 /* OnboardingFeature.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BA82316352389B8CC56F1EE /* OnboardingFeature.swift */; };
 		A78F387E9D4960F45BE80CFC /* UserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21E3B30775F10AEB23D0AB73 /* UserTests.swift */; };
 		C54701A98B898044996270F7 /* AuthFeatureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DDFB7F7664B7E4DF4A8155D /* AuthFeatureTests.swift */; };
 		D78CD7062992AB79AC42BC9F /* AuthClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCA8D457DBB22C462F9D5398 /* AuthClient.swift */; };
@@ -31,15 +34,18 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		1BB02E662408B41CEDDCEA66 /* ProfileClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileClient.swift; sourceTree = "<group>"; };
 		1D4D0A6902647274F72B003C /* HealthComp.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = HealthComp.entitlements; sourceTree = "<group>"; };
 		21E3B30775F10AEB23D0AB73 /* UserTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserTests.swift; sourceTree = "<group>"; };
 		2294A1E5A75ACA21BAC53567 /* AuthFeature.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthFeature.swift; sourceTree = "<group>"; };
+		27DC1FD2CA6CF3568223F17A /* OnboardingFeatureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingFeatureTests.swift; sourceTree = "<group>"; };
 		2C354371C37EF4C38C7654EC /* AuthView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthView.swift; sourceTree = "<group>"; };
 		34A5923143DFA055544421F5 /* Secrets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Secrets.swift; sourceTree = "<group>"; };
 		4D01015283BC66E2ECA9609D /* HealthCompApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthCompApp.swift; sourceTree = "<group>"; };
 		4FAB0D437C5192232ECB516C /* SupabaseService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupabaseService.swift; sourceTree = "<group>"; };
 		6DDFB7F7664B7E4DF4A8155D /* AuthFeatureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthFeatureTests.swift; sourceTree = "<group>"; };
 		88A907F391D88210DA76D5BE /* User.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = User.swift; sourceTree = "<group>"; };
+		8BA82316352389B8CC56F1EE /* OnboardingFeature.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingFeature.swift; sourceTree = "<group>"; };
 		C169E842F9AAD480353D38DD /* HealthComp.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = HealthComp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		CCA8D457DBB22C462F9D5398 /* AuthClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthClient.swift; sourceTree = "<group>"; };
 		F81AE20C21E083ABAC279310 /* HealthCompTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = HealthCompTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -62,6 +68,7 @@
 			isa = PBXGroup;
 			children = (
 				ACCE50DB6B7939405D6C015C /* Auth */,
+				8E7FAD157199BF21D286BC20 /* Onboarding */,
 			);
 			path = Features;
 			sourceTree = "<group>";
@@ -125,9 +132,19 @@
 			isa = PBXGroup;
 			children = (
 				6DDFB7F7664B7E4DF4A8155D /* AuthFeatureTests.swift */,
+				27DC1FD2CA6CF3568223F17A /* OnboardingFeatureTests.swift */,
 				21E3B30775F10AEB23D0AB73 /* UserTests.swift */,
 			);
 			path = HealthCompTests;
+			sourceTree = "<group>";
+		};
+		8E7FAD157199BF21D286BC20 /* Onboarding */ = {
+			isa = PBXGroup;
+			children = (
+				8BA82316352389B8CC56F1EE /* OnboardingFeature.swift */,
+				1BB02E662408B41CEDDCEA66 /* ProfileClient.swift */,
+			);
+			path = Onboarding;
 			sourceTree = "<group>";
 		};
 		ACCE50DB6B7939405D6C015C /* Auth */ = {
@@ -239,6 +256,8 @@
 				F10EA0DA20BBFF2513C25DCF /* AuthFeature.swift in Sources */,
 				38E3876A419311BBE9BB03CD /* AuthView.swift in Sources */,
 				1F1E059933150A061C760DD6 /* HealthCompApp.swift in Sources */,
+				79790AD6AC415A28379343B6 /* OnboardingFeature.swift in Sources */,
+				6C1A40BDCB937639BA172A26 /* ProfileClient.swift in Sources */,
 				646F6136A343E955403BD427 /* Secrets.swift in Sources */,
 				62FB1CDB78DEE949DD50833E /* SupabaseService.swift in Sources */,
 				27E47B5E68C28C7499A58D39 /* User.swift in Sources */,
@@ -250,6 +269,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				C54701A98B898044996270F7 /* AuthFeatureTests.swift in Sources */,
+				2FB5D882D2DDE3EDDAEA88F0 /* OnboardingFeatureTests.swift in Sources */,
 				A78F387E9D4960F45BE80CFC /* UserTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
