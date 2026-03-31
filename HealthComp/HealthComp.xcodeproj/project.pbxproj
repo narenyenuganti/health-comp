@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		026BC27D8A89262270E78565 /* HealthMetricTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09FF3C40395A80635C205A3A /* HealthMetricTests.swift */; };
 		04A5E0CEF55A355869FA3426 /* CompetitionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A90BF0BB5B0B82A46CB32FA /* CompetitionTests.swift */; };
+		0FDCAFF0E13E27FBCEA5D496 /* CompeteFeature.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9499CFFF599EECEA30766443 /* CompeteFeature.swift */; };
 		115A8DB9E5595797C52DAF37 /* FriendshipTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B088A2156840DB64F241B3A /* FriendshipTests.swift */; };
 		17169CD2FDF239DE825B80A5 /* Friendship.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F5AAA7F8D190845117F4EE2 /* Friendship.swift */; };
 		1E677D5B9D0BBC6F7A873642 /* HealthDataProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC8F09779188D9A1FE1C4BF7 /* HealthDataProvider.swift */; };
@@ -22,6 +23,7 @@
 		3E9AFCB2C2C40C2F0662D72E /* MainTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8DE98F9A6E165CAF241964EA /* MainTabView.swift */; };
 		4876547B798FDFBA4EEFDE75 /* HealthKitProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E1EFEB41E5D4ADC7484F272 /* HealthKitProvider.swift */; };
 		62FB1CDB78DEE949DD50833E /* SupabaseService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4FAB0D437C5192232ECB516C /* SupabaseService.swift */; };
+		638E7C6DD447132BD343E7B7 /* CompeteView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 97DEB653D4C6BF2B9205E05C /* CompeteView.swift */; };
 		646F6136A343E955403BD427 /* Secrets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34A5923143DFA055544421F5 /* Secrets.swift */; };
 		68146909378E552F35D6697F /* HealthMetric.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EA3F1951C080758224B44E2 /* HealthMetric.swift */; };
 		68E7EF63C482B3C302F04EBD /* MainTabFeature.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1D8B3EF060D8C52F2299C95 /* MainTabFeature.swift */; };
@@ -31,6 +33,7 @@
 		79790AD6AC415A28379343B6 /* OnboardingFeature.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BA82316352389B8CC56F1EE /* OnboardingFeature.swift */; };
 		816367376365FC6724053009 /* HealthSyncClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6AA1DB6282564E59AB0EC2D7 /* HealthSyncClientTests.swift */; };
 		8AE89AC6A6123E784B8763C2 /* FriendsFeatureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7EE8383943164A057D8DA7F4 /* FriendsFeatureTests.swift */; };
+		9300156C3DFEBB51457C12CE /* CompetitionClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74234FCF4D47A20A84CB9CA1 /* CompetitionClient.swift */; };
 		98103B98B315CF1D6121EF4B /* AppFeatureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A27031C9D6844A658A3C19CE /* AppFeatureTests.swift */; };
 		A39001B8E8145707D693D215 /* AppFeature.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC90AB3B1EDF7C788EF0A48F /* AppFeature.swift */; };
 		A78F387E9D4960F45BE80CFC /* UserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21E3B30775F10AEB23D0AB73 /* UserTests.swift */; };
@@ -77,10 +80,13 @@
 		6AA1DB6282564E59AB0EC2D7 /* HealthSyncClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthSyncClientTests.swift; sourceTree = "<group>"; };
 		6B088A2156840DB64F241B3A /* FriendshipTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FriendshipTests.swift; sourceTree = "<group>"; };
 		6DDFB7F7664B7E4DF4A8155D /* AuthFeatureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthFeatureTests.swift; sourceTree = "<group>"; };
+		74234FCF4D47A20A84CB9CA1 /* CompetitionClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionClient.swift; sourceTree = "<group>"; };
 		7EE8383943164A057D8DA7F4 /* FriendsFeatureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FriendsFeatureTests.swift; sourceTree = "<group>"; };
 		88A907F391D88210DA76D5BE /* User.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = User.swift; sourceTree = "<group>"; };
 		8BA82316352389B8CC56F1EE /* OnboardingFeature.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingFeature.swift; sourceTree = "<group>"; };
 		8DE98F9A6E165CAF241964EA /* MainTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabView.swift; sourceTree = "<group>"; };
+		9499CFFF599EECEA30766443 /* CompeteFeature.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompeteFeature.swift; sourceTree = "<group>"; };
+		97DEB653D4C6BF2B9205E05C /* CompeteView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompeteView.swift; sourceTree = "<group>"; };
 		A27031C9D6844A658A3C19CE /* AppFeatureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppFeatureTests.swift; sourceTree = "<group>"; };
 		A721DCE6A3E7550FA815CA52 /* HealthSyncClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthSyncClient.swift; sourceTree = "<group>"; };
 		C169E842F9AAD480353D38DD /* HealthComp.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = HealthComp.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -110,6 +116,7 @@
 			isa = PBXGroup;
 			children = (
 				ACCE50DB6B7939405D6C015C /* Auth */,
+				FA266FB14A2FE35E71A844B0 /* Compete */,
 				88A9551259C9971CEAA4068D /* Friends */,
 				79B1C92EAAAD58985E8BD91F /* MainTab */,
 				8E7FAD157199BF21D286BC20 /* Onboarding */,
@@ -252,6 +259,16 @@
 			path = Models;
 			sourceTree = "<group>";
 		};
+		FA266FB14A2FE35E71A844B0 /* Compete */ = {
+			isa = PBXGroup;
+			children = (
+				9499CFFF599EECEA30766443 /* CompeteFeature.swift */,
+				97DEB653D4C6BF2B9205E05C /* CompeteView.swift */,
+				74234FCF4D47A20A84CB9CA1 /* CompetitionClient.swift */,
+			);
+			path = Compete;
+			sourceTree = "<group>";
+		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -335,7 +352,10 @@
 				D78CD7062992AB79AC42BC9F /* AuthClient.swift in Sources */,
 				F10EA0DA20BBFF2513C25DCF /* AuthFeature.swift in Sources */,
 				38E3876A419311BBE9BB03CD /* AuthView.swift in Sources */,
+				0FDCAFF0E13E27FBCEA5D496 /* CompeteFeature.swift in Sources */,
+				638E7C6DD447132BD343E7B7 /* CompeteView.swift in Sources */,
 				C01A25D35A5F5948119CFC84 /* Competition.swift in Sources */,
+				9300156C3DFEBB51457C12CE /* CompetitionClient.swift in Sources */,
 				3A2B10F4E1E578F5747CDF38 /* FriendsClient.swift in Sources */,
 				2394C31929E999699194CA08 /* FriendsFeature.swift in Sources */,
 				BEC2E8D7D1ABA1CEB12307C2 /* FriendsView.swift in Sources */,

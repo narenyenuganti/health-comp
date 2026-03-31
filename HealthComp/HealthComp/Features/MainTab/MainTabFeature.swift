@@ -5,6 +5,7 @@ struct MainTabFeature {
     @ObservableState
     struct State: Equatable {
         var selectedTab: Tab = .compete
+        var compete = CompeteFeature.State()
         var friends = FriendsFeature.State()
     }
 
@@ -17,10 +18,14 @@ struct MainTabFeature {
 
     enum Action: Equatable, Sendable {
         case tabSelected(Tab)
+        case compete(CompeteFeature.Action)
         case friends(FriendsFeature.Action)
     }
 
     var body: some ReducerOf<Self> {
+        Scope(state: \.compete, action: \.compete) {
+            CompeteFeature()
+        }
         Scope(state: \.friends, action: \.friends) {
             FriendsFeature()
         }
@@ -29,7 +34,7 @@ struct MainTabFeature {
             case .tabSelected(let tab):
                 state.selectedTab = tab
                 return .none
-            case .friends:
+            case .compete, .friends:
                 return .none
             }
         }

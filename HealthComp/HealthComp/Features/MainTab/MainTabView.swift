@@ -6,19 +6,9 @@ struct MainTabView: View {
 
     var body: some View {
         TabView(selection: $store.selectedTab.sending(\.tabSelected)) {
-            NavigationStack {
-                VStack {
-                    Image(systemName: "figure.run.circle")
-                        .font(.system(size: 60))
-                        .foregroundStyle(.green)
-                    Text("Active Competitions")
-                        .font(.title3)
-                        .foregroundStyle(.secondary)
-                }
-                .navigationTitle("Compete")
-            }
-            .tabItem { Label("Compete", systemImage: "figure.run") }
-            .tag(MainTabFeature.Tab.compete)
+            CompeteView(store: store.scope(state: \.compete, action: \.compete))
+                .tabItem { Label("Compete", systemImage: "figure.run") }
+                .tag(MainTabFeature.Tab.compete)
 
             FriendsView(store: store.scope(state: \.friends, action: \.friends))
                 .tabItem { Label("Friends", systemImage: "person.2") }
