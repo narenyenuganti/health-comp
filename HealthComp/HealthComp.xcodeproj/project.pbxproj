@@ -24,9 +24,11 @@
 		73F853265BC75C365CD2BB2B /* MainTabFeatureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3DFF07C8F1DAF91F666CE2C /* MainTabFeatureTests.swift */; };
 		75D39A881B6BCE6ACD99671C /* ComposableArchitecture in Frameworks */ = {isa = PBXBuildFile; productRef = C19E50C9B46A4490A6CFAAEE /* ComposableArchitecture */; };
 		79790AD6AC415A28379343B6 /* OnboardingFeature.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BA82316352389B8CC56F1EE /* OnboardingFeature.swift */; };
+		816367376365FC6724053009 /* HealthSyncClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6AA1DB6282564E59AB0EC2D7 /* HealthSyncClientTests.swift */; };
 		98103B98B315CF1D6121EF4B /* AppFeatureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A27031C9D6844A658A3C19CE /* AppFeatureTests.swift */; };
 		A39001B8E8145707D693D215 /* AppFeature.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC90AB3B1EDF7C788EF0A48F /* AppFeature.swift */; };
 		A78F387E9D4960F45BE80CFC /* UserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21E3B30775F10AEB23D0AB73 /* UserTests.swift */; };
+		AD5DCFFC2EA4D44F02FE3ED7 /* HealthSyncClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A721DCE6A3E7550FA815CA52 /* HealthSyncClient.swift */; };
 		B20EE4719A220107DFC472EA /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 409E8BC595F04524A1654693 /* OnboardingView.swift */; };
 		B29FF2F0455C354D914ED698 /* HealthKitProviderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF7DE04D723EFB17C6B0F55E /* HealthKitProviderTests.swift */; };
 		C54701A98B898044996270F7 /* AuthFeatureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DDFB7F7664B7E4DF4A8155D /* AuthFeatureTests.swift */; };
@@ -58,11 +60,13 @@
 		4E1EFEB41E5D4ADC7484F272 /* HealthKitProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthKitProvider.swift; sourceTree = "<group>"; };
 		4FAB0D437C5192232ECB516C /* SupabaseService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupabaseService.swift; sourceTree = "<group>"; };
 		5EA3F1951C080758224B44E2 /* HealthMetric.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthMetric.swift; sourceTree = "<group>"; };
+		6AA1DB6282564E59AB0EC2D7 /* HealthSyncClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthSyncClientTests.swift; sourceTree = "<group>"; };
 		6DDFB7F7664B7E4DF4A8155D /* AuthFeatureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthFeatureTests.swift; sourceTree = "<group>"; };
 		88A907F391D88210DA76D5BE /* User.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = User.swift; sourceTree = "<group>"; };
 		8BA82316352389B8CC56F1EE /* OnboardingFeature.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingFeature.swift; sourceTree = "<group>"; };
 		8DE98F9A6E165CAF241964EA /* MainTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabView.swift; sourceTree = "<group>"; };
 		A27031C9D6844A658A3C19CE /* AppFeatureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppFeatureTests.swift; sourceTree = "<group>"; };
+		A721DCE6A3E7550FA815CA52 /* HealthSyncClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthSyncClient.swift; sourceTree = "<group>"; };
 		C169E842F9AAD480353D38DD /* HealthComp.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = HealthComp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C1D8B3EF060D8C52F2299C95 /* MainTabFeature.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabFeature.swift; sourceTree = "<group>"; };
 		C3DFF07C8F1DAF91F666CE2C /* MainTabFeatureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabFeatureTests.swift; sourceTree = "<group>"; };
@@ -128,6 +132,7 @@
 			children = (
 				DC8F09779188D9A1FE1C4BF7 /* HealthDataProvider.swift */,
 				4E1EFEB41E5D4ADC7484F272 /* HealthKitProvider.swift */,
+				A721DCE6A3E7550FA815CA52 /* HealthSyncClient.swift */,
 				4FAB0D437C5192232ECB516C /* SupabaseService.swift */,
 			);
 			path = Services;
@@ -161,6 +166,7 @@
 				6DDFB7F7664B7E4DF4A8155D /* AuthFeatureTests.swift */,
 				CF7DE04D723EFB17C6B0F55E /* HealthKitProviderTests.swift */,
 				09FF3C40395A80635C205A3A /* HealthMetricTests.swift */,
+				6AA1DB6282564E59AB0EC2D7 /* HealthSyncClientTests.swift */,
 				C3DFF07C8F1DAF91F666CE2C /* MainTabFeatureTests.swift */,
 				27DC1FD2CA6CF3568223F17A /* OnboardingFeatureTests.swift */,
 				21E3B30775F10AEB23D0AB73 /* UserTests.swift */,
@@ -301,6 +307,7 @@
 				1E677D5B9D0BBC6F7A873642 /* HealthDataProvider.swift in Sources */,
 				4876547B798FDFBA4EEFDE75 /* HealthKitProvider.swift in Sources */,
 				68146909378E552F35D6697F /* HealthMetric.swift in Sources */,
+				AD5DCFFC2EA4D44F02FE3ED7 /* HealthSyncClient.swift in Sources */,
 				68E7EF63C482B3C302F04EBD /* MainTabFeature.swift in Sources */,
 				3E9AFCB2C2C40C2F0662D72E /* MainTabView.swift in Sources */,
 				79790AD6AC415A28379343B6 /* OnboardingFeature.swift in Sources */,
@@ -320,6 +327,7 @@
 				C54701A98B898044996270F7 /* AuthFeatureTests.swift in Sources */,
 				B29FF2F0455C354D914ED698 /* HealthKitProviderTests.swift in Sources */,
 				026BC27D8A89262270E78565 /* HealthMetricTests.swift in Sources */,
+				816367376365FC6724053009 /* HealthSyncClientTests.swift in Sources */,
 				73F853265BC75C365CD2BB2B /* MainTabFeatureTests.swift in Sources */,
 				2FB5D882D2DDE3EDDAEA88F0 /* OnboardingFeatureTests.swift in Sources */,
 				A78F387E9D4960F45BE80CFC /* UserTests.swift in Sources */,
