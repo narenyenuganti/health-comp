@@ -8,6 +8,8 @@
 
 /* Begin PBXBuildFile section */
 		026BC27D8A89262270E78565 /* HealthMetricTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09FF3C40395A80635C205A3A /* HealthMetricTests.swift */; };
+		115A8DB9E5595797C52DAF37 /* FriendshipTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B088A2156840DB64F241B3A /* FriendshipTests.swift */; };
+		17169CD2FDF239DE825B80A5 /* Friendship.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F5AAA7F8D190845117F4EE2 /* Friendship.swift */; };
 		1E677D5B9D0BBC6F7A873642 /* HealthDataProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC8F09779188D9A1FE1C4BF7 /* HealthDataProvider.swift */; };
 		1F1E059933150A061C760DD6 /* HealthCompApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D01015283BC66E2ECA9609D /* HealthCompApp.swift */; };
 		27E47B5E68C28C7499A58D39 /* User.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88A907F391D88210DA76D5BE /* User.swift */; };
@@ -60,7 +62,9 @@
 		4E1EFEB41E5D4ADC7484F272 /* HealthKitProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthKitProvider.swift; sourceTree = "<group>"; };
 		4FAB0D437C5192232ECB516C /* SupabaseService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupabaseService.swift; sourceTree = "<group>"; };
 		5EA3F1951C080758224B44E2 /* HealthMetric.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthMetric.swift; sourceTree = "<group>"; };
+		5F5AAA7F8D190845117F4EE2 /* Friendship.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Friendship.swift; sourceTree = "<group>"; };
 		6AA1DB6282564E59AB0EC2D7 /* HealthSyncClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthSyncClientTests.swift; sourceTree = "<group>"; };
+		6B088A2156840DB64F241B3A /* FriendshipTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FriendshipTests.swift; sourceTree = "<group>"; };
 		6DDFB7F7664B7E4DF4A8155D /* AuthFeatureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthFeatureTests.swift; sourceTree = "<group>"; };
 		88A907F391D88210DA76D5BE /* User.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = User.swift; sourceTree = "<group>"; };
 		8BA82316352389B8CC56F1EE /* OnboardingFeature.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingFeature.swift; sourceTree = "<group>"; };
@@ -164,6 +168,7 @@
 			children = (
 				A27031C9D6844A658A3C19CE /* AppFeatureTests.swift */,
 				6DDFB7F7664B7E4DF4A8155D /* AuthFeatureTests.swift */,
+				6B088A2156840DB64F241B3A /* FriendshipTests.swift */,
 				CF7DE04D723EFB17C6B0F55E /* HealthKitProviderTests.swift */,
 				09FF3C40395A80635C205A3A /* HealthMetricTests.swift */,
 				6AA1DB6282564E59AB0EC2D7 /* HealthSyncClientTests.swift */,
@@ -214,6 +219,7 @@
 		F72CC3DA997C1AFF9DDA2F03 /* Models */ = {
 			isa = PBXGroup;
 			children = (
+				5F5AAA7F8D190845117F4EE2 /* Friendship.swift */,
 				5EA3F1951C080758224B44E2 /* HealthMetric.swift */,
 				88A907F391D88210DA76D5BE /* User.swift */,
 			);
@@ -303,6 +309,7 @@
 				D78CD7062992AB79AC42BC9F /* AuthClient.swift in Sources */,
 				F10EA0DA20BBFF2513C25DCF /* AuthFeature.swift in Sources */,
 				38E3876A419311BBE9BB03CD /* AuthView.swift in Sources */,
+				17169CD2FDF239DE825B80A5 /* Friendship.swift in Sources */,
 				1F1E059933150A061C760DD6 /* HealthCompApp.swift in Sources */,
 				1E677D5B9D0BBC6F7A873642 /* HealthDataProvider.swift in Sources */,
 				4876547B798FDFBA4EEFDE75 /* HealthKitProvider.swift in Sources */,
@@ -325,6 +332,7 @@
 			files = (
 				98103B98B315CF1D6121EF4B /* AppFeatureTests.swift in Sources */,
 				C54701A98B898044996270F7 /* AuthFeatureTests.swift in Sources */,
+				115A8DB9E5595797C52DAF37 /* FriendshipTests.swift in Sources */,
 				B29FF2F0455C354D914ED698 /* HealthKitProviderTests.swift in Sources */,
 				026BC27D8A89262270E78565 /* HealthMetricTests.swift in Sources */,
 				816367376365FC6724053009 /* HealthSyncClientTests.swift in Sources */,
