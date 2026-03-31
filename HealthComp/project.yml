@@ -1,0 +1,47 @@
+name: HealthComp
+options:
+  bundleIdPrefix: com.narenyenuganti
+  deploymentTarget:
+    iOS: "17.0"
+  xcodeVersion: "16.0"
+  createIntermediateGroups: true
+
+packages:
+  ComposableArchitecture:
+    url: https://github.com/pointfreeco/swift-composable-architecture
+    from: "1.17.0"
+  Supabase:
+    url: https://github.com/supabase/supabase-swift
+    from: "2.0.0"
+
+targets:
+  HealthComp:
+    type: application
+    platform: iOS
+    sources:
+      - path: HealthComp
+    settings:
+      base:
+        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
+        INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
+        INFOPLIST_KEY_NSHealthShareUsageDescription: "HealthComp reads your activity data to score competitions with friends."
+        INFOPLIST_KEY_NSHealthUpdateUsageDescription: "HealthComp does not write health data."
+        CODE_SIGN_ENTITLEMENTS: HealthComp/Resources/HealthComp.entitlements
+        SWIFT_VERSION: "5.9"
+    dependencies:
+      - package: ComposableArchitecture
+      - package: Supabase
+        product: Supabase
+
+  HealthCompTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: HealthCompTests
+    dependencies:
+      - target: HealthComp
+    settings:
+      base:
+        SWIFT_VERSION: "5.9"
