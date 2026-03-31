@@ -20,6 +20,8 @@
 		73F853265BC75C365CD2BB2B /* MainTabFeatureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3DFF07C8F1DAF91F666CE2C /* MainTabFeatureTests.swift */; };
 		75D39A881B6BCE6ACD99671C /* ComposableArchitecture in Frameworks */ = {isa = PBXBuildFile; productRef = C19E50C9B46A4490A6CFAAEE /* ComposableArchitecture */; };
 		79790AD6AC415A28379343B6 /* OnboardingFeature.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8BA82316352389B8CC56F1EE /* OnboardingFeature.swift */; };
+		98103B98B315CF1D6121EF4B /* AppFeatureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A27031C9D6844A658A3C19CE /* AppFeatureTests.swift */; };
+		A39001B8E8145707D693D215 /* AppFeature.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC90AB3B1EDF7C788EF0A48F /* AppFeature.swift */; };
 		A78F387E9D4960F45BE80CFC /* UserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21E3B30775F10AEB23D0AB73 /* UserTests.swift */; };
 		B20EE4719A220107DFC472EA /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 409E8BC595F04524A1654693 /* OnboardingView.swift */; };
 		C54701A98B898044996270F7 /* AuthFeatureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DDFB7F7664B7E4DF4A8155D /* AuthFeatureTests.swift */; };
@@ -52,10 +54,12 @@
 		88A907F391D88210DA76D5BE /* User.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = User.swift; sourceTree = "<group>"; };
 		8BA82316352389B8CC56F1EE /* OnboardingFeature.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OnboardingFeature.swift; sourceTree = "<group>"; };
 		8DE98F9A6E165CAF241964EA /* MainTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabView.swift; sourceTree = "<group>"; };
+		A27031C9D6844A658A3C19CE /* AppFeatureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppFeatureTests.swift; sourceTree = "<group>"; };
 		C169E842F9AAD480353D38DD /* HealthComp.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = HealthComp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C1D8B3EF060D8C52F2299C95 /* MainTabFeature.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabFeature.swift; sourceTree = "<group>"; };
 		C3DFF07C8F1DAF91F666CE2C /* MainTabFeatureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabFeatureTests.swift; sourceTree = "<group>"; };
 		CCA8D457DBB22C462F9D5398 /* AuthClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthClient.swift; sourceTree = "<group>"; };
+		EC90AB3B1EDF7C788EF0A48F /* AppFeature.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppFeature.swift; sourceTree = "<group>"; };
 		F81AE20C21E083ABAC279310 /* HealthCompTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = HealthCompTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -103,6 +107,7 @@
 		25BCE1EEC45C4C6E1176F008 /* App */ = {
 			isa = PBXGroup;
 			children = (
+				EC90AB3B1EDF7C788EF0A48F /* AppFeature.swift */,
 				4D01015283BC66E2ECA9609D /* HealthCompApp.swift */,
 			);
 			path = App;
@@ -140,6 +145,7 @@
 		6E41142DDDABF7B3BBBB7231 /* HealthCompTests */ = {
 			isa = PBXGroup;
 			children = (
+				A27031C9D6844A658A3C19CE /* AppFeatureTests.swift */,
 				6DDFB7F7664B7E4DF4A8155D /* AuthFeatureTests.swift */,
 				C3DFF07C8F1DAF91F666CE2C /* MainTabFeatureTests.swift */,
 				27DC1FD2CA6CF3568223F17A /* OnboardingFeatureTests.swift */,
@@ -272,6 +278,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				A39001B8E8145707D693D215 /* AppFeature.swift in Sources */,
 				D78CD7062992AB79AC42BC9F /* AuthClient.swift in Sources */,
 				F10EA0DA20BBFF2513C25DCF /* AuthFeature.swift in Sources */,
 				38E3876A419311BBE9BB03CD /* AuthView.swift in Sources */,
@@ -291,6 +298,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				98103B98B315CF1D6121EF4B /* AppFeatureTests.swift in Sources */,
 				C54701A98B898044996270F7 /* AuthFeatureTests.swift in Sources */,
 				73F853265BC75C365CD2BB2B /* MainTabFeatureTests.swift in Sources */,
 				2FB5D882D2DDE3EDDAEA88F0 /* OnboardingFeatureTests.swift in Sources */,
