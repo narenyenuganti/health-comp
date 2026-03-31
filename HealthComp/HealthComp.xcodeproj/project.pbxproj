@@ -14,6 +14,9 @@
 		646F6136A343E955403BD427 /* Secrets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34A5923143DFA055544421F5 /* Secrets.swift */; };
 		75D39A881B6BCE6ACD99671C /* ComposableArchitecture in Frameworks */ = {isa = PBXBuildFile; productRef = C19E50C9B46A4490A6CFAAEE /* ComposableArchitecture */; };
 		A78F387E9D4960F45BE80CFC /* UserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21E3B30775F10AEB23D0AB73 /* UserTests.swift */; };
+		C54701A98B898044996270F7 /* AuthFeatureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6DDFB7F7664B7E4DF4A8155D /* AuthFeatureTests.swift */; };
+		D78CD7062992AB79AC42BC9F /* AuthClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = CCA8D457DBB22C462F9D5398 /* AuthClient.swift */; };
+		F10EA0DA20BBFF2513C25DCF /* AuthFeature.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2294A1E5A75ACA21BAC53567 /* AuthFeature.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -29,11 +32,14 @@
 /* Begin PBXFileReference section */
 		1D4D0A6902647274F72B003C /* HealthComp.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = HealthComp.entitlements; sourceTree = "<group>"; };
 		21E3B30775F10AEB23D0AB73 /* UserTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserTests.swift; sourceTree = "<group>"; };
+		2294A1E5A75ACA21BAC53567 /* AuthFeature.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthFeature.swift; sourceTree = "<group>"; };
 		34A5923143DFA055544421F5 /* Secrets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Secrets.swift; sourceTree = "<group>"; };
 		4D01015283BC66E2ECA9609D /* HealthCompApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthCompApp.swift; sourceTree = "<group>"; };
 		4FAB0D437C5192232ECB516C /* SupabaseService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupabaseService.swift; sourceTree = "<group>"; };
+		6DDFB7F7664B7E4DF4A8155D /* AuthFeatureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthFeatureTests.swift; sourceTree = "<group>"; };
 		88A907F391D88210DA76D5BE /* User.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = User.swift; sourceTree = "<group>"; };
 		C169E842F9AAD480353D38DD /* HealthComp.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = HealthComp.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		CCA8D457DBB22C462F9D5398 /* AuthClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthClient.swift; sourceTree = "<group>"; };
 		F81AE20C21E083ABAC279310 /* HealthCompTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = HealthCompTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -53,6 +59,7 @@
 		0D475C1FCAB464F26AE279B5 /* Features */ = {
 			isa = PBXGroup;
 			children = (
+				ACCE50DB6B7939405D6C015C /* Auth */,
 			);
 			path = Features;
 			sourceTree = "<group>";
@@ -115,9 +122,19 @@
 		6E41142DDDABF7B3BBBB7231 /* HealthCompTests */ = {
 			isa = PBXGroup;
 			children = (
+				6DDFB7F7664B7E4DF4A8155D /* AuthFeatureTests.swift */,
 				21E3B30775F10AEB23D0AB73 /* UserTests.swift */,
 			);
 			path = HealthCompTests;
+			sourceTree = "<group>";
+		};
+		ACCE50DB6B7939405D6C015C /* Auth */ = {
+			isa = PBXGroup;
+			children = (
+				CCA8D457DBB22C462F9D5398 /* AuthClient.swift */,
+				2294A1E5A75ACA21BAC53567 /* AuthFeature.swift */,
+			);
+			path = Auth;
 			sourceTree = "<group>";
 		};
 		D3AFFFCE59B8D2086F7B9A8C /* Resources */ = {
@@ -215,6 +232,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				D78CD7062992AB79AC42BC9F /* AuthClient.swift in Sources */,
+				F10EA0DA20BBFF2513C25DCF /* AuthFeature.swift in Sources */,
 				1F1E059933150A061C760DD6 /* HealthCompApp.swift in Sources */,
 				646F6136A343E955403BD427 /* Secrets.swift in Sources */,
 				62FB1CDB78DEE949DD50833E /* SupabaseService.swift in Sources */,
@@ -226,6 +245,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C54701A98B898044996270F7 /* AuthFeatureTests.swift in Sources */,
 				A78F387E9D4960F45BE80CFC /* UserTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
