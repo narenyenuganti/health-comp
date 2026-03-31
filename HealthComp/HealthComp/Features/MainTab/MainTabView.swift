@@ -20,19 +20,9 @@ struct MainTabView: View {
             .tabItem { Label("Compete", systemImage: "figure.run") }
             .tag(MainTabFeature.Tab.compete)
 
-            NavigationStack {
-                VStack {
-                    Image(systemName: "person.2.circle")
-                        .font(.system(size: 60))
-                        .foregroundStyle(.blue)
-                    Text("Friends Activity")
-                        .font(.title3)
-                        .foregroundStyle(.secondary)
-                }
-                .navigationTitle("Friends")
-            }
-            .tabItem { Label("Friends", systemImage: "person.2") }
-            .tag(MainTabFeature.Tab.friends)
+            FriendsView(store: store.scope(state: \.friends, action: \.friends))
+                .tabItem { Label("Friends", systemImage: "person.2") }
+                .tag(MainTabFeature.Tab.friends)
 
             NavigationStack {
                 VStack {
