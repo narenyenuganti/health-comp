@@ -10,6 +10,7 @@
 		1F1E059933150A061C760DD6 /* HealthCompApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D01015283BC66E2ECA9609D /* HealthCompApp.swift */; };
 		27E47B5E68C28C7499A58D39 /* User.swift in Sources */ = {isa = PBXBuildFile; fileRef = 88A907F391D88210DA76D5BE /* User.swift */; };
 		34375EA0795DBFCC09E7D120 /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = 765098240911111A6F629AE3 /* Supabase */; };
+		62FB1CDB78DEE949DD50833E /* SupabaseService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4FAB0D437C5192232ECB516C /* SupabaseService.swift */; };
 		646F6136A343E955403BD427 /* Secrets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 34A5923143DFA055544421F5 /* Secrets.swift */; };
 		75D39A881B6BCE6ACD99671C /* ComposableArchitecture in Frameworks */ = {isa = PBXBuildFile; productRef = C19E50C9B46A4490A6CFAAEE /* ComposableArchitecture */; };
 		A78F387E9D4960F45BE80CFC /* UserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21E3B30775F10AEB23D0AB73 /* UserTests.swift */; };
@@ -30,6 +31,7 @@
 		21E3B30775F10AEB23D0AB73 /* UserTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UserTests.swift; sourceTree = "<group>"; };
 		34A5923143DFA055544421F5 /* Secrets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Secrets.swift; sourceTree = "<group>"; };
 		4D01015283BC66E2ECA9609D /* HealthCompApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthCompApp.swift; sourceTree = "<group>"; };
+		4FAB0D437C5192232ECB516C /* SupabaseService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupabaseService.swift; sourceTree = "<group>"; };
 		88A907F391D88210DA76D5BE /* User.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = User.swift; sourceTree = "<group>"; };
 		C169E842F9AAD480353D38DD /* HealthComp.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = HealthComp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		F81AE20C21E083ABAC279310 /* HealthCompTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = HealthCompTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -81,6 +83,14 @@
 			path = App;
 			sourceTree = "<group>";
 		};
+		29B00DE592B70298ECE97410 /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				4FAB0D437C5192232ECB516C /* SupabaseService.swift */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
 		5A9FDB2F3CE9D48E9D0B1AF2 /* Config */ = {
 			isa = PBXGroup;
 			children = (
@@ -97,6 +107,7 @@
 				0D475C1FCAB464F26AE279B5 /* Features */,
 				F72CC3DA997C1AFF9DDA2F03 /* Models */,
 				D3AFFFCE59B8D2086F7B9A8C /* Resources */,
+				29B00DE592B70298ECE97410 /* Services */,
 			);
 			path = HealthComp;
 			sourceTree = "<group>";
@@ -206,6 +217,7 @@
 			files = (
 				1F1E059933150A061C760DD6 /* HealthCompApp.swift in Sources */,
 				646F6136A343E955403BD427 /* Secrets.swift in Sources */,
+				62FB1CDB78DEE949DD50833E /* SupabaseService.swift in Sources */,
 				27E47B5E68C28C7499A58D39 /* User.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
