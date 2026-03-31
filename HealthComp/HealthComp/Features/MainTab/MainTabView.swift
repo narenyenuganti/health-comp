@@ -14,19 +14,9 @@ struct MainTabView: View {
                 .tabItem { Label("Friends", systemImage: "person.2") }
                 .tag(MainTabFeature.Tab.friends)
 
-            NavigationStack {
-                VStack {
-                    Image(systemName: "trophy.circle")
-                        .font(.system(size: 60))
-                        .foregroundStyle(.yellow)
-                    Text("Badges & Cosmetics")
-                        .font(.title3)
-                        .foregroundStyle(.secondary)
-                }
-                .navigationTitle("Awards")
-            }
-            .tabItem { Label("Awards", systemImage: "trophy") }
-            .tag(MainTabFeature.Tab.awards)
+            AwardsView(store: store.scope(state: \.awards, action: \.awards))
+                .tabItem { Label("Awards", systemImage: "trophy") }
+                .tag(MainTabFeature.Tab.awards)
 
             NavigationStack {
                 VStack {
