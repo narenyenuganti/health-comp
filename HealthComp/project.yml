@@ -45,4 +45,5 @@ targets:
       - target: HealthComp
     settings:
       base:
+        GENERATE_INFOPLIST_FILE: YES
         SWIFT_VERSION: "5.9"
