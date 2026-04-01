@@ -29,14 +29,23 @@ struct AuthView: View {
                     ProgressView()
                         .controlSize(.large)
                 } else {
-                    SignInWithAppleButton(.signIn) { request in
-                        request.requestedScopes = [.fullName, .email]
-                    } onCompletion: { _ in
-                        store.send(.signInWithAppleTapped)
+                    VStack(spacing: 12) {
+                        SignInWithAppleButton(.signIn) { request in
+                            request.requestedScopes = [.fullName, .email]
+                        } onCompletion: { _ in
+                            store.send(.signInWithAppleTapped)
+                        }
+                        .signInWithAppleButtonStyle(.white)
+                        .frame(height: 50)
+                        .cornerRadius(12)
+
+                        #if DEBUG
+                        Button("Continue in Demo Mode") {
+                            store.send(.continueInDemoModeTapped)
+                        }
+                        .buttonStyle(.bordered)
+                        #endif
                     }
-                    .signInWithAppleButtonStyle(.white)
-                    .frame(height: 50)
-                    .cornerRadius(12)
                 }
 
                 if let errorMessage = store.errorMessage {

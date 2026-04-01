@@ -78,3 +78,20 @@ extension JSONEncoder {
         return encoder
     }()
 }
+
+#if DEBUG
+extension User {
+    static let debugDemoUser = User(
+        id: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!,
+        username: "demo",
+        displayName: "Demo User",
+        avatarURL: nil,
+        bio: "Local debug bypass user",
+        cosmetics: .default,
+        cpBalance: 0,
+        cpLifetime: 0,
+        privacy: .default,
+        createdAt: Date(timeIntervalSince1970: 0)
+    )
+}
+#endif

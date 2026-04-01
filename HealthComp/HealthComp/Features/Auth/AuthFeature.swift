@@ -11,6 +11,7 @@ struct AuthFeature {
 
     enum Action: Equatable, Sendable {
         case signInWithAppleTapped
+        case continueInDemoModeTapped
         case signInResponse(Result<AuthResult, AuthError>)
         case dismissErrorTapped
     }
@@ -33,6 +34,15 @@ struct AuthFeature {
                         await send(.signInResponse(.failure(.signInFailed(error.localizedDescription))))
                     }
                 }
+
+            case .continueInDemoModeTapped:
+                state.isLoading = false
+                state.errorMessage = nil
+                #if DEBUG
+                return .send(.signInResponse(.success(.existingUser(.debugDemoUser))))
+                #else
+                return .none
+                #endif
 
             case .signInResponse(.success):
                 state.isLoading = false

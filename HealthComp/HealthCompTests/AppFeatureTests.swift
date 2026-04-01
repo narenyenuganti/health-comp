@@ -111,6 +111,35 @@ final class AppFeatureTests: XCTestCase {
     }
 
     @MainActor
+    func testDebugBypassGoesToMainTab() async {
+        let demoUser = User(
+            id: UUID(uuidString: "00000000-0000-0000-0000-000000000001")!,
+            username: "demo",
+            displayName: "Demo User",
+            avatarURL: nil,
+            bio: "Local debug bypass user",
+            cosmetics: .default,
+            cpBalance: 0,
+            cpLifetime: 0,
+            privacy: .default,
+            createdAt: Date(timeIntervalSince1970: 0)
+        )
+
+        let store = TestStore(
+            initialState: AppFeature.State(screen: .auth(AuthFeature.State()))
+        ) {
+            AppFeature()
+        }
+
+        await store.send(\.auth.continueInDemoModeTapped)
+        await store.receive(\.auth.signInResponse.success)
+        await store.receive(\.navigateToMainTab) {
+            $0.screen = .mainTab(MainTabFeature.State())
+            $0.currentUser = demoUser
+        }
+    }
+
+    @MainActor
     func testOnboardingCompleteGoesToMainTab() async {
         let userId = UUID(uuidString: "550e8400-e29b-41d4-a716-446655440000")!
         let createdUser = User(
