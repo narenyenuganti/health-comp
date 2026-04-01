@@ -78,7 +78,7 @@ struct AppFeature {
 
             case .sessionRestored(.success(.existingUser(let user))):
                 state.currentUser = user
-                state.screen = .mainTab(MainTabFeature.State())
+                state.screen = .mainTab(MainTabFeature.State(currentUser: user))
                 return .none
 
             case .sessionRestored(.success(.newUser(let userId))):
@@ -110,7 +110,7 @@ struct AppFeature {
 
             case .navigateToMainTab(let user):
                 state.currentUser = user
-                state.screen = .mainTab(MainTabFeature.State())
+                state.screen = .mainTab(MainTabFeature.State(currentUser: user))
                 return .none
 
             case .mainTab:

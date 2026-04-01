@@ -70,4 +70,32 @@ final class UserTests: XCTestCase {
         XCTAssertEqual(privacy.activityVisibility, .friendsOnly)
         XCTAssertTrue(privacy.discoverableByContacts)
     }
+
+    func testProfilePresentationHelpers() {
+        let user = User(
+            id: UUID(uuidString: "550e8400-e29b-41d4-a716-446655440000")!,
+            username: "naren",
+            displayName: "Naren Yenuganti",
+            avatarURL: nil,
+            bio: "",
+            cosmetics: User.Cosmetics(avatar: "rocket", frame: "gold", theme: "sunrise"),
+            cpBalance: 250,
+            cpLifetime: 1200,
+            privacy: User.Privacy(
+                profileVisibility: .friendsOnly,
+                activityVisibility: .competitorsOnly,
+                discoverableByContacts: false
+            ),
+            createdAt: Date(timeIntervalSince1970: 0)
+        )
+
+        XCTAssertEqual(user.profileInitials, "NY")
+        XCTAssertEqual(user.profileBioSummary, "Add a short bio so friends know what you are training for.")
+        XCTAssertEqual(user.profileVisibilitySummary, "Friends only")
+        XCTAssertEqual(user.activityVisibilitySummary, "Competitors only")
+        XCTAssertEqual(user.contactDiscoverySummary, "Hidden from contacts")
+        XCTAssertEqual(user.themeSummary, "Sunrise")
+        XCTAssertEqual(user.avatarSummary, "Rocket")
+        XCTAssertEqual(user.frameSummary, "Gold")
+    }
 }

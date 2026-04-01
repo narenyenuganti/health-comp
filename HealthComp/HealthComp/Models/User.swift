@@ -26,6 +26,68 @@ struct User: Codable, Equatable, Identifiable, Sendable {
     }
 }
 
+extension User {
+    var profileInitials: String {
+        let source = displayName.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            ? username
+            : displayName
+
+        let components = source
+            .split(whereSeparator: \.isWhitespace)
+            .prefix(2)
+            .compactMap { $0.first.map(String.init) }
+
+        if !components.isEmpty {
+            return components.joined().uppercased()
+        }
+
+        return String(username.prefix(2)).uppercased()
+    }
+
+    var profileBioSummary: String {
+        guard let bio, !bio.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            return "Add a short bio so friends know what you are training for."
+        }
+        return bio
+    }
+
+    var profileVisibilitySummary: String {
+        switch privacy.profileVisibility {
+        case .public:
+            return "Public"
+        case .friendsOnly:
+            return "Friends only"
+        case .private:
+            return "Private"
+        }
+    }
+
+    var activityVisibilitySummary: String {
+        switch privacy.activityVisibility {
+        case .friendsOnly:
+            return "Friends only"
+        case .competitorsOnly:
+            return "Competitors only"
+        }
+    }
+
+    var contactDiscoverySummary: String {
+        privacy.discoverableByContacts ? "Visible to contacts" : "Hidden from contacts"
+    }
+
+    var avatarSummary: String {
+        cosmetics.avatar.replacingOccurrences(of: "_", with: " ").capitalized
+    }
+
+    var frameSummary: String {
+        cosmetics.frame.replacingOccurrences(of: "_", with: " ").capitalized
+    }
+
+    var themeSummary: String {
+        cosmetics.theme.replacingOccurrences(of: "_", with: " ").capitalized
+    }
+}
+
 // MARK: - Nested Types
 
 extension User {

@@ -33,7 +33,7 @@ final class AppFeatureTests: XCTestCase {
 
         await store.send(\.onAppear)
         await store.receive(\.sessionRestored.success) {
-            $0.screen = .mainTab(MainTabFeature.State())
+            $0.screen = .mainTab(MainTabFeature.State(currentUser: testUser))
             $0.currentUser = testUser
         }
     }
@@ -105,7 +105,7 @@ final class AppFeatureTests: XCTestCase {
             $0.auth?.isLoading = false
         }
         await store.receive(\.navigateToMainTab) {
-            $0.screen = .mainTab(MainTabFeature.State())
+            $0.screen = .mainTab(MainTabFeature.State(currentUser: testUser))
             $0.currentUser = testUser
         }
     }
@@ -134,7 +134,7 @@ final class AppFeatureTests: XCTestCase {
         await store.send(\.auth.continueInDemoModeTapped)
         await store.receive(\.auth.signInResponse.success)
         await store.receive(\.navigateToMainTab) {
-            $0.screen = .mainTab(MainTabFeature.State())
+            $0.screen = .mainTab(MainTabFeature.State(currentUser: demoUser))
             $0.currentUser = demoUser
         }
     }
@@ -182,7 +182,7 @@ final class AppFeatureTests: XCTestCase {
             $0.onboarding?.isLoading = false
         }
         await store.receive(\.navigateToMainTab) {
-            $0.screen = .mainTab(MainTabFeature.State())
+            $0.screen = .mainTab(MainTabFeature.State(currentUser: createdUser))
             $0.currentUser = createdUser
         }
     }

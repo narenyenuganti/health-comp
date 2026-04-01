@@ -4,6 +4,7 @@ import ComposableArchitecture
 struct MainTabFeature {
     @ObservableState
     struct State: Equatable {
+        var currentUser: User
         var selectedTab: Tab = .compete
         var compete = CompeteFeature.State()
         var friends = FriendsFeature.State()
