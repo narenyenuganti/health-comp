@@ -70,4 +70,62 @@ final class HealthMetricTests: XCTestCase {
         ]
         XCTAssertEqual(allTypes.count, 6)
     }
+
+    func testActivityRingSummaryComputesRingPercentages() {
+        let summary = ActivityRingSummary(
+            id: UUID(),
+            userId: UUID(),
+            date: "2026-05-11",
+            moveValue: 750,
+            moveGoal: 500,
+            exerciseValue: 45,
+            exerciseGoal: 30,
+            standValue: 18,
+            standGoal: 12,
+            source: .healthkit,
+            syncedAt: Date()
+        )
+
+        XCTAssertEqual(summary.movePercent, 150)
+        XCTAssertEqual(summary.exercisePercent, 150)
+        XCTAssertEqual(summary.standPercent, 150)
+    }
+
+    func testActivityRingSummaryTreatsZeroGoalsAsZeroPercent() {
+        let summary = ActivityRingSummary(
+            id: UUID(),
+            userId: UUID(),
+            date: "2026-05-11",
+            moveValue: 750,
+            moveGoal: 0,
+            exerciseValue: 45,
+            exerciseGoal: 0,
+            standValue: 18,
+            standGoal: 0,
+            source: .healthkit,
+            syncedAt: Date()
+        )
+
+        XCTAssertEqual(summary.movePercent, 0)
+        XCTAssertEqual(summary.exercisePercent, 0)
+        XCTAssertEqual(summary.standPercent, 0)
+    }
+
+    func testActivityRingSummaryCreatesAppleActivityScore() {
+        let summary = ActivityRingSummary(
+            id: UUID(),
+            userId: UUID(),
+            date: "2026-05-11",
+            moveValue: 500,
+            moveGoal: 500,
+            exerciseValue: 30,
+            exerciseGoal: 30,
+            standValue: 12,
+            standGoal: 12,
+            source: .healthkit,
+            syncedAt: Date()
+        )
+
+        XCTAssertEqual(summary.appleActivityScore.points, 300)
+    }
 }
