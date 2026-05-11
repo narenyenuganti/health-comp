@@ -9,7 +9,10 @@
 /* Begin PBXBuildFile section */
 		026BC27D8A89262270E78565 /* HealthMetricTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09FF3C40395A80635C205A3A /* HealthMetricTests.swift */; };
 		04A5E0CEF55A355869FA3426 /* CompetitionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1A90BF0BB5B0B82A46CB32FA /* CompetitionTests.swift */; };
+		0A69D4B8F8A34D20B70C6EC1 /* CompeteFeatureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2F77A97701645AA9D2D9B46 /* CompeteFeatureTests.swift */; };
+		0B7A0D63A67E42A881EFC001 /* CompetitionParityUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0B7A0D63A67E42A881EFC002 /* CompetitionParityUITests.swift */; };
 		0FDCAFF0E13E27FBCEA5D496 /* CompeteFeature.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9499CFFF599EECEA30766443 /* CompeteFeature.swift */; };
+		1024C8DA9B214F04A05EC779 /* CompetitionNotificationClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = B1F5AF8E35CB42D7A79F2C11 /* CompetitionNotificationClient.swift */; };
 		115A8DB9E5595797C52DAF37 /* FriendshipTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6B088A2156840DB64F241B3A /* FriendshipTests.swift */; };
 		17169CD2FDF239DE825B80A5 /* Friendship.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5F5AAA7F8D190845117F4EE2 /* Friendship.swift */; };
 		1E677D5B9D0BBC6F7A873642 /* HealthDataProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC8F09779188D9A1FE1C4BF7 /* HealthDataProvider.swift */; };
@@ -39,6 +42,7 @@
 		9300156C3DFEBB51457C12CE /* CompetitionClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 74234FCF4D47A20A84CB9CA1 /* CompetitionClient.swift */; };
 		98103B98B315CF1D6121EF4B /* AppFeatureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A27031C9D6844A658A3C19CE /* AppFeatureTests.swift */; };
 		A39001B8E8145707D693D215 /* AppFeature.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC90AB3B1EDF7C788EF0A48F /* AppFeature.swift */; };
+		A5EBA01DD27E4FC7B0709228 /* CompetitionNotificationClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B3BF5D0588B64C43B616DB99 /* CompetitionNotificationClientTests.swift */; };
 		A78F387E9D4960F45BE80CFC /* UserTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 21E3B30775F10AEB23D0AB73 /* UserTests.swift */; };
 		AD5DCFFC2EA4D44F02FE3ED7 /* HealthSyncClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = A721DCE6A3E7550FA815CA52 /* HealthSyncClient.swift */; };
 		B20EE4719A220107DFC472EA /* OnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 409E8BC595F04524A1654693 /* OnboardingView.swift */; };
@@ -59,11 +63,20 @@
 			remoteGlobalIDString = B080D531BAF0BC23F1A02EF7;
 			remoteInfo = HealthComp;
 		};
+		0B7A0D63A67E42A881EFC007 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = 6F8A6AF82470DA913821CC35 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = B080D531BAF0BC23F1A02EF7;
+			remoteInfo = HealthComp;
+		};
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
 		016A5D0501372FAF6B58AC07 /* AwardsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AwardsView.swift; sourceTree = "<group>"; };
 		060AFD7AA3E7C1FF7287607A /* FriendsClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FriendsClient.swift; sourceTree = "<group>"; };
+		0B7A0D63A67E42A881EFC002 /* CompetitionParityUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionParityUITests.swift; sourceTree = "<group>"; };
+		0B7A0D63A67E42A881EFC003 /* HealthCompUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = HealthCompUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		09FF3C40395A80635C205A3A /* HealthMetricTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthMetricTests.swift; sourceTree = "<group>"; };
 		1A90BF0BB5B0B82A46CB32FA /* CompetitionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionTests.swift; sourceTree = "<group>"; };
 		1BB02E662408B41CEDDCEA66 /* ProfileClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ProfileClient.swift; sourceTree = "<group>"; };
@@ -97,6 +110,8 @@
 		9CB0EDBEB6A8404FCB813B7A /* Badge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Badge.swift; sourceTree = "<group>"; };
 		A27031C9D6844A658A3C19CE /* AppFeatureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppFeatureTests.swift; sourceTree = "<group>"; };
 		A721DCE6A3E7550FA815CA52 /* HealthSyncClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthSyncClient.swift; sourceTree = "<group>"; };
+		B1F5AF8E35CB42D7A79F2C11 /* CompetitionNotificationClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionNotificationClient.swift; sourceTree = "<group>"; };
+		B3BF5D0588B64C43B616DB99 /* CompetitionNotificationClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionNotificationClientTests.swift; sourceTree = "<group>"; };
 		C169E842F9AAD480353D38DD /* HealthComp.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = HealthComp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C1D8B3EF060D8C52F2299C95 /* MainTabFeature.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabFeature.swift; sourceTree = "<group>"; };
 		C3DFF07C8F1DAF91F666CE2C /* MainTabFeatureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabFeatureTests.swift; sourceTree = "<group>"; };
@@ -104,6 +119,7 @@
 		CF7DE04D723EFB17C6B0F55E /* HealthKitProviderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthKitProviderTests.swift; sourceTree = "<group>"; };
 		DC8F09779188D9A1FE1C4BF7 /* HealthDataProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthDataProvider.swift; sourceTree = "<group>"; };
 		EC90AB3B1EDF7C788EF0A48F /* AppFeature.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppFeature.swift; sourceTree = "<group>"; };
+		F2F77A97701645AA9D2D9B46 /* CompeteFeatureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompeteFeatureTests.swift; sourceTree = "<group>"; };
 		F81AE20C21E083ABAC279310 /* HealthCompTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = HealthCompTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 /* End PBXFileReference section */
 
@@ -138,6 +154,7 @@
 			children = (
 				60CBD17CD7BBFD3BC9FB34F4 /* HealthComp */,
 				6E41142DDDABF7B3BBBB7231 /* HealthCompTests */,
+				0B7A0D63A67E42A881EFC004 /* HealthCompUITests */,
 				1FDF3C8CE481CE41AFE93EF1 /* Products */,
 			);
 			sourceTree = "<group>";
@@ -147,6 +164,7 @@
 			children = (
 				C169E842F9AAD480353D38DD /* HealthComp.app */,
 				F81AE20C21E083ABAC279310 /* HealthCompTests.xctest */,
+				0B7A0D63A67E42A881EFC003 /* HealthCompUITests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -163,6 +181,7 @@
 		29B00DE592B70298ECE97410 /* Services */ = {
 			isa = PBXGroup;
 			children = (
+				B1F5AF8E35CB42D7A79F2C11 /* CompetitionNotificationClient.swift */,
 				DC8F09779188D9A1FE1C4BF7 /* HealthDataProvider.swift */,
 				4E1EFEB41E5D4ADC7484F272 /* HealthKitProvider.swift */,
 				A721DCE6A3E7550FA815CA52 /* HealthSyncClient.swift */,
@@ -207,6 +226,8 @@
 			children = (
 				A27031C9D6844A658A3C19CE /* AppFeatureTests.swift */,
 				6DDFB7F7664B7E4DF4A8155D /* AuthFeatureTests.swift */,
+				F2F77A97701645AA9D2D9B46 /* CompeteFeatureTests.swift */,
+				B3BF5D0588B64C43B616DB99 /* CompetitionNotificationClientTests.swift */,
 				1A90BF0BB5B0B82A46CB32FA /* CompetitionTests.swift */,
 				7EE8383943164A057D8DA7F4 /* FriendsFeatureTests.swift */,
 				6B088A2156840DB64F241B3A /* FriendshipTests.swift */,
@@ -218,6 +239,14 @@
 				21E3B30775F10AEB23D0AB73 /* UserTests.swift */,
 			);
 			path = HealthCompTests;
+			sourceTree = "<group>";
+		};
+		0B7A0D63A67E42A881EFC004 /* HealthCompUITests */ = {
+			isa = PBXGroup;
+			children = (
+				0B7A0D63A67E42A881EFC002 /* CompetitionParityUITests.swift */,
+			);
+			path = HealthCompUITests;
 			sourceTree = "<group>";
 		};
 		79B1C92EAAAD58985E8BD91F /* MainTab */ = {
@@ -310,6 +339,24 @@
 			productReference = F81AE20C21E083ABAC279310 /* HealthCompTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
 		};
+		0B7A0D63A67E42A881EFC005 /* HealthCompUITests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 0B7A0D63A67E42A881EFC009 /* Build configuration list for PBXNativeTarget "HealthCompUITests" */;
+			buildPhases = (
+				0B7A0D63A67E42A881EFC006 /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				0B7A0D63A67E42A881EFC008 /* PBXTargetDependency */,
+			);
+			name = HealthCompUITests;
+			packageProductDependencies = (
+			);
+			productName = HealthCompUITests;
+			productReference = 0B7A0D63A67E42A881EFC003 /* HealthCompUITests.xctest */;
+			productType = "com.apple.product-type.bundle.ui-testing";
+		};
 		B080D531BAF0BC23F1A02EF7 /* HealthComp */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = B7B1486E7BC6C43CC6001970 /* Build configuration list for PBXNativeTarget "HealthComp" */;
@@ -359,6 +406,7 @@
 			targets = (
 				B080D531BAF0BC23F1A02EF7 /* HealthComp */,
 				2BBEE518756FBCE194988772 /* HealthCompTests */,
+				0B7A0D63A67E42A881EFC005 /* HealthCompUITests */,
 			);
 		};
 /* End PBXProject section */
@@ -380,6 +428,7 @@
 				638E7C6DD447132BD343E7B7 /* CompeteView.swift in Sources */,
 				C01A25D35A5F5948119CFC84 /* Competition.swift in Sources */,
 				9300156C3DFEBB51457C12CE /* CompetitionClient.swift in Sources */,
+				1024C8DA9B214F04A05EC779 /* CompetitionNotificationClient.swift in Sources */,
 				3A2B10F4E1E578F5747CDF38 /* FriendsClient.swift in Sources */,
 				2394C31929E999699194CA08 /* FriendsFeature.swift in Sources */,
 				BEC2E8D7D1ABA1CEB12307C2 /* FriendsView.swift in Sources */,
@@ -406,6 +455,8 @@
 			files = (
 				98103B98B315CF1D6121EF4B /* AppFeatureTests.swift in Sources */,
 				C54701A98B898044996270F7 /* AuthFeatureTests.swift in Sources */,
+				0A69D4B8F8A34D20B70C6EC1 /* CompeteFeatureTests.swift in Sources */,
+				A5EBA01DD27E4FC7B0709228 /* CompetitionNotificationClientTests.swift in Sources */,
 				04A5E0CEF55A355869FA3426 /* CompetitionTests.swift in Sources */,
 				8AE89AC6A6123E784B8763C2 /* FriendsFeatureTests.swift in Sources */,
 				115A8DB9E5595797C52DAF37 /* FriendshipTests.swift in Sources */,
@@ -418,9 +469,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		0B7A0D63A67E42A881EFC006 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				0B7A0D63A67E42A881EFC001 /* CompetitionParityUITests.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
+		0B7A0D63A67E42A881EFC008 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = B080D531BAF0BC23F1A02EF7 /* HealthComp */;
+			targetProxy = 0B7A0D63A67E42A881EFC007 /* PBXContainerItemProxy */;
+		};
 		84498F98752B7F040931C9E5 /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = B080D531BAF0BC23F1A02EF7 /* HealthComp */;
@@ -448,6 +512,7 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.narenyenuganti.HealthComp;
 				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SWIFT_VERSION = 5.9;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
@@ -465,9 +530,52 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.narenyenuganti.HealthCompTests;
 				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SWIFT_VERSION = 5.9;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/HealthComp.app/HealthComp";
+			};
+			name = Release;
+		};
+		0B7A0D63A67E42A881EFC00A /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.narenyenuganti.HealthCompUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.9;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = HealthComp;
+			};
+			name = Debug;
+		};
+		0B7A0D63A67E42A881EFC00B /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				GENERATE_INFOPLIST_FILE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.narenyenuganti.HealthCompUITests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
+				SWIFT_VERSION = 5.9;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = HealthComp;
 			};
 			name = Release;
 		};
@@ -521,6 +629,7 @@
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SWIFT_COMPILATION_MODE = wholemodule;
 				SWIFT_OPTIMIZATION_LEVEL = "-O";
 				SWIFT_VERSION = 5.0;
@@ -584,6 +693,7 @@
 				ONLY_ACTIVE_ARCH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
 				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
 				SWIFT_VERSION = 5.0;
@@ -602,6 +712,7 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.narenyenuganti.HealthCompTests;
 				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SWIFT_VERSION = 5.9;
 				TARGETED_DEVICE_FAMILY = "1,2";
 				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/HealthComp.app/HealthComp";
@@ -627,6 +738,7 @@
 				);
 				PRODUCT_BUNDLE_IDENTIFIER = com.narenyenuganti.HealthComp;
 				SDKROOT = iphoneos;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator";
 				SWIFT_VERSION = 5.9;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
@@ -640,6 +752,15 @@
 			buildConfigurations = (
 				C8A9CBB953B823809AED9646 /* Debug */,
 				702F58129DE03E54C4F611EA /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		0B7A0D63A67E42A881EFC009 /* Build configuration list for PBXNativeTarget "HealthCompUITests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				0B7A0D63A67E42A881EFC00A /* Debug */,
+				0B7A0D63A67E42A881EFC00B /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

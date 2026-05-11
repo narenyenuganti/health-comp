@@ -6,9 +6,23 @@ struct MainTabFeature {
     struct State: Equatable {
         var currentUser: User
         var selectedTab: Tab = .compete
-        var compete = CompeteFeature.State()
+        var compete: CompeteFeature.State
         var friends = FriendsFeature.State()
         var awards = AwardsFeature.State()
+
+        init(
+            currentUser: User,
+            selectedTab: Tab = .compete,
+            compete: CompeteFeature.State? = nil,
+            friends: FriendsFeature.State = FriendsFeature.State(),
+            awards: AwardsFeature.State = AwardsFeature.State()
+        ) {
+            self.currentUser = currentUser
+            self.selectedTab = selectedTab
+            self.compete = compete ?? CompeteFeature.State(currentUserId: currentUser.id)
+            self.friends = friends
+            self.awards = awards
+        }
     }
 
     enum Tab: String, Equatable, Sendable, CaseIterable {

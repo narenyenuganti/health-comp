@@ -95,10 +95,15 @@ extension CompetitionClient: DependencyKey {
                 let userId = try await supabase.auth.session.user.id
                 let calendar = Calendar.current
                 let startDate = calendar.date(byAdding: .day, value: 1, to: Date())!
-                let endDate = calendar.date(byAdding: .day, value: duration, to: startDate)!
-
-                let dateFormatter = DateFormatter()
-                dateFormatter.dateFormat = "yyyy-MM-dd"
+                let dateWindow = CompetitionDateWindow(
+                    starting: startDate,
+                    durationDays: formula.kind == .appleActivity ? AppleActivityScore.durationDays : duration,
+                    calendar: calendar
+                )
+                let competitionType = formula.kind == .appleActivity ? CompetitionType.oneVOne : type
+                let invitedOpponentIds = formula.kind == .appleActivity
+                    ? Array(opponentIds.prefix(1))
+                    : opponentIds
 
                 struct CompPayload: Encodable {
                     let type: String
@@ -114,12 +119,12 @@ extension CompetitionClient: DependencyKey {
                 let comp: Competition = try await supabase
                     .from("competitions")
                     .insert(CompPayload(
-                        type: type.rawValue,
+                        type: competitionType.rawValue,
                         mode_name: modeName,
                         scoring_formula: formula,
                         status: "pending",
-                        start_date: dateFormatter.string(from: startDate),
-                        end_date: dateFormatter.string(from: endDate),
+                        start_date: dateWindow.startDate,
+                        end_date: dateWindow.endDate,
                         created_by: userId,
                         handicap_enabled: false
                     ))
@@ -147,7 +152,7 @@ extension CompetitionClient: DependencyKey {
                     .execute()
 
                 // Add opponents as invited
-                for opponentId in opponentIds {
+                for opponentId in invitedOpponentIds {
                     try await supabase
                         .from("competition_participants")
                         .insert(ParticipantPayload(
