@@ -1,18 +1,14 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import {
+  type ActivityRingSummaryRow,
+  computeDailyScore,
+  type HealthMetricRow,
+  type ScoringFormula,
+} from "./scoring.ts";
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
-
-interface ScoringMetric {
-  type: string;
-  weight: number;
-}
-
-interface ScoringFormula {
-  metrics: ScoringMetric[];
-  daily_cap: number | null;
-}
 
 interface Competition {
   id: string;
@@ -63,30 +59,25 @@ serve(async (_req: Request) => {
 
       if (!metrics) continue;
 
-      // Compute score per metric
-      const metricScores: Record<string, number> = {};
-      let totalPoints = 0;
+      let activityRingSummary: ActivityRingSummaryRow | null = null;
+      if (comp.scoring_formula.kind === "apple_activity") {
+        const { data: summaries } = await supabase
+          .from("activity_ring_summaries")
+          .select("*")
+          .eq("user_id", participant.user_id)
+          .eq("date", today)
+          .limit(1);
 
-      for (const scoringMetric of comp.scoring_formula.metrics) {
-        const healthMetric = metrics.find((m: any) => m.metric_type === scoringMetric.type);
-        const actualValue = healthMetric?.value ?? 0;
-        const goalValue = participant.goal_snapshot?.[scoringMetric.type] ?? 100;
-
-        // rawPercent = (actual / goal) * 100
-        const rawPercent = (actualValue / goalValue) * 100;
-        // weightedPoints = rawPercent * weight * handicap
-        const weightedPoints = rawPercent * scoringMetric.weight * participant.handicap_mult;
-
-        metricScores[scoringMetric.type] = Math.round(weightedPoints * 10) / 10;
-        totalPoints += weightedPoints;
+        activityRingSummary = (summaries?.[0] ?? null) as ActivityRingSummaryRow | null;
       }
 
-      // Apply daily cap
-      if (comp.scoring_formula.daily_cap) {
-        totalPoints = Math.min(totalPoints, comp.scoring_formula.daily_cap);
-      }
-
-      totalPoints = Math.round(totalPoints * 10) / 10;
+      const { metricScores, totalPoints } = computeDailyScore({
+        formula: comp.scoring_formula,
+        metrics: metrics as HealthMetricRow[],
+        activityRingSummary,
+        goalSnapshot: participant.goal_snapshot,
+        handicapMult: Number(participant.handicap_mult ?? 1),
+      });
 
       // Upsert daily score
       await supabase.from("daily_scores").upsert(
