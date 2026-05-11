@@ -1,5 +1,13 @@
 import { serve } from "https://deno.land/std@0.177.0/http/server.ts";
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+import {
+  awardBadgesForResult,
+  buildRivalryUpdate,
+  computeCompetitionResult,
+  type DailyScoreRow,
+  orderedRivalryPair,
+  type RivalryRow,
+} from "./lifecycle.ts";
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -7,7 +15,7 @@ const supabaseServiceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
 serve(async (_req: Request) => {
   const supabase = createClient(supabaseUrl, supabaseServiceKey);
   const today = new Date().toISOString().split("T")[0];
-  const results = { activated: 0, completed: 0, cancelled: 0 };
+  const results = { activated: 0, completed: 0, cancelled: 0, awards: 0, rivalries: 0 };
 
   // 1. Activate pending competitions where all participants accepted
   const { data: pendingComps } = await supabase
@@ -53,27 +61,64 @@ serve(async (_req: Request) => {
   // 2. Complete active competitions past end_date
   const { data: activeComps } = await supabase
     .from("competitions")
-    .select("id, end_date")
+    .select("id, end_date, mode_name")
     .eq("status", "active");
 
   for (const comp of activeComps ?? []) {
     if (comp.end_date && comp.end_date < today) {
-      // Get final scores
       const { data: scores } = await supabase
         .from("daily_scores")
-        .select("user_id, total_points")
+        .select("user_id, date, total_points")
         .eq("competition_id", comp.id);
 
-      // Aggregate total per user
-      const userTotals: Record<string, number> = {};
-      for (const score of scores ?? []) {
-        userTotals[score.user_id] = (userTotals[score.user_id] ?? 0) + score.total_points;
-      }
+      const { data: participants } = await supabase
+        .from("competition_participants")
+        .select("user_id")
+        .eq("competition_id", comp.id)
+        .eq("status", "accepted");
+
+      const dailyScores = (scores ?? []) as DailyScoreRow[];
+      const participantIds = (participants ?? []).map((participant: any) => participant.user_id);
+      const result = computeCompetitionResult(dailyScores);
 
       await supabase
         .from("competitions")
         .update({ status: "completed" })
         .eq("id", comp.id);
+
+      const awards = awardBadgesForResult({
+        competitionId: comp.id,
+        participantIds,
+        result,
+        modeName: comp.mode_name,
+        dailyScores,
+      });
+      if (awards.length > 0) {
+        await supabase.from("user_badges").insert(awards);
+        results.awards += awards.length;
+      }
+
+      if (participantIds.length === 2) {
+        const { userA, userB } = orderedRivalryPair(participantIds[0], participantIds[1]);
+        const { data: existing } = await supabase
+          .from("rivalries")
+          .select("*")
+          .eq("user_a", userA)
+          .eq("user_b", userB)
+          .maybeSingle();
+
+        const rivalry = buildRivalryUpdate(
+          (existing ?? null) as RivalryRow | null,
+          userA,
+          userB,
+          result,
+          comp.end_date,
+        );
+        await supabase
+          .from("rivalries")
+          .upsert(rivalry, { onConflict: "user_a,user_b" });
+        results.rivalries++;
+      }
 
       results.completed++;
     }
