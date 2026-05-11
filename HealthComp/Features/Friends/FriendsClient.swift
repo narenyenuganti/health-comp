@@ -7,6 +7,7 @@ import Supabase
 struct FriendsClient: Sendable {
     var fetchFriends: @Sendable () async throws -> [FriendWithProfile]
     var fetchPendingRequests: @Sendable () async throws -> [FriendWithProfile]
+    var fetchFriendActivity: @Sendable () async throws -> [FriendActivitySummary]
     var sendRequest: @Sendable (_ receiverId: UUID) async throws -> Friendship
     var acceptRequest: @Sendable (_ friendshipId: UUID) async throws -> Void
     var declineRequest: @Sendable (_ friendshipId: UUID) async throws -> Void
@@ -33,29 +34,83 @@ extension FriendsClient: DependencyKey {
 
         return FriendsClient(
             fetchFriends: {
-                // Fetch accepted friendships with joined user profile
+                let currentUserId = try await supabase.auth.session.user.id
                 let friendships: [Friendship] = try await supabase
                     .from("friendships")
                     .select()
                     .eq("status", value: "accepted")
                     .execute()
                     .value
-                return friendships.map { FriendWithProfile(friendship: $0, friendProfile: User(
-                    id: $0.requesterId, username: "", displayName: "", avatarURL: nil, bio: nil,
-                    cosmetics: .default, cpBalance: 0, cpLifetime: 0, privacy: .default, createdAt: Date()
-                )) }
+                let friendIds = friendships.map { $0.friendId(relativeTo: currentUserId) }
+                guard !friendIds.isEmpty else { return [] }
+
+                let users: [User] = try await supabase
+                    .from("users")
+                    .select()
+                    .in("id", values: friendIds.map(\.uuidString))
+                    .execute()
+                    .value
+
+                return friendships.compactMap { friendship in
+                    let friendId = friendship.friendId(relativeTo: currentUserId)
+                    guard let user = users.first(where: { $0.id == friendId }) else { return nil }
+                    return FriendWithProfile(friendship: friendship, friendProfile: user)
+                }
             },
             fetchPendingRequests: {
+                let currentUserId = try await supabase.auth.session.user.id
                 let friendships: [Friendship] = try await supabase
                     .from("friendships")
                     .select()
                     .eq("status", value: "pending")
+                    .eq("receiver_id", value: currentUserId.uuidString)
                     .execute()
                     .value
-                return friendships.map { FriendWithProfile(friendship: $0, friendProfile: User(
-                    id: $0.requesterId, username: "", displayName: "", avatarURL: nil, bio: nil,
-                    cosmetics: .default, cpBalance: 0, cpLifetime: 0, privacy: .default, createdAt: Date()
-                )) }
+                guard !friendships.isEmpty else { return [] }
+
+                let users: [User] = try await supabase
+                    .from("users")
+                    .select()
+                    .in("id", values: friendships.map(\.requesterId.uuidString))
+                    .execute()
+                    .value
+
+                return friendships.compactMap { friendship in
+                    guard let user = users.first(where: { $0.id == friendship.requesterId }) else { return nil }
+                    return FriendWithProfile(friendship: friendship, friendProfile: user)
+                }
+            },
+            fetchFriendActivity: {
+                let currentUserId = try await supabase.auth.session.user.id
+                let friendships: [Friendship] = try await supabase
+                    .from("friendships")
+                    .select()
+                    .eq("status", value: "accepted")
+                    .execute()
+                    .value
+                let friendIds = friendships.map { $0.friendId(relativeTo: currentUserId) }
+                guard !friendIds.isEmpty else { return [] }
+
+                let users: [User] = try await supabase
+                    .from("users")
+                    .select()
+                    .in("id", values: friendIds.map(\.uuidString))
+                    .execute()
+                    .value
+                let summaries: [ActivityRingSummary] = try await supabase
+                    .from("activity_ring_summaries")
+                    .select()
+                    .in("user_id", values: friendIds.map(\.uuidString))
+                    .order("date", ascending: false)
+                    .execute()
+                    .value
+
+                return users.map { user in
+                    FriendActivitySummary(
+                        friend: user,
+                        latestRingSummary: summaries.first { $0.userId == user.id }
+                    )
+                }
             },
             sendRequest: { receiverId in
                 let userId = try await supabase.auth.session.user.id

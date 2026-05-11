@@ -56,7 +56,21 @@ struct FriendsView: View {
                                     Text("@\(item.friendProfile.username)")
                                         .font(.caption)
                                         .foregroundStyle(.secondary)
+                                    if let activity = store.friendActivity.first(where: { $0.friend.id == item.friendProfile.id }) {
+                                        FriendActivityLine(activity: activity)
+                                    }
                                 }
+
+                                Spacer()
+
+                                Button {
+                                    store.send(.challengeFriendTapped(item.friendProfile.id))
+                                } label: {
+                                    Image(systemName: "trophy.fill")
+                                }
+                                .accessibilityLabel("Challenge \(item.friendProfile.displayName)")
+                                .buttonStyle(.bordered)
+                                .controlSize(.small)
                             }
                         }
                     }
@@ -83,6 +97,16 @@ struct FriendsView: View {
                         }
                     }
                 }
+
+                if let competition = store.lastCreatedCompetition {
+                    Section("Challenge Status") {
+                        Label(
+                            "Challenge sent: \(competition.displayModeName)",
+                            systemImage: "paperplane.fill"
+                        )
+                        .foregroundStyle(.green)
+                    }
+                }
             }
             .navigationTitle("Friends")
             .searchable(text: $store.searchQuery.sending(\.searchQueryChanged))
@@ -93,7 +117,7 @@ struct FriendsView: View {
                 store.send(.onAppear)
             }
             .overlay {
-                if store.isLoading && store.friends.isEmpty {
+                if (store.isLoading && store.friends.isEmpty) || store.isCreatingChallenge {
                     ProgressView()
                 }
             }
@@ -107,4 +131,23 @@ struct FriendsView: View {
             FriendsFeature()
         }
     )
+}
+
+private struct FriendActivityLine: View {
+    let activity: FriendActivitySummary
+
+    var body: some View {
+        if let summary = activity.latestRingSummary {
+            Label(
+                "\(summary.appleActivityScore.points.formatted(.number.precision(.fractionLength(0)))) pts today",
+                systemImage: "circle.grid.cross"
+            )
+            .font(.caption)
+            .foregroundStyle(.secondary)
+        } else {
+            Label("No shared activity today", systemImage: "circle.dashed")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+    }
 }

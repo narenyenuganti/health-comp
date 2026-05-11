@@ -26,6 +26,21 @@ final class FriendshipTests: XCTestCase {
         XCTAssertEqual(FriendshipStatus.blocked.rawValue, "blocked")
     }
 
+    func testFriendIdResolvesOtherParticipantRelativeToCurrentUser() {
+        let requester = UUID(uuidString: "660e8400-e29b-41d4-a716-446655440000")!
+        let receiver = UUID(uuidString: "770e8400-e29b-41d4-a716-446655440000")!
+        let friendship = Friendship(
+            id: UUID(),
+            requesterId: requester,
+            receiverId: receiver,
+            status: .accepted,
+            createdAt: Date(timeIntervalSince1970: 0)
+        )
+
+        XCTAssertEqual(friendship.friendId(relativeTo: requester), receiver)
+        XCTAssertEqual(friendship.friendId(relativeTo: receiver), requester)
+    }
+
     func testFriendWithProfileDecodes() throws {
         let json = """
         {

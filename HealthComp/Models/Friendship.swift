@@ -20,6 +20,10 @@ struct Friendship: Codable, Equatable, Identifiable, Sendable {
         case status
         case createdAt = "created_at"
     }
+
+    func friendId(relativeTo currentUserId: UUID) -> UUID {
+        requesterId == currentUserId ? receiverId : requesterId
+    }
 }
 
 struct FriendWithProfile: Codable, Equatable, Sendable {
@@ -51,4 +55,11 @@ struct FriendWithProfile: Codable, Equatable, Sendable {
         try container.encode(friendship, forKey: .friendship)
         try container.encode(friendProfile, forKey: .friendProfile)
     }
+}
+
+struct FriendActivitySummary: Codable, Equatable, Identifiable, Sendable {
+    var id: UUID { friend.id }
+
+    let friend: User
+    let latestRingSummary: ActivityRingSummary?
 }

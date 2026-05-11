@@ -7,10 +7,13 @@ struct FriendsFeature {
     struct State: Equatable {
         var friends: [FriendWithProfile] = []
         var pendingRequests: [FriendWithProfile] = []
+        var friendActivity: [FriendActivitySummary] = []
         var searchQuery = ""
         var searchResultUsers: [User] = []
         var isLoading = false
         var isSearching = false
+        var isCreatingChallenge = false
+        var lastCreatedCompetition: Competition?
         var errorMessage: String?
     }
 
@@ -18,6 +21,7 @@ struct FriendsFeature {
         case onAppear
         case friendsLoaded(Result<[FriendWithProfile], FriendsError>)
         case pendingLoaded(Result<[FriendWithProfile], FriendsError>)
+        case friendActivityLoaded(Result<[FriendActivitySummary], FriendsError>)
         case searchQueryChanged(String)
         case searchSubmitted
         case searchResults(Result<[User], FriendsError>)
@@ -27,9 +31,12 @@ struct FriendsFeature {
         case requestAccepted(Result<Bool, FriendsError>)
         case declineRequestTapped(UUID)
         case removeFriendTapped(UUID)
+        case challengeFriendTapped(UUID)
+        case challengeCreated(Result<Competition, FriendsError>)
     }
 
     @Dependency(\.friendsClient) var friendsClient
+    @Dependency(\.competitionClient) var competitionClient
 
     var body: some ReducerOf<Self> {
         Reduce { state, action in
@@ -49,6 +56,12 @@ struct FriendsFeature {
                     } catch {
                         await send(.pendingLoaded(.failure(.networkError(error.localizedDescription))))
                     }
+                    do {
+                        let activity = try await friendsClient.fetchFriendActivity()
+                        await send(.friendActivityLoaded(.success(activity)))
+                    } catch {
+                        await send(.friendActivityLoaded(.failure(.networkError(error.localizedDescription))))
+                    }
                 }
 
             case .friendsLoaded(.success(let friends)):
@@ -66,6 +79,13 @@ struct FriendsFeature {
                 return .none
 
             case .pendingLoaded(.failure):
+                return .none
+
+            case .friendActivityLoaded(.success(let activity)):
+                state.friendActivity = activity
+                return .none
+
+            case .friendActivityLoaded(.failure):
                 return .none
 
             case .searchQueryChanged(let query):
@@ -132,6 +152,33 @@ struct FriendsFeature {
                 return .run { _ in
                     try await friendsClient.removeFriend(friendshipId)
                 }
+
+            case .challengeFriendTapped(let friendId):
+                state.isCreatingChallenge = true
+                return .run { send in
+                    do {
+                        let competition = try await competitionClient.createCompetition(
+                            .oneVOne,
+                            "apple_activity",
+                            .appleActivity,
+                            AppleActivityScore.durationDays,
+                            [friendId]
+                        )
+                        await send(.challengeCreated(.success(competition)))
+                    } catch {
+                        await send(.challengeCreated(.failure(.networkError(error.localizedDescription))))
+                    }
+                }
+
+            case .challengeCreated(.success(let competition)):
+                state.isCreatingChallenge = false
+                state.lastCreatedCompetition = competition
+                return .none
+
+            case .challengeCreated(.failure(let error)):
+                state.isCreatingChallenge = false
+                state.errorMessage = error.localizedDescription
+                return .none
             }
         }
     }
