@@ -8,7 +8,9 @@ struct HealthSyncClient: Sendable {
     var authorizationStatus: @Sendable () -> AuthorizationStatus = { .notDetermined }
     var fetchToday: @Sendable (_ types: [MetricType]) async throws -> [HealthMetric]
     var fetchRange: @Sendable (_ range: DateRange, _ types: [MetricType]) async throws -> [HealthMetric]
+    var fetchActivityRingSummaries: @Sendable (_ range: DateRange) async throws -> [ActivityRingSummary]
     var uploadMetrics: @Sendable (_ metrics: [HealthMetric]) async throws -> Void
+    var uploadActivityRingSummaries: @Sendable (_ summaries: [ActivityRingSummary]) async throws -> Void
 }
 
 extension HealthSyncClient: TestDependencyKey {
@@ -44,11 +46,21 @@ extension HealthSyncClient: DependencyKey {
             fetchRange: { range, types in
                 return []
             },
+            fetchActivityRingSummaries: { range in
+                return []
+            },
             uploadMetrics: { metrics in
                 guard !metrics.isEmpty else { return }
                 try await supabase
                     .from("health_metrics")
                     .upsert(metrics, onConflict: "user_id,metric_type,date,source")
+                    .execute()
+            },
+            uploadActivityRingSummaries: { summaries in
+                guard !summaries.isEmpty else { return }
+                try await supabase
+                    .from("activity_ring_summaries")
+                    .upsert(summaries, onConflict: "user_id,date,source")
                     .execute()
             }
         )

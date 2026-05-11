@@ -29,5 +29,6 @@ protocol HealthDataProvider: Sendable {
     func requestAuthorization() async throws
     func authorizationStatus() -> AuthorizationStatus
     func fetchMetrics(for range: DateRange, types: [MetricType]) async throws -> [HealthMetric]
+    func fetchActivityRingSummaries(for range: DateRange) async throws -> [ActivityRingSummary]
     func availableMetricTypes() -> [MetricType]
 }

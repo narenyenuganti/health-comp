@@ -24,7 +24,9 @@ final class HealthSyncClientTests: XCTestCase {
                 ]
             },
             fetchRange: { _, _ in [] },
-            uploadMetrics: { _ in }
+            fetchActivityRingSummaries: { _ in [] },
+            uploadMetrics: { _ in },
+            uploadActivityRingSummaries: { _ in }
         )
 
         let metrics = try await client.fetchToday([.steps])
@@ -41,9 +43,11 @@ final class HealthSyncClientTests: XCTestCase {
             authorizationStatus: { .authorized },
             fetchToday: { _ in [] },
             fetchRange: { _, _ in [] },
+            fetchActivityRingSummaries: { _ in [] },
             uploadMetrics: { metrics in
                 uploadedMetrics = metrics
-            }
+            },
+            uploadActivityRingSummaries: { _ in }
         )
 
         let metric = HealthMetric(
@@ -59,5 +63,39 @@ final class HealthSyncClientTests: XCTestCase {
         try await client.uploadMetrics([metric])
         XCTAssertEqual(uploadedMetrics?.count, 1)
         XCTAssertEqual(uploadedMetrics?.first?.metricType, .activeCalories)
+    }
+
+    func testUploadActivityRingSummariesCalled() async throws {
+        var uploadedSummaries: [ActivityRingSummary]?
+
+        let client = HealthSyncClient(
+            requestAuthorization: {},
+            authorizationStatus: { .authorized },
+            fetchToday: { _ in [] },
+            fetchRange: { _, _ in [] },
+            fetchActivityRingSummaries: { _ in [] },
+            uploadMetrics: { _ in },
+            uploadActivityRingSummaries: { summaries in
+                uploadedSummaries = summaries
+            }
+        )
+
+        let summary = ActivityRingSummary(
+            id: UUID(),
+            userId: UUID(),
+            date: "2026-05-11",
+            moveValue: 500,
+            moveGoal: 500,
+            exerciseValue: 30,
+            exerciseGoal: 30,
+            standValue: 12,
+            standGoal: 12,
+            source: .healthkit,
+            syncedAt: Date()
+        )
+
+        try await client.uploadActivityRingSummaries([summary])
+        XCTAssertEqual(uploadedSummaries?.count, 1)
+        XCTAssertEqual(uploadedSummaries?.first?.appleActivityScore.points, 300)
     }
 }

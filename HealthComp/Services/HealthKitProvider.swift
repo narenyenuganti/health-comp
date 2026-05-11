@@ -11,9 +11,10 @@ final class HealthKitProvider: HealthDataProvider, @unchecked Sendable {
     }
 
     func requestAuthorization() async throws {
-        let readTypes: Set<HKObjectType> = Set(
+        var readTypes: Set<HKObjectType> = Set(
             availableMetricTypes().compactMap { Self.hkObjectType(for: $0) }
         )
+        readTypes.insert(HKObjectType.activitySummaryType())
         try await healthStore.requestAuthorization(toShare: [], read: readTypes)
     }
 
@@ -54,6 +55,74 @@ final class HealthKitProvider: HealthDataProvider, @unchecked Sendable {
         return results
     }
 
+    func fetchActivityRingSummaries(for range: DateRange) async throws -> [ActivityRingSummary] {
+        let calendar = Self.activitySummaryCalendar()
+        let components = Self.activitySummaryDateComponents(for: range, calendar: calendar)
+        let predicate = HKQuery.predicate(
+            forActivitySummariesBetweenStart: components.start,
+            end: components.end
+        )
+        let descriptor = HKActivitySummaryQueryDescriptor(predicate: predicate)
+        let summaries = try await descriptor.result(for: healthStore)
+        let syncedAt = Date()
+
+        return try summaries
+            .map {
+                try Self.activityRingSummary(
+                    from: $0,
+                    userId: userId,
+                    calendar: calendar,
+                    syncedAt: syncedAt
+                )
+            }
+            .sorted { $0.date < $1.date }
+    }
+
+    static func activitySummaryDateComponents(
+        for range: DateRange,
+        calendar: Calendar
+    ) -> (start: DateComponents, end: DateComponents) {
+        let endDate = calendar.date(byAdding: .day, value: -1, to: range.end) ?? range.end
+        return (
+            activitySummaryDateComponents(from: range.start, calendar: calendar),
+            activitySummaryDateComponents(from: endDate, calendar: calendar)
+        )
+    }
+
+    static func activityRingSummary(
+        from summary: HKActivitySummary,
+        userId: UUID,
+        calendar: Calendar,
+        syncedAt: Date
+    ) throws -> ActivityRingSummary {
+        let dateComponents = summary.dateComponents(for: calendar)
+        guard
+            let year = dateComponents.year,
+            let month = dateComponents.month,
+            let day = dateComponents.day
+        else {
+            throw HealthKitProviderError.missingActivitySummaryDate
+        }
+
+        let move = moveValueAndGoal(from: summary)
+        let exerciseGoal = summary.exerciseTimeGoal?.doubleValue(for: .minute()) ?? 0
+        let standGoal = summary.standHoursGoal?.doubleValue(for: .count()) ?? 0
+
+        return ActivityRingSummary(
+            id: UUID(),
+            userId: userId,
+            date: String(format: "%04d-%02d-%02d", year, month, day),
+            moveValue: move.value,
+            moveGoal: move.goal,
+            exerciseValue: summary.appleExerciseTime.doubleValue(for: .minute()),
+            exerciseGoal: exerciseGoal,
+            standValue: summary.appleStandHours.doubleValue(for: .count()),
+            standGoal: standGoal,
+            source: .healthkit,
+            syncedAt: syncedAt
+        )
+    }
+
     // MARK: - HK Type Mapping
 
     static func hkQuantityType(for metricType: MetricType) -> HKQuantityType? {
@@ -75,6 +144,39 @@ final class HealthKitProvider: HealthDataProvider, @unchecked Sendable {
     }
 
     // MARK: - Private
+
+    private enum HealthKitProviderError: Error {
+        case missingActivitySummaryDate
+    }
+
+    private static func activitySummaryCalendar() -> Calendar {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = .current
+        return calendar
+    }
+
+    private static func activitySummaryDateComponents(
+        from date: Date,
+        calendar: Calendar
+    ) -> DateComponents {
+        var components = calendar.dateComponents([.era, .year, .month, .day], from: date)
+        components.calendar = calendar
+        return components
+    }
+
+    private static func moveValueAndGoal(from summary: HKActivitySummary) -> (value: Double, goal: Double) {
+        if summary.activityMoveMode == .appleMoveTime {
+            return (
+                summary.appleMoveTime.doubleValue(for: .minute()),
+                summary.appleMoveTimeGoal.doubleValue(for: .minute())
+            )
+        }
+
+        return (
+            summary.activeEnergyBurned.doubleValue(for: .kilocalorie()),
+            summary.activeEnergyBurnedGoal.doubleValue(for: .kilocalorie())
+        )
+    }
 
     private func fetchSingleMetric(type: MetricType, range: DateRange) async throws -> Double? {
         if type == .sleepScore {
