@@ -37,7 +37,7 @@ select columns_are(
 
 select columns_are(
   'public', 'participant_finalization_attestations',
-  array['id', 'competition_id', 'participant_profile_id', 'basis', 'window_commitment_sha256', 'accepted_revisions', 'server_seq', 'attested_at']::name[],
+  array['id', 'competition_id', 'participant_profile_id', 'basis', 'window_commitment_sha256', 'accepted_revisions', 'server_seq', 'attested_at', 'semantic_event_id', 'attestation_version']::name[],
   'finalization attestations expose only approved columns'
 );
 

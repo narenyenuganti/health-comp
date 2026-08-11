@@ -1,0 +1,62 @@
+{
+  "version": 1,
+  "policy_identity": "healthcomp.activity-score.v1",
+  "wire_digest_version": 1,
+  "vectors": [
+    {"kind":"quantization","name":"positive_zero","input":"0","basis_points":0},
+    {"kind":"quantization","name":"negative_zero","input":"-0.0","basis_points":0},
+    {"kind":"quantization","name":"half_even_zero","input":"0.005","basis_points":0},
+    {"kind":"quantization","name":"half_even_two","input":"0.015","basis_points":2},
+    {"kind":"quantization","name":"half_even_two_again","input":"0.025","basis_points":2},
+    {"kind":"quantization","name":"half_even_four","input":"0.035","basis_points":4},
+    {"kind":"quantization","name":"one_half_even_down","input":"1.005","basis_points":100},
+    {"kind":"quantization","name":"one_half_even_up","input":"1.015","basis_points":102},
+    {"kind":"quantization","name":"near_cap_even_down","input":"199.985","basis_points":19998},
+    {"kind":"quantization","name":"near_cap_even_up","input":"199.995","basis_points":20000},
+    {"kind":"quantization","name":"one_third","input":"33.333333333333336","basis_points":3333},
+    {"kind":"quantization","name":"two_thirds","input":"66.66666666666667","basis_points":6667},
+    {"kind":"quantization","name":"trusted_ring_cap","input":"200","basis_points":20000},
+    {"kind":"quantization","name":"trusted_above_cap","input":"275.25","basis_points":20000},
+    {"kind":"invalid_decimal","name":"negative","input":"-0.01"},
+    {"kind":"invalid_decimal","name":"nan","input":"NaN"},
+    {"kind":"invalid_decimal","name":"positive_infinity","input":"Infinity"},
+    {"kind":"invalid_decimal","name":"negative_infinity","input":"-Infinity"},
+    {
+      "kind":"score","name":"move_exercise_stand","competition_id":"00000000-0000-0000-0000-000000000001","participant_id":"00000000-0000-0000-0000-000000000002","day_ordinal":1,"semantic_event_id":"00000000-0000-4000-8000-000000000007","client_revision":"7","evaluated_at":"2026-08-12T19:00:00Z","move_mode":"activeEnergyKilocalories","stand_mode":"standHours","move_basis_points":10000,"exercise_basis_points":5000,"stand_basis_points":12500,"availability_reason":"available","accepted_centi_points":27500,
+      "canonical_hex":"6865616c7468636f6d702d776972652d73636f72652d7631000100000010000000000000000000000000000000010200000010000000000000000000000000000000020300000004000000010400000018616374697665456e657267794b696c6f63616c6f72696573050000000a7374616e64486f7572730600000004000027100700000004000013880800000004000030d4090000000400006b6c0a00000009617661696c61626c650b0000001c6865616c7468636f6d702e61637469766974792d73636f72652e76310c000000080000000000000007","sha256":"37df3f48a20b0b6e042e2450241af9c84ec7696ee505b97d9052dc201afb7fd9"
+    },
+    {
+      "kind":"score","name":"move_time_exercise_roll_daily_cap","competition_id":"00000000-0000-0000-0000-000000000001","participant_id":"00000000-0000-0000-0000-000000000002","day_ordinal":3,"semantic_event_id":"00000000-0000-4000-8000-000000000009","client_revision":"9","evaluated_at":"2026-08-14T19:00:00Z","move_mode":"moveMinutes","stand_mode":"rollHours","move_basis_points":20000,"exercise_basis_points":20000,"stand_basis_points":20000,"availability_reason":"available","accepted_centi_points":60000,
+      "canonical_hex":"6865616c7468636f6d702d776972652d73636f72652d763100010000001000000000000000000000000000000001020000001000000000000000000000000000000002030000000400000003040000000b6d6f76654d696e757465730500000009726f6c6c486f757273060000000400004e20070000000400004e20080000000400004e2009000000040000ea600a00000009617661696c61626c650b0000001c6865616c7468636f6d702e61637469766974792d73636f72652e76310c000000080000000000000009","sha256":"2297a9990a6855c5e9b86402c1d806610a5d0e7b1eb842ded05bcc1cce13fd0c"
+    },
+    {
+      "kind":"score","name":"unavailable","competition_id":"00000000-0000-0000-0000-000000000001","participant_id":"00000000-0000-0000-0000-000000000002","day_ordinal":2,"semantic_event_id":"00000000-0000-4000-8000-000000000008","client_revision":"8","evaluated_at":"2026-08-13T19:00:00Z","move_mode":"activeEnergyKilocalories","stand_mode":"standHours","move_basis_points":null,"exercise_basis_points":null,"stand_basis_points":null,"availability_reason":"sourceDataUnavailable","accepted_centi_points":null,
+      "canonical_hex":"6865616c7468636f6d702d776972652d73636f72652d7631000100000010000000000000000000000000000000010200000010000000000000000000000000000000020300000004000000020400000018616374697665456e657267794b696c6f63616c6f72696573050000000a7374616e64486f75727306ffffffff07ffffffff08ffffffff09ffffffff0a00000015736f7572636544617461556e617661696c61626c650b0000001c6865616c7468636f6d702e61637469766974792d73636f72652e76310c000000080000000000000008","sha256":"9ae1b056c0a331f571d6e906b43051d36f47020187b9729e9048f4666fe81660"
+    },
+    {
+      "kind":"score","name":"all_zero","competition_id":"00000000-0000-0000-0000-000000000001","participant_id":"00000000-0000-0000-0000-000000000002","day_ordinal":4,"semantic_event_id":"00000000-0000-4000-8000-000000000010","client_revision":"10","evaluated_at":"2026-08-15T19:00:00Z","move_mode":"activeEnergyKilocalories","stand_mode":"standHours","move_basis_points":0,"exercise_basis_points":0,"stand_basis_points":0,"availability_reason":"available","accepted_centi_points":0,
+      "canonical_hex":"6865616c7468636f6d702d776972652d73636f72652d7631000100000010000000000000000000000000000000010200000010000000000000000000000000000000020300000004000000040400000018616374697665456e657267794b696c6f63616c6f72696573050000000a7374616e64486f7572730600000004000000000700000004000000000800000004000000000900000004000000000a00000009617661696c61626c650b0000001c6865616c7468636f6d702e61637469766974792d73636f72652e76310c00000008000000000000000a","sha256":"68c2f5a45a8725094df3b2fe0df4ff035cecb14c82fca380def4763cd423bcca"
+    },
+    {"kind":"invalid_wire","name":"direct_20001","field":"move_basis_points","value":20001},
+    {"kind":"invalid_wire","name":"wrong_points","field":"accepted_centi_points","value":1},
+    {"kind":"invalid_wire","name":"wrong_policy","field":"policy_identity","value":"healthcomp.activity-score.v2"},
+    {"kind":"privacy","name":"direct_snapshot","value":"activity-snapshot:secret"},
+    {"kind":"privacy","name":"direct_accepted","value":"accepted-activity-score:secret"},
+    {"kind":"privacy","name":"direct_live","value":"live-day-score:secret"},
+    {"kind":"privacy","name":"base64_snapshot","value":"YWN0aXZpdHktc25hcHNob3Q6c2VjcmV0"},
+    {"kind":"privacy","name":"base64url_snapshot","value":"YWN0aXZpdHktc25hcHNob3Q6c2VjcmV0-w"},
+    {"kind":"digest_mutation","name":"competition_id","field":"competition_id"},
+    {"kind":"digest_mutation","name":"participant_id","field":"participant_id"},
+    {"kind":"digest_mutation","name":"day_ordinal","field":"day_ordinal"},
+    {"kind":"digest_mutation","name":"move_mode","field":"move_mode"},
+    {"kind":"digest_mutation","name":"stand_mode","field":"stand_mode"},
+    {"kind":"digest_mutation","name":"move_basis_points","field":"move_basis_points"},
+    {"kind":"digest_mutation","name":"exercise_basis_points","field":"exercise_basis_points"},
+    {"kind":"digest_mutation","name":"stand_basis_points","field":"stand_basis_points"},
+    {"kind":"digest_mutation","name":"availability_reason","field":"availability_reason"},
+    {"kind":"digest_mutation","name":"policy_identity","field":"policy_identity"},
+    {"kind":"digest_mutation","name":"client_revision","field":"client_revision"},
+    {"kind":"window_commitment","name":"seven_deadline_missing","competition_id":"00000000-0000-0000-0000-000000000001","participant_id":"00000000-0000-0000-0000-000000000002","sha256":"ac2f2c82bc12949cbdc3a8e6f70f1d8bb1eb6c2a3eb0b12b7ae1be50e8e9cea3"},
+    {"kind":"result_hash","name":"best_available_tie","competition_id":"00000000-0000-0000-0000-000000000001","participant_id":"00000000-0000-0000-0000-000000000002","sha256":"3013a48c4f2de0a28b34ba9c43a456893963c21a74ab2ef9ffffa452571ef78c"}
+  ]
+}
