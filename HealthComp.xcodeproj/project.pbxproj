@@ -16,6 +16,7 @@
 		0FC85F9BC7725A7452690C81 /* ActivityRingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B370A537E958C39D00549FA /* ActivityRingsView.swift */; };
 		0FF8C7A7EE486C0C12635490 /* CompetitionCore in Frameworks */ = {isa = PBXBuildFile; productRef = 72D0E717AD59302E2D046DE9 /* CompetitionCore */; };
 		12640A6EFC6346166F8015CF /* CompetitionRoutingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8D842D51C03C651E67B1405 /* CompetitionRoutingTests.swift */; };
+		153576F1521F99A0DB91C2A8 /* remote-best-available-incomplete.json in Resources */ = {isa = PBXBuildFile; fileRef = 707D0C11F6133D4611BF36D7 /* remote-best-available-incomplete.json */; };
 		1E677D5B9D0BBC6F7A873642 /* HealthDataProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC8F09779188D9A1FE1C4BF7 /* HealthDataProvider.swift */; };
 		1F1E059933150A061C760DD6 /* HealthCompApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D01015283BC66E2ECA9609D /* HealthCompApp.swift */; };
 		22078218974E42A03AB0BB92 /* LocalCompetitionClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 620B41081DED3A911320E1F0 /* LocalCompetitionClient.swift */; };
@@ -31,7 +32,9 @@
 		4876547B798FDFBA4EEFDE75 /* HealthKitProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E1EFEB41E5D4ADC7484F272 /* HealthKitProvider.swift */; };
 		510A05F868BEFC10DAAF9862 /* HealthCompAppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6619D758FF31EC86B6996330 /* HealthCompAppDelegate.swift */; };
 		51664C1A7AF7BCBA221C519A /* CompetitionNotificationPreferencesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 185D226E47FB94EBF23B7B6F /* CompetitionNotificationPreferencesTests.swift */; };
+		52926C8187B0B300B1871D18 /* remote-stable-tie.json in Resources */ = {isa = PBXBuildFile; fileRef = 491111F52C594F7DF05E48C4 /* remote-stable-tie.json */; };
 		5DDCDC3DA51E4EA5BD74374C /* LocalCompetitionClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E38A46C1086F6393DC0FA12A /* LocalCompetitionClientTests.swift */; };
+		5F0736352CDB182DF626EC7C /* remote-stable-win.json in Resources */ = {isa = PBXBuildFile; fileRef = DF2EB15D15A1AFC4A22883D0 /* remote-stable-win.json */; };
 		6130C4E53FA5F34F75A83996 /* LocalCompetitionRuntimeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D93500BA9AA5B7AF63C71F7 /* LocalCompetitionRuntimeTests.swift */; };
 		617C5F24C583E12019770400 /* CompetitionNotificationClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35062161F195329954CCC954 /* CompetitionNotificationClientTests.swift */; };
 		664893A2DD239F6897D6B582 /* CompetitionDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45B4CB5326E660812EDE995E /* CompetitionDetailView.swift */; };
@@ -60,6 +63,7 @@
 		D8E69A7D32F7DE11CB47F041 /* CompetitionNotificationPlannerTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1921895541916B918BFFA3E8 /* CompetitionNotificationPlannerTests.swift */; };
 		DD502924E9311DD9A99C81B2 /* CompetitionRouting.swift in Sources */ = {isa = PBXBuildFile; fileRef = 367629019F65C3FCD66B409F /* CompetitionRouting.swift */; };
 		F3EAD9609CA950CEC8D1EF92 /* tie.json in Resources */ = {isa = PBXBuildFile; fileRef = 0118EA02318F4382081CC94F /* tie.json */; };
+		FD0F691DB7A2AD3B9BB2077F /* remote-stable-loss.json in Resources */ = {isa = PBXBuildFile; fileRef = EDE353612B8354B4ACCE996F /* remote-stable-loss.json */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -97,6 +101,7 @@
 		44597F797F2AC9BA7029B1DF /* JSONCompetitionEventStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JSONCompetitionEventStore.swift; sourceTree = "<group>"; };
 		45B4CB5326E660812EDE995E /* CompetitionDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionDetailView.swift; sourceTree = "<group>"; };
 		461F8BCB14AE6E70D8BB4DBE /* CompetitionPresentationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionPresentationTests.swift; sourceTree = "<group>"; };
+		491111F52C594F7DF05E48C4 /* remote-stable-tie.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "remote-stable-tie.json"; sourceTree = "<group>"; };
 		4D01015283BC66E2ECA9609D /* HealthCompApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthCompApp.swift; sourceTree = "<group>"; };
 		4E1EFEB41E5D4ADC7484F272 /* HealthKitProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthKitProvider.swift; sourceTree = "<group>"; };
 		533B5BE105C1A335AE961478 /* CompetitionNotificationCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionNotificationCoordinator.swift; sourceTree = "<group>"; };
@@ -107,6 +112,7 @@
 		620B41081DED3A911320E1F0 /* LocalCompetitionClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalCompetitionClient.swift; sourceTree = "<group>"; };
 		6619D758FF31EC86B6996330 /* HealthCompAppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthCompAppDelegate.swift; sourceTree = "<group>"; };
 		6627DB76B896A69CA64FB159 /* CompetitionClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionClient.swift; sourceTree = "<group>"; };
+		707D0C11F6133D4611BF36D7 /* remote-best-available-incomplete.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "remote-best-available-incomplete.json"; sourceTree = "<group>"; };
 		71260DEAA6FF4102413E26F8 /* CompetitionNotificationCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionNotificationCoordinatorTests.swift; sourceTree = "<group>"; };
 		78CD3641AF9961D0DE49E710 /* CompetitionNotificationPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionNotificationPreferences.swift; sourceTree = "<group>"; };
 		8DE98F9A6E165CAF241964EA /* MainTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabView.swift; sourceTree = "<group>"; };
@@ -127,9 +133,11 @@
 		C3DFF07C8F1DAF91F666CE2C /* MainTabFeatureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabFeatureTests.swift; sourceTree = "<group>"; };
 		CF7DE04D723EFB17C6B0F55E /* HealthKitProviderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthKitProviderTests.swift; sourceTree = "<group>"; };
 		DC8F09779188D9A1FE1C4BF7 /* HealthDataProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthDataProvider.swift; sourceTree = "<group>"; };
+		DF2EB15D15A1AFC4A22883D0 /* remote-stable-win.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "remote-stable-win.json"; sourceTree = "<group>"; };
 		E38A46C1086F6393DC0FA12A /* LocalCompetitionClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalCompetitionClientTests.swift; sourceTree = "<group>"; };
 		E8D842D51C03C651E67B1405 /* CompetitionRoutingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionRoutingTests.swift; sourceTree = "<group>"; };
 		EC90AB3B1EDF7C788EF0A48F /* AppFeature.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppFeature.swift; sourceTree = "<group>"; };
+		EDE353612B8354B4ACCE996F /* remote-stable-loss.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "remote-stable-loss.json"; sourceTree = "<group>"; };
 		EFDE31FDBC7C2D97BF245903 /* CompetitionCore */ = {isa = PBXFileReference; lastKnownFileType = folder; name = CompetitionCore; path = Modules/CompetitionCore; sourceTree = SOURCE_ROOT; };
 		F72580283C9D599F21484EB9 /* CompetitionInviteView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionInviteView.swift; sourceTree = "<group>"; };
 		F81AE20C21E083ABAC279310 /* HealthCompTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = HealthCompTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -294,6 +302,10 @@
 			children = (
 				0B62BF4147CD724EB04CECC6 /* late-watch-sync.json */,
 				ABC64842924F0B681BDB3AC9 /* loss.json */,
+				707D0C11F6133D4611BF36D7 /* remote-best-available-incomplete.json */,
+				EDE353612B8354B4ACCE996F /* remote-stable-loss.json */,
+				491111F52C594F7DF05E48C4 /* remote-stable-tie.json */,
+				DF2EB15D15A1AFC4A22883D0 /* remote-stable-win.json */,
 				0118EA02318F4382081CC94F /* tie.json */,
 				56A0E571C32EF5F1137939B1 /* win.json */,
 			);
@@ -433,6 +445,10 @@
 			files = (
 				0D7E2224EB53F47629BDB312 /* late-watch-sync.json in Resources */,
 				82669C7399410C4DD256DEF9 /* loss.json in Resources */,
+				153576F1521F99A0DB91C2A8 /* remote-best-available-incomplete.json in Resources */,
+				FD0F691DB7A2AD3B9BB2077F /* remote-stable-loss.json in Resources */,
+				52926C8187B0B300B1871D18 /* remote-stable-tie.json in Resources */,
+				5F0736352CDB182DF626EC7C /* remote-stable-win.json in Resources */,
 				F3EAD9609CA950CEC8D1EF92 /* tie.json in Resources */,
 				CCEDDA37D247CA8D663BD235 /* win.json in Resources */,
 			);
