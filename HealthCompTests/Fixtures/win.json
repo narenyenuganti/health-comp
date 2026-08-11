@@ -15,7 +15,7 @@
   "notificationDecisionSemanticIDs" : [
     "competition-notification:v1:10101010-2020-3030-4040-505050505050:result:result"
   ],
-  "payloadVersion" : 3,
+  "payloadVersion" : 4,
   "scenario" : "win",
   "schema" : "healthcomp-competition-trace-v1",
   "seed" : 42,

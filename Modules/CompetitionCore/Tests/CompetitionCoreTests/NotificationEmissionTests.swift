@@ -4,8 +4,8 @@ import XCTest
 @testable import CompetitionCore
 
 final class NotificationEmissionTests: XCTestCase {
-    func testPayloadVersionThreeIsCurrentAndSupported() throws {
-        XCTAssertEqual(CompetitionJournalEnvelope.currentPayloadVersion, 3)
+    func testPayloadVersionFourIsCurrentAndLegacyV3IsSupported() throws {
+        XCTAssertEqual(CompetitionJournalEnvelope.currentPayloadVersion, 4)
 
         let competitionID = CompetitionID(
             UUID(uuidString: "11111111-2222-3333-4444-555555555555")!
@@ -159,7 +159,7 @@ final class NotificationEmissionTests: XCTestCase {
         let after = try CompetitionReplayer.replay(roundTripped)
 
         XCTAssertEqual(append.appendedCount, 2)
-        XCTAssertEqual(journal.envelopes.map(\.payloadVersion), [3, 3])
+        XCTAssertEqual(journal.envelopes.map(\.payloadVersion), [4, 4])
         XCTAssertEqual(after.competition, before.competition)
         XCTAssertEqual(after.scoreLedger, before.scoreLedger)
         XCTAssertEqual(after.activityRefresh, before.activityRefresh)
@@ -539,7 +539,7 @@ final class NotificationEmissionTests: XCTestCase {
         )
         let envelope = try XCTUnwrap(journal.envelopes.first)
 
-        XCTAssertEqual(envelope.payloadVersion, 3)
+        XCTAssertEqual(envelope.payloadVersion, 4)
         XCTAssertEqual(
             envelope.payloadSHA256,
             "8d9fd2c4818c1c0fb7ec2c88b884b3b8d87c22c141c25b92a0cf9b9ee3556c38"
