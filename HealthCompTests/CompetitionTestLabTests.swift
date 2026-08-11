@@ -56,6 +56,67 @@ final class CompetitionTestLabTests: XCTestCase {
         }
     }
 
+    @MainActor
+    func testEveryLabLaunchModeMakesZeroCallsToPoisonedLiveClient() async throws {
+        let poisonedLive = PoisonedCompetitionClientRecorder()
+        var launchCount = 0
+
+        for fixture in CompetitionTestLabFixtureKind.allCases {
+            for direction in [InvitationDirection.incoming, .outgoing] {
+                for journalMode in [
+                    CompetitionTestLabJournalMode.unique,
+                    .persistent,
+                ] {
+                    let directionLabel = direction == .incoming
+                        ? "incoming"
+                        : "outgoing"
+                    let journalLabel = journalMode == .unique
+                        ? "unique"
+                        : "persistent"
+                    let runID = [
+                        "poison",
+                        fixture.rawValue,
+                        directionLabel,
+                        journalLabel,
+                        String(UUID().uuidString.lowercased().prefix(8)),
+                    ].joined(separator: "-")
+                    let root = withDependencies {
+                        $0.competitionClient = poisonedLive.client
+                    } operation: {
+                        CompetitionTestLabRootView(
+                            configuration: CompetitionTestLabConfiguration(
+                                fixture: fixture,
+                                seed: 42,
+                                difficulty: .balanced,
+                                direction: direction,
+                                runID: runID,
+                                journalMode: journalMode
+                            )
+                        )
+                    }
+                    let session = try XCTUnwrap(root.controller.session)
+                    launchCount += 1
+                    session.store.send(.task)
+                    _ = try await publication(in: session, minimumRevision: 1)
+                    session.store.send(.stop)
+                    await session.client.stop()
+                    try CompetitionTestLabStorage.removeSessionRoot(
+                        session.journalRoot,
+                        runID: runID
+                    )
+                    XCTAssertFalse(
+                        FileManager.default.fileExists(
+                            atPath: session.journalRoot.path
+                        )
+                    )
+                }
+            }
+        }
+
+        XCTAssertEqual(launchCount, 28)
+        XCTAssertEqual(poisonedLive.callCount, 0)
+    }
+
     func testLateSyncCatalogHasOrderedLifecycleCheckpoints() throws {
         let catalog = try CompetitionTestLabFixtureCatalog.make(
             configuration: CompetitionTestLabConfiguration(
@@ -507,6 +568,86 @@ final class CompetitionTestLabTests: XCTestCase {
 
 private enum CompetitionTestLabTestError: Error {
     case timeout
+}
+
+private final class PoisonedCompetitionClientRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var calls = 0
+
+    var callCount: Int {
+        lock.withLock { calls }
+    }
+
+    var client: CompetitionClient {
+        CompetitionClient(
+            start: { [weak self] in
+                self?.recordCall()
+                return AsyncStream { $0.finish() }
+            },
+            updates: { [weak self] in
+                self?.recordCall()
+                return AsyncStream { $0.finish() }
+            },
+            reconcileAll: { [weak self] _ in
+                self?.recordCall()
+                return Self.emptyPublication
+            },
+            accept: { [weak self] _ in
+                self?.recordCall()
+                return Self.emptyPublication
+            },
+            decline: { [weak self] _ in
+                self?.recordCall()
+                return Self.emptyPublication
+            },
+            archive: { [weak self] _ in
+                self?.recordCall()
+                return Self.emptyPublication
+            },
+            rematch: { [weak self] _ in
+                self?.recordCall()
+                return Self.emptyPublication
+            },
+            reinvite: { [weak self] in
+                self?.recordCall()
+                return Self.emptyPublication
+            },
+            delete: { [weak self] _ in
+                self?.recordCall()
+                return Self.emptyPublication
+            },
+            reconcileNotifications: { [weak self] in self?.recordCall() },
+            loadMutedOpponentIdentities: { [weak self] in
+                self?.recordCall()
+                return []
+            },
+            setNotificationMuted: { [weak self] _, _ in self?.recordCall() },
+            loadNotificationAuthorizationState: { [weak self] in
+                self?.recordCall()
+                return nil
+            },
+            requestNotificationAuthorization: { [weak self] in
+                self?.recordCall()
+                return .denied
+            },
+            waitUntil: { [weak self] _ in self?.recordCall() },
+            stop: { [weak self] in self?.recordCall() }
+        )
+    }
+
+    private func recordCall() {
+        lock.withLock { calls += 1 }
+    }
+
+    private static let emptyPublication = LocalCompetitionPublication(
+        publicationRevision: 0,
+        dashboard: LocalCompetitionDashboard(
+            competitions: [],
+            awards: [],
+            issues: [],
+            hiddenTerminalCompetitionCount: 0
+        )
+    )
 }
 
 #endif

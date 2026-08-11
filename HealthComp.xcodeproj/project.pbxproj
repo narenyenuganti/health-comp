@@ -9,6 +9,7 @@
 /* Begin PBXBuildFile section */
 		026BC27D8A89262270E78565 /* HealthMetricTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09FF3C40395A80635C205A3A /* HealthMetricTests.swift */; };
 		044015DA32180EF60CF5DC2A /* CompetitionTraceIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB243F0BB966F7049D05D56C /* CompetitionTraceIntegrationTests.swift */; };
+		093DC7E7B8D1993E54AF5D8F /* CompetitionClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6627DB76B896A69CA64FB159 /* CompetitionClient.swift */; };
 		0BD7D8160ECD9E9F9DF4C5EC /* CompetitionNotificationClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = BCFF8829F7432D248978C4F1 /* CompetitionNotificationClient.swift */; };
 		0BF4596D63CCDE7A8B41F7D7 /* CompetitionFeature.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E8BC3205F9F874134CE71BC /* CompetitionFeature.swift */; };
 		0D7E2224EB53F47629BDB312 /* late-watch-sync.json in Resources */ = {isa = PBXBuildFile; fileRef = 0B62BF4147CD724EB04CECC6 /* late-watch-sync.json */; };
@@ -105,6 +106,7 @@
 		616B7E5CE526F649E00317C3 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		620B41081DED3A911320E1F0 /* LocalCompetitionClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalCompetitionClient.swift; sourceTree = "<group>"; };
 		6619D758FF31EC86B6996330 /* HealthCompAppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthCompAppDelegate.swift; sourceTree = "<group>"; };
+		6627DB76B896A69CA64FB159 /* CompetitionClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionClient.swift; sourceTree = "<group>"; };
 		71260DEAA6FF4102413E26F8 /* CompetitionNotificationCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionNotificationCoordinatorTests.swift; sourceTree = "<group>"; };
 		78CD3641AF9961D0DE49E710 /* CompetitionNotificationPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionNotificationPreferences.swift; sourceTree = "<group>"; };
 		8DE98F9A6E165CAF241964EA /* MainTabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabView.swift; sourceTree = "<group>"; };
@@ -275,6 +277,7 @@
 			isa = PBXGroup;
 			children = (
 				9B370A537E958C39D00549FA /* ActivityRingsView.swift */,
+				6627DB76B896A69CA64FB159 /* CompetitionClient.swift */,
 				45B4CB5326E660812EDE995E /* CompetitionDetailView.swift */,
 				8E8BC3205F9F874134CE71BC /* CompetitionFeature.swift */,
 				F72580283C9D599F21484EB9 /* CompetitionInviteView.swift */,
@@ -452,6 +455,7 @@
 			files = (
 				0FC85F9BC7725A7452690C81 /* ActivityRingsView.swift in Sources */,
 				A39001B8E8145707D693D215 /* AppFeature.swift in Sources */,
+				093DC7E7B8D1993E54AF5D8F /* CompetitionClient.swift in Sources */,
 				664893A2DD239F6897D6B582 /* CompetitionDetailView.swift in Sources */,
 				C26DAEF1685314355F596514 /* CompetitionEnvironmentClient.swift in Sources */,
 				0BF4596D63CCDE7A8B41F7D7 /* CompetitionFeature.swift in Sources */,

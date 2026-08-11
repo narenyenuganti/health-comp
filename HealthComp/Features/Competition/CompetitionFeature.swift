@@ -5,7 +5,7 @@ import ComposableArchitecture
 struct CompetitionFeature {
     @ObservableState
     struct State: Equatable {
-        var publication: LocalCompetitionPublication?
+        var publication: CompetitionPublication?
         var commandIDsInFlight: Set<CompetitionID>
         var commandExpectedPublicationRevisions: [CompetitionID: UInt64]
         var mutedOpponentIdentities: Set<String>
@@ -16,7 +16,7 @@ struct CompetitionFeature {
         var notificationAuthorizationRequestIsInFlight: Bool
 
         init(
-            publication: LocalCompetitionPublication? = nil,
+            publication: CompetitionPublication? = nil,
             commandIDsInFlight: Set<CompetitionID> = [],
             commandExpectedPublicationRevisions: [CompetitionID: UInt64] = [:],
             mutedOpponentIdentities: Set<String> = [],
@@ -48,7 +48,7 @@ struct CompetitionFeature {
 
     enum Action: Equatable, Sendable {
         case task
-        case publication(LocalCompetitionPublication)
+        case publication(CompetitionPublication)
         case acceptTapped(CompetitionID)
         case declineTapped(CompetitionID)
         case archiveTapped(CompetitionID)
@@ -72,7 +72,7 @@ struct CompetitionFeature {
         case stop
     }
 
-    @Dependency(\.localCompetitionClient) var localCompetitionClient
+    @Dependency(\.competitionClient) var competitionClient
 
     private enum CancelID {
         case publications
@@ -86,7 +86,7 @@ struct CompetitionFeature {
                 let currentAuthorization = state.notificationAuthorizationState
                 return .merge(
                     .run { send in
-                        for await publication in localCompetitionClient.start() {
+                        for await publication in competitionClient.start() {
                             guard !Task.isCancelled else { return }
                             await send(.publication(publication))
                         }
@@ -97,7 +97,7 @@ struct CompetitionFeature {
                     ),
                     .run { send in
                         do {
-                            let loaded = try await localCompetitionClient
+                            let loaded = try await competitionClient
                                 .loadMutedOpponentIdentities()
                             if loaded != currentMutedIdentities {
                                 await send(.mutePreferencesLoaded(loaded))
@@ -107,7 +107,7 @@ struct CompetitionFeature {
                         }
                     },
                     .run { send in
-                        guard let loaded = await localCompetitionClient
+                        guard let loaded = await competitionClient
                             .loadNotificationAuthorizationState(),
                             loaded != currentAuthorization
                         else {
@@ -142,7 +142,7 @@ struct CompetitionFeature {
                     return .none
                 }
                 return .run { send in
-                    let returned = await localCompetitionClient.accept(id)
+                    let returned = await competitionClient.accept(id)
                     await send(
                         .commandFinished(
                             id,
@@ -156,7 +156,7 @@ struct CompetitionFeature {
                     return .none
                 }
                 return .run { send in
-                    let returned = await localCompetitionClient.decline(id)
+                    let returned = await competitionClient.decline(id)
                     await send(
                         .commandFinished(
                             id,
@@ -170,7 +170,7 @@ struct CompetitionFeature {
                     return .none
                 }
                 return .run { send in
-                    let returned = await localCompetitionClient.archive(id)
+                    let returned = await competitionClient.archive(id)
                     await send(
                         .commandFinished(
                             id,
@@ -184,7 +184,7 @@ struct CompetitionFeature {
                     return .none
                 }
                 return .run { send in
-                    let returned = await localCompetitionClient.rematch(id)
+                    let returned = await competitionClient.rematch(id)
                     await send(
                         .commandFinished(
                             id,
@@ -199,7 +199,7 @@ struct CompetitionFeature {
                     return .none
                 }
                 return .run { send in
-                    let returned = await localCompetitionClient.reinvite()
+                    let returned = await competitionClient.reinvite()
                     await send(
                         .commandFinished(
                             id,
@@ -213,7 +213,7 @@ struct CompetitionFeature {
                     return .none
                 }
                 return .run { send in
-                    let returned = await localCompetitionClient.delete(id)
+                    let returned = await competitionClient.delete(id)
                     await send(
                         .commandFinished(
                             id,
@@ -248,7 +248,7 @@ struct CompetitionFeature {
                 state.notificationPreferenceSaveFailed = false
                 return .run { send in
                     do {
-                        try await localCompetitionClient
+                        try await competitionClient
                             .setNotificationMuted(identity, isMuted)
                         await send(
                             .muteFinished(
@@ -294,7 +294,7 @@ struct CompetitionFeature {
                 return .run { send in
                     await send(
                         .notificationAuthorizationRequestFinished(
-                            await localCompetitionClient
+                            await competitionClient
                                 .requestNotificationAuthorization()
                         )
                     )
@@ -332,7 +332,7 @@ struct CompetitionFeature {
             case .stop:
                 return .concatenate(
                     .cancel(id: CancelID.publications),
-                    .run { _ in await localCompetitionClient.stop() }
+                    .run { _ in await competitionClient.stop() }
                 )
             }
         }
@@ -342,7 +342,7 @@ struct CompetitionFeature {
         trigger: ActivityRefreshTrigger
     ) -> Effect<Action> {
         .run { _ in
-            _ = await localCompetitionClient.reconcileAll(trigger)
+            _ = await competitionClient.reconcileAll(trigger)
         }
     }
 }

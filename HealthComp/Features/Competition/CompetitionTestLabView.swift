@@ -615,13 +615,41 @@ enum CompetitionTestLabPublicationAcknowledger {
     }
 }
 
+struct CompetitionTestLabClientFactory {
+    let make: (
+        CompetitionEnvironmentClient,
+        LocalCompetitionStoreAvailability,
+        LocalCompetitionRuntimeConfiguration,
+        InvitationDirection,
+        UInt64,
+        OpponentDifficulty
+    ) -> CompetitionClient
+
+    static let localFixture = Self { environment, store, configuration,
+        direction, seed, difficulty in
+        CompetitionClient.localFixture(
+            environment: environment,
+            storeAvailability: store,
+            configuration: configuration,
+            bootstrapDirection: direction,
+            opponentRequest: { _ in
+                OpponentPlanGenerationRequest(
+                    seed: seed,
+                    generatorVersion: .v1,
+                    difficulty: difficulty
+                )
+            }
+        )
+    }
+}
+
 @MainActor
 final class CompetitionTestLabSession: ObservableObject, Identifiable {
     let id = UUID()
     let configuration: CompetitionTestLabConfiguration
     let catalog: CompetitionTestLabFixtureCatalog
     let source: FixtureActivitySource
-    let client: LocalCompetitionClient
+    let client: CompetitionClient
     let store: StoreOf<MainTabFeature>
     let journalRoot: URL
 
@@ -632,7 +660,10 @@ final class CompetitionTestLabSession: ObservableObject, Identifiable {
     @Published private(set) var statusMessage = "Accept or start the invitation."
     private var readinessTask: Task<Void, Never>?
 
-    init(configuration: CompetitionTestLabConfiguration) throws {
+    init(
+        configuration: CompetitionTestLabConfiguration,
+        clientFactory: CompetitionTestLabClientFactory = .localFixture
+    ) throws {
         let fixtureCatalog = try CompetitionTestLabFixtureCatalog.make(
             configuration: configuration
         )
@@ -683,18 +714,13 @@ final class CompetitionTestLabSession: ObservableObject, Identifiable {
         case .lateSync, .missing, .unavailable:
             runtimeConfiguration = .testing
         }
-        let labClient = LocalCompetitionClient.make(
-            environment: environment,
-            storeAvailability: .available(eventStore),
-            configuration: runtimeConfiguration,
-            bootstrapDirection: configuration.direction,
-            opponentRequest: { _ in
-                OpponentPlanGenerationRequest(
-                    seed: configuration.seed,
-                    generatorVersion: .v1,
-                    difficulty: configuration.difficulty
-                )
-            }
+        let labClient = clientFactory.make(
+            environment,
+            .available(eventStore),
+            runtimeConfiguration,
+            configuration.direction,
+            configuration.seed,
+            configuration.difficulty
         )
         let labRoutingClient = CompetitionRoutingEnvironment.makeLab().client
         self.configuration = configuration
@@ -705,7 +731,7 @@ final class CompetitionTestLabSession: ObservableObject, Identifiable {
         self.store = Store(initialState: MainTabFeature.State()) {
             MainTabFeature()
         } withDependencies: {
-            $0.localCompetitionClient = labClient
+            $0.competitionClient = labClient
             $0.competitionRoutingClient = labRoutingClient
         }
         self.checkpointIndex = persistedState?.checkpointIndex ?? 0
@@ -860,9 +886,14 @@ final class CompetitionTestLabController: ObservableObject {
     @Published var draftRunID: String
 
     private let initialConfiguration: CompetitionTestLabConfiguration
+    private let clientFactory: CompetitionTestLabClientFactory
 
-    init(configuration: CompetitionTestLabConfiguration) {
+    init(
+        configuration: CompetitionTestLabConfiguration,
+        clientFactory: CompetitionTestLabClientFactory = .localFixture
+    ) {
         self.initialConfiguration = configuration
+        self.clientFactory = clientFactory
         self.draftFixture = configuration.fixture
         self.draftSeed = String(configuration.seed)
         self.draftDifficulty = configuration.difficulty
@@ -911,7 +942,8 @@ final class CompetitionTestLabController: ObservableObject {
         let priorSession = session
         do {
             let replacement = try CompetitionTestLabSession(
-                configuration: configuration
+                configuration: configuration,
+                clientFactory: clientFactory
             )
             session = replacement
             configurationError = nil
@@ -931,12 +963,13 @@ final class CompetitionTestLabController: ObservableObject {
 }
 
 struct CompetitionTestLabRootView: View {
-    @StateObject private var controller: CompetitionTestLabController
+    @StateObject var controller: CompetitionTestLabController
 
     init(configuration: CompetitionTestLabConfiguration) {
         _controller = StateObject(
             wrappedValue: CompetitionTestLabController(
-                configuration: configuration
+                configuration: configuration,
+                clientFactory: .localFixture
             )
         )
     }
