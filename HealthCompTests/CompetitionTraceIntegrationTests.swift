@@ -218,9 +218,13 @@ final class CompetitionTraceIntegrationTests: XCTestCase {
     }
 
     private func loadWinGolden() throws -> GoldenReference {
-        let url = URL(fileURLWithPath: #filePath)
+        let sourceURL = URL(fileURLWithPath: #filePath)
             .deletingLastPathComponent()
             .appendingPathComponent("Fixtures/win.json")
+        let url = Bundle(for: Self.self).url(
+            forResource: "win",
+            withExtension: "json"
+        ) ?? sourceURL
         return try JSONDecoder().decode(
             GoldenReference.self,
             from: Data(contentsOf: url)
