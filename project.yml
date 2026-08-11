@@ -7,12 +7,11 @@ options:
   createIntermediateGroups: true
 
 packages:
+  CompetitionCore:
+    path: Modules/CompetitionCore
   ComposableArchitecture:
     url: https://github.com/pointfreeco/swift-composable-architecture
     from: "1.17.0"
-  Supabase:
-    url: https://github.com/supabase/supabase-swift
-    from: "2.0.0"
 
 targets:
   HealthComp:
@@ -20,21 +19,31 @@ targets:
     platform: iOS
     sources:
       - path: HealthComp
+    info:
+      path: HealthComp/Resources/Info.plist
+      properties:
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: false
+        UIApplicationSupportsIndirectInputEvents: true
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+        UIRequiredDeviceCapabilities:
+          - healthkit
+        NSHealthShareUsageDescription: "HealthComp reads your activity data to score competitions with friends."
+        CFBundleURLTypes:
+          - CFBundleURLName: com.narenyenuganti.HealthComp.competition
+            CFBundleURLSchemes:
+              - healthcomp
     settings:
       base:
-        GENERATE_INFOPLIST_FILE: YES
-        INFOPLIST_KEY_UIApplicationSceneManifest_Generation: YES
-        INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
-        INFOPLIST_KEY_UILaunchScreen_Generation: YES
-        INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
-        INFOPLIST_KEY_NSHealthShareUsageDescription: "HealthComp reads your activity data to score competitions with friends."
-        INFOPLIST_KEY_NSHealthUpdateUsageDescription: "HealthComp does not write health data."
         CODE_SIGN_ENTITLEMENTS: HealthComp/Resources/HealthComp.entitlements
+        TARGETED_DEVICE_FAMILY: "1"
         SWIFT_VERSION: "5.9"
     dependencies:
+      - package: CompetitionCore
+        product: CompetitionCore
       - package: ComposableArchitecture
-      - package: Supabase
-        product: Supabase
 
   HealthCompTests:
     type: bundle.unit-test
@@ -43,7 +52,42 @@ targets:
       - path: HealthCompTests
     dependencies:
       - target: HealthComp
+      - package: CompetitionCore
+        product: CompetitionCore
     settings:
       base:
         GENERATE_INFOPLIST_FILE: YES
         SWIFT_VERSION: "5.9"
+
+  HealthCompUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: HealthCompUITests
+    dependencies:
+      - target: HealthComp
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        SWIFT_VERSION: "5.9"
+
+schemes:
+  HealthComp:
+    build:
+      targets:
+        HealthComp: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - name: HealthCompTests
+          parallelizable: true
+        - name: HealthCompUITests
+          parallelizable: false
+    profile:
+      config: Release
+    analyze:
+      config: Debug
+    archive:
+      config: Release
