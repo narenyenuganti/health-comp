@@ -2,6 +2,8 @@
 
 **Status:** Approved design
 
+**Review status:** Source-verified Fable corrections applied 2026-08-11
+
 **Date:** 2026-08-11
 
 **Initial cohort:** Up to 25 people
@@ -26,7 +28,9 @@ The first release requires Sign in with Apple, an iPhone, and HealthKit Activity
 
 ## System Boundary
 
-The iPhone remains responsible for HealthKit reads and deterministic score evaluation. It produces derived daily competition records containing accepted Activity percentages, competition points, availability, revision metadata, content fingerprints, and the scoring-policy version.
+The iPhone remains responsible for HealthKit reads and deterministic score evaluation. It produces derived daily competition records containing quantized Activity percentages, competition points, availability, revision metadata, a one-way wire digest, and the scoring-policy version.
+
+The existing local Activity fingerprints are not privacy-safe transport identifiers: they encode exact values and goals reversibly. They remain local-only. The wire digest is SHA-256 over canonical privacy-approved wire fields and cannot contain or wrap a local snapshot fingerprint.
 
 A durable local outbox uploads these records to Supabase using stable semantic identifiers. Requests are idempotent, so retries, relaunches, weak connectivity, and duplicate callbacks cannot create duplicate accepted scores.
 
@@ -68,7 +72,7 @@ The backend keeps an append-only competition history rather than overwriting evi
 - `competitions`: schedule, frozen time zone, scoring policy, lifecycle, finalization deadline, and optional rematch parent.
 - `competition_participants`: exactly two account identities and their roles.
 - `competition_invites`: hashed token, creator, expiry, claimed recipient, and consumption state.
-- `daily_score_revisions`: participant, day ordinal, derived Activity values, accepted points, availability, content fingerprint, revision, and evaluation timestamp.
+- `daily_score_revisions`: participant, day ordinal, quantized Activity percentages, accepted fixed-point points, availability, one-way wire digest, client revision, gap-free server sequence, and evaluation timestamp.
 - `competition_results`: immutable totals, outcome, finalization basis, and completion timestamp.
 - `awards`: durable achievements and win-counter changes.
 - `device_installations`: notification token and device status without Health data.
@@ -83,11 +87,11 @@ Uploaded competition data is limited to:
 - calculated competition points;
 - availability and accepted revision;
 - competition day and frozen time-zone identifiers;
-- content fingerprints and integrity metadata;
+- a SHA-256 wire digest over the approved fields and non-sensitive integrity metadata;
 - scoring and policy versions;
 - final totals, outcome, and finalization basis.
 
-Raw HealthKit samples, heart rate, workouts, locations, routes, and unrelated Health data are prohibited from backend payloads and logs.
+Raw HealthKit samples, exact Activity values and goals, local Activity snapshot fingerprints, heart rate, workouts, locations, routes, and unrelated Health data are prohibited from backend payloads and logs.
 
 Row-level security permits participants to read only competitions in which they have membership. Client credentials cannot bypass those policies. Privileged service credentials remain in server-side functions and deployment tooling.
 
@@ -106,13 +110,14 @@ Failure semantics remain explicit:
 - Stale or invalid revisions become inspectable synchronization errors.
 - A user can remain offline for multiple days and later upload the missing ordered sequence.
 - Partial Day 7 evidence enters Tallying Points.
-- Finalization uses the existing stable-evidence deadline and best-available policy.
+- Stable finalization uses complete participant attestations. At the frozen best-available deadline, each day remains either accepted points or explicitly unavailable; totals sum accepted point rows only, so unavailable evidence contributes no points without being presented as observed zero activity.
+- Remote competitions become terminal only through a server-confirmed result. A phone validates all of its own rows exactly and validates any remote rows it has cached, while missing remote rows remain server-authoritative.
 - Backend unavailability cannot destroy the local journal.
 - Permanent validation failures require support-visible diagnostics rather than infinite silent retry.
 
 ## Account Deletion and History
 
-Account deletion removes authentication identity, profile details, device installations, pending invitations, and unfinished competitions according to a durable cleanup workflow.
+Account deletion revokes the Sign in with Apple authorization and removes the Supabase authentication identity, profile details, device installations, pending invitations, and unfinished competitions according to a durable cleanup workflow.
 
 Completed competitions remain in the opponent's history. The deleted participant is irreversibly detached from identifying profile data and rendered as **Former competitor**. Derived competition facts needed to preserve the result remain, but cannot be used to recover the deleted person's identity.
 
