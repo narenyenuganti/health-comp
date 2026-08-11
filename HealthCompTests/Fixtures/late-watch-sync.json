@@ -1,0 +1,104 @@
+{
+  "coverage" : [
+    "late-day-7-arrival",
+    "missed-foreground-boundaries",
+    "duplicate-callback",
+    "dst-boundary",
+    "goal-revision",
+    "unavailable-data",
+    "best-available-fallback"
+  ],
+  "normalizedTransportMetadata" : [
+    "attemptID is deterministic logical identity; monotonicInstant is transport timing and is not serialized into this trace",
+    "OS notification delivery state is excluded; durable notification decision semantic IDs are included separately"
+  ],
+  "notificationDecisionSemanticIDs" : [
+    "competition-notification:v1:10101010-2020-3030-4040-505050505050:result:result"
+  ],
+  "payloadVersion" : 3,
+  "scenario" : "late-watch-sync",
+  "schema" : "healthcomp-competition-trace-v1",
+  "seed" : 42,
+  "semanticEventIDs" : [
+    "competition-event:v1:10101010-2020-3030-4040-505050505050:invitation-accepted",
+    "competition-event:v1:10101010-2020-3030-4040-505050505050:competition-started",
+    "activity-refresh-attempt-recorded:v1:10101010-2020-3030-4040-505050505050:attempt:1",
+    "competition-event:v1:10101010-2020-3030-4040-505050505050:day-1-closed",
+    "competition-event:v1:10101010-2020-3030-4040-505050505050:day-2-closed",
+    "competition-event:v1:10101010-2020-3030-4040-505050505050:day-3-closed",
+    "activity-refresh-attempt-recorded:v1:10101010-2020-3030-4040-505050505050:attempt:2",
+    "competition-event:v1:10101010-2020-3030-4040-505050505050:day-4-closed",
+    "activity-refresh-attempt-recorded:v1:10101010-2020-3030-4040-505050505050:attempt:3",
+    "competition-event:v1:10101010-2020-3030-4040-505050505050:day-5-closed",
+    "competition-event:v1:10101010-2020-3030-4040-505050505050:day-6-closed",
+    "competition-event:v1:10101010-2020-3030-4040-505050505050:final-day-started",
+    "competition-event:v1:10101010-2020-3030-4040-505050505050:day-7-closed",
+    "competition-event:v1:10101010-2020-3030-4040-505050505050:tally-started",
+    "activity-refresh-attempt-recorded:v1:10101010-2020-3030-4040-505050505050:attempt:4",
+    "competition-event:v1:10101010-2020-3030-4040-505050505050:final-read-runtime-10101010-2020-3030-4040-505050505050-attempt-4",
+    "activity-refresh-attempt-recorded:v1:10101010-2020-3030-4040-505050505050:attempt:5",
+    "competition-event:v1:10101010-2020-3030-4040-505050505050:final-read-runtime-10101010-2020-3030-4040-505050505050-attempt-5",
+    "competition-event:v1:10101010-2020-3030-4040-505050505050:competition-finalized",
+    "competition-notification:v1:10101010-2020-3030-4040-505050505050:result:result"
+  ],
+  "terminal" : {
+    "basis" : "bestAvailable",
+    "competitionID" : "10101010-2020-3030-4040-505050505050",
+    "completedAt" : 795254400,
+    "days" : [
+      {
+        "acceptedActivityContentFingerprint" : "accepted-activity-score:v1:YWN0aXZpdHktc2NvcmluZy1wb2xpY3k6djE6YWdncmVnYXRlOm5vbmU6M2ZmMDAwMDAwMDAwMDAwMDpub25lOnNjb3JlUmVwb3J0ZWRWYWx1ZXNXaGVuVW5rbm93bg==:YWN0aXZpdHktc25hcHNob3Q6djE6YWN0aXZlRW5lcmd5S2lsb2NhbG9yaWVzOnN0YW5kSG91cnM6cnVubmluZzo0MDdiNjAwMDAwMDAwMDAwOjQwNTkwMDAwMDAwMDAwMDA6MDo0MDNlMDAwMDAwMDAwMDAwOjA6NDAyODAwMDAwMDAwMDAwMA==",
+        "acceptedPoints" : 438,
+        "ordinal" : 1
+      },
+      {
+        "acceptedActivityContentFingerprint" : "accepted-activity-score:v1:YWN0aXZpdHktc2NvcmluZy1wb2xpY3k6djE6YWdncmVnYXRlOm5vbmU6M2ZmMDAwMDAwMDAwMDAwMDpub25lOnNjb3JlUmVwb3J0ZWRWYWx1ZXNXaGVuVW5rbm93bg==:YWN0aXZpdHktc25hcHNob3Q6djE6YWN0aXZlRW5lcmd5S2lsb2NhbG9yaWVzOnN0YW5kSG91cnM6cnVubmluZzo0MDg1NjAwMDAwMDAwMDAwOjQwNjkwMDAwMDAwMDAwMDA6MDo0MDNlMDAwMDAwMDAwMDAwOjA6NDAyODAwMDAwMDAwMDAwMA==",
+        "acceptedPoints" : 342,
+        "ordinal" : 2
+      },
+      {
+        "acceptedActivityContentFingerprint" : "accepted-activity-score:v1:YWN0aXZpdHktc2NvcmluZy1wb2xpY3k6djE6YWdncmVnYXRlOm5vbmU6M2ZmMDAwMDAwMDAwMDAwMDpub25lOnNjb3JlUmVwb3J0ZWRWYWx1ZXNXaGVuVW5rbm93bg==:YWN0aXZpdHktc25hcHNob3Q6djE6YWN0aXZlRW5lcmd5S2lsb2NhbG9yaWVzOnN0YW5kSG91cnM6cnVubmluZzo0MDdlMTAwMDAwMDAwMDAwOjQwNTkwMDAwMDAwMDAwMDA6MDo0MDNlMDAwMDAwMDAwMDAwOjA6NDAyODAwMDAwMDAwMDAwMA==",
+        "acceptedPoints" : 480.99999999999994,
+        "ordinal" : 3
+      },
+      {
+        "acceptedActivityContentFingerprint" : "accepted-activity-score:v1:YWN0aXZpdHktc2NvcmluZy1wb2xpY3k6djE6YWdncmVnYXRlOm5vbmU6M2ZmMDAwMDAwMDAwMDAwMDpub25lOnNjb3JlUmVwb3J0ZWRWYWx1ZXNXaGVuVW5rbm93bg==:YWN0aXZpdHktc25hcHNob3Q6djE6YWN0aXZlRW5lcmd5S2lsb2NhbG9yaWVzOnN0YW5kSG91cnM6cnVubmluZzo0MDc1NTAwMDAwMDAwMDAwOjQwNTkwMDAwMDAwMDAwMDA6MDo0MDNlMDAwMDAwMDAwMDAwOjA6NDAyODAwMDAwMDAwMDAwMA==",
+        "acceptedPoints" : 341,
+        "ordinal" : 4
+      },
+      {
+        "acceptedActivityContentFingerprint" : "accepted-activity-score:v1:YWN0aXZpdHktc2NvcmluZy1wb2xpY3k6djE6YWdncmVnYXRlOm5vbmU6M2ZmMDAwMDAwMDAwMDAwMDpub25lOnNjb3JlUmVwb3J0ZWRWYWx1ZXNXaGVuVW5rbm93bg==:YWN0aXZpdHktc25hcHNob3Q6djE6YWN0aXZlRW5lcmd5S2lsb2NhbG9yaWVzOnN0YW5kSG91cnM6cnVubmluZzo0MDc5YTAwMDAwMDAwMDAwOjQwNTkwMDAwMDAwMDAwMDA6MDo0MDNlMDAwMDAwMDAwMDAwOjA6NDAyODAwMDAwMDAwMDAwMA==",
+        "acceptedPoints" : 409.99999999999994,
+        "ordinal" : 5
+      },
+      {
+        "acceptedActivityContentFingerprint" : "accepted-activity-score:v1:YWN0aXZpdHktc2NvcmluZy1wb2xpY3k6djE6YWdncmVnYXRlOm5vbmU6M2ZmMDAwMDAwMDAwMDAwMDpub25lOnNjb3JlUmVwb3J0ZWRWYWx1ZXNXaGVuVW5rbm93bg==:YWN0aXZpdHktc25hcHNob3Q6djE6YWN0aXZlRW5lcmd5S2lsb2NhbG9yaWVzOnN0YW5kSG91cnM6cnVubmluZzo0MDc5ZDAwMDAwMDAwMDAwOjQwNTkwMDAwMDAwMDAwMDA6MDo0MDNlMDAwMDAwMDAwMDAwOjA6NDAyODAwMDAwMDAwMDAwMA==",
+        "acceptedPoints" : 413,
+        "ordinal" : 6
+      },
+      {
+        "acceptedActivityContentFingerprint" : "accepted-activity-score:v1:YWN0aXZpdHktc2NvcmluZy1wb2xpY3k6djE6YWdncmVnYXRlOm5vbmU6M2ZmMDAwMDAwMDAwMDAwMDpub25lOnNjb3JlUmVwb3J0ZWRWYWx1ZXNXaGVuVW5rbm93bg==:YWN0aXZpdHktc25hcHNob3Q6djE6YWN0aXZlRW5lcmd5S2lsb2NhbG9yaWVzOnN0YW5kSG91cnM6cnVubmluZzo0MDc3NDAwMDAwMDAwMDAwOjQwNTkwMDAwMDAwMDAwMDA6MDo0MDNlMDAwMDAwMDAwMDAwOjA6NDAyODAwMDAwMDAwMDAwMA==",
+        "acceptedPoints" : 372,
+        "ordinal" : 7
+      }
+    ],
+    "downwardRevisionPolicy" : "maximumObserved",
+    "ledgerIsFrozen" : true,
+    "lifecycle" : "completed",
+    "opponentPlanCommitmentHex" : "e203d6f3c8ef3ef11977091354b761a438eaadef641ee1b4716a66d8debe0b64",
+    "opponentPlanContentIdentity" : "opponent-plan:v1:g1:sha256:e203d6f3c8ef3ef11977091354b761a438eaadef641ee1b4716a66d8debe0b64",
+    "opponentPoints" : 2377,
+    "outcome" : "win",
+    "scheduleTimeZoneIdentifier" : "America\/Los_Angeles",
+    "scoringPolicyIdentity" : "activity-scoring-policy:v1:aggregate:none:3ff0000000000000:none:scoreReportedValuesWhenUnknown",
+    "startDay" : {
+      "day" : 8,
+      "era" : 1,
+      "month" : 3,
+      "timeZoneIdentifier" : "America\/Los_Angeles",
+      "year" : 2026
+    },
+    "userPoints" : 2797
+  },
+  "timeZoneIdentifier" : "America\/Los_Angeles"
+}
