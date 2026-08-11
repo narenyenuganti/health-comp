@@ -816,6 +816,12 @@ final class CompetitionFeatureTests: XCTestCase {
                 return "unexpected-standalone-snapshot"
             case .notificationEmissionRecorded:
                 return "unexpected-notification-emission"
+            case .remoteConfigurationAccepted,
+                 .remoteScoreRevisionRecorded,
+                 .remoteFinalWindowAttested,
+                 .sharedResultConfirmed,
+                 .synchronizationReceiptRecorded:
+                return "unexpected-remote-evidence"
             case let .lifecycle(lifecycle):
                 switch lifecycle.kind {
                 case .invitationAccepted: return "invitation-accepted"
