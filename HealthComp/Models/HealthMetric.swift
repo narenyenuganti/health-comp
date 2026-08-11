@@ -61,14 +61,6 @@ struct ActivityRingSummary: Codable, Equatable, Identifiable, Sendable {
         percent(value: standValue, goal: standGoal)
     }
 
-    var appleActivityScore: AppleActivityScore {
-        AppleActivityScore(
-            movePercent: movePercent,
-            exercisePercent: exercisePercent,
-            standPercent: standPercent
-        )
-    }
-
     enum CodingKeys: String, CodingKey {
         case id
         case userId = "user_id"

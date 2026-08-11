@@ -1,11 +1,5 @@
 import Foundation
 
-enum AuthorizationStatus: Equatable, Sendable {
-    case notDetermined
-    case authorized
-    case denied
-}
-
 struct DateRange: Equatable, Sendable {
     let start: Date
     let end: Date
@@ -27,7 +21,6 @@ struct DateRange: Equatable, Sendable {
 
 protocol HealthDataProvider: Sendable {
     func requestAuthorization() async throws
-    func authorizationStatus() -> AuthorizationStatus
     func fetchMetrics(for range: DateRange, types: [MetricType]) async throws -> [HealthMetric]
     func fetchActivityRingSummaries(for range: DateRange) async throws -> [ActivityRingSummary]
     func availableMetricTypes() -> [MetricType]

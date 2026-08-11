@@ -19,7 +19,7 @@ final class HealthMetricTests: XCTestCase {
         XCTAssertEqual(DataSource.manual.rawValue, "manual")
     }
 
-    func testHealthMetricDecodesFromSupabase() throws {
+    func testHealthMetricDecodesFromSnakeCaseJSON() throws {
         let json = """
         {
             "id": "550e8400-e29b-41d4-a716-446655440000",
@@ -41,7 +41,7 @@ final class HealthMetricTests: XCTestCase {
         XCTAssertEqual(metric.source, .healthkit)
     }
 
-    func testHealthMetricEncodesToSupabase() throws {
+    func testHealthMetricEncodesToSnakeCaseJSON() throws {
         let metric = HealthMetric(
             id: UUID(uuidString: "550e8400-e29b-41d4-a716-446655440000")!,
             userId: UUID(uuidString: "660e8400-e29b-41d4-a716-446655440000")!,
@@ -111,21 +111,4 @@ final class HealthMetricTests: XCTestCase {
         XCTAssertEqual(summary.standPercent, 0)
     }
 
-    func testActivityRingSummaryCreatesAppleActivityScore() {
-        let summary = ActivityRingSummary(
-            id: UUID(),
-            userId: UUID(),
-            date: "2026-05-11",
-            moveValue: 500,
-            moveGoal: 500,
-            exerciseValue: 30,
-            exerciseGoal: 30,
-            standValue: 12,
-            standGoal: 12,
-            source: .healthkit,
-            syncedAt: Date()
-        )
-
-        XCTAssertEqual(summary.appleActivityScore.points, 300)
-    }
 }
