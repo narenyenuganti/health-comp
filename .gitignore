@@ -20,8 +20,6 @@ xcuserdata/
 # Swift Package Manager
 .build/
 Packages/
-Package.resolved
-*.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
 
 # CocoaPods
 Pods/
@@ -38,5 +36,4 @@ fastlane/test_output
 *~
 
 # Project-specific
-docs/
 .worktrees/

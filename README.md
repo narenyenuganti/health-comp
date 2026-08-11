@@ -1,9 +1,10 @@
 # HealthComp
 
-HealthComp is a local-first iPhone Activity competition. It reads the owner's
-Activity summaries from HealthKit, pairs them with a deterministic simulated
-rival, and runs a seven-calendar-day competition without an account or custom
-backend.
+HealthComp is an iPhone Activity competition. The shipping app currently reads
+the owner's Activity summaries from HealthKit and runs its deterministic local
+competition path. The repository is adding a participant-scoped Supabase
+backend for private two-person competitions while keeping raw HealthKit data on
+the owner's device.
 
 ## What it does
 
@@ -31,19 +32,24 @@ HealthComp/                         iOS app, local runtime, and adapters
 HealthCompTests/                    iOS unit and integration tests
 HealthCompUITests/                  accelerated lifecycle and accessibility tests
 Modules/CompetitionCore/           deterministic event-sourced domain engine
-Supabase/                           historical backend reference only; not linked
+supabase/                           live backend source of truth
+SupabaseLegacy/                     historical backend reference; never deploy
 project.yml                         XcodeGen project definition
 ```
 
-The `Supabase/` migrations and functions are intentionally retained as historical
-reference. The application target does not import or link the Supabase SDK.
+Only lowercase `supabase/` may contain executable migrations and Edge Functions
+for the live backend. `SupabaseLegacy/` is retained solely as historical
+reference: never link, reset, push, or deploy it. The current application target
+does not import the Supabase SDK until the authenticated transport milestone.
 
 ## Setup
 
 1. Install XcodeGen: `brew install xcodegen`.
-2. Generate the project from the repository root: `xcodegen generate`.
-3. Open `HealthComp.xcodeproj`.
-4. Use the DEBUG competition test lab on an installed simulator, or run the
+2. Install the Supabase CLI: `brew install supabase/tap/supabase`.
+3. Start Docker Desktop before running the local Supabase stack.
+4. Generate the project from the repository root: `xcodegen generate`.
+5. Open `HealthComp.xcodeproj`.
+6. Use the DEBUG competition test lab on an installed simulator, or run the
    production environment on a physical iPhone for real HealthKit data.
 
 HealthKit authorization, background delivery, and real Activity updates require
@@ -55,6 +61,9 @@ detection.
 
 ```sh
 swift test --package-path Modules/CompetitionCore
+supabase start
+supabase db reset
+supabase test db
 xcodebuild test \
   -project HealthComp.xcodeproj \
   -scheme HealthComp \

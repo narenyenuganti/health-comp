@@ -1,0 +1,14 @@
+{
+  "compilerOptions": {
+    "strict": true
+  },
+  "imports": {
+    "@std/assert": "jsr:@std/assert@1.0.19",
+    "@supabase/supabase-js": "npm:@supabase/supabase-js@2.112.2",
+    "postgres": "npm:postgres@3.4.9"
+  },
+  "lock": {
+    "path": "./deno.lock",
+    "frozen": true
+  }
+}
