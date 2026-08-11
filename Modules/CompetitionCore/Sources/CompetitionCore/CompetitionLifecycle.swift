@@ -222,6 +222,11 @@ public struct Competition: Equatable, Sendable {
     public internal(set) var lifecycle: CompetitionLifecycle
     public internal(set) var schedule: CompetitionSchedule?
     public internal(set) var opponentPlan: OpponentPlan?
+    /// Present only when the journal was accepted by the remote backend.  This
+    /// deliberately sits alongside (rather than inside) the simulated
+    /// acceptance payload so old journals can never reinterpret an opponent
+    /// plan as a human participant.
+    public internal(set) var remoteConfiguration: RemoteCompetitionConfiguration?
     public internal(set) var appliedEventIDs: [String]
 
     public static func pending(
@@ -241,6 +246,7 @@ public struct Competition: Equatable, Sendable {
             ),
             schedule: nil,
             opponentPlan: nil,
+            remoteConfiguration: nil,
             appliedEventIDs: []
         )
     }
@@ -250,12 +256,14 @@ public struct Competition: Equatable, Sendable {
         lifecycle: CompetitionLifecycle,
         schedule: CompetitionSchedule?,
         opponentPlan: OpponentPlan?,
+        remoteConfiguration: RemoteCompetitionConfiguration? = nil,
         appliedEventIDs: [String]
     ) {
         self.id = id
         self.lifecycle = lifecycle
         self.schedule = schedule
         self.opponentPlan = opponentPlan
+        self.remoteConfiguration = remoteConfiguration
         self.appliedEventIDs = appliedEventIDs
     }
 }

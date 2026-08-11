@@ -57,7 +57,7 @@ final class CompetitionFeatureTests: XCTestCase {
             )
         )
         let journalStore = JSONCompetitionEventStore(rootDirectory: root)
-        let realClient = LocalCompetitionClient.make(
+        let realClient = CompetitionClient.localFixture(
             environment: .accelerated(source: source),
             storeAvailability: .available(journalStore),
             configuration: .testing
@@ -70,7 +70,7 @@ final class CompetitionFeatureTests: XCTestCase {
         let reducerStore = TestStore(initialState: CompetitionFeature.State()) {
             CompetitionFeature()
         } withDependencies: {
-            $0.localCompetitionClient = client
+            $0.competitionClient = client
         }
         let sourceID = LocalCompetitionIdentity.bootstrapCompetitionID
 
@@ -291,7 +291,7 @@ final class CompetitionFeatureTests: XCTestCase {
         let store = TestStore(initialState: CompetitionFeature.State()) {
             CompetitionFeature()
         } withDependencies: {
-            $0.localCompetitionClient = harness.client
+            $0.competitionClient = harness.client
         }
 
         await store.send(.task)
@@ -325,7 +325,7 @@ final class CompetitionFeatureTests: XCTestCase {
         let store = TestStore(initialState: CompetitionFeature.State()) {
             CompetitionFeature()
         } withDependencies: {
-            $0.localCompetitionClient = harness.client
+            $0.competitionClient = harness.client
         }
         let first = publication(revision: 1)
         let second = publication(revision: 2)
@@ -355,7 +355,7 @@ final class CompetitionFeatureTests: XCTestCase {
         let store = TestStore(initialState: CompetitionFeature.State()) {
             CompetitionFeature()
         } withDependencies: {
-            $0.localCompetitionClient = client
+            $0.competitionClient = client
         }
 
         await store.send(.task)
@@ -379,7 +379,7 @@ final class CompetitionFeatureTests: XCTestCase {
         let store = TestStore(initialState: CompetitionFeature.State()) {
             CompetitionFeature()
         } withDependencies: {
-            $0.localCompetitionClient = client
+            $0.competitionClient = client
         }
 
         await store.send(.muteTapped(identity)) {
@@ -412,7 +412,7 @@ final class CompetitionFeatureTests: XCTestCase {
         let store = TestStore(initialState: CompetitionFeature.State()) {
             CompetitionFeature()
         } withDependencies: {
-            $0.localCompetitionClient = client
+            $0.competitionClient = client
         }
 
         await store.send(.muteTapped(identity)) {
@@ -448,7 +448,7 @@ final class CompetitionFeatureTests: XCTestCase {
         ) {
             CompetitionFeature()
         } withDependencies: {
-            $0.localCompetitionClient = client
+            $0.competitionClient = client
         }
 
         await store.send(.deleteTapped(id)) {
@@ -486,7 +486,7 @@ final class CompetitionFeatureTests: XCTestCase {
         ) {
             CompetitionFeature()
         } withDependencies: {
-            $0.localCompetitionClient = client
+            $0.competitionClient = client
         }
 
         let initialRequestCount = await recorder.requestCount
@@ -513,7 +513,7 @@ final class CompetitionFeatureTests: XCTestCase {
         let store = TestStore(initialState: CompetitionFeature.State()) {
             CompetitionFeature()
         } withDependencies: {
-            $0.localCompetitionClient = client
+            $0.competitionClient = client
         }
         let id = CompetitionID(
             UUID(uuidString: "EAD172F8-531D-4327-823D-E82A4F696026")!
@@ -578,7 +578,7 @@ final class CompetitionFeatureTests: XCTestCase {
         let store = TestStore(initialState: CompetitionFeature.State()) {
             CompetitionFeature()
         } withDependencies: {
-            $0.localCompetitionClient = client
+            $0.competitionClient = client
         }
         let firstID = CompetitionID(
             UUID(uuidString: "EAD172F8-531D-4327-823D-E82A4F696027")!
@@ -632,7 +632,7 @@ final class CompetitionFeatureTests: XCTestCase {
         ) {
             CompetitionFeature()
         } withDependencies: {
-            $0.localCompetitionClient = recorder.client(returning: next)
+            $0.competitionClient = recorder.client(returning: next)
         }
 
         await store.send(.acceptTapped(id)) {
@@ -659,7 +659,7 @@ final class CompetitionFeatureTests: XCTestCase {
         let store = TestStore(initialState: CompetitionFeature.State()) {
             CompetitionFeature()
         } withDependencies: {
-            $0.localCompetitionClient = client
+            $0.competitionClient = client
         }
 
         await store.send(.pullToRefresh)
@@ -816,6 +816,12 @@ final class CompetitionFeatureTests: XCTestCase {
                 return "unexpected-standalone-snapshot"
             case .notificationEmissionRecorded:
                 return "unexpected-notification-emission"
+            case .remoteConfigurationAccepted,
+                 .remoteScoreRevisionRecorded,
+                 .remoteFinalWindowAttested,
+                 .sharedResultConfirmed,
+                 .synchronizationReceiptRecorded:
+                return "unexpected-remote-evidence"
             case let .lifecycle(lifecycle):
                 switch lifecycle.kind {
                 case .invitationAccepted: return "invitation-accepted"
@@ -912,9 +918,9 @@ private actor CompetitionLifecyclePublicationCapture {
 }
 
 private func clientRecordingCanonicalPublications(
-    from client: LocalCompetitionClient,
+    from client: CompetitionClient,
     into capture: CompetitionLifecyclePublicationCapture
-) -> LocalCompetitionClient {
+) -> CompetitionClient {
     let start = client.start
     var recordingClient = client
     recordingClient.start = {
@@ -970,8 +976,8 @@ final class CompetitionReducerStreamHarness: @unchecked Sendable {
         lock.withLock { state.events }
     }
 
-    var client: LocalCompetitionClient {
-        LocalCompetitionClient(
+    var client: CompetitionClient {
+        CompetitionClient(
             start: { [weak self] in self?.stream() ?? Self.finishedStream() },
             updates: { Self.finishedStream() },
             reconcileAll: { _ in Self.emptyPublication },
@@ -1064,8 +1070,8 @@ private final class CompetitionReducerClientRecorder: @unchecked Sendable {
 
     func client(
         returning publication: LocalCompetitionPublication
-    ) -> LocalCompetitionClient {
-        LocalCompetitionClient(
+    ) -> CompetitionClient {
+        CompetitionClient(
             start: { AsyncStream { $0.finish() } },
             updates: { AsyncStream { $0.finish() } },
             reconcileAll: { [weak self] trigger in

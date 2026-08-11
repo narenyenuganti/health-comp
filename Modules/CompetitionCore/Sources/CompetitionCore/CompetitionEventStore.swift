@@ -133,6 +133,207 @@ public struct CompetitionGenesis: Codable, Equatable, Sendable {
 
 // MARK: - Typed persisted domain events
 
+/// The immutable server descriptor that changes a journal from the simulated
+/// opponent protocol to the remote-participant protocol. It is v4-only.
+public struct RemoteCompetitionConfiguration: Codable, Equatable, Sendable {
+    public enum ValidationError: Error, Equatable, Sendable {
+        case distinctParticipantsRequired, invalidPolicy, invalidRevision, invalidDeadline, invalidSchedule
+    }
+
+    public let competitionID: CompetitionID
+    public let owner: RemoteParticipant
+    public let remote: RemoteParticipant
+    public let acceptedSchedule: CompetitionSchedule
+    public let scoringPolicyIdentity: String
+    /// Downloaded backend cursor (`next_server_seq - 1`) at acceptance.
+    public let backendDescriptorRevision: Int64
+    public let bestAvailableDeadline: Date
+
+    public init(competitionID: CompetitionID, owner: RemoteParticipant, remote: RemoteParticipant, acceptedSchedule: CompetitionSchedule, scoringPolicyIdentity: String, backendDescriptorRevision: Int64, bestAvailableDeadline: Date) throws {
+        guard competitionID.rawValue != UUID(uuidString: "00000000-0000-0000-0000-000000000000")!, owner != remote else { throw ValidationError.distinctParticipantsRequired }
+        guard scoringPolicyIdentity == RemoteScoringWireV1.policyIdentity else { throw ValidationError.invalidPolicy }
+        guard backendDescriptorRevision > 0 else { throw ValidationError.invalidRevision }
+        guard bestAvailableDeadline.timeIntervalSinceReferenceDate.isFinite else { throw ValidationError.invalidDeadline }
+        guard let days = try? acceptedSchedule.calendar.sevenDayWindow(startingOn: acceptedSchedule.startDay),
+              let finalDay = days.last,
+              let dayAfter = try? acceptedSchedule.calendar.day(after: finalDay),
+              let endBoundary = try? acceptedSchedule.calendar.startOfDay(dayAfter),
+              bestAvailableDeadline > endBoundary
+        else { throw ValidationError.invalidSchedule }
+        self.competitionID = competitionID; self.owner = owner; self.remote = remote; self.acceptedSchedule = acceptedSchedule
+        self.scoringPolicyIdentity = scoringPolicyIdentity; self.backendDescriptorRevision = backendDescriptorRevision; self.bestAvailableDeadline = bestAvailableDeadline
+    }
+
+    public var semanticIdentity: String {
+        ["remote-configuration", competitionID.rawValue.uuidString.lowercased(), owner.profileID.uuidString.lowercased(), remote.profileID.uuidString.lowercased(), acceptedSchedule.calendar.timeZoneIdentifier, "\(acceptedSchedule.startDay.era)-\(acceptedSchedule.startDay.year)-\(acceptedSchedule.startDay.month)-\(acceptedSchedule.startDay.day)", scoringPolicyIdentity, "\(backendDescriptorRevision)", "\(bestAvailableDeadline.timeIntervalSince1970)"].joined(separator: ":")
+    }
+    private enum CodingKeys: String, CodingKey { case competitionID, owner, remote, acceptedSchedule, scoringPolicyIdentity, backendDescriptorRevision, bestAvailableDeadline }
+    public init(from decoder: Decoder) throws { let c = try decoder.container(keyedBy: CodingKeys.self); try self.init(competitionID: c.decode(CompetitionID.self, forKey: .competitionID), owner: c.decode(RemoteParticipant.self, forKey: .owner), remote: c.decode(RemoteParticipant.self, forKey: .remote), acceptedSchedule: c.decode(CompetitionSchedule.self, forKey: .acceptedSchedule), scoringPolicyIdentity: c.decode(String.self, forKey: .scoringPolicyIdentity), backendDescriptorRevision: c.decode(Int64.self, forKey: .backendDescriptorRevision), bestAvailableDeadline: c.decode(Date.self, forKey: .bestAvailableDeadline)) }
+}
+
+public struct RemoteScoreRevision: Codable, Equatable, Sendable {
+    public let competitionID: CompetitionID
+    public let participant: RemoteParticipant
+    public let row: RemoteAcceptedScoreRow
+    public let recordedAt: Date
+    public init(competitionID: CompetitionID, participant: RemoteParticipant, row: RemoteAcceptedScoreRow, recordedAt: Date) throws {
+        guard recordedAt.timeIntervalSinceReferenceDate.isFinite else { throw CompetitionJournalError.invalidDomainTransition(sequence: 0) }
+        self.competitionID = competitionID; self.participant = participant; self.row = row; self.recordedAt = recordedAt
+    }
+    public var semanticEventID: String {
+        let evidence = row.acceptedCentiPoints.map(String.init)
+            ?? row.availabilityReason
+            ?? "unavailable"
+        return ["remote-score-revision", competitionID.rawValue.uuidString.lowercased(), participant.profileID.uuidString.lowercased(), "\(row.ordinal)", evidence, row.wireContentSHA256, "\(row.clientRevision)", "\(row.serverSequence)", "\(recordedAt.timeIntervalSince1970)"].joined(separator: ":")
+    }
+    private enum CodingKeys: String, CodingKey { case competitionID, participant, row, recordedAt }
+    public init(from decoder: Decoder) throws { let c = try decoder.container(keyedBy: CodingKeys.self); try self.init(competitionID: c.decode(CompetitionID.self, forKey: .competitionID), participant: c.decode(RemoteParticipant.self, forKey: .participant), row: c.decode(RemoteAcceptedScoreRow.self, forKey: .row), recordedAt: c.decode(Date.self, forKey: .recordedAt)) }
+}
+
+public enum RemoteFinalizationBasis: String, Codable, Equatable, Sendable { case stable, bestAvailable = "best_available" }
+
+public struct RemoteFinalWindowAttestation: Codable, Equatable, Sendable {
+    public let competitionID: CompetitionID
+    public let participant: RemoteParticipant
+    public let windowCommitment: String
+    public let basis: RemoteFinalizationBasis
+    public let acceptedRevisions: [Int64]
+    public let attestationVersion: Int64
+    public let serverSequence: Int64
+    public let attestedAt: Date
+    public init(competitionID: CompetitionID, participant: RemoteParticipant, windowCommitment: String, basis: RemoteFinalizationBasis, acceptedRevisions: [Int64], attestationVersion: Int64, serverSequence: Int64, attestedAt: Date) throws {
+        guard windowCommitment.range(of: "^[0-9a-f]{64}$", options: .regularExpression) != nil,
+              acceptedRevisions.count == 7, acceptedRevisions.allSatisfy({ $0 >= 0 }), attestationVersion > 0, serverSequence > 0, attestedAt.timeIntervalSinceReferenceDate.isFinite
+        else { throw CompetitionJournalError.invalidDomainTransition(sequence: 0) }
+        self.competitionID = competitionID; self.participant = participant; self.windowCommitment = windowCommitment; self.basis = basis; self.acceptedRevisions = acceptedRevisions; self.attestationVersion = attestationVersion; self.serverSequence = serverSequence; self.attestedAt = attestedAt
+    }
+    public var semanticEventID: String { (["remote-final-window", competitionID.rawValue.uuidString.lowercased(), participant.profileID.uuidString.lowercased(), basis.rawValue, windowCommitment, "\(attestationVersion)", "\(serverSequence)", "\(attestedAt.timeIntervalSince1970)"] + acceptedRevisions.map(String.init)).joined(separator: ":") }
+    private enum CodingKeys: String, CodingKey { case competitionID, participant, windowCommitment, basis, acceptedRevisions, attestationVersion, serverSequence, attestedAt }
+    public init(from decoder: Decoder) throws { let c = try decoder.container(keyedBy: CodingKeys.self); try self.init(competitionID: c.decode(CompetitionID.self, forKey: .competitionID), participant: c.decode(RemoteParticipant.self, forKey: .participant), windowCommitment: c.decode(String.self, forKey: .windowCommitment), basis: c.decode(RemoteFinalizationBasis.self, forKey: .basis), acceptedRevisions: c.decode([Int64].self, forKey: .acceptedRevisions), attestationVersion: c.decode(Int64.self, forKey: .attestationVersion), serverSequence: c.decode(Int64.self, forKey: .serverSequence), attestedAt: c.decode(Date.self, forKey: .attestedAt)) }
+}
+
+public enum SharedResultStatus: String, Codable, Equatable, Sendable { case points, unavailable }
+public enum SharedResultSource: String, Codable, Equatable, Sendable { case acceptedRevision = "accepted_revision", deadlineMissing = "deadline_missing" }
+public struct SharedResultDay: Codable, Equatable, Sendable {
+    public let ordinal: Int; public let status: SharedResultStatus; public let source: SharedResultSource; public let centiPoints: Int?; public let reason: String?; public let wireContentSHA256: String?; public let clientRevision: Int64?; public let serverSequence: Int64?; public let scoringPolicyIdentity: String?
+    public init(ordinal: Int, status: SharedResultStatus, source: SharedResultSource, centiPoints: Int?, reason: String?, wireContentSHA256: String?, clientRevision: Int64?, serverSequence: Int64?, scoringPolicyIdentity: String?) throws {
+        _ = try RemoteFinalizationDayV1(ordinal: ordinal, status: status == .points ? .points : .unavailable, source: source == .acceptedRevision ? .acceptedRevision : .deadlineMissing, points: centiPoints, reason: reason, wireContentSHA256: wireContentSHA256, clientRevision: clientRevision, serverSequence: serverSequence)
+        guard source == .deadlineMissing ? scoringPolicyIdentity == nil : scoringPolicyIdentity == RemoteScoringWireV1.policyIdentity else { throw CompetitionJournalError.invalidDomainTransition(sequence: 0) }
+        self.ordinal=ordinal; self.status=status; self.source=source; self.centiPoints=centiPoints; self.reason=reason; self.wireContentSHA256=wireContentSHA256; self.clientRevision=clientRevision; self.serverSequence=serverSequence; self.scoringPolicyIdentity=scoringPolicyIdentity
+    }
+    private enum CodingKeys: String, CodingKey { case ordinal, status, source, centiPoints = "centi_points", reason, wireContentSHA256 = "wire_content_sha256", clientRevision = "client_revision", serverSequence = "server_seq", scoringPolicyIdentity = "scoring_policy_identity" }
+    public init(from decoder: Decoder) throws { let c = try decoder.container(keyedBy: CodingKeys.self); try self.init(ordinal: c.decode(Int.self, forKey: .ordinal), status: c.decode(SharedResultStatus.self, forKey: .status), source: c.decode(SharedResultSource.self, forKey: .source), centiPoints: c.decodeIfPresent(Int.self, forKey: .centiPoints), reason: c.decodeIfPresent(String.self, forKey: .reason), wireContentSHA256: c.decodeIfPresent(String.self, forKey: .wireContentSHA256), clientRevision: c.decodeIfPresent(Int64.self, forKey: .clientRevision), serverSequence: c.decodeIfPresent(Int64.self, forKey: .serverSequence), scoringPolicyIdentity: c.decodeIfPresent(String.self, forKey: .scoringPolicyIdentity)) }
+    public func encode(to encoder: Encoder) throws { var c = encoder.container(keyedBy: CodingKeys.self); try c.encode(ordinal, forKey: .ordinal); try c.encode(status, forKey: .status); try c.encode(source, forKey: .source); if let centiPoints { try c.encode(centiPoints, forKey: .centiPoints) } else { try c.encodeNil(forKey: .centiPoints) }; if let reason { try c.encode(reason, forKey: .reason) } else { try c.encodeNil(forKey: .reason) }; if let wireContentSHA256 { try c.encode(wireContentSHA256, forKey: .wireContentSHA256) } else { try c.encodeNil(forKey: .wireContentSHA256) }; if let clientRevision { try c.encode(clientRevision, forKey: .clientRevision) } else { try c.encodeNil(forKey: .clientRevision) }; if let serverSequence { try c.encode(serverSequence, forKey: .serverSequence) } else { try c.encodeNil(forKey: .serverSequence) }; if let scoringPolicyIdentity { try c.encode(scoringPolicyIdentity, forKey: .scoringPolicyIdentity) } else { try c.encodeNil(forKey: .scoringPolicyIdentity) } }
+}
+
+public struct SharedParticipantWindow: Codable, Equatable, Sendable {
+    public let participant: RemoteParticipant; public let totalCentiPoints: Int; public let windowCommitment: String; public let days: [SharedResultDay]
+    public init(competitionID: CompetitionID, participant: RemoteParticipant, totalCentiPoints: Int, windowCommitment: String, days: [SharedResultDay]) throws {
+        guard days.map(\.ordinal) == Array(1...7), (0...420_000).contains(totalCentiPoints), windowCommitment.range(of: "^[0-9a-f]{64}$", options: .regularExpression) != nil else { throw CompetitionJournalError.invalidDomainTransition(sequence: 0) }
+        let finalDays = try days.map { try RemoteFinalizationDayV1(ordinal: $0.ordinal, status: $0.status == .points ? .points : .unavailable, source: $0.source == .acceptedRevision ? .acceptedRevision : .deadlineMissing, points: $0.centiPoints, reason: $0.reason, wireContentSHA256: $0.wireContentSHA256, clientRevision: $0.clientRevision, serverSequence: $0.serverSequence) }
+        guard totalCentiPoints == finalDays.compactMap(\.points).reduce(0, +), try RemoteFinalizationWireV1.windowCommitment(competitionID: competitionID.rawValue, participantID: participant.profileID, days: finalDays) == windowCommitment else { throw CompetitionJournalError.invalidDomainTransition(sequence: 0) }
+        self.participant=participant; self.totalCentiPoints=totalCentiPoints; self.windowCommitment=windowCommitment; self.days=days
+    }
+    private enum CodingKeys: String, CodingKey { case participant = "profile_id", totalCentiPoints = "total_centi_points", windowCommitment = "window_commitment_sha256", days }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let participant = try RemoteParticipant(profileID: c.decode(UUID.self, forKey: .participant))
+        let total = try c.decode(Int.self, forKey: .totalCentiPoints)
+        let commitment = try c.decode(String.self, forKey: .windowCommitment)
+        let days = try c.decode([SharedResultDay].self, forKey: .days)
+        guard days.map(\.ordinal) == Array(1...7), (0...420_000).contains(total), total == days.compactMap(\.centiPoints).reduce(0, +), commitment.range(of: "^[0-9a-f]{64}$", options: .regularExpression) != nil else { throw CompetitionJournalError.invalidDomainTransition(sequence: 0) }
+        self.participant=participant; self.totalCentiPoints=total; self.windowCommitment=commitment; self.days=days
+    }
+    public func encode(to encoder: Encoder) throws { var c = encoder.container(keyedBy: CodingKeys.self); try c.encode(participant.profileID, forKey: .participant); try c.encode(totalCentiPoints, forKey: .totalCentiPoints); try c.encode(windowCommitment, forKey: .windowCommitment); try c.encode(days, forKey: .days) }
+}
+
+public struct SharedCompetitionResult: Codable, Equatable, Sendable {
+    public static let frozenWindowVersion = 2
+    public let competitionID: CompetitionID
+    public let owner: RemoteParticipant
+    public let remote: RemoteParticipant
+    public let windows: [SharedParticipantWindow]
+    public let frozenWindowVersion: Int
+    public let scoringPolicyIdentity: String
+    public let winner: RemoteParticipant?
+    public let basis: RemoteFinalizationBasis
+    public let resultHash: String
+    public let confirmedAt: Date
+    public let serverSequence: Int64
+
+    public init(competitionID: CompetitionID, owner: RemoteParticipant, remote: RemoteParticipant, windows: [SharedParticipantWindow], frozenWindowVersion: Int = SharedCompetitionResult.frozenWindowVersion, scoringPolicyIdentity: String = RemoteScoringWireV1.policyIdentity, winner: RemoteParticipant?, basis: RemoteFinalizationBasis, resultHash: String, confirmedAt: Date, serverSequence: Int64) throws {
+        guard frozenWindowVersion == Self.frozenWindowVersion, scoringPolicyIdentity == RemoteScoringWireV1.policyIdentity, owner != remote, windows.count == 2, windows.map(\.participant.profileID) == [owner.profileID, remote.profileID].sorted(by: { $0.uuidString < $1.uuidString }), serverSequence > 0, confirmedAt.timeIntervalSinceReferenceDate.isFinite else { throw CompetitionJournalError.invalidDomainTransition(sequence: 0) }
+        guard let ownerWindow = windows.first(where: { $0.participant == owner }),
+              let remoteWindow = windows.first(where: { $0.participant == remote })
+        else { throw CompetitionJournalError.invalidDomainTransition(sequence: 0) }
+        for window in windows {
+            _ = try SharedParticipantWindow(competitionID: competitionID, participant: window.participant, totalCentiPoints: window.totalCentiPoints, windowCommitment: window.windowCommitment, days: window.days)
+        }
+        guard resultHash.range(of: "^[0-9a-f]{64}$", options: .regularExpression) != nil else { throw CompetitionJournalError.invalidDomainTransition(sequence: 0) }
+        if ownerWindow.totalCentiPoints == remoteWindow.totalCentiPoints { guard winner == nil else { throw CompetitionJournalError.invalidDomainTransition(sequence: 0) } }
+        else { guard winner == owner || winner == remote else { throw CompetitionJournalError.invalidDomainTransition(sequence: 0) } }
+        let first = windows[0], second = windows[1]
+        let expected = try RemoteFinalizationWireV1.resultHash(competitionID: competitionID.rawValue, participantA: first.participant.profileID, totalA: first.totalCentiPoints, commitmentA: first.windowCommitment, participantB: second.participant.profileID, totalB: second.totalCentiPoints, commitmentB: second.windowCommitment, outcome: winner == nil ? "tie" : "winner", winner: winner?.profileID, basis: basis.rawValue)
+        guard resultHash == expected else { throw CompetitionJournalError.invalidDomainTransition(sequence: 0) }
+        self.competitionID = competitionID; self.owner = owner; self.remote = remote; self.windows = windows; self.frozenWindowVersion=frozenWindowVersion; self.scoringPolicyIdentity=scoringPolicyIdentity; self.winner = winner; self.basis = basis; self.resultHash = resultHash; self.confirmedAt = confirmedAt; self.serverSequence=serverSequence
+    }
+    public var semanticEventID: String {
+        [
+            "shared-result:v2",
+            competitionID.rawValue.uuidString.lowercased(),
+            owner.profileID.uuidString.lowercased(),
+            remote.profileID.uuidString.lowercased(),
+            resultHash,
+            "\(serverSequence)",
+            "\(confirmedAt.timeIntervalSince1970)",
+        ].joined(separator: ":")
+    }
+    public func window(for participant: RemoteParticipant) throws -> SharedParticipantWindow {
+        guard let window = windows.first(where: { $0.participant == participant }) else { throw CompetitionJournalError.invalidDomainTransition(sequence: 0) }
+        return window
+    }
+    private enum CodingKeys: String, CodingKey { case competitionID = "competition_id", owner = "owner_profile_id", remote = "remote_profile_id", frozenWindow = "frozen_window", winner = "winner_profile_id", basis = "finalization_basis", resultHash = "immutable_hash", confirmedAt = "completed_at", serverSequence = "server_seq" }
+    private enum FrozenWindowKeys: String, CodingKey { case version, policy, participants }
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        let competitionID = try c.decode(CompetitionID.self, forKey: .competitionID)
+        let owner = try RemoteParticipant(profileID: c.decode(UUID.self, forKey: .owner))
+        let remote = try RemoteParticipant(profileID: c.decode(UUID.self, forKey: .remote))
+        let nested = try c.nestedContainer(keyedBy: FrozenWindowKeys.self, forKey: .frozenWindow)
+        let version = try nested.decode(Int.self, forKey: .version)
+        let policy = try nested.decode(String.self, forKey: .policy)
+        let windows = try nested.decode([SharedParticipantWindow].self, forKey: .participants)
+        let winner = try c.decodeIfPresent(UUID.self, forKey: .winner).map { try RemoteParticipant(profileID: $0) }
+        try self.init(competitionID: competitionID, owner: owner, remote: remote, windows: windows, frozenWindowVersion: version, scoringPolicyIdentity: policy, winner: winner, basis: try c.decode(RemoteFinalizationBasis.self, forKey: .basis), resultHash: try c.decode(String.self, forKey: .resultHash), confirmedAt: try c.decode(Date.self, forKey: .confirmedAt), serverSequence: try c.decode(Int64.self, forKey: .serverSequence))
+    }
+    public func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(competitionID, forKey: .competitionID); try c.encode(owner.profileID, forKey: .owner); try c.encode(remote.profileID, forKey: .remote)
+        var nested = c.nestedContainer(keyedBy: FrozenWindowKeys.self, forKey: .frozenWindow)
+        try nested.encode(frozenWindowVersion, forKey: .version); try nested.encode(scoringPolicyIdentity, forKey: .policy); try nested.encode(windows, forKey: .participants)
+        if let winner { try c.encode(winner.profileID, forKey: .winner) } else { try c.encodeNil(forKey: .winner) }; try c.encode(basis, forKey: .basis); try c.encode(resultHash, forKey: .resultHash); try c.encode(confirmedAt, forKey: .confirmedAt); try c.encode(serverSequence, forKey: .serverSequence)
+    }
+}
+
+public enum SynchronizationReceiptKind: String, Codable, Equatable, Sendable { case scoreRevision = "score_revision", finalWindowAttestation = "final_window_attestation" }
+public enum SynchronizationReceiptDisposition: String, Codable, Equatable, Sendable { case appended, duplicate }
+public struct SynchronizationReceipt: Codable, Equatable, Sendable {
+    public let competitionID: CompetitionID
+    public let serverCursor: Int64
+    public let acknowledgedEventID: String
+    public let kind: SynchronizationReceiptKind
+    public let disposition: SynchronizationReceiptDisposition
+    public let entityServerSequence: Int64
+    public let receivedAt: Date
+    public init(competitionID: CompetitionID, serverCursor: Int64, acknowledgedEventID: String, kind: SynchronizationReceiptKind, disposition: SynchronizationReceiptDisposition, entityServerSequence: Int64, receivedAt: Date) throws {
+        guard serverCursor > 0, entityServerSequence > 0, entityServerSequence <= serverCursor, !acknowledgedEventID.isEmpty, receivedAt.timeIntervalSinceReferenceDate.isFinite else { throw CompetitionJournalError.invalidDomainTransition(sequence: 0) }
+        self.competitionID = competitionID; self.serverCursor = serverCursor; self.acknowledgedEventID = acknowledgedEventID; self.kind = kind; self.disposition = disposition; self.entityServerSequence=entityServerSequence; self.receivedAt = receivedAt
+    }
+    public var semanticEventID: String { "synchronization-receipt:\(competitionID.rawValue.uuidString.lowercased()):\(acknowledgedEventID):\(kind):\(disposition):\(entityServerSequence):\(serverCursor):\(receivedAt.timeIntervalSince1970)" }
+    private enum CodingKeys: String, CodingKey { case competitionID, serverCursor, acknowledgedEventID, kind, disposition, entityServerSequence, receivedAt }
+    public init(from decoder: Decoder) throws { let c = try decoder.container(keyedBy: CodingKeys.self); try self.init(competitionID: c.decode(CompetitionID.self, forKey: .competitionID), serverCursor: c.decode(Int64.self, forKey: .serverCursor), acknowledgedEventID: c.decode(String.self, forKey: .acknowledgedEventID), kind: c.decode(SynchronizationReceiptKind.self, forKey: .kind), disposition: c.decode(SynchronizationReceiptDisposition.self, forKey: .disposition), entityServerSequence: c.decode(Int64.self, forKey: .entityServerSequence), receivedAt: c.decode(Date.self, forKey: .receivedAt)) }
+}
+
 public struct ActivitySnapshotRecorded: Codable, Equatable, Sendable {
     public enum ValidationError: Error, Equatable, Sendable {
         case invalidObservationID
@@ -301,14 +502,41 @@ private struct ActivitySnapshotRecordedV1: Decodable {
     }
 }
 
+private enum CompetitionEventKindV3: Decodable {
+    case invitationAccepted(AcceptedCompetitionConfiguration), invitationDeclined, invitationExpired, competitionStarted, dayClosed(Int), finalDayStarted, tallyStarted, finalReadRecorded(FinalReadRecord), competitionFinalized(FinalizationRecord), competitionArchived
+    var upgraded: CompetitionEventKind {
+        switch self {
+        case let .invitationAccepted(value): .invitationAccepted(value)
+        case .invitationDeclined: .invitationDeclined
+        case .invitationExpired: .invitationExpired
+        case .competitionStarted: .competitionStarted
+        case let .dayClosed(value): .dayClosed(value)
+        case .finalDayStarted: .finalDayStarted
+        case .tallyStarted: .tallyStarted
+        case let .finalReadRecorded(value): .finalReadRecorded(value)
+        case let .competitionFinalized(value): .competitionFinalized(value)
+        case .competitionArchived: .competitionArchived
+        }
+    }
+}
+
+private struct CompetitionEventV3: Decodable {
+    let id: String; let competitionID: CompetitionID; let occurredAt: Date; let kind: CompetitionEventKindV3
+    func upgraded() throws -> CompetitionEvent {
+        let event = CompetitionEvent(competitionID: competitionID, occurredAt: occurredAt, kind: kind.upgraded)
+        guard event.id == id else { throw CompetitionEvent.ValidationError.semanticIDMismatch(expected: event.id, actual: id) }
+        return event
+    }
+}
+
 private enum CompetitionDomainEventV1: Decodable {
-    case lifecycle(CompetitionEvent)
+    case lifecycle(CompetitionEventV3)
     case activitySnapshotRecorded(ActivitySnapshotRecordedV1)
 
     func upgraded() throws -> CompetitionDomainEvent {
         switch self {
         case let .lifecycle(event):
-            return .lifecycle(event)
+            return .lifecycle(try event.upgraded())
         case let .activitySnapshotRecorded(event):
             return .activitySnapshotRecorded(try event.upgraded())
         }
@@ -319,14 +547,14 @@ private enum CompetitionDomainEventV1: Decodable {
 /// the already-persisted version-2 types; adding a new live union case must not
 /// make that case decodable from an older envelope.
 private enum CompetitionDomainEventV2: Decodable {
-    case lifecycle(CompetitionEvent)
+    case lifecycle(CompetitionEventV3)
     case activitySnapshotRecorded(ActivitySnapshotRecorded)
     case activityRefreshAttemptRecorded(ActivityRefreshAttemptRecorded)
 
-    func upgraded() -> CompetitionDomainEvent {
+    func upgraded() throws -> CompetitionDomainEvent {
         switch self {
         case let .lifecycle(event):
-            return .lifecycle(event)
+            return .lifecycle(try event.upgraded())
         case let .activitySnapshotRecorded(event):
             return .activitySnapshotRecorded(event)
         case let .activityRefreshAttemptRecorded(event):
@@ -335,14 +563,38 @@ private enum CompetitionDomainEventV2: Decodable {
     }
 }
 
-/// Payload versions 1 and 2 remain immutable and replayable. New writes use
-/// version 3; envelopes preserve exact encoded bytes and semantic duplicate
+/// Payload-v3 is frozen independently of the live union. This is important:
+/// a future top-level case must be impossible to decode merely because it was
+/// added to `CompetitionDomainEvent`.
+private enum CompetitionDomainEventV3: Decodable {
+    case lifecycle(CompetitionEventV3)
+    case activitySnapshotRecorded(ActivitySnapshotRecorded)
+    case activityRefreshAttemptRecorded(ActivityRefreshAttemptRecorded)
+    case notificationEmissionRecorded(NotificationEmissionRecorded)
+
+    func upgraded() throws -> CompetitionDomainEvent {
+        switch self {
+        case let .lifecycle(event): .lifecycle(try event.upgraded())
+        case let .activitySnapshotRecorded(event): .activitySnapshotRecorded(event)
+        case let .activityRefreshAttemptRecorded(event): .activityRefreshAttemptRecorded(event)
+        case let .notificationEmissionRecorded(event): .notificationEmissionRecorded(event)
+        }
+    }
+}
+
+/// Payload versions 1 through 3 remain immutable and replayable. New writes use
+/// version 4; envelopes preserve exact encoded bytes and semantic duplicate
 /// checks compare decoded values.
 public enum CompetitionDomainEvent: Codable, Equatable, Sendable {
     case lifecycle(CompetitionEvent)
     case activitySnapshotRecorded(ActivitySnapshotRecorded)
     case activityRefreshAttemptRecorded(ActivityRefreshAttemptRecorded)
     case notificationEmissionRecorded(NotificationEmissionRecorded)
+    case remoteConfigurationAccepted(RemoteCompetitionConfiguration)
+    case remoteScoreRevisionRecorded(RemoteScoreRevision)
+    case remoteFinalWindowAttested(RemoteFinalWindowAttestation)
+    case sharedResultConfirmed(SharedCompetitionResult)
+    case synchronizationReceiptRecorded(SynchronizationReceipt)
 
     public var semanticEventID: String {
         switch self {
@@ -350,6 +602,11 @@ public enum CompetitionDomainEvent: Codable, Equatable, Sendable {
         case let .activitySnapshotRecorded(event): event.semanticEventID
         case let .activityRefreshAttemptRecorded(event): event.semanticEventID
         case let .notificationEmissionRecorded(event): event.semanticEventID
+        case let .remoteConfigurationAccepted(event): "remote-configuration-accepted:\(event.semanticIdentity)"
+        case let .remoteScoreRevisionRecorded(event): event.semanticEventID
+        case let .remoteFinalWindowAttested(event): event.semanticEventID
+        case let .sharedResultConfirmed(event): event.semanticEventID
+        case let .synchronizationReceiptRecorded(event): event.semanticEventID
         }
     }
 
@@ -359,6 +616,11 @@ public enum CompetitionDomainEvent: Codable, Equatable, Sendable {
         case let .activitySnapshotRecorded(event): event.competitionID
         case let .activityRefreshAttemptRecorded(event): event.competitionID
         case let .notificationEmissionRecorded(event): event.competitionID
+        case let .remoteConfigurationAccepted(event): event.competitionID
+        case let .remoteScoreRevisionRecorded(event): event.competitionID
+        case let .remoteFinalWindowAttested(event): event.competitionID
+        case let .sharedResultConfirmed(event): event.competitionID
+        case let .synchronizationReceiptRecorded(event): event.competitionID
         }
     }
 
@@ -368,6 +630,11 @@ public enum CompetitionDomainEvent: Codable, Equatable, Sendable {
         case let .activitySnapshotRecorded(event): event.observedAt
         case let .activityRefreshAttemptRecorded(event): event.readAt
         case let .notificationEmissionRecorded(event): event.decidedAt
+        case let .remoteConfigurationAccepted(event): event.bestAvailableDeadline
+        case let .remoteScoreRevisionRecorded(event): event.recordedAt
+        case let .remoteFinalWindowAttested(event): event.attestedAt
+        case let .sharedResultConfirmed(event): event.confirmedAt
+        case let .synchronizationReceiptRecorded(event): event.receivedAt
         }
     }
 }
@@ -392,8 +659,8 @@ public struct CompetitionJournalCursor: Codable, Equatable, Sendable {
 
 public struct CompetitionJournalEnvelope: Codable, Equatable, Sendable {
     public static let currentEnvelopeVersion: UInt32 = 1
-    public static let currentPayloadVersion: UInt32 = 3
-    private static let supportedPayloadVersions: ClosedRange<UInt32> = 1...3
+    public static let currentPayloadVersion: UInt32 = 4
+    private static let supportedPayloadVersions: ClosedRange<UInt32> = 1...4
     /// Sequences are one-based. Zero means an unsupported future envelope did
     /// not expose a sequence using the version-one field shape.
     public static let unknownSequence: UInt64 = 0
@@ -639,18 +906,29 @@ public struct CompetitionReplayProjection: Equatable, Sendable {
     public let scoreLedger: ScoreLedger
     public let activityRefresh: ActivityRefreshProjection
     public let notificationEmissions: NotificationEmissionProjection
+    public let remoteScoreLedgers: [UUID: RemoteScoreLedger]
+    public let remoteWindowAttestations: [UUID: RemoteFinalWindowAttestation]
+    public let synchronizationCursor: Int64
+    public let sharedResult: SharedCompetitionResult?
 
     internal init(
         competition: Competition,
         scoreLedger: ScoreLedger,
         activityRefresh: ActivityRefreshProjection = ActivityRefreshProjection(),
-        notificationEmissions: NotificationEmissionProjection =
-            NotificationEmissionProjection()
+        notificationEmissions: NotificationEmissionProjection = NotificationEmissionProjection(),
+        remoteScoreLedgers: [UUID: RemoteScoreLedger] = [:],
+        remoteWindowAttestations: [UUID: RemoteFinalWindowAttestation] = [:],
+        synchronizationCursor: Int64 = 0,
+        sharedResult: SharedCompetitionResult? = nil
     ) {
         self.competition = competition
         self.scoreLedger = scoreLedger
         self.activityRefresh = activityRefresh
         self.notificationEmissions = notificationEmissions
+        self.remoteScoreLedgers = remoteScoreLedgers
+        self.remoteWindowAttestations = remoteWindowAttestations
+        self.synchronizationCursor = synchronizationCursor
+        self.sharedResult = sharedResult
     }
 }
 
@@ -1154,6 +1432,11 @@ public enum CompetitionReplayer {
                     ).upgraded()
                 case 3:
                     event = try JournalPinnedCodec.decoder().decode(
+                        CompetitionDomainEventV3.self,
+                        from: envelope.payload
+                    ).upgraded()
+                case 4:
+                    event = try JournalPinnedCodec.decoder().decode(
                         CompetitionDomainEvent.self,
                         from: envelope.payload
                     )
@@ -1185,6 +1468,16 @@ public enum CompetitionReplayer {
                     sequence: envelope.sequence
                 )
             }
+            if envelope.payloadVersion < 4 {
+                switch event {
+                case .remoteConfigurationAccepted, .remoteScoreRevisionRecorded,
+                     .remoteFinalWindowAttested, .sharedResultConfirmed,
+                     .synchronizationReceiptRecorded:
+                    throw CompetitionJournalError.invalidDomainTransition(sequence: envelope.sequence)
+                default:
+                    break
+                }
+            }
             if envelope.payloadVersion >= 2,
                case .activitySnapshotRecorded = event {
                 throw CompetitionJournalError
@@ -1198,6 +1491,19 @@ public enum CompetitionReplayer {
                 throw CompetitionJournalError.envelopeIdentityMismatch(
                     sequence: envelope.sequence
                 )
+            }
+            if case let .synchronizationReceiptRecorded(receipt) = event {
+                let acknowledged = result.first { $0.semanticEventID == receipt.acknowledgedEventID }
+                let kindAndSequenceMatch: Bool
+                switch (receipt.kind, acknowledged) {
+                case let (.scoreRevision, .some(.remoteScoreRevisionRecorded(revision))):
+                    kindAndSequenceMatch = receipt.entityServerSequence == revision.row.serverSequence
+                case let (.finalWindowAttestation, .some(.remoteFinalWindowAttested(attestation))):
+                    kindAndSequenceMatch = receipt.entityServerSequence == attestation.serverSequence
+                default:
+                    kindAndSequenceMatch = false
+                }
+                guard kindAndSequenceMatch else { throw CompetitionJournalError.invalidDomainTransition(sequence: envelope.sequence) }
             }
             result.append(event)
             priorDigest = envelope.envelopeSHA256
@@ -1216,12 +1522,108 @@ public enum CompetitionReplayer {
         var workingLedger = projection.scoreLedger
         var workingActivityRefresh = projection.activityRefresh
         var workingNotificationEmissions = projection.notificationEmissions
+        var workingRemoteLedgers = projection.remoteScoreLedgers
+        var workingAttestations = projection.remoteWindowAttestations
+        var workingSynchronizationCursor = projection.synchronizationCursor
+        var workingSharedResult = projection.sharedResult
         do {
             switch event {
+            case let .remoteConfigurationAccepted(configuration):
+                guard configuration.competitionID == workingCompetition.id,
+                      case .pendingInvitation = workingCompetition.lifecycle,
+                      workingCompetition.remoteConfiguration == nil
+                else { throw CompetitionJournalError.invalidDomainTransition(sequence: sequence) }
+                workingCompetition.schedule = configuration.acceptedSchedule
+                workingCompetition.remoteConfiguration = configuration
+                workingCompetition.lifecycle = .scheduled
+
+            case let .remoteScoreRevisionRecorded(revision):
+                guard let configuration = workingCompetition.remoteConfiguration,
+                      revision.competitionID == workingCompetition.id,
+                      revision.participant == configuration.owner || revision.participant == configuration.remote
+                else { throw CompetitionJournalError.invalidDomainTransition(sequence: sequence) }
+                switch workingCompetition.lifecycle {
+                case .scheduled, .active, .endsToday, .tallying: break
+                case .pendingInvitation, .declined, .expired, .completed, .archived:
+                    throw CompetitionJournalError.invalidDomainTransition(sequence: sequence)
+                }
+                var ledger: RemoteScoreLedger
+                if let existing = workingRemoteLedgers[revision.participant.profileID] {
+                    ledger = existing
+                } else {
+                    ledger = try RemoteScoreLedger(competitionID: configuration.competitionID, participant: revision.participant, acceptedSchedule: configuration.acceptedSchedule, scoringPolicyIdentity: configuration.scoringPolicyIdentity)
+                }
+                _ = try ledger.accept(revision.row)
+                workingRemoteLedgers[revision.participant.profileID] = ledger
+
+            case let .remoteFinalWindowAttested(attestation):
+                guard let configuration = workingCompetition.remoteConfiguration,
+                      attestation.competitionID == configuration.competitionID,
+                      attestation.participant == configuration.owner,
+                      { if case .tallying = workingCompetition.lifecycle { return true }; return false }(),
+                      let ledger = workingRemoteLedgers[attestation.participant.profileID]
+                else { throw CompetitionJournalError.invalidDomainTransition(sequence: sequence) }
+                let vector = try (1...7).map { try ledger.visibleEntry(forActiveDayOrdinal: $0)?.clientRevision ?? 0 }
+                guard vector == attestation.acceptedRevisions else { throw CompetitionJournalError.invalidDomainTransition(sequence: sequence) }
+                if attestation.basis == .stable {
+                    guard vector.allSatisfy({ $0 > 0 }), try remoteWindowCommitment(ledger: ledger, competitionID: configuration.competitionID, participant: configuration.owner, deadlineMissingAllowed: false) == attestation.windowCommitment else { throw CompetitionJournalError.invalidDomainTransition(sequence: sequence) }
+                } else {
+                    guard attestation.attestedAt >= configuration.bestAvailableDeadline,
+                          try remoteWindowCommitment(ledger: ledger, competitionID: configuration.competitionID, participant: configuration.owner, deadlineMissingAllowed: true) == attestation.windowCommitment else { throw CompetitionJournalError.invalidDomainTransition(sequence: sequence) }
+                }
+                if let prior = workingAttestations[attestation.participant.profileID] {
+                    guard attestation.attestationVersion > prior.attestationVersion,
+                          attestation.serverSequence > prior.serverSequence,
+                          !(prior.basis == .stable && attestation.basis == .bestAvailable)
+                    else { throw CompetitionJournalError.invalidDomainTransition(sequence: sequence) }
+                    workingAttestations[attestation.participant.profileID] = attestation
+                } else {
+                    workingAttestations[attestation.participant.profileID] = attestation
+                }
+
+            case let .sharedResultConfirmed(result):
+                guard let configuration = workingCompetition.remoteConfiguration,
+                      result.competitionID == configuration.competitionID,
+                      result.owner == configuration.owner,
+                      result.remote == configuration.remote,
+                      let ownerResultWindow = try? result.window(for: configuration.owner),
+                      let ownerLedger = workingRemoteLedgers[configuration.owner.profileID]
+                else { throw CompetitionJournalError.invalidDomainTransition(sequence: sequence) }
+                if result.basis == .stable {
+                    guard result.windows.allSatisfy({ $0.days.allSatisfy { $0.source == .acceptedRevision } }) else { throw CompetitionJournalError.invalidDomainTransition(sequence: sequence) }
+                } else {
+                    guard result.confirmedAt >= configuration.bestAvailableDeadline else { throw CompetitionJournalError.invalidDomainTransition(sequence: sequence) }
+                }
+                guard try resultWindowMatchesCachedLedger(ownerResultWindow, ledger: ownerLedger, requireAllRows: result.basis == .stable) else { throw CompetitionJournalError.invalidDomainTransition(sequence: sequence) }
+                let remoteResultWindow = try result.window(for: configuration.remote)
+                if let remoteLedger = workingRemoteLedgers[configuration.remote.profileID] {
+                    guard try resultWindowMatchesCachedLedger(remoteResultWindow, ledger: remoteLedger, requireAllRows: false, allowUncachedAcceptedRows: true)
+                    else { throw CompetitionJournalError.invalidDomainTransition(sequence: sequence) }
+                }
+                guard case .tallying = workingCompetition.lifecycle else { throw CompetitionJournalError.invalidDomainTransition(sequence: sequence) }
+                let ownerPoints = Double(ownerResultWindow.totalCentiPoints) / 100
+                let remotePoints = Double(remoteResultWindow.totalCentiPoints) / 100
+                workingCompetition.lifecycle = .completed(CompletedCompetition(snapshot: try FinalScoreSnapshot(userPoints: ownerPoints, opponentPoints: remotePoints), basis: result.basis == .stable ? .stableAcrossPostBoundaryReads : .bestAvailable, completedAt: result.confirmedAt))
+                workingSharedResult = result
+
+            case let .synchronizationReceiptRecorded(receipt):
+                guard receipt.competitionID == workingCompetition.id,
+                      receipt.serverCursor > workingSynchronizationCursor
+                else { throw CompetitionJournalError.invalidDomainTransition(sequence: sequence) }
+                workingSynchronizationCursor = receipt.serverCursor
+
             case let .notificationEmissionRecorded(record):
                 workingNotificationEmissions.record(record)
 
             case let .activityRefreshAttemptRecorded(attempt):
+                // Remote journals are fed only by server-accepted remote rows.
+                // A local HealthKit refresh is simulated-protocol evidence and
+                // must never be allowed to mutate a remote competition.
+                guard workingCompetition.remoteConfiguration == nil else {
+                    throw CompetitionJournalError.invalidDomainTransition(
+                        sequence: sequence
+                    )
+                }
                 try apply(
                     attempt,
                     competition: workingCompetition,
@@ -1231,6 +1633,9 @@ public enum CompetitionReplayer {
                 )
 
             case let .activitySnapshotRecorded(observation):
+                guard workingCompetition.remoteConfiguration == nil else {
+                    throw CompetitionJournalError.invalidDomainTransition(sequence: sequence)
+                }
                 guard workingCompetition.schedule != nil,
                       !workingLedger.isFrozen
                 else {
@@ -1252,6 +1657,16 @@ public enum CompetitionReplayer {
                 )
 
             case let .lifecycle(lifecycleEvent):
+                if workingCompetition.remoteConfiguration != nil {
+                    switch lifecycleEvent.kind {
+                    case .finalReadRecorded, .competitionFinalized:
+                        throw CompetitionJournalError.invalidDomainTransition(
+                            sequence: sequence
+                        )
+                    default:
+                        break
+                    }
+                }
                 if case let .finalReadRecorded(record) = lifecycleEvent.kind,
                    let claimedContent = record.evidence.completeWindowContent {
                     guard let expectedContent = currentCompleteWindowContent(
@@ -1299,6 +1714,10 @@ public enum CompetitionReplayer {
             scoreLedger: workingLedger,
             activityRefresh: workingActivityRefresh,
             notificationEmissions: workingNotificationEmissions
+            , remoteScoreLedgers: workingRemoteLedgers
+            , remoteWindowAttestations: workingAttestations
+            , synchronizationCursor: workingSynchronizationCursor
+            , sharedResult: workingSharedResult
         )
     }
 
@@ -1309,7 +1728,8 @@ public enum CompetitionReplayer {
         activityRefresh: inout ActivityRefreshProjection,
         sequence: UInt64
     ) throws {
-        guard attempt.competitionID == competition.id,
+        guard competition.remoteConfiguration == nil,
+              attempt.competitionID == competition.id,
               let schedule = competition.schedule,
               !scoreLedger.isFrozen
         else {
@@ -1392,6 +1812,40 @@ public enum CompetitionReplayer {
         return try? opponentPlan.finalScoreWindow.completeWindowContent(
             ownerWindow: ownerWindow
         )
+    }
+
+    private static func remoteWindowCommitment(
+        ledger: RemoteScoreLedger,
+        competitionID: CompetitionID,
+        participant: RemoteParticipant,
+        deadlineMissingAllowed: Bool
+    ) throws -> String {
+        let days = try (1...7).map { ordinal -> RemoteFinalizationDayV1 in
+            if let row = try ledger.visibleEntry(forActiveDayOrdinal: ordinal) {
+                if let points = row.acceptedCentiPoints {
+                    return try RemoteFinalizationDayV1(ordinal: ordinal, status: .points, source: .acceptedRevision, points: points, reason: nil, wireContentSHA256: row.wireContentSHA256, clientRevision: row.clientRevision, serverSequence: row.serverSequence)
+                }
+                return try RemoteFinalizationDayV1(ordinal: ordinal, status: .unavailable, source: .acceptedRevision, points: nil, reason: row.availabilityReason, wireContentSHA256: row.wireContentSHA256, clientRevision: row.clientRevision, serverSequence: row.serverSequence)
+            }
+            guard deadlineMissingAllowed else { throw CompetitionJournalError.invalidDomainTransition(sequence: 0) }
+            return try RemoteFinalizationDayV1(ordinal: ordinal, status: .unavailable, source: .deadlineMissing, points: nil, reason: "missing", wireContentSHA256: nil, clientRevision: nil, serverSequence: nil)
+        }
+        return try RemoteFinalizationWireV1.windowCommitment(competitionID: competitionID.rawValue, participantID: participant.profileID, days: days)
+    }
+
+    private static func resultWindowMatchesCachedLedger(_ window: SharedParticipantWindow, ledger: RemoteScoreLedger, requireAllRows: Bool, allowUncachedAcceptedRows: Bool = false) throws -> Bool {
+        for day in window.days {
+            let cached = try ledger.visibleEntry(forActiveDayOrdinal: day.ordinal)
+            if let cached {
+                guard day.source == .acceptedRevision,
+                      day.centiPoints == cached.acceptedCentiPoints,
+                      day.reason == cached.availabilityReason,
+                      day.wireContentSHA256 == cached.wireContentSHA256,
+                      day.clientRevision == cached.clientRevision,
+                      day.serverSequence == cached.serverSequence else { return false }
+            } else if requireAllRows || (day.source == .acceptedRevision && !allowUncachedAcceptedRows) { return false }
+        }
+        return true
     }
 
     private static func validateFinalReadSourceBinding(

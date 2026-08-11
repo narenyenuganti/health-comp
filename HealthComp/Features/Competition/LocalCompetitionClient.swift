@@ -380,88 +380,46 @@ enum LocalCompetitionStoreAvailability: Sendable {
     case unavailable
 }
 
-struct LocalCompetitionClient: Sendable {
-    var start: @Sendable () -> AsyncStream<LocalCompetitionPublication>
-    var updates: @Sendable () -> AsyncStream<LocalCompetitionPublication>
-    var reconcileAll: @Sendable (
-        ActivityRefreshTrigger
-    ) async -> LocalCompetitionPublication
-    var accept: @Sendable (CompetitionID) async -> LocalCompetitionPublication
-    var decline: @Sendable (CompetitionID) async -> LocalCompetitionPublication
-    var archive: @Sendable (CompetitionID) async -> LocalCompetitionPublication
-    var rematch: @Sendable (CompetitionID) async -> LocalCompetitionPublication
-    var reinvite: @Sendable () async -> LocalCompetitionPublication
-    var delete: @Sendable (CompetitionID) async -> LocalCompetitionPublication
-    var reconcileNotifications: @Sendable () async -> Void
-    var loadMutedOpponentIdentities: @Sendable () async throws -> Set<String>
-    var setNotificationMuted: @Sendable (
-        _ opponentIdentity: String,
-        _ isMuted: Bool
-    ) async throws -> Void
-    var loadNotificationAuthorizationState: @Sendable () async ->
-        CompetitionNotificationAuthorizationState?
-    var requestNotificationAuthorization: @Sendable () async ->
-        CompetitionNotificationAuthorizationState
-    var waitUntil: @Sendable (Date) async throws -> Void
-    var stop: @Sendable () async -> Void
-
-    init(
-        start: @escaping @Sendable () -> AsyncStream<LocalCompetitionPublication>,
-        updates: @escaping @Sendable () -> AsyncStream<LocalCompetitionPublication>,
-        reconcileAll: @escaping @Sendable (
-            ActivityRefreshTrigger
-        ) async -> LocalCompetitionPublication,
-        accept: @escaping @Sendable (
-            CompetitionID
-        ) async -> LocalCompetitionPublication,
-        decline: @escaping @Sendable (
-            CompetitionID
-        ) async -> LocalCompetitionPublication,
-        archive: @escaping @Sendable (
-            CompetitionID
-        ) async -> LocalCompetitionPublication,
-        rematch: @escaping @Sendable (
-            CompetitionID
-        ) async -> LocalCompetitionPublication,
-        reinvite: @escaping @Sendable () async -> LocalCompetitionPublication,
-        delete: @escaping @Sendable (
-            CompetitionID
-        ) async -> LocalCompetitionPublication = { _ in .inert },
-        reconcileNotifications: @escaping @Sendable () async -> Void = {},
-        loadMutedOpponentIdentities: @escaping @Sendable () async throws ->
-            Set<String> = { [] },
-        setNotificationMuted: @escaping @Sendable (
-            _ opponentIdentity: String,
-            _ isMuted: Bool
-        ) async throws -> Void = { _, _ in },
-        loadNotificationAuthorizationState: @escaping @Sendable () async ->
-            CompetitionNotificationAuthorizationState? = { nil },
-        requestNotificationAuthorization: @escaping @Sendable () async ->
-            CompetitionNotificationAuthorizationState = { .denied },
-        waitUntil: @escaping @Sendable (Date) async throws -> Void,
-        stop: @escaping @Sendable () async -> Void
-    ) {
-        self.start = start
-        self.updates = updates
-        self.reconcileAll = reconcileAll
-        self.accept = accept
-        self.decline = decline
-        self.archive = archive
-        self.rematch = rematch
-        self.reinvite = reinvite
-        self.delete = delete
-        self.reconcileNotifications = reconcileNotifications
-        self.loadMutedOpponentIdentities = loadMutedOpponentIdentities
-        self.setNotificationMuted = setNotificationMuted
-        self.loadNotificationAuthorizationState =
-            loadNotificationAuthorizationState
-        self.requestNotificationAuthorization =
-            requestNotificationAuthorization
-        self.waitUntil = waitUntil
-        self.stop = stop
+extension CompetitionClient {
+    static func make(
+        environment: CompetitionEnvironmentClient,
+        storeAvailability: LocalCompetitionStoreAvailability,
+        configuration: LocalCompetitionRuntimeConfiguration = .live,
+        bootstrapDirection: InvitationDirection = .outgoing,
+        opponentRequest: @escaping @Sendable (CompetitionID) ->
+            OpponentPlanGenerationRequest = { id in
+                OpponentPlanGenerationRequest(
+                    seed: LocalCompetitionIdentity.opponentSeed(for: id),
+                    generatorVersion: .v1,
+                    difficulty: LocalCompetitionIdentity.opponentDifficulty
+                )
+            },
+        idGenerator: @escaping @Sendable (CompetitionID) -> CompetitionID = {
+            LocalCompetitionIdentity.rematchID(for: $0)
+        },
+        notificationCoordinatorFactory: @escaping @Sendable (
+            LocalCompetitionRuntime?
+        ) -> CompetitionNotificationCoordinatorClient = { _ in .noop },
+        notificationPreferences: CompetitionNotificationPreferencesClient =
+            .constant(mutedOpponentIdentities: []),
+        notificationClient: CompetitionNotificationClient? = nil,
+        initialPublicationRevision: UInt64 = 0
+    ) -> Self {
+        localFixture(
+            environment: environment,
+            storeAvailability: storeAvailability,
+            configuration: configuration,
+            bootstrapDirection: bootstrapDirection,
+            opponentRequest: opponentRequest,
+            idGenerator: idGenerator,
+            notificationCoordinatorFactory: notificationCoordinatorFactory,
+            notificationPreferences: notificationPreferences,
+            notificationClient: notificationClient,
+            initialPublicationRevision: initialPublicationRevision
+        )
     }
 
-    static func make(
+    static func localFixture(
         environment: CompetitionEnvironmentClient,
         storeAvailability: LocalCompetitionStoreAvailability,
         configuration: LocalCompetitionRuntimeConfiguration = .live,
@@ -599,18 +557,6 @@ struct LocalCompetitionClient: Sendable {
     }
 }
 
-private extension LocalCompetitionPublication {
-    static let inert = LocalCompetitionPublication(
-        publicationRevision: 0,
-        dashboard: LocalCompetitionDashboard(
-            competitions: [],
-            awards: [],
-            issues: [],
-            hiddenTerminalCompetitionCount: 0
-        )
-    )
-}
-
 private final class LocalCompetitionPublishOnce: @unchecked Sendable {
     private let lock = NSLock()
     private var didPublish = false
@@ -635,13 +581,13 @@ private final class LocalCompetitionPublishOnce: @unchecked Sendable {
     }
 }
 
-extension LocalCompetitionClient: TestDependencyKey {
+extension CompetitionClient: TestDependencyKey {
     static let testValue = closed(issue: .unimplemented)
     static let previewValue = closed(issue: .unimplemented)
 }
 
-extension LocalCompetitionClient: DependencyKey {
-    static let liveValue: LocalCompetitionClient = {
+extension CompetitionClient: DependencyKey {
+    static let liveValue: CompetitionClient = {
         let storeResult = Result { try JSONCompetitionEventStore.live() }
         let availability: LocalCompetitionStoreAvailability
         switch storeResult {
@@ -671,7 +617,7 @@ extension LocalCompetitionClient: DependencyKey {
             preferences = .unavailable
         }
         let notifications = CompetitionNotificationClient.liveValue
-        return make(
+        return localFixture(
             environment: .production(),
             storeAvailability: availability,
             configuration: .live,
@@ -687,13 +633,6 @@ extension LocalCompetitionClient: DependencyKey {
             notificationClient: notifications
         )
     }()
-}
-
-extension DependencyValues {
-    var localCompetitionClient: LocalCompetitionClient {
-        get { self[LocalCompetitionClient.self] }
-        set { self[LocalCompetitionClient.self] = newValue }
-    }
 }
 
 // MARK: - Serialized coordinator

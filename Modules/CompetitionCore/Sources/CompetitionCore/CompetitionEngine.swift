@@ -148,6 +148,9 @@ public struct CompetitionEngine: Sendable {
         authorization: FinalizationAuthorization,
         at completedAt: Date
     ) throws -> CompetitionEvent {
+        guard competition.remoteConfiguration == nil else {
+            throw EngineError.invalidTransition
+        }
         guard case let .tallying(tally) = competition.lifecycle else {
             throw EngineError.invalidTransition
         }
@@ -178,6 +181,9 @@ public struct CompetitionEngine: Sendable {
         _ competition: Competition,
         evidence: FinalReadEvidence
     ) throws -> CompetitionEvent {
+        guard competition.remoteConfiguration == nil else {
+            throw EngineError.invalidTransition
+        }
         guard case .tallying = competition.lifecycle else {
             throw EngineError.invalidTransition
         }
@@ -248,6 +254,14 @@ public struct CompetitionEngine: Sendable {
     ) throws {
         guard event.competitionID == competition.id else {
             throw EngineError.eventForDifferentCompetition
+        }
+        if competition.remoteConfiguration != nil {
+            switch event.kind {
+            case .invitationAccepted, .finalReadRecorded, .competitionFinalized:
+                throw EngineError.invalidTransition
+            default:
+                break
+            }
         }
         if case let .finalReadRecorded(record) = event.kind {
             try validateOpponentPlanBinding(
@@ -337,6 +351,9 @@ public struct CompetitionEngine: Sendable {
             competition.lifecycle = .tallying(tally)
 
         case let .competitionFinalized(record):
+            guard competition.remoteConfiguration == nil else {
+                throw EngineError.invalidFinalizationAuthorization
+            }
             guard case let .tallying(tally) = competition.lifecycle else {
                 throw EngineError.invalidTransition
             }

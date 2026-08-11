@@ -1885,7 +1885,7 @@ final class CompetitionReplayTests: XCTestCase {
         )
         let replayed = try CompetitionReplayer.replay(roundTripped)
 
-        XCTAssertEqual(journal.envelopes.last?.payloadVersion, 3)
+        XCTAssertEqual(journal.envelopes.last?.payloadVersion, 4)
         XCTAssertEqual(replayed.activityRefresh.latestAttempt, refresh)
         XCTAssertEqual(
             replayed.activityRefresh.lastSuccessfulFullWindowRefreshAt,

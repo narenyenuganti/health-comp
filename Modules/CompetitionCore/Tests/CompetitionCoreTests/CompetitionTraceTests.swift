@@ -90,7 +90,7 @@ final class CompetitionTraceTests: XCTestCase {
             file: file,
             line: line
         )
-        XCTAssertEqual(accelerated.payloadVersion, 3, file: file, line: line)
+        XCTAssertEqual(accelerated.payloadVersion, 4, file: file, line: line)
         XCTAssertTrue(
             accelerated.coverage.contains("dst-boundary"),
             file: file,
@@ -331,7 +331,7 @@ private struct CompetitionTraceRunner {
         let terminal = try CompetitionSemanticTerminalProjection(
             projection: projection
         )
-        XCTAssertTrue(journal.envelopes.allSatisfy { $0.payloadVersion == 3 })
+        XCTAssertTrue(journal.envelopes.allSatisfy { $0.payloadVersion == 4 })
 
         let notificationIDs = journal.envelopes.compactMap { envelope in
             envelope.semanticEventID.hasPrefix("competition-notification:")

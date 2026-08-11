@@ -1,0 +1,150 @@
+{
+  "payloadVersion" : 4,
+  "scenario" : "remote-best-available-incomplete",
+  "schema" : "healthcomp-remote-competition-trace-v1",
+  "semanticEventIDs" : [
+    "remote-configuration-accepted:remote-configuration:aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa:11111111-1111-1111-1111-111111111111:22222222-2222-2222-2222-222222222222:America\/Los_Angeles:1-2026-8-10:healthcomp.activity-score.v1:1:1787000000.0",
+    "competition-event:v1:aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa:competition-started",
+    "competition-event:v1:aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa:day-1-closed",
+    "competition-event:v1:aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa:day-2-closed",
+    "competition-event:v1:aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa:day-3-closed",
+    "competition-event:v1:aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa:day-4-closed",
+    "competition-event:v1:aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa:day-5-closed",
+    "competition-event:v1:aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa:day-6-closed",
+    "competition-event:v1:aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa:final-day-started",
+    "competition-event:v1:aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa:day-7-closed",
+    "competition-event:v1:aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa:tally-started",
+    "remote-score-revision:aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa:11111111-1111-1111-1111-111111111111:1:101:0000000000000000000000000000000000000000000000000000000000000065:1:1:1787000001.0",
+    "remote-score-revision:aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa:11111111-1111-1111-1111-111111111111:2:102:0000000000000000000000000000000000000000000000000000000000000066:2:2:1787000002.0",
+    "remote-score-revision:aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa:11111111-1111-1111-1111-111111111111:3:103:0000000000000000000000000000000000000000000000000000000000000067:3:3:1787000003.0",
+    "remote-score-revision:aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa:11111111-1111-1111-1111-111111111111:4:104:0000000000000000000000000000000000000000000000000000000000000068:4:4:1787000004.0",
+    "remote-score-revision:aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa:11111111-1111-1111-1111-111111111111:5:105:0000000000000000000000000000000000000000000000000000000000000069:5:5:1787000005.0",
+    "remote-score-revision:aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa:11111111-1111-1111-1111-111111111111:6:106:000000000000000000000000000000000000000000000000000000000000006a:6:6:1787000006.0",
+    "remote-score-revision:aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa:22222222-2222-2222-2222-222222222222:1:201:00000000000000000000000000000000000000000000000000000000000000c9:1:101:1787000101.0",
+    "shared-result:v2:aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa:11111111-1111-1111-1111-111111111111:22222222-2222-2222-2222-222222222222:8a7b7819e1db2dbe3fa2e9b68c2283d8ace584cd11ed59341c1584796aa278fd:99:1787000000.0"
+  ],
+  "terminal" : {
+    "basis" : "bestAvailable",
+    "competitionID" : "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+    "completedAt" : 808692800,
+    "counterpartyKind" : "remote",
+    "lifecycle" : "completed",
+    "opponentPoints" : 14.28,
+    "outcome" : "loss",
+    "remoteDays" : [
+      {
+        "centiPoints" : 101,
+        "ordinal" : 1,
+        "profileID" : "11111111-1111-1111-1111-111111111111",
+        "source" : "accepted_revision",
+        "status" : "points"
+      },
+      {
+        "centiPoints" : 102,
+        "ordinal" : 2,
+        "profileID" : "11111111-1111-1111-1111-111111111111",
+        "source" : "accepted_revision",
+        "status" : "points"
+      },
+      {
+        "centiPoints" : 103,
+        "ordinal" : 3,
+        "profileID" : "11111111-1111-1111-1111-111111111111",
+        "source" : "accepted_revision",
+        "status" : "points"
+      },
+      {
+        "centiPoints" : 104,
+        "ordinal" : 4,
+        "profileID" : "11111111-1111-1111-1111-111111111111",
+        "source" : "accepted_revision",
+        "status" : "points"
+      },
+      {
+        "centiPoints" : 105,
+        "ordinal" : 5,
+        "profileID" : "11111111-1111-1111-1111-111111111111",
+        "source" : "accepted_revision",
+        "status" : "points"
+      },
+      {
+        "centiPoints" : 106,
+        "ordinal" : 6,
+        "profileID" : "11111111-1111-1111-1111-111111111111",
+        "source" : "accepted_revision",
+        "status" : "points"
+      },
+      {
+        "ordinal" : 7,
+        "profileID" : "11111111-1111-1111-1111-111111111111",
+        "reason" : "missing",
+        "source" : "deadline_missing",
+        "status" : "unavailable"
+      },
+      {
+        "centiPoints" : 201,
+        "ordinal" : 1,
+        "profileID" : "22222222-2222-2222-2222-222222222222",
+        "source" : "accepted_revision",
+        "status" : "points"
+      },
+      {
+        "centiPoints" : 202,
+        "ordinal" : 2,
+        "profileID" : "22222222-2222-2222-2222-222222222222",
+        "source" : "accepted_revision",
+        "status" : "points"
+      },
+      {
+        "centiPoints" : 203,
+        "ordinal" : 3,
+        "profileID" : "22222222-2222-2222-2222-222222222222",
+        "source" : "accepted_revision",
+        "status" : "points"
+      },
+      {
+        "centiPoints" : 204,
+        "ordinal" : 4,
+        "profileID" : "22222222-2222-2222-2222-222222222222",
+        "source" : "accepted_revision",
+        "status" : "points"
+      },
+      {
+        "centiPoints" : 205,
+        "ordinal" : 5,
+        "profileID" : "22222222-2222-2222-2222-222222222222",
+        "source" : "accepted_revision",
+        "status" : "points"
+      },
+      {
+        "centiPoints" : 206,
+        "ordinal" : 6,
+        "profileID" : "22222222-2222-2222-2222-222222222222",
+        "source" : "accepted_revision",
+        "status" : "points"
+      },
+      {
+        "centiPoints" : 207,
+        "ordinal" : 7,
+        "profileID" : "22222222-2222-2222-2222-222222222222",
+        "source" : "accepted_revision",
+        "status" : "points"
+      }
+    ],
+    "remoteOwnerProfileID" : "11111111-1111-1111-1111-111111111111",
+    "remoteOwnerWindowCommitment" : "d078e94cfcc6b825bd0c3d4ba9177a905a912376f7805b39433660efebdb3c48",
+    "remoteParticipantProfileID" : "22222222-2222-2222-2222-222222222222",
+    "remoteParticipantWindowCommitment" : "dfeeb4c4e2eccaa91ebef9b77cb7641e33a3efee69f49ea4623b5462b2a055a3",
+    "remoteResultHash" : "8a7b7819e1db2dbe3fa2e9b68c2283d8ace584cd11ed59341c1584796aa278fd",
+    "scheduleTimeZoneIdentifier" : "America\/Los_Angeles",
+    "scoringPolicyIdentity" : "healthcomp.activity-score.v1",
+    "startDay" : {
+      "day" : 10,
+      "era" : 1,
+      "month" : 8,
+      "timeZoneIdentifier" : "America\/Los_Angeles",
+      "year" : 2026
+    },
+    "userPoints" : 6.21
+  }
+}
