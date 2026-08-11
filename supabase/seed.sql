@@ -1,0 +1,1 @@
+-- Intentionally empty until the production schema defines privacy-safe fixtures.
