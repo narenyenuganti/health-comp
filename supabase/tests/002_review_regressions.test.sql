@@ -36,9 +36,10 @@ select is(
         'competition_awards', 'device_installations', 'support_events'
       )
       and grantee in ('anon', 'authenticated')
+      and privilege_type <> 'SELECT'
   ),
   0::bigint,
-  'Task 2 exposes no table privileges before Task 3 installs least-privilege grants'
+  'API roles receive no direct non-read table privileges'
 );
 
 select is(
