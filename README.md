@@ -1,71 +1,73 @@
 # HealthComp
 
-A fitness competition app for iOS. Challenge friends to 1v1, group, or team competitions scored across multiple health metrics — calories, exercise, steps, sleep, and more. Built with SwiftUI, TCA, and Supabase.
+HealthComp is a local-first iPhone Activity competition. It reads the owner's
+Activity summaries from HealthKit, pairs them with a deterministic simulated
+rival, and runs a seven-calendar-day competition without an account or custom
+backend.
 
 ## What it does
 
-- **Compete** — Challenge friends to 7-day (or custom duration) health competitions with preset or custom scoring formulas
-- **Fair scoring** — Goals lock when a competition starts, fixing the calorie target exploit from Apple's Activity Competitions
-- **Multi-metric** — Score across calories, exercise minutes, stand hours, steps, sleep, and distance with configurable weights
-- **Friends** — Find friends by username, contacts, or invite link. See their daily activity and rivalry stats
-- **Awards** — Earn badges for wins, streaks, and milestones. Unlock cosmetics with Competitive Points
-- **Real health data** — Pulls from HealthKit with abstractions for Fitbit/Garmin
+- Runs invitation, scheduled, active, final-day, tallying, completed, archive,
+  rematch, and local-deletion states on one iPhone.
+- Scores Move, Exercise, and Stand or Roll progress through a versioned policy.
+- Re-reads the complete seven-day HealthKit window so late revisions can be
+  reconciled before finalization.
+- Persists an event journal and notification decisions locally for deterministic
+  replay after relaunch.
+- Provides DEBUG-only accelerated fixtures for lifecycle, accessibility, and
+  parity testing without mixing fixture data with production HealthKit dates.
 
 ## Tech stack
 
-- **iOS:** Swift, SwiftUI, The Composable Architecture (TCA)
-- **Backend:** Supabase (Postgres, Auth, Realtime, Edge Functions)
-- **Health data:** HealthKit (primary), protocol-based abstraction for future providers
-- **Auth:** Apple Sign In via Supabase Auth
+- Swift 5.9 language mode, SwiftUI, and The Composable Architecture
+- `CompetitionCore`, a Foundation-only local Swift package
+- HealthKit and UserNotifications adapters in the iOS application target
+- XCTest and XCUITest, with XcodeGen as the project source of truth
 
 ## Project structure
 
+```text
+HealthComp/                         iOS app, local runtime, and adapters
+HealthCompTests/                    iOS unit and integration tests
+HealthCompUITests/                  accelerated lifecycle and accessibility tests
+Modules/CompetitionCore/           deterministic event-sourced domain engine
+Supabase/                           historical backend reference only; not linked
+project.yml                         XcodeGen project definition
 ```
-HealthComp/
-├── HealthComp/
-│   ├── App/              # App entry point, root router
-│   ├── Config/           # Supabase credentials
-│   ├── Models/           # User, HealthMetric, Competition, Friendship, Badge
-│   ├── Features/
-│   │   ├── Auth/         # Apple Sign In
-│   │   ├── Onboarding/   # Profile setup
-│   │   ├── Compete/      # Active competitions, invites
-│   │   ├── Friends/      # Friend list, search, requests
-│   │   ├── Awards/       # Badges, cosmetics shop
-│   │   └── MainTab/      # Tab bar composition
-│   └── Services/         # HealthKit provider, Supabase client, sync
-├── HealthCompTests/      # 42 unit tests
-└── Supabase/
-    ├── migrations/       # 6 SQL migrations
-    └── functions/        # Scoring + lifecycle edge functions
-```
+
+The `Supabase/` migrations and functions are intentionally retained as historical
+reference. The application target does not import or link the Supabase SDK.
 
 ## Setup
 
-1. Clone the repo
-2. Install [XcodeGen](https://github.com/yonaskolb/XcodeGen): `brew install xcodegen`
-3. Create a [Supabase](https://supabase.com) project and run the migrations in `Supabase/migrations/` in order
-4. Enable Apple Sign In in Supabase Auth settings
-5. Update `HealthComp/Config/Secrets.swift` with your Supabase URL and anon key
-6. Generate the Xcode project: `cd HealthComp && xcodegen generate`
-7. Open `HealthComp.xcodeproj` and run on a device (HealthKit requires a real device)
+1. Install XcodeGen: `brew install xcodegen`.
+2. Generate the project from the repository root: `xcodegen generate`.
+3. Open `HealthComp.xcodeproj`.
+4. Use the DEBUG competition test lab on an installed simulator, or run the
+   production environment on a physical iPhone for real HealthKit data.
+
+HealthKit authorization, background delivery, and real Activity updates require
+physical-device verification. The accelerated fixtures exercise logical
+calendar boundaries but do not prove Apple-identical timing or Watch-sync
+detection.
+
+## Verification
+
+```sh
+swift test --package-path Modules/CompetitionCore
+xcodebuild test \
+  -project HealthComp.xcodeproj \
+  -scheme HealthComp \
+  -destination 'platform=iOS Simulator,name=iPhone 17 Pro'
+```
 
 ## Scoring
 
-Competitions use a weighted formula. Each metric earns points as a percentage of the user's locked goal, multiplied by its weight:
-
-```
-dailyScore = sum(actualValue / lockedGoal * 100 * weight) for each metric
-           = min(dailyScore, dailyCap)
-```
-
-**Presets:**
-| Mode | Metrics | Daily Cap |
-|------|---------|-----------|
-| Active Living | Calories 40%, Exercise 35%, Stand 25% | 600 |
-| Total Wellness | Calories 25%, Exercise 25%, Stand 15%, Sleep 20%, Steps 15% | 600 |
-| Sleep Challenge | Sleep 70%, Steps 15%, Exercise 15% | 600 |
-| Step Battle | Steps 100% | 600 |
+The default policy adds the owner's Move, Exercise, and Stand or Roll goal
+percentages and caps each accepted day at 600 points. Policy identity,
+quantization, unavailable data, revisions, reconciliation, and the frozen
+seven-day ledger are explicit domain state; the app does not claim undocumented
+Apple score quantization.
 
 ## License
 
