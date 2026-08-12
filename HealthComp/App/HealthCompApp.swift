@@ -5,13 +5,25 @@ import SwiftUI
 struct HealthCompApp: App {
     @UIApplicationDelegateAdaptor(HealthCompAppDelegate.self)
     private var appDelegate
+    private let supabaseClientProvider: SupabaseClientProvider
 #if DEBUG
     private let launchDecision: CompetitionTestLabLaunchDecision
     private let liveStore: StoreOf<AppFeature>?
 
     init() {
+        self.init(
+            arguments: ProcessInfo.processInfo.arguments,
+            supabaseClientProvider: .live()
+        )
+    }
+
+    init(
+        arguments: [String],
+        supabaseClientProvider: SupabaseClientProvider
+    ) {
+        self.supabaseClientProvider = supabaseClientProvider
         let decision = CompetitionTestLabLaunchParser.decision(
-            arguments: ProcessInfo.processInfo.arguments
+            arguments: arguments
         )
         self.launchDecision = decision
         switch decision {
@@ -28,6 +40,14 @@ struct HealthCompApp: App {
 #else
     private let store = Store(initialState: AppFeature.State()) {
         AppFeature()
+    }
+
+    init() {
+        self.init(supabaseClientProvider: .live())
+    }
+
+    init(supabaseClientProvider: SupabaseClientProvider) {
+        self.supabaseClientProvider = supabaseClientProvider
     }
 #endif
 

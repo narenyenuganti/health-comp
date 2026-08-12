@@ -28,6 +28,7 @@
 		3D7EA73CDC827C2224DFF76F /* CompetitionNotificationPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78CD3641AF9961D0DE49E710 /* CompetitionNotificationPreferences.swift */; };
 		3E9AFCB2C2C40C2F0662D72E /* MainTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8DE98F9A6E165CAF241964EA /* MainTabView.swift */; };
 		3EF61DC4B5E1D8F171C71930 /* CompetitionNotificationModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 429BFB72B91624812F8A02B6 /* CompetitionNotificationModels.swift */; };
+		40513CB901AC87FFF3A78ADB /* SupabaseConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = BAD2EA144469EBA09645C0C8 /* SupabaseConfiguration.swift */; };
 		41CF9795CB853B8522FC9BC6 /* CompetitionResultView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FCDBD0348C760C1907099902 /* CompetitionResultView.swift */; };
 		4876547B798FDFBA4EEFDE75 /* HealthKitProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E1EFEB41E5D4ADC7484F272 /* HealthKitProvider.swift */; };
 		510A05F868BEFC10DAAF9862 /* HealthCompAppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6619D758FF31EC86B6996330 /* HealthCompAppDelegate.swift */; };
@@ -37,6 +38,7 @@
 		5F0736352CDB182DF626EC7C /* remote-stable-win.json in Resources */ = {isa = PBXBuildFile; fileRef = DF2EB15D15A1AFC4A22883D0 /* remote-stable-win.json */; };
 		6130C4E53FA5F34F75A83996 /* LocalCompetitionRuntimeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D93500BA9AA5B7AF63C71F7 /* LocalCompetitionRuntimeTests.swift */; };
 		617C5F24C583E12019770400 /* CompetitionNotificationClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35062161F195329954CCC954 /* CompetitionNotificationClientTests.swift */; };
+		63626B6583F3AA09DED4C760 /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = 765098240911111A6F629AE3 /* Supabase */; };
 		664893A2DD239F6897D6B582 /* CompetitionDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45B4CB5326E660812EDE995E /* CompetitionDetailView.swift */; };
 		68146909378E552F35D6697F /* HealthMetric.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EA3F1951C080758224B44E2 /* HealthMetric.swift */; };
 		6889DEEA038530AC44D1DD99 /* FixtureActivitySourceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CC1985FE34C77217A5DAAD0 /* FixtureActivitySourceTests.swift */; };
@@ -51,6 +53,7 @@
 		9DD3D5044A619666D0DEFE03 /* CompetitionSharingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A050B4C0326B86FA4332142F /* CompetitionSharingView.swift */; };
 		A39001B8E8145707D693D215 /* AppFeature.swift in Sources */ = {isa = PBXBuildFile; fileRef = EC90AB3B1EDF7C788EF0A48F /* AppFeature.swift */; };
 		A48D3EC504E6744EC268C76F /* CompetitionNotificationCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 71260DEAA6FF4102413E26F8 /* CompetitionNotificationCoordinatorTests.swift */; };
+		A90E453F307E46A37BD0C58B /* SupabaseConfigurationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71009CDE26B9E5DEFE8C209 /* SupabaseConfigurationTests.swift */; };
 		A933CF46EE745663C924FB92 /* FixtureActivitySource.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DD763262122302C88AA2F5 /* FixtureActivitySource.swift */; };
 		B23F0459A115348014EF4500 /* CompetitionInviteView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F72580283C9D599F21484EB9 /* CompetitionInviteView.swift */; };
 		B29FF2F0455C354D914ED698 /* HealthKitProviderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF7DE04D723EFB17C6B0F55E /* HealthKitProviderTests.swift */; };
@@ -99,6 +102,7 @@
 		3BE3EF97EDDB31A7DA80B856 /* CompetitionTestLabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionTestLabView.swift; sourceTree = "<group>"; };
 		429BFB72B91624812F8A02B6 /* CompetitionNotificationModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionNotificationModels.swift; sourceTree = "<group>"; };
 		44597F797F2AC9BA7029B1DF /* JSONCompetitionEventStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JSONCompetitionEventStore.swift; sourceTree = "<group>"; };
+		44AD870A448F41B9785BF328 /* Staging.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Staging.xcconfig; sourceTree = "<group>"; };
 		45B4CB5326E660812EDE995E /* CompetitionDetailView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionDetailView.swift; sourceTree = "<group>"; };
 		461F8BCB14AE6E70D8BB4DBE /* CompetitionPresentationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionPresentationTests.swift; sourceTree = "<group>"; };
 		491111F52C594F7DF05E48C4 /* remote-stable-tie.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "remote-stable-tie.json"; sourceTree = "<group>"; };
@@ -122,18 +126,22 @@
 		A050B4C0326B86FA4332142F /* CompetitionSharingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionSharingView.swift; sourceTree = "<group>"; };
 		A1AAA11C718845811F2393C0 /* LocalCompetitionLifecycleUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalCompetitionLifecycleUITests.swift; sourceTree = "<group>"; };
 		A27031C9D6844A658A3C19CE /* AppFeatureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppFeatureTests.swift; sourceTree = "<group>"; };
+		A71009CDE26B9E5DEFE8C209 /* SupabaseConfigurationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupabaseConfigurationTests.swift; sourceTree = "<group>"; };
 		A825F9D5426EB2DD168E91CE /* CompetitionEnvironmentClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionEnvironmentClient.swift; sourceTree = "<group>"; };
 		AB243F0BB966F7049D05D56C /* CompetitionTraceIntegrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionTraceIntegrationTests.swift; sourceTree = "<group>"; };
 		ABC64842924F0B681BDB3AC9 /* loss.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = loss.json; sourceTree = "<group>"; };
 		AFA09548C8311BA7BC4F9C17 /* CompetitionNotificationPlanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionNotificationPlanner.swift; sourceTree = "<group>"; };
+		BAD2EA144469EBA09645C0C8 /* SupabaseConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupabaseConfiguration.swift; sourceTree = "<group>"; };
 		BCFF8829F7432D248978C4F1 /* CompetitionNotificationClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionNotificationClient.swift; sourceTree = "<group>"; };
 		C0DD763262122302C88AA2F5 /* FixtureActivitySource.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FixtureActivitySource.swift; sourceTree = "<group>"; };
+		C16133B055FC48D62F572F7B /* Development.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Development.xcconfig; sourceTree = "<group>"; };
 		C169E842F9AAD480353D38DD /* HealthComp.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = HealthComp.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C1D8B3EF060D8C52F2299C95 /* MainTabFeature.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabFeature.swift; sourceTree = "<group>"; };
 		C3DFF07C8F1DAF91F666CE2C /* MainTabFeatureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabFeatureTests.swift; sourceTree = "<group>"; };
 		CF7DE04D723EFB17C6B0F55E /* HealthKitProviderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthKitProviderTests.swift; sourceTree = "<group>"; };
 		DC8F09779188D9A1FE1C4BF7 /* HealthDataProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthDataProvider.swift; sourceTree = "<group>"; };
 		DF2EB15D15A1AFC4A22883D0 /* remote-stable-win.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "remote-stable-win.json"; sourceTree = "<group>"; };
+		E319BF38E9A52EF2BC2D9349 /* Production.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Production.xcconfig; sourceTree = "<group>"; };
 		E38A46C1086F6393DC0FA12A /* LocalCompetitionClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalCompetitionClientTests.swift; sourceTree = "<group>"; };
 		E8D842D51C03C651E67B1405 /* CompetitionRoutingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionRoutingTests.swift; sourceTree = "<group>"; };
 		EC90AB3B1EDF7C788EF0A48F /* AppFeature.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppFeature.swift; sourceTree = "<group>"; };
@@ -153,6 +161,7 @@
 			files = (
 				75D39A881B6BCE6ACD99671C /* CompetitionCore in Frameworks */,
 				34375EA0795DBFCC09E7D120 /* ComposableArchitecture in Frameworks */,
+				63626B6583F3AA09DED4C760 /* Supabase in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -179,6 +188,7 @@
 		1F20F7610CE2BD04006BCF7A = {
 			isa = PBXGroup;
 			children = (
+				92F4880E01328AB594F53E3A /* Configuration */,
 				60CBD17CD7BBFD3BC9FB34F4 /* HealthComp */,
 				6E41142DDDABF7B3BBBB7231 /* HealthCompTests */,
 				9F5D18D2C36062228CA2B182 /* HealthCompUITests */,
@@ -222,6 +232,7 @@
 				4E1EFEB41E5D4ADC7484F272 /* HealthKitProvider.swift */,
 				44597F797F2AC9BA7029B1DF /* JSONCompetitionEventStore.swift */,
 				16F2F6B05D0D979314129070 /* LocalCompetitionRuntime.swift */,
+				BAD2EA144469EBA09645C0C8 /* SupabaseConfiguration.swift */,
 			);
 			path = Services;
 			sourceTree = "<group>";
@@ -259,6 +270,7 @@
 				E38A46C1086F6393DC0FA12A /* LocalCompetitionClientTests.swift */,
 				1D93500BA9AA5B7AF63C71F7 /* LocalCompetitionRuntimeTests.swift */,
 				C3DFF07C8F1DAF91F666CE2C /* MainTabFeatureTests.swift */,
+				A71009CDE26B9E5DEFE8C209 /* SupabaseConfigurationTests.swift */,
 				98539EF7B15E5910B24EE8A2 /* Fixtures */,
 			);
 			path = HealthCompTests;
@@ -295,6 +307,16 @@
 				620B41081DED3A911320E1F0 /* LocalCompetitionClient.swift */,
 			);
 			path = Competition;
+			sourceTree = "<group>";
+		};
+		92F4880E01328AB594F53E3A /* Configuration */ = {
+			isa = PBXGroup;
+			children = (
+				C16133B055FC48D62F572F7B /* Development.xcconfig */,
+				E319BF38E9A52EF2BC2D9349 /* Production.xcconfig */,
+				44AD870A448F41B9785BF328 /* Staging.xcconfig */,
+			);
+			path = Configuration;
 			sourceTree = "<group>";
 		};
 		98539EF7B15E5910B24EE8A2 /* Fixtures */ = {
@@ -394,6 +416,7 @@
 			packageProductDependencies = (
 				94AE5B1EA8D73C40C59A519D /* CompetitionCore */,
 				C19E50C9B46A4490A6CFAAEE /* ComposableArchitecture */,
+				765098240911111A6F629AE3 /* Supabase */,
 			);
 			productName = HealthComp;
 			productReference = C169E842F9AAD480353D38DD /* HealthComp.app */;
@@ -424,6 +447,7 @@
 			minimizedProjectReferenceProxies = 1;
 			packageReferences = (
 				E447A5458A1BF1E4EAE6EE7D /* XCRemoteSwiftPackageReference "swift-composable-architecture" */,
+				EEF499805781B01BF3CC48F7 /* XCRemoteSwiftPackageReference "supabase-swift" */,
 				462A1D48F134154E6EF5A3C7 /* XCLocalSwiftPackageReference "Modules/CompetitionCore" */,
 			);
 			preferredProjectObjectVersion = 77;
@@ -496,6 +520,7 @@
 				D187775AC911BF131EFF720E /* LocalCompetitionRuntime.swift in Sources */,
 				68E7EF63C482B3C302F04EBD /* MainTabFeature.swift in Sources */,
 				3E9AFCB2C2C40C2F0662D72E /* MainTabView.swift in Sources */,
+				40513CB901AC87FFF3A78ADB /* SupabaseConfiguration.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -521,6 +546,7 @@
 				5DDCDC3DA51E4EA5BD74374C /* LocalCompetitionClientTests.swift in Sources */,
 				6130C4E53FA5F34F75A83996 /* LocalCompetitionRuntimeTests.swift in Sources */,
 				73F853265BC75C365CD2BB2B /* MainTabFeatureTests.swift in Sources */,
+				A90E453F307E46A37BD0C58B /* SupabaseConfigurationTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -540,6 +566,24 @@
 /* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
+		153148AA51E80314704AC5B2 /* Staging */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.narenyenuganti.HealthCompUITests;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.9;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_TARGET_NAME = HealthComp;
+			};
+			name = Staging;
+		};
 		2C4AEBF1A88A7082079BE834 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -576,6 +620,63 @@
 			};
 			name = Release;
 		};
+		600A9BE9926C0442C8AE0C18 /* Staging */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = 44AD870A448F41B9785BF328 /* Staging.xcconfig */;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Staging;
+		};
 		702F58129DE03E54C4F611EA /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -594,8 +695,27 @@
 			};
 			name = Release;
 		};
+		7247BCBF57150B28700B6F32 /* Staging */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.narenyenuganti.HealthCompTests;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.9;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/HealthComp.app/HealthComp";
+			};
+			name = Staging;
+		};
 		9ACD9AD6B4809E0A513B5B33 /* Release */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = E319BF38E9A52EF2BC2D9349 /* Production.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ANALYZER_NONNULL = YES;
@@ -652,6 +772,7 @@
 		};
 		AE61E2B2A54B7508E591590A /* Debug */ = {
 			isa = XCBuildConfiguration;
+			baseConfigurationReference = C16133B055FC48D62F572F7B /* Development.xcconfig */;
 			buildSettings = {
 				ALWAYS_SEARCH_USER_PATHS = NO;
 				CLANG_ANALYZER_NONNULL = YES;
@@ -712,6 +833,24 @@
 				SWIFT_VERSION = 5.0;
 			};
 			name = Debug;
+		};
+		B8763EED9C890C27FFBF35F0 /* Staging */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = HealthComp/Resources/HealthComp.entitlements;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				INFOPLIST_FILE = HealthComp/Resources/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.narenyenuganti.HealthComp;
+				SDKROOT = iphoneos;
+				SWIFT_VERSION = 5.9;
+				TARGETED_DEVICE_FAMILY = 1;
+			};
+			name = Staging;
 		};
 		C8A9CBB953B823809AED9646 /* Debug */ = {
 			isa = XCBuildConfiguration;
@@ -775,6 +914,7 @@
 			buildConfigurations = (
 				C8A9CBB953B823809AED9646 /* Debug */,
 				702F58129DE03E54C4F611EA /* Release */,
+				7247BCBF57150B28700B6F32 /* Staging */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
@@ -784,6 +924,7 @@
 			buildConfigurations = (
 				AE61E2B2A54B7508E591590A /* Debug */,
 				9ACD9AD6B4809E0A513B5B33 /* Release */,
+				600A9BE9926C0442C8AE0C18 /* Staging */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
@@ -793,6 +934,7 @@
 			buildConfigurations = (
 				DF88132285D1FFD65AA9A8E7 /* Debug */,
 				4D394CE778E318D67D463D2B /* Release */,
+				153148AA51E80314704AC5B2 /* Staging */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
@@ -802,6 +944,7 @@
 			buildConfigurations = (
 				2C4AEBF1A88A7082079BE834 /* Debug */,
 				DA07BF8D19C87085FA9ED89C /* Release */,
+				B8763EED9C890C27FFBF35F0 /* Staging */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;
@@ -824,12 +967,25 @@
 				minimumVersion = 1.17.0;
 			};
 		};
+		EEF499805781B01BF3CC48F7 /* XCRemoteSwiftPackageReference "supabase-swift" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/supabase/supabase-swift";
+			requirement = {
+				kind = exactVersion;
+				version = 2.49.0;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
 		72D0E717AD59302E2D046DE9 /* CompetitionCore */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = CompetitionCore;
+		};
+		765098240911111A6F629AE3 /* Supabase */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = EEF499805781B01BF3CC48F7 /* XCRemoteSwiftPackageReference "supabase-swift" */;
+			productName = Supabase;
 		};
 		94AE5B1EA8D73C40C59A519D /* CompetitionCore */ = {
 			isa = XCSwiftPackageProductDependency;

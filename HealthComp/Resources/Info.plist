@@ -31,6 +31,10 @@
 	<string>1</string>
 	<key>NSHealthShareUsageDescription</key>
 	<string>HealthComp reads your activity data to score competitions with friends.</string>
+	<key>SUPABASE_PUBLISHABLE_KEY</key>
+	<string>$(SUPABASE_PUBLISHABLE_KEY)</string>
+	<key>SUPABASE_URL</key>
+	<string>$(SUPABASE_URL)</string>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
