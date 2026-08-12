@@ -6,6 +6,7 @@ REPO_ROOT=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
 STATUS_ENV=$(mktemp "${TMPDIR:-/tmp}/healthcomp-invite-status.XXXXXX")
 TEST_OUTPUT=$(mktemp "${TMPDIR:-/tmp}/healthcomp-invite-tests.XXXXXX")
 FUNCTION_LOG=$(mktemp "${TMPDIR:-/tmp}/healthcomp-invite-functions.XXXXXX")
+FUNCTION_ENV=$(mktemp "${TMPDIR:-/tmp}/healthcomp-invite-env.XXXXXX")
 FUNCTIONS_PID=""
 TEST_PID=""
 
@@ -25,7 +26,7 @@ cleanup() {
     echo "post-run local database reset failed" >&2
     result=1
   fi
-  rm -f "$STATUS_ENV" "$TEST_OUTPUT" "$FUNCTION_LOG"
+  rm -f "$STATUS_ENV" "$TEST_OUTPUT" "$FUNCTION_LOG" "$FUNCTION_ENV"
   exit "$result"
 }
 trap cleanup EXIT INT TERM
@@ -76,6 +77,9 @@ export SUPABASE_ANON_KEY="$ANON_KEY"
 export SUPABASE_SERVICE_ROLE_KEY="$SERVICE_ROLE_KEY"
 export HEALTHCOMP_TEST_DATABASE_URL="$DB_URL"
 export HEALTHCOMP_RUN_INVITE_INTEGRATION=1
+printf '%s\n' \
+  'INVITE_TOKEN_DERIVATION_KEY_V1=healthcomp-local-invite-derivation-v1-only' \
+  >"$FUNCTION_ENV"
 
 attempt=0
 while [ "$attempt" -lt 30 ]; do
@@ -94,7 +98,7 @@ if [ "$attempt" -eq 30 ]; then
   exit 1
 fi
 
-supabase functions serve >"$FUNCTION_LOG" 2>&1 &
+supabase functions serve --env-file "$FUNCTION_ENV" >"$FUNCTION_LOG" 2>&1 &
 FUNCTIONS_PID=$!
 
 attempt=0
@@ -130,12 +134,14 @@ fi
 TEST_PID=""
 if [ "$test_status" -ne 0 ]; then
   cat "$TEST_OUTPUT"
+  echo "Edge Functions child log:" >&2
+  cat "$FUNCTION_LOG" >&2
   exit 1
 fi
 cat "$TEST_OUTPUT"
 
-if ! grep -q "local JWT integration permits exactly one concurrent claimant .* ok" "$TEST_OUTPUT"; then
-  echo "real-JWT concurrency test did not run to completion" >&2
+if ! grep -q "local JWT integration recovers concurrent create and permits exactly one concurrent claimant .* ok" "$TEST_OUTPUT"; then
+  echo "real-JWT create-recovery and claim concurrency test did not run to completion" >&2
   exit 1
 fi
 if grep -q "ignored" "$TEST_OUTPUT"; then

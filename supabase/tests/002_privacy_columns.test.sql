@@ -13,7 +13,7 @@ select columns_are(
 
 select columns_are(
   'public', 'competitions',
-  array['id', 'creator_profile_id', 'time_zone_identifier', 'start_day', 'scoring_policy_identity', 'lifecycle', 'invitation_expires_at', 'best_available_deadline', 'rematch_parent_id', 'next_server_seq', 'created_at', 'updated_at']::name[],
+  array['id', 'creator_profile_id', 'time_zone_identifier', 'start_day', 'scoring_policy_identity', 'lifecycle', 'invitation_expires_at', 'best_available_deadline', 'rematch_parent_id', 'next_server_seq', 'created_at', 'updated_at', 'invite_creation_idempotency_key', 'invite_token_derivation_version']::name[],
   'competitions exposes only approved columns'
 );
 
@@ -55,7 +55,7 @@ select columns_are(
 
 select columns_are(
   'public', 'device_installations',
-  array['id', 'profile_id', 'apns_token', 'environment', 'state', 'created_at', 'updated_at']::name[],
+  array['id', 'profile_id', 'apns_token', 'environment', 'state', 'created_at', 'updated_at', 'installation_id']::name[],
   'device installations expose only approved columns'
 );
 
@@ -67,8 +67,8 @@ select columns_are(
 
 select columns_are(
   'public', 'competition_change_log',
-  array['competition_id', 'server_seq', 'change_kind', 'entity_id', 'occurred_at']::name[],
-  'change log exposes only cursor metadata'
+  array['competition_id', 'server_seq', 'change_kind', 'entity_id', 'occurred_at', 'payload_snapshot']::name[],
+  'change log stores only cursor metadata and closed safe payload snapshots'
 );
 
 select is(

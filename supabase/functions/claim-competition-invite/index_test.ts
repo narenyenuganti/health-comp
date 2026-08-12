@@ -185,9 +185,11 @@ Deno.test("claim keeps unexpected database failures retryable", async () => {
 
 // This test is enabled in the verification command after the local functions are
 // served with their default platform JWT verification. It intentionally uses
-// real Auth-issued access tokens and races two different authenticated callers.
+// real Auth-issued access tokens, races an exact create retry, and then races two
+// different authenticated claimants.
 Deno.test({
-  name: "local JWT integration permits exactly one concurrent claimant",
+  name:
+    "local JWT integration recovers concurrent create and permits exactly one concurrent claimant",
   ignore: Deno.env.get("HEALTHCOMP_RUN_INVITE_INTEGRATION") !== "1",
   fn: async () => {
     const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
@@ -239,7 +241,34 @@ Deno.test({
         users.push({ id: data.user.id, jwt: sessionData.session.access_token });
       }
 
-      const createResponse = await fetch(
+      const idempotencyKey = crypto.randomUUID();
+      const createRequest = () =>
+        fetch(`${supabaseUrl}/functions/v1/create-competition-invite`, {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${users[0].jwt}`,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            timeZoneIdentifier: "Pacific/Kiritimati",
+            idempotencyKey,
+          }),
+        });
+      const createResponses = await Promise.all([
+        createRequest(),
+        createRequest(),
+      ]);
+      assertEquals(
+        createResponses.map((response) => response.status),
+        [201, 201],
+      );
+      const invitations = await Promise.all(
+        createResponses.map((response) => response.json()),
+      );
+      assertEquals(invitations[0], invitations[1]);
+      const invitation = invitations[0];
+
+      const divergentResponse = await fetch(
         `${supabaseUrl}/functions/v1/create-competition-invite`,
         {
           method: "POST",
@@ -247,11 +276,29 @@ Deno.test({
             authorization: `Bearer ${users[0].jwt}`,
             "content-type": "application/json",
           },
-          body: JSON.stringify({ timeZoneIdentifier: "Pacific/Kiritimati" }),
+          body: JSON.stringify({
+            timeZoneIdentifier: "UTC",
+            idempotencyKey,
+          }),
         },
       );
-      assertEquals(createResponse.status, 201);
-      const invitation = await createResponse.json();
+      assertEquals(divergentResponse.status, 409);
+      assertEquals(await divergentResponse.json(), {
+        error: {
+          code: "idempotency_conflict",
+          message: "Invitation request conflicts with an earlier request",
+        },
+      });
+
+      const [creationState] = await sql`
+        select count(*)::int as competition_count,
+               min(invite_token_derivation_version)::int as derivation_version
+        from public.competitions
+        where creator_profile_id = (
+          select id from public.profiles where auth_user_id = ${users[0].id}::uuid
+        ) and invite_creation_idempotency_key = ${idempotencyKey}::uuid`;
+      assertEquals(creationState.competition_count, 1);
+      assertEquals(creationState.derivation_version, 1);
 
       const claimResponses = await Promise.all(
         users.slice(1).map((user) =>

@@ -124,8 +124,8 @@ select ok(has_table_privilege('authenticated', 'public.competition_results', 'SE
   'authenticated may select authorized results');
 select ok(has_table_privilege('authenticated', 'public.competition_awards', 'SELECT'),
   'authenticated may select authorized awards');
-select ok(has_table_privilege('authenticated', 'public.device_installations', 'SELECT'),
-  'authenticated may select only their installation rows');
+select isnt(has_table_privilege('authenticated', 'public.device_installations', 'SELECT'), true,
+  'authenticated clients use token-free installation RPC projections');
 select isnt(has_table_privilege('authenticated', 'public.competition_invites', 'SELECT'), true,
   'competition invites have no direct client read grant');
 select isnt(has_table_privilege('authenticated', 'public.competition_change_log', 'SELECT'), true,
