@@ -1313,11 +1313,13 @@ select ok((
 select ok((
   select (select array_agg(key order by key)
           from jsonb_object_keys(change_row->'payload') keys(key)) = array[
-           'accepted_revisions', 'attested_at', 'basis', 'participant_profile_id',
-           'server_seq', 'window_commitment_sha256'
+           'accepted_revisions', 'attestation_version', 'attested_at', 'basis',
+           'participant_profile_id', 'server_seq', 'window_commitment_sha256'
          ]::text[]
     and change_row->'payload'->'accepted_revisions'
       = '["9007199254740993","2","3","4","5","6","7"]'::jsonb
+    and change_row->'payload'->>'attestation_version' = '1'
+    and jsonb_typeof(change_row->'payload'->'attestation_version') = 'string'
     and jsonb_typeof(change_row->'payload'->'server_seq') = 'string'
     and change_row->'payload'->>'window_commitment_sha256' = repeat('a5', 32)
   from change_feed_results result_row,
