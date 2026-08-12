@@ -15,22 +15,62 @@ export type { InviteRpcClient } from "../_shared/invite_http.ts";
 
 interface CreateDependencies
   extends HandlerDependencies, ServiceClientDependencies {
-  randomBytes(): Uint8Array;
+  deriveToken(userId: string, idempotencyKey: string): Promise<Uint8Array>;
 }
 
 const dependencies: CreateDependencies = {
   ...defaultDependencies,
   ...defaultServiceDependencies,
-  randomBytes: () => crypto.getRandomValues(new Uint8Array(32)),
+  deriveToken: (userId, idempotencyKey) => {
+    const secret = Deno.env.get("INVITE_TOKEN_DERIVATION_KEY_V1");
+    if (!secret) {
+      throw new Error("Invite token derivation is not configured");
+    }
+    return deriveInviteTokenV1(userId, idempotencyKey, secret);
+  },
 };
+
+const textEncoder = new TextEncoder();
+
+export async function deriveInviteTokenV1(
+  userId: string,
+  idempotencyKey: string,
+  secret: string,
+): Promise<Uint8Array> {
+  if (!isUuid(userId) || !isUuid(idempotencyKey)) {
+    throw new Error("Invite token derivation requires UUID inputs");
+  }
+  const secretBytes = textEncoder.encode(secret);
+  if (secretBytes.length < 32) {
+    throw new Error("Invite token derivation key is too short");
+  }
+  const key = await crypto.subtle.importKey(
+    "raw",
+    secretBytes,
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"],
+  );
+  const message = textEncoder.encode(
+    `healthcomp.invite-token.v1\0${userId.toLowerCase()}\0${
+      idempotencyKey.toLowerCase()
+    }`,
+  );
+  return new Uint8Array(await crypto.subtle.sign("HMAC", key, message));
+}
 
 function parseBody(value: unknown): {
   timeZoneIdentifier: string;
   rematchParentId: string | null;
+  idempotencyKey: string;
 } | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const body = value as Record<string, unknown>;
-  const allowedKeys = new Set(["timeZoneIdentifier", "rematchParentId"]);
+  const allowedKeys = new Set([
+    "timeZoneIdentifier",
+    "rematchParentId",
+    "idempotencyKey",
+  ]);
   if (Object.keys(body).some((key) => !allowedKeys.has(key))) return null;
   if (
     typeof body.timeZoneIdentifier !== "string" ||
@@ -42,10 +82,12 @@ function parseBody(value: unknown): {
   ) {
     return null;
   }
+  if (!isUuid(body.idempotencyKey)) return null;
   return {
     timeZoneIdentifier: body.timeZoneIdentifier,
     rematchParentId: (body.rematchParentId as string | null | undefined) ??
       null,
+    idempotencyKey: body.idempotencyKey,
   };
 }
 
@@ -71,7 +113,19 @@ export async function createCompetitionInviteHandler(
     return errorResponse(401, "unauthorized", "Authentication required");
   }
 
-  const bytes = injected.randomBytes();
+  let bytes: Uint8Array;
+  try {
+    bytes = await injected.deriveToken(
+      authenticated.userId,
+      body.idempotencyKey,
+    );
+  } catch {
+    return errorResponse(
+      500,
+      "invite_creation_failed",
+      "Unable to create invitation",
+    );
+  }
   if (bytes.length !== 32) {
     throw new Error("Token generator must return 32 bytes");
   }
@@ -83,6 +137,8 @@ export async function createCompetitionInviteHandler(
     creator_time_zone_identifier: body.timeZoneIdentifier,
     rematch_parent_id: body.rematchParentId,
     creator_auth_user_id: authenticated.userId,
+    creation_idempotency_key: body.idempotencyKey,
+    token_derivation_version: 1,
   });
 
   if (error) {
@@ -91,6 +147,13 @@ export async function createCompetitionInviteHandler(
     }
     if (error.message === "rematch_not_allowed") {
       return errorResponse(403, "rematch_not_allowed", "Rematch not allowed");
+    }
+    if (error.message === "idempotency_conflict") {
+      return errorResponse(
+        409,
+        "idempotency_conflict",
+        "Invitation request conflicts with an earlier request",
+      );
     }
     if (
       error.message === "active_profile_required" ||

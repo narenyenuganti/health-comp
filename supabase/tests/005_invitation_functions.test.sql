@@ -12,8 +12,11 @@ select has_function('private', 'best_available_local_day_offset_v1', array[]::te
 select is(private.best_available_local_day_offset_v1(), 8,
   'best-available policy uses the Day-9 local boundary');
 
-select has_function('public', 'create_competition_invite', array['bytea', 'text', 'uuid', 'uuid'],
-  'service-only create RPC accepts a verified auth user ID');
+select has_function(
+  'public', 'create_competition_invite',
+  array['bytea', 'text', 'uuid', 'uuid', 'uuid', 'smallint'],
+  'service-only create RPC accepts verified identity and idempotency inputs'
+);
 select has_function('public', 'claim_competition_invite', array['bytea'],
   'authenticated claim RPC exists');
 select has_function('public', 'cleanup_expired_competition_invites', array[]::text[],
@@ -23,13 +26,17 @@ select ok(coalesce((
   select procedure_row.prosecdef
   from pg_proc procedure_row
   join pg_namespace schema_row on schema_row.oid = procedure_row.pronamespace
-  where schema_row.nspname = 'public' and procedure_row.proname = 'create_competition_invite'
+  where schema_row.nspname = 'public'
+    and procedure_row.proname = 'create_competition_invite'
+    and procedure_row.proargtypes = '17 25 2950 2950 2950 21'::oidvector
 ), false), 'create RPC is security definer');
 select ok(coalesce((
   select 'search_path=""' = any(coalesce(procedure_row.proconfig, array[]::text[]))
   from pg_proc procedure_row
   join pg_namespace schema_row on schema_row.oid = procedure_row.pronamespace
-  where schema_row.nspname = 'public' and procedure_row.proname = 'create_competition_invite'
+  where schema_row.nspname = 'public'
+    and procedure_row.proname = 'create_competition_invite'
+    and procedure_row.proargtypes = '17 25 2950 2950 2950 21'::oidvector
 ), false), 'create RPC has an empty search path');
 select ok(coalesce((
   select procedure_row.prosecdef and 'search_path=""' = any(coalesce(procedure_row.proconfig, array[]::text[]))
@@ -54,7 +61,9 @@ select ok(coalesce((
       )) acl_row where acl_row.grantee = 0 and acl_row.privilege_type = 'EXECUTE'
     )
   from pg_proc procedure_row join pg_namespace schema_row on schema_row.oid = procedure_row.pronamespace
-  where schema_row.nspname = 'public' and procedure_row.proname = 'create_competition_invite'
+  where schema_row.nspname = 'public'
+    and procedure_row.proname = 'create_competition_invite'
+    and procedure_row.proargtypes = '17 25 2950 2950 2950 21'::oidvector
 ), false), 'only service_role may execute create');
 select ok(coalesce((
   select has_function_privilege('authenticated', procedure_row.oid, 'EXECUTE')
@@ -96,7 +105,10 @@ grant select, insert, update on invite_test_context to authenticated, service_ro
 set local role anon;
 select set_config('request.jwt.claims', '{"role":"anon"}', true);
 select throws_ok(
-  $$select public.create_competition_invite(decode(repeat('01', 32), 'hex'), 'UTC', null, gen_random_uuid())$$,
+  $$select public.create_competition_invite(
+    decode(repeat('01', 32), 'hex'), 'UTC', null, gen_random_uuid(),
+    gen_random_uuid(), 1::smallint
+  )$$,
   '42501', null, 'anonymous create is denied');
 select throws_ok(
   $$select public.claim_competition_invite(decode(repeat('01', 32), 'hex'))$$,
@@ -106,7 +118,11 @@ reset role;
 set local role authenticated;
 select set_config('request.jwt.claims', '{"sub":"51000000-0000-0000-0000-000000000001","role":"authenticated"}', true);
 select throws_ok(
-  $$select public.create_competition_invite(decode(repeat('01', 32), 'hex'), 'UTC', null, '51000000-0000-0000-0000-000000000001')$$,
+  $$select public.create_competition_invite(
+    decode(repeat('01', 32), 'hex'), 'UTC', null,
+    '51000000-0000-0000-0000-000000000001',
+    '54000000-0000-4000-8000-000000000001', 1::smallint
+  )$$,
   '42501', null, 'authenticated users cannot bypass Edge token generation by calling create directly');
 reset role;
 
@@ -115,7 +131,8 @@ select set_config('request.jwt.claims', '{"role":"service_role"}', true);
 insert into invite_test_context
 select 'primary', public.create_competition_invite(
   decode(repeat('01', 32), 'hex'), 'America/Los_Angeles', null,
-  '51000000-0000-0000-0000-000000000001');
+  '51000000-0000-0000-0000-000000000001',
+  '54000000-0000-4000-8000-000000000002', 1::smallint);
 reset role;
 
 select is((select lifecycle from public.competitions where id = (select id from invite_test_context where name = 'primary')),
@@ -135,10 +152,18 @@ select is((select encode(token_digest, 'hex') from public.competition_invites
 set local role service_role;
 select set_config('request.jwt.claims', '{"role":"service_role"}', true);
 select throws_ok(
-  $$select public.create_competition_invite(decode(repeat('02', 32), 'hex'), 'Not/A_Time_Zone', null, '51000000-0000-0000-0000-000000000001')$$,
+  $$select public.create_competition_invite(
+    decode(repeat('02', 32), 'hex'), 'Not/A_Time_Zone', null,
+    '51000000-0000-0000-0000-000000000001',
+    '54000000-0000-4000-8000-000000000003', 1::smallint
+  )$$,
   '22023', 'invalid_time_zone', 'create validates the IANA time zone catalog');
 select throws_ok(
-  $$select public.create_competition_invite(decode(repeat('02', 31), 'hex'), 'UTC', null, '51000000-0000-0000-0000-000000000001')$$,
+  $$select public.create_competition_invite(
+    decode(repeat('02', 31), 'hex'), 'UTC', null,
+    '51000000-0000-0000-0000-000000000001',
+    '54000000-0000-4000-8000-000000000004', 1::smallint
+  )$$,
   '22023', 'invalid_token_digest', 'create accepts only a SHA-256-sized digest');
 reset role;
 set local role authenticated;
@@ -198,7 +223,9 @@ select set_config('request.jwt.claims', '{"role":"service_role"}', true);
 insert into invite_test_context
 select 'rematch', public.create_competition_invite(
   decode(repeat('03', 32), 'hex'), 'Pacific/Kiritimati',
-  '53000000-0000-0000-0000-000000000001', '51000000-0000-0000-0000-000000000002');
+  '53000000-0000-0000-0000-000000000001',
+  '51000000-0000-0000-0000-000000000002',
+  '54000000-0000-4000-8000-000000000005', 1::smallint);
 reset role;
 select isnt((select id from invite_test_context where name = 'rematch'),
   '53000000-0000-0000-0000-000000000001'::uuid, 'rematch receives a new competition identity');
@@ -209,7 +236,12 @@ select is((select scoring_policy_identity from public.competitions where id = (s
 set local role service_role;
 select set_config('request.jwt.claims', '{"role":"service_role"}', true);
 select throws_ok(
-  $$select public.create_competition_invite(decode(repeat('04', 32), 'hex'), 'UTC', '53000000-0000-0000-0000-000000000001', '51000000-0000-0000-0000-000000000003')$$,
+  $$select public.create_competition_invite(
+    decode(repeat('04', 32), 'hex'), 'UTC',
+    '53000000-0000-0000-0000-000000000001',
+    '51000000-0000-0000-0000-000000000003',
+    '54000000-0000-4000-8000-000000000006', 1::smallint
+  )$$,
   '42501', 'rematch_not_allowed', 'a nonparticipant cannot create a rematch');
 
 reset role;

@@ -47,8 +47,8 @@ select isnt(has_table_privilege('authenticated', 'public.competition_change_log'
   'the raw change log cannot be queried directly by clients');
 select isnt(has_table_privilege('authenticated', 'public.support_events', 'SELECT'), true,
   'support events cannot be queried directly by clients');
-select ok(has_table_privilege('authenticated', 'public.device_installations', 'SELECT'),
-  'authenticated clients receive read access to policy-filtered installations');
+select isnt(has_table_privilege('authenticated', 'public.device_installations', 'SELECT'), true,
+  'authenticated clients cannot read raw installation tokens');
 select is((
   select count(*)::bigint
   from information_schema.role_table_grants
