@@ -142,7 +142,8 @@ struct AppFeature {
 
             case .stop:
                 state.isAuthenticationMonitoring = false
-                let shouldStopRuntime = state.mainTab != nil
+                let shouldStopRuntime = state.profile != nil
+                    || state.mainTab != nil
                 return .merge(
                     .cancel(id: CancelID.authenticationEvents),
                     .cancel(id: CancelID.authenticationOperation),
@@ -235,7 +236,8 @@ struct AppFeature {
                     return teardown(
                         epoch: state.authEpoch,
                         reason: .sessionEnded,
-                        stopRuntime: state.mainTab != nil,
+                        stopRuntime: state.profile != nil
+                            || state.mainTab != nil,
                         profileID: state.profile?.id
                     )
 
@@ -245,7 +247,8 @@ struct AppFeature {
                     return teardown(
                         epoch: state.authEpoch,
                         reason: .accountDeleted,
-                        stopRuntime: state.mainTab != nil,
+                        stopRuntime: state.profile != nil
+                            || state.mainTab != nil,
                         profileID: state.profile?.id
                     )
                 }
@@ -414,15 +417,31 @@ struct AppFeature {
     ) -> Effect<Action> {
         .run { send in
             do {
+                let paths = try await authenticatedProfileStorage.mount(
+                    profile.id
+                )
+                do {
+                    try await competitionClient.mountAuthenticatedProfile(
+                        profile,
+                        paths
+                    )
+                } catch let mountError {
+                    await competitionClient.stop()
+                    do {
+                        try await authenticatedProfileStorage.teardown(
+                            profile.id
+                        )
+                    } catch {
+                        throw error as? AuthenticatedProfileStorageFailure
+                            ?? .cleanupFailed
+                    }
+                    throw mountError
+                }
                 await send(
                     .profileStorageResponse(
                         epoch: epoch,
                         profile: profile,
-                        .success(
-                            try await authenticatedProfileStorage.mount(
-                                profile.id
-                            )
-                        )
+                        .success(paths)
                     )
                 )
             } catch {

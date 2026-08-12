@@ -277,6 +277,10 @@ actor FixtureActivitySource: CompetitionActivitySource {
         }
     }
 
+    func signalSubscriberCount() -> Int {
+        signalContinuations.count
+    }
+
     func completeSignal(_ id: String) async {
         signalCompletionCounts[id, default: 0] += 1
     }

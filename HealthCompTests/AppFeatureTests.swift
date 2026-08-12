@@ -38,6 +38,15 @@ final class AppFeatureTests: XCTestCase {
         let session = session
         let profile = profile
         let storage = profileStorageFixture(for: profile)
+        let competitionMounts = OrderedCallRecorder()
+        var competitionClient = CompetitionClient.testValue
+        competitionClient.mountAuthenticatedProfile = {
+            mountedProfile,
+            mountedPaths in
+            competitionMounts.record(
+                "\(mountedProfile.id.uuidString):\(mountedPaths.rootDirectory.path)"
+            )
+        }
         let store = TestStore(initialState: AppFeature.State()) {
             AppFeature()
         } withDependencies: {
@@ -51,6 +60,7 @@ final class AppFeatureTests: XCTestCase {
                 }
             )
             $0.authenticatedProfileStorage = storage.client
+            $0.competitionClient = competitionClient
         }
 
         await store.send(.task) {
@@ -80,6 +90,10 @@ final class AppFeatureTests: XCTestCase {
             $0.account = AccountFeature.State(mode: .authenticated)
             $0.mainTab = MainTabFeature.State()
         }
+        XCTAssertEqual(
+            competitionMounts.calls,
+            ["\(profile.id.uuidString):\(storage.paths.rootDirectory.path)"]
+        )
     }
 
     @MainActor
@@ -389,6 +403,42 @@ final class AppFeatureTests: XCTestCase {
     }
 
     @MainActor
+    func testSignedOutDuringProfileMountStopsRuntimeBeforeStorageTeardown()
+        async
+    {
+        let calls = OrderedCallRecorder()
+        let storage = profileStorageFixture(for: profile, recorder: calls)
+        let store = TestStore(
+            initialState: AppFeature.State(
+                phase: .bootstrappingProfile,
+                profile: profile,
+                authEpoch: 9
+            )
+        ) {
+            AppFeature()
+        } withDependencies: {
+            $0.authenticatedProfileStorage = storage.client
+            $0.competitionClient = .test(
+                stop: { calls.record("runtime-stop") }
+            )
+        }
+
+        await store.send(.authenticationEvent(.signedOut)) {
+            $0.authEpoch = 10
+            $0.account.isRequestInFlight = true
+        }
+        await store.receive(
+            .teardownCompleted(epoch: 10, reason: .sessionEnded)
+        ) {
+            $0.phase = .signedOut
+            $0.profile = nil
+            $0.account = AccountFeature.State(mode: .signedOut)
+            $0.account.message = .sessionEnded
+        }
+        XCTAssertEqual(calls.calls, ["runtime-stop", "storage-teardown"])
+    }
+
+    @MainActor
     func testUserSignOutStopsRuntimeBeforeClearingAuth() async {
         let calls = OrderedCallRecorder()
         let storage = profileStorageFixture(
@@ -571,6 +621,59 @@ final class AppFeatureTests: XCTestCase {
             $0.account = AccountFeature.State(mode: .launchFailure)
             $0.account.message = .tryAgain
         }
+        XCTAssertNil(store.state.mainTab)
+    }
+
+    @MainActor
+    func testCompetitionMountFailureCleansUpMountedProfileStorage() async {
+        let calls = OrderedCallRecorder()
+        let profile = profile
+        let storage = profileStorageFixture(for: profile, recorder: calls)
+        var competitionClient = CompetitionClient.test(
+            stop: { calls.record("runtime-stop") }
+        )
+        competitionClient.mountAuthenticatedProfile = { _, _ in
+            calls.record("competition-mount")
+            throw RemoteCompetitionRuntimeFailure.storageUnavailable
+        }
+        let store = TestStore(
+            initialState: AppFeature.State(
+                phase: .bootstrappingProfile,
+                authEpoch: 7
+            )
+        ) {
+            AppFeature()
+        } withDependencies: {
+            $0.authenticatedProfileStorage = storage.client
+            $0.competitionClient = competitionClient
+        }
+
+        await store.send(
+            .bootstrapProfileResponse(epoch: 7, .success(profile))
+        ) {
+            $0.profile = profile
+        }
+        await store.receive(
+            .profileStorageResponse(
+                epoch: 7,
+                profile: profile,
+                .failure(.unsafeFilesystemEntry)
+            )
+        ) {
+            $0.phase = .launchFailure
+            $0.profile = nil
+            $0.account = AccountFeature.State(mode: .launchFailure)
+            $0.account.message = .tryAgain
+        }
+        XCTAssertEqual(
+            calls.calls,
+            [
+                "storage-mount",
+                "competition-mount",
+                "runtime-stop",
+                "storage-teardown",
+            ]
+        )
         XCTAssertNil(store.state.mainTab)
     }
 
