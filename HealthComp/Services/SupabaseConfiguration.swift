@@ -142,10 +142,10 @@ enum SupabaseConfigurationError:
     }
 }
 
-struct SupabaseClientProvider {
-    private let makeClient: () throws -> SupabaseClient
+struct SupabaseClientProvider: Sendable {
+    private let makeClient: @Sendable () throws -> SupabaseClient
 
-    init(makeClient: @escaping () throws -> SupabaseClient) {
+    init(makeClient: @escaping @Sendable () throws -> SupabaseClient) {
         self.makeClient = makeClient
     }
 
@@ -154,7 +154,7 @@ struct SupabaseClientProvider {
     }
 
     static func live(
-        infoDictionary: @escaping () -> [String: Any] = {
+        infoDictionary: @escaping @Sendable () -> [String: Any] = {
             Bundle.main.infoDictionary ?? [:]
         }
     ) -> Self {

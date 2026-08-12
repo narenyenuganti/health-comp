@@ -1,4 +1,5 @@
 import Foundation
+import ComposableArchitecture
 import XCTest
 @testable import HealthComp
 
@@ -134,17 +135,34 @@ final class SupabaseConfigurationTests: XCTestCase {
 
 #if DEBUG
     @MainActor
-    func testAll28TestLabModesAndOrdinaryLaunchCreateZeroSupabaseClients() {
-        var clientCreationCount = 0
+    func testTestLabCreatesNoAuthGraphAndOrdinaryLaunchInjectsOneLazyAdapter()
+        async
+    {
+        let clientCreationCount = LockedCounter()
+        let adapterCreationCount = LockedCounter()
+        let restoreCount = LockedCounter()
         let poisonedProvider = SupabaseClientProvider {
-            clientCreationCount += 1
+            clientCreationCount.increment()
             fatalError("Supabase client must be lazy")
         }
-
-        _ = HealthCompApp(
-            arguments: ["HealthComp"],
-            supabaseClientProvider: poisonedProvider
-        )
+        let authenticationClientFactory = AuthenticationClientFactory {
+            _ in
+            adapterCreationCount.increment()
+            return AuthenticationClient(
+                restoreSession: {
+                    restoreCount.increment()
+                    return nil
+                },
+                signInWithApple: {
+                    throw AuthenticationClientFailure.operationFailed
+                },
+                bootstrapProfile: { _ in
+                    throw AuthenticationClientFailure.operationFailed
+                },
+                events: { AsyncStream { $0.finish() } },
+                signOut: {}
+            )
+        }
 
         var labLaunchCount = 0
         for fixture in CompetitionTestLabFixtureKind.allCases {
@@ -164,15 +182,47 @@ final class SupabaseConfigurationTests: XCTestCase {
                     }
                     _ = HealthCompApp(
                         arguments: arguments,
-                        supabaseClientProvider: poisonedProvider
+                        supabaseClientProvider: poisonedProvider,
+                        authenticationClientFactory:
+                            authenticationClientFactory
                     )
                     labLaunchCount += 1
                 }
             }
         }
+        _ = HealthCompApp(
+            arguments: [
+                "HealthComp",
+                "--local-competition-test-lab",
+                "--local-competition-fixture",
+                "not-a-fixture",
+            ],
+            supabaseClientProvider: poisonedProvider,
+            authenticationClientFactory: authenticationClientFactory
+        )
 
         XCTAssertEqual(labLaunchCount, 28)
-        XCTAssertEqual(clientCreationCount, 0)
+        XCTAssertEqual(adapterCreationCount.value, 0)
+        XCTAssertEqual(clientCreationCount.value, 0)
+
+        _ = HealthCompApp(
+            arguments: ["HealthComp"],
+            supabaseClientProvider: poisonedProvider,
+            authenticationClientFactory: authenticationClientFactory
+        )
+
+        XCTAssertEqual(adapterCreationCount.value, 1)
+        XCTAssertEqual(clientCreationCount.value, 0)
+
+        let store = HealthCompLiveComposition.store(
+            supabaseClientProvider: poisonedProvider,
+            authenticationClientFactory: authenticationClientFactory
+        )
+        await store.send(.task).finish()
+        XCTAssertEqual(adapterCreationCount.value, 2)
+        XCTAssertEqual(restoreCount.value, 1)
+        XCTAssertEqual(clientCreationCount.value, 0)
+        XCTAssertEqual(store.phase, .signedOut)
     }
 #endif
 
@@ -192,5 +242,18 @@ final class SupabaseConfigurationTests: XCTestCase {
             .replacingOccurrences(of: "+", with: "-")
             .replacingOccurrences(of: "/", with: "_")
             .replacingOccurrences(of: "=", with: "")
+    }
+}
+
+private final class LockedCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var count = 0
+
+    var value: Int {
+        lock.withLock { count }
+    }
+
+    func increment() {
+        lock.withLock { count += 1 }
     }
 }
