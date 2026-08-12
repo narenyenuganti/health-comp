@@ -6,12 +6,25 @@ options:
   xcodeVersion: "16.0"
   createIntermediateGroups: true
 
+configs:
+  Debug: debug
+  Staging: release
+  Release: release
+
+configFiles:
+  Debug: Configuration/Development.xcconfig
+  Staging: Configuration/Staging.xcconfig
+  Release: Configuration/Production.xcconfig
+
 packages:
   CompetitionCore:
     path: Modules/CompetitionCore
   ComposableArchitecture:
     url: https://github.com/pointfreeco/swift-composable-architecture
     from: "1.17.0"
+  Supabase:
+    url: https://github.com/supabase/supabase-swift
+    exactVersion: 2.49.0
 
 targets:
   HealthComp:
@@ -31,6 +44,8 @@ targets:
         UIRequiredDeviceCapabilities:
           - healthkit
         NSHealthShareUsageDescription: "HealthComp reads your activity data to score competitions with friends."
+        SUPABASE_URL: "$(SUPABASE_URL)"
+        SUPABASE_PUBLISHABLE_KEY: "$(SUPABASE_PUBLISHABLE_KEY)"
         CFBundleURLTypes:
           - CFBundleURLName: com.narenyenuganti.HealthComp.competition
             CFBundleURLSchemes:
@@ -44,6 +59,8 @@ targets:
       - package: CompetitionCore
         product: CompetitionCore
       - package: ComposableArchitecture
+      - package: Supabase
+        product: Supabase
 
   HealthCompTests:
     type: bundle.unit-test
@@ -91,3 +108,23 @@ schemes:
       config: Debug
     archive:
       config: Release
+
+  HealthComp Staging:
+    build:
+      targets:
+        HealthComp: all
+    run:
+      config: Staging
+    test:
+      config: Staging
+      targets:
+        - name: HealthCompTests
+          parallelizable: true
+        - name: HealthCompUITests
+          parallelizable: false
+    profile:
+      config: Staging
+    analyze:
+      config: Staging
+    archive:
+      config: Staging
