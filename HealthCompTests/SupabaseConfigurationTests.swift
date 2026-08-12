@@ -140,6 +140,7 @@ final class SupabaseConfigurationTests: XCTestCase {
     {
         let clientCreationCount = LockedCounter()
         let adapterCreationCount = LockedCounter()
+        let competitionAdapterCreationCount = LockedCounter()
         let restoreCount = LockedCounter()
         let poisonedProvider = SupabaseClientProvider {
             clientCreationCount.increment()
@@ -163,6 +164,10 @@ final class SupabaseConfigurationTests: XCTestCase {
                 signOut: {}
             )
         }
+        let competitionClientFactory = CompetitionClientFactory { _ in
+            competitionAdapterCreationCount.increment()
+            return .testValue
+        }
 
         var labLaunchCount = 0
         for fixture in CompetitionTestLabFixtureKind.allCases {
@@ -184,7 +189,8 @@ final class SupabaseConfigurationTests: XCTestCase {
                         arguments: arguments,
                         supabaseClientProvider: poisonedProvider,
                         authenticationClientFactory:
-                            authenticationClientFactory
+                            authenticationClientFactory,
+                        competitionClientFactory: competitionClientFactory
                     )
                     labLaunchCount += 1
                 }
@@ -198,28 +204,34 @@ final class SupabaseConfigurationTests: XCTestCase {
                 "not-a-fixture",
             ],
             supabaseClientProvider: poisonedProvider,
-            authenticationClientFactory: authenticationClientFactory
+            authenticationClientFactory: authenticationClientFactory,
+            competitionClientFactory: competitionClientFactory
         )
 
         XCTAssertEqual(labLaunchCount, 28)
         XCTAssertEqual(adapterCreationCount.value, 0)
+        XCTAssertEqual(competitionAdapterCreationCount.value, 0)
         XCTAssertEqual(clientCreationCount.value, 0)
 
         _ = HealthCompApp(
             arguments: ["HealthComp"],
             supabaseClientProvider: poisonedProvider,
-            authenticationClientFactory: authenticationClientFactory
+            authenticationClientFactory: authenticationClientFactory,
+            competitionClientFactory: competitionClientFactory
         )
 
         XCTAssertEqual(adapterCreationCount.value, 1)
+        XCTAssertEqual(competitionAdapterCreationCount.value, 1)
         XCTAssertEqual(clientCreationCount.value, 0)
 
         let store = HealthCompLiveComposition.store(
             supabaseClientProvider: poisonedProvider,
-            authenticationClientFactory: authenticationClientFactory
+            authenticationClientFactory: authenticationClientFactory,
+            competitionClientFactory: competitionClientFactory
         )
         await store.send(.task).finish()
         XCTAssertEqual(adapterCreationCount.value, 2)
+        XCTAssertEqual(competitionAdapterCreationCount.value, 2)
         XCTAssertEqual(restoreCount.value, 1)
         XCTAssertEqual(clientCreationCount.value, 0)
         XCTAssertEqual(store.phase, .signedOut)

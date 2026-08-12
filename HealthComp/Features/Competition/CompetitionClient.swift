@@ -30,6 +30,16 @@ private extension CompetitionPublication {
     )
 }
 
+struct CompetitionInviteCreationOutcome: Equatable, Sendable {
+    let invite: CompetitionInvite
+    let expectedPublicationRevision: UInt64
+}
+
+struct CompetitionInviteClaimOutcome: Equatable, Sendable {
+    let claim: CompetitionInviteClaim
+    let expectedPublicationRevision: UInt64
+}
+
 /// The source-neutral dependency consumed by competition features.
 ///
 /// Task 6 intentionally preserves the existing local endpoint surface and
@@ -59,6 +69,16 @@ struct CompetitionClient: Sendable {
         CompetitionNotificationAuthorizationState
     var waitUntil: @Sendable (Date) async throws -> Void
     var stop: @Sendable () async -> Void
+    var mountAuthenticatedProfile: @Sendable (
+        AuthenticatedProfile,
+        AuthenticatedProfileStoragePaths
+    ) async throws -> Void
+    var createInvite: @Sendable (
+        CompetitionInviteCreationRequest
+    ) async throws -> CompetitionInviteCreationOutcome
+    var claimInvite: @Sendable (
+        CompetitionInviteClaimRequest
+    ) async throws -> CompetitionInviteClaimOutcome
 
     init(
         start: @escaping @Sendable () -> AsyncStream<CompetitionPublication>,
@@ -94,7 +114,21 @@ struct CompetitionClient: Sendable {
         requestNotificationAuthorization: @escaping @Sendable () async ->
             CompetitionNotificationAuthorizationState = { .denied },
         waitUntil: @escaping @Sendable (Date) async throws -> Void,
-        stop: @escaping @Sendable () async -> Void
+        stop: @escaping @Sendable () async -> Void,
+        mountAuthenticatedProfile: @escaping @Sendable (
+            AuthenticatedProfile,
+            AuthenticatedProfileStoragePaths
+        ) async throws -> Void = { _, _ in },
+        createInvite: @escaping @Sendable (
+            CompetitionInviteCreationRequest
+        ) async throws -> CompetitionInviteCreationOutcome = { _ in
+            throw CompetitionRemoteFailure.operationFailed
+        },
+        claimInvite: @escaping @Sendable (
+            CompetitionInviteClaimRequest
+        ) async throws -> CompetitionInviteClaimOutcome = { _ in
+            throw CompetitionRemoteFailure.operationFailed
+        }
     ) {
         self.start = start
         self.updates = updates
@@ -114,6 +148,9 @@ struct CompetitionClient: Sendable {
             requestNotificationAuthorization
         self.waitUntil = waitUntil
         self.stop = stop
+        self.mountAuthenticatedProfile = mountAuthenticatedProfile
+        self.createInvite = createInvite
+        self.claimInvite = claimInvite
     }
 }
 

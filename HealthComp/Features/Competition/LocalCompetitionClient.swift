@@ -586,55 +586,6 @@ extension CompetitionClient: TestDependencyKey {
     static let previewValue = closed(issue: .unimplemented)
 }
 
-extension CompetitionClient: DependencyKey {
-    static let liveValue: CompetitionClient = {
-        let storeResult = Result { try JSONCompetitionEventStore.live() }
-        let availability: LocalCompetitionStoreAvailability
-        switch storeResult {
-        case let .success(store):
-            availability = .available(store)
-        case .failure:
-            availability = .unavailable
-        }
-        let preferences: CompetitionNotificationPreferencesClient
-        if let applicationSupport = try? FileManager.default.url(
-            for: .applicationSupportDirectory,
-            in: .userDomainMask,
-            appropriateFor: nil,
-            create: true
-        ) {
-            preferences = .live(
-                fileURL: applicationSupport
-                    .appendingPathComponent("HealthComp", isDirectory: true)
-                    .appendingPathComponent(
-                        "NotificationPreferences",
-                        isDirectory: true
-                    )
-                    .appendingPathComponent("v1", isDirectory: true)
-                    .appendingPathComponent("preferences.json")
-            )
-        } else {
-            preferences = .unavailable
-        }
-        let notifications = CompetitionNotificationClient.liveValue
-        return localFixture(
-            environment: .production(),
-            storeAvailability: availability,
-            configuration: .live,
-            notificationCoordinatorFactory: { runtime in
-                .live(
-                    runtime: runtime,
-                    planner: CompetitionNotificationPlanner(policy: .liveV1),
-                    notifications: notifications,
-                    preferences: preferences
-                )
-            },
-            notificationPreferences: preferences,
-            notificationClient: notifications
-        )
-    }()
-}
-
 // MARK: - Serialized coordinator
 
 private actor LocalCompetitionCoordinator {

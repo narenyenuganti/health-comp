@@ -16,18 +16,38 @@ struct AuthenticationClientFactory: Sendable {
     }
 }
 
+struct CompetitionClientFactory: Sendable {
+    var make: @Sendable (SupabaseClientProvider) -> CompetitionClient
+
+    init(
+        _ make: @escaping @Sendable (SupabaseClientProvider) ->
+            CompetitionClient
+    ) {
+        self.make = make
+    }
+
+    static let live = Self { provider in
+        CompetitionClient.live(provider: provider)
+    }
+}
+
 enum HealthCompLiveComposition {
     @MainActor
     static func store(
         supabaseClientProvider: SupabaseClientProvider,
-        authenticationClientFactory: AuthenticationClientFactory = .live
+        authenticationClientFactory: AuthenticationClientFactory = .live,
+        competitionClientFactory: CompetitionClientFactory = .live
     ) -> StoreOf<AppFeature> {
         let authenticationClient = authenticationClientFactory.make(
+            supabaseClientProvider
+        )
+        let competitionClient = competitionClientFactory.make(
             supabaseClientProvider
         )
         return Store(initialState: AppFeature.State()) {
             AppFeature()
                 .dependency(\.authenticationClient, authenticationClient)
+                .dependency(\.competitionClient, competitionClient)
         }
     }
 }
@@ -44,14 +64,16 @@ struct HealthCompApp: App {
         self.init(
             arguments: ProcessInfo.processInfo.arguments,
             supabaseClientProvider: .live(),
-            authenticationClientFactory: .live
+            authenticationClientFactory: .live,
+            competitionClientFactory: .live
         )
     }
 
     init(
         arguments: [String],
         supabaseClientProvider: SupabaseClientProvider,
-        authenticationClientFactory: AuthenticationClientFactory = .live
+        authenticationClientFactory: AuthenticationClientFactory = .live,
+        competitionClientFactory: CompetitionClientFactory = .live
     ) {
         let decision = CompetitionTestLabLaunchParser.decision(
             arguments: arguments
@@ -61,7 +83,8 @@ struct HealthCompApp: App {
         case .disabled:
             self.liveStore = HealthCompLiveComposition.store(
                 supabaseClientProvider: supabaseClientProvider,
-                authenticationClientFactory: authenticationClientFactory
+                authenticationClientFactory: authenticationClientFactory,
+                competitionClientFactory: competitionClientFactory
             )
         case .configured, .invalid:
             // The fixture and fail-closed branches intentionally construct no
@@ -75,17 +98,20 @@ struct HealthCompApp: App {
     init() {
         self.init(
             supabaseClientProvider: .live(),
-            authenticationClientFactory: .live
+            authenticationClientFactory: .live,
+            competitionClientFactory: .live
         )
     }
 
     init(
         supabaseClientProvider: SupabaseClientProvider,
-        authenticationClientFactory: AuthenticationClientFactory = .live
+        authenticationClientFactory: AuthenticationClientFactory = .live,
+        competitionClientFactory: CompetitionClientFactory = .live
     ) {
         self.store = HealthCompLiveComposition.store(
             supabaseClientProvider: supabaseClientProvider,
-            authenticationClientFactory: authenticationClientFactory
+            authenticationClientFactory: authenticationClientFactory,
+            competitionClientFactory: competitionClientFactory
         )
     }
 #endif
