@@ -17,6 +17,8 @@ struct AccountFeature {
         var committedDisplayName: String
         var isEditingDisplayName = false
         var isRequestInFlight = false
+        var isDeleteConfirmationPresented = false
+        var isDeletingAccount = false
         var message: Message?
 
         init(mode: Mode, displayName: String = "") {
@@ -29,6 +31,7 @@ struct AccountFeature {
     enum Message: Equatable, Sendable {
         case invalidCredential
         case invalidDisplayName
+        case reauthenticationRequired
         case sessionEnded
         case tryAgain
 
@@ -38,6 +41,8 @@ struct AccountFeature {
                 "Apple sign-in could not be verified. Please try again."
             case .invalidDisplayName:
                 "Choose a name from 1 to 64 characters without line breaks."
+            case .reauthenticationRequired:
+                "Confirm with Sign in with Apple to delete your account."
             case .sessionEnded:
                 "Your session ended. Sign in again to continue."
             case .tryAgain:
@@ -53,6 +58,7 @@ struct AccountFeature {
             case displayNameUpdateRequested(String)
             case retryRequested
             case signOutRequested
+            case deleteAccountRequested
         }
 
         case displayNameChanged(String)
@@ -64,6 +70,9 @@ struct AccountFeature {
         case profileUpdateFinished(String)
         case retryButtonTapped
         case signOutButtonTapped
+        case deleteAccountButtonTapped
+        case deleteAccountConfirmationCancelled
+        case deleteAccountConfirmationAccepted
         case operationFailed(AuthenticationClientFailure)
         case operationFinished
         case dismissMessage
@@ -150,13 +159,44 @@ struct AccountFeature {
                 beginRequest(state: &state)
                 return .send(.delegate(.signOutRequested))
 
+            case .deleteAccountButtonTapped:
+                guard state.mode == .authenticated,
+                      !state.isRequestInFlight
+                else {
+                    return .none
+                }
+                state.isDeleteConfirmationPresented = true
+                state.message = nil
+                return .none
+
+            case .deleteAccountConfirmationCancelled:
+                guard state.isDeleteConfirmationPresented else {
+                    return .none
+                }
+                state.isDeleteConfirmationPresented = false
+                return .none
+
+            case .deleteAccountConfirmationAccepted:
+                guard state.mode == .authenticated,
+                      state.isDeleteConfirmationPresented,
+                      !state.isRequestInFlight
+                else {
+                    return .none
+                }
+                state.isDeleteConfirmationPresented = false
+                state.isDeletingAccount = true
+                beginRequest(state: &state)
+                return .send(.delegate(.deleteAccountRequested))
+
             case let .operationFailed(failure):
                 state.isRequestInFlight = false
+                state.isDeletingAccount = false
                 state.message = message(for: failure)
                 return .none
 
             case .operationFinished:
                 state.isRequestInFlight = false
+                state.isDeletingAccount = false
                 state.message = nil
                 return .none
 
@@ -198,6 +238,8 @@ struct AccountFeature {
             .sessionEnded
         case .invalidDisplayName:
             .invalidDisplayName
+        case .reauthenticationRequired:
+            .reauthenticationRequired
         case .refreshRetryable, .nonceGenerationFailed,
              .displayNameRequired, .operationFailed:
             .tryAgain

@@ -82,6 +82,11 @@ struct AppFeature {
         case failure(AuthenticationClientFailure)
     }
 
+    enum AccountDeletionResponse: Equatable, Sendable {
+        case success
+        case failure(AuthenticationClientFailure)
+    }
+
     enum ProfileStorageResponse: Equatable, Sendable {
         case success(AuthenticatedProfileStoragePaths)
         case failure(AuthenticatedProfileStorageFailure)
@@ -100,6 +105,10 @@ struct AppFeature {
         case signInResponse(epoch: UInt64, SignInResponse)
         case bootstrapProfileResponse(epoch: UInt64, ProfileResponse)
         case updateProfileResponse(epoch: UInt64, ProfileResponse)
+        case accountDeletionResponse(
+            epoch: UInt64,
+            AccountDeletionResponse
+        )
         case profileStorageResponse(
             epoch: UInt64,
             profile: AuthenticatedProfile,
@@ -246,6 +255,7 @@ struct AppFeature {
                     )
 
                 case .accountDeleted:
+                    guard state.phase != .signedOut else { return .none }
                     state.authEpoch &+= 1
                     state.account.isRequestInFlight = true
                     return teardown(
@@ -281,7 +291,7 @@ struct AppFeature {
                 guard epoch == state.authEpoch else { return .none }
                 becomeSignedOut(
                     state: &state,
-                    message: reason == .userRequested ? nil : .sessionEnded
+                    message: reason == .sessionEnded ? .sessionEnded : nil
                 )
                 return .none
 
@@ -367,6 +377,48 @@ struct AppFeature {
                     stopRuntime: state.mainTab != nil,
                     profileID: state.profile?.id
                 )
+
+            case .account(.delegate(.deleteAccountRequested)):
+                guard state.phase == .authenticated,
+                      state.account.isDeletingAccount,
+                      state.profile != nil
+                else {
+                    return .none
+                }
+                state.authEpoch &+= 1
+                return deleteAccount(epoch: state.authEpoch)
+
+            case let .accountDeletionResponse(epoch, response):
+                guard epoch == state.authEpoch,
+                      state.phase == .authenticated,
+                      state.account.isDeletingAccount,
+                      let profile = state.profile
+                else {
+                    return .none
+                }
+                switch response {
+                case .success:
+                    state.authEpoch &+= 1
+                    return teardown(
+                        epoch: state.authEpoch,
+                        reason: .accountDeleted,
+                        stopRuntime: state.mainTab != nil,
+                        profileID: profile.id
+                    )
+
+                case let .failure(failure):
+                    if failure == .terminalSession
+                        || failure == .sessionExpired {
+                        state.authEpoch &+= 1
+                        return teardown(
+                            epoch: state.authEpoch,
+                            reason: .sessionEnded,
+                            stopRuntime: state.mainTab != nil,
+                            profileID: profile.id
+                        )
+                    }
+                    return .send(.account(.operationFailed(failure)))
+                }
 
             case .account, .mainTab:
                 return .none
@@ -490,6 +542,28 @@ struct AppFeature {
             } catch {
                 await send(
                     .updateProfileResponse(
+                        epoch: epoch,
+                        .failure(authenticationFailure(from: error))
+                    )
+                )
+            }
+        }
+        .cancellable(
+            id: CancelID.authenticationOperation,
+            cancelInFlight: true
+        )
+    }
+
+    private func deleteAccount(epoch: UInt64) -> Effect<Action> {
+        .run { send in
+            do {
+                try await authenticationClient.deleteAccount()
+                await send(
+                    .accountDeletionResponse(epoch: epoch, .success)
+                )
+            } catch {
+                await send(
+                    .accountDeletionResponse(
                         epoch: epoch,
                         .failure(authenticationFailure(from: error))
                     )
@@ -637,7 +711,7 @@ struct AppFeature {
             becomeSignedOut(state: &state, message: nil)
 
         case .invalidCredential, .nonceMismatch, .nonceGenerationFailed,
-             .refreshRetryable, .operationFailed:
+             .reauthenticationRequired, .refreshRetryable, .operationFailed:
             state.phase = .launchFailure
             state.profile = nil
             state.profileStoragePaths = nil
@@ -687,6 +761,8 @@ struct AppFeature {
             .sessionEnded
         case .invalidDisplayName:
             .invalidDisplayName
+        case .reauthenticationRequired:
+            .reauthenticationRequired
         case .refreshRetryable, .nonceGenerationFailed,
              .displayNameRequired, .operationFailed:
             .tryAgain

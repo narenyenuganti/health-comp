@@ -64,6 +64,7 @@
 		73F853265BC75C365CD2BB2B /* MainTabFeatureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3DFF07C8F1DAF91F666CE2C /* MainTabFeatureTests.swift */; };
 		75D39A881B6BCE6ACD99671C /* CompetitionCore in Frameworks */ = {isa = PBXBuildFile; productRef = 94AE5B1EA8D73C40C59A519D /* CompetitionCore */; };
 		7A3A884CEF7A982535C0BD1D /* CompetitionTestLabTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A326EB5826710C985D17686 /* CompetitionTestLabTests.swift */; };
+		7AC8B015321B80E77EEEF3AF /* AccountDeletionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 091448CE772C0EE35F3C5B74 /* AccountDeletionTests.swift */; };
 		7C25EC1CE03E50E68B736A88 /* SupabaseAuthenticationClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F0B7A0111ADA222B439C9D9 /* SupabaseAuthenticationClient.swift */; };
 		7F349991AF7E5B8AB86C1E0E /* CompetitionEnvironmentClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC6B1F694361BA182C8C239D /* CompetitionEnvironmentClientTests.swift */; };
 		82669C7399410C4DD256DEF9 /* loss.json in Resources */ = {isa = PBXBuildFile; fileRef = ABC64842924F0B681BDB3AC9 /* loss.json */; };
@@ -122,6 +123,7 @@
 /* Begin PBXFileReference section */
 		0118EA02318F4382081CC94F /* tie.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = tie.json; sourceTree = "<group>"; };
 		08AF91992EAFD7DD2DD29C21 /* CompetitionRealtimeClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionRealtimeClient.swift; sourceTree = "<group>"; };
+		091448CE772C0EE35F3C5B74 /* AccountDeletionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountDeletionTests.swift; sourceTree = "<group>"; };
 		09FF3C40395A80635C205A3A /* HealthMetricTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthMetricTests.swift; sourceTree = "<group>"; };
 		0A326EB5826710C985D17686 /* CompetitionTestLabTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionTestLabTests.swift; sourceTree = "<group>"; };
 		0B62BF4147CD724EB04CECC6 /* late-watch-sync.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "late-watch-sync.json"; sourceTree = "<group>"; };
@@ -332,6 +334,7 @@
 		6E41142DDDABF7B3BBBB7231 /* HealthCompTests */ = {
 			isa = PBXGroup;
 			children = (
+				091448CE772C0EE35F3C5B74 /* AccountDeletionTests.swift */,
 				511292C66B804FC74970BB4B /* AccountFeatureTests.swift */,
 				A27031C9D6844A658A3C19CE /* AppFeatureTests.swift */,
 				FBFAFEA75A9DBE99760DFF4D /* AuthenticatedProfileStorageTests.swift */,
@@ -656,6 +659,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				7AC8B015321B80E77EEEF3AF /* AccountDeletionTests.swift in Sources */,
 				3CC601AC4956AFE4E678AC28 /* AccountFeatureTests.swift in Sources */,
 				98103B98B315CF1D6121EF4B /* AppFeatureTests.swift in Sources */,
 				A2C0D3A15B09DB208A50D10D /* AuthenticatedProfileStorageTests.swift in Sources */,

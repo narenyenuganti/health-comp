@@ -226,6 +226,30 @@ final class MultiUserCompetitionUITests: XCTestCase {
         XCTAssertTrue(app.buttons["account.sign-out"].exists)
     }
 
+    func testAccountDeletionConfirmationCanBeCancelledSafely() {
+        launch(.account)
+        XCTAssertTrue(app.navigationBars["Account"].waitForExistence(timeout: 8))
+
+        let deleteAccount = app.buttons["account.delete"]
+        scrollToElement(deleteAccount)
+        deleteAccount.tap()
+
+        let alert = app.alerts["Delete Account?"]
+        XCTAssertTrue(alert.waitForExistence(timeout: 3))
+        XCTAssertTrue(
+            alert.staticTexts[
+                "You will confirm with Sign in with Apple. This permanently deletes your account and cannot be undone."
+            ].exists
+        )
+        XCTAssertTrue(alert.buttons["Delete Account"].exists)
+        alert.buttons["Cancel"].tap()
+
+        XCTAssertTrue(alert.waitForNonExistence(timeout: 3))
+        XCTAssertTrue(app.navigationBars["Account"].exists)
+        XCTAssertTrue(deleteAccount.exists)
+        XCTAssertFalse(app.progressIndicators["Deleting account"].exists)
+    }
+
     func testDarkAccessibilitySizeSharingSurfaceHasNoClippedOrUnnamedControls()
         throws
     {

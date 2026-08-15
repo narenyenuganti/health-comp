@@ -393,6 +393,12 @@ verify_jwt = false
 [functions.send-competition-notification]
 verify_jwt = false
 
+# The function verifies the user access token with Auth before any service-role
+# deletion phase. Disabling the legacy gateway verifier also supports projects
+# that use asymmetric JWT signing keys.
+[functions.delete-account]
+verify_jwt = false
+
 # [edge_runtime.secrets]
 # secret_key = "env(SECRET_VALUE)"
 
