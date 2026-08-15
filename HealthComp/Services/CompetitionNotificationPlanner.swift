@@ -71,7 +71,7 @@ extension CompetitionNotificationPolicy {
         case .scheduled(.inviteExpiry):
             return CompetitionNotificationContent(
                 title: "Invitation expiring",
-                body: "Your local activity competition invitation with \(opponent) expires soon."
+                body: "Your activity competition invitation with \(opponent) expires soon."
             )
         case .scheduled(.scheduledStart):
             return CompetitionNotificationContent(
@@ -138,7 +138,7 @@ extension CompetitionNotificationPolicy {
         else {
             return prefix
         }
-        return "\(prefix) Naren \(pointsText(ownerPoints)), \(message.opponentDisplayName) \(pointsText(opponentPoints))."
+        return "\(prefix) You \(pointsText(ownerPoints)), \(message.opponentDisplayName) \(pointsText(opponentPoints))."
     }
 
     private static func pointsText(_ points: Double) -> String {

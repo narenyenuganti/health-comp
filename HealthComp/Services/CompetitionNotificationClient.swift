@@ -30,6 +30,75 @@ struct CompetitionNotificationContent: Equatable, Sendable {
     let body: String
 }
 
+struct CompetitionInviteClaimToken:
+    Equatable,
+    Sendable,
+    CustomStringConvertible,
+    CustomDebugStringConvertible,
+    CustomReflectable
+{
+    let rawValue: String
+
+    init?(rawValue: String) {
+        guard (try? CompetitionInviteClaimRequest(token: rawValue)) != nil else {
+            return nil
+        }
+        self.rawValue = rawValue
+    }
+
+    var description: String { "[REDACTED INVITE TOKEN]" }
+    var debugDescription: String { description }
+    var customMirror: Mirror {
+        Mirror(self, children: ["value": description])
+    }
+}
+
+struct CompetitionInviteShareLink:
+    Equatable,
+    Sendable,
+    CustomStringConvertible,
+    CustomDebugStringConvertible,
+    CustomReflectable
+{
+    let url: URL
+
+    init?(host: String, token: CompetitionInviteClaimToken) {
+        guard CompetitionInviteHost.isValid(host),
+              let url = URL(
+                string: "https://\(host)/invite/\(token.rawValue)"
+              ),
+              CompetitionRoute(
+                url: url,
+                allowedInviteHost: host
+              ) == .claimInvite(token)
+        else {
+            return nil
+        }
+        self.url = url
+    }
+
+    var description: String { "[REDACTED INVITE LINK]" }
+    var debugDescription: String { description }
+    var customMirror: Mirror {
+        Mirror(self, children: ["value": description])
+    }
+}
+
+enum CompetitionInviteHost {
+    static func isValid(_ value: String) -> Bool {
+        guard value == value.lowercased(),
+              !value.hasSuffix("."),
+              value.range(
+                of: "^(?=.{1,253}$)(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$",
+                options: .regularExpression
+              ) != nil
+        else {
+            return false
+        }
+        return true
+    }
+}
+
 enum CompetitionRoute: Equatable, Sendable {
     private enum UserInfoKey {
         static let version = "healthcomp.route.v"
@@ -37,12 +106,23 @@ enum CompetitionRoute: Equatable, Sendable {
         static let competitionID = "healthcomp.route.competitionID"
     }
 
+    enum Kind: Hashable, Sendable {
+        case competition
+        case claimInvite
+    }
+
     case competition(CompetitionID)
+    case claimInvite(CompetitionInviteClaimToken)
 
     init?(url: URL) {
-        guard url.scheme?.lowercased() == "healthcomp",
-              url.host == "competition",
-              url.user == nil,
+        self.init(
+            url: url,
+            allowedInviteHost: CompetitionInviteLinkConfiguration.live.host
+        )
+    }
+
+    init?(url: URL, allowedInviteHost: String?) {
+        guard url.user == nil,
               url.password == nil,
               url.port == nil,
               url.query == nil,
@@ -51,19 +131,59 @@ enum CompetitionRoute: Equatable, Sendable {
             return nil
         }
         let encodedPath = url.path(percentEncoded: true)
-        guard encodedPath.first == "/",
-              !encodedPath.hasSuffix("/"),
-              encodedPath.dropFirst().contains("/") == false
-        else {
+        switch url.scheme {
+        case "healthcomp":
+            guard encodedPath.first == "/",
+                  !encodedPath.hasSuffix("/"),
+                  encodedPath.dropFirst().contains("/") == false
+            else {
+                return nil
+            }
+            let pathValue = String(encodedPath.dropFirst())
+            switch url.host {
+            case "competition":
+                guard let uuid = UUID(uuidString: pathValue),
+                      uuid.uuidString.lowercased() == pathValue
+                else {
+                    return nil
+                }
+                self = .competition(CompetitionID(uuid))
+
+            case "invite":
+                guard let token = CompetitionInviteClaimToken(
+                    rawValue: pathValue
+                ) else {
+                    return nil
+                }
+                self = .claimInvite(token)
+
+            default:
+                return nil
+            }
+
+        case "https":
+            guard let allowedInviteHost,
+                  CompetitionInviteHost.isValid(allowedInviteHost),
+                  url.host == allowedInviteHost,
+                  encodedPath.hasPrefix("/invite/"),
+                  !encodedPath.hasSuffix("/")
+            else {
+                return nil
+            }
+            let pathValue = String(encodedPath.dropFirst("/invite/".count))
+            guard !pathValue.isEmpty,
+                  !pathValue.contains("/"),
+                  let token = CompetitionInviteClaimToken(
+                    rawValue: pathValue
+                  )
+            else {
+                return nil
+            }
+            self = .claimInvite(token)
+
+        default:
             return nil
         }
-        let persistedID = String(encodedPath.dropFirst())
-        guard let uuid = UUID(uuidString: persistedID),
-              uuid.uuidString.lowercased() == persistedID
-        else {
-            return nil
-        }
-        self = .competition(CompetitionID(uuid))
     }
 
     init?(userInfo: [AnyHashable: Any]) {
@@ -94,6 +214,19 @@ enum CompetitionRoute: Equatable, Sendable {
                 UserInfoKey.competitionID:
                     id.rawValue.uuidString.lowercased(),
             ]
+        case .claimInvite:
+            // Invite tokens are intentionally forbidden from notification
+            // payloads. An empty payload fails closed when decoded.
+            return [:]
+        }
+    }
+
+    var kind: Kind {
+        switch self {
+        case .competition:
+            .competition
+        case .claimInvite:
+            .claimInvite
         }
     }
 }

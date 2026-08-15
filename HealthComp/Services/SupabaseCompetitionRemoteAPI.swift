@@ -108,6 +108,24 @@ enum SupabaseCompetitionRemoteAPI {
                     contract: .inviteClaimResponse
                 )
             },
+            archiveCompetition: { competitionID in
+                try validateUUID(competitionID)
+                let response = try await send(
+                    .rpc(
+                        name: "archive_competition",
+                        parameters: try encode(
+                            ArchiveCompetitionParameters(
+                                competitionID: competitionID
+                            )
+                        )
+                    ),
+                    transport: transport
+                )
+                let archivedID = try decodeArchiveResponse(response.data)
+                guard archivedID == competitionID else {
+                    throw CompetitionRemoteFailure.serverContractMismatch
+                }
+            },
             appendScoreRevision: { request in
                 let response = try await send(
                     .function(
@@ -409,6 +427,19 @@ enum SupabaseCompetitionRemoteAPI {
         }
     }
 
+    private static func decodeArchiveResponse(_ data: Data) throws -> UUID {
+        guard let object = try? JSONSerialization.jsonObject(with: data)
+            as? [String: Any],
+              Set(object.keys) == ["competition_id"],
+              let value = object["competition_id"] as? String,
+              let id = UUID(uuidString: value),
+              id.uuidString.lowercased() == value
+        else {
+            throw CompetitionRemoteFailure.serverContractMismatch
+        }
+        return id
+    }
+
     private static func encode<Value: Encodable>(
         _ value: Value
     ) throws -> Data {
@@ -486,6 +517,22 @@ private struct UpdateProfileParameters: Encodable {
 
     enum CodingKeys: String, CodingKey {
         case newDisplayName = "new_display_name"
+    }
+}
+
+private struct ArchiveCompetitionParameters: Encodable {
+    let competitionID: UUID
+
+    enum CodingKeys: String, CodingKey {
+        case competitionID = "competition_id"
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(
+            competitionID.uuidString.lowercased(),
+            forKey: .competitionID
+        )
     }
 }
 

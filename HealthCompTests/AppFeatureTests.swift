@@ -87,7 +87,10 @@ final class AppFeatureTests: XCTestCase {
         ) {
             $0.phase = .authenticated
             $0.profileStoragePaths = storage.paths
-            $0.account = AccountFeature.State(mode: .authenticated)
+            $0.account = AccountFeature.State(
+                mode: .authenticated,
+                displayName: profile.displayName
+            )
             $0.mainTab = MainTabFeature.State()
         }
         XCTAssertEqual(
@@ -161,7 +164,10 @@ final class AppFeatureTests: XCTestCase {
         ) {
             $0.phase = .authenticated
             $0.profileStoragePaths = storage.paths
-            $0.account = AccountFeature.State(mode: .authenticated)
+            $0.account = AccountFeature.State(
+                mode: .authenticated,
+                displayName: profile.displayName
+            )
             $0.mainTab = MainTabFeature.State()
         }
         XCTAssertEqual(recorder.calls, ["refresh", "bootstrap"])
@@ -271,7 +277,10 @@ final class AppFeatureTests: XCTestCase {
         ) {
             $0.phase = .authenticated
             $0.profileStoragePaths = storage.paths
-            $0.account = AccountFeature.State(mode: .authenticated)
+            $0.account = AccountFeature.State(
+                mode: .authenticated,
+                displayName: profile.displayName
+            )
             $0.mainTab = MainTabFeature.State()
         }
         XCTAssertEqual(names.calls, ["nil", "Taylor"])
@@ -320,7 +329,10 @@ final class AppFeatureTests: XCTestCase {
         ) {
             $0.phase = .authenticated
             $0.profileStoragePaths = storage.paths
-            $0.account = AccountFeature.State(mode: .authenticated)
+            $0.account = AccountFeature.State(
+                mode: .authenticated,
+                displayName: profile.displayName
+            )
             $0.mainTab = MainTabFeature.State()
         }
 
@@ -360,6 +372,117 @@ final class AppFeatureTests: XCTestCase {
 
         await store.send(.authenticationEvent(.sessionRefreshed(session)))
         XCTAssertEqual(store.state, initial)
+    }
+
+    @MainActor
+    func testAuthenticatedDisplayNameUpdateReplacesPresentationOnly()
+        async
+    {
+        let profile = profile
+        let updated = AuthenticatedProfile(
+            id: profile.id,
+            displayName: "Taylor Prime"
+        )
+        var competitionClient = CompetitionClient.testValue
+        competitionClient.reconcileAll = { _ in
+            CompetitionPublication(
+                publicationRevision: 1,
+                dashboard: CompetitionDashboard(
+                    competitions: [],
+                    awards: [],
+                    issues: [],
+                    hiddenTerminalCompetitionCount: 0
+                ),
+                source: .remoteParticipants
+            )
+        }
+        let store = TestStore(
+            initialState: .authenticated(profile: profile, epoch: 8)
+        ) {
+            AppFeature()
+        } withDependencies: {
+            $0.authenticationClient = .test(
+                updateProfile: { name in
+                    XCTAssertEqual(name, "Taylor Prime")
+                    return updated
+                }
+            )
+            $0.competitionClient = competitionClient
+        }
+
+        await store.send(.account(.editDisplayNameButtonTapped)) {
+            $0.account.isEditingDisplayName = true
+        }
+        await store.send(.account(.displayNameChanged("Taylor Prime"))) {
+            $0.account.displayName = "Taylor Prime"
+        }
+        await store.send(.account(.saveDisplayNameButtonTapped)) {
+            $0.account.isRequestInFlight = true
+        }
+        await store.receive(
+            .account(.delegate(.displayNameUpdateRequested("Taylor Prime")))
+        )
+        await store.receive(
+            .updateProfileResponse(epoch: 8, .success(updated))
+        ) {
+            $0.profile = updated
+        }
+        await store.receive(
+            .account(.profileUpdateFinished("Taylor Prime"))
+        ) {
+            $0.account.committedDisplayName = "Taylor Prime"
+            $0.account.isEditingDisplayName = false
+            $0.account.isRequestInFlight = false
+        }
+        await store.finish()
+    }
+
+    @MainActor
+    func testTerminalProfileUpdateFailuresTearDownAuthenticatedRuntime()
+        async
+    {
+        for failure in [
+            AuthenticationClientFailure.terminalSession,
+            .sessionExpired,
+        ] {
+            let calls = OrderedCallRecorder()
+            let storage = profileStorageFixture(for: profile, recorder: calls)
+            var initial = AppFeature.State.authenticated(
+                profile: profile,
+                epoch: 8
+            )
+            initial.account.isEditingDisplayName = true
+            initial.account.isRequestInFlight = true
+            let store = TestStore(initialState: initial) {
+                AppFeature()
+            } withDependencies: {
+                $0.authenticatedProfileStorage = storage.client
+                $0.competitionClient = .test(
+                    stop: { calls.record("runtime-stop") }
+                )
+            }
+
+            await store.send(
+                .updateProfileResponse(epoch: 8, .failure(failure))
+            ) {
+                $0.authEpoch = 9
+            }
+            await store.receive(
+                .teardownCompleted(epoch: 9, reason: .sessionEnded)
+            ) {
+                $0.phase = .signedOut
+                $0.profile = nil
+                $0.mainTab = nil
+                $0.account = AccountFeature.State(mode: .signedOut)
+                $0.account.message = .sessionEnded
+            }
+
+            XCTAssertEqual(
+                calls.calls,
+                ["runtime-stop", "storage-teardown"]
+            )
+            await store.finish()
+        }
     }
 
     @MainActor
@@ -801,6 +924,10 @@ private extension AuthenticationClient {
             AuthenticatedProfile = { _ in
                 throw AuthenticationClientFailure.operationFailed
             },
+        updateProfile: @escaping @Sendable (String) async throws ->
+            AuthenticatedProfile = { _ in
+                throw AuthenticationClientFailure.operationFailed
+            },
         events: @escaping @Sendable () -> AsyncStream<AuthenticationEvent> = {
             AsyncStream { $0.finish() }
         },
@@ -810,6 +937,7 @@ private extension AuthenticationClient {
             restoreSession: restoreSession,
             signInWithApple: signInWithApple,
             bootstrapProfile: bootstrapProfile,
+            updateProfile: updateProfile,
             events: events,
             signOut: signOut
         )

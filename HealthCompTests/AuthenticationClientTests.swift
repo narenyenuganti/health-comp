@@ -198,6 +198,26 @@ final class AuthenticationClientTests: XCTestCase {
     }
 
     @MainActor
+    func testProfileUpdateForwardsDisplayNameAndReturnsCanonicalProfile()
+        async throws
+    {
+        let recorder = AuthenticationOperationRecorder()
+        let client = SupabaseAuthenticationClient.make(
+            operations: .test(
+                recorder: recorder,
+                canonicalUpdatedDisplayName: "Taylor Prime Canonical"
+            ),
+            appleAuthorization: .unimplemented
+        )
+
+        let profile = try await client.updateProfile("Taylor Prime")
+
+        XCTAssertEqual(profile.displayName, "Taylor Prime Canonical")
+        let operations = await recorder.operations
+        XCTAssertEqual(operations, ["update:Taylor Prime"])
+    }
+
+    @MainActor
     func testSignOutIsBestEffortWhenSDKLogoutFailsAfterItsLocalRemoval() async {
         let recorder = AuthenticationOperationRecorder()
         let client = SupabaseAuthenticationClient.make(
@@ -374,6 +394,7 @@ private extension SupabaseAuthenticationOperations {
                 expiresAt: Date(timeIntervalSince1970: 200)
             )
         ),
+        canonicalUpdatedDisplayName: String? = nil,
         remoteSignOutFailure: AuthenticationClientFailure? = nil
     ) -> Self {
         Self(
@@ -397,6 +418,13 @@ private extension SupabaseAuthenticationOperations {
                 return AuthenticatedProfile(
                     id: UUID(uuidString: "92000000-0000-4000-8000-000000000001")!,
                     displayName: displayName ?? "Existing"
+                )
+            },
+            updateProfile: { displayName in
+                await recorder.record("update:\(displayName)")
+                return AuthenticatedProfile(
+                    id: UUID(uuidString: "92000000-0000-4000-8000-000000000001")!,
+                    displayName: canonicalUpdatedDisplayName ?? displayName
                 )
             },
             events: { AsyncStream { $0.finish() } },

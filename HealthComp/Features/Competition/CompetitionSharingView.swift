@@ -3,6 +3,9 @@ import SwiftUI
 
 struct CompetitionSharingView: View {
     let publication: LocalCompetitionPublication
+    let inviteCreationStatus: CompetitionFeature.InviteCreationStatus
+    let createdInviteLink: CompetitionInviteShareLink?
+    let createInvite: () -> Void
     let selectCompetition: (CompetitionID) -> Void
     let reinvite: () -> Void
     let isReinviteInFlight: Bool
@@ -11,6 +14,7 @@ struct CompetitionSharingView: View {
     let notificationPreferenceSaveFailed: Bool
     let notificationAuthorization:
         CompetitionNotificationAuthorizationState?
+    let notificationOpponentDisplayName: String?
     let notificationAuthorizationRequestIsInFlight: Bool
     let requestNotificationAuthorization: () -> Void
     let toggleNotifications: () -> Void
@@ -19,6 +23,15 @@ struct CompetitionSharingView: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 20) {
                 sharingHero
+
+                if publication.source == .remoteParticipants {
+                    CreateCompetitionView(
+                        status: inviteCreationStatus,
+                        shareLink: createdInviteLink,
+                        timeZoneIdentifier: publication.timeZoneIdentifier,
+                        create: createInvite
+                    )
+                }
 
                 if !publication.dashboard.issues.isEmpty {
                     issueBanner
@@ -43,7 +56,7 @@ struct CompetitionSharingView: View {
             Label("Local Activity", systemImage: "figure.run.circle.fill")
                 .font(.title2.weight(.bold))
                 .foregroundStyle(.tint)
-            Text("Share a seven-day competition with Alex while your scores stay on this iPhone.")
+            Text(heroDescription)
                 .font(.body)
                 .foregroundStyle(.secondary)
             notificationControls
@@ -64,6 +77,15 @@ struct CompetitionSharingView: View {
         .padding(18)
         .background(.background, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
         .shadow(color: .black.opacity(0.06), radius: 12, y: 5)
+    }
+
+    private var heroDescription: String {
+        switch publication.source {
+        case .simulatedFixture:
+            "Share a seven-day competition with Alex while your scores stay on this iPhone."
+        case .remoteParticipants:
+            "Compete privately with real people while raw Health data stays on this iPhone."
+        }
     }
 
     @ViewBuilder
@@ -95,26 +117,28 @@ struct CompetitionSharingView: View {
             .foregroundStyle(.secondary)
 
         case .authorized, .provisional, .ephemeral:
-            Button(action: toggleNotifications) {
-                Label(
-                    notificationsMuted
-                        ? "Unmute Alex Notifications"
-                        : "Mute Alex Notifications",
-                    systemImage: notificationsMuted
-                        ? "bell.slash.fill"
-                        : "bell.fill"
+            if let notificationOpponentDisplayName {
+                Button(action: toggleNotifications) {
+                    Label(
+                        notificationsMuted
+                            ? "Unmute \(notificationOpponentDisplayName) Notifications"
+                            : "Mute \(notificationOpponentDisplayName) Notifications",
+                        systemImage: notificationsMuted
+                            ? "bell.slash.fill"
+                            : "bell.fill"
+                    )
+                }
+                .buttonStyle(.bordered)
+                .controlSize(.large)
+                .frame(minHeight: 44)
+                .disabled(notificationMuteIsInFlight)
+                .accessibilityIdentifier("competition.notifications.mute")
+                .accessibilityValue(
+                    notificationMuteIsInFlight
+                        ? "Saving"
+                        : (notificationsMuted ? "Muted" : "Not muted")
                 )
             }
-            .buttonStyle(.bordered)
-            .controlSize(.large)
-            .frame(minHeight: 44)
-            .disabled(notificationMuteIsInFlight)
-            .accessibilityIdentifier("competition.notifications.mute")
-            .accessibilityValue(
-                notificationMuteIsInFlight
-                    ? "Saving"
-                    : (notificationsMuted ? "Muted" : "Not muted")
-            )
 
         case nil:
             EmptyView()
@@ -136,7 +160,8 @@ struct CompetitionSharingView: View {
                         description: Text(emptyStateDescription)
                     )
 
-                    if publication.dashboard.hiddenTerminalCompetitionCount > 0 {
+                    if publication.source == .simulatedFixture,
+                       publication.dashboard.hiddenTerminalCompetitionCount > 0 {
                         Button {
                             reinvite()
                         } label: {
@@ -144,7 +169,9 @@ struct CompetitionSharingView: View {
                                 ProgressView()
                                     .frame(maxWidth: .infinity)
                             } else {
-                                Text("Invite Alex Again")
+                                Text(
+                                    "Invite \(LocalCompetitionIdentity.opponentDisplayName) Again"
+                                )
                                     .frame(maxWidth: .infinity)
                             }
                         }
@@ -168,7 +195,10 @@ struct CompetitionSharingView: View {
                     Button {
                         selectCompetition(competition.id)
                     } label: {
-                        CompetitionSharingCard(competition: competition)
+                        CompetitionSharingCard(
+                            competition: competition,
+                            source: publication.source
+                        )
                     }
                     .buttonStyle(CompetitionPressButtonStyle())
                     .accessibilityIdentifier(
@@ -180,9 +210,14 @@ struct CompetitionSharingView: View {
     }
 
     private var emptyStateDescription: String {
-        publication.dashboard.hiddenTerminalCompetitionCount > 0
-            ? "The previous invitation closed. You can invite Alex again."
-            : "A local invitation will appear here."
+        switch publication.source {
+        case .simulatedFixture:
+            publication.dashboard.hiddenTerminalCompetitionCount > 0
+                ? "The previous invitation closed. You can invite \(LocalCompetitionIdentity.opponentDisplayName) again."
+                : "A local invitation will appear here."
+        case .remoteParticipants:
+            "Create and share a private invitation to begin."
+        }
     }
 
     private var awardsSection: some View {
@@ -245,6 +280,7 @@ struct CompetitionSharingView: View {
 
 private struct CompetitionSharingCard: View {
     let competition: LocalCompetitionPresentation
+    let source: CompetitionPublicationSource
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
@@ -301,7 +337,7 @@ private struct CompetitionSharingCard: View {
                         endPoint: .bottomTrailing
                     )
                 )
-            Text("A")
+            Text(competition.opponentDisplayName.prefix(1).uppercased())
                 .font(.headline.weight(.bold))
                 .foregroundStyle(.white)
         }
@@ -317,9 +353,14 @@ private struct CompetitionSharingCard: View {
             Text(competitionSharingStatus(competition.lifecycle))
                 .font(.subheadline.weight(.medium))
                 .foregroundStyle(statusTint)
-            Text("Alex is simulated on this iPhone.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            if let disclosure = competitionFixtureDisclosure(
+                source: source,
+                opponentDisplayName: competition.opponentDisplayName
+            ) {
+                Text(disclosure)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
         }
         .multilineTextAlignment(.leading)
     }
@@ -349,14 +390,19 @@ private struct CompetitionSharingCard: View {
         var parts = [
             competition.opponentDisplayName,
             competitionSharingStatus(competition.lifecycle),
-            "Alex is simulated on this iPhone",
         ]
+        if let disclosure = competitionFixtureDisclosure(
+            source: source,
+            opponentDisplayName: competition.opponentDisplayName
+        ) {
+            parts.append(disclosure)
+        }
         if competitionShouldShowScores(competition.lifecycle) {
             parts.append(
-                "Naren \(competitionPointsText(competition.userPoints)) total points"
+                "\(competition.ownerDisplayName) \(competitionPointsText(competition.userPoints)) total points"
             )
             parts.append(
-                "Alex \(competitionPointsText(competition.opponentPoints)) total points"
+                "\(competition.opponentDisplayName) \(competitionPointsText(competition.opponentPoints)) total points"
             )
         }
         return parts.joined(separator: ". ")
@@ -376,7 +422,11 @@ private struct CompetitionAwardDashboardRow: View {
                 .frame(width: 44, height: 44)
 
             VStack(alignment: .leading, spacing: 2) {
-                Text(award.kind == .victory ? "Victory Over Alex" : "Competition Complete")
+                Text(
+                    award.kind == .victory
+                        ? "Victory Over \(award.friendDisplayName)"
+                        : "Competition Complete"
+                )
                     .font(.subheadline.weight(.semibold))
                 Text(
                     competitionAwardEarnedText(
@@ -412,7 +462,7 @@ private struct CompetitionRivalrySummaryCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Rivalry with Alex")
+            Text("Competition history")
                 .font(.subheadline.weight(.semibold))
 
             ViewThatFits(in: .horizontal) {
@@ -420,9 +470,9 @@ private struct CompetitionRivalrySummaryCard: View {
                 VStack(alignment: .leading, spacing: 8) { statistics }
             }
 
-            if let latestNarenVictoryAt = summary.latestNarenVictoryAt {
+            if let latestOwnerVictoryAt = summary.latestOwnerVictoryAt {
                 Text(
-                    "Latest Naren victory \(competitionAwardDateText(latestNarenVictoryAt, timeZoneIdentifier: timeZoneIdentifier))"
+                    "Latest victory \(competitionAwardDateText(latestOwnerVictoryAt, timeZoneIdentifier: timeZoneIdentifier))"
                 )
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -441,8 +491,8 @@ private struct CompetitionRivalrySummaryCard: View {
     @ViewBuilder
     private var statistics: some View {
         rivalryStatistic("Completed", value: summary.completions)
-        rivalryStatistic("Naren wins", value: summary.narenWins)
-        rivalryStatistic("Alex wins", value: summary.alexWins)
+        rivalryStatistic("Your wins", value: summary.ownerWins)
+        rivalryStatistic("Other wins", value: summary.opponentWins)
         rivalryStatistic("Ties", value: summary.ties)
     }
 
@@ -508,10 +558,10 @@ func competitionShouldShowScores(
 
 struct CompetitionRivalrySummary: Equatable {
     let completions: Int
-    let narenWins: Int
-    let alexWins: Int
+    let ownerWins: Int
+    let opponentWins: Int
     let ties: Int
-    let latestNarenVictoryAt: Date?
+    let latestOwnerVictoryAt: Date?
 }
 
 func competitionRivalrySummary(
@@ -520,10 +570,10 @@ func competitionRivalrySummary(
     let outcomes = dashboard.competitions.compactMap(\.terminalResult)
     return CompetitionRivalrySummary(
         completions: outcomes.count,
-        narenWins: outcomes.filter { $0.outcome == .win }.count,
-        alexWins: outcomes.filter { $0.outcome == .loss }.count,
+        ownerWins: outcomes.filter { $0.outcome == .win }.count,
+        opponentWins: outcomes.filter { $0.outcome == .loss }.count,
         ties: outcomes.filter { $0.outcome == .tie }.count,
-        latestNarenVictoryAt: dashboard.awards
+        latestOwnerVictoryAt: dashboard.awards
             .filter { $0.kind == .victory }
             .map(\.awardedAt)
             .max()

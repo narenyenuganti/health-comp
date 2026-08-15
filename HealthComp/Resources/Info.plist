@@ -29,6 +29,8 @@
 	</array>
 	<key>CFBundleVersion</key>
 	<string>1</string>
+	<key>HEALTHCOMP_INVITE_HOST</key>
+	<string>$(HEALTHCOMP_INVITE_HOST)</string>
 	<key>NSHealthShareUsageDescription</key>
 	<string>HealthComp reads your activity data to score competitions with friends.</string>
 	<key>SUPABASE_PUBLISHABLE_KEY</key>

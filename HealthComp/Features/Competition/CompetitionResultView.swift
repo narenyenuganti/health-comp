@@ -4,6 +4,9 @@ import SwiftUI
 struct CompetitionResultView: View {
     let competition: LocalCompetitionPresentation
     let awards: [LocalCompetitionAward]
+    let source: CompetitionPublicationSource
+    let inviteCreationStatus: CompetitionFeature.InviteCreationStatus
+    let createdInviteLink: CompetitionInviteShareLink?
     let isCommandInFlight: Bool
     let send: (CompetitionFeature.Action) -> Void
 
@@ -91,7 +94,7 @@ struct CompetitionResultView: View {
         .accessibilityElement(children: .ignore)
         .accessibilityIdentifier("competition.result")
         .accessibilityLabel(
-            "\(resultTitle). Final score. Naren \(competitionPointsAccessibilityText(competition.userPoints)). Alex \(competitionPointsAccessibilityText(competition.opponentPoints))."
+            "\(resultTitle). Final score. \(competition.ownerDisplayName) \(competitionPointsAccessibilityText(competition.userPoints)). \(competition.opponentDisplayName) \(competitionPointsAccessibilityText(competition.opponentPoints))."
         )
     }
 
@@ -143,11 +146,11 @@ struct CompetitionResultView: View {
                     VStack(alignment: .leading, spacing: 3) {
                         Text(
                             award.kind == .victory
-                                ? "Victory Over Alex"
+                                ? "Victory Over \(award.friendDisplayName)"
                                 : "Competition Complete"
                         )
                         .font(.headline)
-                        Text("Earned in this local seven-day competition")
+                        Text("Earned in this seven-day competition")
                             .font(.caption)
                             .foregroundStyle(.secondary)
                         Text(
@@ -195,17 +198,25 @@ struct CompetitionResultView: View {
 
     @ViewBuilder
     private var resultButtons: some View {
-        Button {
-            send(.rematchTapped(competition.id))
-        } label: {
-            commandLabel("Rematch")
+        if source == .remoteParticipants {
+            remoteRematchControl
+        } else {
+            Button {
+                send(.rematchTapped(competition.id))
+            } label: {
+                commandLabel("Rematch")
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .disabled(isCommandInFlight)
         }
-        .buttonStyle(.borderedProminent)
-        .controlSize(.large)
-        .frame(maxWidth: .infinity, minHeight: 44)
-        .disabled(isCommandInFlight)
 
-        if !isArchived {
+        switch competitionResultDataControl(
+            source: source,
+            isArchived: isArchived
+        ) {
+        case .archive:
             Button("Archive") {
                 send(.archiveTapped(competition.id))
             }
@@ -213,7 +224,8 @@ struct CompetitionResultView: View {
             .controlSize(.large)
             .frame(maxWidth: .infinity, minHeight: 44)
             .disabled(isCommandInFlight)
-        } else {
+
+        case .deleteLocalData:
             Button("Delete Local Data", role: .destructive) {
                 isDeleteConfirmationPresented = true
             }
@@ -235,6 +247,79 @@ struct CompetitionResultView: View {
                     "This permanently removes the local competition journal and its notifications."
                 )
             }
+
+        case .preservedHistory:
+            Label(
+                "Archived competition history is preserved.",
+                systemImage: "archivebox.fill"
+            )
+            .font(.footnote)
+            .foregroundStyle(.secondary)
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .accessibilityIdentifier("competition.history.preserved")
+        }
+    }
+
+    @ViewBuilder
+    private var remoteRematchControl: some View {
+        switch inviteCreationStatus {
+        case .idle:
+            Button("Create Rematch Invitation") {
+                send(.rematchTapped(competition.id))
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .accessibilityIdentifier("competition.rematch.create")
+
+        case .creating:
+            HStack(spacing: 8) {
+                ProgressView()
+                Text("Creating rematch invitation…")
+            }
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .accessibilityElement(children: .combine)
+
+        case .ready:
+            if let createdInviteLink {
+                ShareLink(
+                    item: createdInviteLink.url,
+                    subject: Text("HealthComp rematch"),
+                    message: Text(
+                        "Open this private link to join our HealthComp rematch."
+                    )
+                ) {
+                    Label(
+                        "Share Rematch Invitation",
+                        systemImage: "square.and.arrow.up"
+                    )
+                    .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .frame(minHeight: 44)
+                .accessibilityHint(
+                    "Opens the system share sheet. The private link is not read aloud."
+                )
+                .accessibilityIdentifier("competition.rematch.share")
+            }
+
+        case .retryable:
+            Button("Try Rematch Again") {
+                send(.rematchTapped(competition.id))
+            }
+            .buttonStyle(.borderedProminent)
+            .controlSize(.large)
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .accessibilityIdentifier("competition.rematch.retry")
+
+        case .configurationUnavailable:
+            Label(
+                "Rematch links are not configured for this build.",
+                systemImage: "exclamationmark.triangle.fill"
+            )
+            .font(.caption)
+            .foregroundStyle(.orange)
         }
     }
 
@@ -266,19 +351,18 @@ struct CompetitionResultView: View {
     }
 
     private var resultTitle: String {
-        switch outcome {
-        case .win: "You Won"
-        case .loss: "Alex Won"
-        case .tie: "It’s a Tie"
-        }
+        competitionResultTitle(
+            outcome: outcome,
+            opponentDisplayName: competition.opponentDisplayName
+        )
     }
 
     private var resultSubtitle: String {
-        switch outcome {
-        case .win: "Your seven-day Activity total finished ahead."
-        case .loss: "Alex’s simulated seven-day total finished ahead."
-        case .tie: "Both seven-day totals finished even."
-        }
+        competitionResultSubtitle(
+            outcome: outcome,
+            opponentDisplayName: competition.opponentDisplayName,
+            source: source
+        )
     }
 
     private var isArchived: Bool {
@@ -288,6 +372,48 @@ struct CompetitionResultView: View {
 
     private var isBestAvailableResult: Bool {
         competition.terminalResult?.basis == .bestAvailable
+    }
+}
+
+enum CompetitionResultDataControl: Equatable {
+    case archive
+    case deleteLocalData
+    case preservedHistory
+}
+
+func competitionResultDataControl(
+    source: CompetitionPublicationSource,
+    isArchived: Bool
+) -> CompetitionResultDataControl {
+    guard isArchived else { return .archive }
+    return source == .remoteParticipants ? .preservedHistory : .deleteLocalData
+}
+
+func competitionResultTitle(
+    outcome: CompetitionOutcome,
+    opponentDisplayName: String
+) -> String {
+    switch outcome {
+    case .win: "You Won"
+    case .loss: "\(opponentDisplayName) Won"
+    case .tie: "It’s a Tie"
+    }
+}
+
+func competitionResultSubtitle(
+    outcome: CompetitionOutcome,
+    opponentDisplayName: String,
+    source: CompetitionPublicationSource
+) -> String {
+    switch outcome {
+    case .win:
+        "Your seven-day Activity total finished ahead."
+    case .loss:
+        source == .simulatedFixture
+            ? "\(opponentDisplayName)’s simulated seven-day total finished ahead."
+            : "\(opponentDisplayName)’s seven-day Activity total finished ahead."
+    case .tie:
+        "Both seven-day totals finished even."
     }
 }
 

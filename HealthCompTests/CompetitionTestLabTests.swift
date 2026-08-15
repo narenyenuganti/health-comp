@@ -6,6 +6,75 @@ import XCTest
 @testable import HealthComp
 
 final class CompetitionTestLabTests: XCTestCase {
+    func testMultiUserLaunchParserAcceptsEveryDeterministicScenario() {
+        for scenario in MultiUserCompetitionTestLabScenario.allCases {
+            XCTAssertEqual(
+                MultiUserCompetitionTestLabLaunchParser.decision(
+                    arguments: [
+                        "HealthComp",
+                        "--multi-user-competition-test-lab",
+                        "--multi-user-competition-scenario",
+                        scenario.rawValue,
+                    ]
+                ),
+                .configured(.init(scenario: scenario))
+            )
+        }
+    }
+
+    func testMultiUserLaunchParserFailsClosedForMixedOrInvalidLabModes() {
+        let cases = [
+            [
+                "--multi-user-competition-test-lab",
+                "--local-competition-test-lab",
+            ],
+            [
+                "--multi-user-competition-test-lab",
+                "--multi-user-competition-scenario", "unknown",
+            ],
+            [
+                "--multi-user-competition-test-lab",
+                "--multi-user-competition-scenario",
+            ],
+        ]
+
+        for arguments in cases {
+            guard case .invalid = MultiUserCompetitionTestLabLaunchParser
+                .decision(arguments: arguments)
+            else {
+                return XCTFail("Invalid multi-user lab arguments must fail closed")
+            }
+        }
+    }
+
+    @MainActor
+    func testMultiUserLabLaunchConstructsNoLiveDependencyGraph() {
+        let authenticationMakeCount = CompetitionTestLabLockedCounter()
+        let competitionMakeCount = CompetitionTestLabLockedCounter()
+
+        _ = HealthCompApp(
+            arguments: [
+                "HealthComp",
+                "--multi-user-competition-test-lab",
+                "--multi-user-competition-scenario", "sharing",
+            ],
+            supabaseClientProvider: SupabaseClientProvider {
+                fatalError("Multi-user Test Lab must not create Supabase")
+            },
+            authenticationClientFactory: AuthenticationClientFactory { _ in
+                authenticationMakeCount.increment()
+                return .testValue
+            },
+            competitionClientFactory: CompetitionClientFactory { _ in
+                competitionMakeCount.increment()
+                return .testValue
+            }
+        )
+
+        XCTAssertEqual(authenticationMakeCount.value, 0)
+        XCTAssertEqual(competitionMakeCount.value, 0)
+    }
+
     func testLaunchParserIsDisabledWithoutLabFlag() {
         XCTAssertEqual(
             CompetitionTestLabLaunchParser.decision(arguments: ["HealthComp"]),
@@ -568,6 +637,17 @@ final class CompetitionTestLabTests: XCTestCase {
 
 private enum CompetitionTestLabTestError: Error {
     case timeout
+}
+
+private final class CompetitionTestLabLockedCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var count = 0
+
+    var value: Int { lock.withLock { count } }
+
+    func increment() {
+        lock.withLock { count += 1 }
+    }
 }
 
 private final class PoisonedCompetitionClientRecorder: @unchecked Sendable {

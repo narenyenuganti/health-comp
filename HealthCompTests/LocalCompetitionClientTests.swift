@@ -925,6 +925,8 @@ final class LocalCompetitionClientTests: XCTestCase {
         let publication = await nextPublication(from: unavailable.start())
         XCTAssertEqual(publication.dashboard.issues, [.storageUnavailable])
 
+        await LocalCompetitionClient.testValue.stop()
+        await LocalCompetitionClient.previewValue.stop()
         let testPublication = await nextPublication(
             from: LocalCompetitionClient.testValue.start()
         )

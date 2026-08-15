@@ -46,6 +46,7 @@ targets:
         NSHealthShareUsageDescription: "HealthComp reads your activity data to score competitions with friends."
         SUPABASE_URL: "$(SUPABASE_URL)"
         SUPABASE_PUBLISHABLE_KEY: "$(SUPABASE_PUBLISHABLE_KEY)"
+        HEALTHCOMP_INVITE_HOST: "$(HEALTHCOMP_INVITE_HOST)"
         CFBundleURLTypes:
           - CFBundleURLName: com.narenyenuganti.HealthComp.competition
             CFBundleURLSchemes:
@@ -55,6 +56,9 @@ targets:
         CODE_SIGN_ENTITLEMENTS: HealthComp/Resources/HealthComp.entitlements
         TARGETED_DEVICE_FAMILY: "1"
         SWIFT_VERSION: "5.9"
+      configs:
+        Staging:
+          PRODUCT_BUNDLE_IDENTIFIER: com.narenyenuganti.HealthComp.staging
     dependencies:
       - package: CompetitionCore
         product: CompetitionCore

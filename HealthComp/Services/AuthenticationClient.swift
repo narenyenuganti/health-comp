@@ -50,6 +50,7 @@ struct AuthenticationClient: Sendable {
     var restoreSession: @Sendable () async throws -> AuthenticationSession?
     var signInWithApple: @MainActor @Sendable () async throws -> AuthenticationSession
     var bootstrapProfile: @Sendable (String?) async throws -> AuthenticatedProfile
+    var updateProfile: @Sendable (String) async throws -> AuthenticatedProfile
     var events: @Sendable () -> AsyncStream<AuthenticationEvent>
     var signOut: @Sendable () async -> Void
 
@@ -57,12 +58,16 @@ struct AuthenticationClient: Sendable {
         restoreSession: @escaping @Sendable () async throws -> AuthenticationSession?,
         signInWithApple: @escaping @MainActor @Sendable () async throws -> AuthenticationSession,
         bootstrapProfile: @escaping @Sendable (String?) async throws -> AuthenticatedProfile,
+        updateProfile: @escaping @Sendable (String) async throws -> AuthenticatedProfile = { _ in
+            throw AuthenticationClientFailure.operationFailed
+        },
         events: @escaping @Sendable () -> AsyncStream<AuthenticationEvent>,
         signOut: @escaping @Sendable () async -> Void
     ) {
         self.restoreSession = restoreSession
         self.signInWithApple = signInWithApple
         self.bootstrapProfile = bootstrapProfile
+        self.updateProfile = updateProfile
         self.events = events
         self.signOut = signOut
     }
@@ -73,6 +78,9 @@ extension AuthenticationClient: TestDependencyKey {
         restoreSession: { nil },
         signInWithApple: { throw AuthenticationClientFailure.operationFailed },
         bootstrapProfile: { _ in
+            throw AuthenticationClientFailure.operationFailed
+        },
+        updateProfile: { _ in
             throw AuthenticationClientFailure.operationFailed
         },
         events: { AsyncStream { $0.finish() } },
