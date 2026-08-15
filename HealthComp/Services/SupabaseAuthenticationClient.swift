@@ -31,6 +31,11 @@ struct SupabaseAuthenticationOperations: Sendable {
     var updateProfile: @Sendable (String) async throws -> AuthenticatedProfile = { _ in
         throw AuthenticationClientFailure.operationFailed
     }
+    var requestAccountDeletion: @Sendable (
+        AccountDeletionRequest
+    ) async throws -> AccountDeletionReceipt = { _ in
+        throw AuthenticationClientFailure.operationFailed
+    }
     var events: @Sendable () -> AsyncStream<SupabaseAuthenticationEvent>
     var clearLocalSession: @Sendable () async -> Void
     var remoteSignOut: @Sendable () async throws -> Void
@@ -43,6 +48,9 @@ struct AppleAuthorizationClient: Sendable {
     var authorize: @MainActor @Sendable (
         _ nonceChallenge: String
     ) async throws -> Data?
+    var reauthorizeForDeletion: @MainActor @Sendable (
+        _ nonceChallenge: String
+    ) async throws -> Data?
 
     init(
         authorize: @escaping @MainActor @Sendable (
@@ -50,6 +58,21 @@ struct AppleAuthorizationClient: Sendable {
         ) async throws -> Data?
     ) {
         self.authorize = authorize
+        self.reauthorizeForDeletion = { _ in
+            throw AuthenticationClientFailure.reauthenticationRequired
+        }
+    }
+
+    init(
+        authorize: @escaping @MainActor @Sendable (
+            _ nonceChallenge: String
+        ) async throws -> Data?,
+        reauthorizeForDeletion: @escaping @MainActor @Sendable (
+            _ nonceChallenge: String
+        ) async throws -> Data?
+    ) {
+        self.authorize = authorize
+        self.reauthorizeForDeletion = reauthorizeForDeletion
     }
 }
 
@@ -119,6 +142,52 @@ enum SupabaseAuthenticationClient {
                 } catch {
                     throw classifyBootstrapFailure(error)
                 }
+            },
+            deleteAccount: {
+                let nonce = try nonce()
+                let authorizationCodeData: Data?
+                do {
+                    authorizationCodeData = try await appleAuthorization
+                        .reauthorizeForDeletion(nonce.challenge)
+                } catch is CancellationError {
+                    throw AuthenticationClientFailure.cancelled
+                } catch let failure as AuthenticationClientFailure {
+                    throw failure
+                } catch {
+                    throw AuthenticationClientFailure
+                        .reauthenticationRequired
+                }
+                guard let authorizationCodeData,
+                      let authorizationCode = String(
+                        data: authorizationCodeData,
+                        encoding: .utf8
+                      ),
+                      (16...4096).contains(authorizationCode.count),
+                      !authorizationCode.unicodeScalars.contains(where: {
+                        CharacterSet.whitespacesAndNewlines.contains($0)
+                            || CharacterSet.controlCharacters.contains($0)
+                      })
+                else {
+                    throw AuthenticationClientFailure
+                        .reauthenticationRequired
+                }
+
+                let receipt: AccountDeletionReceipt
+                do {
+                    receipt = try await operations.requestAccountDeletion(
+                        AccountDeletionRequest(
+                            authorizationCode: authorizationCode,
+                            nonce: nonce.challenge
+                        )
+                    )
+                } catch {
+                    throw SupabaseAuthenticationOperations
+                        .classifyAccountDeletionFailure(error)
+                }
+                guard receipt.status == .deleted else {
+                    throw AuthenticationClientFailure.operationFailed
+                }
+                await operations.clearLocalSession()
             },
             events: {
                 AsyncStream { continuation in
@@ -249,6 +318,15 @@ private extension SupabaseAuthenticationOperations {
                     .execute()
                     .value
             },
+            requestAccountDeletion: { request in
+                try await clientBox.client().functions.invoke(
+                    "delete-account",
+                    options: FunctionInvokeOptions(
+                        method: .post,
+                        body: request
+                    )
+                )
+            },
             events: {
                 AsyncStream { continuation in
                     let task = Task {
@@ -308,6 +386,34 @@ private extension SupabaseAuthenticationOperations {
             return .refreshRetryable
         }
     }
+
+    static func classifyAccountDeletionFailure(
+        _ error: any Error
+    ) -> AuthenticationClientFailure {
+        if let failure = error as? AuthenticationClientFailure {
+            return failure
+        }
+        guard case let FunctionsError.httpError(_, data) = error,
+              let response = try? JSONDecoder().decode(
+                AccountDeletionErrorResponse.self,
+                from: data
+              )
+        else {
+            return .operationFailed
+        }
+        switch response.error {
+        case "authentication_required":
+            return .terminalSession
+        case "reauthentication_required", "apple_identity_mismatch":
+            return .reauthenticationRequired
+        default:
+            return .operationFailed
+        }
+    }
+}
+
+private struct AccountDeletionErrorResponse: Decodable {
+    let error: String
 }
 
 private extension SupabaseAuthenticationSession {
@@ -336,11 +442,23 @@ private actor SupabaseAuthenticationClientBox {
 }
 
 private extension AppleAuthorizationClient {
-    static let live = Self { nonceChallenge in
-        try await AppleAuthorizationBridge.authorize(
-            nonceChallenge: nonceChallenge
-        )
-    }
+    static let live = Self(
+        authorize: { nonceChallenge in
+            try await AppleAuthorizationBridge.authorizeCredential(
+                nonceChallenge: nonceChallenge
+            ).identityToken
+        },
+        reauthorizeForDeletion: { nonceChallenge in
+            try await AppleAuthorizationBridge.authorizeCredential(
+                nonceChallenge: nonceChallenge
+            ).authorizationCode
+        }
+    )
+}
+
+private struct AppleAuthorizationCredentialPayload {
+    let identityToken: Data?
+    let authorizationCode: Data?
 }
 
 struct AppleAuthorizationCancellationState {
@@ -357,11 +475,16 @@ private final class AppleAuthorizationBridge:
     ASAuthorizationControllerDelegate,
     ASAuthorizationControllerPresentationContextProviding
 {
-    private var continuation: CheckedContinuation<Data?, any Error>?
+    private var continuation: CheckedContinuation<
+        AppleAuthorizationCredentialPayload,
+        any Error
+    >?
     private var controller: ASAuthorizationController?
     private var cancellationState = AppleAuthorizationCancellationState()
 
-    static func authorize(nonceChallenge: String) async throws -> Data? {
+    static func authorizeCredential(
+        nonceChallenge: String
+    ) async throws -> AppleAuthorizationCredentialPayload {
         let bridge = AppleAuthorizationBridge()
         return try await withTaskCancellationHandler {
             try await bridge.perform(nonceChallenge: nonceChallenge)
@@ -370,7 +493,9 @@ private final class AppleAuthorizationBridge:
         }
     }
 
-    private func perform(nonceChallenge: String) async throws -> Data? {
+    private func perform(
+        nonceChallenge: String
+    ) async throws -> AppleAuthorizationCredentialPayload {
         try await withCheckedThrowingContinuation { continuation in
             guard !cancellationState.isCancelled else {
                 continuation.resume(throwing: CancellationError())
@@ -400,7 +525,12 @@ private final class AppleAuthorizationBridge:
             finish(throwing: AuthenticationClientFailure.invalidCredential)
             return
         }
-        finish(returning: credential.identityToken)
+        finish(
+            returning: AppleAuthorizationCredentialPayload(
+                identityToken: credential.identityToken,
+                authorizationCode: credential.authorizationCode
+            )
+        )
     }
 
     func authorizationController(
@@ -430,11 +560,13 @@ private final class AppleAuthorizationBridge:
         finish(throwing: CancellationError())
     }
 
-    private func finish(returning identityToken: Data?) {
+    private func finish(
+        returning credential: AppleAuthorizationCredentialPayload
+    ) {
         guard let continuation else { return }
         self.continuation = nil
         controller = nil
-        continuation.resume(returning: identityToken)
+        continuation.resume(returning: credential)
     }
 
     private func finish(throwing error: any Error) {

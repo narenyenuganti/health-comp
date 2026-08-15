@@ -94,14 +94,57 @@ struct AccountSettingsView: View {
                     "Signing out removes this profile’s local competition cache from this device. Completed shared history remains on the server."
                 )
             }
+
+            Section {
+                Button("Delete Account", role: .destructive) {
+                    store.send(.deleteAccountButtonTapped)
+                }
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .disabled(store.isRequestInFlight)
+                .accessibilityIdentifier("account.delete")
+                .accessibilityValue(
+                    store.isDeletingAccount ? "Deleting account" : ""
+                )
+            } footer: {
+                Text(
+                    "Deletion is permanent. Active competitions are cancelled, this profile’s local data is removed, and completed shared history remains for the other participant as Former competitor."
+                )
+            }
         }
         .navigationTitle("Account")
         .navigationBarTitleDisplayMode(.inline)
         .overlay {
             if store.isRequestInFlight {
                 ProgressView()
-                    .accessibilityLabel("Saving account changes")
+                    .accessibilityLabel(
+                        store.isDeletingAccount
+                            ? "Deleting account"
+                            : "Saving account changes"
+                    )
             }
+        }
+        .alert(
+            "Delete Account?",
+            isPresented: Binding(
+                get: { store.isDeleteConfirmationPresented },
+                set: { isPresented in
+                    if !isPresented && store.isDeleteConfirmationPresented {
+                        store.send(.deleteAccountConfirmationCancelled)
+                    }
+                }
+            )
+        ) {
+            Button("Delete Account", role: .destructive) {
+                store.send(.deleteAccountConfirmationAccepted)
+            }
+            .accessibilityIdentifier("account.delete.confirm")
+            Button("Cancel", role: .cancel) {
+                store.send(.deleteAccountConfirmationCancelled)
+            }
+        } message: {
+            Text(
+                "You will confirm with Sign in with Apple. This permanently deletes your account and cannot be undone."
+            )
         }
     }
 }

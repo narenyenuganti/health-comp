@@ -27,6 +27,24 @@ struct AuthenticatedProfile: Codable, Equatable, Sendable {
     }
 }
 
+struct AccountDeletionRequest: Codable, Equatable, Sendable {
+    let authorizationCode: String
+    let nonce: String
+
+    enum CodingKeys: String, CodingKey {
+        case authorizationCode = "authorization_code"
+        case nonce
+    }
+}
+
+struct AccountDeletionReceipt: Codable, Equatable, Sendable {
+    enum Status: String, Codable, Equatable, Sendable {
+        case deleted
+    }
+
+    let status: Status
+}
+
 enum AuthenticationEvent: Equatable, Sendable {
     case sessionRefreshed(AuthenticationSession)
     case signedOut
@@ -43,6 +61,7 @@ enum AuthenticationClientFailure: Error, Equatable, Sendable {
     case terminalSession
     case displayNameRequired
     case invalidDisplayName
+    case reauthenticationRequired
     case operationFailed
 }
 
@@ -51,6 +70,7 @@ struct AuthenticationClient: Sendable {
     var signInWithApple: @MainActor @Sendable () async throws -> AuthenticationSession
     var bootstrapProfile: @Sendable (String?) async throws -> AuthenticatedProfile
     var updateProfile: @Sendable (String) async throws -> AuthenticatedProfile
+    var deleteAccount: @MainActor @Sendable () async throws -> Void
     var events: @Sendable () -> AsyncStream<AuthenticationEvent>
     var signOut: @Sendable () async -> Void
 
@@ -61,6 +81,9 @@ struct AuthenticationClient: Sendable {
         updateProfile: @escaping @Sendable (String) async throws -> AuthenticatedProfile = { _ in
             throw AuthenticationClientFailure.operationFailed
         },
+        deleteAccount: @escaping @MainActor @Sendable () async throws -> Void = {
+            throw AuthenticationClientFailure.operationFailed
+        },
         events: @escaping @Sendable () -> AsyncStream<AuthenticationEvent>,
         signOut: @escaping @Sendable () async -> Void
     ) {
@@ -68,6 +91,7 @@ struct AuthenticationClient: Sendable {
         self.signInWithApple = signInWithApple
         self.bootstrapProfile = bootstrapProfile
         self.updateProfile = updateProfile
+        self.deleteAccount = deleteAccount
         self.events = events
         self.signOut = signOut
     }
@@ -81,6 +105,9 @@ extension AuthenticationClient: TestDependencyKey {
             throw AuthenticationClientFailure.operationFailed
         },
         updateProfile: { _ in
+            throw AuthenticationClientFailure.operationFailed
+        },
+        deleteAccount: {
             throw AuthenticationClientFailure.operationFailed
         },
         events: { AsyncStream { $0.finish() } },

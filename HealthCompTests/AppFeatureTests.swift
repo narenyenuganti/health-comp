@@ -677,6 +677,153 @@ final class AppFeatureTests: XCTestCase {
     }
 
     @MainActor
+    func testAccountDeletionTearsDownLocalStateOnlyAfterServerReceipt() async {
+        let calls = OrderedCallRecorder()
+        let storage = profileStorageFixture(for: profile, recorder: calls)
+        let store = TestStore(
+            initialState: .authenticated(profile: profile, epoch: 3)
+        ) {
+            AppFeature()
+        } withDependencies: {
+            $0.authenticationClient = .test(
+                deleteAccount: { calls.record("server-confirmed") }
+            )
+            $0.authenticatedProfileStorage = storage.client
+            $0.competitionClient = .test(
+                stop: { calls.record("runtime-stop") },
+                prepareForProfileTeardown: { requireRemoteRemoval in
+                    calls.record(
+                        "installation-teardown:\(requireRemoteRemoval)"
+                    )
+                }
+            )
+        }
+
+        await store.send(.account(.deleteAccountButtonTapped)) {
+            $0.account.isDeleteConfirmationPresented = true
+        }
+        await store.send(.account(.deleteAccountConfirmationAccepted)) {
+            $0.account.isDeleteConfirmationPresented = false
+            $0.account.isRequestInFlight = true
+            $0.account.isDeletingAccount = true
+        }
+        await store.receive(.account(.delegate(.deleteAccountRequested))) {
+            $0.authEpoch = 4
+        }
+        await store.receive(.accountDeletionResponse(epoch: 4, .success)) {
+            $0.authEpoch = 5
+        }
+        await store.receive(
+            .teardownCompleted(epoch: 5, reason: .accountDeleted)
+        ) {
+            $0.phase = .signedOut
+            $0.profile = nil
+            $0.mainTab = nil
+            $0.account = AccountFeature.State(mode: .signedOut)
+        }
+
+        XCTAssertEqual(
+            calls.calls,
+            [
+                "server-confirmed",
+                "installation-teardown:false",
+                "runtime-stop",
+                "storage-teardown",
+            ]
+        )
+    }
+
+    @MainActor
+    func testAccountDeletionFailurePreservesAuthenticatedLocalState() async {
+        let calls = OrderedCallRecorder()
+        let storage = profileStorageFixture(for: profile, recorder: calls)
+        let store = TestStore(
+            initialState: .authenticated(profile: profile, epoch: 3)
+        ) {
+            AppFeature()
+        } withDependencies: {
+            $0.authenticationClient = .test(
+                deleteAccount: {
+                    calls.record("server-failed")
+                    throw AuthenticationClientFailure.operationFailed
+                }
+            )
+            $0.authenticatedProfileStorage = storage.client
+            $0.competitionClient = .test(
+                stop: { calls.record("unexpected-runtime-stop") },
+                prepareForProfileTeardown: { _ in
+                    calls.record("unexpected-installation-teardown")
+                }
+            )
+        }
+
+        await store.send(.account(.deleteAccountButtonTapped)) {
+            $0.account.isDeleteConfirmationPresented = true
+        }
+        await store.send(.account(.deleteAccountConfirmationAccepted)) {
+            $0.account.isDeleteConfirmationPresented = false
+            $0.account.isRequestInFlight = true
+            $0.account.isDeletingAccount = true
+        }
+        await store.receive(.account(.delegate(.deleteAccountRequested))) {
+            $0.authEpoch = 4
+        }
+        await store.receive(
+            .accountDeletionResponse(epoch: 4, .failure(.operationFailed))
+        )
+        await store.receive(.account(.operationFailed(.operationFailed))) {
+            $0.account.isRequestInFlight = false
+            $0.account.isDeletingAccount = false
+            $0.account.message = .tryAgain
+        }
+
+        XCTAssertEqual(store.state.phase, .authenticated)
+        XCTAssertEqual(store.state.profile, profile)
+        XCTAssertNotNil(store.state.mainTab)
+        XCTAssertEqual(calls.calls, ["server-failed"])
+    }
+
+    @MainActor
+    func testAuthoritativeAccountDeletedEventWinsOverPendingFailure() async {
+        let calls = OrderedCallRecorder()
+        let storage = profileStorageFixture(for: profile, recorder: calls)
+        var initial = AppFeature.State.authenticated(
+            profile: profile,
+            epoch: 4
+        )
+        initial.account.isRequestInFlight = true
+        initial.account.isDeletingAccount = true
+        let store = TestStore(initialState: initial) {
+            AppFeature()
+        } withDependencies: {
+            $0.authenticatedProfileStorage = storage.client
+            $0.competitionClient = .test(
+                stop: { calls.record("runtime-stop") }
+            )
+        }
+
+        await store.send(.authenticationEvent(.accountDeleted)) {
+            $0.authEpoch = 5
+        }
+        await store.receive(
+            .teardownCompleted(epoch: 5, reason: .accountDeleted)
+        ) {
+            $0.phase = .signedOut
+            $0.profile = nil
+            $0.mainTab = nil
+            $0.account = AccountFeature.State(mode: .signedOut)
+        }
+
+        await store.send(
+            .accountDeletionResponse(epoch: 4, .failure(.operationFailed))
+        )
+        XCTAssertEqual(store.state.phase, .signedOut)
+        XCTAssertNil(store.state.profile)
+        XCTAssertNil(store.state.mainTab)
+        XCTAssertEqual(calls.calls, ["runtime-stop", "storage-teardown"])
+    }
+
+    @MainActor
     func testSignedOutAndDeletedEventsTearDownAuthenticatedMain() async {
         for (event, reason) in [
             (
@@ -712,7 +859,9 @@ final class AppFeatureTests: XCTestCase {
                 $0.profile = nil
                 $0.mainTab = nil
                 $0.account = AccountFeature.State(mode: .signedOut)
-                $0.account.message = .sessionEnded
+                $0.account.message = reason == .sessionEnded
+                    ? .sessionEnded
+                    : nil
             }
             XCTAssertEqual(calls.calls, ["runtime-stop", "storage-teardown"])
         }
@@ -1002,6 +1151,10 @@ private extension AuthenticationClient {
             AuthenticatedProfile = { _ in
                 throw AuthenticationClientFailure.operationFailed
             },
+        deleteAccount: @escaping @MainActor @Sendable () async throws ->
+            Void = {
+                throw AuthenticationClientFailure.operationFailed
+            },
         events: @escaping @Sendable () -> AsyncStream<AuthenticationEvent> = {
             AsyncStream { $0.finish() }
         },
@@ -1012,6 +1165,7 @@ private extension AuthenticationClient {
             signInWithApple: signInWithApple,
             bootstrapProfile: bootstrapProfile,
             updateProfile: updateProfile,
+            deleteAccount: deleteAccount,
             events: events,
             signOut: signOut
         )
