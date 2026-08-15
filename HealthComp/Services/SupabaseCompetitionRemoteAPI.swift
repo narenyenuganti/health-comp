@@ -126,16 +126,38 @@ enum SupabaseCompetitionRemoteAPI {
                     throw CompetitionRemoteFailure.serverContractMismatch
                 }
             },
-            appendScoreRevision: { request in
+            appendScoreRevision: { _ in
+                throw CompetitionRemoteFailure.appAttestUnavailable
+            },
+            issueAppAttestChallenge: { request in
+                let response = try await send(
+                    .function(
+                        name: "app-attest-challenge",
+                        body: try encodeWire(
+                            request,
+                            contract: .appAttestChallengeRequest
+                        )
+                    ),
+                    transport: transport,
+                    context: .appAttestChallenge
+                )
+                return try decode(
+                    CompetitionAppAttestChallenge.self,
+                    response.data,
+                    contract: .appAttestChallengeResponse
+                )
+            },
+            submitAttestedScoreRevision: { request in
                 let response = try await send(
                     .function(
                         name: "submit-score-revision",
                         body: try encodeWire(
                             request,
-                            contract: .scoreRevisionRequest
+                            contract: .attestedScoreRevisionRequest
                         )
                     ),
                     transport: transport,
+                    context: .appAttestSubmission,
                     acceptConflict: true
                 )
                 do {
@@ -151,7 +173,7 @@ enum SupabaseCompetitionRemoteAPI {
                     throw classify(
                         statusCode: response.statusCode,
                         data: response.data,
-                        context: .general
+                        context: .appAttestSubmission
                     )
                 }
             },
@@ -278,9 +300,11 @@ enum SupabaseCompetitionRemoteAPI {
         make(transport: .live(provider: provider))
     }
 
-    private enum ErrorContext {
+    private enum ErrorContext: Equatable {
         case general
         case claimInvite
+        case appAttestChallenge
+        case appAttestSubmission
     }
 
     private static func send(
@@ -351,6 +375,20 @@ enum SupabaseCompetitionRemoteAPI {
         message: String,
         context: ErrorContext
     ) -> CompetitionRemoteFailure {
+        let normalizedCode = code?.lowercased()
+        switch normalizedCode {
+        case "app_attest_proof_rejected":
+            return .appAttestRejected
+        case "app_attest_context_unavailable",
+             "app_attest_grant_unavailable":
+            return .appAttestContextUnavailable
+        case "app_attest_proof_conflict":
+            return .appAttestProofConflict
+        case "installation_unavailable" where context == .appAttestChallenge:
+            return .appAttestUnavailable
+        default:
+            break
+        }
         if let statusCode,
            statusCode == 408
             || statusCode == 429

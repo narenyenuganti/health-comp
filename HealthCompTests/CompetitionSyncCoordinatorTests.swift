@@ -760,6 +760,10 @@ final class CompetitionSyncCoordinatorTests: XCTestCase {
             (.incompatiblePolicy, .incompatiblePolicy),
             (.serverContractMismatch, .serverContractMismatch),
             (.accountDeletionUnavailable, .accountDeletionUnavailable),
+            (.appAttestUnavailable, .appAttestUnavailable),
+            (.appAttestRejected, .appAttestRejected),
+            (.appAttestContextUnavailable, .appAttestRejected),
+            (.appAttestProofConflict, .appAttestRejected),
             (.operationFailed, .operationFailed),
         ]
         let failedAt = Date(timeIntervalSince1970: 1_786_536_010)

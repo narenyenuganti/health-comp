@@ -116,6 +116,8 @@ enum CompetitionOutboxPermanentFailure:
     case incompatiblePolicy
     case serverContractMismatch
     case accountDeletionUnavailable
+    case appAttestUnavailable
+    case appAttestRejected
     case operationFailed
 }
 

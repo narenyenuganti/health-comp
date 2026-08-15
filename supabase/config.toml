@@ -399,6 +399,18 @@ verify_jwt = false
 [functions.delete-account]
 verify_jwt = false
 
+# The function verifies the bearer access token with Auth before issuing a
+# challenge. Disabling the legacy gateway verifier also supports projects that
+# use asymmetric JWT signing keys.
+[functions.app-attest-challenge]
+verify_jwt = false
+
+# The function authenticates the user in-process, then uses a server-only client
+# for App Attest verification state before returning to the caller-scoped RPC.
+# Disabling the legacy gateway verifier supports asymmetric JWT signing keys.
+[functions.submit-score-revision]
+verify_jwt = false
+
 # [edge_runtime.secrets]
 # secret_key = "env(SECRET_VALUE)"
 

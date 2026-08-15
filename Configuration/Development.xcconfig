@@ -1,4 +1,5 @@
 #include "Base.xcconfig"
 APS_ENVIRONMENT = development
+APP_ATTEST_ENVIRONMENT = development
 HEALTHCOMP_APNS_ENVIRONMENT = sandbox
 #include? "Development.local.xcconfig"
