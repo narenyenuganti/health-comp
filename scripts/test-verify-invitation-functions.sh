@@ -9,6 +9,7 @@ grep -Fq 'child_state=$(ps -o stat= -p "$FUNCTIONS_PID" 2>/dev/null || true)' "$
 grep -Fq '"" | *Z*) fail_functions_child ;;' "$VERIFIER"
 grep -Fq 'cat "$FUNCTION_LOG" >&2' "$VERIFIER"
 grep -Fq 'while kill -0 "$TEST_PID" 2>/dev/null; do' "$VERIFIER"
+grep -Fq 'NO_COLOR=1 deno test --config' "$VERIFIER"
 
 spawn_line=$(grep -nF 'FUNCTIONS_PID=$!' "$VERIFIER" | cut -d: -f1)
 curl_line=$(grep -nF 'if curl --silent' "$VERIFIER" | cut -d: -f1)

@@ -65,7 +65,5 @@ if (import.meta.main) {
   const appIDs = configuredAppIDs(
     Deno.env.get("HEALTHCOMP_AASA_APP_IDS"),
   );
-  Deno.serve((request) =>
-    appleAppSiteAssociationHandler(request, appIDs)
-  );
+  Deno.serve((request) => appleAppSiteAssociationHandler(request, appIDs));
 }

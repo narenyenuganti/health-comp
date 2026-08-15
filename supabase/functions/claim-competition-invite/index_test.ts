@@ -295,7 +295,9 @@ Deno.test({
                min(invite_token_derivation_version)::int as derivation_version
         from public.competitions
         where creator_profile_id = (
-          select id from public.profiles where auth_user_id = ${users[0].id}::uuid
+          select id from public.profiles where auth_user_id = ${
+        users[0].id
+      }::uuid
         ) and invite_creation_idempotency_key = ${idempotencyKey}::uuid`;
       assertEquals(creationState.competition_count, 1);
       assertEquals(creationState.derivation_version, 1);

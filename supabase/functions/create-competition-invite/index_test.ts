@@ -264,23 +264,25 @@ Deno.test("create maps divergent idempotency reuse without database details", as
     {
       createUserClient: () => ({
         auth: {
-          getUser: () => Promise.resolve({
-            data: { user: { id: "41000000-0000-4000-8000-000000000001" } },
-            error: null,
-          }),
+          getUser: () =>
+            Promise.resolve({
+              data: { user: { id: "41000000-0000-4000-8000-000000000001" } },
+              error: null,
+            }),
         },
         rpc: () => Promise.resolve({ data: null, error: null }),
       }),
       createServiceClient: () => ({
         auth: { getUser: () => Promise.reject(new Error("not used")) },
-        rpc: () => Promise.resolve({
-          data: null,
-          error: {
-            message: "idempotency_conflict",
-            code: "P0001",
-            details: "private detail",
-          },
-        }),
+        rpc: () =>
+          Promise.resolve({
+            data: null,
+            error: {
+              message: "idempotency_conflict",
+              code: "P0001",
+              details: "private detail",
+            },
+          }),
       }),
       deriveToken: () => Promise.resolve(new Uint8Array(32)),
     },
