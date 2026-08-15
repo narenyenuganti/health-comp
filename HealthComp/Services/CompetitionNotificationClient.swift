@@ -187,18 +187,24 @@ enum CompetitionRoute: Equatable, Sendable {
     }
 
     init?(userInfo: [AnyHashable: Any]) {
-        guard userInfo.count == 3,
-              let version = userInfo[UserInfoKey.version] as? Int,
+        let routeKeys = Set([
+            UserInfoKey.version,
+            UserInfoKey.kind,
+            UserInfoKey.competitionID,
+        ])
+        let stringKeys = Set(userInfo.keys.compactMap { $0 as? String })
+        guard stringKeys.count == userInfo.count else { return nil }
+        if stringKeys == routeKeys.union(["aps"]) {
+            guard userInfo["aps"] is [String: Any] else { return nil }
+        } else {
+            guard stringKeys == routeKeys else { return nil }
+        }
+        guard let version = userInfo[UserInfoKey.version] as? Int,
               version == 1,
               userInfo[UserInfoKey.kind] as? String == "competition",
               let persistedID = userInfo[UserInfoKey.competitionID] as? String,
               let uuid = UUID(uuidString: persistedID),
-              uuid.uuidString.lowercased() == persistedID,
-              Set(userInfo.keys.compactMap { $0 as? String }) == Set([
-                  UserInfoKey.version,
-                  UserInfoKey.kind,
-                  UserInfoKey.competitionID,
-              ])
+              uuid.uuidString.lowercased() == persistedID
         else {
             return nil
         }

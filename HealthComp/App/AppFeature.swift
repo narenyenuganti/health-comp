@@ -564,6 +564,23 @@ struct AppFeature {
             .cancel(id: CancelID.authenticationOperation),
             .run { send in
                 if stopRuntime {
+                    do {
+                        try await competitionClient
+                            .prepareForProfileTeardown(
+                                requireRemoteInstallationRemoval:
+                                    reason == .userRequested
+                            )
+                    } catch {
+                        await competitionClient.stop()
+                        await send(
+                            .teardownFailed(
+                                epoch: epoch,
+                                reason: reason,
+                                failure: .cleanupFailed
+                            )
+                        )
+                        return
+                    }
                     await competitionClient.stop()
                 }
                 if let profileID {

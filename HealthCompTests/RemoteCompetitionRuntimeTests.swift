@@ -136,6 +136,205 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
         XCTAssertEqual(persistedIDs, [])
     }
 
+    func testRemoteDecisionCommitterRecordsStableSemanticDecisionOnlyOnce()
+        async throws
+    {
+        let root = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = makeStore(root: root)
+        let createdAt = Date(timeIntervalSince1970: 1_786_540_000)
+        let descriptor = try pendingDescriptor(
+            creatorProfileID: profileID,
+            expiresAt: createdAt.addingTimeInterval(48 * 60 * 60)
+        )
+        let page = try CompetitionChangePage(
+            competitionID: descriptor.competitionID,
+            afterServerSequence: 0,
+            snapshotServerSequence: 1,
+            nextServerSequence: 1,
+            hasMore: false,
+            changes: [
+                try participantAddedChange(
+                    sequence: 1,
+                    profileID: profileID,
+                    role: .creator,
+                    occurredAt: createdAt
+                ),
+            ]
+        )
+        let runtime = RemoteCompetitionRuntime(
+            profileID: profileID,
+            store: store,
+            remoteAPI: remoteAPI(
+                listCompetitions: { [descriptor] },
+                fetchChanges: { _, _ in page }
+            )
+        )
+        let outcome = await runtime.synchronizeAll()
+        XCTAssertEqual(outcome.failures, [])
+        let decision = try NotificationEmissionRecorded(
+            competitionID: CompetitionID(descriptor.competitionID),
+            family: .result,
+            episodeKey: .result,
+            disposition: .suppressed(reason: .superseded),
+            decidedAt: createdAt,
+            basisPublicationRevision: 1
+        )
+        let snapshot = CompetitionNotificationCompetitionSnapshot(
+            id: CompetitionID(descriptor.competitionID),
+            opponentIdentity: "remote-profile:v1:pending",
+            opponentDisplayName: "Waiting for competitor",
+            lifecycle: .pending(expiresAt: descriptor.invitationExpiresAt),
+            schedule: nil,
+            ownerPoints: 0,
+            opponentPoints: 0,
+            days: [],
+            currentDayOrdinal: nil,
+            latestRefresh: .none,
+            evaluationFreshness: .notFresh,
+            terminalResult: nil,
+            emissionHistory: NotificationEmissionProjection(),
+            evaluatedAt: createdAt,
+            timeZoneIdentifier: descriptor.timeZoneIdentifier ?? "UTC"
+        )
+        let committer = CompetitionNotificationDecisionCommitter.remote(
+            runtime: runtime
+        )
+
+        let first = try await committer.commit(snapshot) { fresh in
+            XCTAssertFalse(
+                fresh.emissionHistory.recordedIDs.contains(
+                    decision.semanticEventID
+                )
+            )
+            return [.suppression(decision)]
+        }
+        let second = try await committer.commit(snapshot) { fresh in
+            XCTAssertTrue(
+                fresh.emissionHistory.recordedIDs.contains(
+                    decision.semanticEventID
+                )
+            )
+            return [.suppression(decision)]
+        }
+
+        XCTAssertEqual(first, .appended([.suppression(decision)]))
+        XCTAssertEqual(second, .duplicate)
+        let optionalLoaded = try await store.load(
+            CompetitionID(descriptor.competitionID)
+        )
+        let loaded = try XCTUnwrap(optionalLoaded)
+        XCTAssertEqual(
+            loaded.projection.notificationEmissions.recordedIDs,
+            [decision.semanticEventID]
+        )
+    }
+
+    func testRemoteDecisionCommitterReplansFromReloadedLifecycleAfterConflict()
+        async throws
+    {
+        let root = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let baseStore = makeStore(root: root)
+        let createdAt = Date(timeIntervalSince1970: 1_786_540_000)
+        let declinedAt = createdAt.addingTimeInterval(60)
+        let store = RemoteNotificationConflictStore(
+            base: baseStore,
+            declinedAt: declinedAt
+        )
+        let descriptor = try pendingDescriptor(
+            creatorProfileID: profileID,
+            expiresAt: createdAt.addingTimeInterval(48 * 60 * 60)
+        )
+        let page = try CompetitionChangePage(
+            competitionID: descriptor.competitionID,
+            afterServerSequence: 0,
+            snapshotServerSequence: 1,
+            nextServerSequence: 1,
+            hasMore: false,
+            changes: [
+                try participantAddedChange(
+                    sequence: 1,
+                    profileID: profileID,
+                    role: .creator,
+                    occurredAt: createdAt
+                ),
+            ]
+        )
+        let runtime = RemoteCompetitionRuntime(
+            profileID: profileID,
+            store: store,
+            remoteAPI: remoteAPI(
+                listCompetitions: { [descriptor] },
+                fetchChanges: { _, _ in page }
+            )
+        )
+        let outcome = await runtime.synchronizeAll()
+        XCTAssertEqual(outcome.failures, [])
+        let decision = try NotificationEmissionRecorded(
+            competitionID: CompetitionID(descriptor.competitionID),
+            family: .result,
+            episodeKey: .result,
+            disposition: .suppressed(reason: .superseded),
+            decidedAt: createdAt,
+            basisPublicationRevision: 1
+        )
+        let snapshot = CompetitionNotificationCompetitionSnapshot(
+            id: CompetitionID(descriptor.competitionID),
+            opponentIdentity: "remote-profile:v1:pending",
+            opponentDisplayName: "Waiting for competitor",
+            lifecycle: .pending(expiresAt: descriptor.invitationExpiresAt),
+            schedule: nil,
+            ownerPoints: 0,
+            opponentPoints: 0,
+            days: [],
+            currentDayOrdinal: nil,
+            latestRefresh: .none,
+            evaluationFreshness: .notFresh,
+            terminalResult: nil,
+            emissionHistory: NotificationEmissionProjection(),
+            evaluatedAt: createdAt,
+            timeZoneIdentifier: descriptor.timeZoneIdentifier ?? "UTC"
+        )
+        let replans = RemoteNotificationReplanProbe()
+        let committer = CompetitionNotificationDecisionCommitter.remote(
+            runtime: runtime
+        )
+
+        let result = try await committer.commit(snapshot) { fresh in
+            replans.record(fresh.lifecycle)
+            guard case .pending = fresh.lifecycle else { return [] }
+            return [.suppression(decision)]
+        }
+
+        XCTAssertEqual(
+            result,
+            CompetitionNotificationDecisionCommitResult.noDecision
+        )
+        let lifecycles = replans.values()
+        XCTAssertEqual(lifecycles.count, 2)
+        if lifecycles.count == 2 {
+            guard case .pending = lifecycles[0] else {
+                return XCTFail("Expected the first plan to see pending")
+            }
+            guard case .declined = lifecycles[1] else {
+                return XCTFail("Expected the retry to see declined")
+            }
+        }
+        let optionalLoaded = try await baseStore.load(
+            CompetitionID(descriptor.competitionID)
+        )
+        let loaded = try XCTUnwrap(optionalLoaded)
+        XCTAssertEqual(
+            loaded.projection.competition.lifecycle,
+            .declined(at: declinedAt)
+        )
+        XCTAssertEqual(
+            loaded.projection.notificationEmissions.recordedIDs,
+            []
+        )
+    }
+
     func testOutgoingPendingDescriptorMaterializesFromGapFreeServerHistory()
         async throws
     {
@@ -422,7 +621,8 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
             remoteAPI: remoteAPI(
                 listCompetitions: { [descriptor] },
                 fetchChanges: { _, _ in page }
-            )
+            ),
+            now: { acceptedAt }
         )
 
         let outcome = await runtime.synchronizeAll()
@@ -2342,6 +2542,82 @@ private actor RemoteCompetitionRuntimeProbe {
 
     func attestationRequests() -> [CompetitionAttestationRequest] {
         submittedAttestationRequests
+    }
+}
+
+private final class RemoteNotificationReplanProbe: @unchecked Sendable {
+    private let lock = NSLock()
+    private var lifecycles: [CompetitionNotificationLifecycle] = []
+
+    func record(_ lifecycle: CompetitionNotificationLifecycle) {
+        lock.withLock { lifecycles.append(lifecycle) }
+    }
+
+    func values() -> [CompetitionNotificationLifecycle] {
+        lock.withLock { lifecycles }
+    }
+}
+
+private actor RemoteNotificationConflictStore: CompetitionEventStore {
+    private let base: JSONCompetitionEventStore
+    private let declinedAt: Date
+    private var didInjectConflict = false
+
+    init(base: JSONCompetitionEventStore, declinedAt: Date) {
+        self.base = base
+        self.declinedAt = declinedAt
+    }
+
+    func ids() async throws -> [CompetitionID] {
+        try await base.ids()
+    }
+
+    func load(_ id: CompetitionID) async throws -> LoadedCompetitionJournal? {
+        try await base.load(id)
+    }
+
+    func create(
+        _ genesis: CompetitionGenesis
+    ) async throws -> CompetitionEventStoreCreateResult {
+        try await base.create(genesis)
+    }
+
+    func append(
+        _ events: [CompetitionDomainEvent],
+        to id: CompetitionID,
+        expectedCursor: CompetitionJournalCursor
+    ) async throws -> CompetitionJournalAppendResult {
+        if !didInjectConflict,
+           events.contains(where: {
+               if case .notificationEmissionRecorded = $0 { return true }
+               return false
+           }) {
+            didInjectConflict = true
+            guard let loaded = try await base.load(id) else {
+                throw CompetitionEventStoreError.identityNotFound
+            }
+            let decline = try CompetitionEngine().decline(
+                loaded.projection.competition,
+                at: declinedAt
+            )
+            _ = try await base.append(
+                [.lifecycle(decline)],
+                to: id,
+                expectedCursor: expectedCursor
+            )
+        }
+        return try await base.append(
+            events,
+            to: id,
+            expectedCursor: expectedCursor
+        )
+    }
+
+    func delete(
+        _ id: CompetitionID,
+        expectedCursor: CompetitionJournalCursor
+    ) async throws {
+        try await base.delete(id, expectedCursor: expectedCursor)
     }
 }
 

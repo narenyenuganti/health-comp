@@ -184,6 +184,31 @@ final class CompetitionRoutingTests: XCTestCase {
         XCTAssertNil(CompetitionRoute(userInfo: payload))
     }
 
+    func testRemoteNotificationPayloadAllowsOnlyAppleAPSAddition() {
+        let route = CompetitionRoute.competition(
+            CompetitionID(
+                UUID(
+                    uuidString: "EAD172F8-531D-4327-823D-E82A4F696051"
+                )!
+            )
+        )
+        var payload = route.userInfo
+        payload["aps"] = [
+            "alert": [
+                "title": "HealthComp",
+                "body": "Open HealthComp for your competition update.",
+            ],
+        ]
+
+        XCTAssertEqual(CompetitionRoute(userInfo: payload), route)
+
+        payload["unexpected"] = "value"
+        XCTAssertNil(CompetitionRoute(userInfo: payload))
+        payload["unexpected"] = nil
+        payload["aps"] = "not-an-aps-dictionary"
+        XCTAssertNil(CompetitionRoute(userInfo: payload))
+    }
+
     func testHubBuffersReplaysAndConsumesOnlyMatchingSequence() async {
         let hub = CompetitionRouteHub()
         let firstRoute = CompetitionRoute.competition(

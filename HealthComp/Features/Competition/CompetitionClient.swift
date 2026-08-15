@@ -69,6 +69,9 @@ struct CompetitionClient: Sendable {
         CompetitionNotificationAuthorizationState
     var waitUntil: @Sendable (Date) async throws -> Void
     var stop: @Sendable () async -> Void
+    var prepareForProfileTeardownOperation: @Sendable (
+        _ requireRemoteInstallationRemoval: Bool
+    ) async throws -> Void
     var mountAuthenticatedProfile: @Sendable (
         AuthenticatedProfile,
         AuthenticatedProfileStoragePaths
@@ -115,6 +118,9 @@ struct CompetitionClient: Sendable {
             CompetitionNotificationAuthorizationState = { .denied },
         waitUntil: @escaping @Sendable (Date) async throws -> Void,
         stop: @escaping @Sendable () async -> Void,
+        prepareForProfileTeardown: @escaping @Sendable (
+            _ requireRemoteInstallationRemoval: Bool
+        ) async throws -> Void = { _ in },
         mountAuthenticatedProfile: @escaping @Sendable (
             AuthenticatedProfile,
             AuthenticatedProfileStoragePaths
@@ -148,9 +154,18 @@ struct CompetitionClient: Sendable {
             requestNotificationAuthorization
         self.waitUntil = waitUntil
         self.stop = stop
+        self.prepareForProfileTeardownOperation = prepareForProfileTeardown
         self.mountAuthenticatedProfile = mountAuthenticatedProfile
         self.createInvite = createInvite
         self.claimInvite = claimInvite
+    }
+
+    func prepareForProfileTeardown(
+        requireRemoteInstallationRemoval: Bool
+    ) async throws {
+        try await prepareForProfileTeardownOperation(
+            requireRemoteInstallationRemoval
+        )
     }
 }
 

@@ -1,6 +1,66 @@
 import CompetitionCore
 import Foundation
 
+/// Source-neutral boundary for atomically recording notification decisions.
+///
+/// A successful `.appended` result means the semantic decision is durable. It
+/// never means that iOS, APNs, or a user actually received a notification.
+struct CompetitionNotificationDecisionCommitter: Sendable {
+    typealias Replan = @Sendable (
+        CompetitionNotificationCompetitionSnapshot
+    ) throws -> [CompetitionNotificationDurableDecision]
+    typealias Commit = @Sendable (
+        CompetitionNotificationCompetitionSnapshot,
+        @escaping Replan
+    ) async throws -> CompetitionNotificationDecisionCommitResult
+
+    let commit: Commit
+
+    static func local(runtime: LocalCompetitionRuntime) -> Self {
+        Self { competition, replan in
+            try await runtime.commitNotificationDecisions(
+                competitionID: competition.id,
+                replan: { loaded in
+                    let context = CompetitionEnvironmentContext(
+                        instant: EnvironmentInstant(
+                            wallDate: competition.evaluatedAt,
+                            monotonic: MonotonicInstant(
+                                epochID: "notification-replan-v1",
+                                nanoseconds: 0
+                            )
+                        ),
+                        timeZoneIdentifier: competition.timeZoneIdentifier
+                    )
+                    let isFreshEvaluation: Bool
+                    if case .freshCompletedRefresh =
+                        competition.evaluationFreshness {
+                        isFreshEvaluation = true
+                    } else {
+                        isFreshEvaluation = false
+                    }
+                    let fresh = LocalCompetitionProjector
+                        .notificationCompetition(
+                            from: loaded,
+                            context: context,
+                            configuration: .live,
+                            isFreshEvaluation: isFreshEvaluation
+                        )
+                    return try replan(fresh)
+                }
+            )
+        }
+    }
+
+    static func remote(runtime: RemoteCompetitionRuntime) -> Self {
+        Self { competition, replan in
+            try await runtime.commitNotificationDecisions(
+                competition: competition,
+                replan: replan
+            )
+        }
+    }
+}
+
 struct CompetitionNotificationCoordinatorClient: Sendable {
     var submit: @Sendable (
         CompetitionNotificationPlanningSnapshot
@@ -22,43 +82,28 @@ struct CompetitionNotificationCoordinatorClient: Sendable {
         reportError: @escaping @Sendable (_ context: String) -> Void = { _ in }
     ) -> Self {
         guard let runtime else { return .noop }
+        return live(
+            decisionCommitter: .local(runtime: runtime),
+            planner: planner,
+            notifications: notifications,
+            preferences: preferences,
+            reportError: reportError
+        )
+    }
+
+    static func live(
+        decisionCommitter: CompetitionNotificationDecisionCommitter?,
+        planner: CompetitionNotificationPlanner,
+        notifications: CompetitionNotificationClient,
+        preferences: CompetitionNotificationPreferencesClient,
+        reportError: @escaping @Sendable (_ context: String) -> Void = { _ in }
+    ) -> Self {
+        guard let decisionCommitter else { return .noop }
         let coordinator = CompetitionNotificationCoordinator(
             planner: planner,
             notifications: notifications,
             preferences: preferences,
-            commitDecisions: { competition, replan in
-                try await runtime.commitNotificationDecisions(
-                    competitionID: competition.id,
-                    replan: { loaded in
-                        let context = CompetitionEnvironmentContext(
-                            instant: EnvironmentInstant(
-                                wallDate: competition.evaluatedAt,
-                                monotonic: MonotonicInstant(
-                                    epochID: "notification-replan-v1",
-                                    nanoseconds: 0
-                                )
-                            ),
-                            timeZoneIdentifier:
-                                competition.timeZoneIdentifier
-                        )
-                        let isFreshEvaluation: Bool
-                        if case .freshCompletedRefresh =
-                            competition.evaluationFreshness {
-                            isFreshEvaluation = true
-                        } else {
-                            isFreshEvaluation = false
-                        }
-                        let fresh = LocalCompetitionProjector
-                            .notificationCompetition(
-                                from: loaded,
-                                context: context,
-                                configuration: .live,
-                                isFreshEvaluation: isFreshEvaluation
-                            )
-                        return try replan(fresh)
-                    }
-                )
-            },
+            commitDecisions: decisionCommitter.commit,
             reportError: reportError
         )
         return Self(

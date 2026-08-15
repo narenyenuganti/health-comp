@@ -542,7 +542,12 @@ final class AppFeatureTests: XCTestCase {
         } withDependencies: {
             $0.authenticatedProfileStorage = storage.client
             $0.competitionClient = .test(
-                stop: { calls.record("runtime-stop") }
+                stop: { calls.record("runtime-stop") },
+                prepareForProfileTeardown: { requireRemoteRemoval in
+                    calls.record(
+                        "installation-teardown:\(requireRemoteRemoval)"
+                    )
+                }
             )
         }
 
@@ -558,7 +563,14 @@ final class AppFeatureTests: XCTestCase {
             $0.account = AccountFeature.State(mode: .signedOut)
             $0.account.message = .sessionEnded
         }
-        XCTAssertEqual(calls.calls, ["runtime-stop", "storage-teardown"])
+        XCTAssertEqual(
+            calls.calls,
+            [
+                "installation-teardown:false",
+                "runtime-stop",
+                "storage-teardown",
+            ]
+        )
     }
 
     @MainActor
@@ -578,7 +590,12 @@ final class AppFeatureTests: XCTestCase {
             )
             $0.authenticatedProfileStorage = storage.client
             $0.competitionClient = .test(
-                stop: { calls.record("runtime-stop") }
+                stop: { calls.record("runtime-stop") },
+                prepareForProfileTeardown: { requireRemoteRemoval in
+                    calls.record(
+                        "installation-teardown:\(requireRemoteRemoval)"
+                    )
+                }
             )
         }
 
@@ -598,7 +615,64 @@ final class AppFeatureTests: XCTestCase {
         }
         XCTAssertEqual(
             calls.calls,
-            ["runtime-stop", "storage-teardown", "auth-sign-out"]
+            [
+                "installation-teardown:true",
+                "runtime-stop",
+                "storage-teardown",
+                "auth-sign-out",
+            ]
+        )
+    }
+
+    @MainActor
+    func testRequiredInstallationRemovalFailurePreservesProfileAndAuth()
+        async
+    {
+        let calls = OrderedCallRecorder()
+        let profile = profile
+        let storage = profileStorageFixture(for: profile, recorder: calls)
+        let store = TestStore(
+            initialState: .authenticated(profile: profile, epoch: 3)
+        ) {
+            AppFeature()
+        } withDependencies: {
+            $0.authenticationClient = .test(
+                signOut: { calls.record("auth-sign-out") }
+            )
+            $0.authenticatedProfileStorage = storage.client
+            $0.competitionClient = .test(
+                stop: { calls.record("runtime-stop") },
+                prepareForProfileTeardown: { requireRemoteRemoval in
+                    calls.record(
+                        "installation-teardown:\(requireRemoteRemoval)"
+                    )
+                    throw CompetitionRemoteFailure.retryableTransport
+                }
+            )
+        }
+
+        await store.send(.account(.signOutButtonTapped)) {
+            $0.account.isRequestInFlight = true
+        }
+        await store.receive(.account(.delegate(.signOutRequested))) {
+            $0.authEpoch = 4
+        }
+        await store.receive(
+            .teardownFailed(
+                epoch: 4,
+                reason: .userRequested,
+                failure: .cleanupFailed
+            )
+        ) {
+            $0.phase = .launchFailure
+            $0.profile = nil
+            $0.mainTab = nil
+            $0.account = AccountFeature.State(mode: .launchFailure)
+            $0.account.message = .tryAgain
+        }
+        XCTAssertEqual(
+            calls.calls,
+            ["installation-teardown:true", "runtime-stop"]
         )
     }
 
@@ -952,7 +1026,10 @@ private extension AppleAuthorizationClient {
 
 private extension CompetitionClient {
     static func test(
-        stop: @escaping @Sendable () async -> Void
+        stop: @escaping @Sendable () async -> Void,
+        prepareForProfileTeardown: @escaping @Sendable (
+            Bool
+        ) async throws -> Void = { _ in }
     ) -> Self {
         let publication = CompetitionPublication(
             publicationRevision: 0,
@@ -973,7 +1050,8 @@ private extension CompetitionClient {
             rematch: { _ in publication },
             reinvite: { publication },
             waitUntil: { _ in },
-            stop: stop
+            stop: stop,
+            prepareForProfileTeardown: prepareForProfileTeardown
         )
     }
 }

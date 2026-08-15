@@ -54,6 +54,15 @@ struct CompetitionRemoteAPI: Sendable {
     var removeInstallation: @Sendable (
         _ installationID: UUID
     ) async throws -> CompetitionInstallation
+    var loadMutedOpponentProfileIDs: @Sendable () async throws -> Set<UUID> = {
+        throw CompetitionRemoteFailure.operationFailed
+    }
+    var setOpponentMuted: @Sendable (
+        _ opponentProfileID: UUID,
+        _ isMuted: Bool
+    ) async throws -> Void = { _, _ in
+        throw CompetitionRemoteFailure.operationFailed
+    }
     var requestAccountDeletion: @Sendable () async throws -> Void
 }
 

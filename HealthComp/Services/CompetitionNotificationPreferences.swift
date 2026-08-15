@@ -123,6 +123,29 @@ struct CompetitionNotificationPreferencesClient: Sendable {
         )
     }
 
+    static func remote(
+        remoteAPI: CompetitionRemoteAPI
+    ) -> CompetitionNotificationPreferencesClient {
+        CompetitionNotificationPreferencesClient(
+            mutedOpponentIdentities: {
+                let profileIDs = try await remoteAPI
+                    .loadMutedOpponentProfileIDs()
+                return Set(profileIDs.map {
+                    RemoteCompetitionOpponentIdentity.identity(for: $0)
+                })
+            },
+            setMuted: { identity, isMuted in
+                guard let profileID = RemoteCompetitionOpponentIdentity
+                    .profileID(identity)
+                else {
+                    throw CompetitionNotificationPreferencesError
+                        .invalidIdentity
+                }
+                try await remoteAPI.setOpponentMuted(profileID, isMuted)
+            }
+        )
+    }
+
     static let unavailable = CompetitionNotificationPreferencesClient(
         mutedOpponentIdentities: {
             throw CompetitionNotificationPreferencesError.ioFailure
@@ -131,4 +154,23 @@ struct CompetitionNotificationPreferencesClient: Sendable {
             throw CompetitionNotificationPreferencesError.ioFailure
         }
     )
+}
+
+enum RemoteCompetitionOpponentIdentity {
+    static let prefix = "remote-profile:v1:"
+
+    static func identity(for profileID: UUID) -> String {
+        prefix + profileID.uuidString.lowercased()
+    }
+
+    static func profileID(_ identity: String) -> UUID? {
+        guard identity.hasPrefix(prefix) else { return nil }
+        let value = String(identity.dropFirst(prefix.count))
+        guard let profileID = UUID(uuidString: value),
+              profileID.uuidString.lowercased() == value,
+              profileID.uuidString
+                != "00000000-0000-0000-0000-000000000000"
+        else { return nil }
+        return profileID
+    }
 }

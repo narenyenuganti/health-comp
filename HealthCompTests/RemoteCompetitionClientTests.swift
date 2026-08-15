@@ -5,6 +5,248 @@ import XCTest
 @testable import HealthComp
 
 final class RemoteCompetitionClientTests: XCTestCase {
+    func testLiveClientMountsWhenAPNsEnvironmentIsUnavailable() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: root,
+            withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: root) }
+        let profile = AuthenticatedProfile(
+            id: UUID(
+                uuidString: "7f000000-0000-4000-8000-000000000001"
+            )!,
+            displayName: "Beta Alice"
+        )
+        let paths = AuthenticatedProfileStoragePaths(
+            profileID: profile.id,
+            rootDirectory: root
+        )
+        for directory in paths.fixedDirectories {
+            try FileManager.default.createDirectory(
+                at: directory,
+                withIntermediateDirectories: true
+            )
+        }
+        let provider = SupabaseClientProvider {
+            throw SupabaseConfigurationError.missingURL
+        }
+        let client = CompetitionClient.live(
+            provider: provider,
+            installationEnvironment: nil
+        )
+
+        try await client.mountAuthenticatedProfile(profile, paths)
+        await client.stop()
+    }
+
+    func testAuthenticatedProfileTeardownRemovesRegisteredInstallation()
+        async throws
+    {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: root,
+            withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: root) }
+        let profile = AuthenticatedProfile(
+            id: UUID(
+                uuidString: "80000000-0000-4000-8000-000000000001"
+            )!,
+            displayName: "Beta Alice"
+        )
+        let paths = AuthenticatedProfileStoragePaths(
+            profileID: profile.id,
+            rootDirectory: root
+        )
+        for directory in paths.fixedDirectories {
+            try FileManager.default.createDirectory(
+                at: directory,
+                withIntermediateDirectories: true
+            )
+        }
+        let installations = RemoteCompetitionInstallationProbe()
+        let registration = RemoteCompetitionPushProbe(
+            token: String(repeating: "ac", count: 32)
+        )
+        let client = CompetitionClient.remote(
+            remoteAPI: remoteAPI(
+                listCompetitions: { [] },
+                registerInstallation: { request in
+                    try await installations.register(request)
+                },
+                removeInstallation: { id in
+                    try await installations.remove(id)
+                }
+            ),
+            environment: try environment(),
+            pushRegistrationClient: registration.client,
+            installationEnvironment: .sandbox
+        )
+
+        try await client.mountAuthenticatedProfile(profile, paths)
+        try await client.prepareForProfileTeardown(
+            requireRemoteInstallationRemoval: true
+        )
+        await client.stop()
+
+        let requests = await installations.registrationRequests()
+        let removals = await installations.removalIDs()
+        let registrationCalls = await registration.recordedCalls()
+        XCTAssertEqual(requests.count, 1)
+        XCTAssertEqual(removals, requests.map(\.installationID))
+        XCTAssertEqual(
+            registrationCalls,
+            ["register", "unregister"]
+        )
+    }
+
+    func testNotificationPreferenceReadCompletesBeforeProfileRemount()
+        async throws
+    {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: root,
+            withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: root) }
+        let firstProfile = AuthenticatedProfile(
+            id: UUID(
+                uuidString: "7f000000-0000-4000-8000-000000000002"
+            )!,
+            displayName: "Beta Alice"
+        )
+        let secondProfile = AuthenticatedProfile(
+            id: UUID(
+                uuidString: "7f000000-0000-4000-8000-000000000003"
+            )!,
+            displayName: "Beta Bob"
+        )
+        let firstPaths = AuthenticatedProfileStoragePaths(
+            profileID: firstProfile.id,
+            rootDirectory: root.appendingPathComponent("first")
+        )
+        let secondPaths = AuthenticatedProfileStoragePaths(
+            profileID: secondProfile.id,
+            rootDirectory: root.appendingPathComponent("second")
+        )
+        for directory in firstPaths.fixedDirectories
+            + secondPaths.fixedDirectories {
+            try FileManager.default.createDirectory(
+                at: directory,
+                withIntermediateDirectories: true
+            )
+        }
+        let probe = RemoteNotificationOperationOrderProbe()
+        let client = CompetitionClient.remote(
+            remoteAPI: remoteAPI(listCompetitions: { [] }),
+            environment: try environment(),
+            notificationPreferencesFactory: { paths in
+                if paths.profileID == firstProfile.id {
+                    return probe.blockingClient
+                }
+                probe.record("second-mounted")
+                return .constant(mutedOpponentIdentities: [])
+            }
+        )
+
+        try await client.mountAuthenticatedProfile(firstProfile, firstPaths)
+        let readTask = Task {
+            try await client.loadMutedOpponentIdentities()
+        }
+        await probe.waitUntilReadStarts()
+        let mountTask = Task {
+            try await client.mountAuthenticatedProfile(
+                secondProfile,
+                secondPaths
+            )
+        }
+        try await Task.sleep(for: .milliseconds(50))
+        await probe.releaseRead()
+        _ = try await readTask.value
+        try await mountTask.value
+
+        XCTAssertEqual(
+            probe.events(),
+            ["read-start", "read-end", "second-mounted"]
+        )
+        await client.stop()
+    }
+
+    func testAuthorizationPromptDoesNotBlockProfileRemount()
+        async throws
+    {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: root,
+            withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: root) }
+        let firstProfile = AuthenticatedProfile(
+            id: UUID(
+                uuidString: "7f000000-0000-4000-8000-000000000004"
+            )!,
+            displayName: "Beta Alice"
+        )
+        let secondProfile = AuthenticatedProfile(
+            id: UUID(
+                uuidString: "7f000000-0000-4000-8000-000000000005"
+            )!,
+            displayName: "Beta Bob"
+        )
+        let firstPaths = AuthenticatedProfileStoragePaths(
+            profileID: firstProfile.id,
+            rootDirectory: root.appendingPathComponent("first")
+        )
+        let secondPaths = AuthenticatedProfileStoragePaths(
+            profileID: secondProfile.id,
+            rootDirectory: root.appendingPathComponent("second")
+        )
+        for directory in firstPaths.fixedDirectories
+            + secondPaths.fixedDirectories {
+            try FileManager.default.createDirectory(
+                at: directory,
+                withIntermediateDirectories: true
+            )
+        }
+        let authorization = RemoteNotificationAuthorizationProbe()
+        let secondMount = expectation(description: "second profile mounted")
+        let client = CompetitionClient.remote(
+            remoteAPI: remoteAPI(listCompetitions: { [] }),
+            environment: try environment(),
+            notificationClient: authorization.client,
+            notificationPreferencesFactory: { paths in
+                if paths.profileID == secondProfile.id {
+                    secondMount.fulfill()
+                }
+                return .constant(mutedOpponentIdentities: [])
+            }
+        )
+
+        try await client.mountAuthenticatedProfile(firstProfile, firstPaths)
+        let authorizationTask = Task {
+            await client.requestNotificationAuthorization()
+        }
+        await authorization.waitUntilRequestStarts()
+        let mountTask = Task {
+            try await client.mountAuthenticatedProfile(
+                secondProfile,
+                secondPaths
+            )
+        }
+
+        await fulfillment(of: [secondMount], timeout: 1)
+        await authorization.releaseRequest()
+        try await mountTask.value
+        let state = await authorizationTask.value
+        XCTAssertEqual(state, .authorized)
+        await client.stop()
+    }
+
     func testMountedRemoteClientPublishesEmptyCanonicalDashboard()
         async throws
     {
@@ -591,6 +833,148 @@ final class RemoteCompetitionClientTests: XCTestCase {
         await offline.stop()
     }
 
+    func testRemotePublicationSchedulesThroughRuntimeNeutralCoordinator()
+        async throws
+    {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: root,
+            withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: root) }
+        let profile = AuthenticatedProfile(
+            id: UUID(
+                uuidString: "81000000-0000-4000-8000-000000000001"
+            )!,
+            displayName: "Beta Alice"
+        )
+        let paths = AuthenticatedProfileStoragePaths(
+            profileID: profile.id,
+            rootDirectory: root
+        )
+        for directory in paths.fixedDirectories {
+            try FileManager.default.createDirectory(
+                at: directory,
+                withIntermediateDirectories: true
+            )
+        }
+        let competitionID = UUID(
+            uuidString: "82000000-0000-4000-8000-000000000001"
+        )!
+        let createdAt = Date(timeIntervalSince1970: 1_786_540_000)
+        let descriptor = try pendingDescriptor(
+            competitionID: competitionID,
+            profile: profile,
+            expiresAt: createdAt.addingTimeInterval(48 * 60 * 60)
+        )
+        let page = try pendingHistoryPage(
+            descriptor: descriptor,
+            profileID: profile.id,
+            createdAt: createdAt
+        )
+        let notifications = RemoteCompetitionNotificationProbe()
+        let client = CompetitionClient.remote(
+            remoteAPI: remoteAPI(
+                listCompetitions: { [descriptor] },
+                fetchChanges: { _, _ in page }
+            ),
+            environment: try environment(),
+            notificationClient: notifications.client,
+            notificationPreferencesFactory: { _ in
+                .constant(mutedOpponentIdentities: [])
+            }
+        )
+
+        try await client.mountAuthenticatedProfile(profile, paths)
+        var iterator = client.start().makeAsyncIterator()
+        _ = await iterator.next()
+        let request = await notifications.firstUpsert()
+
+        XCTAssertEqual(
+            request.identifier,
+            CompetitionNotificationIdentifier.scheduled(
+                competitionID: CompetitionID(competitionID),
+                family: .inviteExpiry
+            )
+        )
+        XCTAssertEqual(request.route, .competition(CompetitionID(competitionID)))
+        await client.stop()
+    }
+
+    func testStopCancelsPriorNotificationAfterTransientReconciliationFailure()
+        async throws
+    {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: root,
+            withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: root) }
+        let profile = AuthenticatedProfile(
+            id: UUID(
+                uuidString: "81000000-0000-4000-8000-000000000001"
+            )!,
+            displayName: "Beta Alice"
+        )
+        let paths = AuthenticatedProfileStoragePaths(
+            profileID: profile.id,
+            rootDirectory: root
+        )
+        for directory in paths.fixedDirectories {
+            try FileManager.default.createDirectory(
+                at: directory,
+                withIntermediateDirectories: true
+            )
+        }
+        let competitionID = UUID(
+            uuidString: "82000000-0000-4000-8000-000000000001"
+        )!
+        let createdAt = Date(timeIntervalSince1970: 1_786_540_000)
+        let descriptor = try pendingDescriptor(
+            competitionID: competitionID,
+            profile: profile,
+            expiresAt: createdAt.addingTimeInterval(48 * 60 * 60)
+        )
+        let page = try pendingHistoryPage(
+            descriptor: descriptor,
+            profileID: profile.id,
+            createdAt: createdAt
+        )
+        let fetches = RemoteCompetitionFetchSequenceProbe(page: page)
+        let notifications = RemoteCompetitionNotificationProbe()
+        let client = CompetitionClient.remote(
+            remoteAPI: remoteAPI(
+                listCompetitions: { [descriptor] },
+                fetchChanges: { _, _ in try await fetches.fetch() }
+            ),
+            environment: try environment(),
+            notificationClient: notifications.client,
+            notificationPreferencesFactory: { _ in
+                .constant(mutedOpponentIdentities: [])
+            }
+        )
+
+        try await client.mountAuthenticatedProfile(profile, paths)
+        var iterator = client.start().makeAsyncIterator()
+        _ = await iterator.next()
+        let scheduled = await notifications.firstUpsert()
+        let initiallyPending = await notifications.pendingIdentifiers()
+        XCTAssertEqual(initiallyPending, [scheduled.identifier])
+        await fetches.failSubsequentFetches()
+
+        let failed = await client.reconcileAll(.pullToRefresh)
+        XCTAssertEqual(
+            failed.dashboard.issues,
+            [.competitionFailures([CompetitionID(competitionID)])]
+        )
+        await client.stop()
+
+        let remaining = await notifications.pendingIdentifiers()
+        XCTAssertEqual(remaining, [], "Profile teardown must cancel prior work")
+    }
+
     func testRelaunchResumesFromDurableServerCursor()
         async throws
     {
@@ -794,6 +1178,16 @@ final class RemoteCompetitionClientTests: XCTestCase {
             Int
         ) async throws -> CompetitionChangePage = { _, _ in
             throw CompetitionRemoteFailure.operationFailed
+        },
+        registerInstallation: @escaping @Sendable (
+            CompetitionInstallationRequest
+        ) async throws -> CompetitionInstallation = { _ in
+            throw CompetitionRemoteFailure.operationFailed
+        },
+        removeInstallation: @escaping @Sendable (
+            UUID
+        ) async throws -> CompetitionInstallation = { _ in
+            throw CompetitionRemoteFailure.operationFailed
         }
     ) -> CompetitionRemoteAPI {
         CompetitionRemoteAPI(
@@ -816,16 +1210,142 @@ final class RemoteCompetitionClientTests: XCTestCase {
                 throw CompetitionRemoteFailure.operationFailed
             },
             fetchChanges: fetchChanges,
-            registerInstallation: { _ in
-                throw CompetitionRemoteFailure.operationFailed
-            },
-            removeInstallation: { _ in
-                throw CompetitionRemoteFailure.operationFailed
-            },
+            registerInstallation: registerInstallation,
+            removeInstallation: removeInstallation,
             requestAccountDeletion: {
                 throw CompetitionRemoteFailure.operationFailed
             }
         )
+    }
+}
+
+private actor RemoteCompetitionInstallationProbe {
+    private var registrations: [CompetitionInstallationRequest] = []
+    private var removals: [UUID] = []
+
+    func register(
+        _ request: CompetitionInstallationRequest
+    ) throws -> CompetitionInstallation {
+        registrations.append(request)
+        return try CompetitionInstallation(
+            installationID: request.installationID,
+            environment: request.environment,
+            state: .active
+        )
+    }
+
+    func remove(_ id: UUID) throws -> CompetitionInstallation {
+        removals.append(id)
+        return try CompetitionInstallation(
+            installationID: id,
+            environment: .sandbox,
+            state: .revoked
+        )
+    }
+
+    func registrationRequests() -> [CompetitionInstallationRequest] {
+        registrations
+    }
+
+    func removalIDs() -> [UUID] { removals }
+}
+
+private actor RemoteCompetitionPushProbe {
+    private let token: String
+    private var calls: [String] = []
+
+    init(token: String) {
+        self.token = token
+    }
+
+    nonisolated var client: CompetitionPushRegistrationClient {
+        CompetitionPushRegistrationClient(
+            register: { [weak self] in await self?.record("register") },
+            unregister: { [weak self] in
+                await self?.record("unregister")
+            },
+            latestToken: { [weak self] in await self?.currentToken() },
+            events: {
+                AsyncStream<CompetitionPushRegistrationEvent> {
+                    $0.finish()
+                }
+            }
+        )
+    }
+
+    func recordedCalls() -> [String] { calls }
+
+    private func currentToken() -> String { token }
+
+    private func record(_ call: String) { calls.append(call) }
+}
+
+private actor RemoteCompetitionNotificationProbe {
+    private var upserts: [CompetitionScheduledNotificationRequest] = []
+    private var waiters: [
+        CheckedContinuation<CompetitionScheduledNotificationRequest, Never>
+    ] = []
+
+    nonisolated var client: CompetitionNotificationClient {
+        CompetitionNotificationClient(
+            requestAuthorization: { true },
+            authorizationState: { .authorized },
+            upsert: { [weak self] request in
+                await self?.record(request)
+            },
+            postNow: { _ in },
+            pendingIDs: { [weak self] prefix in
+                await self?.pendingIdentifiers(prefix: prefix) ?? []
+            },
+            deliveredIDs: { _ in [] },
+            removePending: { [weak self] identifiers in
+                await self?.removePending(identifiers)
+            },
+            removeDelivered: { _ in }
+        )
+    }
+
+    func firstUpsert() async -> CompetitionScheduledNotificationRequest {
+        if let first = upserts.first { return first }
+        return await withCheckedContinuation { continuation in
+            waiters.append(continuation)
+        }
+    }
+
+    func pendingIdentifiers(prefix: String? = nil) -> Set<String> {
+        Set(upserts.map(\.identifier)).filter { identifier in
+            prefix.map(identifier.hasPrefix) ?? true
+        }
+    }
+
+    private func removePending(_ identifiers: [String]) {
+        let removed = Set(identifiers)
+        upserts.removeAll { removed.contains($0.identifier) }
+    }
+
+    private func record(_ request: CompetitionScheduledNotificationRequest) {
+        upserts.append(request)
+        let continuations = waiters
+        waiters.removeAll()
+        continuations.forEach { $0.resume(returning: request) }
+    }
+}
+
+private actor RemoteCompetitionFetchSequenceProbe {
+    private let page: CompetitionChangePage
+    private var shouldFail = false
+
+    init(page: CompetitionChangePage) {
+        self.page = page
+    }
+
+    func failSubsequentFetches() {
+        shouldFail = true
+    }
+
+    func fetch() throws -> CompetitionChangePage {
+        if shouldFail { throw CompetitionRemoteFailure.operationFailed }
+        return page
     }
 }
 
@@ -897,6 +1417,105 @@ private actor RemoteCompetitionClientProbe {
 
     func listCount() -> Int {
         lists
+    }
+}
+
+private final class RemoteNotificationOperationOrderProbe: @unchecked Sendable {
+    private let lock = NSLock()
+    private let gate = RemoteNotificationOperationGate()
+    private var recordedEvents: [String] = []
+
+    var blockingClient: CompetitionNotificationPreferencesClient {
+        CompetitionNotificationPreferencesClient(
+            mutedOpponentIdentities: { [self] in
+                record("read-start")
+                await gate.enterAndWait()
+                record("read-end")
+                return []
+            },
+            setMuted: { _, _ in }
+        )
+    }
+
+    func record(_ event: String) {
+        lock.withLock { recordedEvents.append(event) }
+    }
+
+    func events() -> [String] {
+        lock.withLock { recordedEvents }
+    }
+
+    func waitUntilReadStarts() async {
+        await gate.waitUntilEntered()
+    }
+
+    func releaseRead() async {
+        await gate.release()
+    }
+}
+
+private actor RemoteNotificationOperationGate {
+    private var entered = false
+    private var released = false
+    private var entryWaiters: [CheckedContinuation<Void, Never>] = []
+    private var releaseWaiters: [CheckedContinuation<Void, Never>] = []
+
+    func enterAndWait() async {
+        entered = true
+        let waitingForEntry = entryWaiters
+        entryWaiters.removeAll()
+        waitingForEntry.forEach { $0.resume() }
+        guard !released else { return }
+        await withCheckedContinuation { continuation in
+            releaseWaiters.append(continuation)
+        }
+    }
+
+    func waitUntilEntered() async {
+        guard !entered else { return }
+        await withCheckedContinuation { continuation in
+            entryWaiters.append(continuation)
+        }
+    }
+
+    func release() {
+        released = true
+        let waiters = releaseWaiters
+        releaseWaiters.removeAll()
+        waiters.forEach { $0.resume() }
+    }
+}
+
+private actor RemoteNotificationAuthorizationProbe {
+    private let gate = RemoteNotificationOperationGate()
+
+    nonisolated var client: CompetitionNotificationClient {
+        CompetitionNotificationClient(
+            requestAuthorization: { [weak self] in
+                guard let self else { return false }
+                await self.request()
+                return true
+            },
+            authorizationState: { .authorized },
+            upsert: { _ in },
+            postNow: { _ in },
+            pendingIDs: { _ in [] },
+            deliveredIDs: { _ in [] },
+            removePending: { _ in },
+            removeDelivered: { _ in }
+        )
+    }
+
+    func waitUntilRequestStarts() async {
+        await gate.waitUntilEntered()
+    }
+
+    func releaseRequest() async {
+        await gate.release()
+    }
+
+    private func request() async {
+        await gate.enterAndWait()
     }
 }
 
