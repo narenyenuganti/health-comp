@@ -28,6 +28,9 @@ struct SupabaseAuthenticationOperations: Sendable {
         _ rawNonce: String
     ) async throws -> SupabaseAuthenticationSession
     var bootstrapProfile: @Sendable (String?) async throws -> AuthenticatedProfile
+    var updateProfile: @Sendable (String) async throws -> AuthenticatedProfile = { _ in
+        throw AuthenticationClientFailure.operationFailed
+    }
     var events: @Sendable () -> AsyncStream<SupabaseAuthenticationEvent>
     var clearLocalSession: @Sendable () async -> Void
     var remoteSignOut: @Sendable () async throws -> Void
@@ -106,6 +109,13 @@ enum SupabaseAuthenticationClient {
             bootstrapProfile: { displayName in
                 do {
                     return try await operations.bootstrapProfile(displayName)
+                } catch {
+                    throw classifyBootstrapFailure(error)
+                }
+            },
+            updateProfile: { displayName in
+                do {
+                    return try await operations.updateProfile(displayName)
                 } catch {
                     throw classifyBootstrapFailure(error)
                 }
@@ -219,6 +229,22 @@ private extension SupabaseAuthenticationOperations {
                         params: Parameters(
                             suggestedDisplayName: suggestedDisplayName
                         )
+                    )
+                    .execute()
+                    .value
+            },
+            updateProfile: { displayName in
+                struct Parameters: Encodable {
+                    let newDisplayName: String
+
+                    enum CodingKeys: String, CodingKey {
+                        case newDisplayName = "new_display_name"
+                    }
+                }
+                return try await clientBox.client()
+                    .rpc(
+                        "update_current_profile",
+                        params: Parameters(newDisplayName: displayName)
                     )
                     .execute()
                     .value

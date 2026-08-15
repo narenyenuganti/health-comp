@@ -278,22 +278,30 @@ struct LocalCompetitionDashboard: Equatable, Sendable {
     let hiddenTerminalCompetitionCount: Int
 }
 
+enum CompetitionPublicationSource: Equatable, Sendable {
+    case simulatedFixture
+    case remoteParticipants
+}
+
 struct LocalCompetitionPublication: Equatable, Sendable {
     let publicationRevision: UInt64
     let dashboard: LocalCompetitionDashboard
     let evaluatedAt: Date
     let timeZoneIdentifier: String
+    let source: CompetitionPublicationSource
 
     init(
         publicationRevision: UInt64,
         dashboard: LocalCompetitionDashboard,
         evaluatedAt: Date = .distantPast,
-        timeZoneIdentifier: String = "UTC"
+        timeZoneIdentifier: String = "UTC",
+        source: CompetitionPublicationSource = .simulatedFixture
     ) {
         self.publicationRevision = publicationRevision
         self.dashboard = dashboard
         self.evaluatedAt = evaluatedAt
         self.timeZoneIdentifier = timeZoneIdentifier
+        self.source = source
     }
 }
 
@@ -582,8 +590,8 @@ private final class LocalCompetitionPublishOnce: @unchecked Sendable {
 }
 
 extension CompetitionClient: TestDependencyKey {
-    static let testValue = closed(issue: .unimplemented)
-    static let previewValue = closed(issue: .unimplemented)
+    static var testValue: Self { closed(issue: .unimplemented) }
+    static var previewValue: Self { closed(issue: .unimplemented) }
 }
 
 // MARK: - Serialized coordinator

@@ -3,6 +3,29 @@ import XCTest
 @testable import HealthComp
 
 final class SupabaseCompetitionRemoteAPITests: XCTestCase {
+    func testArchiveRoutesThroughAuthenticatedIdempotentRPC() async throws {
+        let harness = CompetitionTransportHarness(stubs: [
+            .response(
+                200,
+                try jsonData([
+                    "competition_id": competitionID.uuidString.lowercased(),
+                ])
+            ),
+        ])
+
+        try await makeAPI(harness).archiveCompetition(competitionID)
+
+        let requests = await harness.recordedRequests()
+        XCTAssertEqual(requests.count, 1)
+        try assertRPC(
+            requests[0],
+            name: "archive_competition",
+            body: [
+                "competition_id": competitionID.uuidString.lowercased(),
+            ]
+        )
+    }
+
     func testRoutesEveryOperationWithExactAppOwnedRequests() async throws {
         let inviteToken = Data(repeating: 0x42, count: 32)
             .base64EncodedString()

@@ -89,6 +89,38 @@ final class AccountFeatureTests: XCTestCase {
     }
 
     @MainActor
+    func testAuthenticatedDisplayNameEditValidatesAndDelegatesUpdate() async {
+        let store = TestStore(
+            initialState: AccountFeature.State(
+                mode: .authenticated,
+                displayName: "Taylor"
+            )
+        ) {
+            AccountFeature()
+        }
+
+        await store.send(.editDisplayNameButtonTapped) {
+            $0.isEditingDisplayName = true
+        }
+        await store.send(.displayNameChanged("  Taylor Prime  ")) {
+            $0.displayName = "  Taylor Prime  "
+        }
+        await store.send(.saveDisplayNameButtonTapped) {
+            $0.displayName = "Taylor Prime"
+            $0.isRequestInFlight = true
+        }
+        await store.receive(
+            .delegate(.displayNameUpdateRequested("Taylor Prime"))
+        )
+        await store.send(.profileUpdateFinished("Taylor Prime")) {
+            $0.isRequestInFlight = false
+            $0.isEditingDisplayName = false
+            $0.displayName = "Taylor Prime"
+            $0.committedDisplayName = "Taylor Prime"
+        }
+    }
+
+    @MainActor
     func testRetryAndSignOutAreExplicitDelegates() async {
         let retryStore = TestStore(
             initialState: AccountFeature.State(mode: .launchFailure)

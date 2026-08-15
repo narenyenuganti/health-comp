@@ -32,7 +32,7 @@ extension CompetitionClient {
             },
             accept: { id in await coordinator.unsupported(id) },
             decline: { id in await coordinator.unsupported(id) },
-            archive: { id in await coordinator.unsupported(id) },
+            archive: { id in await coordinator.archive(id) },
             rematch: { id in await coordinator.unsupported(id) },
             reinvite: { await coordinator.unsupported(nil) },
             delete: { id in await coordinator.unsupported(id) },
@@ -184,23 +184,43 @@ private actor RemoteCompetitionClientCoordinator {
         await withOperationGate {
             let issue = id.map(CompetitionClientIssue.commandRejected)
                 ?? .unimplemented
-            guard let latestPublication else {
-                return publish(materializations: [], issues: [issue])
-            }
-            return publish(
-                dashboard: CompetitionDashboard(
-                    competitions: latestPublication.dashboard.competitions,
-                    awards: latestPublication.dashboard.awards,
-                    issues: Self.deduplicated(
-                        latestPublication.dashboard.issues + [issue]
-                    ),
-                    hiddenTerminalCompetitionCount: latestPublication
-                        .dashboard.hiddenTerminalCompetitionCount
-                ),
-                evaluatedAt: latestPublication.evaluatedAt,
-                timeZoneIdentifier: latestPublication.timeZoneIdentifier
-            )
+            return publication(adding: issue)
         }
+    }
+
+    func archive(_ id: CompetitionID) async -> CompetitionPublication {
+        await withOperationGate {
+            guard runtime != nil else {
+                return publication(adding: .commandRejected(id))
+            }
+            do {
+                try await remoteAPI.archiveCompetition(id.rawValue)
+                return await performReconciliation()
+            } catch {
+                return publication(adding: .commandRejected(id))
+            }
+        }
+    }
+
+    private func publication(
+        adding issue: CompetitionClientIssue
+    ) -> CompetitionPublication {
+        guard let latestPublication else {
+            return publish(materializations: [], issues: [issue])
+        }
+        return publish(
+            dashboard: CompetitionDashboard(
+                competitions: latestPublication.dashboard.competitions,
+                awards: latestPublication.dashboard.awards,
+                issues: Self.deduplicated(
+                    latestPublication.dashboard.issues + [issue]
+                ),
+                hiddenTerminalCompetitionCount: latestPublication.dashboard
+                    .hiddenTerminalCompetitionCount
+            ),
+            evaluatedAt: latestPublication.evaluatedAt,
+            timeZoneIdentifier: latestPublication.timeZoneIdentifier
+        )
     }
 
     func createInvite(
@@ -365,7 +385,8 @@ private actor RemoteCompetitionClientCoordinator {
                 publicationRevision: UInt64.max,
                 dashboard: dashboard,
                 evaluatedAt: evaluatedAt,
-                timeZoneIdentifier: timeZoneIdentifier
+                timeZoneIdentifier: timeZoneIdentifier,
+                source: .remoteParticipants
             )
         }
         publicationRevision += 1
@@ -373,7 +394,8 @@ private actor RemoteCompetitionClientCoordinator {
             publicationRevision: publicationRevision,
             dashboard: dashboard,
             evaluatedAt: evaluatedAt,
-            timeZoneIdentifier: timeZoneIdentifier
+            timeZoneIdentifier: timeZoneIdentifier,
+            source: .remoteParticipants
         )
         latestPublication = publication
         hub?.publish(publication)
@@ -389,6 +411,27 @@ private actor RemoteCompetitionClientCoordinator {
         }
         return result
     }
+}
+
+struct RemoteCompetitionParticipantPresentation: Equatable, Sendable {
+    let ownerName: String
+    let opponentName: String
+    let opponentID: UUID?
+}
+
+func remoteCompetitionParticipantPresentation(
+    descriptor: CompetitionDescriptor,
+    profile: AuthenticatedProfile
+) -> RemoteCompetitionParticipantPresentation {
+    let ownerName = descriptor.participants
+        .first { $0.profileID == profile.id }?.profile.displayName
+        ?? profile.displayName
+    let opponent = descriptor.participants.first { $0.profileID != profile.id }
+    return RemoteCompetitionParticipantPresentation(
+        ownerName: ownerName,
+        opponentName: opponent?.profile.displayName ?? "Waiting for competitor",
+        opponentID: opponent?.profileID
+    )
 }
 
 private enum RemoteCompetitionProjector {
@@ -424,11 +467,13 @@ private enum RemoteCompetitionProjector {
     ) -> CompetitionPresentation? {
         let projection = materialization.journal.projection
         let competition = projection.competition
-        let opponentDescriptor = materialization.descriptor.participants
-            .first { $0.profileID != profile.id }
-        let opponentName = opponentDescriptor?.profile.displayName
-            ?? "Waiting for competitor"
-        let opponentID = opponentDescriptor?.profileID
+        let participantPresentation = remoteCompetitionParticipantPresentation(
+            descriptor: materialization.descriptor,
+            profile: profile
+        )
+        let ownerName = participantPresentation.ownerName
+        let opponentName = participantPresentation.opponentName
+        let opponentID = participantPresentation.opponentID
         let terminal = terminalPresentation(competition.lifecycle)
         let schedule = competition.schedule
         let days = schedule.map {
@@ -448,7 +493,7 @@ private enum RemoteCompetitionProjector {
         }.map { Double($0.totalAcceptedCentiPoints) / 100 } ?? 0
         return CompetitionPresentation(
             id: competition.id,
-            ownerDisplayName: profile.displayName,
+            ownerDisplayName: ownerName,
             opponentDisplayName: opponentName,
             opponentIdentity: opponentID.map {
                 "remote-profile:v1:\($0.uuidString.lowercased())"

@@ -3,6 +3,145 @@ import XCTest
 @testable import HealthComp
 
 final class CompetitionPresentationTests: XCTestCase {
+    func testArchivedRemoteHistoryCannotBeDeletedLocally() {
+        XCTAssertEqual(
+            competitionResultDataControl(
+                source: .remoteParticipants,
+                isArchived: false
+            ),
+            .archive
+        )
+        XCTAssertEqual(
+            competitionResultDataControl(
+                source: .remoteParticipants,
+                isArchived: true
+            ),
+            .preservedHistory
+        )
+        XCTAssertEqual(
+            competitionResultDataControl(
+                source: .simulatedFixture,
+                isArchived: true
+            ),
+            .deleteLocalData
+        )
+    }
+
+    func testRemoteParticipantCopyUsesRealIdentityWithoutFixtureLanguage() {
+        let source = CompetitionPublicationSource.remoteParticipants
+
+        XCTAssertNil(
+            competitionFixtureDisclosure(
+                source: source,
+                opponentDisplayName: "Priya"
+            )
+        )
+        XCTAssertEqual(
+            competitionInviteTitle(
+                direction: .outgoing,
+                opponentDisplayName: "Priya"
+            ),
+            "Outgoing invitation to Priya"
+        )
+        XCTAssertEqual(
+            competitionResultTitle(
+                outcome: .loss,
+                opponentDisplayName: "Priya"
+            ),
+            "Priya Won"
+        )
+        XCTAssertEqual(
+            competitionResultSubtitle(
+                outcome: .loss,
+                opponentDisplayName: "Priya",
+                source: source
+            ),
+            "Priya’s seven-day Activity total finished ahead."
+        )
+        XCTAssertEqual(
+            competitionTallyAttentionText(
+                .opponentPlanUnavailable,
+                opponentDisplayName: "Priya",
+                source: source
+            ),
+            "Finalizing Priya’s scores."
+        )
+
+        let allCopy = [
+            competitionInviteTitle(
+                direction: .outgoing,
+                opponentDisplayName: "Priya"
+            ),
+            competitionResultTitle(
+                outcome: .loss,
+                opponentDisplayName: "Priya"
+            ),
+            competitionResultSubtitle(
+                outcome: .loss,
+                opponentDisplayName: "Priya",
+                source: source
+            ),
+            competitionTallyAttentionText(
+                .opponentPlanUnavailable,
+                opponentDisplayName: "Priya",
+                source: source
+            ),
+        ].joined(separator: " ")
+        XCTAssertFalse(allCopy.contains("Alex"))
+        XCTAssertFalse(allCopy.localizedCaseInsensitiveContains("simulat"))
+    }
+
+    func testFixtureParticipantCopyRetainsExplicitSimulationDisclosure() {
+        XCTAssertEqual(
+            competitionFixtureDisclosure(
+                source: .simulatedFixture,
+                opponentDisplayName: "Alex"
+            ),
+            "Alex is simulated on this iPhone."
+        )
+        XCTAssertEqual(
+            competitionResultSubtitle(
+                outcome: .loss,
+                opponentDisplayName: "Alex",
+                source: .simulatedFixture
+            ),
+            "Alex’s simulated seven-day total finished ahead."
+        )
+    }
+
+    func testScheduledCompetitionDisclosesConcreteFrozenDatesAndTimeZone()
+        throws
+    {
+        let timeZoneIdentifier = "America/Los_Angeles"
+        let schedule = CompetitionSchedule(
+            calendar: try CompetitionCalendar(
+                timeZoneIdentifier: timeZoneIdentifier
+            ),
+            startDay: try CompetitionDay(
+                era: 1,
+                year: 2026,
+                month: 8,
+                day: 13,
+                timeZoneIdentifier: timeZoneIdentifier
+            )
+        )
+
+        XCTAssertEqual(
+            competitionScheduleDateRangeText(
+                schedule,
+                locale: Locale(identifier: "en_US")
+            ),
+            "Aug 13, 2026–Aug 19, 2026 (America/Los_Angeles)"
+        )
+        XCTAssertEqual(
+            competitionScheduleDateRangeText(
+                schedule,
+                locale: Locale(identifier: "fr_FR")
+            ),
+            "13 août 2026–19 août 2026 (America/Los_Angeles)"
+        )
+    }
+
     func testRefreshFailureCopyMapsEveryPrivacySafeReason() {
         let expected: [(ActivityQueryFailureReason, String)] = [
             (
@@ -457,10 +596,10 @@ final class CompetitionPresentationTests: XCTestCase {
             competitionRivalrySummary(dashboard),
             CompetitionRivalrySummary(
                 completions: 3,
-                narenWins: 1,
-                alexWins: 1,
+                ownerWins: 1,
+                opponentWins: 1,
                 ties: 1,
-                latestNarenVictoryAt: Date(timeIntervalSinceReferenceDate: 0)
+                latestOwnerVictoryAt: Date(timeIntervalSinceReferenceDate: 0)
             )
         )
         let victory = try! XCTUnwrap(

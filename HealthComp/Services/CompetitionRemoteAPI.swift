@@ -33,6 +33,11 @@ struct CompetitionRemoteAPI: Sendable {
     var claimInvite: @Sendable (
         _ request: CompetitionInviteClaimRequest
     ) async throws -> CompetitionInviteClaim
+    var archiveCompetition: @Sendable (
+        _ competitionID: UUID
+    ) async throws -> Void = { _ in
+        throw CompetitionRemoteFailure.operationFailed
+    }
     var appendScoreRevision: @Sendable (
         _ request: CompetitionScoreRevisionRequest
     ) async throws -> CompetitionScoreRevisionResponse

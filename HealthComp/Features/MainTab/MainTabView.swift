@@ -14,6 +14,17 @@ struct MainTabView: View {
                 if let publication = store.competition.publication {
                     CompetitionSharingView(
                         publication: publication,
+                        inviteCreationStatus: store.competition
+                            .inviteCreationRematchParentID == nil
+                                ? store.competition.inviteCreationStatus
+                                : .idle,
+                        createdInviteLink: store.competition
+                            .inviteCreationRematchParentID == nil
+                                ? store.competition.createdInviteLink
+                                : nil,
+                        createInvite: {
+                            store.send(.competition(.createInviteTapped))
+                        },
                         selectCompetition: {
                             store.send(.pathChanged([$0]))
                         },
@@ -27,16 +38,18 @@ struct MainTabView: View {
                             ),
                         notificationsMuted: store.competition
                             .mutedOpponentIdentities.contains(
-                                LocalCompetitionIdentity.opponentIdentity
+                                notificationOpponentIdentity ?? ""
                             ),
                         notificationMuteIsInFlight: store.competition
                             .muteOpponentIdentitiesInFlight.contains(
-                                LocalCompetitionIdentity.opponentIdentity
+                                notificationOpponentIdentity ?? ""
                             ),
                         notificationPreferenceSaveFailed: store.competition
                             .notificationPreferenceSaveFailed,
                         notificationAuthorization: store.competition
                             .notificationAuthorizationState,
+                        notificationOpponentDisplayName:
+                            notificationOpponent?.opponentDisplayName,
                         notificationAuthorizationRequestIsInFlight:
                             store.competition
                                 .notificationAuthorizationRequestIsInFlight,
@@ -46,14 +59,13 @@ struct MainTabView: View {
                             )
                         },
                         toggleNotifications: {
-                            store.send(
-                                .competition(
-                                    .muteTapped(
-                                        LocalCompetitionIdentity
-                                            .opponentIdentity
+                            if let notificationOpponentIdentity {
+                                store.send(
+                                    .competition(
+                                        .muteTapped(notificationOpponentIdentity)
                                     )
                                 )
-                            )
+                            }
                         }
                     )
                     .refreshable {
@@ -81,12 +93,52 @@ struct MainTabView: View {
         ) { _ in
             store.send(.timeZoneChanged)
         }
+        .sheet(isPresented: claimSheetPresented) {
+            ClaimCompetitionView(
+                status: store.inviteClaimStatus,
+                accept: { store.send(.acceptClaimTapped) },
+                decline: { store.send(.declineClaimTapped) },
+                retry: { store.send(.retryClaimTapped) },
+                dismiss: { store.send(.dismissClaimStatus) }
+            )
+        }
     }
 
     private var navigationPath: Binding<[CompetitionID]> {
         Binding(
             get: { store.path },
             set: { store.send(.pathChanged($0)) }
+        )
+    }
+
+    private var notificationOpponent: LocalCompetitionPresentation? {
+        store.competition.publication?.dashboard.competitions.first {
+            !$0.opponentIdentity.hasSuffix(":pending")
+        }
+    }
+
+    private var notificationOpponentIdentity: String? {
+        notificationOpponent?.opponentIdentity
+    }
+
+    private var claimSheetPresented: Binding<Bool> {
+        Binding(
+            get: { store.inviteClaimStatus != .idle },
+            set: { isPresented in
+                guard !isPresented else { return }
+                switch store.inviteClaimStatus {
+                case .ready:
+                    store.send(.declineClaimTapped)
+                case .retryable:
+                    store.send(.dismissRetryableClaim)
+                case .unavailable:
+                    store.send(.dismissClaimStatus)
+                case .confirmationTimedOut:
+                    store.send(.dismissClaimStatus)
+                case .idle, .claiming, .waitingForCompetition:
+                    break
+                }
+            }
         )
     }
 
@@ -100,18 +152,31 @@ struct MainTabView: View {
             case .pending:
                 CompetitionInviteView(
                     competition: competition,
+                    source: publication.source,
                     isCommandInFlight: store.competition
                         .isCommandInFlight(id),
                     send: sendCompetitionAction
                 )
 
             case .scheduled, .active, .endsToday, .tallying:
-                CompetitionDetailView(competition: competition)
+                CompetitionDetailView(
+                    competition: competition,
+                    source: publication.source
+                )
 
             case .completed, .archived:
                 CompetitionResultView(
                     competition: competition,
                     awards: publication.dashboard.awards,
+                    source: publication.source,
+                    inviteCreationStatus: store.competition
+                        .inviteCreationRematchParentID == id
+                            ? store.competition.inviteCreationStatus
+                            : .idle,
+                    createdInviteLink: store.competition
+                        .inviteCreationRematchParentID == id
+                            ? store.competition.createdInviteLink
+                            : nil,
                     isCommandInFlight: store.competition
                         .isCommandInFlight(id),
                     send: sendCompetitionAction

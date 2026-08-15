@@ -13,12 +13,16 @@ struct AccountFeature {
         }
 
         var mode: Mode
-        var displayName = ""
+        var displayName: String
+        var committedDisplayName: String
+        var isEditingDisplayName = false
         var isRequestInFlight = false
         var message: Message?
 
-        init(mode: Mode) {
+        init(mode: Mode, displayName: String = "") {
             self.mode = mode
+            self.displayName = displayName
+            self.committedDisplayName = displayName
         }
     }
 
@@ -46,6 +50,7 @@ struct AccountFeature {
         enum Delegate: Equatable, Sendable {
             case signInWithAppleRequested
             case displayNameSubmitted(String)
+            case displayNameUpdateRequested(String)
             case retryRequested
             case signOutRequested
         }
@@ -53,6 +58,10 @@ struct AccountFeature {
         case displayNameChanged(String)
         case signInButtonTapped
         case submitDisplayNameButtonTapped
+        case editDisplayNameButtonTapped
+        case cancelDisplayNameButtonTapped
+        case saveDisplayNameButtonTapped
+        case profileUpdateFinished(String)
         case retryButtonTapped
         case signOutButtonTapped
         case operationFailed(AuthenticationClientFailure)
@@ -83,6 +92,53 @@ struct AccountFeature {
                 state.displayName = displayName
                 beginRequest(state: &state)
                 return .send(.delegate(.displayNameSubmitted(displayName)))
+
+            case .editDisplayNameButtonTapped:
+                guard state.mode == .authenticated,
+                      !state.isRequestInFlight
+                else {
+                    return .none
+                }
+                state.isEditingDisplayName = true
+                state.message = nil
+                return .none
+
+            case .cancelDisplayNameButtonTapped:
+                guard state.mode == .authenticated,
+                      !state.isRequestInFlight
+                else {
+                    return .none
+                }
+                state.displayName = state.committedDisplayName
+                state.isEditingDisplayName = false
+                state.message = nil
+                return .none
+
+            case .saveDisplayNameButtonTapped:
+                guard state.mode == .authenticated,
+                      state.isEditingDisplayName,
+                      !state.isRequestInFlight
+                else {
+                    return .none
+                }
+                guard let displayName = validDisplayName(state.displayName)
+                else {
+                    state.message = .invalidDisplayName
+                    return .none
+                }
+                state.displayName = displayName
+                beginRequest(state: &state)
+                return .send(
+                    .delegate(.displayNameUpdateRequested(displayName))
+                )
+
+            case let .profileUpdateFinished(displayName):
+                state.displayName = displayName
+                state.committedDisplayName = displayName
+                state.isEditingDisplayName = false
+                state.isRequestInFlight = false
+                state.message = nil
+                return .none
 
             case .retryButtonTapped:
                 guard !state.isRequestInFlight else { return .none }

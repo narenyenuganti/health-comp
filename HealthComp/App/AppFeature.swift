@@ -56,7 +56,10 @@ struct AppFeature {
         ) -> Self {
             Self(
                 phase: .authenticated,
-                account: AccountFeature.State(mode: .authenticated),
+                account: AccountFeature.State(
+                    mode: .authenticated,
+                    displayName: profile.displayName
+                ),
                 mainTab: MainTabFeature.State(),
                 profile: profile,
                 authEpoch: epoch
@@ -96,6 +99,7 @@ struct AppFeature {
         case restoreSessionResponse(epoch: UInt64, SessionResponse)
         case signInResponse(epoch: UInt64, SignInResponse)
         case bootstrapProfileResponse(epoch: UInt64, ProfileResponse)
+        case updateProfileResponse(epoch: UInt64, ProfileResponse)
         case profileStorageResponse(
             epoch: UInt64,
             profile: AuthenticatedProfile,
@@ -263,7 +267,10 @@ struct AppFeature {
                 case let .success(paths) where paths.profileID == profile.id:
                     state.phase = .authenticated
                     state.profileStoragePaths = paths
-                    state.account = AccountFeature.State(mode: .authenticated)
+                    state.account = AccountFeature.State(
+                        mode: .authenticated,
+                        displayName: profile.displayName
+                    )
                     state.mainTab = MainTabFeature.State()
                 case .success, .failure:
                     becomeLaunchFailure(state: &state)
@@ -291,6 +298,59 @@ struct AppFeature {
             case let .account(.delegate(.displayNameSubmitted(name))):
                 guard state.phase == .settingUpProfile else { return .none }
                 return bootstrapProfile(name, epoch: state.authEpoch)
+
+            case let .account(.delegate(.displayNameUpdateRequested(name))):
+                guard state.phase == .authenticated,
+                      state.profile != nil
+                else {
+                    return .none
+                }
+                return updateProfile(name, epoch: state.authEpoch)
+
+            case let .updateProfileResponse(epoch, response):
+                guard epoch == state.authEpoch,
+                      state.phase == .authenticated,
+                      let currentProfile = state.profile
+                else {
+                    return .none
+                }
+                switch response {
+                case let .success(profile) where profile.id == currentProfile.id:
+                    state.profile = profile
+                    return .merge(
+                        .send(
+                            .account(
+                                .profileUpdateFinished(profile.displayName)
+                            )
+                        ),
+                        .run { _ in
+                            _ = await competitionClient.reconcileAll(
+                                .pullToRefresh
+                            )
+                        }
+                    )
+
+                case .success:
+                    state.account.isRequestInFlight = false
+                    state.account.message = .tryAgain
+                    return .none
+
+                case let .failure(failure):
+                    if failure == .terminalSession
+                        || failure == .sessionExpired {
+                        state.authEpoch &+= 1
+                        return teardown(
+                            epoch: state.authEpoch,
+                            reason: .sessionEnded,
+                            stopRuntime: state.profile != nil
+                                || state.mainTab != nil,
+                            profileID: currentProfile.id
+                        )
+                    }
+                    state.account.isRequestInFlight = false
+                    state.account.message = accountMessage(for: failure)
+                    return .none
+                }
 
             case .account(.delegate(.retryRequested)):
                 guard state.phase == .launchFailure else { return .none }
@@ -399,6 +459,37 @@ struct AppFeature {
             } catch {
                 await send(
                     .bootstrapProfileResponse(
+                        epoch: epoch,
+                        .failure(authenticationFailure(from: error))
+                    )
+                )
+            }
+        }
+        .cancellable(
+            id: CancelID.authenticationOperation,
+            cancelInFlight: true
+        )
+    }
+
+    private func updateProfile(
+        _ displayName: String,
+        epoch: UInt64
+    ) -> Effect<Action> {
+        .run { send in
+            do {
+                await send(
+                    .updateProfileResponse(
+                        epoch: epoch,
+                        .success(
+                            try await authenticationClient.updateProfile(
+                                displayName
+                            )
+                        )
+                    )
+                )
+            } catch {
+                await send(
+                    .updateProfileResponse(
                         epoch: epoch,
                         .failure(authenticationFailure(from: error))
                     )

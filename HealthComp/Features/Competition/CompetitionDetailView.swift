@@ -3,6 +3,7 @@ import SwiftUI
 
 struct CompetitionDetailView: View {
     let competition: LocalCompetitionPresentation
+    let source: CompetitionPublicationSource
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
@@ -41,7 +42,7 @@ struct CompetitionDetailView: View {
             .padding(.vertical, 12)
         }
         .background(Color(.systemGroupedBackground))
-        .navigationTitle("Competition with Alex")
+        .navigationTitle("Competition with \(competition.opponentDisplayName)")
         .navigationBarTitleDisplayMode(.inline)
     }
 
@@ -66,11 +67,21 @@ struct CompetitionDetailView: View {
     private var scheduledCard: some View {
         Label {
             VStack(alignment: .leading, spacing: 3) {
-                Text("Starts next competition day")
-                    .font(.headline)
-                Text("Your stored schedule sets the seven competition days.")
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
+                if let schedule = competition.acceptedConfiguration?.schedule,
+                   let dateRange = competitionScheduleDateRangeText(schedule) {
+                    Text("Seven-day schedule")
+                        .font(.headline)
+                    Text(dateRange)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .accessibilityIdentifier("competition.schedule.dates")
+                } else {
+                    Text("Starts next competition day")
+                        .font(.headline)
+                    Text("Your stored schedule sets the seven competition days.")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
             }
         } icon: {
             Image(systemName: "calendar.badge.clock")
@@ -122,7 +133,11 @@ struct CompetitionDetailView: View {
         VStack(alignment: .leading, spacing: 8) {
             if let attention = competition.tally?.attention {
                 Label(
-                    competitionTallyAttentionText(attention),
+                    competitionTallyAttentionText(
+                        attention,
+                        opponentDisplayName: competition.opponentDisplayName,
+                        source: source
+                    ),
                     systemImage: tallyStatusSymbol(attention)
                 )
                 .font(.subheadline.weight(.semibold))
@@ -133,7 +148,9 @@ struct CompetitionDetailView: View {
                 Text(
                     competitionTallyDeadlineText(
                         tally,
-                        timeZoneIdentifier: competition.timeZoneIdentifier
+                        timeZoneIdentifier: competition.timeZoneIdentifier,
+                        opponentDisplayName: competition.opponentDisplayName,
+                        source: source
                     )
                 )
                 .font(.caption)
@@ -172,7 +189,7 @@ struct CompetitionDetailView: View {
     @ViewBuilder
     private var ownerActivity: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Naren’s Activity")
+            Text("\(competition.ownerDisplayName)’s Activity")
                 .font(.headline)
 
             if let day = activityDay,
@@ -616,6 +633,29 @@ func competitionDayDateText(_ day: CompetitionDay) -> String {
     return "\(month) \(day.day)"
 }
 
+func competitionScheduleDateRangeText(
+    _ schedule: CompetitionSchedule,
+    locale: Locale = .current
+) -> String? {
+    guard let days = try? schedule.calendar.sevenDayWindow(
+        startingOn: schedule.startDay
+    ),
+        let first = days.first,
+        let last = days.last,
+        let firstDate = try? schedule.calendar.startOfDay(first),
+        let lastDate = try? schedule.calendar.startOfDay(last),
+        let timeZone = TimeZone(
+            identifier: schedule.calendar.timeZoneIdentifier
+        )
+    else {
+        return nil
+    }
+    var style = Date.FormatStyle(date: .abbreviated, time: .omitted)
+        .locale(locale)
+    style.timeZone = timeZone
+    return "\(firstDate.formatted(style))–\(lastDate.formatted(style)) (\(schedule.calendar.timeZoneIdentifier))"
+}
+
 func competitionOwnerAccessibilityText(
     _ day: LocalCompetitionDayPresentation
 ) -> String {
@@ -678,7 +718,9 @@ private func competitionOwnerAvailabilityShortText(
 }
 
 func competitionTallyAttentionText(
-    _ attention: LocalCompetitionTallyAttention
+    _ attention: LocalCompetitionTallyAttention,
+    opponentDisplayName: String = LocalCompetitionIdentity.opponentDisplayName,
+    source _: CompetitionPublicationSource = .simulatedFixture
 ) -> String {
     switch attention {
     case .noRead:
@@ -696,7 +738,7 @@ func competitionTallyAttentionText(
     case let .unacceptedScores(ordinals):
         return "Waiting to accept scores for days \(ordinals.sorted().map(String.init).joined(separator: ", "))."
     case .opponentPlanUnavailable:
-        return "Finalizing Alex’s scores."
+        return "Finalizing \(opponentDisplayName)’s scores."
     case .awaitingStability:
         return "Waiting for one more stable read."
     }
@@ -745,7 +787,9 @@ func competitionRefreshTimelineText(
 
 func competitionTallyDeadlineText(
     _ tally: LocalCompetitionTallyPresentation,
-    timeZoneIdentifier: String
+    timeZoneIdentifier: String,
+    opponentDisplayName: String = LocalCompetitionIdentity.opponentDisplayName,
+    source: CompetitionPublicationSource = .simulatedFixture
 ) -> String {
     let deadline = competitionDateTimeText(
         tally.bestAvailableDeadline,
@@ -755,7 +799,8 @@ func competitionTallyDeadlineText(
         return "If complete scores do not stabilize by \(deadline), HealthComp may finalize using the best available accepted data."
     }
     if tally.attention == .opponentPlanUnavailable {
-        return "If Alex’s final simulated scores are still unavailable after \(deadline), HealthComp may finalize using the best available accepted data."
+        let qualifier = source == .simulatedFixture ? " simulated" : ""
+        return "If \(opponentDisplayName)’s final\(qualifier) scores are still unavailable after \(deadline), HealthComp may finalize using the best available accepted data."
     }
     return "If complete accepted scores are still unavailable after \(deadline), HealthComp may finalize using the best available accepted data."
 }

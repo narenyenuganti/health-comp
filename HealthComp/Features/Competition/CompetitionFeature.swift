@@ -1,8 +1,27 @@
 import CompetitionCore
 import ComposableArchitecture
+import Foundation
 
 @Reducer
 struct CompetitionFeature {
+    enum InviteCreationStatus: Equatable, Sendable {
+        case idle
+        case creating
+        case ready
+        case retryable
+        case configurationUnavailable
+    }
+
+    enum InviteCreationResponse: Equatable, Sendable {
+        case success(
+            link: CompetitionInviteShareLink,
+            competitionID: CompetitionID,
+            expectedRevision: UInt64
+        )
+        case failure(CompetitionRemoteFailure)
+        case configurationUnavailable
+    }
+
     @ObservableState
     struct State: Equatable {
         var publication: CompetitionPublication?
@@ -14,6 +33,10 @@ struct CompetitionFeature {
         var notificationAuthorizationState:
             CompetitionNotificationAuthorizationState?
         var notificationAuthorizationRequestIsInFlight: Bool
+        var inviteCreationStatus: InviteCreationStatus
+        var inviteCreationIdempotencyKey: UUID?
+        var inviteCreationRematchParentID: CompetitionID?
+        var createdInviteLink: CompetitionInviteShareLink?
 
         init(
             publication: CompetitionPublication? = nil,
@@ -24,7 +47,11 @@ struct CompetitionFeature {
             notificationPreferenceSaveFailed: Bool = false,
             notificationAuthorizationState:
                 CompetitionNotificationAuthorizationState? = nil,
-            notificationAuthorizationRequestIsInFlight: Bool = false
+            notificationAuthorizationRequestIsInFlight: Bool = false,
+            inviteCreationStatus: InviteCreationStatus = .idle,
+            inviteCreationIdempotencyKey: UUID? = nil,
+            inviteCreationRematchParentID: CompetitionID? = nil,
+            createdInviteLink: CompetitionInviteShareLink? = nil
         ) {
             self.publication = publication
             self.commandIDsInFlight = commandIDsInFlight
@@ -39,6 +66,11 @@ struct CompetitionFeature {
                 notificationAuthorizationState
             self.notificationAuthorizationRequestIsInFlight =
                 notificationAuthorizationRequestIsInFlight
+            self.inviteCreationStatus = inviteCreationStatus
+            self.inviteCreationIdempotencyKey = inviteCreationIdempotencyKey
+            self.inviteCreationRematchParentID =
+                inviteCreationRematchParentID
+            self.createdInviteLink = createdInviteLink
         }
 
         func isCommandInFlight(_ id: CompetitionID) -> Bool {
@@ -49,6 +81,11 @@ struct CompetitionFeature {
     enum Action: Equatable, Sendable {
         case task
         case publication(CompetitionPublication)
+        case createInviteTapped
+        case createInviteResponse(
+            idempotencyKey: UUID,
+            InviteCreationResponse
+        )
         case acceptTapped(CompetitionID)
         case declineTapped(CompetitionID)
         case archiveTapped(CompetitionID)
@@ -73,9 +110,11 @@ struct CompetitionFeature {
     }
 
     @Dependency(\.competitionClient) var competitionClient
+    @Dependency(\.competitionInviteLinkClient) var competitionInviteLinkClient
 
     private enum CancelID {
         case publications
+        case inviteCreation
     }
 
     var body: some ReducerOf<Self> {
@@ -137,6 +176,31 @@ struct CompetitionFeature {
                 }
                 return .none
 
+            case .createInviteTapped:
+                return beginInviteCreation(
+                    state: &state,
+                    rematchParentID: nil
+                )
+
+            case let .createInviteResponse(idempotencyKey, response):
+                guard state.inviteCreationIdempotencyKey == idempotencyKey,
+                      state.inviteCreationStatus == .creating
+                else {
+                    return .none
+                }
+                switch response {
+                case let .success(link, _, _):
+                    state.inviteCreationStatus = .ready
+                    state.createdInviteLink = link
+                case .failure:
+                    state.inviteCreationStatus = .retryable
+                    state.createdInviteLink = nil
+                case .configurationUnavailable:
+                    state.inviteCreationStatus = .configurationUnavailable
+                    state.createdInviteLink = nil
+                }
+                return .none
+
             case let .acceptTapped(id):
                 guard state.commandIDsInFlight.insert(id).inserted else {
                     return .none
@@ -180,6 +244,12 @@ struct CompetitionFeature {
                 }
 
             case let .rematchTapped(id):
+                if state.publication?.source == .remoteParticipants {
+                    return beginInviteCreation(
+                        state: &state,
+                        rematchParentID: id
+                    )
+                }
                 guard state.commandIDsInFlight.insert(id).inserted else {
                     return .none
                 }
@@ -330,8 +400,15 @@ struct CompetitionFeature {
                 return reconcile(trigger: .timeZoneChange)
 
             case .stop:
+                state.inviteCreationStatus = .idle
+                state.inviteCreationIdempotencyKey = nil
+                state.inviteCreationRematchParentID = nil
+                state.createdInviteLink = nil
                 return .concatenate(
-                    .cancel(id: CancelID.publications),
+                    .merge(
+                        .cancel(id: CancelID.publications),
+                        .cancel(id: CancelID.inviteCreation)
+                    ),
                     .run { _ in await competitionClient.stop() }
                 )
             }
@@ -344,5 +421,88 @@ struct CompetitionFeature {
         .run { _ in
             _ = await competitionClient.reconcileAll(trigger)
         }
+    }
+
+    private func beginInviteCreation(
+        state: inout State,
+        rematchParentID: CompetitionID?
+    ) -> Effect<Action> {
+        let isSameRequest = state.inviteCreationRematchParentID
+            == rematchParentID
+        let hasShareableReadyInvite = isSameRequest
+            && state.inviteCreationStatus == .ready
+            && state.createdInviteLink != nil
+        guard state.inviteCreationStatus != .creating,
+              !hasShareableReadyInvite
+        else {
+            return .none
+        }
+        if !isSameRequest {
+            state.inviteCreationIdempotencyKey = nil
+        }
+        let idempotencyKey = state.inviteCreationIdempotencyKey
+            ?? competitionInviteLinkClient.makeIdempotencyKey()
+        state.inviteCreationIdempotencyKey = idempotencyKey
+        state.inviteCreationRematchParentID = rematchParentID
+        state.inviteCreationStatus = .creating
+        state.createdInviteLink = nil
+        let timeZoneIdentifier = competitionInviteLinkClient
+            .currentTimeZoneIdentifier()
+        return .run { send in
+            do {
+                let request = try CompetitionInviteCreationRequest(
+                    timeZoneIdentifier: timeZoneIdentifier,
+                    rematchParentID: rematchParentID?.rawValue,
+                    idempotencyKey: idempotencyKey
+                )
+                let outcome = try await competitionClient.createInvite(
+                    request
+                )
+                guard let link = competitionInviteLinkClient
+                    .makeShareLink(outcome.invite.token)
+                else {
+                    await send(
+                        .createInviteResponse(
+                            idempotencyKey: idempotencyKey,
+                            .configurationUnavailable
+                        )
+                    )
+                    return
+                }
+                await send(
+                    .createInviteResponse(
+                        idempotencyKey: idempotencyKey,
+                        .success(
+                            link: link,
+                            competitionID: CompetitionID(
+                                outcome.invite.competitionID
+                            ),
+                            expectedRevision: outcome
+                                .expectedPublicationRevision
+                        )
+                    )
+                )
+            } catch let failure as CompetitionRemoteFailure {
+                await send(
+                    .createInviteResponse(
+                        idempotencyKey: idempotencyKey,
+                        .failure(failure)
+                    )
+                )
+            } catch is CancellationError {
+                return
+            } catch {
+                await send(
+                    .createInviteResponse(
+                        idempotencyKey: idempotencyKey,
+                        .failure(.operationFailed)
+                    )
+                )
+            }
+        }
+        .cancellable(
+            id: CancelID.inviteCreation,
+            cancelInFlight: false
+        )
     }
 }

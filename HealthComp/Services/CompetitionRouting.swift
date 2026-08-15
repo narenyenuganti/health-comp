@@ -1,6 +1,72 @@
 import Dependencies
 import Foundation
 
+struct CompetitionInviteLinkConfiguration: Equatable, Sendable {
+    static let infoKey = "HEALTHCOMP_INVITE_HOST"
+
+    let host: String?
+
+    init(infoDictionary: [String: Any]) {
+        guard let value = infoDictionary[Self.infoKey] as? String,
+              CompetitionInviteHost.isValid(value)
+        else {
+            self.host = nil
+            return
+        }
+        self.host = value
+    }
+
+    static let live = CompetitionInviteLinkConfiguration(
+        infoDictionary: Bundle.main.infoDictionary ?? [:]
+    )
+}
+
+struct CompetitionInviteLinkClient: Sendable {
+    var makeShareLink: @Sendable (String) -> CompetitionInviteShareLink?
+    var currentTimeZoneIdentifier: @Sendable () -> String
+    var makeIdempotencyKey: @Sendable () -> UUID
+
+    static func live(configuration: CompetitionInviteLinkConfiguration) -> Self {
+        Self(
+            makeShareLink: { rawToken in
+                guard let host = configuration.host,
+                      let token = CompetitionInviteClaimToken(
+                        rawValue: rawToken
+                      )
+                else {
+                    return nil
+                }
+                return CompetitionInviteShareLink(host: host, token: token)
+            },
+            currentTimeZoneIdentifier: { TimeZone.current.identifier },
+            makeIdempotencyKey: { UUID() }
+        )
+    }
+}
+
+extension CompetitionInviteLinkClient: TestDependencyKey {
+    static let testValue = CompetitionInviteLinkClient(
+        makeShareLink: { _ in nil },
+        currentTimeZoneIdentifier: { "UTC" },
+        makeIdempotencyKey: {
+            UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+        }
+    )
+}
+
+extension CompetitionInviteLinkClient: DependencyKey {
+    static let liveValue = CompetitionInviteLinkClient.live(
+        configuration: .live
+    )
+}
+
+extension DependencyValues {
+    var competitionInviteLinkClient: CompetitionInviteLinkClient {
+        get { self[CompetitionInviteLinkClient.self] }
+        set { self[CompetitionInviteLinkClient.self] = newValue }
+    }
+}
+
 enum CompetitionRoutingEnvironment {
     static let liveHub = CompetitionRouteHub()
 
@@ -21,7 +87,9 @@ struct CompetitionRouteEnvelope: Equatable, Sendable {
 final class CompetitionRouteHub: @unchecked Sendable {
     private struct State {
         var sequence: UInt64
-        var pending: CompetitionRouteEnvelope?
+        var pendingByKind: [
+            CompetitionRoute.Kind: CompetitionRouteEnvelope
+        ] = [:]
         var continuations: [
             UUID: AsyncStream<CompetitionRouteEnvelope>.Continuation
         ] = [:]
@@ -47,7 +115,9 @@ final class CompetitionRouteHub: @unchecked Sendable {
                     return
                 }
                 state.continuations[token] = continuation
-                if let pending = state.pending {
+                for pending in state.pendingByKind.values.sorted(
+                    by: { $0.sequence < $1.sequence }
+                ) {
                     continuation.yield(pending)
                 }
             }
@@ -67,7 +137,7 @@ final class CompetitionRouteHub: @unchecked Sendable {
                 sequence: state.sequence,
                 route: route
             )
-            state.pending = envelope
+            state.pendingByKind[route.kind] = envelope
             for continuation in state.continuations.values {
                 continuation.yield(envelope)
             }
@@ -77,8 +147,12 @@ final class CompetitionRouteHub: @unchecked Sendable {
 
     func consume(sequence: UInt64) {
         lock.withLock {
-            guard state.pending?.sequence == sequence else { return }
-            state.pending = nil
+            guard let kind = state.pendingByKind.first(where: {
+                $0.value.sequence == sequence
+            })?.key else {
+                return
+            }
+            state.pendingByKind[kind] = nil
         }
     }
 
@@ -89,7 +163,7 @@ final class CompetitionRouteHub: @unchecked Sendable {
     private func finishLocked() {
         guard !state.isFinished else { return }
         state.isFinished = true
-        state.pending = nil
+        state.pendingByKind.removeAll()
         let continuations = Array(state.continuations.values)
         state.continuations.removeAll()
         for continuation in continuations {

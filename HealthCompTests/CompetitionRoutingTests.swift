@@ -23,6 +23,119 @@ final class CompetitionRoutingTests: XCTestCase {
         )
     }
 
+    func testStrictFallbackInviteURLParsesWithoutExposingTokenDescription() {
+        let token = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+        let route = CompetitionRoute(
+            url: URL(string: "healthcomp://invite/\(token)")!
+        )
+
+        guard case let .claimInvite(parsedToken) = route else {
+            return XCTFail("Expected a private invite-claim route")
+        }
+        XCTAssertEqual(parsedToken.rawValue, token)
+        XCTAssertFalse(String(describing: parsedToken).contains(token))
+        XCTAssertFalse(String(reflecting: parsedToken).contains(token))
+    }
+
+    func testFallbackInviteURLRejectsMalformedOrDataBearingTokens() {
+        let token = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+        let invalid = [
+            "healthcomp://invite/short",
+            "healthcomp://invite/\(token)/extra",
+            "healthcomp://invite/\(token)/",
+            "healthcomp://invite/\(token)?source=message",
+            "healthcomp://invite/\(token)#claim",
+            "healthcomp://user@invite/\(token)",
+            "healthcomp://invite:443/\(token)",
+        ]
+
+        for value in invalid {
+            XCTAssertNil(CompetitionRoute(url: URL(string: value)!))
+        }
+    }
+
+    func testStrictHTTPSInviteURLRequiresExactConfiguredHost() {
+        let token = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+        let route = CompetitionRoute(
+            url: URL(
+                string: "https://invites.healthcomp.example/invite/\(token)"
+            )!,
+            allowedInviteHost: "invites.healthcomp.example"
+        )
+
+        guard case let .claimInvite(parsedToken) = route else {
+            return XCTFail("Expected an HTTPS invite-claim route")
+        }
+        XCTAssertEqual(parsedToken.rawValue, token)
+    }
+
+    func testHTTPSInviteURLRejectsWrongAuthorityOrExtraData() {
+        let token = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+        let invalid = [
+            "http://invites.healthcomp.example/invite/\(token)",
+            "https://other.healthcomp.example/invite/\(token)",
+            "https://user@invites.healthcomp.example/invite/\(token)",
+            "https://invites.healthcomp.example:443/invite/\(token)",
+            "https://invites.healthcomp.example/Invite/\(token)",
+            "https://invites.healthcomp.example/invite/\(token)/",
+            "https://invites.healthcomp.example/invite/\(token)?source=text",
+            "https://invites.healthcomp.example/invite/\(token)#claim",
+        ]
+
+        for value in invalid {
+            XCTAssertNil(
+                CompetitionRoute(
+                    url: URL(string: value)!,
+                    allowedInviteHost: "invites.healthcomp.example"
+                )
+            )
+        }
+    }
+
+    func testInviteShareLinkUsesHTTPSAndRedactsEveryStringRepresentation() {
+        let token = try! XCTUnwrap(
+            CompetitionInviteClaimToken(
+                rawValue: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+            )
+        )
+        let link = try! XCTUnwrap(
+            CompetitionInviteShareLink(
+                host: "invites.healthcomp.example",
+                token: token
+            )
+        )
+
+        XCTAssertEqual(
+            link.url.absoluteString,
+            "https://invites.healthcomp.example/invite/"
+                + token.rawValue
+        )
+        XCTAssertFalse(String(describing: link).contains(token.rawValue))
+        XCTAssertFalse(String(reflecting: link).contains(token.rawValue))
+        XCTAssertNil(
+            CompetitionInviteShareLink(host: "", token: token)
+        )
+        XCTAssertNil(
+            CompetitionInviteShareLink(
+                host: "INVITES.healthcomp.example",
+                token: token
+            )
+        )
+    }
+
+    func testInviteHostRejectsEmbeddedOrTrailingLineBreaks() {
+        XCTAssertFalse(
+            CompetitionInviteHost.isValid(
+                "invites.healthcomp.example\n"
+            )
+        )
+        XCTAssertFalse(
+            CompetitionInviteHost.isValid(
+                "invites.healthcomp\n.example"
+            )
+        )
+    }
+
     func testURLParserRejectsNonCanonicalOrDataBearingRoutes() {
         let invalid = [
             "healthcomp://competition/EAD172F8-531D-4327-823D-E82A4F696050",
@@ -100,6 +213,36 @@ final class CompetitionRoutingTests: XCTestCase {
         XCTAssertGreaterThan(second.sequence, first.sequence)
         let deliveredSecond = await iterator.next()
         XCTAssertEqual(deliveredSecond, second)
+    }
+
+    func testHubKeepsClaimAndNotificationPendingIndependently() async {
+        let token = try! XCTUnwrap(
+            CompetitionInviteClaimToken(
+                rawValue: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+            )
+        )
+        let competition = CompetitionRoute.competition(
+            CompetitionID(
+                UUID(uuidString: "EAD172F8-531D-4327-823D-E82A4F696056")!
+            )
+        )
+        let hub = CompetitionRouteHub()
+        let claimEnvelope = try! XCTUnwrap(
+            hub.enqueue(.claimInvite(token))
+        )
+        let competitionEnvelope = try! XCTUnwrap(hub.enqueue(competition))
+        var iterator = hub.stream().makeAsyncIterator()
+
+        let firstReplay = await iterator.next()
+        XCTAssertEqual(firstReplay, claimEnvelope)
+        guard firstReplay == claimEnvelope else { return }
+        let secondReplay = await iterator.next()
+        XCTAssertEqual(secondReplay, competitionEnvelope)
+
+        hub.consume(sequence: competitionEnvelope.sequence)
+        var claimOnlyIterator = hub.stream().makeAsyncIterator()
+        let remainingClaim = await claimOnlyIterator.next()
+        XCTAssertEqual(remainingClaim, claimEnvelope)
     }
 
     func testHubFailsClosedAtSequenceOverflowAndFinishesSubscribers() async {

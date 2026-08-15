@@ -152,6 +152,135 @@ final class RemoteCompetitionClientTests: XCTestCase {
         await client.stop()
     }
 
+    func testArchiveCallsServerThenReturnsCanonicalPublicationRevision()
+        async throws
+    {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: root,
+            withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: root) }
+        let profile = AuthenticatedProfile(
+            id: UUID(
+                uuidString: "81000000-0000-4000-8000-000000000001"
+            )!,
+            displayName: "Beta Alice"
+        )
+        let paths = AuthenticatedProfileStoragePaths(
+            profileID: profile.id,
+            rootDirectory: root
+        )
+        for directory in paths.fixedDirectories {
+            try FileManager.default.createDirectory(
+                at: directory,
+                withIntermediateDirectories: true
+            )
+        }
+        let competitionID = CompetitionID(
+            UUID(
+                uuidString: "82000000-0000-4000-8000-000000000001"
+            )!
+        )
+        let probe = RemoteCompetitionClientCommandProbe()
+        var api = remoteAPI(listCompetitions: {
+            await probe.recordList()
+            return []
+        })
+        api.archiveCompetition = { id in
+            await probe.recordArchive(id)
+        }
+        let client = CompetitionClient.remote(
+            remoteAPI: api,
+            environment: try environment()
+        )
+
+        try await client.mountAuthenticatedProfile(profile, paths)
+        var iterator = client.start().makeAsyncIterator()
+        let initial = await iterator.next()
+        XCTAssertEqual(initial?.publicationRevision, 1)
+
+        let returned = await client.archive(competitionID)
+        let canonical = await iterator.next()
+
+        XCTAssertEqual(returned.publicationRevision, 2)
+        XCTAssertEqual(canonical?.publicationRevision, 2)
+        let archives = await probe.archiveRequests()
+        XCTAssertEqual(archives, [competitionID.rawValue])
+        await client.stop()
+    }
+
+    func testAnonymizedOpponentIdentityRemainsVisibleInRemoteHistory()
+        throws
+    {
+        let ownerID = UUID(
+            uuidString: "81000000-0000-4000-8000-000000000001"
+        )!
+        let opponentID = UUID(
+            uuidString: "81000000-0000-4000-8000-000000000002"
+        )!
+        let profile = AuthenticatedProfile(
+            id: ownerID,
+            displayName: "Beta Alice"
+        )
+        let descriptor = try CompetitionDescriptor(
+            competitionID: UUID(
+                uuidString: "82000000-0000-4000-8000-000000000001"
+            )!,
+            creatorProfileID: ownerID,
+            timeZoneIdentifier: "UTC",
+            startDay: "2026-08-01",
+            scoringPolicyIdentity: RemoteScoringWireV1.policyIdentity,
+            lifecycle: .archived,
+            invitationExpiresAt: Date(timeIntervalSince1970: 1_786_032_000),
+            bestAvailableDeadline: Date(
+                timeIntervalSince1970: 1_786_809_600
+            ),
+            rematchParentID: nil,
+            nextServerSequence: 10,
+            participants: [
+                try CompetitionParticipantDescriptor(
+                    profileID: ownerID,
+                    role: .creator,
+                    state: .accepted,
+                    profile: try CompetitionProfilePresentation(
+                        id: ownerID,
+                        displayName: "Beta Alice"
+                    )
+                ),
+                try CompetitionParticipantDescriptor(
+                    profileID: opponentID,
+                    role: .invitee,
+                    state: .anonymized,
+                    profile: try CompetitionProfilePresentation(
+                        id: opponentID,
+                        displayName: "Former competitor"
+                    )
+                ),
+            ]
+        )
+
+        let participantPresentation = remoteCompetitionParticipantPresentation(
+            descriptor: descriptor,
+            profile: profile
+        )
+
+        XCTAssertEqual(participantPresentation.ownerName, "Beta Alice")
+        XCTAssertEqual(
+            participantPresentation.opponentName,
+            "Former competitor"
+        )
+        XCTAssertEqual(participantPresentation.opponentID, opponentID)
+        XCTAssertEqual(
+            competitionResultTitle(
+                outcome: .loss,
+                opponentDisplayName: participantPresentation.opponentName
+            ),
+            "Former competitor Won"
+        )
+    }
+
     func testProfileSwitchAndStopTerminateTheirPriorCanonicalStreams()
         async throws
     {
@@ -704,6 +833,7 @@ private actor RemoteCompetitionClientCommandProbe {
     private var lists = 0
     private var creates: [CompetitionInviteCreationRequest] = []
     private var claims: [CompetitionInviteClaimRequest] = []
+    private var archives: [UUID] = []
 
     func recordList() {
         lists += 1
@@ -717,6 +847,10 @@ private actor RemoteCompetitionClientCommandProbe {
         claims.append(request)
     }
 
+    func recordArchive(_ competitionID: UUID) {
+        archives.append(competitionID)
+    }
+
     func listCount() -> Int {
         lists
     }
@@ -727,6 +861,10 @@ private actor RemoteCompetitionClientCommandProbe {
 
     func claimRequests() -> [CompetitionInviteClaimRequest] {
         claims
+    }
+
+    func archiveRequests() -> [UUID] {
+        archives
     }
 }
 

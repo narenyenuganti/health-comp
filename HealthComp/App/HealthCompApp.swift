@@ -58,6 +58,8 @@ struct HealthCompApp: App {
     private var appDelegate
 #if DEBUG
     private let launchDecision: CompetitionTestLabLaunchDecision
+    private let multiUserLaunchDecision:
+        MultiUserCompetitionTestLabLaunchDecision
     private let liveStore: StoreOf<AppFeature>?
 
     init() {
@@ -75,21 +77,29 @@ struct HealthCompApp: App {
         authenticationClientFactory: AuthenticationClientFactory = .live,
         competitionClientFactory: CompetitionClientFactory = .live
     ) {
+        let multiUserDecision = MultiUserCompetitionTestLabLaunchParser
+            .decision(arguments: arguments)
         let decision = CompetitionTestLabLaunchParser.decision(
             arguments: arguments
         )
+        self.multiUserLaunchDecision = multiUserDecision
         self.launchDecision = decision
-        switch decision {
-        case .disabled:
-            self.liveStore = HealthCompLiveComposition.store(
-                supabaseClientProvider: supabaseClientProvider,
-                authenticationClientFactory: authenticationClientFactory,
-                competitionClientFactory: competitionClientFactory
-            )
+        switch multiUserDecision {
         case .configured, .invalid:
-            // The fixture and fail-closed branches intentionally construct no
-            // live dependency graph, HealthKit source, or production journal.
             self.liveStore = nil
+        case .disabled:
+            switch decision {
+            case .disabled:
+                self.liveStore = HealthCompLiveComposition.store(
+                    supabaseClientProvider: supabaseClientProvider,
+                    authenticationClientFactory: authenticationClientFactory,
+                    competitionClientFactory: competitionClientFactory
+                )
+            case .configured, .invalid:
+                // The fixture and fail-closed branches intentionally construct no
+                // live dependency graph, HealthKit source, or production journal.
+                self.liveStore = nil
+            }
         }
     }
 #else
@@ -129,15 +139,22 @@ struct HealthCompApp: App {
 #if DEBUG
     @ViewBuilder
     private var debugRoot: some View {
-        switch launchDecision {
-        case .disabled:
-            if let liveStore {
-                AppRootView(store: liveStore)
-            }
+        switch multiUserLaunchDecision {
         case let .configured(configuration):
-            CompetitionTestLabRootView(configuration: configuration)
+            MultiUserCompetitionTestLabRootView(configuration: configuration)
         case let .invalid(message):
-            CompetitionTestLabConfigurationErrorView(message: message)
+            MultiUserCompetitionTestLabConfigurationErrorView(message: message)
+        case .disabled:
+            switch launchDecision {
+            case .disabled:
+                if let liveStore {
+                    AppRootView(store: liveStore)
+                }
+            case let .configured(configuration):
+                CompetitionTestLabRootView(configuration: configuration)
+            case let .invalid(message):
+                CompetitionTestLabConfigurationErrorView(message: message)
+            }
         }
     }
 #endif
@@ -176,6 +193,10 @@ struct AppRootView: View {
         .task {
             await store.send(.task).finish()
         }
+        .onOpenURL { url in
+            guard let route = CompetitionRoute(url: url) else { return }
+            _ = CompetitionRoutingEnvironment.liveHub.enqueue(route)
+        }
     }
 }
 
@@ -191,17 +212,11 @@ private struct AuthenticatedRootView: View {
                 }
 
             NavigationStack {
-                AccountView(store: accountStore)
-                    .navigationTitle("Account")
-                    .navigationBarTitleDisplayMode(.inline)
+                AccountSettingsView(store: accountStore)
             }
             .tabItem {
                 Label("Account", systemImage: "person.crop.circle")
             }
-        }
-        .onOpenURL { url in
-            guard let route = CompetitionRoute(url: url) else { return }
-            _ = CompetitionRoutingEnvironment.liveHub.enqueue(route)
         }
     }
 }
