@@ -25,4 +25,18 @@ if grep -Eq 'SupabaseLegacy|(^|[/"])Supabase/' supabase/config.toml; then
   exit 1
 fi
 
+if ! grep -Eiq \
+  '^[[:space:]]*create[[:space:]]+extension[[:space:]]+if[[:space:]]+not[[:space:]]+exists[[:space:]]+pg_net[[:space:]]+with[[:space:]]+schema[[:space:]]+extensions[[:space:]]*;[[:space:]]*$' \
+  supabase/migrations/*.sql; then
+  echo "The executable migration chain must enable pg_net in schema extensions." >&2
+  exit 1
+fi
+
+if ! grep -Eiq \
+  '^[[:space:]]*create[[:space:]]+extension[[:space:]]+if[[:space:]]+not[[:space:]]+exists[[:space:]]+pg_cron[[:space:]]*;[[:space:]]*$' \
+  supabase/migrations/*.sql; then
+  echo "The executable migration chain must enable pg_cron for hosted schedules." >&2
+  exit 1
+fi
+
 echo "Supabase layout is isolated from the historical backend."

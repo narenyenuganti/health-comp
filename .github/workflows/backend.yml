@@ -38,6 +38,7 @@ jobs:
         run: |
           set -euo pipefail
           bash scripts/test-verify-no-secrets.sh
+          sh scripts/test-verify-invitation-functions.sh
           bash scripts/verify-no-secrets.sh
           bash scripts/verify-supabase-layout.sh
           deno fmt --config supabase/functions/deno.json --check supabase/functions

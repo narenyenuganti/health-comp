@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = extensions, public, pg_catalog;
 
-select plan(18);
+select plan(20);
 
 select has_table('public', 'profiles', 'profiles exists');
 select has_table('public', 'competitions', 'competitions exists');
@@ -19,6 +19,8 @@ select has_table('public', 'competition_change_log', 'competition_change_log exi
 
 select has_schema('private', 'private helper schema exists');
 select has_extension('pgcrypto', 'pgcrypto is installed for wire digests');
+select has_extension('pg_net', 'pg_net is installed for notification wakeups');
+select has_extension('pg_cron', 'pg_cron is installed for hosted schedules');
 
 select has_pk('public', 'profiles', 'profiles has a primary key');
 select has_pk('public', 'competitions', 'competitions has a primary key');

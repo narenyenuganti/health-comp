@@ -7,6 +7,7 @@ STATUS_ENV=$(mktemp "${TMPDIR:-/tmp}/healthcomp-invite-status.XXXXXX")
 TEST_OUTPUT=$(mktemp "${TMPDIR:-/tmp}/healthcomp-invite-tests.XXXXXX")
 FUNCTION_LOG=$(mktemp "${TMPDIR:-/tmp}/healthcomp-invite-functions.XXXXXX")
 FUNCTION_ENV=$(mktemp "${TMPDIR:-/tmp}/healthcomp-invite-env.XXXXXX")
+READINESS_OUTPUT=$(mktemp "${TMPDIR:-/tmp}/healthcomp-invite-readiness.XXXXXX")
 FUNCTIONS_PID=""
 TEST_PID=""
 
@@ -26,7 +27,8 @@ cleanup() {
     echo "post-run local database reset failed" >&2
     result=1
   fi
-  rm -f "$STATUS_ENV" "$TEST_OUTPUT" "$FUNCTION_LOG" "$FUNCTION_ENV"
+  rm -f "$STATUS_ENV" "$TEST_OUTPUT" "$FUNCTION_LOG" "$FUNCTION_ENV" \
+    "$READINESS_OUTPUT"
   exit "$result"
 }
 trap cleanup EXIT INT TERM
@@ -72,6 +74,7 @@ case "$DB_URL" in
 esac
 
 FUNCTIONS_URL="${API_URL%/}/functions/v1"
+FUNCTIONS_READY_PATTERN='Serving functions on http://(127[.]0[.]0[.]1|localhost):[0-9]+/functions/v1/<function-name>$'
 export SUPABASE_URL="$API_URL"
 export SUPABASE_ANON_KEY="$ANON_KEY"
 export SUPABASE_SERVICE_ROLE_KEY="$SERVICE_ROLE_KEY"
@@ -104,8 +107,25 @@ FUNCTIONS_PID=$!
 attempt=0
 while [ "$attempt" -lt 30 ]; do
   assert_functions_child_alive
-  if curl --silent --output /dev/null \
-    "${FUNCTIONS_URL}/create-competition-invite"; then
+  if ! grep -Eq "$FUNCTIONS_READY_PATTERN" "$FUNCTION_LOG"; then
+    attempt=$((attempt + 1))
+    sleep 1
+    continue
+  fi
+  readiness_status=$(
+    curl --silent --show-error --output "$READINESS_OUTPUT" \
+      --write-out '%{http_code}' \
+      --connect-timeout 2 \
+      --max-time 5 \
+      --request POST \
+      --header "authorization: Bearer $ANON_KEY" \
+      --header 'content-type: application/json' \
+      --data '{"timeZoneIdentifier":"UTC","idempotencyKey":"84000000-0000-4000-8000-000000000001"}' \
+      "${FUNCTIONS_URL}/create-competition-invite" || true
+  )
+  if [ "$readiness_status" = "401" ] && \
+    grep -Fq '"code":"unauthorized"' "$READINESS_OUTPUT" && \
+    grep -Fq '"message":"Authentication required"' "$READINESS_OUTPUT"; then
     assert_functions_child_alive
     break
   fi
