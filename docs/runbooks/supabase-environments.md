@@ -6,13 +6,34 @@ required future work.
 
 ## Current environment inventory
 
-Last read through the authenticated Supabase CLI on 2026-08-15:
+Last read through the authenticated Supabase CLI and dashboard on 2026-08-15:
 
 | Logical environment | Supabase target | Status | App configuration |
 | --- | --- | --- | --- |
 | Development | Disposable local CLI stack (project ID health-comp) | Verified locally | com.narenyenuganti.HealthComp, sandbox APNs, development App Attest |
-| Staging | healthcomp-staging (xhfdfdrtxwptrwhvvlhg) | ACTIVE_HEALTHY; migrations, Functions, providers, secrets, and schedules not yet read back | com.narenyenuganti.HealthComp.staging, sandbox APNs, development App Attest |
+| Staging | healthcomp-staging (xhfdfdrtxwptrwhvvlhg) | ACTIVE_HEALTHY; 13 migrations through 20260811000850 and nine Functions read back; Apple Auth enabled for the exact staging bundle; application-specific Function secrets, worker Vault entries, and schedules remain incomplete | com.narenyenuganti.HealthComp.staging, sandbox APNs, development App Attest |
 | Production | **TBD** | No project has been approved as HealthComp production | com.narenyenuganti.HealthComp, production APNs, production App Attest |
+
+The 2026-08-15 staging promotion and readback established all of the following:
+
+- the 13 local and remote migration versions match without gaps through
+  `20260811000850`, and a second dry run is empty;
+- all nine reviewed Edge Functions are `ACTIVE`;
+- Apple Auth is enabled with only
+  `com.narenyenuganti.HealthComp.staging` as its native Client ID; the optional
+  web OAuth secret was not inspected and is not credited as evidence;
+- `pg_net` 0.20.4 is installed in `extensions`, `pg_cron` 1.6.4 is installed in
+  `pg_catalog`, hosted database lint reports no schema errors, and the private
+  notification worker is not executable by `anon`, `authenticated`, or
+  `service_role`;
+- the only application-specific Function secret names present are
+  `INVITE_TOKEN_DERIVATION_KEY_V1` and `HEALTHCOMP_AASA_APP_IDS`; the latter is
+  un-routed and does not constitute invitation-domain or AASA evidence; and
+- neither notification-worker Vault entry nor either reviewed cron job exists.
+
+Staging is therefore promoted at the code/schema layer but is not operationally
+ready for two-account or physical-device verification. APNs, Apple deletion,
+App Attest, worker, Vault, and schedule configurations remain pending.
 
 The inactive project named “naren-polymath's Project”
 (vleyumieoroaipedqpsp) is not production merely because it is the other
@@ -254,7 +275,9 @@ portal/dashboard readback; source configuration alone is not proof.
    - production: com.narenyenuganti.HealthComp
 3. Enable Sign in with Apple, Push Notifications, HealthKit with background
    delivery, and App Attest for that App ID.
-4. Associated Domains remains disabled until an invitation domain is selected.
+4. Do not add an Associated Domains entitlement, route, or domain until an
+   invitation domain is selected. A portal capability toggle by itself is not
+   signed-app or domain-association evidence.
 5. Regenerate and install the provisioning profile after capability changes.
 6. In the matching Supabase project, enable Apple Auth and register only the
    matching bundle ID as the native Client ID.
@@ -342,7 +365,11 @@ pending/leased notification work does not remain past its retry window.
 No HTTPS invitation domain has been selected. Therefore:
 
 - HEALTHCOMP_INVITE_HOST remains empty;
-- the Associated Domains entitlement is absent;
+- the Associated Domains entitlement is absent; the paid-team App ID capability
+  was observed enabled, but no domain is configured and that toggle is not
+  credited as evidence;
+- HEALTHCOMP_AASA_APP_IDS is present in staging but is not routed or credited as
+  AASA readiness;
 - no DNS, TLS, route, cache, AASA, or physical universal-link evidence exists;
 - healthcomp:// remains a controlled fallback/testing route, not the final
   shareable production link.
