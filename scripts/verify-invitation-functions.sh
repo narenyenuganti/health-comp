@@ -118,7 +118,7 @@ if [ "$attempt" -eq 30 ]; then
 fi
 assert_functions_child_alive
 
-deno test --config supabase/functions/deno.json --allow-env --allow-net \
+NO_COLOR=1 deno test --config supabase/functions/deno.json --allow-env --allow-net \
   supabase/functions/create-competition-invite \
   supabase/functions/claim-competition-invite >"$TEST_OUTPUT" 2>&1 &
 TEST_PID=$!
