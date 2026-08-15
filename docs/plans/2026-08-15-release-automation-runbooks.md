@@ -214,7 +214,7 @@ git diff --check
 
 Then run the iOS unit/build/XcodeGen commands encoded in `.github/workflows/ci.yml` with one bounded DerivedData directory. Stop Supabase and delete exact temporary artifacts after evidence is captured.
 
-Hosted PR stabilization must preserve three runner contracts discovered by the
+Hosted PR stabilization must preserve four runner contracts discovered by the
 first exact-head run and its focused regression probes:
 
 - capture all of `xcodebuild -version` before validating its first line; piping
@@ -225,6 +225,10 @@ first exact-head run and its focused regression probes:
   false `[[ ... ]]` even with `set -e`;
 - run the redirected invitation Deno test with `NO_COLOR=1` so the verifier's
   completion assertion consumes stable plain text rather than ANSI sequences.
+- check in the dependency resolution emitted by pinned Xcode 16.4 and make
+  every application `xcodebuild` use only `Package.resolved`; a stale or
+  compiler-conditional package graph must fail instead of being rewritten and
+  discovered only by the final clean-tree guard.
 
 Request independent code and security review. Fix only validated findings with a new RED-to-GREEN cycle. Commit with:
 

@@ -84,6 +84,7 @@ jobs:
             -destination 'platform=iOS Simulator,OS=18.5,name=iPhone 16 Pro' \
             -derivedDataPath "$RUNNER_TEMP/HealthComp-DerivedData" \
             -only-testing:HealthCompTests \
+            -onlyUsePackageVersionsFromResolvedFile \
             -skipMacroValidation \
             -skipPackagePluginValidation \
             CODE_SIGNING_ALLOWED=NO \
@@ -101,6 +102,7 @@ jobs:
               -configuration "$configuration" \
               -destination 'generic/platform=iOS' \
               -derivedDataPath "$RUNNER_TEMP/HealthComp-DerivedData" \
+              -onlyUsePackageVersionsFromResolvedFile \
               -skipMacroValidation \
               -skipPackagePluginValidation \
               CODE_SIGNING_ALLOWED=NO \
