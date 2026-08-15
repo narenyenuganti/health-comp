@@ -103,6 +103,77 @@ final class RemoteCompetitionClientTests: XCTestCase {
         )
     }
 
+    func testProfileScopedAppAttestWrapperReusesStableInstallationOnRelaunch()
+        async throws
+    {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: root,
+            withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: root) }
+        let profileID = UUID(
+            uuidString: "8a000000-0000-4000-8000-000000000001"
+        )!
+        let paths = AuthenticatedProfileStoragePaths(
+            profileID: profileID,
+            rootDirectory: root
+        )
+        for directory in paths.fixedDirectories {
+            try FileManager.default.createDirectory(
+                at: directory,
+                withIntermediateDirectories: true
+            )
+        }
+        let probe = RemoteCompetitionAppAttestProbe()
+        let service = RemoteCompetitionAppAttestServiceProbe()
+        let rawAPI = remoteAPI(
+            listCompetitions: { [] },
+            issueAppAttestChallenge: { try await probe.issue($0) },
+            submitAttestedScoreRevision: { try await probe.submit($0) }
+        )
+
+        let first = try await ProfileScopedAppAttestRemoteAPI.make(
+            profileID: profileID,
+            paths: paths,
+            installationStore: CompetitionInstallationStateStore(
+                directory: paths.installationsDirectory
+            ),
+            remoteAPI: rawAPI,
+            service: service
+        )
+        _ = try await first.appendScoreRevision(
+            appAttestScoreRequest(revision: 1)
+        )
+        let relaunched = try await ProfileScopedAppAttestRemoteAPI.make(
+            profileID: profileID,
+            paths: paths,
+            installationStore: CompetitionInstallationStateStore(
+                directory: paths.installationsDirectory
+            ),
+            remoteAPI: rawAPI,
+            service: service
+        )
+        _ = try await relaunched.appendScoreRevision(
+            appAttestScoreRequest(revision: 2)
+        )
+
+        let challenges = await probe.challengeRequests()
+        let submissions = await probe.submissions()
+        let generatedKeyCount = await service.generatedKeyCount()
+        XCTAssertEqual(challenges.count, 2)
+        XCTAssertEqual(
+            Set(challenges.map(\.installationID)).count,
+            1
+        )
+        XCTAssertEqual(
+            submissions.map(\.appAttest.proofKind),
+            [.attestation, .assertion]
+        )
+        XCTAssertEqual(generatedKeyCount, 1)
+    }
+
     func testNotificationPreferenceReadCompletesBeforeProfileRemount()
         async throws
     {
@@ -1160,6 +1231,33 @@ final class RemoteCompetitionClientTests: XCTestCase {
         await iterator.next()
     }
 
+    private func appAttestScoreRequest(revision: Int64) throws
+        -> CompetitionScoreRevisionRequest
+    {
+        try CompetitionScoreRevisionRequest(
+            competitionID: UUID(
+                uuidString: "8b000000-0000-4000-8000-000000000001"
+            )!,
+            semanticEventID: UUID(
+                uuidString: String(
+                    format: "8c000000-0000-4000-8000-%012lld",
+                    revision
+                )
+            )!,
+            dayOrdinal: 1,
+            clientRevision: revision,
+            evaluatedAt: Date(timeIntervalSince1970: 1_786_536_000),
+            moveMode: "activeEnergyKilocalories",
+            standMode: "standHours",
+            moveBasisPoints: 10_000,
+            exerciseBasisPoints: 9_000,
+            standBasisPoints: 8_000,
+            availabilityReason: "available",
+            scoringPolicyIdentity: "healthcomp.activity-score.v1",
+            wireContentSHA256: String(repeating: "d", count: 64)
+        )
+    }
+
     private func remoteAPI(
         listCompetitions: @escaping @Sendable () async throws ->
             [CompetitionDescriptor],
@@ -1188,6 +1286,16 @@ final class RemoteCompetitionClientTests: XCTestCase {
             UUID
         ) async throws -> CompetitionInstallation = { _ in
             throw CompetitionRemoteFailure.operationFailed
+        },
+        issueAppAttestChallenge: @escaping @Sendable (
+            CompetitionAppAttestChallengeRequest
+        ) async throws -> CompetitionAppAttestChallenge = { _ in
+            throw CompetitionRemoteFailure.appAttestUnavailable
+        },
+        submitAttestedScoreRevision: @escaping @Sendable (
+            CompetitionAttestedScoreRevisionRequest
+        ) async throws -> CompetitionScoreRevisionResponse = { _ in
+            throw CompetitionRemoteFailure.appAttestUnavailable
         }
     ) -> CompetitionRemoteAPI {
         CompetitionRemoteAPI(
@@ -1206,6 +1314,8 @@ final class RemoteCompetitionClientTests: XCTestCase {
             appendScoreRevision: { _ in
                 throw CompetitionRemoteFailure.operationFailed
             },
+            issueAppAttestChallenge: issueAppAttestChallenge,
+            submitAttestedScoreRevision: submitAttestedScoreRevision,
             submitAttestation: { _ in
                 throw CompetitionRemoteFailure.operationFailed
             },
@@ -1248,6 +1358,80 @@ private actor RemoteCompetitionInstallationProbe {
     }
 
     func removalIDs() -> [UUID] { removals }
+}
+
+private actor RemoteCompetitionAppAttestServiceProbe:
+    AppAttestServiceProtocol
+{
+    private let keyID = Data(repeating: 0x51, count: 32)
+        .base64EncodedString()
+    private var keyGenerationCount = 0
+
+    func isSupported() -> Bool { true }
+
+    func generateKey() -> String {
+        keyGenerationCount += 1
+        return keyID
+    }
+
+    func attestKey(_ keyID: String, clientDataHash: Data) -> Data {
+        Data("attestation".utf8)
+    }
+
+    func generateAssertion(
+        _ keyID: String,
+        clientDataHash: Data
+    ) -> Data {
+        Data("assertion".utf8)
+    }
+
+    func generatedKeyCount() -> Int { keyGenerationCount }
+}
+
+private actor RemoteCompetitionAppAttestProbe {
+    private var challenges: [CompetitionAppAttestChallengeRequest] = []
+    private var submitted: [CompetitionAttestedScoreRevisionRequest] = []
+
+    func issue(
+        _ request: CompetitionAppAttestChallengeRequest
+    ) throws -> CompetitionAppAttestChallenge {
+        challenges.append(request)
+        let ordinal = challenges.count
+        let challengeID = UUID(
+            uuidString: String(
+                format: "8d000000-0000-4000-8000-%012d",
+                ordinal
+            )
+        )!
+        return try CompetitionAppAttestChallenge(
+            challengeID: challengeID,
+            challenge: Data(repeating: UInt8(ordinal), count: 32),
+            expiresAt: Date().addingTimeInterval(300),
+            proofKind: ordinal == 1 ? .attestation : .assertion
+        )
+    }
+
+    func submit(
+        _ request: CompetitionAttestedScoreRevisionRequest
+    ) throws -> CompetitionScoreRevisionResponse {
+        submitted.append(request)
+        return try CompetitionScoreRevisionResponse(
+            disposition: .appended,
+            rejectionCode: nil,
+            acceptedCentiPoints: 27_000,
+            wireContentSHA256: request.score.wireContentSHA256,
+            acceptedServerSequence: request.score.clientRevision,
+            competitionCursor: request.score.clientRevision
+        )
+    }
+
+    func challengeRequests() -> [CompetitionAppAttestChallengeRequest] {
+        challenges
+    }
+
+    func submissions() -> [CompetitionAttestedScoreRevisionRequest] {
+        submitted
+    }
 }
 
 private actor RemoteCompetitionPushProbe {

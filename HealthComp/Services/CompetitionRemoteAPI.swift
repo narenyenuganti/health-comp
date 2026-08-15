@@ -13,6 +13,10 @@ enum CompetitionRemoteFailure: Error, Equatable, Sendable {
     case incompatiblePolicy
     case serverContractMismatch
     case accountDeletionUnavailable
+    case appAttestUnavailable
+    case appAttestRejected
+    case appAttestContextUnavailable
+    case appAttestProofConflict
     case operationFailed
 }
 
@@ -41,6 +45,16 @@ struct CompetitionRemoteAPI: Sendable {
     var appendScoreRevision: @Sendable (
         _ request: CompetitionScoreRevisionRequest
     ) async throws -> CompetitionScoreRevisionResponse
+    var issueAppAttestChallenge: @Sendable (
+        _ request: CompetitionAppAttestChallengeRequest
+    ) async throws -> CompetitionAppAttestChallenge = { _ in
+        throw CompetitionRemoteFailure.appAttestUnavailable
+    }
+    var submitAttestedScoreRevision: @Sendable (
+        _ request: CompetitionAttestedScoreRevisionRequest
+    ) async throws -> CompetitionScoreRevisionResponse = { _ in
+        throw CompetitionRemoteFailure.appAttestUnavailable
+    }
     var submitAttestation: @Sendable (
         _ request: CompetitionAttestationRequest
     ) async throws -> CompetitionAttestationReceipt

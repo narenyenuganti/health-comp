@@ -4,7 +4,7 @@ set local role postgres;
 create extension if not exists pgtap with schema extensions;
 set local search_path = extensions, public, pg_catalog;
 
-select plan(72);
+select plan(77);
 
 select has_table(
   'private', 'account_deletions',
@@ -238,6 +238,80 @@ insert into private.competition_notification_work (
   'pending'
 );
 
+insert into private.app_attest_keys (
+  key_id, profile_id, installation_id, public_key_pem, receipt,
+  environment, validation_category, bundle_version, sign_count
+) values
+  (
+    'AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=',
+    'd2000000-0000-4000-8000-000000000001',
+    'd5000000-0000-4000-8000-000000000001',
+    '-----BEGIN PUBLIC KEY-----' || chr(10) || repeat('A', 120)
+      || chr(10) || '-----END PUBLIC KEY-----',
+    decode('a1', 'hex'), 'production', 2, '1', 1
+  ),
+  (
+    'AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=',
+    'd2000000-0000-4000-8000-000000000002',
+    'd5000000-0000-4000-8000-000000000002',
+    '-----BEGIN PUBLIC KEY-----' || chr(10) || repeat('B', 120)
+      || chr(10) || '-----END PUBLIC KEY-----',
+    decode('b2', 'hex'), 'production', 2, '1', 1
+  );
+
+insert into private.app_attest_challenges (
+  id, profile_id, installation_id, requested_key_id, payload_sha256,
+  challenge, proof_kind, created_at, expires_at, consumed_at
+) values
+  (
+    'd6000000-0000-4000-8000-000000000001',
+    'd2000000-0000-4000-8000-000000000001',
+    'd5000000-0000-4000-8000-000000000001',
+    'AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=',
+    decode(repeat('11', 32), 'hex'), decode(repeat('12', 32), 'hex'),
+    'assertion', statement_timestamp(),
+    statement_timestamp() + interval '5 minutes', statement_timestamp()
+  ),
+  (
+    'd6000000-0000-4000-8000-000000000002',
+    'd2000000-0000-4000-8000-000000000002',
+    'd5000000-0000-4000-8000-000000000002',
+    'AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=',
+    decode(repeat('21', 32), 'hex'), decode(repeat('22', 32), 'hex'),
+    'assertion', statement_timestamp(),
+    statement_timestamp() + interval '5 minutes', statement_timestamp()
+  );
+
+insert into private.app_attest_submission_grants (
+  id, challenge_id, profile_id, installation_id, key_id, payload_sha256,
+  competition_id, semantic_event_id, day_ordinal, client_revision,
+  evaluated_at, wire_content_sha256, created_at, expires_at
+) values
+  (
+    'd7000000-0000-4000-8000-000000000001',
+    'd6000000-0000-4000-8000-000000000001',
+    'd2000000-0000-4000-8000-000000000001',
+    'd5000000-0000-4000-8000-000000000001',
+    'AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=',
+    decode(repeat('11', 32), 'hex'),
+    'd3000000-0000-4000-8000-000000000002',
+    'd7100000-0000-4000-8000-000000000001',
+    1, 1, statement_timestamp(), decode(repeat('13', 32), 'hex'),
+    statement_timestamp(), statement_timestamp() + interval '2 minutes'
+  ),
+  (
+    'd7000000-0000-4000-8000-000000000002',
+    'd6000000-0000-4000-8000-000000000002',
+    'd2000000-0000-4000-8000-000000000002',
+    'd5000000-0000-4000-8000-000000000002',
+    'AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgI=',
+    decode(repeat('21', 32), 'hex'),
+    'd3000000-0000-4000-8000-000000000002',
+    'd7100000-0000-4000-8000-000000000002',
+    1, 1, statement_timestamp(), decode(repeat('23', 32), 'hex'),
+    statement_timestamp(), statement_timestamp() + interval '2 minutes'
+  );
+
 select throws_ok(
   $$
     select public.begin_account_deletion(
@@ -400,6 +474,23 @@ select throws_ok(
   '55000', 'account_deletion_auth_removed_before_anonymization',
   'the deletion phase machine independently rejects premature auth removal'
 );
+select is((
+  select jsonb_build_object(
+    'challenges', (
+      select count(*) from private.app_attest_challenges
+      where profile_id = 'd2000000-0000-4000-8000-000000000001'
+    ),
+    'grants', (
+      select count(*) from private.app_attest_submission_grants
+      where profile_id = 'd2000000-0000-4000-8000-000000000001'
+    ),
+    'keys', (
+      select count(*) from private.app_attest_keys
+      where profile_id = 'd2000000-0000-4000-8000-000000000001'
+    )
+  )
+), '{"challenges":1,"grants":1,"keys":1}'::jsonb,
+  'unverified deletion preparation leaves App Attest state intact');
 
 select throws_ok(
   $$
@@ -438,6 +529,35 @@ select is(
   'deleting',
   'verified reauthentication blocks new authenticated work'
 );
+select is((
+  select count(*) from private.app_attest_challenges
+  where profile_id = 'd2000000-0000-4000-8000-000000000001'
+), 0::bigint, 'verified deletion purges every App Attest challenge');
+select is((
+  select count(*) from private.app_attest_submission_grants
+  where profile_id = 'd2000000-0000-4000-8000-000000000001'
+), 0::bigint, 'verified deletion purges every App Attest submission grant');
+select is((
+  select count(*) from private.app_attest_keys
+  where profile_id = 'd2000000-0000-4000-8000-000000000001'
+), 0::bigint, 'verified deletion purges App Attest keys receipts and counters');
+select is((
+  select jsonb_build_object(
+    'challenges', (
+      select count(*) from private.app_attest_challenges
+      where profile_id = 'd2000000-0000-4000-8000-000000000002'
+    ),
+    'grants', (
+      select count(*) from private.app_attest_submission_grants
+      where profile_id = 'd2000000-0000-4000-8000-000000000002'
+    ),
+    'keys', (
+      select count(*) from private.app_attest_keys
+      where profile_id = 'd2000000-0000-4000-8000-000000000002'
+    )
+  )
+), '{"challenges":1,"grants":1,"keys":1}'::jsonb,
+  'verified deletion leaves another profile App Attest state untouched');
 select is(
   (
     select competition_row.lifecycle

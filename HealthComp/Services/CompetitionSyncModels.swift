@@ -15,6 +15,9 @@ enum CompetitionWireContract: Sendable {
     case inviteClaimResponse
     case scoreRevisionRequest
     case scoreRevisionResponse
+    case appAttestChallengeRequest
+    case appAttestChallengeResponse
+    case attestedScoreRevisionRequest
     case attestationRequest
     case attestationResponse
     case changePage
@@ -361,6 +364,316 @@ struct CompetitionScoreRevisionRequest: Codable, Equatable, Sendable {
             of: "^[0-9a-f]{64}$",
             options: .regularExpression
         ) != nil
+    }
+}
+
+enum CompetitionAppAttestProofKind:
+    String,
+    Codable,
+    Equatable,
+    Sendable
+{
+    case attestation
+    case assertion
+}
+
+struct CompetitionAppAttestChallengeRequest:
+    Codable,
+    Equatable,
+    Sendable
+{
+    static let version = 1
+
+    let installationID: UUID
+    let payloadSHA256: String
+    let keyID: String
+
+    init(
+        installationID: UUID,
+        payloadSHA256: String,
+        keyID: String
+    ) throws {
+        guard CompetitionWireValue.validUUID(installationID),
+              CompetitionWireValue.validDigest(payloadSHA256),
+              CompetitionAppAttestWireValue.isCanonicalBase64(
+                  keyID,
+                  byteCount: 32
+              )
+        else {
+            throw CompetitionWireContractError.serverContractMismatch
+        }
+        self.installationID = installationID
+        self.payloadSHA256 = payloadSHA256
+        self.keyID = keyID
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case version
+        case installationID
+        case payloadSHA256
+        case keyID
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        guard try container.decode(Int.self, forKey: .version) == Self.version
+        else {
+            throw CompetitionWireContractError.serverContractMismatch
+        }
+        try self.init(
+            installationID: CompetitionWireValue.uuid(
+                try container.decode(String.self, forKey: .installationID)
+            ),
+            payloadSHA256: try container.decode(
+                String.self,
+                forKey: .payloadSHA256
+            ),
+            keyID: try container.decode(String.self, forKey: .keyID)
+        )
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(Self.version, forKey: .version)
+        try container.encode(
+            installationID.uuidString.lowercased(),
+            forKey: .installationID
+        )
+        try container.encode(payloadSHA256, forKey: .payloadSHA256)
+        try container.encode(keyID, forKey: .keyID)
+    }
+}
+
+struct CompetitionAppAttestChallenge: Codable, Equatable, Sendable {
+    static let version = 1
+
+    let challengeID: UUID
+    let challenge: Data
+    let expiresAt: Date
+    let proofKind: CompetitionAppAttestProofKind
+
+    init(
+        challengeID: UUID,
+        challenge: Data,
+        expiresAt: Date,
+        proofKind: CompetitionAppAttestProofKind
+    ) throws {
+        guard CompetitionWireValue.validUUID(challengeID),
+              challenge.count == 32,
+              expiresAt.timeIntervalSinceReferenceDate.isFinite
+        else {
+            throw CompetitionWireContractError.serverContractMismatch
+        }
+        self.challengeID = challengeID
+        self.challenge = challenge
+        self.expiresAt = expiresAt
+        self.proofKind = proofKind
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case version
+        case challengeID
+        case challenge
+        case expiresAt
+        case proofKind
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        guard try container.decode(Int.self, forKey: .version) == Self.version
+        else {
+            throw CompetitionWireContractError.serverContractMismatch
+        }
+        let encodedChallenge = try container.decode(
+            String.self,
+            forKey: .challenge
+        )
+        guard let challenge = Data(base64Encoded: encodedChallenge),
+              challenge.base64EncodedString() == encodedChallenge
+        else {
+            throw CompetitionWireContractError.serverContractMismatch
+        }
+        try self.init(
+            challengeID: CompetitionWireValue.uuid(
+                try container.decode(String.self, forKey: .challengeID)
+            ),
+            challenge: challenge,
+            expiresAt: CompetitionWireCodec.date(
+                try container.decode(String.self, forKey: .expiresAt)
+            ),
+            proofKind: try container.decode(
+                CompetitionAppAttestProofKind.self,
+                forKey: .proofKind
+            )
+        )
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(Self.version, forKey: .version)
+        try container.encode(
+            challengeID.uuidString.lowercased(),
+            forKey: .challengeID
+        )
+        try container.encode(
+            challenge.base64EncodedString(),
+            forKey: .challenge
+        )
+        try container.encode(
+            CompetitionWireCodec.timestamp(expiresAt),
+            forKey: .expiresAt
+        )
+        try container.encode(proofKind, forKey: .proofKind)
+    }
+}
+
+struct CompetitionAppAttestProof: Codable, Equatable, Sendable {
+    static let version = 1
+
+    let challengeID: UUID
+    let installationID: UUID
+    let keyID: String
+    let proofKind: CompetitionAppAttestProofKind
+    let object: Data
+
+    init(
+        challengeID: UUID,
+        installationID: UUID,
+        keyID: String,
+        proofKind: CompetitionAppAttestProofKind,
+        object: Data
+    ) throws {
+        let maximumBytes = proofKind == .attestation ? 96 * 1024 : 2_048
+        guard CompetitionWireValue.validUUID(challengeID),
+              CompetitionWireValue.validUUID(installationID),
+              CompetitionAppAttestWireValue.isCanonicalBase64(
+                  keyID,
+                  byteCount: 32
+              ),
+              (1...maximumBytes).contains(object.count)
+        else {
+            throw CompetitionWireContractError.serverContractMismatch
+        }
+        self.challengeID = challengeID
+        self.installationID = installationID
+        self.keyID = keyID
+        self.proofKind = proofKind
+        self.object = object
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case version
+        case challengeID
+        case installationID
+        case keyID
+        case proofKind
+        case object
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        guard try container.decode(Int.self, forKey: .version) == Self.version
+        else {
+            throw CompetitionWireContractError.serverContractMismatch
+        }
+        let encodedObject = try container.decode(String.self, forKey: .object)
+        guard let object = Data(base64Encoded: encodedObject),
+              object.base64EncodedString() == encodedObject
+        else {
+            throw CompetitionWireContractError.serverContractMismatch
+        }
+        try self.init(
+            challengeID: CompetitionWireValue.uuid(
+                try container.decode(String.self, forKey: .challengeID)
+            ),
+            installationID: CompetitionWireValue.uuid(
+                try container.decode(String.self, forKey: .installationID)
+            ),
+            keyID: try container.decode(String.self, forKey: .keyID),
+            proofKind: try container.decode(
+                CompetitionAppAttestProofKind.self,
+                forKey: .proofKind
+            ),
+            object: object
+        )
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(Self.version, forKey: .version)
+        try container.encode(
+            challengeID.uuidString.lowercased(),
+            forKey: .challengeID
+        )
+        try container.encode(
+            installationID.uuidString.lowercased(),
+            forKey: .installationID
+        )
+        try container.encode(keyID, forKey: .keyID)
+        try container.encode(proofKind, forKey: .proofKind)
+        try container.encode(object.base64EncodedString(), forKey: .object)
+    }
+}
+
+struct CompetitionAttestedScoreRevisionRequest:
+    Codable,
+    Equatable,
+    Sendable
+{
+    static let version = 1
+
+    let score: CompetitionScoreRevisionRequest
+    let appAttest: CompetitionAppAttestProof
+
+    init(
+        score: CompetitionScoreRevisionRequest,
+        appAttest: CompetitionAppAttestProof
+    ) throws {
+        self.score = score
+        self.appAttest = appAttest
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case version
+        case score
+        case appAttest
+    }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        guard try container.decode(Int.self, forKey: .version) == Self.version
+        else {
+            throw CompetitionWireContractError.serverContractMismatch
+        }
+        try self.init(
+            score: try container.decode(
+                CompetitionScoreRevisionRequest.self,
+                forKey: .score
+            ),
+            appAttest: try container.decode(
+                CompetitionAppAttestProof.self,
+                forKey: .appAttest
+            )
+        )
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(Self.version, forKey: .version)
+        try container.encode(score, forKey: .score)
+        try container.encode(appAttest, forKey: .appAttest)
+    }
+}
+
+private enum CompetitionAppAttestWireValue {
+    static func isCanonicalBase64(
+        _ value: String,
+        byteCount: Int
+    ) -> Bool {
+        guard let data = Data(base64Encoded: value),
+              data.count == byteCount
+        else { return false }
+        return data.base64EncodedString() == value
     }
 }
 
@@ -2832,6 +3145,12 @@ private enum CompetitionWireValidator {
             try validateScoreRequest(value)
         case .scoreRevisionResponse:
             try validateScoreResponse(value)
+        case .appAttestChallengeRequest:
+            try validateAppAttestChallengeRequest(value)
+        case .appAttestChallengeResponse:
+            try validateAppAttestChallengeResponse(value)
+        case .attestedScoreRevisionRequest:
+            try validateAttestedScoreRevisionRequest(value)
         case .attestationRequest:
             try validateAttestationRequest(value)
         case .attestationResponse:
@@ -3095,6 +3414,82 @@ private enum CompetitionWireValidator {
               digestOrNull(object["wireContentSHA256"]),
               wireInt64OrNull(object["acceptedServerSeq"]),
               wireInt64(object["competitionCursor"], allowZero: true)
+        else {
+            throw CompetitionWireContractError.serverContractMismatch
+        }
+    }
+
+    private static func validateAppAttestChallengeRequest(
+        _ value: Any
+    ) throws {
+        let object = try exactObject(
+            value,
+            keys: ["installationID", "keyID", "payloadSHA256", "version"]
+        )
+        guard integer(object["version"]) == 1,
+              uuid(object["installationID"]),
+              digest(object["payloadSHA256"]),
+              canonicalBase64(object["keyID"], byteCount: 32)
+        else {
+            throw CompetitionWireContractError.serverContractMismatch
+        }
+    }
+
+    private static func validateAppAttestChallengeResponse(
+        _ value: Any
+    ) throws {
+        let object = try exactObject(
+            value,
+            keys: [
+                "challenge", "challengeID", "expiresAt", "proofKind",
+                "version",
+            ]
+        )
+        guard integer(object["version"]) == 1,
+              uuid(object["challengeID"]),
+              canonicalBase64(object["challenge"], byteCount: 32),
+              timestamp(object["expiresAt"]),
+              enumValue(
+                  object["proofKind"],
+                  CompetitionAppAttestProofKind.self
+              )
+        else {
+            throw CompetitionWireContractError.serverContractMismatch
+        }
+    }
+
+    private static func validateAttestedScoreRevisionRequest(
+        _ value: Any
+    ) throws {
+        let object = try exactObject(
+            value,
+            keys: ["appAttest", "score", "version"]
+        )
+        guard integer(object["version"]) == 1 else {
+            throw CompetitionWireContractError.serverContractMismatch
+        }
+        try validateScoreRequest(object["score"] as Any)
+        let proof = try exactObject(
+            object["appAttest"] as Any,
+            keys: [
+                "challengeID", "installationID", "keyID", "object",
+                "proofKind", "version",
+            ]
+        )
+        guard integer(proof["version"]) == 1,
+              uuid(proof["challengeID"]),
+              uuid(proof["installationID"]),
+              canonicalBase64(proof["keyID"], byteCount: 32),
+              let proofKindValue = proof["proofKind"] as? String,
+              let proofKind = CompetitionAppAttestProofKind(
+                  rawValue: proofKindValue
+              ),
+              canonicalBase64(
+                  proof["object"],
+                  byteCountRange: proofKind == .attestation
+                    ? 1...(96 * 1024)
+                    : 1...2_048
+              )
         else {
             throw CompetitionWireContractError.serverContractMismatch
         }
@@ -3528,6 +3923,24 @@ private enum CompetitionWireValidator {
 
     private static func digestOrNull(_ value: Any?) -> Bool {
         value is NSNull || digest(value)
+    }
+
+    private static func canonicalBase64(
+        _ value: Any?,
+        byteCount: Int
+    ) -> Bool {
+        canonicalBase64(value, byteCountRange: byteCount...byteCount)
+    }
+
+    private static func canonicalBase64(
+        _ value: Any?,
+        byteCountRange: ClosedRange<Int>
+    ) -> Bool {
+        guard let value = value as? String,
+              let data = Data(base64Encoded: value),
+              byteCountRange.contains(data.count)
+        else { return false }
+        return data.base64EncodedString() == value
     }
 
     private static func boolean(_ value: Any?) -> Bool {

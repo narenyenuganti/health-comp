@@ -25,6 +25,10 @@ export interface UserDependencies {
 export interface ServiceDependencies {
   createServiceClient(): ScoringRpcClient;
 }
+export interface AuthenticatedUserContext {
+  client: ScoringRpcClient;
+  userId: string;
+}
 
 export const defaultUserDependencies: UserDependencies = {
   createUserClient(authorization) {
@@ -64,11 +68,19 @@ export function error(status: number, code: string, message: string) {
   return json(status, { error: { code, message } });
 }
 export async function authenticated(request: Request, deps: UserDependencies) {
+  return (await authenticatedContext(request, deps))?.client ?? null;
+}
+export async function authenticatedContext(
+  request: Request,
+  deps: UserDependencies,
+): Promise<AuthenticatedUserContext | null> {
   const authorization = request.headers.get("authorization");
   if (!authorization || !/^Bearer\s+\S+$/i.test(authorization)) return null;
   const client = deps.createUserClient(authorization);
   const result = await client.auth.getUser();
-  return result.error || !result.data.user ? null : client;
+  return result.error || !result.data.user
+    ? null
+    : { client, userId: result.data.user.id };
 }
 export function isUuid(value: unknown): value is string {
   return typeof value === "string" &&

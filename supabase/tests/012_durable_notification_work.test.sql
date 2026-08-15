@@ -278,6 +278,64 @@ select revision,
 from pg_catalog.generate_series(1, 5) revisions(revision);
 grant select on notification_score_digests to authenticated;
 
+insert into private.app_attest_keys (
+  key_id, profile_id, installation_id, public_key_pem, receipt,
+  environment, validation_category, bundle_version, sign_count
+) values (
+  'AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=',
+  'b2000000-0000-4000-8000-000000000001',
+  'b5000000-0000-4000-8000-000000000001',
+  '-----BEGIN PUBLIC KEY-----' || chr(10) || repeat('A', 120)
+    || chr(10) || '-----END PUBLIC KEY-----',
+  decode('aa', 'hex'), 'production', 2, '1', 5
+);
+
+insert into private.app_attest_challenges (
+  id, profile_id, installation_id, requested_key_id, payload_sha256,
+  challenge, proof_kind, created_at, expires_at, consumed_at
+)
+select
+  ('b7000000-0000-4000-8000-' || lpad(binding.ordinal::text, 12, '0'))::uuid,
+  'b2000000-0000-4000-8000-000000000001',
+  'b5000000-0000-4000-8000-000000000001',
+  'AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=',
+  decode(repeat(binding.payload_byte, 32), 'hex'),
+  digest('notification-app-attest-' || binding.ordinal, 'sha256'),
+  'assertion', statement_timestamp(),
+  statement_timestamp() + interval '5 minutes', statement_timestamp()
+from (values
+  (1, '11'), (2, '22'), (3, '33'), (4, '33'), (5, '44'), (6, '55')
+) binding(ordinal, payload_byte);
+
+insert into private.app_attest_submission_grants (
+  id, challenge_id, profile_id, installation_id, key_id, payload_sha256,
+  competition_id, semantic_event_id, day_ordinal, client_revision,
+  evaluated_at, wire_content_sha256, created_at, expires_at
+)
+select
+  ('b8000000-0000-4000-8000-' || lpad(binding.ordinal::text, 12, '0'))::uuid,
+  ('b7000000-0000-4000-8000-' || lpad(binding.ordinal::text, 12, '0'))::uuid,
+  'b2000000-0000-4000-8000-000000000001',
+  'b5000000-0000-4000-8000-000000000001',
+  'AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQE=',
+  decode(repeat(binding.payload_byte, 32), 'hex'),
+  'b3000000-0000-4000-8000-000000000001',
+  binding.semantic_event_id::uuid,
+  1, binding.revision,
+  (current_date::timestamp + interval '12 hours') at time zone 'UTC',
+  decode(digest_row.digest, 'hex'),
+  statement_timestamp(), statement_timestamp() + interval '2 minutes'
+from (values
+  (1, '11', 'b6000000-0000-4000-8000-000000000001', 1::bigint),
+  (2, '22', 'b6000000-0000-4000-8000-000000000002', 2::bigint),
+  (3, '33', 'b6000000-0000-4000-8000-000000000003', 3::bigint),
+  (4, '33', 'b6000000-0000-4000-8000-000000000003', 3::bigint),
+  (5, '44', 'b6000000-0000-4000-8000-000000000004', 4::bigint),
+  (6, '55', 'b6000000-0000-4000-8000-000000000005', 5::bigint)
+) binding(ordinal, payload_byte, semantic_event_id, revision)
+join notification_score_digests digest_row
+  on digest_row.revision = binding.revision;
+
 set local role authenticated;
 select pg_catalog.set_config(
   'request.jwt.claims',
@@ -285,12 +343,14 @@ select pg_catalog.set_config(
   true
 );
 select lives_ok(
-  $$select public.submit_score_revision(
+  $$select public.submit_attested_score_revision(
+    'b8000000-0000-4000-8000-000000000001',
     'b3000000-0000-4000-8000-000000000001',
     'b6000000-0000-4000-8000-000000000001', 1, 1,
     (current_date::timestamp + interval '12 hours') at time zone 'UTC',
     'activeEnergyKilocalories', 'standHours', 1000, 1000, 1000,
     'available', 'healthcomp.activity-score.v1',
+    repeat('11', 32),
     (select digest from notification_score_digests where revision = 1)
   )$$,
   'an accepted score transaction durably enqueues notification work'
@@ -332,12 +392,14 @@ select pg_catalog.set_config(
   true
 );
 select lives_ok(
-  $$select public.submit_score_revision(
+  $$select public.submit_attested_score_revision(
+    'b8000000-0000-4000-8000-000000000002',
     'b3000000-0000-4000-8000-000000000001',
     'b6000000-0000-4000-8000-000000000002', 1, 2,
     (current_date::timestamp + interval '12 hours') at time zone 'UTC',
     'activeEnergyKilocalories', 'standHours', 1100, 1000, 1000,
     'available', 'healthcomp.activity-score.v1',
+    repeat('22', 32),
     (select digest from notification_score_digests where revision = 2)
   )$$,
   'a newer accepted score enqueues a new semantic decision'
@@ -364,12 +426,14 @@ select pg_catalog.set_config(
   true
 );
 select lives_ok(
-  $$select public.submit_score_revision(
+  $$select public.submit_attested_score_revision(
+    'b8000000-0000-4000-8000-000000000003',
     'b3000000-0000-4000-8000-000000000001',
     'b6000000-0000-4000-8000-000000000003', 1, 3,
     (current_date::timestamp + interval '12 hours') at time zone 'UTC',
     'activeEnergyKilocalories', 'standHours', 1200, 1000, 1000,
     'available', 'healthcomp.activity-score.v1',
+    repeat('33', 32),
     (select digest from notification_score_digests where revision = 3)
   )$$,
   'a muted score event records a durable suppression instead of a send'
@@ -389,12 +453,14 @@ select pg_catalog.set_config(
   true
 );
 select lives_ok(
-  $$select public.submit_score_revision(
+  $$select public.submit_attested_score_revision(
+    'b8000000-0000-4000-8000-000000000004',
     'b3000000-0000-4000-8000-000000000001',
     'b6000000-0000-4000-8000-000000000003', 1, 3,
     (current_date::timestamp + interval '12 hours') at time zone 'UTC',
     'activeEnergyKilocalories', 'standHours', 1200, 1000, 1000,
     'available', 'healthcomp.activity-score.v1',
+    repeat('33', 32),
     (select digest from notification_score_digests where revision = 3)
   )$$,
   'an exact score retry is still idempotent'
@@ -419,12 +485,14 @@ select pg_catalog.set_config(
   true
 );
 select lives_ok(
-  $$select public.submit_score_revision(
+  $$select public.submit_attested_score_revision(
+    'b8000000-0000-4000-8000-000000000005',
     'b3000000-0000-4000-8000-000000000001',
     'b6000000-0000-4000-8000-000000000004', 1, 4,
     (current_date::timestamp + interval '12 hours') at time zone 'UTC',
     'activeEnergyKilocalories', 'standHours', 1300, 1000, 1000,
     'available', 'healthcomp.activity-score.v1',
+    repeat('44', 32),
     (select digest from notification_score_digests where revision = 4)
   )$$,
   'unmuting permits a future score notification decision'
@@ -594,12 +662,14 @@ select pg_catalog.set_config(
   true
 );
 select lives_ok(
-  $$select public.submit_score_revision(
+  $$select public.submit_attested_score_revision(
+    'b8000000-0000-4000-8000-000000000006',
     'b3000000-0000-4000-8000-000000000001',
     'b6000000-0000-4000-8000-000000000005', 1, 5,
     (current_date::timestamp + interval '12 hours') at time zone 'UTC',
     'activeEnergyKilocalories', 'standHours', 1400, 1000, 1000,
     'available', 'healthcomp.activity-score.v1',
+    repeat('55', 32),
     (select digest from notification_score_digests where revision = 5)
   )$$,
   'a later score uses the rotated active installation token'

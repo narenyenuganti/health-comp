@@ -115,6 +115,14 @@ final class SupabaseCompetitionRemoteAPITests: XCTestCase {
                 "competitionId": competitionID.uuidString.lowercased(),
             ])),
             .response(200, try jsonData([
+                "version": 1,
+                "challengeID": appAttestChallengeID.uuidString.lowercased(),
+                "challenge": Data(repeating: 0x31, count: 32)
+                    .base64EncodedString(),
+                "expiresAt": "2026-08-15T20:05:00Z",
+                "proofKind": "attestation",
+            ])),
+            .response(200, try jsonData([
                 "disposition": "appended",
                 "acceptedCentiPoints": 27_500,
                 "wireContentSHA256": digest("a"),
@@ -145,6 +153,11 @@ final class SupabaseCompetitionRemoteAPITests: XCTestCase {
         )
         let claimRequest = try CompetitionInviteClaimRequest(token: inviteToken)
         let scoreRequest = try fixtureScoreRequest()
+        let challengeRequest = try CompetitionAppAttestChallengeRequest(
+            installationID: installationID,
+            payloadSHA256: digest("c"),
+            keyID: appAttestKeyID
+        )
         let attestationRequest = try CompetitionAttestationRequest(
             competitionID: competitionID,
             semanticEventID: attestationEventID,
@@ -169,7 +182,22 @@ final class SupabaseCompetitionRemoteAPITests: XCTestCase {
         let fetchedCompetition = try await api.fetchCompetition(competitionID)
         let createdInvite = try await api.createInvite(inviteRequest)
         let claimedInvite = try await api.claimInvite(claimRequest)
-        let scoreResponse = try await api.appendScoreRevision(scoreRequest)
+        let challenge = try await api.issueAppAttestChallenge(
+            challengeRequest
+        )
+        let attestedScoreRequest = try CompetitionAttestedScoreRevisionRequest(
+            score: scoreRequest,
+            appAttest: CompetitionAppAttestProof(
+                challengeID: challenge.challengeID,
+                installationID: installationID,
+                keyID: appAttestKeyID,
+                proofKind: challenge.proofKind,
+                object: Data("attestation-object".utf8)
+            )
+        )
+        let scoreResponse = try await api.submitAttestedScoreRevision(
+            attestedScoreRequest
+        )
         let attestationReceipt = try await api.submitAttestation(
             attestationRequest
         )
@@ -187,6 +215,7 @@ final class SupabaseCompetitionRemoteAPITests: XCTestCase {
         XCTAssertEqual(fetchedCompetition.competitionID, competitionID)
         XCTAssertEqual(createdInvite.token, inviteToken)
         XCTAssertEqual(claimedInvite.competitionID, competitionID)
+        XCTAssertEqual(challenge.proofKind, .attestation)
         XCTAssertEqual(scoreResponse.disposition, .appended)
         XCTAssertEqual(attestationReceipt.entityServerSequence, 2)
         XCTAssertEqual(changePage.nextServerSequence, 0)
@@ -194,7 +223,7 @@ final class SupabaseCompetitionRemoteAPITests: XCTestCase {
         XCTAssertEqual(removedInstallation.state, .revoked)
 
         let requests = await harness.recordedRequests()
-        XCTAssertEqual(requests.count, 11)
+        XCTAssertEqual(requests.count, 12)
         try assertRPC(
             requests[0],
             name: "bootstrap_current_profile",
@@ -224,16 +253,26 @@ final class SupabaseCompetitionRemoteAPITests: XCTestCase {
         )
         try assertFunction(
             requests[6],
-            name: "submit-score-revision",
+            name: "app-attest-challenge",
             body: try jsonObject(
                 CompetitionWireCodec.encode(
-                    scoreRequest,
-                    contract: .scoreRevisionRequest
+                    challengeRequest,
+                    contract: .appAttestChallengeRequest
                 )
             )
         )
         try assertFunction(
             requests[7],
+            name: "submit-score-revision",
+            body: try jsonObject(
+                CompetitionWireCodec.encode(
+                    attestedScoreRequest,
+                    contract: .attestedScoreRevisionRequest
+                )
+            )
+        )
+        try assertFunction(
+            requests[8],
             name: "attest-final-window",
             body: try jsonObject(
                 CompetitionWireCodec.encode(
@@ -243,7 +282,7 @@ final class SupabaseCompetitionRemoteAPITests: XCTestCase {
             )
         )
         try assertRPC(
-            requests[8],
+            requests[9],
             name: "fetch_competition_changes",
             body: [
                 "competition_id": competitionID.uuidString.lowercased(),
@@ -252,7 +291,7 @@ final class SupabaseCompetitionRemoteAPITests: XCTestCase {
             ]
         )
         try assertRPC(
-            requests[9],
+            requests[10],
             name: "register_current_device_installation",
             body: try jsonObject(
                 CompetitionWireCodec.encode(
@@ -262,7 +301,7 @@ final class SupabaseCompetitionRemoteAPITests: XCTestCase {
             )
         )
         try assertRPC(
-            requests[10],
+            requests[11],
             name: "remove_current_device_installation",
             body: [
                 "installation_id": installationID.uuidString.lowercased(),
@@ -285,7 +324,7 @@ final class SupabaseCompetitionRemoteAPITests: XCTestCase {
         ])
 
         let response = try await makeAPI(harness)
-            .appendScoreRevision(fixtureScoreRequest())
+            .submitAttestedScoreRevision(fixtureAttestedScoreRequest())
 
         XCTAssertEqual(response.disposition, .rejected)
         XCTAssertEqual(response.rejectionCode, .revisionRegression)
@@ -312,6 +351,41 @@ final class SupabaseCompetitionRemoteAPITests: XCTestCase {
             XCTAssertEqual(failure, .retryableTransport)
             let requestCount = await harness.requestCount()
             XCTAssertEqual(requestCount, 1)
+        }
+    }
+
+    func testBareScoreSubmissionFailsClosedWithoutTransport() async throws {
+        let harness = CompetitionTransportHarness(stubs: [])
+
+        let failure = await remoteFailure {
+            _ = try await makeAPI(harness)
+                .appendScoreRevision(fixtureScoreRequest())
+        }
+
+        XCTAssertEqual(failure, .appAttestUnavailable)
+        let requestCount = await harness.requestCount()
+        XCTAssertEqual(requestCount, 0)
+    }
+
+    func testAppAttestSubmissionErrorsKeepStableIntegritySemantics()
+        async throws
+    {
+        let cases: [(Int, String, CompetitionRemoteFailure)] = [
+            (401, "app_attest_proof_rejected", .appAttestRejected),
+            (409, "app_attest_context_unavailable", .appAttestContextUnavailable),
+            (409, "app_attest_grant_unavailable", .appAttestContextUnavailable),
+            (409, "app_attest_proof_conflict", .appAttestProofConflict),
+        ]
+        for (status, code, expected) in cases {
+            let harness = CompetitionTransportHarness(stubs: [
+                .response(status, try errorData(code: code)),
+            ])
+            let failure = await remoteFailure {
+                _ = try await makeAPI(harness).submitAttestedScoreRevision(
+                    fixtureAttestedScoreRequest()
+                )
+            }
+            XCTAssertEqual(failure, expected, "Unexpected mapping for \(code)")
         }
     }
 
@@ -593,6 +667,21 @@ final class SupabaseCompetitionRemoteAPITests: XCTestCase {
         )
     }
 
+    private func fixtureAttestedScoreRequest() throws
+        -> CompetitionAttestedScoreRevisionRequest
+    {
+        try CompetitionAttestedScoreRevisionRequest(
+            score: fixtureScoreRequest(),
+            appAttest: CompetitionAppAttestProof(
+                challengeID: appAttestChallengeID,
+                installationID: installationID,
+                keyID: appAttestKeyID,
+                proofKind: .attestation,
+                object: Data("attestation-object".utf8)
+            )
+        )
+    }
+
     private func profileObject(name: String) -> [String: Any] {
         [
             "id": profileID.uuidString.lowercased(),
@@ -664,6 +753,12 @@ final class SupabaseCompetitionRemoteAPITests: XCTestCase {
     }
     private var installationID: UUID {
         UUID(uuidString: "85000000-0000-4000-8000-000000000001")!
+    }
+    private var appAttestChallengeID: UUID {
+        UUID(uuidString: "86000000-0000-4000-8000-000000000001")!
+    }
+    private var appAttestKeyID: String {
+        Data(repeating: 0x41, count: 32).base64EncodedString()
     }
 }
 

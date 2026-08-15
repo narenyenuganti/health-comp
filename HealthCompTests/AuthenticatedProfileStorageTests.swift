@@ -58,6 +58,7 @@ final class AuthenticatedProfileStorageTests: XCTestCase {
                 "ServerCursors",
                 "NotificationPreferences",
                 "Installations",
+                "AppAttest",
             ]
         )
         for url in [paths.rootDirectory] + paths.fixedDirectories {

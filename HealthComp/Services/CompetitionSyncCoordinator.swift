@@ -465,6 +465,11 @@ actor CompetitionSyncCoordinator {
             .serverContractMismatch
         case .accountDeletionUnavailable:
             .accountDeletionUnavailable
+        case .appAttestUnavailable:
+            .appAttestUnavailable
+        case .appAttestRejected, .appAttestContextUnavailable,
+             .appAttestProofConflict:
+            .appAttestRejected
         case .operationFailed:
             .operationFailed
         case .cancelled, .retryableTransport:

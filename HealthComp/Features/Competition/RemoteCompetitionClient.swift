@@ -18,6 +18,7 @@ extension CompetitionClient {
             notificationClient: .liveValue,
             pushRegistrationClient: pushRegistrationClient,
             installationEnvironment: installationEnvironment,
+            appAttestServiceFactory: { DeviceCheckAppAttestClient() },
             notificationPreferencesFactory: { _ in
                 .remote(remoteAPI: remoteAPI)
             }
@@ -31,6 +32,8 @@ extension CompetitionClient {
         notificationClient: CompetitionNotificationClient? = nil,
         pushRegistrationClient: CompetitionPushRegistrationClient? = nil,
         installationEnvironment: CompetitionInstallationEnvironment? = nil,
+        appAttestServiceFactory: (@Sendable () ->
+            any AppAttestServiceProtocol)? = nil,
         notificationPreferencesFactory: @escaping @Sendable (
             AuthenticatedProfileStoragePaths
         ) -> CompetitionNotificationPreferencesClient = { _ in
@@ -45,6 +48,7 @@ extension CompetitionClient {
             notificationClient: notificationClient,
             pushRegistrationClient: pushRegistrationClient,
             installationEnvironment: installationEnvironment,
+            appAttestServiceFactory: appAttestServiceFactory,
             notificationPreferencesFactory: notificationPreferencesFactory,
             router: router
         )
@@ -133,6 +137,32 @@ private struct RemoteCompetitionStoppedTasks {
     let realtime: Task<Void, Never>?
 }
 
+enum ProfileScopedAppAttestRemoteAPI {
+    static func make(
+        profileID: UUID,
+        paths: AuthenticatedProfileStoragePaths,
+        installationStore: CompetitionInstallationStateStore,
+        remoteAPI: CompetitionRemoteAPI,
+        service: any AppAttestServiceProtocol
+    ) async throws -> CompetitionRemoteAPI {
+        let installationState = try await installationStore.loadOrCreate()
+        let appAttest = AppAttestClient.live(
+            profileID: profileID,
+            installationID: installationState.installationID,
+            service: service,
+            stateStore: AppAttestStateStore(
+                profileID: profileID,
+                directory: paths.appAttestDirectory
+            ),
+            issueChallenge: remoteAPI.issueAppAttestChallenge,
+            submit: remoteAPI.submitAttestedScoreRevision
+        )
+        var wrapped = remoteAPI
+        wrapped.appendScoreRevision = appAttest.appendScoreRevision
+        return wrapped
+    }
+}
+
 private actor RemoteCompetitionClientCoordinator {
     private let remoteAPI: CompetitionRemoteAPI
     private let environment: CompetitionEnvironmentClient
@@ -140,6 +170,8 @@ private actor RemoteCompetitionClientCoordinator {
     private let notificationClient: CompetitionNotificationClient?
     private let pushRegistrationClient: CompetitionPushRegistrationClient?
     private let installationEnvironment: CompetitionInstallationEnvironment?
+    private let appAttestServiceFactory: (@Sendable () ->
+        any AppAttestServiceProtocol)?
     private let notificationPreferencesFactory: @Sendable (
         AuthenticatedProfileStoragePaths
     ) -> CompetitionNotificationPreferencesClient
@@ -171,6 +203,8 @@ private actor RemoteCompetitionClientCoordinator {
         notificationClient: CompetitionNotificationClient?,
         pushRegistrationClient: CompetitionPushRegistrationClient?,
         installationEnvironment: CompetitionInstallationEnvironment?,
+        appAttestServiceFactory: (@Sendable () ->
+            any AppAttestServiceProtocol)?,
         notificationPreferencesFactory: @escaping @Sendable (
             AuthenticatedProfileStoragePaths
         ) -> CompetitionNotificationPreferencesClient,
@@ -182,6 +216,7 @@ private actor RemoteCompetitionClientCoordinator {
         self.notificationClient = notificationClient
         self.pushRegistrationClient = pushRegistrationClient
         self.installationEnvironment = installationEnvironment
+        self.appAttestServiceFactory = appAttestServiceFactory
         self.notificationPreferencesFactory = notificationPreferencesFactory
         self.router = router
     }
@@ -209,12 +244,26 @@ private actor RemoteCompetitionClientCoordinator {
             self.latestPublication = nil
             self.hasStarted = false
             self.isStopped = false
+            let installationStore = CompetitionInstallationStateStore(
+                directory: paths.installationsDirectory
+            )
+            var mountedRemoteAPI = remoteAPI
+            if let appAttestServiceFactory {
+                mountedRemoteAPI = try await ProfileScopedAppAttestRemoteAPI
+                    .make(
+                        profileID: profile.id,
+                        paths: paths,
+                        installationStore: installationStore,
+                        remoteAPI: remoteAPI,
+                        service: appAttestServiceFactory()
+                    )
+            }
             let runtime = RemoteCompetitionRuntime(
                 profileID: profile.id,
                 store: JSONCompetitionEventStore(
                     rootDirectory: paths.competitionEventsDirectory
                 ),
-                remoteAPI: remoteAPI,
+                remoteAPI: mountedRemoteAPI,
                 environment: environment,
                 outboxStore: JSONCompetitionOutboxStore(
                     rootDirectory: paths.outboxDirectory
@@ -244,9 +293,7 @@ private actor RemoteCompetitionClientCoordinator {
                     CompetitionInstallationCoordinator(
                         remoteAPI: remoteAPI,
                         registration: pushRegistrationClient,
-                        store: CompetitionInstallationStateStore(
-                            directory: paths.installationsDirectory
-                        ),
+                        store: installationStore,
                         environment: installationEnvironment
                     )
                 self.installationCoordinator = installationCoordinator
