@@ -8,8 +8,9 @@ rehearsed and its non-identifying integrity receipt has been compared.
 
 As of 2026-08-15:
 
-- no hosted backup inventory or retention setting has been read back for
-  healthcomp-staging;
+- the authenticated healthcomp-staging backup page reports that the project is
+  on the Free Plan and that project backups are not included; no restorable
+  scheduled backup or PITR window is available;
 - no HealthComp production project has been approved;
 - no staging restore rehearsal has run;
 - no recovery point objective or recovery time objective has been measured;
