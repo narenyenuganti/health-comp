@@ -52,9 +52,7 @@ export async function deriveInviteTokenV1(
     ["sign"],
   );
   const message = textEncoder.encode(
-    `healthcomp.invite-token.v1\0${userId.toLowerCase()}\0${
-      idempotencyKey.toLowerCase()
-    }`,
+    `healthcomp.invite-token.v1\0${userId.toLowerCase()}\0${idempotencyKey.toLowerCase()}`,
   );
   return new Uint8Array(await crypto.subtle.sign("HMAC", key, message));
 }

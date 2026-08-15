@@ -58,13 +58,15 @@ Deno.test("AASA rejects methods and fails closed for invalid app identifiers", a
   assertEquals(methodResponse.status, 405);
   assertEquals(methodResponse.headers.get("allow"), "GET, HEAD");
 
-  for (const invalid of [
-    [],
-    [""],
-    ["not-an-app-id"],
-    ["abcde12345.com.narenyenuganti.HealthComp"],
-    ["ABCDE12345.com.narenyenuganti.HealthComp", "not-an-app-id"],
-  ]) {
+  for (
+    const invalid of [
+      [],
+      [""],
+      ["not-an-app-id"],
+      ["abcde12345.com.narenyenuganti.HealthComp"],
+      ["ABCDE12345.com.narenyenuganti.HealthComp", "not-an-app-id"],
+    ]
+  ) {
     const response = appleAppSiteAssociationHandler(
       new Request(
         "https://invites.example/.well-known/apple-app-site-association",

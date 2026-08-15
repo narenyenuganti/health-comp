@@ -1,0 +1,103 @@
+name: iOS CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ios:
+    name: Core, iOS, and project generation
+    runs-on: macos-15
+    timeout-minutes: 75
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+      HOMEBREW_NO_AUTO_UPDATE: "1"
+      SUPABASE_URL: https://ci-fixture.supabase.co
+      SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci-fixture
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Verify Xcode and install XcodeGen
+        run: |
+          set -euo pipefail
+          xcodebuild -version
+          xcodebuild -version | grep -q '^Xcode 16[.]4$'
+          brew install xcodegen
+          [[ "$(xcodegen --version)" == "Version: 2.46.0" ]]
+
+      - name: Verify deterministic project generation
+        run: |
+          set -euo pipefail
+          tracked_hash="$(shasum -a 256 HealthComp.xcodeproj/project.pbxproj | cut -d ' ' -f 1)"
+          xcodegen generate
+          first_hash="$(shasum -a 256 HealthComp.xcodeproj/project.pbxproj | cut -d ' ' -f 1)"
+          xcodegen generate
+          second_hash="$(shasum -a 256 HealthComp.xcodeproj/project.pbxproj | cut -d ' ' -f 1)"
+
+          [[ "$tracked_hash" == "$first_hash" ]]
+          [[ "$first_hash" == "$second_hash" ]]
+          git diff --exit-code -- HealthComp.xcodeproj
+
+      - name: Test CompetitionCore in Debug and Release
+        run: |
+          set -euo pipefail
+          swift test \
+            --package-path Modules/CompetitionCore \
+            --scratch-path "$RUNNER_TEMP/CompetitionCore-Debug"
+          swift test \
+            --configuration release \
+            --package-path Modules/CompetitionCore \
+            --scratch-path "$RUNNER_TEMP/CompetitionCore-Release"
+
+      - name: Test iOS application logic
+        run: |
+          set -euo pipefail
+          xcodebuild test \
+            -project HealthComp.xcodeproj \
+            -scheme HealthComp \
+            -configuration Debug \
+            -destination 'platform=iOS Simulator,OS=18.5,name=iPhone 16 Pro' \
+            -derivedDataPath "$RUNNER_TEMP/HealthComp-DerivedData" \
+            -only-testing:HealthCompTests \
+            -skipMacroValidation \
+            -skipPackagePluginValidation \
+            CODE_SIGNING_ALLOWED=NO \
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            SUPABASE_URL="$SUPABASE_URL" \
+            SUPABASE_PUBLISHABLE_KEY="$SUPABASE_PUBLISHABLE_KEY"
+
+      - name: Build unsigned device configurations
+        run: |
+          set -euo pipefail
+          for configuration in Debug Staging Release; do
+            xcodebuild build \
+              -project HealthComp.xcodeproj \
+              -scheme HealthComp \
+              -configuration "$configuration" \
+              -destination 'generic/platform=iOS' \
+              -derivedDataPath "$RUNNER_TEMP/HealthComp-DerivedData" \
+              -skipMacroValidation \
+              -skipPackagePluginValidation \
+              CODE_SIGNING_ALLOWED=NO \
+              COMPILER_INDEX_STORE_ENABLE=NO \
+              SUPABASE_URL="$SUPABASE_URL" \
+              SUPABASE_PUBLISHABLE_KEY="$SUPABASE_PUBLISHABLE_KEY"
+          done
+
+      - name: Verify source tree remains clean
+        run: |
+          set -euo pipefail
+          git diff --check
+          git diff --exit-code
+          [[ -z "$(git status --porcelain --untracked-files=all)" ]]
