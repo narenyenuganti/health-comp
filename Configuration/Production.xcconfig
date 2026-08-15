@@ -1,2 +1,4 @@
 #include "Base.xcconfig"
+APS_ENVIRONMENT = production
+HEALTHCOMP_APNS_ENVIRONMENT = production
 #include? "Production.local.xcconfig"

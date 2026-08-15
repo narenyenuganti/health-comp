@@ -12,6 +12,7 @@ enum RemoteCompetitionRuntimeFailure: Error, Equatable, Sendable {
     case competitionNotMaterialized
     case serverContractMismatch
     case storageUnavailable
+    case cursorRetryLimitExceeded
 }
 
 enum RemoteCompetitionCacheFailure: Error, Equatable, Sendable {
@@ -428,6 +429,15 @@ struct RemoteCompetitionRuntimeIDFailure: Equatable, Sendable {
 enum RemoteCompetitionRuntimeIDOutcome: Equatable, Sendable {
     case success(RemoteCompetitionMaterialization)
     case failure(RemoteCompetitionRuntimeIDFailure)
+
+    var competitionID: CompetitionID {
+        switch self {
+        case let .success(materialization):
+            CompetitionID(materialization.descriptor.competitionID)
+        case let .failure(failure):
+            failure.competitionID
+        }
+    }
 }
 
 struct RemoteCompetitionRuntimeOutcome: Equatable, Sendable {
@@ -468,6 +478,7 @@ actor RemoteCompetitionRuntime {
     private let cacheStore: (any RemoteCompetitionCacheStore)?
     private let now: @Sendable () -> Date
     private let engine = CompetitionEngine()
+    private let maximumCursorRetries = 4
 
     init(
         profileID: UUID,
@@ -498,6 +509,54 @@ actor RemoteCompetitionRuntime {
 
     func stop() async {
         await syncCoordinator?.stop()
+    }
+
+    func commitNotificationDecisions(
+        competition: CompetitionNotificationCompetitionSnapshot,
+        replan: @escaping CompetitionNotificationDecisionCommitter.Replan
+    ) async throws -> CompetitionNotificationDecisionCommitResult {
+        for retry in 0..<maximumCursorRetries {
+            guard let loaded = try await store.load(competition.id) else {
+                throw RemoteCompetitionRuntimeFailure
+                    .competitionNotMaterialized
+            }
+            let fresh = RemoteCompetitionProjector.notificationCompetition(
+                reloading: loaded,
+                profileID: profileID,
+                baseline: competition
+            )
+            let replanned = try replan(fresh)
+            guard !replanned.isEmpty else { return .noDecision }
+
+            let recordedIDs = loaded.projection.notificationEmissions
+                .recordedIDs
+            var seenIDs: Set<String> = []
+            let novel = replanned.filter { decision in
+                let id = decision.record.semanticEventID
+                return seenIDs.insert(id).inserted
+                    && !recordedIDs.contains(id)
+            }
+            guard !novel.isEmpty else { return .duplicate }
+
+            do {
+                let result = try await store.append(
+                    novel.map {
+                        .notificationEmissionRecorded($0.record)
+                    },
+                    to: competition.id,
+                    expectedCursor: loaded.journal.cursor
+                )
+                guard result.appendedCount > 0 else { return .duplicate }
+                return .appended(novel)
+            } catch let error as CompetitionEventStoreError {
+                guard case .cursorConflict = error else { throw error }
+                guard retry + 1 < maximumCursorRetries else {
+                    throw RemoteCompetitionRuntimeFailure
+                        .cursorRetryLimitExceeded
+                }
+            }
+        }
+        throw RemoteCompetitionRuntimeFailure.cursorRetryLimitExceeded
     }
 
     func synchronizeAll() async -> RemoteCompetitionRuntimeOutcome {

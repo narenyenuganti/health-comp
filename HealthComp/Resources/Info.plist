@@ -29,6 +29,8 @@
 	</array>
 	<key>CFBundleVersion</key>
 	<string>1</string>
+	<key>HEALTHCOMP_APNS_ENVIRONMENT</key>
+	<string>$(HEALTHCOMP_APNS_ENVIRONMENT)</string>
 	<key>HEALTHCOMP_INVITE_HOST</key>
 	<string>$(HEALTHCOMP_INVITE_HOST)</string>
 	<key>NSHealthShareUsageDescription</key>

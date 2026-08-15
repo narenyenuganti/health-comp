@@ -46,6 +46,7 @@ targets:
         NSHealthShareUsageDescription: "HealthComp reads your activity data to score competitions with friends."
         SUPABASE_URL: "$(SUPABASE_URL)"
         SUPABASE_PUBLISHABLE_KEY: "$(SUPABASE_PUBLISHABLE_KEY)"
+        HEALTHCOMP_APNS_ENVIRONMENT: "$(HEALTHCOMP_APNS_ENVIRONMENT)"
         HEALTHCOMP_INVITE_HOST: "$(HEALTHCOMP_INVITE_HOST)"
         CFBundleURLTypes:
           - CFBundleURLName: com.narenyenuganti.HealthComp.competition

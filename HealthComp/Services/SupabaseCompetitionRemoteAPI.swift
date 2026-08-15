@@ -236,6 +236,36 @@ enum SupabaseCompetitionRemoteAPI {
                     contract: .installationResponse
                 )
             },
+            loadMutedOpponentProfileIDs: {
+                let response = try await send(
+                    .rpc(
+                        name: "list_current_notification_mutes",
+                        parameters: try encode(EmptyParameters())
+                    ),
+                    transport: transport
+                )
+                return try decodeNotificationMuteProfileIDs(response.data)
+            },
+            setOpponentMuted: { opponentProfileID, isMuted in
+                try validateUUID(opponentProfileID)
+                let response = try await send(
+                    .rpc(
+                        name: "set_current_notification_mute",
+                        parameters: try encode(
+                            SetNotificationMuteParameters(
+                                opponentProfileID: opponentProfileID,
+                                isMuted: isMuted
+                            )
+                        )
+                    ),
+                    transport: transport
+                )
+                try validateNotificationMuteMutation(
+                    response.data,
+                    expectedOpponentProfileID: opponentProfileID,
+                    expectedIsMuted: isMuted
+                )
+            },
             requestAccountDeletion: {
                 throw CompetitionRemoteFailure.accountDeletionUnavailable
             }
@@ -388,6 +418,7 @@ enum SupabaseCompetitionRemoteAPI {
             "server_contract_mismatch",
             "invalid_request",
             "invalid_installation_request",
+            "invalid_notification_mute",
         ]) {
             return .serverContractMismatch
         }
@@ -402,6 +433,7 @@ enum SupabaseCompetitionRemoteAPI {
             "forbidden",
             "rematch_not_allowed",
             "installation_unavailable",
+            "opponent_unavailable",
         ]) || statusCode == 403 {
             return .forbidden
         }
@@ -438,6 +470,54 @@ enum SupabaseCompetitionRemoteAPI {
             throw CompetitionRemoteFailure.serverContractMismatch
         }
         return id
+    }
+
+    private static func decodeNotificationMuteProfileIDs(
+        _ data: Data
+    ) throws -> Set<UUID> {
+        guard let object = try? JSONSerialization.jsonObject(with: data)
+            as? [String: Any],
+              Set(object.keys) == ["opponent_profile_ids"],
+              let values = object["opponent_profile_ids"] as? [Any],
+              values.count <= 1_000
+        else {
+            throw CompetitionRemoteFailure.serverContractMismatch
+        }
+        var profileIDs: Set<UUID> = []
+        for value in values {
+            guard let string = value as? String,
+                  let profileID = UUID(uuidString: string),
+                  profileID.uuidString.lowercased() == string,
+                  profileID.uuidString
+                    != "00000000-0000-0000-0000-000000000000",
+                  profileIDs.insert(profileID).inserted
+            else {
+                throw CompetitionRemoteFailure.serverContractMismatch
+            }
+        }
+        return profileIDs
+    }
+
+    private static func validateNotificationMuteMutation(
+        _ data: Data,
+        expectedOpponentProfileID: UUID,
+        expectedIsMuted: Bool
+    ) throws {
+        guard let object = try? JSONSerialization.jsonObject(with: data)
+            as? [String: Any],
+              Set(object.keys) == ["is_muted", "opponent_profile_id"],
+              let profileIDString = object["opponent_profile_id"] as? String,
+              profileIDString
+                == expectedOpponentProfileID.uuidString.lowercased(),
+              let response = try? JSONDecoder().decode(
+                NotificationMuteMutationResponse.self,
+                from: data
+              ),
+              response.opponentProfileID == expectedOpponentProfileID,
+              response.isMuted == expectedIsMuted
+        else {
+            throw CompetitionRemoteFailure.serverContractMismatch
+        }
     }
 
     private static func encode<Value: Encodable>(
@@ -509,6 +589,37 @@ private struct BootstrapProfileParameters: Encodable {
             suggestedDisplayName,
             forKey: .suggestedDisplayName
         )
+    }
+}
+
+private struct EmptyParameters: Encodable {}
+
+private struct SetNotificationMuteParameters: Encodable {
+    let opponentProfileID: UUID
+    let isMuted: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case opponentProfileID = "opponent_profile_id"
+        case isMuted = "is_muted"
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(
+            opponentProfileID.uuidString.lowercased(),
+            forKey: .opponentProfileID
+        )
+        try container.encode(isMuted, forKey: .isMuted)
+    }
+}
+
+private struct NotificationMuteMutationResponse: Decodable {
+    let opponentProfileID: UUID
+    let isMuted: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case opponentProfileID = "opponent_profile_id"
+        case isMuted = "is_muted"
     }
 }
 

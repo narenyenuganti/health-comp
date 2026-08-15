@@ -4,6 +4,19 @@ import UserNotifications
 final class HealthCompAppDelegate: NSObject,
     UIApplicationDelegate,
     UNUserNotificationCenterDelegate {
+    private let pushRegistrationHub: CompetitionPushRegistrationHub
+
+    override init() {
+        self.pushRegistrationHub = CompetitionPushRegistrationEnvironment
+            .liveHub
+        super.init()
+    }
+
+    init(pushRegistrationHub: CompetitionPushRegistrationHub) {
+        self.pushRegistrationHub = pushRegistrationHub
+        super.init()
+    }
+
     func application(
         _ application: UIApplication,
         didFinishLaunchingWithOptions launchOptions: [
@@ -18,7 +31,22 @@ final class HealthCompAppDelegate: NSObject,
         }
 #endif
         UNUserNotificationCenter.current().delegate = self
+        application.registerForRemoteNotifications()
         return true
+    }
+
+    func application(
+        _ application: UIApplication,
+        didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
+    ) {
+        pushRegistrationHub.publishDeviceToken(deviceToken)
+    }
+
+    func application(
+        _ application: UIApplication,
+        didFailToRegisterForRemoteNotificationsWithError error: Error
+    ) {
+        pushRegistrationHub.publishFailure()
     }
 
     func userNotificationCenter(

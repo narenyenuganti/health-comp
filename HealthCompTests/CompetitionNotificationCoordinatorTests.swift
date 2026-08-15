@@ -4,6 +4,45 @@ import XCTest
 @testable import HealthComp
 
 final class CompetitionNotificationCoordinatorTests: XCTestCase {
+    func testRuntimeNeutralDecisionCommitterPersistsBeforePosting()
+        async throws
+    {
+        let recorder = NotificationOperationRecorder()
+        let snapshot = try resultSnapshot()
+        let committer = CompetitionNotificationDecisionCommitter(
+            commit: { competition, replan in
+                let decisions = try replan(competition)
+                for decision in decisions {
+                    await recorder.record(
+                        "append:\(decision.record.semanticEventID)"
+                    )
+                }
+                return decisions.isEmpty ? .noDecision : .appended(decisions)
+            }
+        )
+        let client = CompetitionNotificationCoordinatorClient.live(
+            decisionCommitter: committer,
+            planner: CompetitionNotificationPlanner(
+                policy: .coordinatorFixture
+            ),
+            notifications: recorder.notificationClient(
+                authorization: .authorized
+            ),
+            preferences: .constant(mutedOpponentIdentities: [])
+        )
+
+        await client.submit(snapshot)
+
+        let operations = await recorder.operations
+        let appendIndex = try XCTUnwrap(
+            operations.firstIndex { $0.hasPrefix("append:") }
+        )
+        let postIndex = try XCTUnwrap(
+            operations.firstIndex { $0.hasPrefix("post:") }
+        )
+        XCTAssertLessThan(appendIndex, postIndex)
+    }
+
     func testJournalAppendPrecedesImmediatePost() async throws {
         let recorder = NotificationOperationRecorder()
         let snapshot = try resultSnapshot()

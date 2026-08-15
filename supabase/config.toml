@@ -388,6 +388,11 @@ deno_version = 2
 [functions.apple-app-site-association]
 verify_jwt = false
 
+# The database wake-up uses a dedicated opaque token that the function checks
+# in constant time before reading provider configuration or creating a client.
+[functions.send-competition-notification]
+verify_jwt = false
+
 # [edge_runtime.secrets]
 # secret_key = "env(SECRET_VALUE)"
 

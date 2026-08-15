@@ -3,21 +3,49 @@ import Dependencies
 import Foundation
 
 extension CompetitionClient {
-    static func live(provider: SupabaseClientProvider) -> Self {
-        remote(
-            remoteAPI: SupabaseCompetitionRemoteAPI.live(provider: provider),
-            environment: .production()
+    static func live(
+        provider: SupabaseClientProvider,
+        installationEnvironment: CompetitionInstallationEnvironment? = try?
+            .configured()
+    ) -> Self {
+        let remoteAPI = SupabaseCompetitionRemoteAPI.live(provider: provider)
+        let pushRegistrationClient: CompetitionPushRegistrationClient? =
+            installationEnvironment == nil ? nil : .liveValue
+        return remote(
+            remoteAPI: remoteAPI,
+            environment: .production(),
+            realtimeClient: .supabase(provider: provider),
+            notificationClient: .liveValue,
+            pushRegistrationClient: pushRegistrationClient,
+            installationEnvironment: installationEnvironment,
+            notificationPreferencesFactory: { _ in
+                .remote(remoteAPI: remoteAPI)
+            }
         )
     }
 
     static func remote(
         remoteAPI: CompetitionRemoteAPI,
-        environment: CompetitionEnvironmentClient
+        environment: CompetitionEnvironmentClient,
+        realtimeClient: CompetitionRealtimeClient = .inert,
+        notificationClient: CompetitionNotificationClient? = nil,
+        pushRegistrationClient: CompetitionPushRegistrationClient? = nil,
+        installationEnvironment: CompetitionInstallationEnvironment? = nil,
+        notificationPreferencesFactory: @escaping @Sendable (
+            AuthenticatedProfileStoragePaths
+        ) -> CompetitionNotificationPreferencesClient = { _ in
+            .constant(mutedOpponentIdentities: [])
+        }
     ) -> Self {
         let router = RemoteCompetitionPublicationRouter()
         let coordinator = RemoteCompetitionClientCoordinator(
             remoteAPI: remoteAPI,
             environment: environment,
+            realtimeClient: realtimeClient,
+            notificationClient: notificationClient,
+            pushRegistrationClient: pushRegistrationClient,
+            installationEnvironment: installationEnvironment,
+            notificationPreferencesFactory: notificationPreferencesFactory,
             router: router
         )
         return Self(
@@ -36,8 +64,31 @@ extension CompetitionClient {
             rematch: { id in await coordinator.unsupported(id) },
             reinvite: { await coordinator.unsupported(nil) },
             delete: { id in await coordinator.unsupported(id) },
+            reconcileNotifications: {
+                await coordinator.reconcileNotifications()
+            },
+            loadMutedOpponentIdentities: {
+                try await coordinator.loadMutedOpponentIdentities()
+            },
+            setNotificationMuted: { identity, isMuted in
+                try await coordinator.setNotificationMuted(
+                    identity,
+                    isMuted: isMuted
+                )
+            },
+            loadNotificationAuthorizationState: {
+                await coordinator.notificationAuthorizationState()
+            },
+            requestNotificationAuthorization: {
+                await coordinator.requestNotificationAuthorization()
+            },
             waitUntil: { date in try await environment.wait(until: date) },
             stop: { await coordinator.stop() },
+            prepareForProfileTeardown: { requireRemoteRemoval in
+                try await coordinator.prepareForProfileTeardown(
+                    requireRemoteInstallationRemoval: requireRemoteRemoval
+                )
+            },
             mountAuthenticatedProfile: { profile, paths in
                 try await coordinator.mount(profile: profile, paths: paths)
             },
@@ -77,9 +128,21 @@ private final class RemoteCompetitionPublicationRouter: @unchecked Sendable {
     }
 }
 
+private struct RemoteCompetitionStoppedTasks {
+    let signal: Task<Void, Never>?
+    let realtime: Task<Void, Never>?
+}
+
 private actor RemoteCompetitionClientCoordinator {
     private let remoteAPI: CompetitionRemoteAPI
     private let environment: CompetitionEnvironmentClient
+    private let realtimeClient: CompetitionRealtimeClient
+    private let notificationClient: CompetitionNotificationClient?
+    private let pushRegistrationClient: CompetitionPushRegistrationClient?
+    private let installationEnvironment: CompetitionInstallationEnvironment?
+    private let notificationPreferencesFactory: @Sendable (
+        AuthenticatedProfileStoragePaths
+    ) -> CompetitionNotificationPreferencesClient
     private let router: RemoteCompetitionPublicationRouter
 
     private var profile: AuthenticatedProfile?
@@ -88,6 +151,13 @@ private actor RemoteCompetitionClientCoordinator {
     private var publicationRevision: UInt64 = 0
     private var latestPublication: CompetitionPublication?
     private var signalTask: Task<Void, Never>?
+    private var realtimeTask: Task<Void, Never>?
+    private var notificationCoordinator: CompetitionNotificationCoordinatorClient =
+        .noop
+    private var notificationPreferences: CompetitionNotificationPreferencesClient =
+        .unavailable
+    private var installationCoordinator: CompetitionInstallationCoordinator?
+    private var mountedCompetitionIDs: Set<CompetitionID> = []
     private var hasStarted = false
     private var isStopped = false
     private var runtimeGeneration: UInt64 = 0
@@ -97,10 +167,22 @@ private actor RemoteCompetitionClientCoordinator {
     init(
         remoteAPI: CompetitionRemoteAPI,
         environment: CompetitionEnvironmentClient,
+        realtimeClient: CompetitionRealtimeClient,
+        notificationClient: CompetitionNotificationClient?,
+        pushRegistrationClient: CompetitionPushRegistrationClient?,
+        installationEnvironment: CompetitionInstallationEnvironment?,
+        notificationPreferencesFactory: @escaping @Sendable (
+            AuthenticatedProfileStoragePaths
+        ) -> CompetitionNotificationPreferencesClient,
         router: RemoteCompetitionPublicationRouter
     ) {
         self.remoteAPI = remoteAPI
         self.environment = environment
+        self.realtimeClient = realtimeClient
+        self.notificationClient = notificationClient
+        self.pushRegistrationClient = pushRegistrationClient
+        self.installationEnvironment = installationEnvironment
+        self.notificationPreferencesFactory = notificationPreferencesFactory
         self.router = router
     }
 
@@ -108,11 +190,17 @@ private actor RemoteCompetitionClientCoordinator {
         profile: AuthenticatedProfile,
         paths: AuthenticatedProfileStoragePaths
     ) async throws {
-        try await withOperationGate {
-            guard profile.id == paths.profileID else {
-                throw RemoteCompetitionRuntimeFailure.profileMismatch
-            }
-            await stopRuntime()
+        guard profile.id == paths.profileID else {
+            throw RemoteCompetitionRuntimeFailure.profileMismatch
+        }
+        if pushRegistrationClient != nil,
+           installationEnvironment == nil {
+            throw CompetitionPushRegistrationFailure.invalidConfiguration
+        }
+        signalTask?.cancel()
+        realtimeTask?.cancel()
+        let stoppedTasks = try await withOperationGate {
+            let stoppedTasks = await stopRuntime()
             let replacement = LocalCompetitionPublicationHub()
             router.activate(replacement)
             self.profile = profile
@@ -121,7 +209,7 @@ private actor RemoteCompetitionClientCoordinator {
             self.latestPublication = nil
             self.hasStarted = false
             self.isStopped = false
-            self.runtime = RemoteCompetitionRuntime(
+            let runtime = RemoteCompetitionRuntime(
                 profileID: profile.id,
                 store: JSONCompetitionEventStore(
                     rootDirectory: paths.competitionEventsDirectory
@@ -135,7 +223,39 @@ private actor RemoteCompetitionClientCoordinator {
                     rootDirectory: paths.serverCursorsDirectory
                 )
             )
+            self.runtime = runtime
+            let preferences = notificationPreferencesFactory(paths)
+            self.notificationPreferences = preferences
+            if let notificationClient {
+                self.notificationCoordinator = .live(
+                    decisionCommitter: .remote(runtime: runtime),
+                    planner: CompetitionNotificationPlanner(
+                        policy: .liveV1
+                    ),
+                    notifications: notificationClient,
+                    preferences: preferences
+                )
+            } else {
+                self.notificationCoordinator = .noop
+            }
+            if let pushRegistrationClient,
+               let installationEnvironment {
+                let installationCoordinator =
+                    CompetitionInstallationCoordinator(
+                        remoteAPI: remoteAPI,
+                        registration: pushRegistrationClient,
+                        store: CompetitionInstallationStateStore(
+                            directory: paths.installationsDirectory
+                        ),
+                        environment: installationEnvironment
+                    )
+                self.installationCoordinator = installationCoordinator
+                try await installationCoordinator.start()
+            }
+            return stoppedTasks
         }
+        await stoppedTasks.signal?.value
+        await stoppedTasks.realtime?.value
     }
 
     func start() async {
@@ -143,6 +263,7 @@ private actor RemoteCompetitionClientCoordinator {
             guard !hasStarted, !isStopped else { return }
             hasStarted = true
             startSignals()
+            startRealtime()
             _ = await performReconciliation()
         }
     }
@@ -162,6 +283,7 @@ private actor RemoteCompetitionClientCoordinator {
                 issues: [.storageUnavailable]
             )
         }
+        await installationCoordinator?.reconcile()
         let outcome = await runtime.synchronizeAll()
         var issues: [CompetitionClientIssue] = []
         if outcome.discoveryFailure != nil {
@@ -176,8 +298,56 @@ private actor RemoteCompetitionClientCoordinator {
         return await publish(
             materializations: outcome.successfulCompetitions,
             profile: profile,
-            issues: issues
+            issues: issues,
+            knownCompetitionIDs: outcome.discoveryFailure == nil
+                ? Set(outcome.outcomes.map(\.competitionID))
+                : nil
         )
+    }
+
+    func reconcileNotifications() async {
+        await withOperationGate {
+            await notificationCoordinator.reconcileLatest()
+        }
+    }
+
+    func loadMutedOpponentIdentities() async throws -> Set<String> {
+        try await withOperationGate {
+            try await notificationPreferences.mutedOpponentIdentities()
+        }
+    }
+
+    func setNotificationMuted(
+        _ identity: String,
+        isMuted: Bool
+    ) async throws {
+        try await withOperationGate {
+            try await notificationPreferences.setMuted(identity, isMuted)
+            await notificationCoordinator.reconcileLatest()
+        }
+    }
+
+    func notificationAuthorizationState()
+        async -> CompetitionNotificationAuthorizationState?
+    {
+        guard let notificationClient else { return nil }
+        return await notificationClient.authorizationState()
+    }
+
+    func requestNotificationAuthorization()
+        async -> CompetitionNotificationAuthorizationState
+    {
+        guard let notificationClient else { return .denied }
+        do {
+            _ = try await notificationClient.requestAuthorization()
+        } catch {
+            return await notificationClient.authorizationState()
+        }
+        let state = await notificationClient.authorizationState()
+        await withOperationGate {
+            await notificationCoordinator.reconcileLatest()
+        }
+        return state
     }
 
     func unsupported(_ id: CompetitionID?) async -> CompetitionPublication {
@@ -257,26 +427,58 @@ private actor RemoteCompetitionClientCoordinator {
 
     func stop() async {
         isStopped = true
-        let task = signalTask
-        task?.cancel()
-        await withOperationGate {
-            await stopRuntime()
+        signalTask?.cancel()
+        realtimeTask?.cancel()
+        let stoppedTasks = await withOperationGate {
+            let stoppedTasks = await stopRuntime()
             profile = nil
             hub = nil
             latestPublication = nil
             publicationRevision = 0
             hasStarted = false
             router.finishCurrent()
+            return stoppedTasks
         }
-        await task?.value
+        await stoppedTasks.signal?.value
+        await stoppedTasks.realtime?.value
     }
 
-    private func stopRuntime() async {
+    func prepareForProfileTeardown(
+        requireRemoteInstallationRemoval: Bool
+    ) async throws {
+        try await withOperationGate {
+            try await installationCoordinator?.prepareForProfileTeardown(
+                requireRemoteRemoval: requireRemoteInstallationRemoval
+            )
+        }
+    }
+
+    private func stopRuntime() async -> RemoteCompetitionStoppedTasks {
         runtimeGeneration &+= 1
-        signalTask?.cancel()
+        let stoppedTasks = RemoteCompetitionStoppedTasks(
+            signal: signalTask,
+            realtime: realtimeTask
+        )
+        stoppedTasks.signal?.cancel()
+        stoppedTasks.realtime?.cancel()
         signalTask = nil
+        realtimeTask = nil
+        if stoppedTasks.realtime != nil {
+            await realtimeClient.stop()
+        }
+        for competitionID in mountedCompetitionIDs.sorted(by: {
+            $0.rawValue.uuidString < $1.rawValue.uuidString
+        }) {
+            await notificationCoordinator.cancelAll(competitionID)
+        }
+        mountedCompetitionIDs = []
+        notificationCoordinator = .noop
+        notificationPreferences = .unavailable
+        await installationCoordinator?.stopListening()
+        installationCoordinator = nil
         await runtime?.stop()
         runtime = nil
+        return stoppedTasks
     }
 
     private func startSignals() {
@@ -287,6 +489,21 @@ private actor RemoteCompetitionClientCoordinator {
             for await signal in signals {
                 guard !Task.isCancelled else { return }
                 await self?.consume(signal, generation: generation)
+            }
+        }
+    }
+
+    private func startRealtime() {
+        guard realtimeTask == nil, let profile else { return }
+        let generation = runtimeGeneration
+        realtimeTask = Task { [weak self, realtimeClient] in
+            let wakeUps = await realtimeClient.wakeUps(profile.id)
+            for await wakeUp in wakeUps {
+                guard !Task.isCancelled else { return }
+                await self?.consumeRealtime(
+                    wakeUp,
+                    generation: generation
+                )
             }
         }
     }
@@ -306,6 +523,21 @@ private actor RemoteCompetitionClientCoordinator {
             if signal.requiresCompletion {
                 await environment.completeSignal(signal.id)
             }
+        }
+    }
+
+    private func consumeRealtime(
+        _ wakeUp: CompetitionRealtimeWakeUp,
+        generation: UInt64
+    ) async {
+        await withOperationGate {
+            guard generation == runtimeGeneration, !Task.isCancelled else {
+                return
+            }
+            // The reason and cursor are diagnostic hints only. Durable state is
+            // always authoritative, including duplicate and out-of-order hints.
+            _ = wakeUp
+            _ = await performReconciliation()
         }
     }
 
@@ -360,10 +592,11 @@ private actor RemoteCompetitionClientCoordinator {
     private func publish(
         materializations: [RemoteCompetitionMaterialization],
         profile: AuthenticatedProfile,
-        issues: [CompetitionClientIssue]
+        issues: [CompetitionClientIssue],
+        knownCompetitionIDs: Set<CompetitionID>?
     ) async -> CompetitionPublication {
         let context = await environment.context()
-        return publish(
+        let publication = publish(
             dashboard: RemoteCompetitionProjector.dashboard(
                 materializations: materializations,
                 profile: profile,
@@ -373,6 +606,24 @@ private actor RemoteCompetitionClientCoordinator {
             evaluatedAt: context.instant.wallDate,
             timeZoneIdentifier: context.timeZoneIdentifier
         )
+        let materializedIDs = Set(materializations.map {
+            CompetitionID($0.descriptor.competitionID)
+        })
+        if let knownCompetitionIDs {
+            mountedCompetitionIDs = knownCompetitionIDs
+        } else {
+            mountedCompetitionIDs.formUnion(materializedIDs)
+        }
+        await notificationCoordinator.submit(
+            RemoteCompetitionProjector.notificationSnapshot(
+                publication: publication,
+                materializations: materializations,
+                profile: profile,
+                context: context,
+                knownCompetitionIDs: knownCompetitionIDs
+            )
+        )
+        return publication
     }
 
     private func publish(
@@ -434,7 +685,7 @@ func remoteCompetitionParticipantPresentation(
     )
 }
 
-private enum RemoteCompetitionProjector {
+enum RemoteCompetitionProjector {
     static func dashboard(
         materializations: [RemoteCompetitionMaterialization],
         profile: AuthenticatedProfile,
@@ -458,6 +709,169 @@ private enum RemoteCompetitionProjector {
             issues: issues,
             hiddenTerminalCompetitionCount: all.count - visible.count
         )
+    }
+
+    static func notificationSnapshot(
+        publication: CompetitionPublication,
+        materializations: [RemoteCompetitionMaterialization],
+        profile: AuthenticatedProfile,
+        context: CompetitionEnvironmentContext,
+        knownCompetitionIDs: Set<CompetitionID>?
+    ) -> CompetitionNotificationPlanningSnapshot {
+        let competitions = materializations.compactMap { materialization in
+            notificationCompetition(
+                from: materialization,
+                profile: profile,
+                context: context
+            )
+        }.sorted { $0.id.rawValue.uuidString < $1.id.rawValue.uuidString }
+        return CompetitionNotificationPlanningSnapshot(
+            publicationRevision: publication.publicationRevision,
+            evaluatedAt: context.instant.wallDate,
+            timeZoneIdentifier: context.timeZoneIdentifier,
+            competitions: competitions,
+            knownCompetitionIDs: knownCompetitionIDs
+        )
+    }
+
+    static func notificationCompetition(
+        from materialization: RemoteCompetitionMaterialization,
+        profile: AuthenticatedProfile,
+        context: CompetitionEnvironmentContext
+    ) -> CompetitionNotificationCompetitionSnapshot? {
+        guard let projected = presentation(
+            from: materialization,
+            profile: profile,
+            context: context
+        ) else {
+            return nil
+        }
+        return CompetitionNotificationCompetitionSnapshot(
+            id: projected.id,
+            opponentIdentity: projected.opponentIdentity,
+            opponentDisplayName: projected.opponentDisplayName,
+            lifecycle: notificationLifecycle(projected.lifecycle),
+            schedule: materialization.journal.projection.competition.schedule,
+            ownerPoints: projected.userPoints,
+            opponentPoints: projected.opponentPoints,
+            days: projected.days.map {
+                CompetitionNotificationDaySnapshot(
+                    ordinal: $0.ordinal,
+                    ownerAcceptedPoints: $0.ownerAcceptedPoints,
+                    opponentRevealedPoints: $0.opponentRevealedPoints
+                )
+            },
+            currentDayOrdinal: projected.currentDayOrdinal,
+            latestRefresh: .completed,
+            evaluationFreshness: .freshCompletedRefresh(
+                attemptID: "remote-reconciliation-v1:\(materialization.descriptor.serverCursor)",
+                readAt: context.instant.wallDate
+            ),
+            terminalResult: projected.terminalResult.map {
+                CompetitionNotificationTerminalSnapshot(
+                    ownerPoints: $0.userPoints,
+                    opponentPoints: $0.opponentPoints,
+                    outcome: $0.outcome
+                )
+            },
+            emissionHistory: materialization.journal.projection
+                .notificationEmissions,
+            evaluatedAt: context.instant.wallDate,
+            timeZoneIdentifier: projected.timeZoneIdentifier
+        )
+    }
+
+    /// Rebuilds every journal-derived notification field after a commit CAS
+    /// conflict. Presentation-only names and evaluation freshness remain bound
+    /// to the submitted publication because neither is persisted in the Core
+    /// journal.
+    static func notificationCompetition(
+        reloading loaded: LoadedCompetitionJournal,
+        profileID: UUID,
+        baseline: CompetitionNotificationCompetitionSnapshot
+    ) -> CompetitionNotificationCompetitionSnapshot {
+        let projection = loaded.projection
+        let competition = projection.competition
+        let opponentID = competition.remoteConfiguration?.remote.profileID
+        let terminal = terminalPresentation(competition.lifecycle)
+        let schedule = competition.schedule
+        let days = schedule.map {
+            dayPresentations(
+                schedule: $0,
+                projection: projection,
+                ownerID: profileID,
+                remoteID: opponentID,
+                now: baseline.evaluatedAt,
+                terminal: terminal
+            )
+        } ?? []
+        let ownerPoints = projection.remoteScoreLedgers[profileID]
+            .map { Double($0.totalAcceptedCentiPoints) / 100 } ?? 0
+        let opponentPoints = opponentID.flatMap {
+            projection.remoteScoreLedgers[$0]
+        }.map { Double($0.totalAcceptedCentiPoints) / 100 } ?? 0
+        return CompetitionNotificationCompetitionSnapshot(
+            id: competition.id,
+            opponentIdentity: opponentID.map {
+                RemoteCompetitionOpponentIdentity.identity(for: $0)
+            } ?? baseline.opponentIdentity,
+            opponentDisplayName: baseline.opponentDisplayName,
+            lifecycle: notificationLifecycle(
+                lifecyclePresentation(competition.lifecycle)
+            ),
+            schedule: schedule,
+            ownerPoints: terminal?.userPoints ?? ownerPoints,
+            opponentPoints: terminal?.opponentPoints ?? opponentPoints,
+            days: days.map {
+                CompetitionNotificationDaySnapshot(
+                    ordinal: $0.ordinal,
+                    ownerAcceptedPoints: $0.ownerAcceptedPoints,
+                    opponentRevealedPoints: $0.opponentRevealedPoints
+                )
+            },
+            currentDayOrdinal: currentDayOrdinal(
+                schedule: schedule,
+                now: baseline.evaluatedAt
+            ),
+            latestRefresh: baseline.latestRefresh,
+            evaluationFreshness: baseline.evaluationFreshness,
+            terminalResult: terminal.map {
+                CompetitionNotificationTerminalSnapshot(
+                    ownerPoints: $0.userPoints,
+                    opponentPoints: $0.opponentPoints,
+                    outcome: $0.outcome
+                )
+            },
+            emissionHistory: projection.notificationEmissions,
+            evaluatedAt: baseline.evaluatedAt,
+            timeZoneIdentifier: schedule?.calendar.timeZoneIdentifier
+                ?? baseline.timeZoneIdentifier
+        )
+    }
+
+    private static func notificationLifecycle(
+        _ lifecycle: CompetitionLifecyclePresentation
+    ) -> CompetitionNotificationLifecycle {
+        switch lifecycle {
+        case let .pending(_, _, expiresAt):
+            .pending(expiresAt: expiresAt)
+        case .declined:
+            .declined
+        case .expired:
+            .expired
+        case .scheduled:
+            .scheduled
+        case let .active(dayOrdinal):
+            .active(dayOrdinal: dayOrdinal)
+        case .endsToday:
+            .endsToday
+        case .tallying:
+            .tallying
+        case .completed:
+            .completed
+        case .archived:
+            .archived
+        }
     }
 
     private static func presentation(
@@ -496,7 +910,7 @@ private enum RemoteCompetitionProjector {
             ownerDisplayName: ownerName,
             opponentDisplayName: opponentName,
             opponentIdentity: opponentID.map {
-                "remote-profile:v1:\($0.uuidString.lowercased())"
+                RemoteCompetitionOpponentIdentity.identity(for: $0)
             } ?? "remote-profile:v1:pending",
             lifecycle: lifecyclePresentation(competition.lifecycle),
             acceptedConfiguration: schedule.map {

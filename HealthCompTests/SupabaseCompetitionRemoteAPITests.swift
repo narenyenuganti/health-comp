@@ -3,6 +3,76 @@ import XCTest
 @testable import HealthComp
 
 final class SupabaseCompetitionRemoteAPITests: XCTestCase {
+    func testNotificationMutesRouteThroughExactAccountRPCs() async throws {
+        let opponentID = UUID(
+            uuidString: "12000000-0000-4000-8000-000000000002"
+        )!
+        let harness = CompetitionTransportHarness(stubs: [
+            .response(200, try jsonData([
+                "opponent_profile_ids": [
+                    opponentID.uuidString.lowercased(),
+                ],
+            ])),
+            .response(200, try jsonData([
+                "opponent_profile_id": opponentID.uuidString.lowercased(),
+                "is_muted": true,
+            ])),
+        ])
+        let api = makeAPI(harness)
+
+        let muted = try await api.loadMutedOpponentProfileIDs()
+        try await api.setOpponentMuted(opponentID, true)
+
+        XCTAssertEqual(muted, [opponentID])
+        let requests = await harness.recordedRequests()
+        XCTAssertEqual(requests.count, 2)
+        try assertRPC(
+            requests[0],
+            name: "list_current_notification_mutes",
+            body: [:]
+        )
+        try assertRPC(
+            requests[1],
+            name: "set_current_notification_mute",
+            body: [
+                "opponent_profile_id": opponentID.uuidString.lowercased(),
+                "is_muted": true,
+            ]
+        )
+    }
+
+    func testNotificationMuteResponsesRejectUnknownOrDivergentFields()
+        async throws
+    {
+        let opponentID = UUID(
+            uuidString: "12000000-0000-4000-8000-000000000002"
+        )!
+        let unknownFieldHarness = CompetitionTransportHarness(stubs: [
+            .response(200, try jsonData([
+                "opponent_profile_ids": [],
+                "profile_id": profileID.uuidString.lowercased(),
+            ])),
+        ])
+        let divergentHarness = CompetitionTransportHarness(stubs: [
+            .response(200, try jsonData([
+                "opponent_profile_id": profileID.uuidString.lowercased(),
+                "is_muted": false,
+            ])),
+        ])
+
+        let unknownFailure = await remoteFailure {
+            _ = try await self.makeAPI(unknownFieldHarness)
+                .loadMutedOpponentProfileIDs()
+        }
+        let divergentFailure = await remoteFailure {
+            try await self.makeAPI(divergentHarness)
+                .setOpponentMuted(opponentID, true)
+        }
+
+        XCTAssertEqual(unknownFailure, .serverContractMismatch)
+        XCTAssertEqual(divergentFailure, .serverContractMismatch)
+    }
+
     func testArchiveRoutesThroughAuthenticatedIdempotentRPC() async throws {
         let harness = CompetitionTransportHarness(stubs: [
             .response(
