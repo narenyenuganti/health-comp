@@ -30,6 +30,11 @@ enum FixtureActivityReadState: Equatable, Sendable {
     case failure(CompetitionActivitySourceError)
 }
 
+enum FixtureHealthAuthorizationState: Equatable, Sendable {
+    case available
+    case failure(CompetitionActivitySourceError)
+}
+
 enum FixtureSummarySubscriptionSynchronization: Equatable, Sendable {
     case changed(to: Set<CompetitionActivityWindow>)
     case noOp(desired: Set<CompetitionActivityWindow>)
@@ -71,6 +76,7 @@ struct ActivityFixture: Equatable, Sendable {
     let initialInstant: EnvironmentInstant
     let timeZoneIdentifier: String
     let initialDays: [FixtureActivityValue]
+    let initialAuthorizationState: FixtureHealthAuthorizationState
     let initialReadState: FixtureActivityReadState
     let changes: [FixtureActivityChange]
 
@@ -78,6 +84,7 @@ struct ActivityFixture: Equatable, Sendable {
         initialInstant: EnvironmentInstant,
         timeZoneIdentifier: String = "UTC",
         initialDays: [FixtureActivityValue],
+        initialAuthorizationState: FixtureHealthAuthorizationState = .available,
         initialReadState: FixtureActivityReadState = .available,
         changes: [FixtureActivityChange]
     ) throws {
@@ -99,6 +106,7 @@ struct ActivityFixture: Equatable, Sendable {
         self.initialInstant = initialInstant
         self.timeZoneIdentifier = timeZoneIdentifier
         self.initialDays = initialDays
+        self.initialAuthorizationState = initialAuthorizationState
         self.initialReadState = initialReadState
         self.changes = orderedChanges
     }
@@ -110,9 +118,27 @@ actor FixtureActivitySource: CompetitionActivitySource {
         let continuation: CheckedContinuation<Void, Error>
     }
 
+    private struct AuthorizationCompletionWaiter {
+        let minimumCount: Int
+        let continuation: CheckedContinuation<Void, Never>
+    }
+
     private var instantValue: EnvironmentInstant
     private let fixtureTimeZoneIdentifier: String
     private var valuesByDay: [CompetitionDay: FixtureActivityValue]
+    private let authorizationState: FixtureHealthAuthorizationState
+    private var authorizationRequests = 0
+    private var completedAuthorizationRequests = 0
+    private var authorizationCompletionWaiters: [
+        AuthorizationCompletionWaiter
+    ] = []
+    private var shouldBlockNextAuthorizationRequest = false
+    private var authorizationRequestIsBlocked = false
+    private var blockedAuthorizationRequestContinuation:
+        CheckedContinuation<Void, Never>?
+    private var authorizationRequestBlockedWaiters: [
+        CheckedContinuation<Void, Never>
+    ] = []
     private var readState: FixtureActivityReadState
     private let changes: [FixtureActivityChange]
     private var nextChangeIndex = 0
@@ -142,6 +168,7 @@ actor FixtureActivitySource: CompetitionActivitySource {
         self.valuesByDay = Dictionary(
             uniqueKeysWithValues: fixture.initialDays.map { ($0.day, $0) }
         )
+        self.authorizationState = fixture.initialAuthorizationState
         self.readState = fixture.initialReadState
         self.changes = fixture.changes
     }
@@ -194,6 +221,7 @@ actor FixtureActivitySource: CompetitionActivitySource {
         )
         self.fixtureTimeZoneIdentifier = fixture.timeZoneIdentifier
         self.valuesByDay = valuesByDay
+        self.authorizationState = fixture.initialAuthorizationState
         self.readState = readState
         self.changes = fixture.changes
         self.nextChangeIndex = restoredChangeCount
@@ -215,8 +243,70 @@ actor FixtureActivitySource: CompetitionActivitySource {
     }
 
     func requestReadAuthorization() async throws {
-        // Accelerated data is local deterministic fixture state and requires no
-        // HealthKit authorization.
+        authorizationRequests += 1
+        defer { completeAuthorizationRequest() }
+        if shouldBlockNextAuthorizationRequest {
+            shouldBlockNextAuthorizationRequest = false
+            authorizationRequestIsBlocked = true
+            for waiter in authorizationRequestBlockedWaiters {
+                waiter.resume()
+            }
+            authorizationRequestBlockedWaiters.removeAll()
+            await withCheckedContinuation { continuation in
+                blockedAuthorizationRequestContinuation = continuation
+            }
+            authorizationRequestIsBlocked = false
+        }
+        if case let .failure(error) = authorizationState {
+            throw error
+        }
+    }
+
+    func authorizationRequestCount() -> Int {
+        authorizationRequests
+    }
+
+    func waitUntilAuthorizationRequestCompletionCount(
+        _ minimumCount: Int
+    ) async {
+        guard completedAuthorizationRequests < minimumCount else { return }
+        await withCheckedContinuation { continuation in
+            authorizationCompletionWaiters.append(
+                AuthorizationCompletionWaiter(
+                    minimumCount: minimumCount,
+                    continuation: continuation
+                )
+            )
+        }
+    }
+
+    func blockNextAuthorizationRequest() {
+        shouldBlockNextAuthorizationRequest = true
+    }
+
+    func waitUntilAuthorizationRequestIsBlocked() async {
+        guard !authorizationRequestIsBlocked else { return }
+        await withCheckedContinuation { continuation in
+            authorizationRequestBlockedWaiters.append(continuation)
+        }
+    }
+
+    func releaseBlockedAuthorizationRequest() {
+        blockedAuthorizationRequestContinuation?.resume()
+        blockedAuthorizationRequestContinuation = nil
+    }
+
+    private func completeAuthorizationRequest() {
+        completedAuthorizationRequests += 1
+        var pending: [AuthorizationCompletionWaiter] = []
+        for waiter in authorizationCompletionWaiters {
+            if completedAuthorizationRequests >= waiter.minimumCount {
+                waiter.continuation.resume()
+            } else {
+                pending.append(waiter)
+            }
+        }
+        authorizationCompletionWaiters = pending
     }
 
     func read(_ window: CompetitionActivityWindow) async throws -> ActivityWindowRead {

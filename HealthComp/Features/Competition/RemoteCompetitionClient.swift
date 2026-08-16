@@ -192,6 +192,7 @@ private actor RemoteCompetitionClientCoordinator {
     private var mountedCompetitionIDs: Set<CompetitionID> = []
     private var hasStarted = false
     private var isStopped = false
+    private var healthAuthorizationIssue: CompetitionClientIssue?
     private var runtimeGeneration: UInt64 = 0
     private var operationIsInProgress = false
     private var operationWaiters: [CheckedContinuation<Void, Never>] = []
@@ -306,9 +307,28 @@ private actor RemoteCompetitionClientCoordinator {
     }
 
     func start() async {
-        await withOperationGate {
-            guard !hasStarted, !isStopped else { return }
+        let generation: UInt64? = await withOperationGate {
+            guard !hasStarted, !isStopped else { return nil }
             hasStarted = true
+            return runtimeGeneration
+        }
+        guard let generation else { return }
+
+        let authorizationIssue: CompetitionClientIssue?
+        do {
+            try await environment.requestHealthAuthorization()
+            authorizationIssue = nil
+        } catch {
+            authorizationIssue = .authorizationUnavailable
+        }
+
+        await withOperationGate {
+            guard generation == runtimeGeneration,
+                  hasStarted,
+                  !isStopped else {
+                return
+            }
+            healthAuthorizationIssue = authorizationIssue
             startSignals()
             startRealtime()
             _ = await performReconciliation()
@@ -324,15 +344,15 @@ private actor RemoteCompetitionClientCoordinator {
     }
 
     private func performReconciliation() async -> CompetitionPublication {
+        var issues = healthAuthorizationIssue.map { [$0] } ?? []
         guard let runtime, let profile else {
             return publish(
                 materializations: [],
-                issues: [.storageUnavailable]
+                issues: issues + [.storageUnavailable]
             )
         }
         await installationCoordinator?.reconcile()
         let outcome = await runtime.synchronizeAll()
-        var issues: [CompetitionClientIssue] = []
         if outcome.discoveryFailure != nil {
             issues.append(.storageUnavailable)
         }
@@ -502,6 +522,7 @@ private actor RemoteCompetitionClientCoordinator {
 
     private func stopRuntime() async -> RemoteCompetitionStoppedTasks {
         runtimeGeneration &+= 1
+        healthAuthorizationIssue = nil
         let stoppedTasks = RemoteCompetitionStoppedTasks(
             signal: signalTask,
             realtime: realtimeTask
