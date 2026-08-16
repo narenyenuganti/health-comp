@@ -11,7 +11,7 @@ Last read through the authenticated Supabase CLI and dashboard on 2026-08-15:
 | Logical environment | Supabase target | Status | App configuration |
 | --- | --- | --- | --- |
 | Development | Disposable local CLI stack (project ID health-comp) | Verified locally | com.narenyenuganti.HealthComp, sandbox APNs, development App Attest |
-| Staging | healthcomp-staging (xhfdfdrtxwptrwhvvlhg) | ACTIVE_HEALTHY; 13 migrations through 20260811000850 and nine Functions read back; Apple Auth enabled for the exact staging bundle; application-specific Function secrets, worker Vault entries, and schedules remain incomplete | com.narenyenuganti.HealthComp.staging, sandbox APNs, development App Attest |
+| Staging | healthcomp-staging (xhfdfdrtxwptrwhvvlhg) | ACTIVE_HEALTHY; 13 migrations through 20260811000850 and nine Functions read back; Apple Auth and a topic-restricted server key are configured for the exact staging bundle; Function secrets, worker Vault entries, and the notification-repair schedule are configured; the failing finalizer schedule was removed pending 20260811000900 | com.narenyenuganti.HealthComp.staging, sandbox APNs, development App Attest |
 | Production | **TBD** | No project has been approved as HealthComp production | com.narenyenuganti.HealthComp, production APNs, production App Attest |
 
 The 2026-08-15 staging promotion and readback established all of the following:
@@ -26,14 +26,23 @@ The 2026-08-15 staging promotion and readback established all of the following:
   `pg_catalog`, hosted database lint reports no schema errors, and the private
   notification worker is not executable by `anon`, `authenticated`, or
   `service_role`;
-- the only application-specific Function secret names present are
-  `INVITE_TOKEN_DERIVATION_KEY_V1` and `HEALTHCOMP_AASA_APP_IDS`; the latter is
-  un-routed and does not constitute invitation-domain or AASA evidence; and
-- neither notification-worker Vault entry nor either reviewed cron job exists.
+- all 14 unconditional application-specific Function secret names are present;
+  the conditional `HEALTHCOMP_AASA_APP_IDS` name is also present but remains
+  un-routed and does not constitute invitation-domain or AASA evidence;
+- one Apple key is restricted to sandbox APNs for only
+  `com.narenyenuganti.HealthComp.staging` plus Sign in with Apple for the
+  staging App ID; the private key was downloaded once and is not tracked;
+- both notification-worker Vault names exist, the one-minute repair schedule
+  succeeded, and its pg_net request reached the worker with HTTP 200 and zero
+  leased or unresolved work; and
+- the first five-minute finalizer run failed with `service_role_required`
+  because hosted pg_cron executes as `postgres` without PostgREST JWT claims.
+  The exact failing job was removed; forward migration `20260811000900` and
+  the corrected private scheduler command remain pending promotion.
 
-Staging is therefore promoted at the code/schema layer but is not operationally
-ready for two-account or physical-device verification. APNs, Apple deletion,
-App Attest, worker, Vault, and schedule configurations remain pending.
+Staging is not operationally ready for two-account or physical-device
+verification. The finalizer runtime fix, paid-team signing material, and the
+required staging/physical evidence remain pending.
 
 The inactive project named “naren-polymath's Project”
 (vleyumieoroaipedqpsp) is not production merely because it is the other
@@ -327,8 +336,12 @@ Vault entries are configured:
 
 | Job name | Schedule | Command |
 | --- | --- | --- |
-| healthcomp-finalize-due | every 5 minutes | select public.finalize_due_competitions(100); |
+| healthcomp-finalize-due | every 5 minutes | select private.run_due_competition_finalizer(); |
 | healthcomp-notification-repair | every minute | select private.request_competition_notification_worker(); |
+
+The finalizer definition requires migration `20260811000900`. Do not recreate
+the job with the public RPC: hosted pg_cron has no service-role JWT claims, and
+that command fails closed with `service_role_required`.
 
 Before creating or replacing anything, read the exact existing jobs:
 
