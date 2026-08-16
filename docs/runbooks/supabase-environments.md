@@ -11,13 +11,13 @@ Last read through the authenticated Supabase CLI and dashboard on 2026-08-15:
 | Logical environment | Supabase target | Status | App configuration |
 | --- | --- | --- | --- |
 | Development | Disposable local CLI stack (project ID health-comp) | Verified locally | com.narenyenuganti.HealthComp, sandbox APNs, development App Attest |
-| Staging | healthcomp-staging (xhfdfdrtxwptrwhvvlhg) | ACTIVE_HEALTHY; 13 migrations through 20260811000850 and nine Functions read back; Apple Auth and a topic-restricted server key are configured for the exact staging bundle; Function secrets, worker Vault entries, and the notification-repair schedule are configured; the failing finalizer schedule was removed pending 20260811000900 | com.narenyenuganti.HealthComp.staging, sandbox APNs, development App Attest |
+| Staging | healthcomp-staging (xhfdfdrtxwptrwhvvlhg) | ACTIVE_HEALTHY; 14 migrations through 20260811000900 and nine Functions read back; Apple Auth and a topic-restricted server key are configured for the exact staging bundle; Function secrets, worker Vault entries, notification repair, and the corrected finalizer schedule are configured; both hosted jobs have succeeded | com.narenyenuganti.HealthComp.staging, sandbox APNs, development App Attest |
 | Production | **TBD** | No project has been approved as HealthComp production | com.narenyenuganti.HealthComp, production APNs, production App Attest |
 
 The 2026-08-15 staging promotion and readback established all of the following:
 
-- the 13 local and remote migration versions match without gaps through
-  `20260811000850`, and a second dry run is empty;
+- the 14 local and remote migration versions match without gaps through
+  `20260811000900`, and a second dry run is empty;
 - all nine reviewed Edge Functions are `ACTIVE`;
 - Apple Auth is enabled with only
   `com.narenyenuganti.HealthComp.staging` as its native Client ID; the optional
@@ -33,16 +33,19 @@ The 2026-08-15 staging promotion and readback established all of the following:
   `com.narenyenuganti.HealthComp.staging` plus Sign in with Apple for the
   staging App ID; the private key was downloaded once and is not tracked;
 - both notification-worker Vault names exist, the one-minute repair schedule
-  succeeded, and its pg_net request reached the worker with HTTP 200 and zero
-  leased or unresolved work; and
+  continues to succeed, and its 2026-08-16 04:01 UTC pg_net request reached
+  the worker with HTTP 200, no timeout or error, and zero leased, sent,
+  retried, invalid-token, discarded, or unresolved work;
 - the first five-minute finalizer run failed with `service_role_required`
   because hosted pg_cron executes as `postgres` without PostgREST JWT claims.
-  The exact failing job was removed; forward migration `20260811000900` and
-  the corrected private scheduler command remain pending promotion.
+  The exact failing job was removed. Reviewed forward migration
+  `20260811000900` is now applied, hosted lint reports no schema errors, and
+  the corrected private five-minute job first succeeded at 2026-08-16 04:00
+  UTC with no due competition left unfinalized.
 
 Staging is not operationally ready for two-account or physical-device
-verification. The finalizer runtime fix, paid-team signing material, and the
-required staging/physical evidence remain pending.
+verification. Paid-team signing material and the required staging/physical
+evidence remain pending.
 
 The inactive project named “naren-polymath's Project”
 (vleyumieoroaipedqpsp) is not production merely because it is the other
@@ -342,6 +345,13 @@ Vault entries are configured:
 The finalizer definition requires migration `20260811000900`. Do not recreate
 the job with the public RPC: hosted pg_cron has no service-role JWT claims, and
 that command fails closed with `service_role_required`.
+
+Staging readback on 2026-08-16 UTC confirmed both exact definitions active
+under `postgres`. The corrected finalizer first succeeded at 04:00 UTC. The
+notification repair job succeeded at 04:00 UTC and again at 04:02 UTC; its
+04:01 UTC pg_net response returned HTTP 200. At readback there were no due
+unfinished competitions, pending-due notification rows, or active/expired
+leases.
 
 Before creating or replacing anything, read the exact existing jobs:
 
