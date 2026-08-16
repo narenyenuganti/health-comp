@@ -8,9 +8,9 @@ data, exact Activity values, and reversible local fingerprints.
 
 | Scope | Current evidence | Disposition |
 | --- | --- | --- |
-| Source | `main` commit `645f96bfe2a3ac35e6fb0ef1b735bc4d5634ab5f` | Current |
-| Backend CI | [Run 31927324144](https://github.com/narenyenuganti/health-comp/actions/runs/31927324144), completed successfully with no failed steps | PASS |
-| iOS CI | [Run 31927324156](https://github.com/narenyenuganti/health-comp/actions/runs/31927324156), completed successfully with no failed steps | PASS |
+| Source | `main` commit `47d65964607ad8fe8cdb48d35129cc8bf88cc464` | Current |
+| Backend CI | [Run 31930884414, attempt 2](https://github.com/narenyenuganti/health-comp/actions/runs/31930884414), completed successfully after the first attempt's local Edge Runtime container crash | PASS |
+| iOS CI | [Run 31930884445](https://github.com/narenyenuganti/health-comp/actions/runs/31930884445), completed successfully with no failed steps | PASS |
 | Staging database | Fourteen ordered, identical local/remote migrations through `20260811000900`; `2026-08-16T05:34:16Z` dry run returned `up to date`; CLI unlinked afterward; hosted lint clean | PASS |
 | Hosted finalizer | Exact private `healthcomp-finalize-due` job; first corrected run succeeded at 2026-08-16 04:00 UTC | PASS |
 | Notification repair | Exact private one-minute job; HTTP 200 worker response and zero unresolved work at readback | PASS |
@@ -19,35 +19,37 @@ data, exact Activity values, and reversible local fingerprints.
 | Profile entitlements | Sandbox APNs, Sign in with Apple, HealthKit, HealthKit background delivery, and App Attest authorized | PASS |
 | Physical build | Staging build completed for the paired physical iPhone using automatic paid-team signing | PASS |
 | Physical install | Bundle `com.narenyenuganti.HealthComp.staging`, build 1, installed and visible in device inventory | PASS |
-| Physical launch | Three launch attempts returned the explicit iOS `Locked` denial | BLOCKED |
+| Physical launch | Already-installed staging build launched while the paired iPhone was unlocked; authenticated Sharing UI was read back at `2026-08-16T07:02:20Z` | PASS |
+| Sign in with Apple | Native authorization completed on the physical iPhone; staging Supabase session/profile bootstrap reached the required display-name setup and then the authenticated Sharing UI; no account identity or token was retained | PASS |
+| APNs registration | iOS authorization completed; a read-only staging query returned exactly one `sandbox` / `active` installation updated at `2026-08-16T07:04:49.701324Z`; no installation, profile, or token identifier was selected | PASS |
 
-## What the physical build proves
+## What the physical receipt proves
 
 The current receipt proves that Xcode can resolve the paid team, create a
-one-year staging development profile for the exact bundle, sign a device build,
-and install that build on the paired iPhone. The profile readback proves the
-required capability authorizations are present.
+one-year staging development profile for the exact bundle, sign and install a
+device build, launch it on the paired iPhone, complete native Sign in with
+Apple, bootstrap a staging Supabase profile, and reach the authenticated app.
+The profile readback proves the required capability authorizations are present.
 
-It does not prove that Sign in with Apple, HealthKit, background delivery,
-APNs, App Attest, deletion, or universal links work. Those claims require the
-app to launch and the corresponding physical or hosted service flow to complete.
+It does not prove that HealthKit, background delivery, APNs foreground,
+background, or cold-route delivery, App Attest, deletion, or universal links
+work. Those claims require the corresponding physical or hosted service flow
+to complete.
 
 ## Immediate continuation
 
-1. Unlock the paired iPhone and keep it awake.
-2. Launch the already installed staging bundle without rebuilding.
-3. Complete native Sign in with Apple and verify Supabase profile bootstrap
-   without recording account details or tokens.
-4. Exercise HealthKit grant, deny, and re-enable paths with only boolean/status
+1. Exercise HealthKit grant, deny, and re-enable paths with only boolean/status
    evidence retained.
-5. Continue the APNs, background observer, App Attest, deletion, and
+2. Verify APNs foreground, background, and cold-route delivery when a second
+   staging participant is available.
+3. Continue the background observer, App Attest, deletion, and
    replacement-device gates in the checked-in order.
 
 ## Explicitly unresolved
 
 - No two-account or two-device staging E2E receipt exists.
 - No adversarial cross-account/tamper receipt exists.
-- No real physical Sign in with Apple, HealthKit, background, APNs, App Attest,
+- No real physical HealthKit, background observer, APNs delivery, App Attest,
   deletion, or replacement-device receipt exists.
 - No HTTPS invitation domain is selected, so universal-link evidence cannot be
   produced.

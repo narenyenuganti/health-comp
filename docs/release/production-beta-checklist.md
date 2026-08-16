@@ -1,7 +1,7 @@
 # HealthComp Production Beta Verification Checklist
 
 **Snapshot:** 2026-08-16
-**Reviewed commit:** `645f96bfe2a3ac35e6fb0ef1b735bc4d5634ab5f`
+**Reviewed commit:** `47d65964607ad8fe8cdb48d35129cc8bf88cc464`
 **Release status:** Not production-ready
 
 Status meanings:
@@ -54,19 +54,21 @@ Status meanings:
   `2027-08-16T05:23:35Z` and authorizes sandbox APNs, Sign in with Apple,
   HealthKit, HealthKit background delivery, and App Attest.
 - **PASS:** Build 1 was installed on the paired physical iPhone.
-- **BLOCKED:** The first three launch attempts were denied only because the
-  device was locked. Launch and service evidence must be retried with the phone
-  unlocked.
+- **PASS:** The already-installed staging build launched on the unlocked paired
+  iPhone. Native Sign in with Apple completed, staging Supabase profile
+  bootstrap required and accepted a user-selected display name, and the
+  authenticated Sharing UI was read back at `2026-08-16T07:02:20Z`. No Apple
+  account identity, token, or private screenshot was retained.
 
 ## Physical-device gates
 
 | Gate | Status | Required evidence |
 | --- | --- | --- |
-| Signed staging launch | BLOCKED | Successful launch while the device is unlocked |
-| Sign in with Apple | PENDING | Native authorization and Supabase session/profile bootstrap |
+| Signed staging launch | PASS | Successful launch while the device is unlocked |
+| Sign in with Apple | PASS | Native authorization, staging Supabase session/profile bootstrap, and authenticated UI readback |
 | HealthKit | PENDING | Grant, deny, re-enable, and privacy-safe derived-score behavior |
 | Background observer | PENDING | Durable journal write before completion callback |
-| APNs | PENDING | Registration plus foreground, background, and cold-route delivery |
+| APNs | PARTIAL | iOS authorization and one active sandbox installation were verified at `2026-08-16T07:04:49.701324Z`; foreground, background, and cold-route delivery remain pending |
 | App Attest | PENDING | Real key registration, assertion, replay rejection, and replacement-device flow |
 | Account deletion | PENDING | Reauthorization, server-confirmed completion, local wipe, no resurrection, and preserved Former competitor history |
 | Universal link | BLOCKED | No HTTPS invitation domain has been selected; custom-scheme fallback is not universal-link evidence |
