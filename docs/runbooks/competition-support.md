@@ -342,7 +342,7 @@ idempotent.
    as the privileged database operator, then repeat the read-only result query:
 
    ~~~sql
-   select public.finalize_due_competitions(100);
+   select private.run_due_competition_finalizer();
    ~~~
 
 3. For durable pending notification work, trigger the standard worker request
