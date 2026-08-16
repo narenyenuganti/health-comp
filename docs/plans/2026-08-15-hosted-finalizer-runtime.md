@@ -44,3 +44,17 @@ Only after merge and fresh action-time approval may staging receive migration
 `20260811000900` and the corrected five-minute job. Hosted evidence requires a
 successful cron run plus confirmation that due competitions and notification
 work remain within their reviewed state machines.
+
+Promotion completed after that approval on 2026-08-15 local time
+(2026-08-16 UTC). The pre-promotion history had 13 paired migrations through
+`20260811000850` with only `20260811000900` pending; the post-promotion history
+had 14 pairs and an empty second dry run. Hosted lint found no schema errors,
+and live privilege readback confirmed the private scheduler remained a
+postgres-owned, empty-search-path security definer unavailable to PUBLIC and
+all API roles while the public RPC remained service-role-only.
+
+The corrected job was recreated with the reviewed five-minute command. Its
+first execution succeeded at 2026-08-16 04:00 UTC, with no due competition
+left unfinalized. Notification repair also continued succeeding, its pg_net
+request returned HTTP 200 without timeout or error, and all six non-sensitive
+worker outcome counts plus pending-due and leased work counts were zero.
