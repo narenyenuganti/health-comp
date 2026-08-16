@@ -367,6 +367,205 @@ final class RemoteCompetitionClientTests: XCTestCase {
         await client.stop()
     }
 
+    func testStartRequestsHealthAuthorizationAndPublishesFailure()
+        async throws
+    {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: root,
+            withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: root) }
+        let profile = AuthenticatedProfile(
+            id: UUID(
+                uuidString: "81000000-0000-4000-8000-000000000002"
+            )!,
+            displayName: "Beta Alice"
+        )
+        let paths = AuthenticatedProfileStoragePaths(
+            profileID: profile.id,
+            rootDirectory: root
+        )
+        for directory in paths.fixedDirectories {
+            try FileManager.default.createDirectory(
+                at: directory,
+                withIntermediateDirectories: true
+            )
+        }
+        let calendar = try CompetitionCalendar(
+            timeZoneIdentifier: "America/Los_Angeles"
+        )
+        let start = try CompetitionDay(
+            era: 1,
+            year: 2026,
+            month: 8,
+            day: 13,
+            timeZoneIdentifier: calendar.timeZoneIdentifier
+        )
+        let days = try calendar.sevenDayWindow(startingOn: start)
+        let source = FixtureActivitySource(
+            fixture: try ActivityFixture(
+                initialInstant: EnvironmentInstant(
+                    wallDate: try calendar.startOfDay(start),
+                    monotonic: MonotonicInstant(
+                        epochID: "task13-remote-health-authorization",
+                        nanoseconds: 1
+                    )
+                ),
+                timeZoneIdentifier: calendar.timeZoneIdentifier,
+                initialDays: days.map { .missing(day: $0) },
+                initialAuthorizationState: .failure(
+                    .healthDataUnavailable
+                ),
+                changes: []
+            )
+        )
+        let client = CompetitionClient.remote(
+            remoteAPI: remoteAPI(listCompetitions: { [] }),
+            environment: .accelerated(source: source)
+        )
+
+        try await client.mountAuthenticatedProfile(profile, paths)
+        var iterator = client.start().makeAsyncIterator()
+        let nextPublication = await iterator.next()
+        let publication = try XCTUnwrap(nextPublication)
+
+        let authorizationRequestCount = await source.authorizationRequestCount()
+        XCTAssertEqual(authorizationRequestCount, 1)
+        XCTAssertEqual(
+            publication.dashboard.issues,
+            [.authorizationUnavailable]
+        )
+
+        let refreshedPublication = await client.reconcileAll(
+            .reconciliationProbe
+        )
+        XCTAssertEqual(
+            refreshedPublication.dashboard.issues,
+            [.authorizationUnavailable]
+        )
+        await client.stop()
+    }
+
+    func testHealthAuthorizationPromptDoesNotBlockOrPublishAcrossProfileRemount()
+        async throws
+    {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: root,
+            withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: root) }
+        let firstProfile = AuthenticatedProfile(
+            id: UUID(
+                uuidString: "81000000-0000-4000-8000-000000000003"
+            )!,
+            displayName: "Beta Alice"
+        )
+        let secondProfile = AuthenticatedProfile(
+            id: UUID(
+                uuidString: "81000000-0000-4000-8000-000000000004"
+            )!,
+            displayName: "Beta Bob"
+        )
+        let firstPaths = AuthenticatedProfileStoragePaths(
+            profileID: firstProfile.id,
+            rootDirectory: root.appendingPathComponent("first")
+        )
+        let secondPaths = AuthenticatedProfileStoragePaths(
+            profileID: secondProfile.id,
+            rootDirectory: root.appendingPathComponent("second")
+        )
+        for directory in firstPaths.fixedDirectories
+            + secondPaths.fixedDirectories {
+            try FileManager.default.createDirectory(
+                at: directory,
+                withIntermediateDirectories: true
+            )
+        }
+        let calendar = try CompetitionCalendar(
+            timeZoneIdentifier: "America/Los_Angeles"
+        )
+        let start = try CompetitionDay(
+            era: 1,
+            year: 2026,
+            month: 8,
+            day: 13,
+            timeZoneIdentifier: calendar.timeZoneIdentifier
+        )
+        let days = try calendar.sevenDayWindow(startingOn: start)
+        let source = FixtureActivitySource(
+            fixture: try ActivityFixture(
+                initialInstant: EnvironmentInstant(
+                    wallDate: try calendar.startOfDay(start),
+                    monotonic: MonotonicInstant(
+                        epochID: "task13-remote-health-remount",
+                        nanoseconds: 1
+                    )
+                ),
+                timeZoneIdentifier: calendar.timeZoneIdentifier,
+                initialDays: days.map { .missing(day: $0) },
+                changes: []
+            )
+        )
+        await source.blockNextAuthorizationRequest()
+        let lists = RemoteCompetitionClientProbe()
+        let secondMount = expectation(description: "second profile mounted")
+        let firstStreamFinished = expectation(
+            description: "first profile stream finished after remount"
+        )
+        let client = CompetitionClient.remote(
+            remoteAPI: remoteAPI(listCompetitions: {
+                await lists.recordList()
+                return []
+            }),
+            environment: .accelerated(source: source),
+            notificationPreferencesFactory: { paths in
+                if paths.profileID == secondProfile.id {
+                    secondMount.fulfill()
+                }
+                return .constant(mutedOpponentIdentities: [])
+            }
+        )
+
+        try await client.mountAuthenticatedProfile(firstProfile, firstPaths)
+        var firstIterator = client.start().makeAsyncIterator()
+        let firstStreamTask = Task {
+            if await firstIterator.next() == nil {
+                firstStreamFinished.fulfill()
+            }
+        }
+        await source.waitUntilAuthorizationRequestIsBlocked()
+        let mountTask = Task {
+            try await client.mountAuthenticatedProfile(
+                secondProfile,
+                secondPaths
+            )
+        }
+
+        await fulfillment(of: [secondMount], timeout: 1)
+        try await mountTask.value
+        await fulfillment(of: [firstStreamFinished], timeout: 1)
+        await firstStreamTask.value
+
+        var secondIterator = client.start().makeAsyncIterator()
+        let nextSecondPublication = await secondIterator.next()
+        let secondStartPublication = try XCTUnwrap(nextSecondPublication)
+        XCTAssertEqual(secondStartPublication.publicationRevision, 1)
+
+        await source.releaseBlockedAuthorizationRequest()
+        await source.waitUntilAuthorizationRequestCompletionCount(2)
+        let reconciledPublication = await client.reconcileAll(
+            .reconciliationProbe
+        )
+        XCTAssertEqual(reconciledPublication.publicationRevision, 2)
+        let listCount = await lists.listCount()
+        XCTAssertEqual(listCount, 2)
+        await client.stop()
+    }
+
     func testCreateAndClaimReturnCanonicalPublicationRevisions()
         async throws
     {
