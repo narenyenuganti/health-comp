@@ -388,14 +388,18 @@ pending/leased notification work does not remain past its retry window.
 No HTTPS invitation domain has been selected. Therefore:
 
 - HEALTHCOMP_INVITE_HOST remains empty;
+- HEALTHCOMP_ALLOW_CUSTOM_INVITE_SCHEME is YES only in Staging and defaults to
+  NO; an unconfigured build without that explicit opt-in fails before creating
+  a server invitation;
 - the Associated Domains entitlement is absent; the paid-team App ID capability
   was observed enabled, but no domain is configured and that toggle is not
   credited as evidence;
 - HEALTHCOMP_AASA_APP_IDS is present in staging but is not routed or credited as
   AASA readiness;
 - no DNS, TLS, route, cache, AASA, or physical universal-link evidence exists;
-- healthcomp:// remains a controlled fallback/testing route, not the final
-  shareable production link.
+- healthcomp:// is generated only by the explicitly opted-in Staging build and
+  remains a controlled fallback/testing route, not the final shareable
+  production link.
 
 The apple-app-site-association Function may be deployed but must not be routed
 or credited as universal-link readiness. Once a domain is approved, configure

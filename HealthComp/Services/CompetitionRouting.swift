@@ -3,10 +3,16 @@ import Foundation
 
 struct CompetitionInviteLinkConfiguration: Equatable, Sendable {
     static let infoKey = "HEALTHCOMP_INVITE_HOST"
+    static let customSchemeFallbackInfoKey =
+        "HEALTHCOMP_ALLOW_CUSTOM_INVITE_SCHEME"
 
     let host: String?
+    let allowsCustomSchemeFallback: Bool
 
     init(infoDictionary: [String: Any]) {
+        self.allowsCustomSchemeFallback =
+            infoDictionary[Self.customSchemeFallbackInfoKey] as? String
+                == "YES"
         guard let value = infoDictionary[Self.infoKey] as? String,
               CompetitionInviteHost.isValid(value)
         else {
@@ -25,21 +31,34 @@ struct CompetitionInviteLinkClient: Sendable {
     var makeShareLink: @Sendable (String) -> CompetitionInviteShareLink?
     var currentTimeZoneIdentifier: @Sendable () -> String
     var makeIdempotencyKey: @Sendable () -> UUID
+    var canCreateShareLink: @Sendable () -> Bool = { false }
 
     static func live(configuration: CompetitionInviteLinkConfiguration) -> Self {
         Self(
             makeShareLink: { rawToken in
-                guard let host = configuration.host,
-                      let token = CompetitionInviteClaimToken(
-                        rawValue: rawToken
-                      )
+                guard let token = CompetitionInviteClaimToken(
+                    rawValue: rawToken
+                )
                 else {
                     return nil
                 }
-                return CompetitionInviteShareLink(host: host, token: token)
+                if let host = configuration.host {
+                    return CompetitionInviteShareLink(
+                        host: host,
+                        token: token
+                    )
+                }
+                guard configuration.allowsCustomSchemeFallback else {
+                    return nil
+                }
+                return CompetitionInviteShareLink(fallbackToken: token)
             },
             currentTimeZoneIdentifier: { TimeZone.current.identifier },
-            makeIdempotencyKey: { UUID() }
+            makeIdempotencyKey: { UUID() },
+            canCreateShareLink: {
+                configuration.host != nil
+                    || configuration.allowsCustomSchemeFallback
+            }
         )
     }
 }

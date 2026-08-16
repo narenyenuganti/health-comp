@@ -186,6 +186,44 @@ final class RemoteCompetitionFeatureTests: XCTestCase {
     }
 
     @MainActor
+    func testCreateInviteWithoutLinkConfigurationFailsBeforeServerWrite()
+        async
+    {
+        let idempotencyKey = UUID(
+            uuidString: "82000000-0000-4000-8000-000000000020"
+        )!
+        let competitionID = CompetitionID(
+            UUID(uuidString: "82000000-0000-4000-8000-000000000021")!
+        )
+        let recorder = InviteCreationRecorder(
+            results: [
+                .success(
+                    competitionID,
+                    token: "GGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGGG",
+                    expectedRevision: 1
+                ),
+            ]
+        )
+        let store = TestStore(initialState: CompetitionFeature.State()) {
+            CompetitionFeature()
+        } withDependencies: {
+            $0.competitionClient = recorder.client
+            $0.competitionInviteLinkClient = CompetitionInviteLinkClient(
+                makeShareLink: { _ in nil },
+                currentTimeZoneIdentifier: { "UTC" },
+                makeIdempotencyKey: { idempotencyKey }
+            )
+        }
+
+        await store.send(.createInviteTapped) {
+            $0.inviteCreationStatus = .configurationUnavailable
+        }
+
+        XCTAssertEqual(recorder.requestCount, 0)
+        await store.finish()
+    }
+
+    @MainActor
     func testReadyInviteWithoutShareLinkRetriesWithSameIdempotencyKey() async throws {
         let idempotencyKey = UUID(
             uuidString: "82000000-0000-0000-0000-000000000012"
@@ -431,7 +469,8 @@ private extension CompetitionInviteLinkClient {
                 return CompetitionInviteShareLink(host: host, token: token)
             },
             currentTimeZoneIdentifier: { timeZoneIdentifier },
-            makeIdempotencyKey: { idempotencyKey }
+            makeIdempotencyKey: { idempotencyKey },
+            canCreateShareLink: { true }
         )
     }
 }

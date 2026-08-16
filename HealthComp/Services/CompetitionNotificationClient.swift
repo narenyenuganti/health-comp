@@ -77,6 +77,17 @@ struct CompetitionInviteShareLink:
         self.url = url
     }
 
+    init?(fallbackToken token: CompetitionInviteClaimToken) {
+        guard let url = URL(
+            string: "healthcomp://invite/\(token.rawValue)"
+        ),
+            CompetitionRoute(url: url) == .claimInvite(token)
+        else {
+            return nil
+        }
+        self.url = url
+    }
+
     var description: String { "[REDACTED INVITE LINK]" }
     var debugDescription: String { description }
     var customMirror: Mirror {
