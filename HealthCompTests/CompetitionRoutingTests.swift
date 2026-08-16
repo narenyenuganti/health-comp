@@ -37,6 +37,47 @@ final class CompetitionRoutingTests: XCTestCase {
         XCTAssertFalse(String(reflecting: parsedToken).contains(token))
     }
 
+    func testLinkClientBuildsFallbackInviteURLWhenExplicitlyEnabled() throws {
+        let rawToken = "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"
+        let token = try XCTUnwrap(
+            CompetitionInviteClaimToken(rawValue: rawToken)
+        )
+        let configuration = CompetitionInviteLinkConfiguration(
+            infoDictionary: [
+                "HEALTHCOMP_INVITE_HOST": "",
+                "HEALTHCOMP_ALLOW_CUSTOM_INVITE_SCHEME": "YES",
+            ]
+        )
+
+        let link = try XCTUnwrap(
+            CompetitionInviteLinkClient.live(configuration: configuration)
+                .makeShareLink(rawToken)
+        )
+
+        XCTAssertEqual(
+            link.url.absoluteString,
+            "healthcomp://invite/\(rawToken)"
+        )
+        XCTAssertEqual(CompetitionRoute(url: link.url), .claimInvite(token))
+        XCTAssertFalse(String(describing: link).contains(rawToken))
+        XCTAssertFalse(String(reflecting: link).contains(rawToken))
+    }
+
+    func testLinkClientFailsClosedWithoutHostOrFallbackOptIn() {
+        let rawToken = "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"
+        let configuration = CompetitionInviteLinkConfiguration(
+            infoDictionary: [
+                "HEALTHCOMP_INVITE_HOST": "",
+                "HEALTHCOMP_ALLOW_CUSTOM_INVITE_SCHEME": "NO",
+            ]
+        )
+
+        XCTAssertNil(
+            CompetitionInviteLinkClient.live(configuration: configuration)
+                .makeShareLink(rawToken)
+        )
+    }
+
     func testFallbackInviteURLRejectsMalformedOrDataBearingTokens() {
         let token = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
         let invalid = [

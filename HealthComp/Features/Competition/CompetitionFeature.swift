@@ -427,6 +427,13 @@ struct CompetitionFeature {
         state: inout State,
         rematchParentID: CompetitionID?
     ) -> Effect<Action> {
+        guard competitionInviteLinkClient.canCreateShareLink() else {
+            state.inviteCreationStatus = .configurationUnavailable
+            state.inviteCreationIdempotencyKey = nil
+            state.inviteCreationRematchParentID = rematchParentID
+            state.createdInviteLink = nil
+            return .none
+        }
         let isSameRequest = state.inviteCreationRematchParentID
             == rematchParentID
         let hasShareableReadyInvite = isSameRequest
