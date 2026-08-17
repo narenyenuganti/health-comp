@@ -630,6 +630,12 @@ func competitionIssueSummary(_ issues: [LocalCompetitionClientIssue]) -> String 
     if issues.contains(.authorizationUnavailable) {
         return "Activity authorization is unavailable."
     }
+    if issues.contains(.remoteFailure) {
+        return "Competition data could not be refreshed."
+    }
+    if issues.contains(.remoteUnavailable) {
+        return "Unable to connect. HealthComp will keep trying."
+    }
     if issues.contains(where: {
         if case .competitionFailures = $0 { return true }
         return false

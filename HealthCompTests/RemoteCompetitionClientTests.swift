@@ -1098,9 +1098,59 @@ final class RemoteCompetitionClientTests: XCTestCase {
         )
         XCTAssertEqual(
             offlinePublication.dashboard.issues,
-            [.storageUnavailable]
+            [.remoteUnavailable]
         )
         await offline.stop()
+    }
+
+    func testDiscoveryFailureIssueKeepsRemoteAndStorageFailuresDistinct() {
+        XCTAssertNil(
+            RemoteCompetitionRuntimeFailure.cancelled.competitionClientIssue
+        )
+        XCTAssertEqual(
+            RemoteCompetitionRuntimeFailure.discoveryUnavailable
+                .competitionClientIssue,
+            .remoteUnavailable
+        )
+        XCTAssertEqual(
+            RemoteCompetitionRuntimeFailure.storageUnavailable
+                .competitionClientIssue,
+            .storageUnavailable
+        )
+        let nonRetryableFailures: [RemoteCompetitionRuntimeFailure] = [
+            .unauthenticated,
+            .forbidden,
+            .profileMismatch,
+            .competitionNotMaterialized,
+            .serverContractMismatch,
+            .cursorRetryLimitExceeded,
+        ]
+        XCTAssertEqual(
+            nonRetryableFailures.map(\.competitionClientIssue),
+            Array(repeating: .remoteFailure, count: nonRetryableFailures.count)
+        )
+    }
+
+    func testRemoteDiscoveryIssueHasTruthfulRetryingMessage() {
+        XCTAssertEqual(
+            competitionIssueSummary([.remoteUnavailable]),
+            "Unable to connect. HealthComp will keep trying."
+        )
+        XCTAssertEqual(
+            competitionIssueSummary([.storageUnavailable]),
+            "Local competition storage is unavailable."
+        )
+        XCTAssertEqual(
+            competitionIssueSummary([.remoteFailure]),
+            "Competition data could not be refreshed."
+        )
+        XCTAssertEqual(
+            competitionIssueSummary([
+                .remoteUnavailable,
+                .authorizationUnavailable,
+            ]),
+            "Activity authorization is unavailable."
+        )
     }
 
     func testRemotePublicationSchedulesThroughRuntimeNeutralCoordinator()

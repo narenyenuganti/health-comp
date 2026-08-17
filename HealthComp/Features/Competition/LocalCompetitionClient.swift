@@ -263,6 +263,8 @@ struct LocalCompetitionAward: Equatable, Identifiable, Sendable {
 
 enum LocalCompetitionClientIssue: Error, Equatable, Sendable {
     case storageUnavailable
+    case remoteUnavailable
+    case remoteFailure
     case authorizationUnavailable
     case competitionFailures([CompetitionID])
     case commandRejected(CompetitionID)

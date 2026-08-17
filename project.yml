@@ -24,7 +24,7 @@ packages:
     from: "1.17.0"
   Supabase:
     url: https://github.com/supabase/supabase-swift
-    exactVersion: 2.49.0
+    exactVersion: 2.55.1
 
 targets:
   HealthComp:
