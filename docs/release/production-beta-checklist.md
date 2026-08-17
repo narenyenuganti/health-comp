@@ -2,9 +2,9 @@
 
 **Snapshot:** 2026-08-17
 **Integrated baseline:** `acd8a1caa15a01a650f8d3d4bc8d5b7ceccfc37b`
-**Selected release artifact:** Pending the guarded merge of
-`bugfix/supabase-network-recovery`; the uncommitted candidate is not yet an
-eligible release artifact.
+**Selected release artifact:** Pending the guarded merge of PR #26 from
+`bugfix/supabase-network-recovery`; the branch candidate is not yet an eligible
+release artifact.
 **Release status:** Not production-ready
 
 Status meanings:
@@ -68,7 +68,7 @@ Status meanings:
   profile-scoped data and authenticated session, completed staging requests
   with HTTP 200 responses, and produced no `-1005` or missing-HealthKit-
   entitlement error.
-- **PARTIAL:** The uncommitted `bugfix/supabase-network-recovery` candidate
+- **PARTIAL:** The PR #26 `bugfix/supabase-network-recovery` candidate
   pins Supabase Swift 2.55.1 and passed 90/90 focused recovery tests, 459/459
   canonical app tests, 241/241 CompetitionCore tests in both Debug and
   Release, unsigned Debug/Staging/Release device builds, deterministic project
@@ -77,10 +77,14 @@ Status meanings:
   and restored the authenticated Sharing UI. The current process produced 42
   process-local HTTP-200 markers and zero `-1005`, HealthKit-entitlement, or crash markers
   from `2026-08-17 02:46:15.068` through `02:49:22.348` PDT. No invitation was
-  created or consumed. Commit, hosted CI, and guarded integration remain
-  pending.
+  created or consumed. The first hosted iOS attempt passed deterministic
+  generation and both Core configurations, then stopped before app tests
+  because Xcode 16.4 requires the dormant OpenCombine 0.14.0 pin declared by
+  CombineSchedulers' compatibility manifest. That exact prior pin has been
+  restored and accepted by the strict local resolver; hosted rerun and guarded
+  integration remain pending.
 - **PARTIAL:** The prior integrated transport baseline `21af9a7` and the
-  uncommitted recovery candidate have not been installed or retested on the
+  PR #26 recovery candidate have not been installed or retested on the
   physical iPhone. Only the eventual guarded-merge commit may become the
   selected release artifact. Simulator receipts are not physical-device evidence.
 

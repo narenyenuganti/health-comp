@@ -96,6 +96,13 @@ Return to the approved one-physical-iPhone-plus-Simulator two-account staging fl
   `21d3aaf21ee98f41611f9f75070489fc8b23d882`. The generated project hash
   remained `f255f6cd138334c621f33c798028a289101f25334380f05227b25ef249ca6cca`
   across the tracked file and two consecutive XcodeGen 2.46.0 generations.
+- The shared lockfile retains OpenCombine 0.14.0 at revision
+  `8576f0d579b27020beccbccc3ea6844f3ddfc2c2`. Newer SwiftPM trait resolution
+  does not need that dormant Apple-platform product, but CombineSchedulers
+  1.2.0's Xcode 16-compatible manifest still declares the package. The first
+  hosted iOS attempt exposed the missing cross-Xcode pin before app tests; the
+  restored pin passed the strict local resolver unchanged and requires a fresh
+  hosted rerun.
 - Failure classification is explicit: cancellation publishes no issue, local
   persistence failure remains `.storageUnavailable`, retryable discovery
   failure becomes `.remoteUnavailable`, and non-retryable remote failures use
@@ -119,5 +126,6 @@ Return to the approved one-physical-iPhone-plus-Simulator two-account staging fl
 - CodeRabbit's stabilized-diff re-review reported zero findings. The no-secrets
   verifier and `git diff --check` passed before runtime verification.
 
-The branch is not yet committed, hosted-CI verified, merged, or installed on
-the physical iPhone. Those remain required before Task 19 resumes.
+The branch is committed and published as PR #26, but it is not yet hosted-CI
+verified, merged, or installed on the physical iPhone. Those remain required
+before Task 19 resumes.

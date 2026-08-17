@@ -16,12 +16,12 @@ represented as universal-link evidence.
 | Scope | Current evidence | Disposition |
 | --- | --- | --- |
 | Source | `main` commit `acd8a1caa15a01a650f8d3d4bc8d5b7ceccfc37b` | Current |
-| Selected release artifact | Pending the guarded merge of `bugfix/supabase-network-recovery`; the uncommitted candidate is not an eligible release artifact | PENDING |
+| Selected release artifact | Pending the guarded merge of PR #26 from `bugfix/supabase-network-recovery`; the branch candidate is not an eligible release artifact | PENDING |
 | Backend CI | [Run 32010702616](https://github.com/narenyenuganti/health-comp/actions/runs/32010702616), completed successfully on the current `main` commit | PASS |
 | iOS CI | [Run 32010702582](https://github.com/narenyenuganti/health-comp/actions/runs/32010702582), completed successfully on the current `main` commit | PASS |
 | Supabase transport | Focused transport/authentication/profile-isolation/API gate passed 52 tests; canonical local `HealthCompTests` passed 457/457; CodeRabbit reported no findings | PASS |
 | Signed Simulator staging | Existing profile-scoped data and authentication survived reinstall; authenticated staging requests returned HTTP 200; no `-1005` or missing-HealthKit-entitlement error appeared | PASS |
-| Realtime recovery candidate | The uncommitted `bugfix/supabase-network-recovery` candidate pins Supabase Swift 2.55.1, passed the 90-test focused recovery matrix and 459/459 canonical app tests, passed 241/241 CompetitionCore tests in both Debug and Release, built unsigned Debug/Staging/Release device configurations, generated the project deterministically, and received a zero-finding CodeRabbit re-review. A signed Staging Simulator over-install left the data-container file count unchanged at 19, restored the authenticated Sharing UI, and produced 42 process-local HTTP-200 markers with zero `-1005`, HealthKit-entitlement, or crash markers from `2026-08-17 02:46:15.068` through `02:49:22.348` PDT. No invitation action occurred. Commit, hosted CI, guarded merge, and physical-device repetition remain pending | PARTIAL |
+| Realtime recovery candidate | The PR #26 branch candidate pins Supabase Swift 2.55.1, passed the 90-test focused recovery matrix and 459/459 canonical app tests, passed 241/241 CompetitionCore tests in both Debug and Release, built unsigned Debug/Staging/Release device configurations, generated the project deterministically, and received a zero-finding CodeRabbit source review. A signed Staging Simulator over-install left the data-container file count unchanged at 19, restored the authenticated Sharing UI, and produced 42 process-local HTTP-200 markers with zero `-1005`, HealthKit-entitlement, or crash markers from `2026-08-17 02:46:15.068` through `02:49:22.348` PDT. The first hosted iOS attempt passed deterministic generation and both Core configurations, then failed before app tests because the Xcode 16.4 compatibility manifest requires OpenCombine 0.14.0 in the lockfile. The exact prior pin is restored and accepted by the strict local resolver; hosted rerun, guarded merge, physical repetition, and all later release gates remain pending. No invitation action occurred | PARTIAL |
 | Staging database | Fourteen ordered, identical local/remote migrations through `20260811000900`; `2026-08-16T05:34:16Z` dry run returned `up to date`; CLI unlinked afterward; hosted lint clean | PASS |
 | Hosted finalizer | Exact private `healthcomp-finalize-due` job; first corrected run succeeded at 2026-08-16 04:00 UTC | PASS |
 | Notification repair | Exact private one-minute job; HTTP 200 worker response and zero unresolved work at readback | PASS |
@@ -66,9 +66,9 @@ physical or hosted service flow to complete.
 
 ## Immediate continuation
 
-1. Commit the reviewed Realtime recovery candidate, push the purpose-named
-   branch, require hosted Backend and iOS CI, and guarded-merge only while the
-   branch remains based on current `main`.
+1. Push the cross-Xcode lockfile correction to PR #26, require fresh hosted
+   Backend and iOS CI, and guarded-merge only while the branch remains based on
+   current `main`.
 2. After both unavailable invitations expire, follow the exact guarded
    expired-invitation procedure in
    [Competition Support](../runbooks/competition-support.md#supported-operator-actions),
@@ -96,8 +96,8 @@ physical or hosted service flow to complete.
 - Two live unclaimed invitations remain until their 2026-08-19 expiry window;
   neither plaintext claim token is recoverable from hosted state.
 - No adversarial cross-account/tamper receipt exists.
-- The reviewed Realtime recovery candidate is not committed, hosted-CI
-  verified, merged, or installed on the physical iPhone.
+- The PR #26 Realtime recovery candidate is not hosted-CI verified, merged, or
+  installed on the physical iPhone.
 - No active-competition HealthKit derived-score, background-observer, APNs
   delivery, App Attest, deletion, or same-phone replacement-installation
   receipt exists.
