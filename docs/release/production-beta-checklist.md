@@ -1,10 +1,10 @@
 # HealthComp Production Beta Verification Checklist
 
 **Snapshot:** 2026-08-17
-**Integrated baseline:** `acd8a1caa15a01a650f8d3d4bc8d5b7ceccfc37b`
-**Selected release artifact:** Pending the guarded merge of PR #26 from
-`bugfix/supabase-network-recovery`; the branch candidate is not yet an eligible
-release artifact.
+**Integrated baseline:** `ae28c6add58e82fd82576f210afefd050b09151c`
+**Selected release artifact:** `ae28c6add58e82fd82576f210afefd050b09151c`;
+selected for the remaining staging and physical-device gates, but not yet
+cleared for production.
 **Release status:** Not production-ready
 
 Status meanings:
@@ -42,16 +42,17 @@ Status meanings:
 
 ## Automated matrix
 
-- **PASS:** [Backend CI run 32010702616](https://github.com/narenyenuganti/health-comp/actions/runs/32010702616)
-  completed successfully on current `main` commit `acd8a1c`, including static
+- **PASS:** [Backend CI run 32023749118](https://github.com/narenyenuganti/health-comp/actions/runs/32023749118)
+  completed successfully on current `main` commit `ae28c6a`, including static
   backend boundaries, migrations, policies, Edge Functions, and the checked-in
   secret/privacy guards.
-- **PASS:** [iOS CI run 32010702582](https://github.com/narenyenuganti/health-comp/actions/runs/32010702582)
-  completed successfully on current `main` commit `acd8a1c`, including
-  deterministic Xcode generation, CompetitionCore Debug and Release tests, all iOS
-  application-logic tests, unsigned Debug, Staging, and Release device builds,
-  and a clean-tree check.
-- **PARTIAL:** Attempt 1 of earlier iOS run `31999779841` reported one failure
+- **PASS:** [iOS CI run 32023749062](https://github.com/narenyenuganti/health-comp/actions/runs/32023749062)
+  completed successfully on current `main` commit `ae28c6a`, including
+  deterministic Xcode generation, CompetitionCore Debug and Release tests, all
+  iOS application-logic tests, unsigned Debug, Staging, and Release device
+  builds, and a clean-tree check. Exact PR-head run `32020898831` passed the
+  same matrix before the guarded merge.
+- **PASS:** Attempt 1 of earlier iOS run `31999779841` reported one failure
   in the pre-existing cancellation-scheduling fixture test. The exact test
   then passed 100/100 locally and the full attempt-2 rerun, but the same test
   recurred as the sole app-suite failure in PR #26 run `32019147010` after
@@ -60,21 +61,23 @@ Status meanings:
   virtual time could resume the continuation before cleanup. The candidate now
   rechecks cancellation after the suspension boundary, and the test waits for
   actual waiter registration before exercising the race. The strengthened
-  test passed 100/100 locally; fresh hosted full-suite evidence remains pending.
-  No transport test failed.
+  test passed 100/100 locally, and exact-head run `32020898831` passed the
+  complete hosted app suite. No transport test failed.
 
 ## Staging client transport
 
 - **PASS:** The live Supabase client uses one injected ephemeral `URLSession`
   with persistent cookies, URL credentials, and URL caching disabled.
-- **PASS:** The focused transport/authentication/profile-isolation/API gate
-  passed 52 tests, and the canonical local `HealthCompTests` gate passed all
-  457 tests without failures or skips.
+- **PASS:** On pre-recovery transport baseline `21af9a7`, the focused
+  transport/authentication/profile-isolation/API gate passed 52 tests, and the
+  canonical local `HealthCompTests` gate passed all 457 tests without failures
+  or skips. The integrated recovery matrix below later passed the expanded
+  459-test canonical suite.
 - **PASS:** A signed Staging Simulator build restored the existing
   profile-scoped data and authenticated session, completed staging requests
   with HTTP 200 responses, and produced no `-1005` or missing-HealthKit-
   entitlement error.
-- **PARTIAL:** The PR #26 `bugfix/supabase-network-recovery` candidate
+- **PASS:** The integrated PR #26 recovery change
   pins Supabase Swift 2.55.1 and passed 90/90 focused recovery tests, 459/459
   canonical app tests, 241/241 CompetitionCore tests in both Debug and
   Release, unsigned Debug/Staging/Release device builds, deterministic project
@@ -93,11 +96,12 @@ Status meanings:
   graph and passed deterministic generation and both Core configurations, then
   ran the app suite with only the known cancellation fixture test failing. Its
   cancellation-precedence correction passed the strengthened exact test 100/100
-  locally; a fresh hosted rerun and guarded integration remain pending.
-- **PARTIAL:** The prior integrated transport baseline `21af9a7` and the
-  PR #26 recovery candidate have not been installed or retested on the
-  physical iPhone. Only the eventual guarded-merge commit may become the
-  selected release artifact. Simulator receipts are not physical-device evidence.
+  locally. Exact-head run `32020898831` then passed the complete hosted matrix,
+  and PR #26 was guarded-squash-merged as selected commit `ae28c6a` with a tree
+  identical to the reviewed PR head.
+- **PARTIAL:** Selected release artifact `ae28c6a` has not been installed or
+  retested on the physical iPhone. Simulator receipts are not physical-device
+  evidence.
 
 ## Hosted staging
 
@@ -153,7 +157,7 @@ Status meanings:
   accepted a user-selected display name, and the authenticated Sharing UI was
   read back at `2026-08-16T07:02:20Z`. No Apple account identity, token, or
   private screenshot was retained. This is historical capability evidence,
-  not evidence for the still-pending selected release artifact.
+  not evidence for selected release artifact `ae28c6a`.
 
 ## Physical-device gates
 

@@ -115,8 +115,9 @@ Return to the approved one-physical-iPhone-plus-Simulator two-account staging fl
   actor, so virtual time could win the race and resume a cancelled continuation
   normally. The candidate rechecks cancellation after the suspension boundary,
   and the strengthened test first observes actual waiter registration before
-  cancelling and advancing. That exact race passed 100/100 locally; a fresh
-  hosted full suite remains required.
+  cancelling and advancing. That exact race passed 100/100 locally, and exact-
+  head hosted iOS run `32020898831` passed the complete app suite and all
+  subsequent build and clean-tree steps.
 - Failure classification is explicit: cancellation publishes no issue, local
   persistence failure remains `.storageUnavailable`, retryable discovery
   failure becomes `.remoteUnavailable`, and non-retryable remote failures use
@@ -140,6 +141,10 @@ Return to the approved one-physical-iPhone-plus-Simulator two-account staging fl
 - CodeRabbit's stabilized-diff re-review reported zero findings. The no-secrets
   verifier and `git diff --check` passed before runtime verification.
 
-The branch is committed and published as PR #26, but it is not yet hosted-CI
-verified, merged, or installed on the physical iPhone. Those remain required
-before Task 19 resumes.
+Exact-head Backend run `32020898843` and iOS run `32020898831` completed
+successfully. PR #26 was then guarded-squash-merged as
+`ae28c6add58e82fd82576f210afefd050b09151c`; the merge tree is identical to the
+reviewed PR-head tree. Post-merge Backend run `32023749118` and iOS run
+`32023749062` also completed successfully on the exact merge commit. The
+selected commit has not been installed on the physical iPhone, so Task 19's
+physical and staging evidence gates remain open.
