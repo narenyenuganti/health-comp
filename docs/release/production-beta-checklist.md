@@ -51,11 +51,17 @@ Status meanings:
   deterministic Xcode generation, CompetitionCore Debug and Release tests, all iOS
   application-logic tests, unsigned Debug, Staging, and Release device builds,
   and a clean-tree check.
-- **PASS:** Attempt 1 of earlier iOS run `31999779841` reported one failure in
-  the pre-existing cancellation-scheduling fixture test. The exact test then passed 100/100
-  local repeated iterations, had passed the prior ten main-branch CI runs, and
-  passed in the full attempt-2 rerun without a source change. No transport test
-  failed in either attempt.
+- **PARTIAL:** Attempt 1 of earlier iOS run `31999779841` reported one failure
+  in the pre-existing cancellation-scheduling fixture test. The exact test
+  then passed 100/100 locally and the full attempt-2 rerun, but the same test
+  recurred as the sole app-suite failure in PR #26 run `32019147010` after
+  dependency resolution, deterministic generation, and both Core configurations
+  passed. Cancellation cleanup re-enters the fixture actor asynchronously, so
+  virtual time could resume the continuation before cleanup. The candidate now
+  rechecks cancellation after the suspension boundary, and the test waits for
+  actual waiter registration before exercising the race. The strengthened
+  test passed 100/100 locally; fresh hosted full-suite evidence remains pending.
+  No transport test failed.
 
 ## Staging client transport
 
@@ -83,8 +89,11 @@ Status meanings:
   required Supabase's optional OpenTelemetry package in the resolved-file
   superset. The exact compatible OpenTelemetry pin and its Linux-only Swift
   Atomics dependency are now retained with OpenCombine and passed strict local
-  resolution unchanged; a fresh hosted rerun and guarded integration remain
-  pending.
+  resolution unchanged. The third hosted attempt accepted the complete package
+  graph and passed deterministic generation and both Core configurations, then
+  ran the app suite with only the known cancellation fixture test failing. Its
+  cancellation-precedence correction passed the strengthened exact test 100/100
+  locally; a fresh hosted rerun and guarded integration remain pending.
 - **PARTIAL:** The prior integrated transport baseline `21af9a7` and the
   PR #26 recovery candidate have not been installed or retested on the
   physical iPhone. Only the eventual guarded-merge commit may become the

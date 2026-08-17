@@ -408,6 +408,10 @@ actor FixtureActivitySource: CompetitionActivitySource {
         } onCancel: {
             Task { await self.cancelWaiter(id) }
         }
+        // Cancellation cleanup must hop back to this actor. Virtual time can
+        // otherwise resume the continuation before that cleanup runs, so
+        // preserve cancellation precedence at the suspension boundary.
+        try Task.checkCancellation()
     }
 
     func advance(to targetDate: Date) throws {

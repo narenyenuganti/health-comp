@@ -107,7 +107,16 @@ Return to the approved one-physical-iPhone-plus-Simulator two-account staging fl
   exposed Supabase's optional OpenTelemetry package. OpenTelemetry's manifest
   also declares Swift Atomics for Linux, so both exact compatible pins are
   retained to close the cross-Xcode dependency chain. The resulting superset
-  passed strict local resolution unchanged and requires a fresh hosted rerun.
+  passed strict local resolution unchanged. The third hosted attempt accepted
+  the complete graph, passed deterministic generation and both Core
+  configurations, and reached the app suite.
+- The third hosted attempt's sole app-suite failure was the pre-existing
+  cancellation fixture test. Cancellation cleanup hops back to the fixture
+  actor, so virtual time could win the race and resume a cancelled continuation
+  normally. The candidate rechecks cancellation after the suspension boundary,
+  and the strengthened test first observes actual waiter registration before
+  cancelling and advancing. That exact race passed 100/100 locally; a fresh
+  hosted full suite remains required.
 - Failure classification is explicit: cancellation publishes no issue, local
   persistence failure remains `.storageUnavailable`, retryable discovery
   failure becomes `.remoteUnavailable`, and non-retryable remote failures use

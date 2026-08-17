@@ -97,10 +97,14 @@ final class FixtureActivitySourceTests: XCTestCase {
         let waiting = Task {
             try await source.wait(until: wakeDate)
         }
-        for _ in 0..<10 { await Task.yield() }
+        var pendingWaiters = await source.pendingWaiterCount()
+        for _ in 0..<50_000 where pendingWaiters != 1 {
+            await Task.yield()
+            pendingWaiters = await source.pendingWaiterCount()
+        }
+        XCTAssertEqual(pendingWaiters, 1)
 
         waiting.cancel()
-        for _ in 0..<10 { await Task.yield() }
         try await source.advance(to: wakeDate)
 
         do {
@@ -109,7 +113,7 @@ final class FixtureActivitySourceTests: XCTestCase {
         } catch {
             XCTAssertTrue(error is CancellationError)
         }
-        let pendingWaiters = await source.pendingWaiterCount()
+        pendingWaiters = await source.pendingWaiterCount()
         XCTAssertEqual(pendingWaiters, 0)
     }
 
