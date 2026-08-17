@@ -338,14 +338,179 @@ idempotent.
 
 1. Ask an authenticated participant to pull-to-refresh or retry the normal app
    action. The app and RLS remain the identity boundary.
-2. For a genuinely due tallying competition, run the standard finalizer sweep
+2. To close genuinely expired, unclaimed pending invitations, first record one
+   privacy-safe scope snapshot. The count is reviewable; the SHA-256 value is
+   an opaque fingerprint of the sorted eligible competition UUIDs. The query
+   does not return any competition, invitation, profile, token, or invite
+   digest identifier:
+
+   ~~~sql
+   with eligible as (
+     select competition_record.id
+     from public.competitions competition_record
+     where competition_record.lifecycle = 'pending'
+       and exists (
+         select 1
+         from public.competition_invites invite_record
+         where invite_record.competition_id = competition_record.id
+           and invite_record.claimed_profile_id is null
+           and invite_record.consumed_at is null
+           and invite_record.expires_at <= pg_catalog.statement_timestamp()
+       )
+   )
+   select
+     pg_catalog.count(*)::bigint as expected_expired_pending_count,
+     pg_catalog.encode(
+       extensions.digest(
+        coalesce(
+           pg_catalog.string_agg(
+             eligible.id::text,
+             ',' order by eligible.id
+           ),
+           ''
+         ),
+         'sha256'
+       ),
+       'hex'
+     ) as eligible_scope_sha256
+   from eligible;
+   ~~~
+
+   Obtain action-time approval for that exact count and fingerprint. Open a
+   fresh `psql -X` session as the approved privileged database operator with
+   `ON_ERROR_STOP=on`, and enter the two approved values only when prompted.
+   Do not `SET ROLE service_role`: that role intentionally has only function
+   execution privilege, while the transaction guard must read the eligible
+   scope. The request-role claim below is used only by the reviewed function's
+   authorization check.
+
+   The serializable transaction recomputes both approved values and invokes
+   cleanup inside one guarded statement. A malformed value, changed scope,
+   timeout, or unexpected cleanup count raises an error and aborts the whole
+   transaction before `commit;` can persist anything:
+
+   ~~~text
+   \prompt 'Approved expired-pending count: ' approved_expired_pending_count
+   \prompt 'Approved eligible-scope SHA-256: ' approved_eligible_scope_sha256
+
+   begin transaction isolation level serializable;
+   set local statement_timeout = '10s';
+   set local lock_timeout = '3s';
+   set local idle_in_transaction_session_timeout = '30s';
+
+   select pg_catalog.set_config(
+     'healthcomp.approved_expired_pending_count',
+     :'approved_expired_pending_count',
+     true
+   );
+   select pg_catalog.set_config(
+     'healthcomp.approved_eligible_scope_sha256',
+     :'approved_eligible_scope_sha256',
+     true
+   );
+   select pg_catalog.set_config(
+     'request.jwt.claims',
+     '{"role":"service_role"}',
+     true
+   );
+
+   do $cleanup$
+   declare
+     approved_count_text text := pg_catalog.current_setting(
+       'healthcomp.approved_expired_pending_count'
+     );
+     approved_scope_sha256 text := pg_catalog.lower(
+       pg_catalog.current_setting(
+         'healthcomp.approved_eligible_scope_sha256'
+       )
+     );
+     approved_count bigint;
+     actual_count bigint;
+     actual_scope_sha256 text;
+     expired_count bigint;
+   begin
+     if approved_count_text !~ '^(0|[1-9][0-9]*)$' then
+       raise exception 'invalid_approved_expired_pending_count'
+         using errcode = '22023';
+     end if;
+     if approved_scope_sha256 !~ '^[0-9a-f]{64}$' then
+       raise exception 'invalid_approved_eligible_scope_sha256'
+         using errcode = '22023';
+     end if;
+
+     approved_count := approved_count_text::bigint;
+
+     with eligible as (
+       select competition_record.id
+       from public.competitions competition_record
+       where competition_record.lifecycle = 'pending'
+         and exists (
+           select 1
+           from public.competition_invites invite_record
+           where invite_record.competition_id = competition_record.id
+             and invite_record.claimed_profile_id is null
+             and invite_record.consumed_at is null
+             and invite_record.expires_at
+               <= pg_catalog.statement_timestamp()
+         )
+     )
+     select
+       pg_catalog.count(*)::bigint,
+       pg_catalog.encode(
+         extensions.digest(
+          coalesce(
+             pg_catalog.string_agg(
+               eligible.id::text,
+               ',' order by eligible.id
+             ),
+             ''
+           ),
+           'sha256'
+         ),
+         'hex'
+       )
+     into actual_count, actual_scope_sha256
+     from eligible;
+
+     if actual_count is distinct from approved_count
+        or actual_scope_sha256 is distinct from approved_scope_sha256 then
+       raise exception 'approved_expired_invitation_scope_changed'
+         using errcode = '40001';
+     end if;
+
+     expired_count := public.cleanup_expired_competition_invites();
+     if expired_count is distinct from approved_count then
+       raise exception 'expired_invitation_cleanup_count_changed'
+         using errcode = '40001';
+     end if;
+
+     raise notice 'expired_pending_invitation_cleanup_count=%', expired_count;
+   end
+   $cleanup$;
+
+   commit;
+   \unset approved_expired_pending_count
+   \unset approved_eligible_scope_sha256
+   ~~~
+
+   If any statement times out or errors, the transaction is aborted: do not
+   retry or alter the approved values. Enter `rollback;` if the session remains
+   open, refresh the read-only scope snapshot, investigate the change, and seek
+   fresh action-time approval. Never disconnect and later assume that the
+   mutation committed. After a successful commit, use the same privacy-safe
+   count query to confirm zero live expired-and-pending invitations.
+
+   The function is idempotent. It marks only eligible competitions `expired`
+   and deliberately retains the unconsumed invitation-history rows; it does
+   not recover a token or make an expired invitation claimable.
+3. For a genuinely due tallying competition, run the standard finalizer sweep
    as the privileged database operator, then repeat the read-only result query:
 
    ~~~sql
    select private.run_due_competition_finalizer();
    ~~~
 
-3. For durable pending notification work, trigger the standard worker request
+4. For durable pending notification work, trigger the standard worker request
    after verifying its Vault entries and Function configuration:
 
    ~~~sql
