@@ -1,7 +1,7 @@
 # HealthComp Production Beta Verification Checklist
 
 **Snapshot:** 2026-08-17
-**Integrated baseline:** `ae28c6add58e82fd82576f210afefd050b09151c`
+**Selected application baseline:** `ae28c6add58e82fd82576f210afefd050b09151c`
 **Selected release artifact:** `ae28c6add58e82fd82576f210afefd050b09151c`;
 selected for the remaining staging and physical-device gates, but not yet
 cleared for production.
@@ -43,15 +43,20 @@ Status meanings:
 ## Automated matrix
 
 - **PASS:** [Backend CI run 32023749118](https://github.com/narenyenuganti/health-comp/actions/runs/32023749118)
-  completed successfully on current `main` commit `ae28c6a`, including static
-  backend boundaries, migrations, policies, Edge Functions, and the checked-in
-  secret/privacy guards.
+  completed successfully on selected application commit `ae28c6a`, including
+  static backend boundaries, migrations, policies, Edge Functions, and the
+  checked-in secret/privacy guards.
 - **PASS:** [iOS CI run 32023749062](https://github.com/narenyenuganti/health-comp/actions/runs/32023749062)
-  completed successfully on current `main` commit `ae28c6a`, including
+  completed successfully on selected application commit `ae28c6a`, including
   deterministic Xcode generation, CompetitionCore Debug and Release tests, all
   iOS application-logic tests, unsigned Debug, Staging, and Release device
   builds, and a clean-tree check. Exact PR-head run `32020898831` passed the
   same matrix before the guarded merge.
+- **PASS:** Evidence-only PR #27 preserved the selected application tree. Its
+  exact-head Backend run `32027282748` and iOS run `32027282728`, followed by
+  post-merge Backend run `32030763547` and iOS run `32030763718`, completed
+  successfully. Evidence commits do not silently replace the selected release
+  artifact named above.
 - **PASS:** Attempt 1 of earlier iOS run `31999779841` reported one failure
   in the pre-existing cancellation-scheduling fixture test. The exact test
   then passed 100/100 locally and the full attempt-2 rerun, but the same test
