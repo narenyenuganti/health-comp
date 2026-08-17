@@ -77,12 +77,14 @@ Status meanings:
   and restored the authenticated Sharing UI. The current process produced 42
   process-local HTTP-200 markers and zero `-1005`, HealthKit-entitlement, or crash markers
   from `2026-08-17 02:46:15.068` through `02:49:22.348` PDT. No invitation was
-  created or consumed. The first hosted iOS attempt passed deterministic
-  generation and both Core configurations, then stopped before app tests
-  because Xcode 16.4 requires the dormant OpenCombine 0.14.0 pin declared by
-  CombineSchedulers' compatibility manifest. That exact prior pin has been
-  restored and accepted by the strict local resolver; hosted rerun and guarded
-  integration remain pending.
+  created or consumed. The first hosted iOS attempt stopped before app tests
+  because Xcode 16.4 required the dormant OpenCombine pin. The second accepted
+  that pin, passed deterministic generation and both Core configurations, then
+  required Supabase's optional OpenTelemetry package in the resolved-file
+  superset. The exact compatible OpenTelemetry pin and its Linux-only Swift
+  Atomics dependency are now retained with OpenCombine and passed strict local
+  resolution unchanged; a fresh hosted rerun and guarded integration remain
+  pending.
 - **PARTIAL:** The prior integrated transport baseline `21af9a7` and the
   PR #26 recovery candidate have not been installed or retested on the
   physical iPhone. Only the eventual guarded-merge commit may become the

@@ -96,13 +96,18 @@ Return to the approved one-physical-iPhone-plus-Simulator two-account staging fl
   `21d3aaf21ee98f41611f9f75070489fc8b23d882`. The generated project hash
   remained `f255f6cd138334c621f33c798028a289101f25334380f05227b25ef249ca6cca`
   across the tracked file and two consecutive XcodeGen 2.46.0 generations.
-- The shared lockfile retains OpenCombine 0.14.0 at revision
-  `8576f0d579b27020beccbccc3ea6844f3ddfc2c2`. Newer SwiftPM trait resolution
-  does not need that dormant Apple-platform product, but CombineSchedulers
-  1.2.0's Xcode 16-compatible manifest still declares the package. The first
-  hosted iOS attempt exposed the missing cross-Xcode pin before app tests; the
-  restored pin passed the strict local resolver unchanged and requires a fresh
-  hosted rerun.
+- The shared lockfile retains the compatibility-only packages that newer
+  SwiftPM trait and platform pruning does not materialize: OpenCombine 0.14.0
+  at revision `8576f0d579b27020beccbccc3ea6844f3ddfc2c2`, OpenTelemetry
+  Swift Core 2.5.1 at revision
+  `06f8a460a66f813758d22f09025d85df45450a63`, and Swift Atomics 1.3.1 at
+  revision `0442cb5a3f98ab802acb777929fdb446bda11a34`. The first hosted
+  Xcode 16.4 attempt exposed OpenCombine before app tests. The second accepted
+  that pin, passed deterministic generation and both Core configurations, then
+  exposed Supabase's optional OpenTelemetry package. OpenTelemetry's manifest
+  also declares Swift Atomics for Linux, so both exact compatible pins are
+  retained to close the cross-Xcode dependency chain. The resulting superset
+  passed strict local resolution unchanged and requires a fresh hosted rerun.
 - Failure classification is explicit: cancellation publishes no issue, local
   persistence failure remains `.storageUnavailable`, retryable discovery
   failure becomes `.remoteUnavailable`, and non-retryable remote failures use
