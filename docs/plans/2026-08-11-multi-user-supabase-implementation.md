@@ -974,6 +974,20 @@ git commit -m "ci: verify multi-user backend and iOS release"
 
 ### Task 19: Execute the Production Verification Matrix
 
+**Approved execution amendment (2026-08-17):** The private-beta completion
+topology is one physical iPhone, one or more iOS Simulators, and two distinct
+Apple accounts. A second physical iPhone is not required. Invitation,
+convergence, account-switching, and participant-isolation evidence may use one
+physical iPhone plus a Simulator as the two isolated endpoints. Physical-only
+Sign in with Apple, HealthKit, background-delivery, APNs, App Attest, and
+deletion evidence must still run on the physical iPhone. Device replacement is
+verified as a same-phone replacement-installation lifecycle: retire the old
+installation, remove and reinstall the exact build, enroll a new installation
+and App Attest key, and prove the retired installation remains unusable.
+Universal links are explicitly deferred because no HTTPS invitation domain
+will be provided; the controlled custom-scheme fallback remains in scope and
+must not be represented as universal-link evidence.
+
 **Files:**
 
 - Create: `docs/release/production-beta-checklist.md`
@@ -1011,7 +1025,13 @@ Expected: all commands exit 0.
 
 **Step 2: Run two-account staging E2E**
 
-Use two dedicated test Apple accounts on two iPhones or production-shaped test identities in staging. Verify create, link share, cold acceptance, frozen time zone, scheduled start, Days 1...7, offline catch-up, Tallying Points, stable and incomplete best-available results, history, rematch, mute, archive, deep link, and relaunch. Also sign out and switch accounts on one device; the second account must see no first-account journals, outbox entries, cursors, mutes, or installations.
+Use two dedicated test Apple accounts on the approved one-physical-iPhone-plus-
+Simulator topology. Verify create, custom-scheme share, cold acceptance, frozen
+time zone, scheduled start, Days 1...7, offline catch-up, Tallying Points,
+stable and incomplete best-available results, history, rematch, mute, archive,
+deep link, and relaunch. Also sign out and switch accounts on one endpoint; the
+second account must see no first-account journals, outbox entries, cursors,
+mutes, or installations.
 
 **Step 3: Run adversarial staging cases**
 
@@ -1019,7 +1039,13 @@ Attempt cross-account reads, replayed invite claims, modified points, stale revi
 
 **Step 4: Run physical-device gates**
 
-Verify Sign in with Apple plus provider configuration, HealthKit grant/deny/re-enable, background observer completion after durable journal write, universal-link opening, APNs token registration and foreground/background delivery, cold notification routing, App Attest, device replacement, Apple token revocation during account deletion, and relaunch without resurrection.
+On the physical iPhone, verify Sign in with Apple plus provider configuration,
+HealthKit grant/deny/re-enable, background observer completion after durable
+journal write, APNs token registration and foreground/background delivery,
+cold notification routing, App Attest, same-phone replacement installation,
+Apple token revocation during account deletion, and relaunch without
+resurrection. Exercise the controlled custom-scheme invitation fallback on the
+approved topology; universal-link opening is deferred and must not be claimed.
 
 **Step 5: Roll out gradually**
 
