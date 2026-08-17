@@ -15,22 +15,22 @@ represented as universal-link evidence.
 
 | Scope | Current evidence | Disposition |
 | --- | --- | --- |
-| Source | `main` commit `acd8a1caa15a01a650f8d3d4bc8d5b7ceccfc37b` | Current |
-| Selected release artifact | Pending the guarded merge of PR #26 from `bugfix/supabase-network-recovery`; the branch candidate is not an eligible release artifact | PENDING |
-| Backend CI | [Run 32010702616](https://github.com/narenyenuganti/health-comp/actions/runs/32010702616), completed successfully on the current `main` commit | PASS |
-| iOS CI | [Run 32010702582](https://github.com/narenyenuganti/health-comp/actions/runs/32010702582), completed successfully on the current `main` commit | PASS |
-| Supabase transport | Focused transport/authentication/profile-isolation/API gate passed 52 tests; canonical local `HealthCompTests` passed 457/457; CodeRabbit reported no findings | PASS |
+| Source | `main` commit `ae28c6add58e82fd82576f210afefd050b09151c` | Current |
+| Selected release artifact | `ae28c6add58e82fd82576f210afefd050b09151c`; selected for the remaining staging and physical gates, but not cleared for production | PARTIAL |
+| Backend CI | [Run 32023749118](https://github.com/narenyenuganti/health-comp/actions/runs/32023749118), completed successfully on the current `main` commit | PASS |
+| iOS CI | [Run 32023749062](https://github.com/narenyenuganti/health-comp/actions/runs/32023749062) completed successfully on exact `main` commit `ae28c6a`: deterministic generation, both Core configurations, the complete app-test suite, unsigned Debug/Staging/Release device builds, and the clean-tree check passed. Exact PR-head run `32020898831` passed the same matrix before the guarded merge | PASS |
+| Supabase transport | On pre-recovery transport baseline `21af9a7`, the focused transport/authentication/profile-isolation/API gate passed 52 tests and canonical local `HealthCompTests` passed 457/457; the integrated recovery matrix later passed the expanded 459-test canonical suite; CodeRabbit reported no findings | PASS |
 | Signed Simulator staging | Existing profile-scoped data and authentication survived reinstall; authenticated staging requests returned HTTP 200; no `-1005` or missing-HealthKit-entitlement error appeared | PASS |
-| Realtime recovery candidate | The PR #26 branch candidate pins Supabase Swift 2.55.1, passed the 90-test focused recovery matrix and 459/459 canonical app tests, passed 241/241 CompetitionCore tests in both Debug and Release, built unsigned Debug/Staging/Release device configurations, generated the project deterministically, and received a zero-finding CodeRabbit source review. A signed Staging Simulator over-install left the data-container file count unchanged at 19, restored the authenticated Sharing UI, and produced 42 process-local HTTP-200 markers with zero `-1005`, HealthKit-entitlement, or crash markers from `2026-08-17 02:46:15.068` through `02:49:22.348` PDT. The first two hosted iOS attempts exposed cross-Xcode resolved-file omissions for OpenCombine and OpenTelemetry. The third accepted the complete package graph, passed deterministic generation and both Core configurations, then ran the app suite with only the known cancellation fixture test failing. The candidate now preserves cancellation precedence across the fixture actor hop, and the strengthened exact race passed 100/100 locally. A fresh hosted full suite, device builds, guarded merge, physical repetition, and all later release gates remain pending. No invitation action occurred | PARTIAL |
+| Realtime recovery integration | PR #26 pins Supabase Swift 2.55.1, passed the 90-test focused recovery matrix and 459/459 canonical app tests, passed 241/241 CompetitionCore tests in both Debug and Release, built unsigned Debug/Staging/Release device configurations, generated the project deterministically, and received a zero-finding CodeRabbit source review. A signed Staging Simulator over-install left the data-container file count unchanged at 19, restored the authenticated Sharing UI, and produced 42 process-local HTTP-200 markers with zero `-1005`, HealthKit-entitlement, or crash markers from `2026-08-17 02:46:15.068` through `02:49:22.348` PDT. Early hosted attempts exposed and closed cross-Xcode resolved-file omissions, then exposed the cancellation actor-hop race. The strengthened race passed 100/100 locally and exact-head hosted run `32020898831` passed the complete matrix. PR #26 was guarded-squash-merged as `ae28c6a`, whose tree is identical to the reviewed PR head. Physical repetition and later release gates remain pending. No invitation action occurred | PASS |
 | Staging database | Fourteen ordered, identical local/remote migrations through `20260811000900`; `2026-08-16T05:34:16Z` dry run returned `up to date`; CLI unlinked afterward; hosted lint clean | PASS |
 | Hosted finalizer | Exact private `healthcomp-finalize-due` job; first corrected run succeeded at 2026-08-16 04:00 UTC | PASS |
 | Notification repair | Exact private one-minute job; HTTP 200 worker response and zero unresolved work at readback | PASS |
 | Staging build inputs | Exact staging bundle, expected public Supabase URL, nonempty ignored publishable key, blank invitation host, development App Attest setting | PASS |
 | Paid-team provisioning | Staging development profile for team `23LUYD78QK`, expiring `2027-08-16T05:23:35Z` | PASS |
 | Profile entitlements | Sandbox APNs, Sign in with Apple, HealthKit, HealthKit background delivery, and App Attest authorized | PASS |
-| Physical build | Automatic paid-team signing produced historical source commit `1ca67af76b738bd7fbb19277b238b448a555f8ef` for the paired physical iPhone. Neither the prior integrated transport baseline `21af9a7` nor the PR #26 branch candidate is the selected release artifact | PARTIAL |
-| Physical install | Bundle `com.narenyenuganti.HealthComp.staging`, build 1 from historical source commit `1ca67af76b738bd7fbb19277b238b448a555f8ef`, was installed and visible in device inventory; the selected release artifact remains pending and is not installed | PARTIAL |
-| Physical launch | The historical staging build launched while the paired iPhone was unlocked; authenticated Sharing UI was read back at `2026-08-16T07:02:20Z`. Launch evidence for the exact selected release artifact remains pending | PARTIAL |
+| Physical build | Automatic paid-team signing produced historical source commit `1ca67af76b738bd7fbb19277b238b448a555f8ef` for the paired physical iPhone. Selected release artifact `ae28c6a` has not been built for or installed on the phone | PARTIAL |
+| Physical install | Bundle `com.narenyenuganti.HealthComp.staging`, build 1 from historical source commit `1ca67af76b738bd7fbb19277b238b448a555f8ef`, was installed and visible in device inventory; physical installation of selected release artifact `ae28c6a` remains pending | PARTIAL |
+| Physical launch | The historical staging build launched while the paired iPhone was unlocked; authenticated Sharing UI was read back at `2026-08-16T07:02:20Z`. Launch evidence for selected release artifact `ae28c6a` remains pending | PARTIAL |
 | Sign in with Apple | Native authorization and staging Supabase profile bootstrap completed on the prior physical build; no account identity or token was retained; current-build repetition remains pending | PARTIAL |
 | APNs registration | iOS authorization completed; a read-only staging query returned exactly one `sandbox` / `active` installation updated at `2026-08-16T07:04:49.701324Z`; no installation, profile, or token identifier was selected | PASS |
 | HealthKit startup cycle | The physical iPhone completed grant, revoke, and re-enable startup paths. Each enabled relaunch reached the authenticated Sharing UI without an authorization-unavailable issue; only status/UI evidence was retained. Active-competition derived-score behavior remains unverified | PARTIAL |
@@ -52,10 +52,9 @@ either invitation into two-account claim or convergence evidence.
 
 That physical receipt was captured on source commit
 `1ca67af76b738bd7fbb19277b238b448a555f8ef`. It is historical capability
-evidence only. It does not prove the prior integrated transport baseline
-`21af9a7e418dbcc33077bfc861ca9d39a53e8417`, the PR #26 branch candidate,
-or the still-pending selected release artifact has been installed
-or exercised on the phone. The current signed Simulator receipt proves only
+evidence only. It does not prove selected release artifact
+`ae28c6add58e82fd82576f210afefd050b09151c` has been installed or exercised
+on the phone. The current signed Simulator receipt proves only
 transport, entitlement embedding, session restoration, and local profile
 persistence in the Simulator environment.
 
@@ -66,9 +65,9 @@ physical or hosted service flow to complete.
 
 ## Immediate continuation
 
-1. Commit and push the cancellation-precedence correction to PR #26, require
-   fresh hosted Backend and iOS CI, and guarded-merge only while the branch
-   remains based on current `main`.
+1. Record the exact post-merge Backend and iOS CI receipts for selected release
+   artifact `ae28c6a`, then integrate this evidence update without changing the
+   selected source tree.
 2. After both unavailable invitations expire, follow the exact guarded
    expired-invitation procedure in
    [Competition Support](../runbooks/competition-support.md#supported-operator-actions),
@@ -81,9 +80,9 @@ physical or hosted service flow to complete.
    consume its opaque custom-scheme link immediately on the physical endpoint.
    Complete two-account convergence with the approved topology and two Apple
    accounts, touching the physical phone only after explicit authorization.
-4. Build, install, and launch the exact guarded-merge commit selected as the
-   release artifact on the physical phone, then repeat Sign in with Apple and
-   the first privacy-safe score submission.
+4. Build, install, and launch selected release artifact `ae28c6a` on the
+   physical phone, then repeat Sign in with Apple and the first privacy-safe
+   score submission.
 5. Verify active-competition HealthKit behavior, the background observer, App
    Attest, and APNs foreground/background/cold-route delivery.
 6. Continue deletion and same-phone replacement-installation gates in the
@@ -96,8 +95,8 @@ physical or hosted service flow to complete.
 - Two live unclaimed invitations remain until their 2026-08-19 expiry window;
   neither plaintext claim token is recoverable from hosted state.
 - No adversarial cross-account/tamper receipt exists.
-- The PR #26 Realtime recovery candidate is not hosted-CI verified, merged, or
-  installed on the physical iPhone.
+- Selected release artifact `ae28c6a` is not installed or exercised on the
+  physical iPhone.
 - No active-competition HealthKit derived-score, background-observer, APNs
   delivery, App Attest, deletion, or same-phone replacement-installation
   receipt exists.
