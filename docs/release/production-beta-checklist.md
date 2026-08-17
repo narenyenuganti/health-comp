@@ -1,7 +1,7 @@
 # HealthComp Production Beta Verification Checklist
 
-**Snapshot:** 2026-08-16
-**Reviewed commit:** `47d65964607ad8fe8cdb48d35129cc8bf88cc464`
+**Snapshot:** 2026-08-17
+**Reviewed commit:** `1ca67af76b738bd7fbb19277b238b448a555f8ef`
 **Release status:** Not production-ready
 
 Status meanings:
@@ -41,7 +41,10 @@ Status meanings:
 - **PASS:** Apple Auth, environment-scoped Function secrets, worker Vault
   values, and the topic-restricted sandbox APNs key were read back without
   exposing secret values.
-- **PENDING:** Two-account staging E2E.
+- **PARTIAL:** At `2026-08-17T02:01:59Z`, one authenticated physical creator
+  had created exactly one pending competition and one unclaimed invitation.
+  The creator UI showed `Waiting for competitor`; claim and two-account
+  convergence remain pending.
 - **PENDING:** Adversarial participant-isolation and tamper matrix.
 
 ## Paid-team signing and installation
@@ -66,7 +69,7 @@ Status meanings:
 | --- | --- | --- |
 | Signed staging launch | PASS | Successful launch while the device is unlocked |
 | Sign in with Apple | PASS | Native authorization, staging Supabase session/profile bootstrap, and authenticated UI readback |
-| HealthKit | PENDING | Grant, deny, re-enable, and privacy-safe derived-score behavior |
+| HealthKit | PARTIAL | Grant, revoke, and re-enable startup paths completed on the physical iPhone with status/UI-only evidence; active-competition privacy-safe derived-score behavior remains pending |
 | Background observer | PENDING | Durable journal write before completion callback |
 | APNs | PARTIAL | iOS authorization and one active sandbox installation were verified at `2026-08-16T07:04:49.701324Z`; foreground, background, and cold-route delivery remain pending |
 | App Attest | PENDING | Real key registration, assertion, replay rejection, and replacement-device flow |
@@ -76,8 +79,9 @@ Status meanings:
 
 ## Multi-user and operational gates
 
-- **PENDING:** Two dedicated accounts create, claim, synchronize, finish,
-  revisit history, rematch, mute, archive, and relaunch.
+- **PARTIAL:** The first dedicated account created one private staging
+  competition and unclaimed invitation. The second account must still claim,
+  synchronize, finish, revisit history, rematch, mute, archive, and relaunch.
 - **PENDING:** Two-device invitation and convergence evidence. Sequential
   account switching on one phone may test profile isolation, but does not
   replace the required two-device gate.
