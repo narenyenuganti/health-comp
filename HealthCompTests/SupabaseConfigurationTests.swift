@@ -4,6 +4,60 @@ import XCTest
 @testable import HealthComp
 
 final class SupabaseConfigurationTests: XCTestCase {
+    func testLiveSupabaseTransportIsEphemeralAndNonPersistent() {
+        let session = SupabaseTransport.makeSession()
+        defer { session.invalidateAndCancel() }
+
+        let configuration = session.configuration
+        XCTAssertEqual(
+            configuration.requestCachePolicy,
+            .reloadIgnoringLocalCacheData
+        )
+        XCTAssertNil(configuration.urlCache)
+        XCTAssertNil(configuration.httpCookieStorage)
+        XCTAssertFalse(configuration.httpShouldSetCookies)
+        XCTAssertNil(configuration.urlCredentialStorage)
+    }
+
+    func testLiveProviderUsesInjectedTransportSession() async throws {
+        let recorder = SupabaseTransportStubURLProtocol.recorder
+        recorder.reset()
+
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [
+            SupabaseTransportStubURLProtocol.self,
+        ]
+        let session = URLSession(configuration: configuration)
+        defer {
+            session.invalidateAndCancel()
+            recorder.reset()
+        }
+        let provider = SupabaseClientProvider.live(
+            infoDictionary: { self.dictionary() },
+            urlSession: session
+        )
+        let client = try provider.client()
+
+        do {
+            _ = try await client.auth.refreshSession(
+                refreshToken: "synthetic-refresh-value"
+            )
+            XCTFail("The stubbed HTTP 400 response must fail refresh.")
+        } catch {
+            // The request receipt below is the behavior under test.
+        }
+
+        XCTAssertEqual(
+            recorder.requests,
+            [
+                RecordedTransportRequest(
+                    method: "POST",
+                    path: "/auth/v1/token"
+                ),
+            ]
+        )
+    }
+
     func testParsesValidPublishableConfiguration() throws {
         let configuration = try SupabaseConfiguration.parse([
             "SUPABASE_URL": "  https://project-ref.supabase.co  ",
@@ -268,4 +322,69 @@ private final class LockedCounter: @unchecked Sendable {
     func increment() {
         lock.withLock { count += 1 }
     }
+}
+
+private struct RecordedTransportRequest: Equatable, Sendable {
+    let method: String?
+    let path: String?
+}
+
+private final class LockedTransportRequestRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var recordedRequests: [RecordedTransportRequest] = []
+
+    var requests: [RecordedTransportRequest] {
+        lock.withLock { recordedRequests }
+    }
+
+    func record(_ request: URLRequest) {
+        lock.withLock {
+            recordedRequests.append(
+                RecordedTransportRequest(
+                    method: request.httpMethod,
+                    path: request.url?.path
+                )
+            )
+        }
+    }
+
+    func reset() {
+        lock.withLock { recordedRequests.removeAll() }
+    }
+}
+
+private final class SupabaseTransportStubURLProtocol: URLProtocol {
+    static let recorder = LockedTransportRequestRecorder()
+
+    override class func canInit(with request: URLRequest) -> Bool {
+        true
+    }
+
+    override class func canonicalRequest(
+        for request: URLRequest
+    ) -> URLRequest {
+        request
+    }
+
+    override func startLoading() {
+        Self.recorder.record(request)
+        let response = HTTPURLResponse(
+            url: request.url!,
+            statusCode: 400,
+            httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+        client?.urlProtocol(
+            self,
+            didReceive: response,
+            cacheStoragePolicy: .notAllowed
+        )
+        client?.urlProtocol(
+            self,
+            didLoad: Data(#"{"error":"invalid_grant"}"#.utf8)
+        )
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
 }

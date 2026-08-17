@@ -142,6 +142,18 @@ enum SupabaseConfigurationError:
     }
 }
 
+enum SupabaseTransport {
+    static func makeSession() -> URLSession {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+        configuration.urlCache = nil
+        configuration.httpCookieStorage = nil
+        configuration.httpShouldSetCookies = false
+        configuration.urlCredentialStorage = nil
+        return URLSession(configuration: configuration)
+    }
+}
+
 struct SupabaseClientProvider: Sendable {
     private let makeClient: @Sendable () throws -> SupabaseClient
 
@@ -156,13 +168,17 @@ struct SupabaseClientProvider: Sendable {
     static func live(
         infoDictionary: @escaping @Sendable () -> [String: Any] = {
             Bundle.main.infoDictionary ?? [:]
-        }
+        },
+        urlSession: URLSession = SupabaseTransport.makeSession()
     ) -> Self {
         Self {
             let configuration = try SupabaseConfiguration.parse(infoDictionary())
             return SupabaseClient(
                 supabaseURL: configuration.url,
-                supabaseKey: configuration.publishableKey
+                supabaseKey: configuration.publishableKey,
+                options: SupabaseClientOptions(
+                    global: .init(session: urlSession)
+                )
             )
         }
     }
