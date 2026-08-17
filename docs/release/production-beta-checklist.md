@@ -85,10 +85,24 @@ Status meanings:
 - **PASS:** Apple Auth, environment-scoped Function secrets, worker Vault
   values, and the topic-restricted sandbox APNs key were read back without
   exposing secret values.
-- **PARTIAL:** At `2026-08-17T02:01:59Z`, one authenticated physical creator
-  had created exactly one pending competition and one unclaimed invitation.
-  The creator UI showed `Waiting for competitor`; claim and two-account
-  convergence remain pending.
+- **PASS:** A SELECT-only hosted inventory ending at
+  `2026-08-17T07:12:08Z` found two active profiles, two active sandbox
+  installations, two pending competitions, two live unclaimed invitations,
+  and zero consumed invitations. The pending-competition distribution across
+  the two active profiles was `[0,2]`; no profile, installation, competition,
+  invitation, token, or digest identifier was selected or retained.
+- **PASS:** The same privacy-bounded inventory found zero App Attest keys,
+  account-deletion records, daily-score revisions, and competition results.
+  No third invitation or hosted mutation was created during the audit.
+- **PARTIAL:** The two unclaimed invitations expire between
+  `2026-08-19T01:56:21Z` and `2026-08-19T03:37:49Z`. Their plaintext tokens are
+  not recoverable from hosted state, no supported creator-cancel action or
+  audited operator-cancel RPC exists, and no direct row edit was attempted.
+  After expiry, follow the guarded expired-invitation procedure in
+  [Competition Support](../runbooks/competition-support.md#supported-operator-actions).
+  It must mark the competitions expired while retaining invitation history. A
+  readback of zero live pending invitations must precede creation of one
+  immediately consumed replacement invitation.
 - **PENDING:** Adversarial participant-isolation and tamper matrix.
 
 ## Paid-team signing and installation
@@ -124,9 +138,11 @@ Status meanings:
 
 ## Multi-user and operational gates
 
-- **PARTIAL:** The first dedicated account created one private staging
-  competition and unclaimed invitation. The second account must still claim,
-  synchronize, finish, revisit history, rematch, mute, archive, and relaunch.
+- **PARTIAL:** Both dedicated accounts have authenticated staging profiles, but
+  the two existing invitations remain unclaimed and are owned by only one
+  profile. A fresh invitation must still be created and immediately claimed,
+  then synchronized, finished, revisited in history, rematched, muted,
+  archived, and relaunched.
 - **PENDING:** Two-account invitation, controlled custom-scheme sharing, cold
   acceptance, and convergence evidence using the approved one-physical-iPhone-
   plus-Simulator topology. Sequential account switching must additionally
