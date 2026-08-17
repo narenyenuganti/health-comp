@@ -110,6 +110,26 @@ extension CompetitionClient: DependencyKey {
     static let liveValue = CompetitionClient.live(provider: .live())
 }
 
+extension RemoteCompetitionRuntimeFailure {
+    var competitionClientIssue: LocalCompetitionClientIssue? {
+        switch self {
+        case .cancelled:
+            nil
+        case .storageUnavailable:
+            .storageUnavailable
+        case .discoveryUnavailable:
+            .remoteUnavailable
+        case .unauthenticated,
+             .forbidden,
+             .profileMismatch,
+             .competitionNotMaterialized,
+             .serverContractMismatch,
+             .cursorRetryLimitExceeded:
+            .remoteFailure
+        }
+    }
+}
+
 private final class RemoteCompetitionPublicationRouter: @unchecked Sendable {
     private let lock = NSLock()
     private var hub = LocalCompetitionPublicationHub()
@@ -353,8 +373,8 @@ private actor RemoteCompetitionClientCoordinator {
         }
         await installationCoordinator?.reconcile()
         let outcome = await runtime.synchronizeAll()
-        if outcome.discoveryFailure != nil {
-            issues.append(.storageUnavailable)
+        if let issue = outcome.discoveryFailure?.competitionClientIssue {
+            issues.append(issue)
         }
         let failedIDs = outcome.failures.map(\.competitionID).sorted {
             $0.rawValue.uuidString < $1.rawValue.uuidString

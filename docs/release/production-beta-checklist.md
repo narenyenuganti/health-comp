@@ -1,7 +1,10 @@
 # HealthComp Production Beta Verification Checklist
 
 **Snapshot:** 2026-08-17
-**Reviewed commit:** `21af9a7e418dbcc33077bfc861ca9d39a53e8417`
+**Integrated baseline:** `acd8a1caa15a01a650f8d3d4bc8d5b7ceccfc37b`
+**Selected release artifact:** Pending the guarded merge of PR #26 from
+`bugfix/supabase-network-recovery`; the branch candidate is not yet an eligible
+release artifact.
 **Release status:** Not production-ready
 
 Status meanings:
@@ -25,6 +28,9 @@ Status meanings:
   delivery, APNs, App Attest, and deletion service evidence must still run on
   the physical iPhone where the platform capability requires it. Simulator
   results do not substitute for those physical service receipts.
+- **REQUIRED:** Physical-device receipts count toward completion only when
+  they name the exact selected release artifact above. Receipts from older
+  commits remain historical capability evidence only.
 - **APPROVED:** Replacement is exercised as a replacement-installation
   lifecycle on the same physical iPhone: retire the old installation, remove
   and reinstall the exact build, enroll a new installation/App Attest key, and
@@ -36,20 +42,26 @@ Status meanings:
 
 ## Automated matrix
 
-- **PASS:** [Backend CI run 31999779829](https://github.com/narenyenuganti/health-comp/actions/runs/31999779829)
-  completed successfully on the reviewed commit, including static backend
-  boundaries, migrations, policies, Edge Functions, and the checked-in
+- **PASS:** [Backend CI run 32010702616](https://github.com/narenyenuganti/health-comp/actions/runs/32010702616)
+  completed successfully on current `main` commit `acd8a1c`, including static
+  backend boundaries, migrations, policies, Edge Functions, and the checked-in
   secret/privacy guards.
-- **PASS:** [iOS CI run 31999779841, attempt 2](https://github.com/narenyenuganti/health-comp/actions/runs/31999779841)
-  completed successfully on the reviewed commit, including deterministic
-  Xcode generation, CompetitionCore Debug and Release tests, all iOS
+- **PASS:** [iOS CI run 32010702582](https://github.com/narenyenuganti/health-comp/actions/runs/32010702582)
+  completed successfully on current `main` commit `acd8a1c`, including
+  deterministic Xcode generation, CompetitionCore Debug and Release tests, all iOS
   application-logic tests, unsigned Debug, Staging, and Release device builds,
   and a clean-tree check.
-- **PASS:** Attempt 1 of the iOS run reported one failure in the pre-existing
-  cancellation-scheduling fixture test. The exact test then passed 100/100
-  local repeated iterations, had passed the prior ten main-branch CI runs, and
-  passed in the full attempt-2 rerun without a source change. No transport test
-  failed in either attempt.
+- **PARTIAL:** Attempt 1 of earlier iOS run `31999779841` reported one failure
+  in the pre-existing cancellation-scheduling fixture test. The exact test
+  then passed 100/100 locally and the full attempt-2 rerun, but the same test
+  recurred as the sole app-suite failure in PR #26 run `32019147010` after
+  dependency resolution, deterministic generation, and both Core configurations
+  passed. Cancellation cleanup re-enters the fixture actor asynchronously, so
+  virtual time could resume the continuation before cleanup. The candidate now
+  rechecks cancellation after the suspension boundary, and the test waits for
+  actual waiter registration before exercising the race. The strengthened
+  test passed 100/100 locally; fresh hosted full-suite evidence remains pending.
+  No transport test failed.
 
 ## Staging client transport
 
@@ -62,9 +74,30 @@ Status meanings:
   profile-scoped data and authenticated session, completed staging requests
   with HTTP 200 responses, and produced no `-1005` or missing-HealthKit-
   entitlement error.
-- **PARTIAL:** The reviewed transport commit has not been installed or retested
-  on the physical iPhone. The Simulator receipt is not physical-device
-  evidence.
+- **PARTIAL:** The PR #26 `bugfix/supabase-network-recovery` candidate
+  pins Supabase Swift 2.55.1 and passed 90/90 focused recovery tests, 459/459
+  canonical app tests, 241/241 CompetitionCore tests in both Debug and
+  Release, unsigned Debug/Staging/Release device builds, deterministic project
+  generation, and a zero-finding CodeRabbit re-review. Its signed Staging
+  Simulator over-install left the data-container file count unchanged at 19
+  and restored the authenticated Sharing UI. The current process produced 42
+  process-local HTTP-200 markers and zero `-1005`, HealthKit-entitlement, or crash markers
+  from `2026-08-17 02:46:15.068` through `02:49:22.348` PDT. No invitation was
+  created or consumed. The first hosted iOS attempt stopped before app tests
+  because Xcode 16.4 required the dormant OpenCombine pin. The second accepted
+  that pin, passed deterministic generation and both Core configurations, then
+  required Supabase's optional OpenTelemetry package in the resolved-file
+  superset. The exact compatible OpenTelemetry pin and its Linux-only Swift
+  Atomics dependency are now retained with OpenCombine and passed strict local
+  resolution unchanged. The third hosted attempt accepted the complete package
+  graph and passed deterministic generation and both Core configurations, then
+  ran the app suite with only the known cancellation fixture test failing. Its
+  cancellation-precedence correction passed the strengthened exact test 100/100
+  locally; a fresh hosted rerun and guarded integration remain pending.
+- **PARTIAL:** The prior integrated transport baseline `21af9a7` and the
+  PR #26 recovery candidate have not been installed or retested on the
+  physical iPhone. Only the eventual guarded-merge commit may become the
+  selected release artifact. Simulator receipts are not physical-device evidence.
 
 ## Hosted staging
 
@@ -119,15 +152,15 @@ Status meanings:
   with Apple completed, staging Supabase profile bootstrap required and
   accepted a user-selected display name, and the authenticated Sharing UI was
   read back at `2026-08-16T07:02:20Z`. No Apple account identity, token, or
-  private screenshot was retained. The reviewed commit has not been installed
-  on that phone.
+  private screenshot was retained. This is historical capability evidence,
+  not evidence for the still-pending selected release artifact.
 
 ## Physical-device gates
 
 | Gate | Status | Required evidence |
 | --- | --- | --- |
-| Signed staging launch | PARTIAL | Prior commit `1ca67af` launched successfully; reviewed commit `21af9a7` has not been installed on the phone |
-| Sign in with Apple | PARTIAL | Native authorization, staging Supabase session/profile bootstrap, and authenticated UI readback passed on the prior physical build; current-build repetition remains pending |
+| Signed staging launch | PARTIAL | Prior commit `1ca67af` launched successfully as historical evidence; the exact selected release artifact remains pending and must be installed on the phone |
+| Sign in with Apple | PARTIAL | Native authorization, staging Supabase session/profile bootstrap, and authenticated UI readback passed on the historical physical build; repetition on the exact selected release artifact remains pending |
 | HealthKit | PARTIAL | Grant, revoke, and re-enable startup paths completed on the physical iPhone with status/UI-only evidence; active-competition privacy-safe derived-score behavior remains pending |
 | Background observer | PENDING | Durable journal write before completion callback |
 | APNs | PARTIAL | iOS authorization and one active sandbox installation were verified at `2026-08-16T07:04:49.701324Z`; foreground, background, and cold-route delivery remain pending |
