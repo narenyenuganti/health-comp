@@ -1,8 +1,8 @@
 # HealthComp Production Beta Verification Checklist
 
 **Snapshot:** 2026-08-17
-**Selected application baseline:** `ae28c6add58e82fd82576f210afefd050b09151c`
-**Selected release artifact:** `ae28c6add58e82fd82576f210afefd050b09151c`;
+**Selected application baseline:** `9d199377f5d72cb7bc90133c190e4e7681abfb41`
+**Selected release artifact:** `9d199377f5d72cb7bc90133c190e4e7681abfb41`;
 selected for the remaining staging and physical-device gates, but not yet
 cleared for production.
 **Release status:** Not production-ready
@@ -42,21 +42,32 @@ Status meanings:
 
 ## Automated matrix
 
-- **PASS:** [Backend CI run 32023749118](https://github.com/narenyenuganti/health-comp/actions/runs/32023749118)
-  completed successfully on selected application commit `ae28c6a`, including
+- **PASS:** [Backend CI run 32101691658](https://github.com/narenyenuganti/health-comp/actions/runs/32101691658)
+  completed successfully on selected application commit `9d19937`, including
   static backend boundaries, migrations, policies, Edge Functions, and the
   checked-in secret/privacy guards.
-- **PASS:** [iOS CI run 32023749062](https://github.com/narenyenuganti/health-comp/actions/runs/32023749062)
-  completed successfully on selected application commit `ae28c6a`, including
+- **PASS:** [iOS CI run 32101691575](https://github.com/narenyenuganti/health-comp/actions/runs/32101691575)
+  completed successfully on selected application commit `9d19937`, including
+  deterministic Xcode generation, CompetitionCore Debug and Release tests, all
+  iOS application-logic tests, unsigned Debug, Staging, and Release device
+  builds, and the clean-tree check. Exact PR-head run `32099524540` passed the
+  same matrix before the guarded merge.
+- **PASS:** PR #29 selected the white 1024-pixel logo as the app icon, preserved
+  all six supplied black and white source assets, and produced an opaque icon
+  accepted by Xcode's asset compiler without changing its visible pixels. The
+  reviewed PR tree is identical to selected merge commit `9d19937`; exact-head
+  Backend run `32099524516` and iOS run `32099524540` completed successfully.
+- **PASS:** Earlier selected-application iOS run `32023749062` completed
+  successfully on pre-icon application commit `ae28c6a`, including
   deterministic Xcode generation, CompetitionCore Debug and Release tests, all
   iOS application-logic tests, unsigned Debug, Staging, and Release device
   builds, and a clean-tree check. Exact PR-head run `32020898831` passed the
   same matrix before the guarded merge.
-- **PASS:** Evidence-only PR #27 preserved the selected application tree. Its
-  exact-head Backend run `32027282748` and iOS run `32027282728`, followed by
-  post-merge Backend run `32030763547` and iOS run `32030763718`, completed
-  successfully. Evidence commits do not silently replace the selected release
-  artifact named above.
+- **PASS:** Evidence-only PR #27 preserved the then-selected pre-icon
+  application tree. Its exact-head Backend run `32027282748` and iOS run
+  `32027282728`, followed by post-merge Backend run `32030763547` and iOS run
+  `32030763718`, completed successfully. Evidence commits do not silently
+  replace the selected release artifact named above.
 - **PASS:** Attempt 1 of earlier iOS run `31999779841` reported one failure
   in the pre-existing cancellation-scheduling fixture test. The exact test
   then passed 100/100 locally and the full attempt-2 rerun, but the same test
@@ -102,11 +113,13 @@ Status meanings:
   ran the app suite with only the known cancellation fixture test failing. Its
   cancellation-precedence correction passed the strengthened exact test 100/100
   locally. Exact-head run `32020898831` then passed the complete hosted matrix,
-  and PR #26 was guarded-squash-merged as selected commit `ae28c6a` with a tree
-  identical to the reviewed PR head.
-- **PARTIAL:** Selected release artifact `ae28c6a` has not been installed or
-  retested on the physical iPhone. Simulator receipts are not physical-device
-  evidence.
+  and PR #26 was guarded-squash-merged as pre-icon application commit `ae28c6a`
+  with a tree identical to the reviewed PR head. PR #29 later added only the
+  reviewed app-icon assets and selected merge commit `9d19937`.
+- **PARTIAL:** Selected release artifact `9d19937` has been signed, installed,
+  and launched on the physical iPhone, but authenticated physical transport
+  has not yet been retested on that exact artifact. Simulator receipts are not
+  physical-device evidence.
 
 ## Hosted staging
 
@@ -151,24 +164,34 @@ Status meanings:
 
 - **PASS:** Xcode reads the paid Apple Developer team as an Admin team with one
   provisioned device.
-- **PASS:** Automatic signing previously produced a Staging device build for
+- **PASS:** Automatic signing produced selected application commit `9d19937`
+  as a Staging device build for
   `23LUYD78QK.com.narenyenuganti.HealthComp.staging`.
 - **PASS:** The generated staging development profile expires
   `2027-08-16T05:23:35Z` and authorizes sandbox APNs, Sign in with Apple,
   HealthKit, HealthKit background delivery, and App Attest.
-- **PARTIAL:** Build 1 from source commit `1ca67af76b738bd7fbb19277b238b448a555f8ef`
+- **PASS:** Build 1 from selected source commit
+  `9d199377f5d72cb7bc90133c190e4e7681abfb41` was signed with the paid-team
+  profile, freshly installed after device inventory confirmed that no
+  HealthComp bundle was present, displayed the selected white app icon in
+  Spotlight, and launched to the native Health Access prompt. No Health
+  permission was granted or denied. This proves selected-artifact signing,
+  installation, icon rendering, and launch only.
+- **PARTIAL:** Build 1 from historical source commit
+  `1ca67af76b738bd7fbb19277b238b448a555f8ef`
   was installed and launched on the paired physical iPhone. Native Sign in
   with Apple completed, staging Supabase profile bootstrap required and
   accepted a user-selected display name, and the authenticated Sharing UI was
   read back at `2026-08-16T07:02:20Z`. No Apple account identity, token, or
   private screenshot was retained. This is historical capability evidence,
-  not evidence for selected release artifact `ae28c6a`.
+  not current-build Sign in with Apple evidence for selected release artifact
+  `9d19937`.
 
 ## Physical-device gates
 
 | Gate | Status | Required evidence |
 | --- | --- | --- |
-| Signed staging launch | PARTIAL | Prior commit `1ca67af` launched successfully as historical evidence; the exact selected release artifact remains pending and must be installed on the phone |
+| Signed staging launch | PASS | Selected artifact `9d19937` was signed with the paid-team profile, freshly installed as `com.narenyenuganti.HealthComp.staging`, displayed the selected icon in Spotlight, and launched to the Health Access prompt; no permission choice was made |
 | Sign in with Apple | PARTIAL | Native authorization, staging Supabase session/profile bootstrap, and authenticated UI readback passed on the historical physical build; repetition on the exact selected release artifact remains pending |
 | HealthKit | PARTIAL | Grant, revoke, and re-enable startup paths completed on the physical iPhone with status/UI-only evidence; active-competition privacy-safe derived-score behavior remains pending |
 | Background observer | PENDING | Durable journal write before completion callback |
