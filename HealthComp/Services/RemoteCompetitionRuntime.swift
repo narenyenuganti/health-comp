@@ -604,6 +604,15 @@ actor RemoteCompetitionRuntime {
                 )
                 continue
             }
+            switch descriptor.lifecycle {
+            case .declined, .expired, .cancelled:
+                nextCacheByID.removeValue(
+                    forKey: descriptor.competitionID
+                )
+                continue
+            default:
+                break
+            }
             do {
                 let materialization = try await synchronize(
                     descriptor: descriptor,
