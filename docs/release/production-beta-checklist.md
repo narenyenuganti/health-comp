@@ -1,8 +1,8 @@
 # HealthComp Production Beta Verification Checklist
 
 **Snapshot:** 2026-08-19
-**Selected application baseline:** `9d199377f5d72cb7bc90133c190e4e7681abfb41`
-**Selected release artifact:** `9d199377f5d72cb7bc90133c190e4e7681abfb41`;
+**Selected application baseline:** `dd0ed683a78de216f622e2a958baeda1cb996e46`
+**Selected release artifact:** `dd0ed683a78de216f622e2a958baeda1cb996e46`;
 selected for the remaining staging and physical-device gates, but not yet
 cleared for production.
 **Release status:** Not production-ready
@@ -42,20 +42,20 @@ Status meanings:
 
 ## Automated matrix
 
-- **PASS:** [Backend CI run 32101691658](https://github.com/narenyenuganti/health-comp/actions/runs/32101691658)
-  completed successfully on selected application commit `9d19937`, including
+- **PASS:** [Backend CI run 32231758224](https://github.com/narenyenuganti/health-comp/actions/runs/32231758224)
+  completed successfully on selected application commit `dd0ed68`, including
   static backend boundaries, migrations, policies, Edge Functions, and the
   checked-in secret/privacy guards.
-- **PASS:** [iOS CI run 32101691575](https://github.com/narenyenuganti/health-comp/actions/runs/32101691575)
-  completed successfully on selected application commit `9d19937`, including
+- **PASS:** [iOS CI run 32231758192](https://github.com/narenyenuganti/health-comp/actions/runs/32231758192)
+  completed successfully on selected application commit `dd0ed68`, including
   deterministic Xcode generation, CompetitionCore Debug and Release tests, all
   iOS application-logic tests, unsigned Debug, Staging, and Release device
-  builds, and the clean-tree check. Exact PR-head run `32099524540` passed the
+  builds, and the clean-tree check. Exact bugfix-head run `32227758803` passed the
   same matrix before the guarded merge.
 - **PASS:** PR #29 selected the white 1024-pixel logo as the app icon, preserved
   all six supplied black and white source assets, and produced an opaque icon
   accepted by Xcode's asset compiler without changing its visible pixels. The
-  reviewed PR tree is identical to selected merge commit `9d19937`; exact-head
+  reviewed assets remain unchanged in selected merge commit `dd0ed68`; exact-head
   Backend run `32099524516` and iOS run `32099524540` completed successfully.
 - **PASS:** Earlier selected-application iOS run `32023749062` completed
   successfully on pre-icon application commit `ae28c6a`, including
@@ -116,12 +116,17 @@ Status meanings:
   and PR #26 was guarded-squash-merged as pre-icon application commit `ae28c6a`
   with a tree identical to the reviewed PR head. PR #29 later added only the
   reviewed app-icon assets and selected merge commit `9d19937`.
-- **PARTIAL:** Selected release artifact `9d19937` has been signed, installed,
-  and launched on the physical iPhone. Fresh native Sign in with Apple and
-  authenticated physical transport were retested on that exact artifact and
-  reached the Sharing UI, but a controlled relaunch reproduced the terminal-
-  invitation refresh warning; a clean authenticated physical readback remains
-  pending. Simulator receipts are not physical-device evidence.
+- **PASS:** Selected release artifact `dd0ed68` was signed, over-installed, and
+  launched on the physical iPhone. At `2026-08-19T15:06Z`, it reached the
+  authenticated Sharing UI without a warning. Its Account UI confirmed the
+  authenticated state and raw-HealthKit-on-device boundary. A controlled
+  terminate/relaunch and bounded readback ending at `2026-08-19T15:07Z`
+  remained free of both the prior refresh warning and `Activity authorization
+  is unavailable.` Current source requests Health authorization during startup,
+  so this proves corrected authenticated transport and a completed startup
+  authorization request under the retained same-bundle grant, not fresh native
+  Sign in with Apple or active HealthKit behavior. Simulator receipts are not
+  physical-device evidence.
 
 ## Hosted staging
 
@@ -167,17 +172,20 @@ Status meanings:
   invitations, and zero remaining eligible invitations. No identifier or token
   was selected, no lifecycle row was edited directly, and no replacement
   invitation was created.
-- **PARTIAL:** Fresh Sign in with Apple succeeded on selected artifact
+- **PASS:** Fresh Sign in with Apple succeeded on prior selected artifact
   `9d19937`, but a controlled relaunch at `2026-08-19T07:02Z` reproduced
   `Some competition activity could not be refreshed.` A privacy-safe hosted
   readback sequence ending at `2026-08-19T07:06:16.64042Z` confirmed zero
   pending and two expired competitions; accepted-membership, retained-
   unclaimed-invitation, and lifecycle-change distributions were each `[1,1]`.
-  Selected client source maps each expired descriptor to
-  `competitionNotMaterialized` and then to a per-competition warning. No
-  identifier, account detail, token, or Health datum was selected.
-  Replacement-invitation staging remains paused until this terminal-invitation
-  synchronization defect is fixed and verified.
+  Prior client source mapped each expired descriptor to
+  `competitionNotMaterialized` and then to a per-competition warning. PR #34
+  now prunes declined, expired, and cancelled inventory descriptors before
+  materialization while preserving the local journal and retained server
+  history. Selected artifact `dd0ed68` remained warning-free through first
+  authenticated launch, controlled terminate/relaunch, and a bounded refresh
+  readback ending at `2026-08-19T15:07Z`. No identifier, account detail, token,
+  or Health datum was selected.
 - **PENDING:** Create exactly one replacement invitation and consume it
   immediately during the two-account staging flow.
 - **PENDING:** Adversarial participant-isolation and tamper matrix.
@@ -186,13 +194,13 @@ Status meanings:
 
 - **PASS:** Xcode reads the paid Apple Developer team as an Admin team with one
   provisioned device.
-- **PASS:** Automatic signing produced selected application commit `9d19937`
+- **PASS:** Automatic signing produced selected application commit `dd0ed68`
   as a Staging device build for
   `23LUYD78QK.com.narenyenuganti.HealthComp.staging`.
 - **PASS:** The generated staging development profile expires
   `2027-08-16T05:23:35Z` and authorizes sandbox APNs, Sign in with Apple,
   HealthKit, HealthKit background delivery, and App Attest.
-- **PASS:** Build 1 from selected source commit
+- **PASS:** Build 1 from prior selected source commit
   `9d199377f5d72cb7bc90133c190e4e7681abfb41` was signed with the paid-team
   profile, freshly installed after device inventory confirmed that no
   HealthComp bundle was present, displayed the selected white app icon in
@@ -202,9 +210,17 @@ Status meanings:
   HealthComp, and the selected build reached the authenticated Sharing UI using
   its restored session. This checked-in receipt contains no account identity,
   token, private screenshot, raw HealthKit datum, or exact Activity value. This proves
-  selected-artifact signing, installation, icon rendering, launch, and Health
-  authorization UI behavior; it does not prove active-competition derived
-  scores or background delivery.
+  prior-artifact signing, installation, icon rendering, launch, and Health
+  authorization UI behavior; it does not prove those service paths on current
+  selected artifact `dd0ed68`, active-competition derived scores, or background
+  delivery.
+- **PASS:** At `2026-08-19T08:18:49Z`, selected source commit `dd0ed68` was
+  signed with the same paid-team profile and over-installed on the physical
+  iPhone. The app remained installed as
+  `com.narenyenuganti.HealthComp.staging`, retained its authenticated session
+  and local state, and passed the clean physical relaunch receipt ending at
+  `2026-08-19T15:07Z`. This is same-bundle upgrade evidence, not the pending
+  remove/reinstall replacement lifecycle.
 - **PARTIAL:** Build 1 from historical source commit
   `1ca67af76b738bd7fbb19277b238b448a555f8ef`
   was installed and launched on the paired physical iPhone. Native Sign in
@@ -213,20 +229,22 @@ Status meanings:
   read back at `2026-08-16T07:02:20Z`. No Apple account identity, token, or
   private screenshot was retained. This is historical capability evidence,
   not current-build Sign in with Apple evidence for selected release artifact
-  `9d19937`.
-- **PASS:** After the restored session was signed out, fresh native Sign in
+  `dd0ed68`.
+- **PARTIAL:** After the restored session was signed out, fresh native Sign in
   with Apple authorization completed directly on the physical iPhone for
-  selected artifact `9d19937`. At `2026-08-19T06:59Z`, iPhone Mirroring read
-  back the authenticated Sharing UI. No Apple account identity, authorization
-  payload, token, or private screenshot is included in this receipt.
+  prior selected artifact `9d19937`. At `2026-08-19T06:59Z`, iPhone Mirroring
+  read back the authenticated Sharing UI. Selected artifact `dd0ed68` preserved
+  that session through over-install and relaunch, but native authorization has
+  not yet been re-exercised on the exact current artifact. No Apple account
+  identity, authorization payload, token, or private screenshot is included.
 
 ## Physical-device gates
 
 | Gate | Status | Required evidence |
 | --- | --- | --- |
-| Signed staging launch | PASS | Selected artifact `9d19937` was signed with the paid-team profile, freshly installed as `com.narenyenuganti.HealthComp.staging`, displayed the selected icon, launched to the Health Access prompt, enabled every app-requested category after action-time approval, and reached the authenticated Sharing UI through its restored session |
-| Sign in with Apple | PASS | Fresh native authorization completed directly on the physical iPhone for selected artifact `9d19937`, and iPhone Mirroring read back the authenticated Sharing UI without retaining Apple account identity or token evidence |
-| HealthKit | PARTIAL | Grant, revoke, and re-enable startup paths completed historically, and all app-requested categories were granted on selected artifact `9d19937` with status/UI-only evidence; active-competition privacy-safe derived-score and background-observer behavior remain pending |
+| Signed staging launch | PASS | Selected artifact `dd0ed68` was signed with the paid-team profile, over-installed as `com.narenyenuganti.HealthComp.staging`, retained local state and its authenticated session, and remained warning-free through controlled relaunch and bounded refresh |
+| Sign in with Apple | PARTIAL | Fresh native authorization completed on prior artifact `9d19937`; selected artifact `dd0ed68` preserved that authenticated session, but native authorization still requires exact-current-artifact readback |
+| HealthKit | PARTIAL | Grant, revoke, and re-enable startup paths completed historically, and all app-requested categories were granted on prior artifact `9d19937`; selected artifact `dd0ed68` invoked its startup authorization request and launched without `Activity authorization is unavailable.` Public HealthKit does not expose read denial, so active-competition privacy-safe derived score and background-observer behavior remain pending |
 | Background observer | PENDING | Durable journal write before completion callback |
 | APNs | PARTIAL | iOS authorization and one active sandbox installation were verified at `2026-08-16T07:04:49.701324Z`; foreground, background, and cold-route delivery remain pending |
 | App Attest | PENDING | Real key registration, assertion, replay rejection, and replacement-device flow |
@@ -236,12 +254,12 @@ Status meanings:
 
 ## Multi-user and operational gates
 
-- **PARTIAL:** Both dedicated accounts have authenticated staging profiles, but
-  the retained expired invitation descriptors expose a client synchronization
-  defect that consistently produces a per-competition refresh warning. The
-  diagnosed terminal-invitation handling must be fixed before a fresh
-  invitation is created and immediately claimed, then synchronized, finished,
-  revisited in history, rematched, muted, archived, and relaunched.
+- **PARTIAL:** Both dedicated accounts have authenticated staging profiles. PR #34
+  corrected terminal invitation inventory handling without deleting retained
+  history or the local journal, and selected artifact `dd0ed68` remained clean
+  through physical authenticated relaunch and bounded refresh. The prior false
+  warning no longer blocks a fresh invitation, but invitation acceptance,
+  convergence, and participant-isolation evidence remain pending below.
 - **PENDING:** Two-account invitation, controlled custom-scheme sharing, cold
   acceptance, and convergence evidence using the approved one-physical-iPhone-
   plus-Simulator topology. Sequential account switching must additionally
