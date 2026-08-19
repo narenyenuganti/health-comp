@@ -186,6 +186,15 @@ Status meanings:
   authenticated launch, controlled terminate/relaunch, and a bounded refresh
   readback ending at `2026-08-19T15:07Z`. No identifier, account detail, token,
   or Health datum was selected.
+- **PASS:** In a user-approved physical sequence ending at
+  `2026-08-19T17:13:03Z`, exact selected artifact `dd0ed68` completed sign-out,
+  reached its clean welcome screen, completed fresh native Sign in with Apple,
+  and returned to authenticated Sharing without a warning. No account identity,
+  authorization payload, token, private screenshot, raw HealthKit datum, or
+  exact Activity value is retained. This closes the exact-current-artifact
+  Sign in with Apple gate only; it does not create invitation, convergence,
+  HealthKit activity, background-delivery, APNs-delivery, App Attest, deletion,
+  or replacement-installation evidence.
 - **PENDING:** Create exactly one replacement invitation and consume it
   immediately during the two-account staging flow.
 - **PENDING:** Adversarial participant-isolation and tamper matrix.
@@ -233,17 +242,24 @@ Status meanings:
 - **PARTIAL:** After the restored session was signed out, fresh native Sign in
   with Apple authorization completed directly on the physical iPhone for
   prior selected artifact `9d19937`. At `2026-08-19T06:59Z`, iPhone Mirroring
-  read back the authenticated Sharing UI. Selected artifact `dd0ed68` preserved
-  that session through over-install and relaunch, but native authorization has
-  not yet been re-exercised on the exact current artifact. No Apple account
-  identity, authorization payload, token, or private screenshot is included.
+  read back the authenticated Sharing UI. Selected artifact `dd0ed68` later
+  preserved that session through over-install and relaunch. This remains a
+  historical supporting receipt; the exact-current receipt below supersedes
+  its former artifact-version limitation. No Apple account identity,
+  authorization payload, token, or private screenshot is included.
+- **PASS:** In the later user-approved sequence ending at
+  `2026-08-19T17:13:03Z`, selected artifact `dd0ed68` itself completed sign-out,
+  displayed its clean welcome screen, completed fresh native Sign in with
+  Apple, and returned to authenticated Sharing without a warning. The evidence
+  retains no account identity, authorization payload, token, private
+  screenshot, raw HealthKit datum, or exact Activity value.
 
 ## Physical-device gates
 
 | Gate | Status | Required evidence |
 | --- | --- | --- |
 | Signed staging launch | PASS | Selected artifact `dd0ed68` was signed with the paid-team profile, over-installed as `com.narenyenuganti.HealthComp.staging`, retained local state and its authenticated session, and remained warning-free through controlled relaunch and bounded refresh |
-| Sign in with Apple | PARTIAL | Fresh native authorization completed on prior artifact `9d19937`; selected artifact `dd0ed68` preserved that authenticated session, but native authorization still requires exact-current-artifact readback |
+| Sign in with Apple | PASS | Exact selected artifact `dd0ed68` completed a user-approved sign-out and fresh native Sign in with Apple sequence, then returned to authenticated Sharing without a warning at `2026-08-19T17:13:03Z`; no identity or authorization payload is retained |
 | HealthKit | PARTIAL | Grant, revoke, and re-enable startup paths completed historically, and all app-requested categories were granted on prior artifact `9d19937`; selected artifact `dd0ed68` invoked its startup authorization request and launched without `Activity authorization is unavailable.` Public HealthKit does not expose read denial, so active-competition privacy-safe derived score and background-observer behavior remain pending |
 | Background observer | PENDING | Durable journal write before completion callback |
 | APNs | PARTIAL | iOS authorization and one active sandbox installation were verified at `2026-08-16T07:04:49.701324Z`; foreground, background, and cold-route delivery remain pending |

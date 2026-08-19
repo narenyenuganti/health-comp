@@ -34,7 +34,7 @@ represented as universal-link evidence.
 | Physical build | Automatic paid-team signing produced selected source commit `dd0ed683a78de216f622e2a958baeda1cb996e46` for the paired physical iPhone. The embedded profile authorizes exact App ID `23LUYD78QK.com.narenyenuganti.HealthComp.staging`, sandbox APNs, Sign in with Apple, HealthKit with background delivery, and App Attest; the bundle passed strict code-signature validation | PASS |
 | Physical install | At `2026-08-19T08:18:49Z`, build 1 from selected source commit `dd0ed68` over-installed successfully as `com.narenyenuganti.HealthComp.staging` and appeared in device inventory. The existing authenticated session and local app state remained available. This proves a same-bundle upgrade, not the later remove/reinstall replacement lifecycle that must retire an installation and App Attest key | PASS |
 | Physical launch | At `2026-08-19T15:06Z`, iPhone Mirroring read back selected artifact `dd0ed68` at the authenticated Sharing UI without a warning. The Account UI then confirmed the authenticated state and displayed the raw-HealthKit-on-device privacy boundary. A controlled terminate/relaunch returned to Sharing, and a bounded readback at `2026-08-19T15:07Z` remained warning-free. No account identity, token, private screenshot, raw HealthKit datum, or exact Activity value is retained | PASS |
-| Sign in with Apple | Fresh native Sign in with Apple authorization completed on prior selected artifact `9d19937`. Selected artifact `dd0ed68` preserved that authenticated session across the over-install and controlled relaunch, but native authorization has not yet been re-exercised on the exact current artifact | PARTIAL |
+| Sign in with Apple | In a user-approved physical sequence ending at `2026-08-19T17:13:03Z`, selected artifact `dd0ed68` completed sign-out, reached its clean welcome screen, completed fresh native Sign in with Apple, and returned to authenticated Sharing without a warning. No account identity, authorization payload, token, private screenshot, raw HealthKit datum, or exact Activity value is retained | PASS |
 | Selected-build authenticated refresh | The prior `9d19937` relaunch reproduced `Some competition activity could not be refreshed.` and privacy-safe hosted readbacks isolated two terminal descriptors. PR #34 corrected the client boundary, and selected artifact `dd0ed68` reached authenticated Sharing without a warning on first launch, controlled terminate/relaunch, and the bounded post-refresh readback ending at `2026-08-19T15:07Z`. Retained server history and the local journal were not deleted | PASS |
 | APNs registration | On historical physical build `1ca67af`, iOS authorization completed and a read-only staging query returned exactly one `sandbox` / `active` installation updated at `2026-08-16T07:04:49.701324Z`; no installation, profile, or token identifier was selected. Registration on selected release artifact `dd0ed68` remains pending | PARTIAL |
 | HealthKit startup cycle | The physical iPhone completed grant, revoke, and re-enable startup paths historically. On prior selected artifact `9d19937`, all app-requested categories were granted through the native Health Access sheet. Selected artifact `dd0ed68` was over-installed under the same bundle, invoked its startup authorization request, and reached Sharing without `Activity authorization is unavailable.` This proves the exact-current startup request completed under the retained grant; public HealthKit does not reveal read denial, so active-competition derived score and background-observer behavior remain unverified | PARTIAL |
@@ -49,17 +49,19 @@ The current selected-artifact physical receipt proves that exact source commit
 profile, over-installed on the paired iPhone, and launched with its existing
 local state and authenticated session intact. A controlled terminate/relaunch
 and bounded post-refresh readback remained at the Sharing UI without the prior
-terminal-invitation warning. No private screenshot, account identity, raw
-HealthKit datum, or exact Activity value is retained. This receipt does not
-prove fresh native Sign in with Apple on the exact current artifact,
-active-competition HealthKit behavior, background delivery, or the later
-remove/reinstall replacement lifecycle.
+terminal-invitation warning. In a later user-approved sequence, the exact same
+artifact completed sign-out, reached its clean welcome screen, completed fresh
+native Sign in with Apple, and returned to authenticated Sharing without a
+warning at `2026-08-19T17:13:03Z`. No private screenshot, account identity,
+authorization payload, token, raw HealthKit datum, or exact Activity value is
+retained. This receipt does not prove active-competition HealthKit behavior,
+background delivery, or the later remove/reinstall replacement lifecycle.
 
 The prior `9d199377f5d72cb7bc90133c190e4e7681abfb41` receipt proves a fresh
 install, selected-icon rendering, fresh native Health Access approval, and
-fresh native Sign in with Apple. Those are historical current-lineage
-capability receipts after selection advanced to `dd0ed68`; they are not direct
-exact-current-artifact service receipts.
+fresh native Sign in with Apple. Those remain historical current-lineage
+capability receipts after selection advanced to `dd0ed68`; fresh native Sign
+in with Apple is now also directly evidenced on the exact selected artifact.
 
 The prior historical physical receipt proves that Xcode can resolve the paid
 team, create a one-year staging development profile for the exact bundle, sign
@@ -77,9 +79,9 @@ convergence evidence.
 
 That broader historical capability receipt was captured on source commit
 `1ca67af76b738bd7fbb19277b238b448a555f8ef`. It is historical capability
-evidence only. It does not prove current-build Sign in with Apple, authenticated
-transport, or HealthKit behavior on selected release artifact `dd0ed68`. The
-current signed Simulator receipt proves only
+evidence only and, by itself, does not prove current-build Sign in with Apple,
+authenticated transport, or HealthKit behavior on selected release artifact
+`dd0ed68`. The current signed Simulator receipt proves only
 transport, entitlement embedding, session restoration, and local profile
 persistence in the Simulator environment.
 
@@ -90,17 +92,15 @@ physical or hosted service flow to complete.
 
 ## Immediate continuation
 
-1. Re-exercise native Sign in with Apple on exact selected artifact `dd0ed68`
-   without retaining identity or authorization payloads.
-2. After that exact-artifact service readback, create one
+1. After the exact-artifact Sign in with Apple readback, create one
    replacement invitation on the clean Simulator endpoint and
    consume its opaque custom-scheme link immediately on the selected-artifact
    physical endpoint. Complete two-account convergence with the approved
    topology and two Apple accounts, including the first privacy-safe score
    submission.
-3. Verify active-competition HealthKit behavior, the background observer, App
+2. Verify active-competition HealthKit behavior, the background observer, App
    Attest, and APNs foreground/background/cold-route delivery.
-4. Continue deletion and same-phone replacement-installation gates in the
+3. Continue deletion and same-phone replacement-installation gates in the
    checked-in order.
 
 ## Explicitly unresolved
@@ -111,13 +111,11 @@ physical or hosted service flow to complete.
   both history rows are retained, and the one replacement invitation required
   for two-account staging has not been created.
 - No adversarial cross-account/tamper receipt exists.
-- Selected release artifact `dd0ed68` is installed and reaches the authenticated
-  Sharing UI without the prior terminal-invitation warning across a controlled
-  relaunch and bounded refresh. Its session descends from fresh native Sign in
-  with Apple on prior artifact `9d19937`, so native Sign in with Apple still
-  requires exact-current-artifact readback. The current artifact's startup
-  Health authorization request completed under the retained same-bundle grant,
-  but active-competition HealthKit behavior and the remaining physical service
+- Selected release artifact `dd0ed68` is installed, completed fresh native
+  Sign in with Apple, and reaches authenticated Sharing without the prior
+  terminal-invitation warning. The current artifact's startup Health
+  authorization request completed under the retained same-bundle grant, but
+  active-competition HealthKit behavior and the remaining physical service
   gates are not yet exercised.
 - No active-competition HealthKit derived-score, background-observer, APNs
   delivery, App Attest, deletion, or same-phone replacement-installation
