@@ -32,10 +32,11 @@ represented as universal-link evidence.
 | Profile entitlements | Sandbox APNs, Sign in with Apple, HealthKit, HealthKit background delivery, and App Attest authorized | PASS |
 | Physical build | Automatic paid-team signing produced selected source commit `9d199377f5d72cb7bc90133c190e4e7681abfb41` for the paired physical iPhone. The embedded profile authorizes exact App ID `23LUYD78QK.com.narenyenuganti.HealthComp.staging`, sandbox APNs, Sign in with Apple, HealthKit with background delivery, and App Attest; the bundle passed strict code-signature validation | PASS |
 | Physical install | A pre-install device query found no installed HealthComp bundle. At `2026-08-18T05:12:52Z`, build 1 from selected source commit `9d19937` installed successfully as `com.narenyenuganti.HealthComp.staging` and appeared in device inventory. Because the app was absent beforehand, this was a fresh install and is not replacement-installation evidence | PASS |
-| Physical launch | iPhone Mirroring showed the selected white app icon in Spotlight and the selected build launched to the native Health Access prompt. No Health permission was granted or denied. This proves launch only, not authenticated staging transport or any HealthKit data flow | PASS |
-| Sign in with Apple | Native authorization and staging Supabase profile bootstrap completed on the prior physical build; no account identity or token was retained; current-build repetition remains pending | PARTIAL |
+| Physical launch | iPhone Mirroring showed the selected white app icon in Spotlight and the selected build launched to the native Health Access prompt. At `2026-08-19T06:53Z`, after fresh action-time approval, every Health category requested by the app was enabled through the native `Turn On All` control and the final `Allow` action completed. The selected build then reached the authenticated Sharing UI through its restored session. This checked-in receipt contains no account identity, token, private screenshot, raw HealthKit datum, or exact Activity value. This proves selected-build launch and the Health authorization UI path, not active-competition derived-score or background behavior | PASS |
+| Sign in with Apple | After the restored session was signed out, fresh native Sign in with Apple authorization completed directly on the physical iPhone for selected artifact `9d19937`. At `2026-08-19T06:59Z`, iPhone Mirroring read back the authenticated Sharing UI. The checked-in receipt contains no Apple account identity, authorization payload, or token | PASS |
+| Selected-build authenticated refresh | A controlled relaunch at `2026-08-19T07:02Z` reproduced `Some competition activity could not be refreshed.` Privacy-safe hosted readbacks ending at `2026-08-19T07:06:16.64042Z` found zero pending competitions and two expired competitions; accepted-membership, retained-unclaimed-invitation, and lifecycle-change distributions were each `[1,1]`. Selected client source treats every declined, expired, or cancelled descriptor as `competitionNotMaterialized`, which the publication layer exposes as a per-competition failure. No identifier, account detail, token, or Health datum was selected. The terminal-invitation synchronization defect must be fixed before replacement-invitation staging | PARTIAL |
 | APNs registration | On historical physical build `1ca67af`, iOS authorization completed and a read-only staging query returned exactly one `sandbox` / `active` installation updated at `2026-08-16T07:04:49.701324Z`; no installation, profile, or token identifier was selected. Registration on selected release artifact `9d19937` remains pending | PARTIAL |
-| HealthKit startup cycle | The physical iPhone completed grant, revoke, and re-enable startup paths. Each enabled relaunch reached the authenticated Sharing UI without an authorization-unavailable issue; only status/UI evidence was retained. Active-competition derived-score behavior remains unverified | PARTIAL |
+| HealthKit startup cycle | The physical iPhone completed grant, revoke, and re-enable startup paths on the historical build. On selected artifact `9d19937`, all app-requested categories were granted through the native Health Access sheet and the app reached the authenticated Sharing UI without an authorization-unavailable issue. Only privacy-safe status/UI evidence was retained. Active-competition derived-score and background-observer behavior remain unverified | PARTIAL |
 | Hosted staging preflight | A SELECT-only audit ending at `2026-08-17T07:12:08Z` found two active profiles, two active sandbox installations, two pending competitions, two live unclaimed invitations, zero consumed invitations, and a pending distribution of `[0,2]` across the active profiles. It also found zero App Attest keys, account-deletion records, daily-score revisions, and competition results. No identifier, token, digest, account detail, private screenshot, or HealthKit value was selected or retained | PASS |
 | Staging expired-invitation cleanup | After both invitations expired, a privacy-safe snapshot returned exact count `2` and opaque scope SHA-256 `0ebe0077d5312b7245ce55065dc2d30437e1af052f14ae98ee391af92542f314`. Following action-time approval, the reviewed guard ran as one explicit serializable transaction through the authenticated Supabase Management API database-query route rather than `psql`; it retained the approved scope checks, timeouts, service-role request claim, cleanup-count assertion, and explicit commit. Dedicated read-only route readback at `2026-08-19T04:16:02.604717Z` found zero pending competitions, two expired competitions, two retained invitation-history rows, zero claimed or consumed invitations, and zero remaining eligible invitations. No identifier or token was selected, no lifecycle row was edited directly, and no replacement invitation was created | PASS |
 | Staging replacement invitation | One replacement invitation must be created only after selected-build Health Access and Sign in with Apple are complete, then consumed immediately on the second isolated endpoint | PENDING |
@@ -47,7 +48,11 @@ The selected-artifact physical receipt proves that exact source commit
 profile, installed on the paired iPhone, rendered with the selected app icon,
 and launched to the native Health Access prompt. The app was absent before the
 install, so the receipt proves a fresh install rather than an over-install or
-replacement lifecycle. No Health permission choice was made.
+replacement lifecycle. A later action-time-approved pass enabled every
+app-requested Health category through the native sheet and reached the
+authenticated Sharing UI using the restored session. No private screenshot,
+raw HealthKit datum, or exact Activity value is included in this receipt. This
+does not prove active-competition derived-score or background behavior.
 
 The prior historical physical receipt proves that Xcode can resolve the paid
 team, create a one-year staging development profile for the exact bundle, sign
@@ -78,10 +83,12 @@ physical or hosted service flow to complete.
 
 ## Immediate continuation
 
-1. On already-installed selected release artifact `9d19937`, complete an
-   explicitly authorized Health Access choice and repeat Sign in with Apple
-   before creating or consuming a replacement invitation.
-2. Create one replacement invitation on the clean Simulator endpoint and
+1. Fix and verify terminal invitation synchronization so the two retained
+   expired server descriptors do not produce a false refresh failure. Select,
+   sign, and reinstall the corrected artifact before continuing physical
+   evidence.
+2. After the corrected artifact has clean authenticated readback, create one
+   replacement invitation on the clean Simulator endpoint and
    consume its opaque custom-scheme link immediately on the selected-artifact
    physical endpoint. Complete two-account convergence with the approved
    topology and two Apple accounts, including the first privacy-safe score
@@ -99,10 +106,13 @@ physical or hosted service flow to complete.
   both history rows are retained, and the one replacement invitation required
   for two-account staging has not been created.
 - No adversarial cross-account/tamper receipt exists.
-- Selected release artifact `9d19937` is installed and launches on the physical
-  iPhone, but current-build Sign in with Apple, authenticated transport,
-  HealthKit behavior, and the remaining physical service gates are not yet
-  exercised.
+- Selected release artifact `9d19937` is installed, has all app-requested
+  Health categories authorized, and reaches the authenticated Sharing UI using
+  both its restored session and a fresh direct-on-iPhone Sign in with Apple.
+  Its authenticated competition refresh consistently reports the diagnosed
+  terminal-invitation synchronization defect, so clean authenticated transport
+  readback, active-competition HealthKit behavior, and the remaining physical
+  service gates are not yet exercised.
 - No active-competition HealthKit derived-score, background-observer, APNs
   delivery, App Attest, deletion, or same-phone replacement-installation
   receipt exists.
