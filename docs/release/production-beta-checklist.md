@@ -149,15 +149,24 @@ Status meanings:
 - **PASS:** The same privacy-bounded inventory found zero App Attest keys,
   account-deletion records, daily-score revisions, and competition results.
   No third invitation or hosted mutation was created during the audit.
-- **PARTIAL:** The two unclaimed invitations expire between
-  `2026-08-19T01:56:21Z` and `2026-08-19T03:37:49Z`. Their plaintext tokens are
-  not recoverable from hosted state, no supported creator-cancel action or
-  audited operator-cancel RPC exists, and no direct row edit was attempted.
-  After expiry, follow the guarded expired-invitation procedure in
-  [Competition Support](../runbooks/competition-support.md#supported-operator-actions).
-  It must mark the competitions expired while retaining invitation history. A
-  readback of zero live pending invitations must precede creation of one
-  immediately consumed replacement invitation.
+- **PASS:** After both invitations expired, a fresh privacy-safe scope snapshot
+  returned count `2` and opaque scope SHA-256
+  `0ebe0077d5312b7245ce55065dc2d30437e1af052f14ae98ee391af92542f314`.
+  Following action-time approval, the exact reviewed guard from
+  [Competition Support](../runbooks/competition-support.md#supported-operator-actions)
+  ran as one explicit serializable transaction through the authenticated
+  Supabase Management API database-query route. The transport was the
+  Management API rather than `psql`; the transaction retained the approved
+  count/fingerprint checks, bounded timeouts, service-role request claim,
+  cleanup-count assertion, and explicit commit.
+- **PASS:** Readback through the dedicated read-only Management API route at
+  `2026-08-19T04:16:02.604717Z` found zero pending competitions, two expired
+  competitions, two retained invitation-history rows, zero claimed or consumed
+  invitations, and zero remaining eligible invitations. No identifier or token
+  was selected, no lifecycle row was edited directly, and no replacement
+  invitation was created.
+- **PENDING:** Create exactly one replacement invitation and consume it
+  immediately during the two-account staging flow.
 - **PENDING:** Adversarial participant-isolation and tamper matrix.
 
 ## Paid-team signing and installation
