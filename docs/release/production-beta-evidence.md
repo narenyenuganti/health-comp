@@ -37,7 +37,8 @@ represented as universal-link evidence.
 | APNs registration | On historical physical build `1ca67af`, iOS authorization completed and a read-only staging query returned exactly one `sandbox` / `active` installation updated at `2026-08-16T07:04:49.701324Z`; no installation, profile, or token identifier was selected. Registration on selected release artifact `9d19937` remains pending | PARTIAL |
 | HealthKit startup cycle | The physical iPhone completed grant, revoke, and re-enable startup paths. Each enabled relaunch reached the authenticated Sharing UI without an authorization-unavailable issue; only status/UI evidence was retained. Active-competition derived-score behavior remains unverified | PARTIAL |
 | Hosted staging preflight | A SELECT-only audit ending at `2026-08-17T07:12:08Z` found two active profiles, two active sandbox installations, two pending competitions, two live unclaimed invitations, zero consumed invitations, and a pending distribution of `[0,2]` across the active profiles. It also found zero App Attest keys, account-deletion records, daily-score revisions, and competition results. No identifier, token, digest, account detail, private screenshot, or HealthKit value was selected or retained | PASS |
-| Staging invitation lifecycle | The two unclaimed invitations expire between `2026-08-19T01:56:21Z` and `2026-08-19T03:37:49Z`. Their plaintext tokens are not recoverable from hosted state; no supported creator-cancel action or audited operator-cancel RPC exists. No third invitation, cleanup call, direct row edit, or other hosted mutation was performed during the preflight | PARTIAL |
+| Staging expired-invitation cleanup | After both invitations expired, a privacy-safe snapshot returned exact count `2` and opaque scope SHA-256 `0ebe0077d5312b7245ce55065dc2d30437e1af052f14ae98ee391af92542f314`. Following action-time approval, the reviewed guard ran as one explicit serializable transaction through the authenticated Supabase Management API database-query route rather than `psql`; it retained the approved scope checks, timeouts, service-role request claim, cleanup-count assertion, and explicit commit. Dedicated read-only route readback at `2026-08-19T04:16:02.604717Z` found zero pending competitions, two expired competitions, two retained invitation-history rows, zero claimed or consumed invitations, and zero remaining eligible invitations. No identifier or token was selected, no lifecycle row was edited directly, and no replacement invitation was created | PASS |
+| Staging replacement invitation | One replacement invitation must be created only after selected-build Health Access and Sign in with Apple are complete, then consumed immediately on the second isolated endpoint | PENDING |
 
 ## What the physical receipt proves
 
@@ -57,8 +58,10 @@ The profile readback proves the required capability authorizations are present.
 It also proves the HealthKit authorization lifecycle can return to an enabled
 startup state and that one authenticated creator can durably create a private,
 unclaimed staging competition without prematurely invoking App Attest. A later
-read-only audit found two pending unclaimed competitions; it does not turn
-either invitation into two-account claim or convergence evidence.
+read-only audit found two pending unclaimed competitions. After their expiry,
+the approved guarded cleanup marked both competitions expired while retaining
+both invitation-history rows. Neither invitation became two-account claim or
+convergence evidence.
 
 That broader historical capability receipt was captured on source commit
 `1ca67af76b738bd7fbb19277b238b448a555f8ef`. It is historical capability
@@ -75,33 +78,26 @@ physical or hosted service flow to complete.
 
 ## Immediate continuation
 
-1. After both unavailable invitations expire, follow the exact guarded
-   expired-invitation procedure in
-   [Competition Support](../runbooks/competition-support.md#supported-operator-actions),
-   including action-time scope approval, transaction bounds, and automatic
-   rollback on scope drift or error. Confirm that it marks the two competitions
-   expired, retains the invitation-history rows, and leaves zero live pending
-   invitations. Do not create a third live invitation or edit lifecycle rows
-   directly.
-2. On already-installed selected release artifact `9d19937`, complete an
+1. On already-installed selected release artifact `9d19937`, complete an
    explicitly authorized Health Access choice and repeat Sign in with Apple
    before creating or consuming a replacement invitation.
-3. Create one replacement invitation on the clean Simulator endpoint and
+2. Create one replacement invitation on the clean Simulator endpoint and
    consume its opaque custom-scheme link immediately on the selected-artifact
    physical endpoint. Complete two-account convergence with the approved
    topology and two Apple accounts, including the first privacy-safe score
    submission.
-4. Verify active-competition HealthKit behavior, the background observer, App
+3. Verify active-competition HealthKit behavior, the background observer, App
    Attest, and APNs foreground/background/cold-route delivery.
-5. Continue deletion and same-phone replacement-installation gates in the
+4. Continue deletion and same-phone replacement-installation gates in the
    checked-in order.
 
 ## Explicitly unresolved
 
 - No two-account staging E2E receipt exists under the approved one-physical-
   iPhone-plus-Simulator topology.
-- Two live unclaimed invitations remain until their 2026-08-19 expiry window;
-  neither plaintext claim token is recoverable from hosted state.
+- No live invitation remains after the approved expired-invitation cleanup;
+  both history rows are retained, and the one replacement invitation required
+  for two-account staging has not been created.
 - No adversarial cross-account/tamper receipt exists.
 - Selected release artifact `9d19937` is installed and launches on the physical
   iPhone, but current-build Sign in with Apple, authenticated transport,
