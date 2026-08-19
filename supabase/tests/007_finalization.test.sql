@@ -21,7 +21,7 @@ insert into public.profiles(id,auth_user_id,display_name,state) values
 insert into public.competitions(id,creator_profile_id,time_zone_identifier,start_day,scoring_policy_identity,lifecycle,invitation_expires_at,best_available_deadline) values
 ('73000000-0000-0000-0000-000000000001','72000000-0000-0000-0000-000000000001','UTC','2026-08-01','healthcomp.activity-score.v1','tallying','2026-07-31','2099-01-01'),
 ('73000000-0000-0000-0000-000000000002','72000000-0000-0000-0000-000000000001','UTC','2026-08-12','healthcomp.activity-score.v1','tallying','2026-08-01','2026-08-10'),
-('73000000-0000-0000-0000-000000000003','72000000-0000-0000-0000-000000000001','UTC','2026-08-12','healthcomp.activity-score.v1','tallying','2026-08-11','2099-01-01');
+('73000000-0000-0000-0000-000000000003','72000000-0000-0000-0000-000000000001','UTC',(transaction_timestamp() at time zone 'UTC')::date+1,'healthcomp.activity-score.v1','tallying',(transaction_timestamp() at time zone 'UTC')::date,'2099-01-01');
 insert into public.competition_participants(competition_id,profile_id,role,state)
 select c.id,p.id,case when p.id='72000000-0000-0000-0000-000000000001' then 'creator' else 'invitee' end,'accepted'
 from (values('73000000-0000-0000-0000-000000000001'::uuid),('73000000-0000-0000-0000-000000000002'::uuid),('73000000-0000-0000-0000-000000000003'::uuid)) c(id)
@@ -33,7 +33,7 @@ select '73000000-0000-0000-0000-000000000001',p.id,d,gen_random_uuid()::text,d,'
  private.wire_score_digest_v1('73000000-0000-0000-0000-000000000001',p.id,d::smallint,'activeEnergyKilocalories','standHours',case when p.id='72000000-0000-0000-0000-000000000001' then 300 else 100 end,200,100,case when p.id='72000000-0000-0000-0000-000000000001' then 600 else 400 end,'available','healthcomp.activity-score.v1',d),1,'2026-07-31'::timestamptz+d*interval '1 day'
 from (values('72000000-0000-0000-0000-000000000001'::uuid),('72000000-0000-0000-0000-000000000002'::uuid)) p(id) cross join generate_series(1,7) d;
 insert into public.daily_score_revisions(competition_id,participant_profile_id,day_ordinal,semantic_event_id,client_revision,move_mode,stand_mode,move_basis_points,exercise_basis_points,stand_basis_points,accepted_centi_points,availability_reason,scoring_policy_identity,wire_content_sha256,server_seq,evaluated_at)
-select '73000000-0000-0000-0000-000000000003',p.id,d,gen_random_uuid()::text,d,'activeEnergyKilocalories','standHours',100,100,100,300,'available','healthcomp.activity-score.v1',private.wire_score_digest_v1('73000000-0000-0000-0000-000000000003',p.id,d::smallint,'activeEnergyKilocalories','standHours',100,100,100,300,'available','healthcomp.activity-score.v1',d),1,'2026-08-11'::timestamptz+d*interval '1 day'
+select '73000000-0000-0000-0000-000000000003',p.id,d,gen_random_uuid()::text,d,'activeEnergyKilocalories','standHours',100,100,100,300,'available','healthcomp.activity-score.v1',private.wire_score_digest_v1('73000000-0000-0000-0000-000000000003',p.id,d::smallint,'activeEnergyKilocalories','standHours',100,100,100,300,'available','healthcomp.activity-score.v1',d),1,(((transaction_timestamp() at time zone 'UTC')::date+d)::timestamp at time zone 'UTC')
 from (values('72000000-0000-0000-0000-000000000001'::uuid),('72000000-0000-0000-0000-000000000002'::uuid)) p(id) cross join generate_series(1,7) d;
 
 select set_config('request.jwt.claims','{"sub":"71000000-0000-0000-0000-000000000001","role":"authenticated"}',true);
