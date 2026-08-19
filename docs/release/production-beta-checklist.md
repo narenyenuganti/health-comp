@@ -121,9 +121,12 @@ Status meanings:
   authenticated Sharing UI without a warning. Its Account UI confirmed the
   authenticated state and raw-HealthKit-on-device boundary. A controlled
   terminate/relaunch and bounded readback ending at `2026-08-19T15:07Z`
-  remained warning-free. This proves corrected authenticated transport, not
-  fresh native Sign in with Apple or active HealthKit behavior on this exact
-  artifact. Simulator receipts are not physical-device evidence.
+  remained free of both the prior refresh warning and `Activity authorization
+  is unavailable.` Current source requests Health authorization during startup,
+  so this proves corrected authenticated transport and a completed startup
+  authorization request under the retained same-bundle grant, not fresh native
+  Sign in with Apple or active HealthKit behavior. Simulator receipts are not
+  physical-device evidence.
 
 ## Hosted staging
 
@@ -241,7 +244,7 @@ Status meanings:
 | --- | --- | --- |
 | Signed staging launch | PASS | Selected artifact `dd0ed68` was signed with the paid-team profile, over-installed as `com.narenyenuganti.HealthComp.staging`, retained local state and its authenticated session, and remained warning-free through controlled relaunch and bounded refresh |
 | Sign in with Apple | PARTIAL | Fresh native authorization completed on prior artifact `9d19937`; selected artifact `dd0ed68` preserved that authenticated session, but native authorization still requires exact-current-artifact readback |
-| HealthKit | PARTIAL | Grant, revoke, and re-enable startup paths completed historically, and all app-requested categories were granted on prior artifact `9d19937`; selected artifact `dd0ed68` launched without an authorization-unavailable issue, but exact-current-artifact authorization readback, active-competition privacy-safe derived score, and background-observer behavior remain pending |
+| HealthKit | PARTIAL | Grant, revoke, and re-enable startup paths completed historically, and all app-requested categories were granted on prior artifact `9d19937`; selected artifact `dd0ed68` invoked its startup authorization request and launched without `Activity authorization is unavailable.` Public HealthKit does not expose read denial, so active-competition privacy-safe derived score and background-observer behavior remain pending |
 | Background observer | PENDING | Durable journal write before completion callback |
 | APNs | PARTIAL | iOS authorization and one active sandbox installation were verified at `2026-08-16T07:04:49.701324Z`; foreground, background, and cold-route delivery remain pending |
 | App Attest | PENDING | Real key registration, assertion, replay rejection, and replacement-device flow |

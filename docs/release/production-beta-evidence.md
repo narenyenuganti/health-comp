@@ -37,7 +37,7 @@ represented as universal-link evidence.
 | Sign in with Apple | Fresh native Sign in with Apple authorization completed on prior selected artifact `9d19937`. Selected artifact `dd0ed68` preserved that authenticated session across the over-install and controlled relaunch, but native authorization has not yet been re-exercised on the exact current artifact | PARTIAL |
 | Selected-build authenticated refresh | The prior `9d19937` relaunch reproduced `Some competition activity could not be refreshed.` and privacy-safe hosted readbacks isolated two terminal descriptors. PR #34 corrected the client boundary, and selected artifact `dd0ed68` reached authenticated Sharing without a warning on first launch, controlled terminate/relaunch, and the bounded post-refresh readback ending at `2026-08-19T15:07Z`. Retained server history and the local journal were not deleted | PASS |
 | APNs registration | On historical physical build `1ca67af`, iOS authorization completed and a read-only staging query returned exactly one `sandbox` / `active` installation updated at `2026-08-16T07:04:49.701324Z`; no installation, profile, or token identifier was selected. Registration on selected release artifact `dd0ed68` remains pending | PARTIAL |
-| HealthKit startup cycle | The physical iPhone completed grant, revoke, and re-enable startup paths historically. On prior selected artifact `9d19937`, all app-requested categories were granted through the native Health Access sheet. Selected artifact `dd0ed68` was over-installed under the same bundle and launched without an authorization-unavailable issue, but exact-current-artifact authorization readback, active-competition derived score, and background-observer behavior remain unverified | PARTIAL |
+| HealthKit startup cycle | The physical iPhone completed grant, revoke, and re-enable startup paths historically. On prior selected artifact `9d19937`, all app-requested categories were granted through the native Health Access sheet. Selected artifact `dd0ed68` was over-installed under the same bundle, invoked its startup authorization request, and reached Sharing without `Activity authorization is unavailable.` This proves the exact-current startup request completed under the retained grant; public HealthKit does not reveal read denial, so active-competition derived score and background-observer behavior remain unverified | PARTIAL |
 | Hosted staging preflight | A SELECT-only audit ending at `2026-08-17T07:12:08Z` found two active profiles, two active sandbox installations, two pending competitions, two live unclaimed invitations, zero consumed invitations, and a pending distribution of `[0,2]` across the active profiles. It also found zero App Attest keys, account-deletion records, daily-score revisions, and competition results. No identifier, token, digest, account detail, private screenshot, or HealthKit value was selected or retained | PASS |
 | Staging expired-invitation cleanup | After both invitations expired, a privacy-safe snapshot returned exact count `2` and opaque scope SHA-256 `0ebe0077d5312b7245ce55065dc2d30437e1af052f14ae98ee391af92542f314`. Following action-time approval, the reviewed guard ran as one explicit serializable transaction through the authenticated Supabase Management API database-query route rather than `psql`; it retained the approved scope checks, timeouts, service-role request claim, cleanup-count assertion, and explicit commit. Dedicated read-only route readback at `2026-08-19T04:16:02.604717Z` found zero pending competitions, two expired competitions, two retained invitation-history rows, zero claimed or consumed invitations, and zero remaining eligible invitations. No identifier or token was selected, no lifecycle row was edited directly, and no replacement invitation was created | PASS |
 | Staging replacement invitation | One replacement invitation must be created only after selected-build Health Access and Sign in with Apple are complete, then consumed immediately on the second isolated endpoint | PENDING |
@@ -90,9 +90,9 @@ physical or hosted service flow to complete.
 
 ## Immediate continuation
 
-1. Re-exercise native Sign in with Apple and confirm Health authorization on
-   exact selected artifact `dd0ed68` without retaining identity or Health data.
-2. After those exact-artifact service readbacks, create one
+1. Re-exercise native Sign in with Apple on exact selected artifact `dd0ed68`
+   without retaining identity or authorization payloads.
+2. After that exact-artifact service readback, create one
    replacement invitation on the clean Simulator endpoint and
    consume its opaque custom-scheme link immediately on the selected-artifact
    physical endpoint. Complete two-account convergence with the approved
@@ -114,10 +114,11 @@ physical or hosted service flow to complete.
 - Selected release artifact `dd0ed68` is installed and reaches the authenticated
   Sharing UI without the prior terminal-invitation warning across a controlled
   relaunch and bounded refresh. Its session descends from fresh native Sign in
-  with Apple and Health Access approval on prior artifact `9d19937`; those
-  native service paths still require exact-current-artifact readback. Active-
-  competition HealthKit behavior and the remaining physical service gates are
-  not yet exercised.
+  with Apple on prior artifact `9d19937`, so native Sign in with Apple still
+  requires exact-current-artifact readback. The current artifact's startup
+  Health authorization request completed under the retained same-bundle grant,
+  but active-competition HealthKit behavior and the remaining physical service
+  gates are not yet exercised.
 - No active-competition HealthKit derived-score, background-observer, APNs
   delivery, App Attest, deletion, or same-phone replacement-installation
   receipt exists.
