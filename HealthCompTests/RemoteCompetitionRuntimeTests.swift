@@ -420,6 +420,208 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
         XCTAssertEqual(fetches[0].pageSize, 200)
     }
 
+    func testExpiredDescriptorPrunesInventoryWithoutDeletingJournalOrFailure()
+        async throws
+    {
+        let root = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let eventsRoot = root.appendingPathComponent(
+            "events",
+            isDirectory: true
+        )
+        let cursorsRoot = root.appendingPathComponent(
+            "cursors",
+            isDirectory: true
+        )
+        for directory in [eventsRoot, cursorsRoot] {
+            try FileManager.default.createDirectory(
+                at: directory,
+                withIntermediateDirectories: true
+            )
+        }
+        let store = makeStore(root: eventsRoot)
+        let cache = JSONRemoteCompetitionCacheStore(
+            rootDirectory: cursorsRoot,
+            fileProtection: JSONCompetitionEventStoreFileProtection {
+                _, _ in
+            }
+        )
+        let createdAt = Date(timeIntervalSince1970: 1_786_540_000)
+        let pending = try pendingDescriptor(
+            creatorProfileID: profileID,
+            expiresAt: createdAt.addingTimeInterval(48 * 60 * 60)
+        )
+        let initialPage = try CompetitionChangePage(
+            competitionID: pending.competitionID,
+            afterServerSequence: 0,
+            snapshotServerSequence: 1,
+            nextServerSequence: 1,
+            hasMore: false,
+            changes: [
+                try participantAddedChange(
+                    sequence: 1,
+                    profileID: profileID,
+                    role: .creator,
+                    occurredAt: createdAt
+                ),
+            ]
+        )
+        let probe = RemoteCompetitionRuntimeProbe()
+        let initialRuntime = RemoteCompetitionRuntime(
+            profileID: profileID,
+            store: store,
+            remoteAPI: remoteAPI(
+                listCompetitions: { [pending] },
+                fetchChanges: { cursor, pageSize in
+                    await probe.recordFetch(
+                        cursor: cursor,
+                        pageSize: pageSize
+                    )
+                    return initialPage
+                }
+            ),
+            cacheStore: cache
+        )
+
+        let initial = await initialRuntime.synchronizeAll()
+
+        XCTAssertEqual(initial.failures, [])
+        XCTAssertEqual(initial.successfulCompetitions.count, 1)
+        let initialCache = try await cache.load(profileID: profileID)
+        XCTAssertEqual(initialCache.count, 1)
+        let journalIDs = try await store.ids()
+        XCTAssertEqual(journalIDs, [CompetitionID(competitionID)])
+
+        let expired = try CompetitionDescriptor(
+            competitionID: pending.competitionID,
+            creatorProfileID: pending.creatorProfileID,
+            timeZoneIdentifier: nil,
+            startDay: nil,
+            scoringPolicyIdentity: pending.scoringPolicyIdentity,
+            lifecycle: .expired,
+            invitationExpiresAt: pending.invitationExpiresAt,
+            bestAvailableDeadline: nil,
+            rematchParentID: pending.rematchParentID,
+            nextServerSequence: 3,
+            participants: pending.participants
+        )
+        let terminalRuntime = RemoteCompetitionRuntime(
+            profileID: profileID,
+            store: store,
+            remoteAPI: remoteAPI(
+                listCompetitions: { [expired] },
+                fetchChanges: { cursor, pageSize in
+                    await probe.recordFetch(
+                        cursor: cursor,
+                        pageSize: pageSize
+                    )
+                    throw CompetitionRemoteFailure.operationFailed
+                }
+            ),
+            cacheStore: cache
+        )
+
+        let terminal = await terminalRuntime.synchronizeAll()
+
+        XCTAssertNil(terminal.discoveryFailure)
+        XCTAssertEqual(terminal.outcomes, [])
+        let fetches = await probe.fetchObservations()
+        XCTAssertEqual(fetches.count, 1)
+        let terminalCache = try await cache.load(profileID: profileID)
+        XCTAssertEqual(terminalCache, [])
+        let terminalJournalIDs = try await store.ids()
+        XCTAssertEqual(terminalJournalIDs, journalIDs)
+    }
+
+    func testOtherNonmaterializedTerminalDescriptorsPruneWithoutFailure()
+        async throws
+    {
+        let root = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let createdAt = Date(timeIntervalSince1970: 1_786_540_000)
+        let pending = try pendingDescriptor(
+            creatorProfileID: profileID,
+            expiresAt: createdAt.addingTimeInterval(48 * 60 * 60)
+        )
+
+        for lifecycle in [
+            CompetitionRemoteLifecycle.declined,
+            .cancelled,
+        ] {
+            let caseRoot = root.appendingPathComponent(
+                lifecycle.rawValue,
+                isDirectory: true
+            )
+            let eventsRoot = caseRoot.appendingPathComponent(
+                "events",
+                isDirectory: true
+            )
+            let cursorsRoot = caseRoot.appendingPathComponent(
+                "cursors",
+                isDirectory: true
+            )
+            for directory in [eventsRoot, cursorsRoot] {
+                try FileManager.default.createDirectory(
+                    at: directory,
+                    withIntermediateDirectories: true
+                )
+            }
+            let cache = JSONRemoteCompetitionCacheStore(
+                rootDirectory: cursorsRoot,
+                fileProtection: JSONCompetitionEventStoreFileProtection {
+                    _, _ in
+                }
+            )
+            try await cache.save(
+                [
+                    try RemoteCompetitionCacheEntry(
+                        descriptor: pending,
+                        lastSeenServerSequence: pending.serverCursor
+                    ),
+                ],
+                profileID: profileID
+            )
+            let terminalDescriptor = try CompetitionDescriptor(
+                competitionID: pending.competitionID,
+                creatorProfileID: pending.creatorProfileID,
+                timeZoneIdentifier: nil,
+                startDay: nil,
+                scoringPolicyIdentity: pending.scoringPolicyIdentity,
+                lifecycle: lifecycle,
+                invitationExpiresAt: pending.invitationExpiresAt,
+                bestAvailableDeadline: nil,
+                rematchParentID: pending.rematchParentID,
+                nextServerSequence: 3,
+                participants: pending.participants
+            )
+            let probe = RemoteCompetitionRuntimeProbe()
+            let runtime = RemoteCompetitionRuntime(
+                profileID: profileID,
+                store: makeStore(root: eventsRoot),
+                remoteAPI: remoteAPI(
+                    listCompetitions: { [terminalDescriptor] },
+                    fetchChanges: { cursor, pageSize in
+                        await probe.recordFetch(
+                            cursor: cursor,
+                            pageSize: pageSize
+                        )
+                        throw CompetitionRemoteFailure.operationFailed
+                    }
+                ),
+                cacheStore: cache
+            )
+
+            let outcome = await runtime.synchronizeAll()
+
+            XCTAssertNil(outcome.discoveryFailure, lifecycle.rawValue)
+            XCTAssertEqual(outcome.outcomes, [], lifecycle.rawValue)
+            let fetches = await probe.fetchObservations()
+            XCTAssertEqual(fetches.count, 0, lifecycle.rawValue)
+            let cachedEntries = try await cache.load(profileID: profileID)
+            XCTAssertEqual(cachedEntries, [], lifecycle.rawValue)
+        }
+    }
+
     func testEnumerationFailureForOneIDDoesNotSuppressValidCompetition()
         async throws
     {
