@@ -117,9 +117,11 @@ Status meanings:
   with a tree identical to the reviewed PR head. PR #29 later added only the
   reviewed app-icon assets and selected merge commit `9d19937`.
 - **PARTIAL:** Selected release artifact `9d19937` has been signed, installed,
-  and launched on the physical iPhone, but authenticated physical transport
-  has not yet been retested on that exact artifact. Simulator receipts are not
-  physical-device evidence.
+  and launched on the physical iPhone. Fresh native Sign in with Apple and
+  authenticated physical transport were retested on that exact artifact and
+  reached the Sharing UI, but a controlled relaunch reproduced the terminal-
+  invitation refresh warning; a clean authenticated physical readback remains
+  pending. Simulator receipts are not physical-device evidence.
 
 ## Hosted staging
 
