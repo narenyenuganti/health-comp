@@ -210,11 +210,18 @@ Status meanings:
   Sign in with Apple gate only; it does not create invitation, convergence,
   HealthKit activity, background-delivery, APNs-delivery, App Attest, deletion,
   or replacement-installation evidence.
-- **PENDING:** Create exactly one replacement invitation and consume it
-  immediately during the two-account staging flow when the physical iPhone is
-  available. First launch the prepared selected-build Simulator endpoint and
-  confirm its isolated authenticated state; obtain fresh action-time approval
-  immediately before creation.
+- **PASS:** Following fresh action-time approval, exact selected artifact
+  `dd0ed68` created exactly one replacement invitation from the isolated
+  Simulator endpoint. The same opaque custom-scheme link cold-launched the
+  selected-artifact physical endpoint, displayed the explicit claim decision,
+  and was accepted once. A read-only hosted readback ending at
+  `2026-08-19T21:56:37Z` found one scheduled competition for the replacement,
+  exactly two participant rows, and exactly one corresponding invitation row
+  with both claimant and consumption time present. Both endpoints then showed
+  the same scheduled competition after controlled relaunch. No token, account
+  identity, profile/competition identifier, private screenshot, raw HealthKit
+  datum, or exact Activity value is retained. This is controlled custom-scheme
+  evidence, not universal-link evidence.
 - **PENDING:** Adversarial participant-isolation and tamper matrix.
 
 ## Paid-team signing and installation
@@ -288,17 +295,18 @@ Status meanings:
 
 ## Multi-user and operational gates
 
-- **PARTIAL:** Both dedicated accounts have authenticated staging profiles. PR #34
-  corrected terminal invitation inventory handling without deleting retained
-  history or the local journal, and selected artifact `dd0ed68` remained clean
-  through physical authenticated relaunch and bounded refresh. The prior false
-  warning no longer blocks a fresh invitation, but invitation acceptance,
-  convergence, and participant-isolation evidence remain pending below.
-- **PENDING:** Two-account invitation, controlled custom-scheme sharing, cold
-  acceptance, and convergence evidence using the approved one-physical-iPhone-
-  plus-Simulator topology. Sequential account switching must additionally
-  prove profile-scoped journal, outbox, cursor, mute, and installation
-  isolation.
+- **PARTIAL:** Both dedicated accounts have authenticated staging profiles.
+  Exact selected artifact `dd0ed68` now completed one replacement invitation,
+  controlled custom-scheme sharing, cold physical acceptance, single hosted
+  consumption, two-participant membership, and scheduled-state convergence on
+  the approved one-physical-iPhone-plus-Simulator topology. PR #34 continues to
+  preserve terminal history and local journals without the former false
+  warning.
+- **PARTIAL:** The replacement competition is scheduled to start on
+  `2026-08-20` in its frozen `America/Los_Angeles` time zone. Day 1 score
+  submission, Days 1...7, offline catch-up, tallying/results, history, rematch,
+  mute, archive, deep-link relaunch, and sequential profile-scoped journal,
+  outbox, cursor, mute, and installation isolation remain pending.
 - **PENDING:** Cross-account reads and mutations, replayed claims, modified
   points, stale/conflicting revisions, result rewrites, deleted-profile access,
   token leakage, and unregistered installations all fail closed.

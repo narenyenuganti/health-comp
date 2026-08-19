@@ -42,7 +42,8 @@ represented as universal-link evidence.
 | HealthKit startup cycle | The physical iPhone completed grant, revoke, and re-enable startup paths historically. On prior selected artifact `9d19937`, all app-requested categories were granted through the native Health Access sheet. Selected artifact `dd0ed68` was over-installed under the same bundle, invoked its startup authorization request, and reached Sharing without `Activity authorization is unavailable.` This proves the exact-current startup request completed under the retained grant; public HealthKit does not reveal read denial, so active-competition derived score and background-observer behavior remain unverified | PARTIAL |
 | Hosted staging preflight | A SELECT-only audit ending at `2026-08-17T07:12:08Z` found two active profiles, two active sandbox installations, two pending competitions, two live unclaimed invitations, zero consumed invitations, and a pending distribution of `[0,2]` across the active profiles. It also found zero App Attest keys, account-deletion records, daily-score revisions, and competition results. No identifier, token, digest, account detail, private screenshot, or HealthKit value was selected or retained | PASS |
 | Staging expired-invitation cleanup | After both invitations expired, a privacy-safe snapshot returned exact count `2` and opaque scope SHA-256 `0ebe0077d5312b7245ce55065dc2d30437e1af052f14ae98ee391af92542f314`. Following action-time approval, the reviewed guard ran as one explicit serializable transaction through the authenticated Supabase Management API database-query route rather than `psql`; it retained the approved scope checks, timeouts, service-role request claim, cleanup-count assertion, and explicit commit. Dedicated read-only route readback at `2026-08-19T04:16:02.604717Z` found zero pending competitions, two expired competitions, two retained invitation-history rows, zero claimed or consumed invitations, and zero remaining eligible invitations. No identifier or token was selected, no lifecycle row was edited directly, and no replacement invitation was created | PASS |
-| Staging replacement invitation | One replacement invitation must be created only after selected-build Health Access and Sign in with Apple are complete, then consumed immediately on the second isolated endpoint | PENDING |
+| Staging replacement invitation | Following fresh action-time approval, exact selected artifact `dd0ed68` created exactly one replacement invitation on the isolated Simulator endpoint. The same opaque custom-scheme link cold-launched the selected-artifact physical endpoint and was accepted once. Read-only hosted readback ending at `2026-08-19T21:56:37Z` found one scheduled replacement competition, exactly two participant rows, and exactly one corresponding invitation row with claimant and consumption time present. Both endpoints converged on the scheduled competition after controlled relaunch. No token, identity, private identifier, screenshot, raw HealthKit datum, or exact Activity value is retained; this is not universal-link evidence | PASS |
+| Two-account staging convergence | Invitation creation, controlled custom-scheme delivery, cold acceptance, single consumption, two-participant membership, and scheduled-state convergence passed on the approved physical-iPhone-plus-Simulator topology. The competition starts `2026-08-20` in its frozen `America/Los_Angeles` time zone, so the first privacy-safe score and the remaining lifecycle/isolation cases are not yet available | PARTIAL |
 
 ## What the physical receipt proves
 
@@ -94,29 +95,33 @@ physical or hosted service flow to complete.
 
 ## Immediate continuation
 
-1. When the physical iPhone is available, launch the prepared selected-build
-   Simulator endpoint, confirm its isolated authenticated state, create one
-   replacement invitation after fresh action-time approval, and
-   consume its opaque custom-scheme link immediately on the selected-artifact
-   physical endpoint. Complete two-account convergence with the approved
-   topology and two Apple accounts, including the first privacy-safe score
-   submission.
-2. Verify active-competition HealthKit behavior, the background observer, App
+1. After the scheduled `2026-08-20` Day 1 boundary, complete the first
+   privacy-safe score submission and read back two-account convergence without
+   retaining exact Activity values. Continue the remaining scheduled lifecycle,
+   offline catch-up, relaunch, and profile-isolation cases.
+2. Run the adversarial participant-isolation and tamper matrix, including
+   replay of the now-consumed invitation.
+3. Verify active-competition HealthKit behavior, the background observer, App
    Attest, and APNs foreground/background/cold-route delivery.
-3. Continue deletion and same-phone replacement-installation gates in the
+4. Continue deletion and same-phone replacement-installation gates in the
    checked-in order.
 
 ## Explicitly unresolved
 
-- No two-account staging E2E receipt exists under the approved one-physical-
-  iPhone-plus-Simulator topology.
-- No live invitation remains after the approved expired-invitation cleanup;
-  both history rows are retained, and the one replacement invitation required
-  for two-account staging has not been created.
-- Selected application source `dd0ed68` is installed on the dedicated staging
-  Simulator with its 19-file local container preserved, but it was deliberately
-  not launched after over-install. This is preparation evidence only, not a
-  current authenticated-runtime or hosted-staging receipt.
+- A partial two-account staging E2E receipt now exists: exact selected artifact
+  `dd0ed68` created exactly one replacement invitation, the physical endpoint
+  cold-accepted it once through the controlled custom scheme, hosted staging
+  records one consumed invitation and exactly two participants, and both
+  endpoints show the same scheduled competition. The remaining lifecycle and
+  isolation matrix is not complete.
+- The replacement invitation is consumed and the competition is scheduled for
+  `2026-08-20` in its frozen `America/Los_Angeles` time zone. No first score can
+  be evidenced before the Day 1 boundary; the earlier two expired invitation
+  history rows remain retained.
+- Selected application source `dd0ed68` is installed and currently authenticated
+  on the dedicated staging Simulator with its profile-scoped local container
+  preserved. It now provides direct invitation-creation and scheduled-
+  convergence evidence, not merely build preparation.
 - No adversarial cross-account/tamper receipt exists.
 - Selected release artifact `dd0ed68` is installed, completed fresh native
   Sign in with Apple, and reaches authenticated Sharing without the prior
