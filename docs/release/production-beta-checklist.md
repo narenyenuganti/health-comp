@@ -68,6 +68,10 @@ Status meanings:
   `32027282728`, followed by post-merge Backend run `32030763547` and iOS run
   `32030763718`, completed successfully. Evidence commits do not silently
   replace the selected release artifact named above.
+- **PASS:** Evidence-only PR #36 merged as `a45c325`; only this checklist and
+  evidence file changed after selected application commit `dd0ed68`. Exact-head
+  Backend run `32280929100` and iOS run `32280929157`, followed by post-merge
+  Backend run `32284529024` and iOS run `32284529049`, completed successfully.
 - **PASS:** Attempt 1 of earlier iOS run `31999779841` reported one failure
   in the pre-existing cancellation-scheduling fixture test. The exact test
   then passed 100/100 locally and the full attempt-2 rerun, but the same test
@@ -93,6 +97,17 @@ Status meanings:
   profile-scoped data and authenticated session, completed staging requests
   with HTTP 200 responses, and produced no `-1005` or missing-HealthKit-
   entitlement error.
+- **PASS:** At `2026-08-19T18:36:33Z`, selected application source `dd0ed68`
+  was rebuilt from docs-only main `a45c325` as a Staging Simulator bundle.
+  Offline checks confirmed the exact staging bundle ID, expected public project
+  URL, publishable-key shape, blank invitation host, custom-scheme fallback,
+  and Xcode-generated simulated sandbox/development capability values without
+  exposing credentials. The over-install exactly matched the verified build,
+  kept the pre-existing data-container count at 19, and left the app stopped.
+  The dedicated tester was then shut down without contacting hosted staging.
+  Only the 44 MiB app and simulator-entitlement receipt were retained; the
+  1.5 GiB DerivedData was removed. This is selected-build preparation, not
+  authenticated-runtime, invitation, or physical-device evidence.
 - **PASS:** The integrated PR #26 recovery change
   pins Supabase Swift 2.55.1 and passed 90/90 focused recovery tests, 459/459
   canonical app tests, 241/241 CompetitionCore tests in both Debug and
@@ -196,7 +211,10 @@ Status meanings:
   HealthKit activity, background-delivery, APNs-delivery, App Attest, deletion,
   or replacement-installation evidence.
 - **PENDING:** Create exactly one replacement invitation and consume it
-  immediately during the two-account staging flow.
+  immediately during the two-account staging flow when the physical iPhone is
+  available. First launch the prepared selected-build Simulator endpoint and
+  confirm its isolated authenticated state; obtain fresh action-time approval
+  immediately before creation.
 - **PENDING:** Adversarial participant-isolation and tamper matrix.
 
 ## Paid-team signing and installation
