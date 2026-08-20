@@ -6,12 +6,12 @@ required future work.
 
 ## Current environment inventory
 
-Last read through the authenticated Supabase CLI and dashboard on 2026-08-15:
+Current authenticated environment evidence through 2026-08-19 PDT:
 
 | Logical environment | Supabase target | Status | App configuration |
 | --- | --- | --- | --- |
 | Development | Disposable local CLI stack (project ID health-comp) | Verified locally | com.narenyenuganti.HealthComp, sandbox APNs, development App Attest |
-| Staging | healthcomp-staging (xhfdfdrtxwptrwhvvlhg) | ACTIVE_HEALTHY; 14 migrations through 20260811000900 and nine Functions read back; Apple Auth and a topic-restricted server key are configured for the exact staging bundle; Function secrets, worker Vault entries, notification repair, and the corrected finalizer schedule are configured; both hosted jobs have succeeded | com.narenyenuganti.HealthComp.staging, sandbox APNs, development App Attest |
+| Staging | healthcomp-staging (xhfdfdrtxwptrwhvvlhg) | ACTIVE_HEALTHY; 14 migrations through 20260811000900 and nine Functions read back; Apple Auth and a topic-restricted server key are configured for the exact staging bundle; Function secrets, worker Vault entries, notification repair, and the corrected finalizer schedule are configured; both hosted jobs have succeeded; SSL enforcement is enabled; the rollback-only hosted database adversarial verifier passed 15/15 with zero residue | com.narenyenuganti.HealthComp.staging, sandbox APNs, development App Attest |
 | Production | **TBD** | No project has been approved as HealthComp production | com.narenyenuganti.HealthComp, production APNs, production App Attest |
 
 The 2026-08-15 staging promotion and readback established all of the following:
@@ -43,9 +43,13 @@ The 2026-08-15 staging promotion and readback established all of the following:
   the corrected private five-minute job first succeeded at 2026-08-16 04:00
   UTC with no due competition left unfinalized.
 
-Staging is not operationally ready for two-account or physical-device
-verification. Paid-team signing material and the required staging/physical
-evidence remain pending.
+Staging has now supported partial two-account and physical-device verification
+on selected artifact `dd0ed68`. The rollback-only database adversarial boundary
+also passed 15/15 at exact verifier commit `4fca597` with zero synthetic rows
+remaining. These are bounded receipts, not release readiness: the scheduled
+two-account lifecycle, selected-build Edge Function and local-store isolation,
+remaining physical service gates, deletion, and restore rehearsal are still
+incomplete.
 
 The inactive project named “naren-polymath's Project”
 (vleyumieoroaipedqpsp) is not production merely because it is the other
@@ -407,6 +411,76 @@ HEALTHCOMP_AASA_APP_IDS, add the exact applinks entitlement, serve
 /.well-known/apple-app-site-association without redirect, verify headers and
 cache behavior, and test cold/warm opening on a signed physical device.
 
+## Rollback-only adversarial staging verifier
+
+`scripts/staging-adversarial-rollback.sql` exercises the database portion of
+the Task 19 hosted adversarial matrix with fixed `.invalid` synthetic
+identities. It checks
+anonymous and cross-participant reads, invitation replay, private-column and
+raw-table access, direct mutation attempts, App Attest fail-closed behavior,
+valid-grant payload and score-content binding, cross-table score/attestation/
+award/installation isolation, score duplicate/regression contracts, result
+rewrites, stale deleted-profile access, and unregistered installations. The
+script opens one transaction,
+sets bounded timeouts, fails on the first unmet assertion, executes exactly one
+explicit `ROLLBACK`, independently confirms that no synthetic rows remain, and
+switches the session to read-only before returning one final privacy-safe JSON
+receipt. It reapplies the bounded session timeouts before the post-rollback
+residue query. The receipt is the final statement, so no post-receipt work is
+allowed.
+
+The verifier performs temporary writes even though its successful outcome is
+rollback. Run it only against staging, only after reviewing its exact selected
+commit, and only with fresh action-time approval. Never substitute production,
+never alter the fixed fixture scope at execution time, and never retain query
+output other than the final receipt.
+
+Use a direct or session-mode staging database connection from the Supabase
+**Connect** panel; use the session pooler when the operator network has no IPv6
+route. Before connecting, read back the staging project's SSL-enforcement
+setting and require it to be enabled; stop for approval instead of changing a
+disabled setting implicitly. Download the **Connect** panel's current CA
+certificate to an untracked temporary path and require full hostname
+verification. Do not put the database password or full connection URI in the
+command, an environment variable, a file, shell history, or evidence. Force
+`psql` to request it interactively:
+
+~~~bash
+PGSSLMODE=verify-full \
+PGSSLROOTCERT='<untracked path to the current Supabase CA certificate>' \
+PGCONNECT_TIMEOUT=10 \
+psql -X \
+  --host '<approved staging database host>' \
+  --port '<approved staging database port>' \
+  --username '<approved staging database user>' \
+  --dbname postgres \
+  --password \
+  --set=ON_ERROR_STOP=1 \
+  --quiet \
+  --tuples-only \
+  --no-align \
+  --file scripts/staging-adversarial-rollback.sql
+~~~
+
+The expected sole nonblank output has version
+`healthcomp_staging_adversarial_v1`, status `pass`, 15 passed assertions, zero
+synthetic rows remaining, no private values returned, and transaction outcome
+`rolled_back`. Treat any other output or nonzero exit as a failed gate. If the
+client exits on an assertion error, PostgreSQL rolls the still-open transaction
+back when the connection closes; nevertheless, run a reviewed read-only
+fixed-fixture residue check before retrying.
+
+Supabase CLI `2.113.0` must not be used here via
+`supabase db query --file`: its local query path submits the multi-statement
+file as one prepared statement and rejects it. Backend CI instead executes the
+same file through `psql` inside the already isolated local database container,
+so every pull request verifies both the static safety boundary and the runtime
+rollback receipt. A local or CI receipt does not count as hosted staging
+evidence. Even a hosted pass covers only the database adversarial boundary; it
+does not replace selected-build Edge Function routing, replay of the selected
+consumed invitation when that token is available, or the two endpoints'
+profile-scoped local-store isolation checks.
+
 ## Completion evidence
 
 For each hosted environment, retain only anonymized evidence:
@@ -420,7 +494,8 @@ For each hosted environment, retain only anonymized evidence:
 - exact unresolved blockers.
 
 Do not call an environment ready from dashboard configuration alone. Task 19
-still requires two-account staging, adversarial isolation, and physical-device
+still requires completion of the two-account staging lifecycle, adversarial
+isolation above the proven database boundary, and the remaining physical-device
 evidence.
 
 ## Primary references

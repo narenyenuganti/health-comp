@@ -39,6 +39,7 @@ jobs:
           set -euo pipefail
           bash scripts/test-verify-no-secrets.sh
           sh scripts/test-verify-invitation-functions.sh
+          sh scripts/test-staging-adversarial-sql.sh
           bash scripts/verify-no-secrets.sh
           bash scripts/verify-supabase-layout.sh
           deno fmt --config supabase/functions/deno.json --check supabase/functions
@@ -62,6 +63,31 @@ jobs:
           supabase start
           supabase db reset
           supabase test db
+
+          database_containers="$(
+            docker ps \
+              --filter 'label=com.supabase.cli.project=health-comp' \
+              --filter 'name=supabase_db_' \
+              --format '{{.ID}}'
+          )"
+          database_container_count="$(
+            printf '%s\n' "$database_containers" | sed '/^$/d' | wc -l | tr -d ' '
+          )"
+          if [[ "$database_container_count" -ne 1 ]]; then
+            echo "Expected exactly one HealthComp local database container." >&2
+            exit 1
+          fi
+          docker exec -i "$database_containers" \
+            psql \
+              --no-psqlrc \
+              --quiet \
+              --tuples-only \
+              --no-align \
+              --set=ON_ERROR_STOP=1 \
+              --username=postgres \
+              --dbname=postgres \
+            < scripts/staging-adversarial-rollback.sql
+
           deno test \
             --config supabase/functions/deno.json \
             --allow-env \
