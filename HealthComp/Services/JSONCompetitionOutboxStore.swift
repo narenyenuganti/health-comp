@@ -55,14 +55,15 @@ actor JSONCompetitionOutboxStore: CompetitionOutboxStore {
         _ payload: CompetitionOutboxPayload,
         enqueuedAt: Date
     ) async throws -> CompetitionOutboxEntry {
-        try withExclusiveLock {
+        let canonicalPayload = try Self.canonicalPayload(payload)
+        return try withExclusiveLock {
             var document = try readDocument()
             if let existing = document.entries.first(where: {
-                $0.semanticEventID == payload.semanticEventID
+                $0.semanticEventID == canonicalPayload.semanticEventID
             }) {
-                guard existing.payload == payload else {
+                guard existing.payload == canonicalPayload else {
                     throw CompetitionOutboxStoreFailure.semanticEventConflict(
-                        payload.semanticEventID
+                        canonicalPayload.semanticEventID
                     )
                 }
                 return existing
@@ -71,10 +72,10 @@ actor JSONCompetitionOutboxStore: CompetitionOutboxStore {
                 throw CompetitionOutboxStoreFailure.generationOverflow
             }
             let entry = try CompetitionOutboxEntry(
-                semanticEventID: payload.semanticEventID,
+                semanticEventID: canonicalPayload.semanticEventID,
                 enqueuedAt: enqueuedAt,
                 generation: 1,
-                payload: payload,
+                payload: canonicalPayload,
                 state: .pending(attemptCount: 0, retryAt: nil)
             )
             document.entries.append(entry)
@@ -82,6 +83,40 @@ actor JSONCompetitionOutboxStore: CompetitionOutboxStore {
             try persist(document)
             return entry
         }
+    }
+
+    private static func canonicalPayload(
+        _ payload: CompetitionOutboxPayload
+    ) throws -> CompetitionOutboxPayload {
+        let data: Data
+        do {
+            data = try encoder.encode(payload)
+        } catch let failure as CompetitionOutboxStoreFailure {
+            throw failure
+        } catch {
+            throw CompetitionOutboxStoreFailure.invalidDocument
+        }
+        let verified: CompetitionOutboxPayload
+        do {
+            verified = try decoder.decode(
+                CompetitionOutboxPayload.self,
+                from: data
+            )
+        } catch {
+            throw CompetitionOutboxStoreFailure.invalidDocument
+        }
+        let verifiedData: Data
+        do {
+            verifiedData = try encoder.encode(verified)
+        } catch let failure as CompetitionOutboxStoreFailure {
+            throw failure
+        } catch {
+            throw CompetitionOutboxStoreFailure.invalidDocument
+        }
+        guard verifiedData == data else {
+            throw CompetitionOutboxStoreFailure.invalidDocument
+        }
+        return verified
     }
 
     func entries() async throws -> [CompetitionOutboxEntry] {
@@ -307,7 +342,18 @@ actor JSONCompetitionOutboxStore: CompetitionOutboxStore {
         } catch {
             throw CompetitionOutboxStoreFailure.invalidDocument
         }
-        guard verified == document else {
+        // Nested wire timestamps intentionally encode at whole-second
+        // precision, so validate their canonical bytes instead of requiring
+        // lossy in-memory Date values to remain exactly equal.
+        let verifiedData: Data
+        do {
+            verifiedData = try Self.encoder.encode(verified)
+        } catch let failure as CompetitionOutboxStoreFailure {
+            throw failure
+        } catch {
+            throw CompetitionOutboxStoreFailure.invalidDocument
+        }
+        guard verifiedData == data else {
             throw CompetitionOutboxStoreFailure.invalidDocument
         }
         let temporaryURL = try writeTemporary(data, role: "new")

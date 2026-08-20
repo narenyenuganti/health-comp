@@ -36,6 +36,83 @@ final class JSONCompetitionOutboxStoreTests: XCTestCase {
         XCTAssertEqual(relaunchedEntries, [entry])
     }
 
+    func testWireTimestampPrecisionPersistsAsCanonicalJSON() async throws {
+        let root = makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let timestamp = Date(
+            timeIntervalSince1970: 1_786_536_001.123_456
+        )
+        let request = try scoreRequest(evaluatedAt: timestamp)
+        let store = JSONCompetitionOutboxStore(
+            rootDirectory: root,
+            fileProtection: .testNoop
+        )
+
+        _ = try await store.enqueue(
+            .scoreRevision(request),
+            enqueuedAt: timestamp
+        )
+
+        let relaunched = JSONCompetitionOutboxStore(
+            rootDirectory: root,
+            fileProtection: .testNoop
+        )
+        let durableEntries = try await relaunched.entries()
+        XCTAssertEqual(durableEntries.count, 1)
+        let durableEntry = try XCTUnwrap(durableEntries.first)
+        XCTAssertEqual(durableEntry.semanticEventID, request.semanticEventID)
+        XCTAssertLessThan(
+            abs(durableEntry.enqueuedAt.timeIntervalSince(timestamp)),
+            0.001
+        )
+        guard case let .scoreRevision(durableRequest) = durableEntry.payload
+        else {
+            return XCTFail("Expected a durable score revision")
+        }
+        XCTAssertEqual(
+            durableRequest.evaluatedAt,
+            Date(
+                timeIntervalSince1970:
+                    timestamp.timeIntervalSince1970.rounded(.down)
+            )
+        )
+    }
+
+    func testCanonicalizedWireTimestampDuplicateIsBytePreservingNoOp()
+        async throws
+    {
+        let root = makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let timestamp = Date(
+            timeIntervalSince1970: 1_786_536_001.123_456
+        )
+        let request = try scoreRequest(evaluatedAt: timestamp)
+        let store = JSONCompetitionOutboxStore(
+            rootDirectory: root,
+            fileProtection: .testNoop
+        )
+        let first = try await store.enqueue(
+            .scoreRevision(request),
+            enqueuedAt: timestamp
+        )
+        let documentURL = root.appendingPathComponent("outbox.json")
+        let before = try Data(contentsOf: documentURL)
+        let relaunched = JSONCompetitionOutboxStore(
+            rootDirectory: root,
+            fileProtection: .testNoop
+        )
+
+        let duplicate = try await relaunched.enqueue(
+            .scoreRevision(request),
+            enqueuedAt: timestamp.addingTimeInterval(999)
+        )
+
+        XCTAssertEqual(duplicate, first)
+        XCTAssertEqual(try Data(contentsOf: documentURL), before)
+        let durableEntries = try await relaunched.entries()
+        XCTAssertEqual(durableEntries, [first])
+    }
+
     func testExactDuplicateEnqueueIsABytePreservingNoOp() async throws {
         let root = makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -471,7 +548,8 @@ final class JSONCompetitionOutboxStoreTests: XCTestCase {
             uuidString: "64000000-0000-4000-8000-000000000001"
         )!,
         clientRevision: Int64 = 1,
-        wireContentSHA256: String = String(repeating: "a", count: 64)
+        wireContentSHA256: String = String(repeating: "a", count: 64),
+        evaluatedAt: Date = Date(timeIntervalSince1970: 1_786_536_000)
     ) throws -> CompetitionScoreRevisionRequest {
         try CompetitionScoreRevisionRequest(
             competitionID: UUID(
@@ -480,7 +558,7 @@ final class JSONCompetitionOutboxStoreTests: XCTestCase {
             semanticEventID: semanticEventID,
             dayOrdinal: 1,
             clientRevision: clientRevision,
-            evaluatedAt: Date(timeIntervalSince1970: 1_786_536_000),
+            evaluatedAt: evaluatedAt,
             moveMode: "activeEnergyKilocalories",
             standMode: "standHours",
             moveBasisPoints: 10_000,
