@@ -354,6 +354,64 @@ final class SupabaseCompetitionRemoteAPITests: XCTestCase {
         }
     }
 
+    func testCompetitionDiscoveryRetriesOneTransientTransportFailure()
+        async throws
+    {
+        let harness = CompetitionTransportHarness(stubs: [
+            .failure(.network),
+            .response(200, try jsonData([])),
+        ])
+
+        let failure = await remoteFailure {
+            let competitions = try await makeAPI(harness)
+                .listCompetitions()
+            XCTAssertEqual(competitions, [])
+        }
+
+        XCTAssertNil(failure)
+        let requests = await harness.recordedRequests()
+        XCTAssertEqual(requests, [.listCompetitions, .listCompetitions])
+    }
+
+    func testCompetitionHistoryRetriesOneTransientTransportFailure()
+        async throws
+    {
+        let harness = CompetitionTransportHarness(stubs: [
+            .failure(.network),
+            .response(200, try jsonData([
+                "competition_id": competitionID.uuidString.lowercased(),
+                "after_server_seq": "0",
+                "snapshot_server_seq": "0",
+                "next_server_seq": "0",
+                "has_more": false,
+                "changes": [],
+            ])),
+        ])
+        let cursor = try CompetitionSynchronizationCursor(
+            competitionID: competitionID,
+            lastSeenServerSequence: 0
+        )
+
+        let failure = await remoteFailure {
+            let page = try await makeAPI(harness).fetchChanges(cursor, 200)
+            XCTAssertEqual(page.nextServerSequence, 0)
+        }
+
+        XCTAssertNil(failure)
+        let requests = await harness.recordedRequests()
+        XCTAssertEqual(requests.count, 2)
+        XCTAssertEqual(requests.first, requests.last)
+        try assertRPC(
+            requests[0],
+            name: "fetch_competition_changes",
+            body: [
+                "competition_id": competitionID.uuidString.lowercased(),
+                "after_server_seq": "0",
+                "page_size": 200,
+            ]
+        )
+    }
+
     func testBareScoreSubmissionFailsClosedWithoutTransport() async throws {
         let harness = CompetitionTransportHarness(stubs: [])
 
