@@ -7,8 +7,8 @@
     "@supabase/supabase-js": "npm:@supabase/supabase-js@2.112.2",
     "asn1js": "npm:asn1js@3.0.10",
     "cbor": "npm:cbor@10.0.12",
-    "node-app-attest": "npm:node-app-attest@1.0.1",
-    "pkijs": "npm:pkijs@3.4.0",
+    "node-app-attest": "https://esm.sh/node-app-attest@1.0.1?target=denonext",
+    "pkijs": "https://esm.sh/pkijs@3.4.0?target=deno",
     "postgres": "npm:postgres@3.4.9"
   },
   "lock": {
