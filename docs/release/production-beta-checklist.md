@@ -222,6 +222,15 @@ Status meanings:
   identity, profile/competition identifier, private screenshot, raw HealthKit
   datum, or exact Activity value is retained. This is controlled custom-scheme
   evidence, not universal-link evidence.
+- **PASS:** Selected application source `dd0ed68` routes live invitation
+  creation through `create-competition-invite` and claims through
+  `claim-competition-invite`; that source is unchanged through integrated
+  commit `89ee243`. The exact selected artifact completed both actions above,
+  and hosted state records their create/consume effects. At
+  `2026-08-20T02:32:28Z`, read-only dashboard summaries reported exactly one
+  invocation since the last deployment and no errors for each Function. No new
+  request was sent, and no token, identity, request body, Function identifier,
+  or execution identifier was retained.
 - **PASS:** At `2026-08-20T01:18:06Z`, exact reviewed verifier commit
   `4fca597757befafc9ed10cafecc4af4b73e65026` ran against
   `healthcomp-staging` only after SSL enforcement was enabled and read back.
@@ -231,9 +240,10 @@ Status meanings:
   privacy-safe receipt has SHA-256
   `852fc2d64c0daa93677726cda4fdddf4acd088b68884aa247939188f408660af`.
 - **PARTIAL:** The database portion of the adversarial participant-isolation
-  and tamper matrix is proven. Selected-build Edge Function routing, replay of
-  the consumed replacement invitation when its token is available, and both
-  endpoints' profile-scoped local-store isolation remain pending.
+  and tamper matrix and the selected-build create/claim Function routing are
+  proven. Replay of the consumed replacement invitation when its token is
+  available and both endpoints' profile-scoped local-store isolation remain
+  pending.
 
 ## Paid-team signing and installation
 
@@ -322,8 +332,8 @@ Status meanings:
   synthetic cross-account reads and mutations, replayed claims, modified
   points, stale/conflicting revisions, result rewrites, deleted-profile access,
   private-column/raw-table denial, and unregistered-installation cases fail
-  closed. Selected-build Edge Function and endpoint-local isolation evidence
-  remains pending.
+  closed. Selected-build create/claim Function routing is also proven;
+  consumed-token replay and endpoint-local isolation evidence remain pending.
 - **BLOCKED:** Hosted backup/restore rehearsal requires a backup-capable plan
   and an approved disposable restore target.
 - **BLOCKED:** No production Supabase project has been approved.

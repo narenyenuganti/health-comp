@@ -41,9 +41,10 @@ represented as universal-link evidence.
 | APNs registration | On historical physical build `1ca67af`, iOS authorization completed and a read-only staging query returned exactly one `sandbox` / `active` installation updated at `2026-08-16T07:04:49.701324Z`; no installation, profile, or token identifier was selected. Registration on selected release artifact `dd0ed68` remains pending | PARTIAL |
 | HealthKit startup cycle | The physical iPhone completed grant, revoke, and re-enable startup paths historically. On prior selected artifact `9d19937`, all app-requested categories were granted through the native Health Access sheet. Selected artifact `dd0ed68` was over-installed under the same bundle, invoked its startup authorization request, and reached Sharing without `Activity authorization is unavailable.` This proves the exact-current startup request completed under the retained grant; public HealthKit does not reveal read denial, so active-competition derived score and background-observer behavior remain unverified | PARTIAL |
 | Hosted staging preflight | A SELECT-only audit ending at `2026-08-17T07:12:08Z` found two active profiles, two active sandbox installations, two pending competitions, two live unclaimed invitations, zero consumed invitations, and a pending distribution of `[0,2]` across the active profiles. It also found zero App Attest keys, account-deletion records, daily-score revisions, and competition results. No identifier, token, digest, account detail, private screenshot, or HealthKit value was selected or retained | PASS |
-| Staging database adversarial boundary | At `2026-08-20T01:18:06Z`, exact reviewed verifier commit `4fca597757befafc9ed10cafecc4af4b73e65026` ran against `healthcomp-staging` after SSL enforcement was enabled and read back. The certificate-verified session passed 15/15 database assertions, explicitly rolled back, independently found zero synthetic rows remaining, and returned no private values. The sole nonblank privacy-safe receipt has SHA-256 `852fc2d64c0daa93677726cda4fdddf4acd088b68884aa247939188f408660af`. This is database-boundary evidence only; selected-build Edge Function routing, replay of the consumed replacement invitation when its token is available, and both endpoints' profile-scoped local-store isolation remain pending | PASS |
+| Staging database adversarial boundary | At `2026-08-20T01:18:06Z`, exact reviewed verifier commit `4fca597757befafc9ed10cafecc4af4b73e65026` ran against `healthcomp-staging` after SSL enforcement was enabled and read back. The certificate-verified session passed 15/15 database assertions, explicitly rolled back, independently found zero synthetic rows remaining, and returned no private values. The sole nonblank privacy-safe receipt has SHA-256 `852fc2d64c0daa93677726cda4fdddf4acd088b68884aa247939188f408660af`. This is database-boundary evidence only; replay of the consumed replacement invitation when its token is available and both endpoints' profile-scoped local-store isolation remain pending | PASS |
 | Staging expired-invitation cleanup | After both invitations expired, a privacy-safe snapshot returned exact count `2` and opaque scope SHA-256 `0ebe0077d5312b7245ce55065dc2d30437e1af052f14ae98ee391af92542f314`. Following action-time approval, the reviewed guard ran as one explicit serializable transaction through the authenticated Supabase Management API database-query route rather than `psql`; it retained the approved scope checks, timeouts, service-role request claim, cleanup-count assertion, and explicit commit. Dedicated read-only route readback at `2026-08-19T04:16:02.604717Z` found zero pending competitions, two expired competitions, two retained invitation-history rows, zero claimed or consumed invitations, and zero remaining eligible invitations. No identifier or token was selected, no lifecycle row was edited directly, and no replacement invitation was created | PASS |
 | Staging replacement invitation | Following fresh action-time approval, exact selected artifact `dd0ed68` created exactly one replacement invitation on the isolated Simulator endpoint. The same opaque custom-scheme link cold-launched the selected-artifact physical endpoint and was accepted once. Read-only hosted readback ending at `2026-08-19T21:56:37Z` found one scheduled replacement competition, exactly two participant rows, and exactly one corresponding invitation row with claimant and consumption time present. Both endpoints converged on the scheduled competition after controlled relaunch. No token, identity, private identifier, screenshot, raw HealthKit datum, or exact Activity value is retained; this is not universal-link evidence | PASS |
+| Selected-build invitation Function routing | Selected application source `dd0ed68` routes live invitation creation through `create-competition-invite` and claims through `claim-competition-invite`; that source remains unchanged through integrated commit `89ee243`. The exact selected artifact completed both actions above, and the hosted state records their create/consume effects. A read-only dashboard readback at `2026-08-20T02:32:28Z` reported exactly one invocation since the last deployment and no errors for each Function. No new request was sent, and no token, identity, request body, Function identifier, or execution identifier was retained | PASS |
 | Two-account staging convergence | Invitation creation, controlled custom-scheme delivery, cold acceptance, single consumption, two-participant membership, and scheduled-state convergence passed on the approved physical-iPhone-plus-Simulator topology. The competition starts `2026-08-20` in its frozen `America/Los_Angeles` time zone, so the first privacy-safe score and the remaining lifecycle/isolation cases are not yet available | PARTIAL |
 
 ## What the physical receipt proves
@@ -100,10 +101,10 @@ physical or hosted service flow to complete.
    privacy-safe score submission and read back two-account convergence without
    retaining exact Activity values. Continue the remaining scheduled lifecycle,
    offline catch-up, relaunch, and profile-isolation cases.
-2. Continue the adversarial matrix above the proven database boundary: exercise
-   selected-build Edge Function routing, replay the consumed replacement
-   invitation when its token is available, and verify both endpoints'
-   profile-scoped local-store isolation.
+2. Continue the adversarial matrix above the proven database and selected-build
+   Function-routing boundaries: replay the consumed replacement invitation when
+   its token is available and verify both endpoints' profile-scoped local-store
+   isolation.
 3. Verify active-competition HealthKit behavior, the background observer, App
    Attest, and APNs foreground/background/cold-route delivery.
 4. Continue deletion and same-phone replacement-installation gates in the
@@ -126,9 +127,9 @@ physical or hosted service flow to complete.
   preserved. It now provides direct invitation-creation and scheduled-
   convergence evidence, not merely build preparation.
 - The rollback-only hosted database adversarial receipt passed 15/15 with zero
-  residue. Selected-build Edge Function routing, replay of the consumed
-  replacement invitation when its token is available, and both endpoints'
-  profile-scoped local-store isolation remain unresolved.
+  residue, and the selected build's create/claim Function routing is proven.
+  Replay of the consumed replacement invitation when its token is available and
+  both endpoints' profile-scoped local-store isolation remain unresolved.
 - Selected release artifact `dd0ed68` is installed, completed fresh native
   Sign in with Apple, and reaches authenticated Sharing without the prior
   terminal-invitation warning. The current artifact's startup Health
