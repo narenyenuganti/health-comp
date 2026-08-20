@@ -8,6 +8,23 @@ interface WorkerResult {
   message?: string;
 }
 
+function workerResult(worker: Worker): Promise<WorkerResult> {
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(
+      () => reject(new Error("hosted edge worker probe timed out")),
+      10_000,
+    );
+    worker.onmessage = (event: MessageEvent<WorkerResult>) => {
+      clearTimeout(timeout);
+      resolve(event.data);
+    };
+    worker.onerror = (event) => {
+      clearTimeout(timeout);
+      reject(event.error ?? new Error(event.message));
+    };
+  });
+}
+
 Deno.test("score endpoint boots with the hosted edge process shim", async () => {
   const moduleURL = new URL(
     "../submit-score-revision/index.ts",
@@ -44,14 +61,7 @@ Deno.test("score endpoint boots with the hosted edge process shim", async () => 
   const worker = new Worker(workerURL, { type: "module" });
 
   try {
-    const result = await new Promise<WorkerResult>((resolve, reject) => {
-      worker.onmessage = (event: MessageEvent<WorkerResult>) => {
-        resolve(event.data);
-      };
-      worker.onerror = (event) => {
-        reject(event.error ?? new Error(event.message));
-      };
-    });
+    const result = await workerResult(worker);
 
     assertEquals(result, {
       status: "ok",

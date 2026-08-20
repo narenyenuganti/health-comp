@@ -40,9 +40,16 @@ jobs:
           bash scripts/test-verify-no-secrets.sh
           sh scripts/test-verify-invitation-functions.sh
           sh scripts/test-staging-adversarial-sql.sh
+          sh scripts/test-verify-app-attest-dependency-graph.sh
+          sh -n scripts/verify-app-attest-dependency-graph.sh
+          sh -n scripts/test-app-attest-edge-runtime.sh
           bash scripts/verify-no-secrets.sh
           bash scripts/verify-supabase-layout.sh
-          deno fmt --config supabase/functions/deno.json --check supabase/functions
+          deno fmt --config supabase/functions/deno.json --check \
+            supabase/functions \
+            supabase/tests/app-attest-hosted-regression.deno.json \
+            supabase/tests/app-attest-hosted-regression.deno.lock \
+            supabase/tests/edge-runtime
           deno lint --config supabase/functions/deno.json supabase/functions
           git diff --check
 
@@ -94,6 +101,11 @@ jobs:
             --allow-net \
             --allow-read \
             supabase/functions
+          deno test \
+            --config supabase/tests/app-attest-hosted-regression.deno.json \
+            --allow-read \
+            supabase/functions/_shared/app-attest_hosted_regression_test.ts
+          sh scripts/test-app-attest-edge-runtime.sh
           bash scripts/verify-invitation-functions.sh
           supabase db lint --local --level warning --fail-on warning
           supabase db diff --local >"$schema_diff"

@@ -13,16 +13,18 @@ one-time server challenge, purpose, and SHA-256 of the existing canonical score
 JSON. Supabase stores private challenge/key/counter state and exchanges each
 verified proof for a short-lived, single-use submission grant; the existing
 score mutation can only be reached through that grant. The Deno verifier pins
-CBOR and ASN.1/PKI dependencies for exact attestation verification against
-Apple's root and retains `node-app-attest@1.0.1` only for assertion-signature
-mechanics. The shared boundary enforces the 2026 Apple requirements: exact CBOR
-shape, certificate chain and time, nonce, key binding, environment, validation
-category, bundle version, payload binding, one-time challenge, and monotonic
-counter.
+CBOR and ASN.1 dependencies and performs strict app-owned certificate,
+attestation, and assertion verification with ASN.1.js and `node:crypto`. The
+production graph deliberately excludes PKI.js and `node-app-attest`; an isolated
+adversarial fixture retains their exact former versions only to reproduce the
+hosted-runtime incompatibility. The shared boundary enforces the 2026 Apple
+requirements: exact CBOR shape, certificate chain and time, nonce, key binding,
+environment, validation category, bundle version, payload binding, one-time
+challenge, and monotonic counter.
 
 **Tech Stack:** Swift 5.9, CryptoKit, DeviceCheck `DCAppAttestService`, XCTest,
-Deno, `node-app-attest@1.0.1`, `cbor@10.0.12`, `asn1js@3.0.10`, `pkijs@3.4.0`,
-Supabase Edge Functions, PostgreSQL 17, RLS, pgTAP, XcodeGen.
+Deno, `cbor@10.0.12`, `asn1js@3.0.10`, `node:crypto`, Supabase Edge Functions
+and pinned Edge Runtime fixture, PostgreSQL 17, RLS, pgTAP, XcodeGen.
 
 ---
 
@@ -48,11 +50,13 @@ Supabase Edge Functions, PostgreSQL 17, RLS, pgTAP, XcodeGen.
   (`4`) is added only when that distribution exists. Bundle-version policy uses
   the exact `CFBundleVersion` build string (`1` today), not the marketing
   version.
-- `node-app-attest` is not treated as a complete attestation or policy verifier.
-  Its attestation path re-hashes a challenge and cannot verify Apple's 2026
-  fixture, so HealthComp verifies attestation chain, nonce, key, and policy in
-  the shared module and uses the pinned package only for assertion signatures
-  and counters.
+- HealthComp owns the complete attestation and assertion verifier. The
+  production dependency graph contains neither `node-app-attest` nor PKI.js:
+  their initialization and X.509 paths are incompatible with the pinned hosted
+  Edge worker. Certificate structure, algorithm matching, Apple-chain
+  signatures, nonce extraction, assertion signatures, and counters are all
+  verified in the shared boundary with bounded ASN.1 parsing and
+  `node:crypto`.
 - Apple's 2026 guide prose labels its example bundle version `1.0`, while the
   published CBOR fixture encodes `1`. Tests preserve both facts and treat the
   signed CBOR value as authoritative.
@@ -66,6 +70,14 @@ Supabase Edge Functions, PostgreSQL 17, RLS, pgTAP, XcodeGen.
   discard the local outbox.
 - Associated Domains remain outside this task and explicitly deferred because no
   invitation domain exists.
+
+> **Runtime correction (2026-08-20):** A real staging attestation reached a
+> fail-closed hosted-runtime error even though the deployed ESZip contained the
+> checked-in import map and frozen graph. The corrective boundary removes both
+> PKI dependency ingresses, verifies Apple's official fixture inside the exact
+> pinned Supabase Edge user worker, and separately preserves the former exact
+> raw dependency graph as a RED-capable regression. A credential-free endpoint
+> boot probe alone is not App Attest runtime evidence.
 
 ## Task 1: Freeze protocol fixtures and verifier boundary
 
@@ -87,8 +99,10 @@ Supabase Edge Functions, PostgreSQL 17, RLS, pgTAP, XcodeGen.
    key-ID mismatch.
 4. Add RED synthetic assertion tests for signature, RP ID, exact extension map,
    bundle/category mismatch, and counter extraction.
-5. Pin `node-app-attest@1.0.1`, `cbor@10.0.12`, `asn1js@3.0.10`, and
-   `pkijs@3.4.0`; regenerate the frozen Deno lock.
+5. Pin `cbor@10.0.12` and `asn1js@3.0.10`, regenerate the frozen Deno lock, and
+   fail the runtime gate if the resolved production graph reaches PKI.js or
+   `node-app-attest`. Keep the former exact package pins only in the isolated
+   hosted-regression configuration.
 6. Implement the smallest strict wrapper that makes the tests green. Do not
    implement certificate parsing or signature verification inside an HTTP
    handler.
@@ -97,10 +111,14 @@ Run:
 
 ```bash
 deno test --config supabase/functions/deno.json --allow-env --allow-read supabase/functions/_shared/app_attest_test.ts
+deno test --config supabase/tests/app-attest-hosted-regression.deno.json --allow-read supabase/functions/_shared/app-attest_hosted_regression_test.ts
+sh scripts/test-app-attest-edge-runtime.sh
 ```
 
 Expected: RED before `_shared/app-attest.ts`; GREEN with every fixture and
-mutation test passing.
+mutation test passing, the rejected raw graph reproduced safely, the production
+graph free of both rejected packages, and the real fixture verified inside the
+pinned Edge user worker.
 
 ## Task 2: Add private challenge, key, counter, and submission-grant state
 
