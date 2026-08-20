@@ -1206,6 +1206,175 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
         )
     }
 
+    func testRelaunchWakesPersistedScoreOutbox() async throws {
+        let root = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let eventsRoot = root.appendingPathComponent(
+            "events",
+            isDirectory: true
+        )
+        let outboxRoot = root.appendingPathComponent(
+            "outbox",
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(
+            at: eventsRoot,
+            withIntermediateDirectories: false
+        )
+        try FileManager.default.createDirectory(
+            at: outboxRoot,
+            withIntermediateDirectories: false
+        )
+        let outboxStore = JSONCompetitionOutboxStore(
+            rootDirectory: outboxRoot,
+            fileProtection: JSONCompetitionEventStoreFileProtection {
+                _, _ in
+            }
+        )
+        let observedAt = Date(
+            timeIntervalSince1970:
+                floor(Date().timeIntervalSince1970) + 300
+        )
+        let request = try CompetitionScoreRevisionRequest(
+            competitionID: competitionID,
+            semanticEventID: UUID(
+                uuidString: "74000000-0000-4000-8000-000000000001"
+            )!,
+            dayOrdinal: 1,
+            clientRevision: 1,
+            evaluatedAt: observedAt,
+            moveMode: "activeEnergyKilocalories",
+            standMode: "standHours",
+            moveBasisPoints: 7_000,
+            exerciseBasisPoints: 8_000,
+            standBasisPoints: 8_333,
+            availabilityReason: "available",
+            scoringPolicyIdentity: RemoteScoringWireV1.policyIdentity,
+            wireContentSHA256: String(repeating: "a", count: 64)
+        )
+        _ = try await outboxStore.enqueue(
+            .scoreRevision(request),
+            enqueuedAt: observedAt
+        )
+        let probe = RemoteCompetitionRuntimeProbe()
+        let runtime = RemoteCompetitionRuntime(
+            profileID: profileID,
+            store: makeStore(root: eventsRoot),
+            remoteAPI: remoteAPI(
+                listCompetitions: {
+                    await probe.waitForScoreRequestCount(1)
+                    return []
+                },
+                appendScoreRevision: { submitted in
+                    await probe.recordScoreRequest(submitted)
+                    throw CompetitionRemoteFailure.retryableTransport
+                }
+            ),
+            outboxStore: outboxStore,
+            now: { observedAt }
+        )
+
+        let outcome = await runtime.synchronizeAll()
+        await runtime.stop()
+
+        XCTAssertEqual(outcome.failures, [])
+        let requests = await probe.scoreRequests()
+        XCTAssertEqual(requests, [request])
+        let durable = try await outboxStore.entries()
+        XCTAssertEqual(durable.count, 1)
+        XCTAssertEqual(
+            durable.first?.state,
+            .pending(
+                attemptCount: 1,
+                retryAt: observedAt.addingTimeInterval(1)
+            )
+        )
+    }
+
+    func testPersistedOutboxDrainDoesNotBlockCompetitionDiscovery()
+        async throws
+    {
+        let root = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let eventsRoot = root.appendingPathComponent(
+            "events",
+            isDirectory: true
+        )
+        let outboxRoot = root.appendingPathComponent(
+            "outbox",
+            isDirectory: true
+        )
+        try FileManager.default.createDirectory(
+            at: eventsRoot,
+            withIntermediateDirectories: false
+        )
+        try FileManager.default.createDirectory(
+            at: outboxRoot,
+            withIntermediateDirectories: false
+        )
+        let outboxStore = JSONCompetitionOutboxStore(
+            rootDirectory: outboxRoot,
+            fileProtection: JSONCompetitionEventStoreFileProtection {
+                _, _ in
+            }
+        )
+        let observedAt = Date(timeIntervalSince1970: 1_786_536_000)
+        let request = try CompetitionScoreRevisionRequest(
+            competitionID: competitionID,
+            semanticEventID: UUID(
+                uuidString: "74000000-0000-4000-8000-000000000002"
+            )!,
+            dayOrdinal: 1,
+            clientRevision: 1,
+            evaluatedAt: observedAt,
+            moveMode: "activeEnergyKilocalories",
+            standMode: "standHours",
+            moveBasisPoints: 7_000,
+            exerciseBasisPoints: 8_000,
+            standBasisPoints: 8_333,
+            availabilityReason: "available",
+            scoringPolicyIdentity: RemoteScoringWireV1.policyIdentity,
+            wireContentSHA256: String(repeating: "b", count: 64)
+        )
+        _ = try await outboxStore.enqueue(
+            .scoreRevision(request),
+            enqueuedAt: observedAt
+        )
+        let submission = SuspendedScoreSubmissionProbe()
+        let discoveryStarted = expectation(
+            description: "competition discovery is not blocked by outbox"
+        )
+        let runtime = RemoteCompetitionRuntime(
+            profileID: profileID,
+            store: makeStore(root: eventsRoot),
+            remoteAPI: remoteAPI(
+                listCompetitions: {
+                    discoveryStarted.fulfill()
+                    return []
+                },
+                appendScoreRevision: { _ in
+                    await submission.suspendUntilReleased()
+                    throw CompetitionRemoteFailure.retryableTransport
+                }
+            ),
+            outboxStore: outboxStore,
+            now: { observedAt }
+        )
+
+        let synchronization = Task {
+            await runtime.synchronizeAll()
+        }
+        await submission.waitUntilStarted()
+        await fulfillment(of: [discoveryStarted], timeout: 0.25)
+        await submission.release()
+        let outcome = await synchronization.value
+        await runtime.stop()
+
+        let durableCount = try await outboxStore.entries().count
+        XCTAssertEqual(outcome.failures, [])
+        XCTAssertEqual(durableCount, 1)
+    }
+
     func testRemoteScoreArrivalPersistsLedgerAndRelaunchIsIdempotent()
         async throws
     {
@@ -2708,6 +2877,9 @@ private actor RemoteCompetitionRuntimeProbe {
     private var submittedScoreRequests: [CompetitionScoreRevisionRequest] = []
     private var submittedAttestationRequests:
         [CompetitionAttestationRequest] = []
+    private var scoreRequestWaiters: [
+        (count: Int, continuation: CheckedContinuation<Void, Never>)
+    ] = []
 
     func recordListCall() {
         listCalls += 1
@@ -2730,10 +2902,24 @@ private actor RemoteCompetitionRuntimeProbe {
 
     func recordScoreRequest(_ request: CompetitionScoreRevisionRequest) {
         submittedScoreRequests.append(request)
+        let ready = scoreRequestWaiters.filter {
+            submittedScoreRequests.count >= $0.count
+        }
+        scoreRequestWaiters.removeAll {
+            submittedScoreRequests.count >= $0.count
+        }
+        ready.forEach { $0.continuation.resume() }
     }
 
     func scoreRequests() -> [CompetitionScoreRevisionRequest] {
         submittedScoreRequests
+    }
+
+    func waitForScoreRequestCount(_ count: Int) async {
+        guard submittedScoreRequests.count < count else { return }
+        await withCheckedContinuation { continuation in
+            scoreRequestWaiters.append((count, continuation))
+        }
     }
 
     func recordAttestationRequest(
@@ -2744,6 +2930,32 @@ private actor RemoteCompetitionRuntimeProbe {
 
     func attestationRequests() -> [CompetitionAttestationRequest] {
         submittedAttestationRequests
+    }
+}
+
+private actor SuspendedScoreSubmissionProbe {
+    private var started = false
+    private var released = false
+    private var startWaiter: CheckedContinuation<Void, Never>?
+    private var releaseWaiter: CheckedContinuation<Void, Never>?
+
+    func waitUntilStarted() async {
+        guard !started else { return }
+        await withCheckedContinuation { startWaiter = $0 }
+    }
+
+    func suspendUntilReleased() async {
+        started = true
+        startWaiter?.resume()
+        startWaiter = nil
+        guard !released else { return }
+        await withCheckedContinuation { releaseWaiter = $0 }
+    }
+
+    func release() {
+        released = true
+        releaseWaiter?.resume()
+        releaseWaiter = nil
     }
 }
 

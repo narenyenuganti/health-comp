@@ -106,6 +106,7 @@ actor CompetitionSyncCoordinator {
     private var retryTask: Task<Void, Never>?
     private var scheduledRetryAt: Date?
     private var isStopped = false
+    private var shouldRecoverPersistedAppAttestUnavailable = true
 
     init(
         profileID: UUID,
@@ -198,8 +199,13 @@ actor CompetitionSyncCoordinator {
     }
 
     private func drainPass() async throws -> Date? {
+        let entries = try await outboxStore.entries()
+        if try await recoverPersistedAppAttestUnavailable(in: entries) {
+            drainRequested = true
+            return nil
+        }
         var nextRetryAt: Date?
-        for entry in try await outboxStore.entries() {
+        for entry in entries {
             try Task.checkCancellation()
             switch (entry.payload, entry.state) {
             case let (
@@ -371,6 +377,29 @@ actor CompetitionSyncCoordinator {
             }
         }
         return nextRetryAt
+    }
+
+    private func recoverPersistedAppAttestUnavailable(
+        in entries: [CompetitionOutboxEntry]
+    ) async throws -> Bool {
+        guard shouldRecoverPersistedAppAttestUnavailable else { return false }
+        var recoveredEntry = false
+        for entry in entries {
+            guard case .scoreRevision = entry.payload,
+                  case .permanentFailure(.appAttestUnavailable, _) = entry.state
+            else {
+                continue
+            }
+            try Task.checkCancellation()
+            _ = try await outboxStore.update(
+                entry.semanticEventID,
+                expectedGeneration: entry.generation,
+                state: .pending(attemptCount: 0, retryAt: nil)
+            )
+            recoveredEntry = true
+        }
+        shouldRecoverPersistedAppAttestUnavailable = false
+        return recoveredEntry
     }
 
     private func replaceRetrySchedule(with retryAt: Date?) {
