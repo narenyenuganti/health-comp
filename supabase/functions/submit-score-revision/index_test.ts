@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import {
   appAttestClientDataV1,
   AppAttestVerificationError,
+  type AppAttestVerificationErrorCode,
   type AppAttestVerificationPolicy,
 } from "../_shared/app-attest.ts";
 import { containsFingerprint } from "../_shared/scoring_http.ts";
@@ -125,10 +126,16 @@ function rpcClient(
   };
 }
 
+type TestScoreSubmissionDependencies = ScoreSubmissionDependencies & {
+  reportVerificationFailure?: (
+    code: AppAttestVerificationErrorCode,
+  ) => void;
+};
+
 function dependencies(
-  overrides: Partial<ScoreSubmissionDependencies> = {},
+  overrides: Partial<TestScoreSubmissionDependencies> = {},
   calls: RpcCall[] = [],
-): ScoreSubmissionDependencies {
+): TestScoreSubmissionDependencies {
   return {
     createUserClient: () =>
       rpcClient((name, args) => {
@@ -662,6 +669,7 @@ Deno.test("invalid attestation, assertion, and equal counters are stable proof r
   ] as const;
   for (const code of codes) {
     let authorizationCalled = false;
+    const reportedCodes: AppAttestVerificationErrorCode[] = [];
     const assertion = code === "invalid_assertion" ||
       code === "invalid_counter";
     const selectedProof = assertion
@@ -696,6 +704,12 @@ Deno.test("invalid attestation, assertion, and equal counters are stable proof r
         verifyAssertion: () => {
           throw new AppAttestVerificationError(code);
         },
+        reportVerificationFailure: (reportedCode) => {
+          reportedCodes.push(reportedCode);
+          if (reportedCode === "invalid_bundle_version") {
+            throw new Error("synthetic reporter failure");
+          }
+        },
       }),
     );
     assertEquals(response.status, 401);
@@ -704,6 +718,7 @@ Deno.test("invalid attestation, assertion, and equal counters are stable proof r
       "app_attest_proof_rejected",
     );
     assertEquals(authorizationCalled, false);
+    assertEquals(reportedCodes, [code]);
   }
 });
 
