@@ -47,7 +47,7 @@ enum SupabaseCompetitionRemoteAPI {
                 )
             },
             listCompetitions: {
-                let response = try await send(
+                let response = try await sendReadOnly(
                     .listCompetitions,
                     transport: transport
                 )
@@ -198,7 +198,7 @@ enum SupabaseCompetitionRemoteAPI {
                 guard (1...200).contains(pageSize) else {
                     throw CompetitionRemoteFailure.serverContractMismatch
                 }
-                let response = try await send(
+                let response = try await sendReadOnly(
                     .rpc(
                         name: "fetch_competition_changes",
                         parameters: try encode(
@@ -298,6 +298,22 @@ enum SupabaseCompetitionRemoteAPI {
         provider: SupabaseClientProvider
     ) -> CompetitionRemoteAPI {
         make(transport: .live(provider: provider))
+    }
+
+    private static func sendReadOnly(
+        _ request: CompetitionRemoteTransportRequest,
+        transport: CompetitionRemoteTransport
+    ) async throws -> CompetitionRemoteTransportResponse {
+        do {
+            return try await send(request, transport: transport)
+        } catch CompetitionRemoteFailure.retryableTransport {
+            do {
+                try await Task.sleep(for: .seconds(1))
+            } catch is CancellationError {
+                throw CompetitionRemoteFailure.cancelled
+            }
+            return try await send(request, transport: transport)
+        }
     }
 
     private enum ErrorContext: Equatable {
