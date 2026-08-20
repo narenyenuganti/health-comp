@@ -2,7 +2,15 @@
 set -eu
 
 repository_root=$(git rev-parse --show-toplevel)
-runtime_image="public.ecr.aws/supabase/edge-runtime:v1.74.3"
+runtime_registry=${SUPABASE_INTERNAL_IMAGE_REGISTRY:-public.ecr.aws}
+case "$runtime_registry" in
+  public.ecr.aws | ghcr.io) ;;
+  *)
+    echo "Unsupported Supabase Edge Runtime registry." >&2
+    exit 1
+    ;;
+esac
+runtime_image="$runtime_registry/supabase/edge-runtime:v1.74.3"
 container_name="healthcomp-app-attest-edge-$$"
 result_dir=$(mktemp -d "${TMPDIR:-/tmp}/healthcomp-app-attest-edge.XXXXXX")
 fixture_dir="$result_dir/function"
