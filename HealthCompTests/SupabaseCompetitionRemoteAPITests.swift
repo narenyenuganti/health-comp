@@ -425,6 +425,28 @@ final class SupabaseCompetitionRemoteAPITests: XCTestCase {
         XCTAssertEqual(requestCount, 0)
     }
 
+    func testChallengeRetriesInstallationRegistrationRace() async throws {
+        let harness = CompetitionTransportHarness(stubs: [
+            .response(
+                404,
+                try errorData(code: "installation_unavailable")
+            ),
+        ])
+        let request = try CompetitionAppAttestChallengeRequest(
+            installationID: installationID,
+            payloadSHA256: digest("c"),
+            keyID: appAttestKeyID
+        )
+
+        let failure = await remoteFailure {
+            _ = try await makeAPI(harness).issueAppAttestChallenge(request)
+        }
+
+        XCTAssertEqual(failure, .retryableTransport)
+        let requestCount = await harness.requestCount()
+        XCTAssertEqual(requestCount, 1)
+    }
+
     func testAppAttestSubmissionErrorsKeepStableIntegritySemantics()
         async throws
     {
@@ -433,6 +455,7 @@ final class SupabaseCompetitionRemoteAPITests: XCTestCase {
             (409, "app_attest_context_unavailable", .appAttestContextUnavailable),
             (409, "app_attest_grant_unavailable", .appAttestContextUnavailable),
             (409, "app_attest_proof_conflict", .appAttestProofConflict),
+            (404, "installation_unavailable", .notFound),
         ]
         for (status, code, expected) in cases {
             let harness = CompetitionTransportHarness(stubs: [

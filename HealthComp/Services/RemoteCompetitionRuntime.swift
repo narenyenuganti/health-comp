@@ -560,6 +560,7 @@ actor RemoteCompetitionRuntime {
     }
 
     func synchronizeAll() async -> RemoteCompetitionRuntimeOutcome {
+        await syncCoordinator?.wake()
         let cachedEntries: [RemoteCompetitionCacheEntry]
         do {
             cachedEntries = try await cacheStore?.load(

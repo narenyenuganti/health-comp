@@ -401,7 +401,7 @@ enum SupabaseCompetitionRemoteAPI {
         case "app_attest_proof_conflict":
             return .appAttestProofConflict
         case "installation_unavailable" where context == .appAttestChallenge:
-            return .appAttestUnavailable
+            return .retryableTransport
         default:
             break
         }
