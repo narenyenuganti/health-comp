@@ -239,11 +239,24 @@ Status meanings:
   rows remaining, and returned no private values. The sole nonblank
   privacy-safe receipt has SHA-256
   `852fc2d64c0daa93677726cda4fdddf4acd088b68884aa247939188f408660af`.
+- **PASS:** In a user-approved sequential Simulator sequence ending at
+  `2026-08-20T05:56:37Z`, selected artifact `dd0ed68` remotely retired Account
+  A's installation, reached zero local profile roots and files, and mounted one
+  distinct Account B root. The hosted aggregate moved from two active / three
+  revoked installations, to one / four after sign-out, to two / four after
+  Account B registration. Account B contained only the legitimate
+  server-rematerialized scheduled competition, two cursors, and its one active
+  installation; no outbox, notification preference, or App Attest file was
+  present. The canonical selected-artifact profile-transition test separately
+  seeds and rejects cross-profile outbox loading. No identity, identifier,
+  token, local fingerprint, or private screenshot is retained. The iOS 18.4
+  Simulator transport-cache recovery touched only rebuildable alternative-
+  service rows and did not alter profile data.
 - **PARTIAL:** The database portion of the adversarial participant-isolation
   and tamper matrix and the selected-build create/claim Function routing are
-  proven. Replay of the consumed replacement invitation when its token is
-  available and both endpoints' profile-scoped local-store isolation remain
-  pending.
+  proven, and the sequential Simulator profile-root boundary now passes.
+  Replay of the consumed replacement invitation when its token is available
+  and the remaining lifecycle isolation cases remain pending.
 
 ## Paid-team signing and installation
 
@@ -326,14 +339,16 @@ Status meanings:
 - **PARTIAL:** The replacement competition is scheduled to start on
   `2026-08-20` in its frozen `America/Los_Angeles` time zone. Day 1 score
   submission, Days 1...7, offline catch-up, tallying/results, history, rematch,
-  mute, archive, deep-link relaunch, and sequential profile-scoped journal,
-  outbox, cursor, mute, and installation isolation remain pending.
+  mute, archive, and deep-link relaunch remain pending. Sequential Simulator
+  profile-root teardown/remount, non-cross-load of the private outbox, cursor
+  scoping, and remote installation retirement/re-registration now pass.
 - **PARTIAL:** The rollback-only hosted database matrix proved its fixed
   synthetic cross-account reads and mutations, replayed claims, modified
   points, stale/conflicting revisions, result rewrites, deleted-profile access,
   private-column/raw-table denial, and unregistered-installation cases fail
   closed. Selected-build create/claim Function routing is also proven;
-  consumed-token replay and endpoint-local isolation evidence remain pending.
+  consumed-token replay and the remaining lifecycle isolation evidence remain
+  pending.
 - **BLOCKED:** Hosted backup/restore rehearsal requires a backup-capable plan
   and an approved disposable restore target.
 - **BLOCKED:** No production Supabase project has been approved.
