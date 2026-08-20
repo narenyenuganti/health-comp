@@ -407,6 +407,76 @@ HEALTHCOMP_AASA_APP_IDS, add the exact applinks entitlement, serve
 /.well-known/apple-app-site-association without redirect, verify headers and
 cache behavior, and test cold/warm opening on a signed physical device.
 
+## Rollback-only adversarial staging verifier
+
+`scripts/staging-adversarial-rollback.sql` exercises the database portion of
+the Task 19 hosted adversarial matrix with fixed `.invalid` synthetic
+identities. It checks
+anonymous and cross-participant reads, invitation replay, private-column and
+raw-table access, direct mutation attempts, App Attest fail-closed behavior,
+valid-grant payload and score-content binding, cross-table score/attestation/
+award/installation isolation, score duplicate/regression contracts, result
+rewrites, stale deleted-profile access, and unregistered installations. The
+script opens one transaction,
+sets bounded timeouts, fails on the first unmet assertion, executes exactly one
+explicit `ROLLBACK`, independently confirms that no synthetic rows remain, and
+switches the session to read-only before returning one final privacy-safe JSON
+receipt. It reapplies the bounded session timeouts before the post-rollback
+residue query. The receipt is the final statement, so no post-receipt work is
+allowed.
+
+The verifier performs temporary writes even though its successful outcome is
+rollback. Run it only against staging, only after reviewing its exact selected
+commit, and only with fresh action-time approval. Never substitute production,
+never alter the fixed fixture scope at execution time, and never retain query
+output other than the final receipt.
+
+Use a direct or session-mode staging database connection from the Supabase
+**Connect** panel; use the session pooler when the operator network has no IPv6
+route. Before connecting, read back the staging project's SSL-enforcement
+setting and require it to be enabled; stop for approval instead of changing a
+disabled setting implicitly. Download the **Connect** panel's current CA
+certificate to an untracked temporary path and require full hostname
+verification. Do not put the database password or full connection URI in the
+command, an environment variable, a file, shell history, or evidence. Force
+`psql` to request it interactively:
+
+~~~bash
+PGSSLMODE=verify-full \
+PGSSLROOTCERT='<untracked path to the current Supabase CA certificate>' \
+PGCONNECT_TIMEOUT=10 \
+psql -X \
+  --host '<approved staging database host>' \
+  --port '<approved staging database port>' \
+  --username '<approved staging database user>' \
+  --dbname postgres \
+  --password \
+  --set=ON_ERROR_STOP=1 \
+  --quiet \
+  --tuples-only \
+  --no-align \
+  --file scripts/staging-adversarial-rollback.sql
+~~~
+
+The expected sole nonblank output has version
+`healthcomp_staging_adversarial_v1`, status `pass`, 15 passed assertions, zero
+synthetic rows remaining, no private values returned, and transaction outcome
+`rolled_back`. Treat any other output or nonzero exit as a failed gate. If the
+client exits on an assertion error, PostgreSQL rolls the still-open transaction
+back when the connection closes; nevertheless, run a reviewed read-only
+fixed-fixture residue check before retrying.
+
+Supabase CLI `2.113.0` must not be used here via
+`supabase db query --file`: its local query path submits the multi-statement
+file as one prepared statement and rejects it. Backend CI instead executes the
+same file through `psql` inside the already isolated local database container,
+so every pull request verifies both the static safety boundary and the runtime
+rollback receipt. A local or CI receipt does not count as hosted staging
+evidence. Even a hosted pass covers only the database adversarial boundary; it
+does not replace selected-build Edge Function routing, replay of the selected
+consumed invitation when that token is available, or the two endpoints'
+profile-scoped local-store isolation checks.
+
 ## Completion evidence
 
 For each hosted environment, retain only anonymized evidence:
