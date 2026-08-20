@@ -47,9 +47,9 @@ Staging has now supported partial two-account and physical-device verification
 on selected artifact `dd0ed68`. The rollback-only database adversarial boundary
 also passed 15/15 at exact verifier commit `4fca597` with zero synthetic rows
 remaining. These are bounded receipts, not release readiness: the scheduled
-two-account lifecycle, selected-build Edge Function and local-store isolation,
-remaining physical service gates, deletion, and restore rehearsal are still
-incomplete.
+two-account lifecycle, consumed-token replay, profile-scoped local-store
+isolation, remaining physical service gates, deletion, and restore rehearsal
+are still incomplete.
 
 The inactive project named “naren-polymath's Project”
 (vleyumieoroaipedqpsp) is not production merely because it is the other
@@ -476,10 +476,12 @@ file as one prepared statement and rejects it. Backend CI instead executes the
 same file through `psql` inside the already isolated local database container,
 so every pull request verifies both the static safety boundary and the runtime
 rollback receipt. A local or CI receipt does not count as hosted staging
-evidence. Even a hosted pass covers only the database adversarial boundary; it
-does not replace selected-build Edge Function routing, replay of the selected
-consumed invitation when that token is available, or the two endpoints'
-profile-scoped local-store isolation checks.
+evidence. Even a hosted pass covers only the database adversarial boundary.
+Selected-build create/claim Function routing is proven separately by the
+selected-artifact create/accept flow, its hosted effects, and read-only
+invocation summaries. Neither receipt replaces replay of the selected consumed
+invitation when that token is available or the two endpoints' profile-scoped
+local-store isolation checks.
 
 ## Completion evidence
 
