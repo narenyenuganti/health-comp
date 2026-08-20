@@ -79,6 +79,23 @@ and pinned Edge Runtime fixture, PostgreSQL 17, RLS, pgTAP, XcodeGen.
 > raw dependency graph as a RED-capable regression. A credential-free endpoint
 > boot probe alone is not App Attest runtime evidence.
 
+> **Physical staging checkpoint (2026-08-20):** Function version 5 booted and a
+> development-signed physical iPhone obtained one fresh attestation challenge
+> and reached `submit-score-revision`. The endpoint returned the unchanged
+> non-enumerating HTTP 401 `app_attest_proof_rejected`; the challenge remained
+> unconsumed, and staging created no App Attest key, submission grant, or
+> accepted score. This proves fail-closed verifier reachability after the
+> runtime correction, not successful physical attestation.
+>
+> The rejection-recovery follow-up preserves that public response and reports
+> only a fixed log event plus the closed verifier-reason enum. It treats the
+> existing local `appAttestRejected` encoding as a decode-only beta migration
+> source eligible for one recovery, while every new proof/context/conflict
+> failure is written as `appAttestRejectedTerminal` and is never reopened by a
+> fresh coordinator. No identity, challenge, key, proof, score, or HealthKit
+> value enters this diagnostic seam. Successful physical key registration and
+> assertion renewal remain required evidence.
+
 ## Task 1: Freeze protocol fixtures and verifier boundary
 
 **Files:**
@@ -218,6 +235,9 @@ deno test --config supabase/functions/deno.json --allow-env --allow-net --allow-
 6. Return existing canonical append/duplicate/conflict responses unchanged. Map
    App Attest policy failures to stable 401/409 codes and infrastructure
    failures to retryable 503.
+7. Report a typed verifier failure only through an injected code-only seam.
+   The live reporter emits a fixed event name plus the closed reason enum;
+   reporter failure cannot change the generic client response.
 
 Run:
 
@@ -257,6 +277,10 @@ deno test --config supabase/functions/deno.json --allow-env --allow-net --allow-
    and is support-visible.
 6. Keep deterministic DEBUG Test Lab composition inert and free of challenge
    requests.
+7. Recover the historical beta `appAttestRejected` outbox encoding exactly once
+   on coordinator startup. Persist every new proof/context/conflict rejection
+   as `appAttestRejectedTerminal`, which remains support-inspectable and is not
+   a startup-recovery source.
 
 Run focused tests with a unique `/tmp` DerivedData path and macro-validation
 skip flags.
@@ -301,7 +325,9 @@ git commit -m "feat(security): attest competition score submissions"
 6. Push, open a ready PR, verify its exact head/check state, and merge with a
    head-SHA guard.
 7. Record external evidence honestly: automated/simulator fixtures prove logic
-   only. A real production-signed iPhone, configured Apple App ID capability,
-   matching Supabase environment values, real key registration/assertion,
-   replacement device, and fail-closed score submission remain Task 19 physical
-   gates.
+   only. A real correctly signed iPhone, configured Apple App ID capability,
+   matching Supabase environment values, accepted key registration/assertion,
+   and fail-closed score submission remain Task 19 physical gates. The agreed
+   hardware boundary is one physical iPhone plus simulators and two Apple
+   accounts; key-loss/relaunch/profile-isolation scenarios may be automated or
+   simulated but must not be labeled second-physical-device evidence.
