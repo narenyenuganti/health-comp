@@ -118,6 +118,7 @@ enum CompetitionOutboxPermanentFailure:
     case accountDeletionUnavailable
     case appAttestUnavailable
     case appAttestRejected
+    case appAttestRejectedTerminal
     case operationFailed
 }
 

@@ -106,7 +106,7 @@ actor CompetitionSyncCoordinator {
     private var retryTask: Task<Void, Never>?
     private var scheduledRetryAt: Date?
     private var isStopped = false
-    private var shouldRecoverPersistedAppAttestUnavailable = true
+    private var shouldRecoverPersistedLegacyAppAttestFailure = true
 
     init(
         profileID: UUID,
@@ -200,7 +200,7 @@ actor CompetitionSyncCoordinator {
 
     private func drainPass() async throws -> Date? {
         let entries = try await outboxStore.entries()
-        if try await recoverPersistedAppAttestUnavailable(in: entries) {
+        if try await recoverPersistedLegacyAppAttestFailures(in: entries) {
             drainRequested = true
             return nil
         }
@@ -379,14 +379,18 @@ actor CompetitionSyncCoordinator {
         return nextRetryAt
     }
 
-    private func recoverPersistedAppAttestUnavailable(
+    private func recoverPersistedLegacyAppAttestFailures(
         in entries: [CompetitionOutboxEntry]
     ) async throws -> Bool {
-        guard shouldRecoverPersistedAppAttestUnavailable else { return false }
+        guard shouldRecoverPersistedLegacyAppAttestFailure else {
+            return false
+        }
         var recoveredEntry = false
         for entry in entries {
             guard case .scoreRevision = entry.payload,
-                  case .permanentFailure(.appAttestUnavailable, _) = entry.state
+                  case let .permanentFailure(failure, _) = entry.state,
+                  failure == .appAttestUnavailable
+                    || failure == .appAttestRejected
             else {
                 continue
             }
@@ -398,7 +402,7 @@ actor CompetitionSyncCoordinator {
             )
             recoveredEntry = true
         }
-        shouldRecoverPersistedAppAttestUnavailable = false
+        shouldRecoverPersistedLegacyAppAttestFailure = false
         return recoveredEntry
     }
 
@@ -498,7 +502,7 @@ actor CompetitionSyncCoordinator {
             .appAttestUnavailable
         case .appAttestRejected, .appAttestContextUnavailable,
              .appAttestProofConflict:
-            .appAttestRejected
+            .appAttestRejectedTerminal
         case .operationFailed:
             .operationFailed
         case .cancelled, .retryableTransport:
