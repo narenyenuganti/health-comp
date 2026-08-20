@@ -1,14 +1,14 @@
 import * as asn1js from "asn1js";
 import cbor from "cbor";
-import { verifyAssertion as packageVerifyAssertion } from "node-app-attest";
 import { Buffer } from "node:buffer";
 import {
   createHash,
   createPublicKey,
+  createVerify,
+  type KeyObject,
   timingSafeEqual,
   X509Certificate,
 } from "node:crypto";
-import * as pkijs from "pkijs";
 
 export type AppAttestEnvironment = "development" | "production";
 
@@ -79,12 +79,23 @@ const productionAAGUID = Buffer.concat([
   Buffer.from("appattest", "ascii"),
   Buffer.alloc(7),
 ]);
-const appleAppAttestationRootCA = new X509Certificate(
-  `-----BEGIN CERTIFICATE-----
+const appleAppAttestationRootCAPEM = `-----BEGIN CERTIFICATE-----
 MIICITCCAaegAwIBAgIQC/O+DvHN0uD7jG5yH2IXmDAKBggqhkjOPQQDAzBSMSYwJAYDVQQDDB1BcHBsZSBBcHAgQXR0ZXN0YXRpb24gUm9vdCBDQTETMBEGA1UECgwKQXBwbGUgSW5jLjETMBEGA1UECAwKQ2FsaWZvcm5pYTAeFw0yMDAzMTgxODMyNTNaFw00NTAzMTUwMDAwMDBaMFIxJjAkBgNVBAMMHUFwcGxlIEFwcCBBdHRlc3RhdGlvbiBSb290IENBMRMwEQYDVQQKDApBcHBsZSBJbmMuMRMwEQYDVQQIDApDYWxpZm9ybmlhMHYwEAYHKoZIzj0CAQYFK4EEACIDYgAERTHhmLW07ATaFQIEVwTtT4dyctdhNbJhFs/Ii2FdCgAHGbpphY3+d8qjuDngIN3WVhQUBHAoMeQ/cLiP1sOUtgjqK9auYen1mMEvRq9Sk3Jm5X8U62H+xTD3FE9TgS41o0IwQDAPBgNVHRMBAf8EBTADAQH/MB0GA1UdDgQWBBSskRBTM72+aEH/pwyp5frq5eWKoTAOBgNVHQ8BAf8EBAMCAQYwCgYIKoZIzj0EAwMDaAAwZQIwQgFGnByvsiVbpTKwSga0kP0e8EeDS4+sQmTvb7vn53O5+FRXgeLhpJ06ysC5PrOyAjEAp5U4xDgEgllF7En3VcE3iexZZtKeYnpqtijVoyFraWVIyd/dganmrduC1bmTBGwD
------END CERTIFICATE-----`,
+-----END CERTIFICATE-----`;
+const appleAppAttestationRootCA = new X509Certificate(
+  appleAppAttestationRootCAPEM,
+);
+const appleAppAttestationRootCADER = Buffer.from(
+  appleAppAttestationRootCAPEM.replace(
+    /-----BEGIN CERTIFICATE-----|-----END CERTIFICATE-----|\s/g,
+    "",
+  ),
+  "base64",
 );
 const appAttestNonceOID = "1.2.840.113635.100.8.2";
+const ecdsaWithSHA256OID = "1.2.840.10045.4.3.2";
+const ecdsaWithSHA384OID = "1.2.840.10045.4.3.3";
+const maximumCertificateBytes = 16 * 1024;
 
 function fail(
   code: AppAttestVerificationErrorCode,
@@ -262,6 +273,20 @@ function equal(left: Uint8Array, right: Uint8Array): boolean {
     timingSafeEqual(Buffer.from(left), Buffer.from(right));
 }
 
+function isP256PublicKey(publicKey: KeyObject): boolean {
+  if (
+    publicKey.asymmetricKeyType !== "ec" ||
+    !["prime256v1", "p256", "P-256"].includes(
+      publicKey.asymmetricKeyDetails?.namedCurve ?? "",
+    )
+  ) return false;
+  try {
+    return publicKey.export({ format: "jwk" }).crv === "P-256";
+  } catch {
+    return false;
+  }
+}
+
 function decodeCanonicalKeyID(value: string): Buffer {
   if (typeof value !== "string" || value.length !== 44) fail("invalid_key");
   const decoded = Buffer.from(value, "base64");
@@ -302,16 +327,27 @@ function validateCertificates(
     intermediate.issuer !== appleAppAttestationRootCA.subject ||
     !intermediate.subject.includes("CN=Apple App Attestation CA 1") ||
     !intermediate.issuer.includes("CN=Apple App Attestation Root CA") ||
-    leaf.publicKey.asymmetricKeyType !== "ec" ||
-    leaf.publicKey.asymmetricKeyDetails?.namedCurve !== "prime256v1"
+    !isP256PublicKey(leaf.publicKey)
   ) {
     fail("invalid_certificate");
   }
   try {
     if (
-      !leaf.verify(intermediate.publicKey) ||
-      !intermediate.verify(appleAppAttestationRootCA.publicKey) ||
-      !appleAppAttestationRootCA.verify(appleAppAttestationRootCA.publicKey)
+      !verifyCertificateSignature(
+        certificateBytes[0],
+        intermediate,
+        ecdsaWithSHA256OID,
+      ) ||
+      !verifyCertificateSignature(
+        certificateBytes[1],
+        appleAppAttestationRootCA,
+        ecdsaWithSHA384OID,
+      ) ||
+      !verifyCertificateSignature(
+        appleAppAttestationRootCADER,
+        appleAppAttestationRootCA,
+        ecdsaWithSHA384OID,
+      )
     ) {
       fail("invalid_certificate");
     }
@@ -332,24 +368,137 @@ function validateCertificates(
   return { leaf, intermediate };
 }
 
-function certificateNonce(certificateBytes: Buffer): Buffer {
-  let certificate: pkijs.Certificate;
+function algorithmIdentifierOID(block: asn1js.BaseBlock): string | null {
+  if (!(block instanceof asn1js.Sequence)) return null;
+  const values = block.valueBlock.value;
+  if (
+    values.length !== 1 ||
+    !(values[0] instanceof asn1js.ObjectIdentifier)
+  ) return null;
+  return values[0].valueBlock.toString();
+}
+
+function parseCertificate(certificateBytes: Uint8Array) {
+  if (
+    certificateBytes.length === 0 ||
+    certificateBytes.length > maximumCertificateBytes
+  ) fail("invalid_certificate");
+
+  const parsed = asn1js.fromBER(certificateBytes, {
+    maxDepth: 32,
+    maxNodes: 512,
+    maxContentLength: maximumCertificateBytes,
+  });
+  if (
+    parsed.offset !== certificateBytes.length ||
+    !(parsed.result instanceof asn1js.Sequence)
+  ) fail("invalid_certificate");
+  const certificate = parsed.result.valueBlock.value;
+  if (
+    certificate.length !== 3 ||
+    !(certificate[0] instanceof asn1js.Sequence) ||
+    !(certificate[2] instanceof asn1js.BitString) ||
+    certificate[2].valueBlock.unusedBits !== 0 ||
+    certificate[2].valueBlock.isConstructed ||
+    certificate[2].valueBlock.valueHexView.byteLength === 0
+  ) fail("invalid_certificate");
+
+  const signatureOID = algorithmIdentifierOID(certificate[1]);
+  if (!signatureOID) fail("invalid_certificate");
+  const tbsValues = certificate[0].valueBlock.value;
+  const hasVersion = tbsValues[0] instanceof asn1js.Constructed &&
+    tbsValues[0].idBlock.tagClass === 3 &&
+    tbsValues[0].idBlock.tagNumber === 0;
+  if (hasVersion) {
+    const version = tbsValues[0] as asn1js.Constructed;
+    if (
+      version.valueBlock.value.length !== 1 ||
+      !(version.valueBlock.value[0] instanceof asn1js.Integer)
+    ) fail("invalid_certificate");
+  }
+  const tbsSignatureIndex = hasVersion ? 2 : 1;
+  if (
+    tbsSignatureIndex >= tbsValues.length ||
+    algorithmIdentifierOID(tbsValues[tbsSignatureIndex]) !== signatureOID
+  ) fail("invalid_certificate");
+
+  return {
+    signatureOID,
+    signature: certificate[2].valueBlock.valueHexView,
+    tbs: certificate[0].valueBeforeDecodeView,
+    tbsValues,
+  };
+}
+
+function verifyCertificateSignature(
+  certificateBytes: Uint8Array,
+  issuer: X509Certificate,
+  expectedAlgorithmOID: string,
+): boolean {
+  const parsed = parseCertificate(certificateBytes);
+  if (parsed.signatureOID !== expectedAlgorithmOID) return false;
+  const digest = expectedAlgorithmOID === ecdsaWithSHA256OID
+    ? "SHA256"
+    : expectedAlgorithmOID === ecdsaWithSHA384OID
+    ? "SHA384"
+    : null;
+  if (!digest) return false;
+  const verifier = createVerify(digest);
+  verifier.update(parsed.tbs);
+  return verifier.verify(issuer.publicKey, parsed.signature);
+}
+
+export function decodeAppAttestCertificateNonce(
+  certificateBytes: Uint8Array,
+): Uint8Array {
+  let parsed;
   try {
-    const parsed = asn1js.fromBER(certificateBytes);
-    if (parsed.offset !== certificateBytes.length) fail("invalid_certificate");
-    certificate = new pkijs.Certificate({ schema: parsed.result });
+    parsed = parseCertificate(certificateBytes);
   } catch (error) {
     if (error instanceof AppAttestVerificationError) throw error;
     fail("invalid_certificate", error);
   }
-  const matchingExtensions = (certificate.extensions ?? []).filter((
-    extension,
-  ) => extension.extnID === appAttestNonceOID);
+
+  const wrappers = parsed.tbsValues.filter((block) =>
+    block instanceof asn1js.Constructed &&
+    block.idBlock.tagClass === 3 && block.idBlock.tagNumber === 3
+  ) as asn1js.Constructed[];
+  if (
+    wrappers.length !== 1 ||
+    parsed.tbsValues[parsed.tbsValues.length - 1] !== wrappers[0] ||
+    wrappers[0].valueBlock.value.length !== 1 ||
+    !(wrappers[0].valueBlock.value[0] instanceof asn1js.Sequence)
+  ) fail("invalid_certificate");
+
+  const extensions = wrappers[0].valueBlock.value[0].valueBlock.value;
+  if (extensions.length === 0 || extensions.length > 64) {
+    fail("invalid_certificate");
+  }
+  const matchingExtensions: asn1js.OctetString[] = [];
+  for (const extension of extensions) {
+    if (!(extension instanceof asn1js.Sequence)) fail("invalid_certificate");
+    const values = extension.valueBlock.value;
+    const extnValue = values[values.length - 1];
+    if (
+      (values.length !== 2 && values.length !== 3) ||
+      !(values[0] instanceof asn1js.ObjectIdentifier) ||
+      (values.length === 3 && !(values[1] instanceof asn1js.Boolean)) ||
+      !(extnValue instanceof asn1js.OctetString) ||
+      extnValue.valueBlock.isConstructed
+    ) fail("invalid_certificate");
+    if (values[0].valueBlock.toString() === appAttestNonceOID) {
+      matchingExtensions.push(extnValue as asn1js.OctetString);
+    }
+  }
   if (matchingExtensions.length !== 1) fail("invalid_certificate");
 
   try {
-    const encoded = matchingExtensions[0].extnValue.valueBlock.valueHexView;
-    const decoded = asn1js.fromBER(encoded);
+    const encoded = matchingExtensions[0].valueBlock.valueHexView;
+    const decoded = asn1js.fromBER(encoded, {
+      maxDepth: 4,
+      maxNodes: 8,
+      maxContentLength: 256,
+    });
     if (
       decoded.offset !== encoded.byteLength ||
       !(decoded.result instanceof asn1js.Sequence) ||
@@ -373,7 +522,7 @@ function certificateNonce(certificateBytes: Buffer): Buffer {
     ) {
       fail("invalid_certificate");
     }
-    return Buffer.from(octetString.valueBlock.valueHexView);
+    return new Uint8Array(octetString.valueBlock.valueHexView);
   } catch (error) {
     if (error instanceof AppAttestVerificationError) throw error;
     fail("invalid_certificate", error);
@@ -392,7 +541,7 @@ function validateAttestationNonce(
     authenticatorData,
     Buffer.from(clientDataHash),
   ]));
-  if (!equal(certificateNonce(certificateBytes), expected)) {
+  if (!equal(decodeAppAttestCertificateNonce(certificateBytes), expected)) {
     fail("invalid_attestation");
   }
 }
@@ -571,20 +720,17 @@ export function verifyAppAttestAssertion(input: {
   try {
     const publicKey = createPublicKey(input.publicKeyPEM);
     if (
-      publicKey.asymmetricKeyType !== "ec" ||
-      publicKey.asymmetricKeyDetails?.namedCurve !== "prime256v1"
+      !isP256PublicKey(publicKey)
     ) {
       fail("invalid_key");
     }
-    const verified = packageVerifyAssertion({
-      assertion: Buffer.from(input.assertion),
-      payload: Buffer.from(input.clientData),
-      publicKey: input.publicKeyPEM,
-      bundleIdentifier: policy.bundleIdentifier,
-      teamIdentifier: policy.teamIdentifier,
-      signCount: input.previousSignCount,
-    });
-    if (verified.signCount !== decoded.signCount) fail("invalid_assertion");
+    const clientDataHash = sha256(input.clientData);
+    const nonce = sha256(Buffer.concat([decoded.authData, clientDataHash]));
+    const verifier = createVerify("SHA256");
+    verifier.update(nonce);
+    if (!verifier.verify(publicKey, decoded.signature)) {
+      fail("invalid_assertion");
+    }
   } catch (error) {
     if (error instanceof AppAttestVerificationError) throw error;
     fail("invalid_assertion", error);

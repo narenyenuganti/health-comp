@@ -1,4 +1,5 @@
 import { assertEquals, assertThrows } from "@std/assert";
+import * as asn1js from "asn1js";
 import cbor from "cbor";
 import { Buffer } from "node:buffer";
 import { createHash, createSign, generateKeyPairSync } from "node:crypto";
@@ -6,6 +7,7 @@ import {
   appAttestClientDataV1,
   AppAttestVerificationError,
   type AppAttestVerificationPolicy,
+  decodeAppAttestCertificateNonce,
   decodeAppAttestPolicyExtensions,
   verifyAppAttestAssertion,
   verifyAppAttestAttestation,
@@ -45,6 +47,61 @@ const officialPolicy = (): AppAttestVerificationPolicy => ({
 
 function bytes(from: number, count: number): Uint8Array {
   return Uint8Array.from({ length: count }, (_, index) => from + index);
+}
+
+function algorithmIdentifier(oid = "1.2.840.10045.4.3.2") {
+  return new asn1js.Sequence({
+    value: [new asn1js.ObjectIdentifier({ value: oid })],
+  });
+}
+
+function nonceExtension(nonce: Uint8Array, extra: asn1js.BaseBlock[] = []) {
+  const encodedNonce = new asn1js.Sequence({
+    value: [
+      new asn1js.Constructed({
+        idBlock: { tagClass: 3, tagNumber: 1 },
+        value: [new asn1js.OctetString({ valueHex: nonce })],
+      }),
+    ],
+  }).toBER();
+  return new asn1js.Sequence({
+    value: [
+      new asn1js.ObjectIdentifier({ value: "1.2.840.113635.100.8.2" }),
+      new asn1js.OctetString({ valueHex: encodedNonce }),
+      ...extra,
+    ],
+  });
+}
+
+function syntheticCertificate(
+  extensions: asn1js.BaseBlock[],
+  wrapperTags: number[] = [3],
+): Uint8Array {
+  const tbsValues: asn1js.BaseBlock[] = [
+    new asn1js.Constructed({
+      idBlock: { tagClass: 3, tagNumber: 0 },
+      value: [new asn1js.Integer({ value: 2 })],
+    }),
+    new asn1js.Integer({ value: 1 }),
+    algorithmIdentifier(),
+  ];
+  for (const tagNumber of wrapperTags) {
+    tbsValues.push(
+      new asn1js.Constructed({
+        idBlock: { tagClass: 3, tagNumber },
+        value: [new asn1js.Sequence({ value: extensions })],
+      }),
+    );
+  }
+  return new Uint8Array(
+    new asn1js.Sequence({
+      value: [
+        new asn1js.Sequence({ value: tbsValues }),
+        algorithmIdentifier(),
+        new asn1js.BitString({ valueHex: new Uint8Array([0x30, 0x00]) }),
+      ],
+    }).toBER(),
+  );
 }
 
 function expectCode(
@@ -124,6 +181,36 @@ Deno.test("Apple 2026 official attestation fixture passes the strict wrapper", (
   assertEquals(result.receipt.length > 1_000, true);
 });
 
+Deno.test("certificate nonce parser is exact and rejects ambiguous extension layouts", () => {
+  const nonce = bytes(0, 32);
+  assertEquals(
+    decodeAppAttestCertificateNonce(
+      syntheticCertificate([nonceExtension(nonce)]),
+    ),
+    nonce,
+  );
+
+  for (
+    const certificate of [
+      syntheticCertificate([nonceExtension(nonce), nonceExtension(nonce)]),
+      syntheticCertificate([nonceExtension(nonce)], [2]),
+      syntheticCertificate([nonceExtension(nonce)], [3, 3]),
+      syntheticCertificate([
+        nonceExtension(nonce, [new asn1js.Null()]),
+      ]),
+      Uint8Array.from([
+        ...syntheticCertificate([nonceExtension(nonce)]),
+        0,
+      ]),
+    ]
+  ) {
+    expectCode(
+      "invalid_certificate",
+      () => decodeAppAttestCertificateNonce(certificate),
+    );
+  }
+});
+
 Deno.test("attestation rejects identity environment category version and certificate time", () => {
   const candidate = {
     attestation: Buffer.from(official.attestation, "base64"),
@@ -181,7 +268,33 @@ Deno.test("attestation rejects malformed CBOR client hash and key identifier", (
     }));
 });
 
-Deno.test("attestation rejects a certificate with a tampered signature", async () => {
+Deno.test("attestation rejects tampered leaf and intermediate signatures", async () => {
+  for (const certificateIndex of [0, 1]) {
+    const decoded = cbor.decodeFirstSync(
+      Buffer.from(official.attestation, "base64"),
+    ) as {
+      fmt: string;
+      attStmt: { x5c: Buffer[]; receipt: Buffer };
+      authData: Buffer;
+    };
+    const certificates = decoded.attStmt.x5c.map((value) => Buffer.from(value));
+    certificates[certificateIndex][certificates[certificateIndex].length - 1] ^=
+      1;
+    const attestation = await cbor.encodeAsync({
+      ...decoded,
+      attStmt: { ...decoded.attStmt, x5c: certificates },
+    });
+    expectCode("invalid_certificate", () =>
+      verifyAppAttestAttestation({
+        attestation,
+        clientDataHash: Buffer.from(official.clientDataHash, "base64"),
+        keyID: official.keyId,
+        policy: officialPolicy(),
+      }));
+  }
+});
+
+Deno.test("attestation rejects mismatched certificate signature algorithms", async () => {
   const decoded = cbor.decodeFirstSync(
     Buffer.from(official.attestation, "base64"),
   ) as {
@@ -189,13 +302,17 @@ Deno.test("attestation rejects a certificate with a tampered signature", async (
     attStmt: { x5c: Buffer[]; receipt: Buffer };
     authData: Buffer;
   };
-  const leaf = Buffer.from(decoded.attStmt.x5c[0]);
-  leaf[leaf.length - 1] ^= 1;
+  const parsed = asn1js.fromBER(decoded.attStmt.x5c[0]);
+  if (!(parsed.result instanceof asn1js.Sequence)) {
+    throw new Error("Official leaf certificate did not parse");
+  }
+  const certificate = parsed.result.valueBlock.value;
+  certificate[1] = algorithmIdentifier("1.2.840.10045.4.3.3");
   const attestation = await cbor.encodeAsync({
     ...decoded,
     attStmt: {
       ...decoded.attStmt,
-      x5c: [leaf, decoded.attStmt.x5c[1]],
+      x5c: [Buffer.from(parsed.result.toBER()), decoded.attStmt.x5c[1]],
     },
   });
   expectCode("invalid_certificate", () =>
