@@ -6,12 +6,12 @@ required future work.
 
 ## Current environment inventory
 
-Last read through the authenticated Supabase CLI and dashboard on 2026-08-15:
+Current authenticated environment evidence through 2026-08-19 PDT:
 
 | Logical environment | Supabase target | Status | App configuration |
 | --- | --- | --- | --- |
 | Development | Disposable local CLI stack (project ID health-comp) | Verified locally | com.narenyenuganti.HealthComp, sandbox APNs, development App Attest |
-| Staging | healthcomp-staging (xhfdfdrtxwptrwhvvlhg) | ACTIVE_HEALTHY; 14 migrations through 20260811000900 and nine Functions read back; Apple Auth and a topic-restricted server key are configured for the exact staging bundle; Function secrets, worker Vault entries, notification repair, and the corrected finalizer schedule are configured; both hosted jobs have succeeded | com.narenyenuganti.HealthComp.staging, sandbox APNs, development App Attest |
+| Staging | healthcomp-staging (xhfdfdrtxwptrwhvvlhg) | ACTIVE_HEALTHY; 14 migrations through 20260811000900 and nine Functions read back; Apple Auth and a topic-restricted server key are configured for the exact staging bundle; Function secrets, worker Vault entries, notification repair, and the corrected finalizer schedule are configured; both hosted jobs have succeeded; SSL enforcement is enabled; the rollback-only hosted database adversarial verifier passed 15/15 with zero residue | com.narenyenuganti.HealthComp.staging, sandbox APNs, development App Attest |
 | Production | **TBD** | No project has been approved as HealthComp production | com.narenyenuganti.HealthComp, production APNs, production App Attest |
 
 The 2026-08-15 staging promotion and readback established all of the following:
@@ -43,9 +43,13 @@ The 2026-08-15 staging promotion and readback established all of the following:
   the corrected private five-minute job first succeeded at 2026-08-16 04:00
   UTC with no due competition left unfinalized.
 
-Staging is not operationally ready for two-account or physical-device
-verification. Paid-team signing material and the required staging/physical
-evidence remain pending.
+Staging has now supported partial two-account and physical-device verification
+on selected artifact `dd0ed68`. The rollback-only database adversarial boundary
+also passed 15/15 at exact verifier commit `4fca597` with zero synthetic rows
+remaining. These are bounded receipts, not release readiness: the scheduled
+two-account lifecycle, selected-build Edge Function and local-store isolation,
+remaining physical service gates, deletion, and restore rehearsal are still
+incomplete.
 
 The inactive project named “naren-polymath's Project”
 (vleyumieoroaipedqpsp) is not production merely because it is the other
@@ -490,7 +494,8 @@ For each hosted environment, retain only anonymized evidence:
 - exact unresolved blockers.
 
 Do not call an environment ready from dashboard configuration alone. Task 19
-still requires two-account staging, adversarial isolation, and physical-device
+still requires completion of the two-account staging lifecycle, adversarial
+isolation above the proven database boundary, and the remaining physical-device
 evidence.
 
 ## Primary references

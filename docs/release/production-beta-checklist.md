@@ -222,7 +222,18 @@ Status meanings:
   identity, profile/competition identifier, private screenshot, raw HealthKit
   datum, or exact Activity value is retained. This is controlled custom-scheme
   evidence, not universal-link evidence.
-- **PENDING:** Adversarial participant-isolation and tamper matrix.
+- **PASS:** At `2026-08-20T01:18:06Z`, exact reviewed verifier commit
+  `4fca597757befafc9ed10cafecc4af4b73e65026` ran against
+  `healthcomp-staging` only after SSL enforcement was enabled and read back.
+  The certificate-verified session passed all 15 database adversarial
+  assertions, explicitly rolled back, independently confirmed zero synthetic
+  rows remaining, and returned no private values. The sole nonblank
+  privacy-safe receipt has SHA-256
+  `852fc2d64c0daa93677726cda4fdddf4acd088b68884aa247939188f408660af`.
+- **PARTIAL:** The database portion of the adversarial participant-isolation
+  and tamper matrix is proven. Selected-build Edge Function routing, replay of
+  the consumed replacement invitation when its token is available, and both
+  endpoints' profile-scoped local-store isolation remain pending.
 
 ## Paid-team signing and installation
 
@@ -307,9 +318,12 @@ Status meanings:
   submission, Days 1...7, offline catch-up, tallying/results, history, rematch,
   mute, archive, deep-link relaunch, and sequential profile-scoped journal,
   outbox, cursor, mute, and installation isolation remain pending.
-- **PENDING:** Cross-account reads and mutations, replayed claims, modified
+- **PARTIAL:** The rollback-only hosted database matrix proved its fixed
+  synthetic cross-account reads and mutations, replayed claims, modified
   points, stale/conflicting revisions, result rewrites, deleted-profile access,
-  token leakage, and unregistered installations all fail closed.
+  private-column/raw-table denial, and unregistered-installation cases fail
+  closed. Selected-build Edge Function and endpoint-local isolation evidence
+  remains pending.
 - **BLOCKED:** Hosted backup/restore rehearsal requires a backup-capable plan
   and an approved disposable restore target.
 - **BLOCKED:** No production Supabase project has been approved.
