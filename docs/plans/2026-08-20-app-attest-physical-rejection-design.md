@@ -19,9 +19,10 @@ client migration. The backend reports only the closed
 same non-enumerating HTTP 401 response. The client treats the existing encoded
 `appAttestRejected` value as a legacy beta state eligible for one recovery, and
 persists all new proof rejections as `appAttestRejectedTerminal`. That new
-encoding is never selected by startup recovery. Therefore a legacy entry can
-move to pending once, then either converge and disappear or fail into a durable
-support-inspectable terminal state.
+encoding is never selected by startup recovery. A legacy entry moves once into
+the durable `appAttestRejectionRecovery` state. That state preserves its origin
+across transport backoff and process relaunch, then either converges and
+disappears or fails into a durable support-inspectable terminal state.
 
 ## Alternatives rejected
 
@@ -44,18 +45,21 @@ identity, proof, or payload value is passed through the seam.
 
 On iOS startup, `CompetitionSyncCoordinator` scans a profile-scoped outbox. It
 continues to recover the existing `appAttestUnavailable` state as before and
-also migrates only legacy `appAttestRejected` score entries to pending. Any new
-remote rejection maps to `appAttestRejectedTerminal`; a fresh coordinator must
-leave that state untouched. The outbox remains append-safe, profile-scoped,
-idempotent, and support-inspectable, with no direct file mutation or retry-time
-override outside the coordinator contract.
+also migrates only legacy `appAttestRejected` score entries to the dedicated
+recovery state. Retryable transport preserves that state and its bounded retry
+schedule. Any subsequent App Attest availability/proof failure maps to
+`appAttestRejectedTerminal`; a fresh coordinator must leave that state
+untouched. The outbox remains append-safe, profile-scoped, idempotent, and
+support-inspectable, with no direct file mutation or retry-time override
+outside the coordinator contract.
 
 ## Verification
 
 Strict RED-to-GREEN tests cover the reporter and its unchanged HTTP response,
 legacy rejection recovery, failure into the new terminal encoding, and a
-second coordinator lifetime that performs no further request. Focused Deno and
-XCTest suites run first. Then the existing App Attest dependency-graph and
+second coordinator lifetime that performs no further request. A relaunch test
+also proves transport backoff retains the recovery provenance. Focused Deno
+and XCTest suites run first. Then the existing App Attest dependency-graph and
 pinned Edge Runtime gates, the full relevant backend/iOS matrix, secret/privacy
 scans, deterministic project generation, clean-tree checks, and independent
 Spec/Standards review must pass before integration. Deployment, installation,

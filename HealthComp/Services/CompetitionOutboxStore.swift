@@ -86,6 +86,7 @@ extension CompetitionOutboxPayload: Codable {
 
 enum CompetitionOutboxState: Equatable, Sendable {
     case pending(attemptCount: Int, retryAt: Date?)
+    case appAttestRejectionRecovery(attemptCount: Int, retryAt: Date?)
     case scoreAccepted(
         CompetitionScoreRevisionResponse,
         receivedAt: Date
@@ -136,6 +137,7 @@ extension CompetitionOutboxState: Codable {
 
     private enum Kind: String, Codable {
         case pending
+        case appAttestRejectionRecovery = "app_attest_rejection_recovery"
         case scoreAccepted = "score_accepted"
         case attestationAcknowledged = "attestation_acknowledged"
         case permanentFailure = "permanent_failure"
@@ -153,6 +155,21 @@ extension CompetitionOutboxState: Codable {
                 throw CompetitionOutboxStoreFailure.invalidDocument
             }
             self = .pending(
+                attemptCount: attemptCount,
+                retryAt: try container.decodeIfPresent(
+                    Date.self,
+                    forKey: .retryAt
+                )
+            )
+        case .appAttestRejectionRecovery:
+            let attemptCount = try container.decode(
+                Int.self,
+                forKey: .attemptCount
+            )
+            guard attemptCount >= 0 else {
+                throw CompetitionOutboxStoreFailure.invalidDocument
+            }
+            self = .appAttestRejectionRecovery(
                 attemptCount: attemptCount,
                 retryAt: try container.decodeIfPresent(
                     Date.self,
@@ -211,6 +228,16 @@ extension CompetitionOutboxState: Codable {
             try container.encode(Kind.pending, forKey: .kind)
             try container.encode(attemptCount, forKey: .attemptCount)
             try container.encodeIfPresent(retryAt, forKey: .retryAt)
+        case let .appAttestRejectionRecovery(attemptCount, retryAt):
+            guard attemptCount >= 0 else {
+                throw CompetitionOutboxStoreFailure.invalidDocument
+            }
+            try container.encode(
+                Kind.appAttestRejectionRecovery,
+                forKey: .kind
+            )
+            try container.encode(attemptCount, forKey: .attemptCount)
+            try container.encodeIfPresent(retryAt, forKey: .retryAt)
         case let .scoreAccepted(response, receivedAt):
             try container.encode(Kind.scoreAccepted, forKey: .kind)
             try container.encode(response, forKey: .scoreResponse)
@@ -231,7 +258,8 @@ extension CompetitionOutboxState: Codable {
 
     private var datesAreFinite: Bool {
         switch self {
-        case let .pending(_, retryAt):
+        case let .pending(_, retryAt),
+             let .appAttestRejectionRecovery(_, retryAt):
             retryAt?.timeIntervalSinceReferenceDate.isFinite ?? true
         case let .scoreAccepted(_, receivedAt),
              let .attestationAcknowledged(_, receivedAt):
@@ -265,6 +293,7 @@ struct CompetitionOutboxEntry: Codable, Equatable, Sendable {
         }
         switch (payload, state) {
         case (.scoreRevision, .pending),
+             (.scoreRevision, .appAttestRejectionRecovery),
              (.scoreRevision, .scoreAccepted),
              (.scoreRevision, .permanentFailure),
              (.finalWindowAttestation, .pending),
@@ -272,6 +301,7 @@ struct CompetitionOutboxEntry: Codable, Equatable, Sendable {
              (.finalWindowAttestation, .permanentFailure):
             break
         case (.scoreRevision, .attestationAcknowledged),
+             (.finalWindowAttestation, .appAttestRejectionRecovery),
              (.finalWindowAttestation, .scoreAccepted):
             throw CompetitionOutboxStoreFailure.invalidDocument
         }

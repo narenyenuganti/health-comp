@@ -90,11 +90,14 @@ and pinned Edge Runtime fixture, PostgreSQL 17, RLS, pgTAP, XcodeGen.
 > The rejection-recovery follow-up preserves that public response and reports
 > only a fixed log event plus the closed verifier-reason enum. It treats the
 > existing local `appAttestRejected` encoding as a decode-only beta migration
-> source eligible for one recovery, while every new proof/context/conflict
-> failure is written as `appAttestRejectedTerminal` and is never reopened by a
-> fresh coordinator. No identity, challenge, key, proof, score, or HealthKit
-> value enters this diagnostic seam. Successful physical key registration and
-> assertion renewal remain required evidence.
+> source eligible for one recovery. Its dedicated durable recovery state
+> survives bounded transport retry and relaunch without becoming a generic
+> legacy failure again, while every subsequent App Attest
+> availability/proof/context/conflict failure is written as
+> `appAttestRejectedTerminal` and is never reopened by a fresh coordinator. No
+> identity, challenge, key, proof, score, or HealthKit value enters this
+> diagnostic seam. Successful physical key registration and assertion renewal
+> remain required evidence.
 
 ## Task 1: Freeze protocol fixtures and verifier boundary
 
@@ -278,9 +281,11 @@ deno test --config supabase/functions/deno.json --allow-env --allow-net --allow-
 6. Keep deterministic DEBUG Test Lab composition inert and free of challenge
    requests.
 7. Recover the historical beta `appAttestRejected` outbox encoding exactly once
-   on coordinator startup. Persist every new proof/context/conflict rejection
-   as `appAttestRejectedTerminal`, which remains support-inspectable and is not
-   a startup-recovery source.
+   on coordinator startup by moving it to a dedicated durable recovery state.
+   Preserve that provenance through bounded transport retry and relaunch, then
+   persist any subsequent App Attest availability/proof/context/conflict
+   failure as `appAttestRejectedTerminal`, which remains support-inspectable
+   and is not a startup-recovery source.
 
 Run focused tests with a unique `/tmp` DerivedData path and macro-validation
 skip flags.

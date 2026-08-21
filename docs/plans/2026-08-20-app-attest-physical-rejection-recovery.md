@@ -4,7 +4,7 @@
 
 **Goal:** Preserve a privacy-safe verifier reason for the real staging rejection and give the existing legacy terminal score exactly one durable recovery attempt.
 
-**Architecture:** The Edge handler receives an injected reporter that accepts only `AppAttestVerificationErrorCode`; the live implementation logs a fixed event and that closed enum while keeping the client response unchanged. The iOS outbox retains the old `appAttestRejected` wire value as a decode-only migration source, writes all new proof failures as `appAttestRejectedTerminal`, and reopens only the legacy value.
+**Architecture:** The Edge handler receives an injected reporter that accepts only `AppAttestVerificationErrorCode`; the live implementation logs a fixed event and that closed enum while keeping the client response unchanged. The iOS outbox retains the old `appAttestRejected` wire value as a decode-only migration source, moves it into a durable recovery state that survives bounded transport retry and relaunch, and writes all subsequent App Attest failures as `appAttestRejectedTerminal`.
 
 **Tech Stack:** Swift 5.9, XCTest, Deno, TypeScript, Supabase Edge Functions, JSON profile-scoped outbox storage.
 
@@ -98,7 +98,9 @@ startup migration currently matches only `appAttestUnavailable`.
 **Step 3: Implement legacy recovery**
 
 Extend the startup migration to select legacy `appAttestRejected` score rows as
-well as `appAttestUnavailable`, without changing any other failure.
+well as `appAttestUnavailable`, without changing any other failure. Move legacy
+rejections into a dedicated `appAttestRejectionRecovery` state so their origin
+cannot be lost across persistence or relaunch.
 
 **Step 4: Verify the first GREEN**
 
@@ -121,12 +123,21 @@ uses the legacy encoding and is reopened in the second lifetime.
 Add `appAttestRejectedTerminal` to `CompetitionOutboxPermanentFailure`, map all
 new App Attest proof/context/conflict rejections to it, and leave only the old
 `appAttestRejected` value eligible for migration. Preserve both as
-support-inspectable permanent failures.
+support-inspectable permanent failures. If a legacy rejection recovery reaches
+another App Attest availability/proof failure, persist the terminal encoding;
+retryable transport alone retains the dedicated recovery state and its bounded
+backoff.
 
 **Step 8: Verify the second GREEN and focused suite**
 
 Run the new XCTest and then all `CompetitionSyncCoordinatorTests`. Expected:
 PASS, including the unchanged bounded retry and no-spin tests.
+
+**Review hardening:** Independently reproduce the two-lifetime path where the
+legacy rejection recovery returns `appAttestUnavailable`. The second lifetime
+must make no further request, and a separate transport-retry relaunch test must
+prove the dedicated recovery provenance remains durable until a conclusive
+outcome.
 
 **Step 9: Commit the iOS unit**
 

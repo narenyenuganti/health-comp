@@ -672,7 +672,7 @@ private actor AppAttestClientCoordinator {
                 case .appAttestContextUnavailable:
                     try await clearPending(keyID: keyID)
                     guard contextRefreshAttemptsRemaining > 0 else {
-                        throw CompetitionRemoteFailure.retryableTransport
+                        throw failure
                     }
                     contextRefreshAttemptsRemaining -= 1
                     continue
