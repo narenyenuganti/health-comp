@@ -115,6 +115,16 @@ function expectCode(
   assertEquals((failure as AppAttestVerificationError).code, code);
 }
 
+function captureCode(operation: () => unknown): string {
+  try {
+    operation();
+    throw new Error("Expected AppAttestVerificationError");
+  } catch (error) {
+    if (!(error instanceof AppAttestVerificationError)) throw error;
+    return error.code;
+  }
+}
+
 Deno.test("App Attest v1 client data has frozen cross-language bytes", () => {
   const encoded = appAttestClientDataV1({
     challengeID: "10000000-0000-4000-8000-000000000001",
@@ -244,23 +254,86 @@ Deno.test("attestation rejects identity environment category version and certifi
     }));
 });
 
-Deno.test("attestation rejects malformed CBOR client hash and key identifier", () => {
+Deno.test("attestation rejection diagnostics distinguish strict verifier stages", async () => {
   const candidate = {
     attestation: Buffer.from(official.attestation, "base64"),
     clientDataHash: Buffer.from(official.clientDataHash, "base64"),
     keyID: official.keyId,
     policy: officialPolicy(),
   };
-  expectCode("invalid_attestation", () =>
-    verifyAppAttestAttestation({
-      ...candidate,
-      attestation: new Uint8Array([0xff]),
-    }));
-  expectCode("invalid_attestation", () =>
-    verifyAppAttestAttestation({
-      ...candidate,
-      clientDataHash: new TextEncoder().encode("wrong_client_data_hash"),
-    }));
+
+  const decoded = cbor.decodeFirstSync(candidate.attestation) as {
+    fmt: string;
+    attStmt: { x5c: Buffer[]; receipt: Buffer };
+    authData: Buffer;
+  };
+  const invalidAuthenticatorData = Buffer.from(decoded.authData);
+  invalidAuthenticatorData[32] = 0x41;
+
+  const trailing = cbor.decodeAllSync(decoded.authData.subarray(87));
+  if (!(trailing[0] instanceof Map) || trailing.length !== 2) {
+    throw new Error("Official fixture authenticator data changed shape");
+  }
+  const invalidCOSE = new Map(trailing[0]);
+  invalidCOSE.delete(-3);
+  const invalidCOSEAuthenticatorData = Buffer.concat([
+    decoded.authData.subarray(0, 87),
+    await cbor.encodeAsync(invalidCOSE),
+    await cbor.encodeAsync(trailing[1]),
+  ]);
+
+  const invalidAuthenticatorObject = await cbor.encodeAsync({
+    ...decoded,
+    authData: invalidAuthenticatorData,
+  });
+  const invalidCOSEObject = await cbor.encodeAsync({
+    ...decoded,
+    authData: invalidCOSEAuthenticatorData,
+  });
+
+  assertEquals(
+    [
+      captureCode(() =>
+        verifyAppAttestAttestation({
+          ...candidate,
+          attestation: new Uint8Array([0xff]),
+        })
+      ),
+      captureCode(() =>
+        verifyAppAttestAttestation({
+          ...candidate,
+          attestation: invalidAuthenticatorObject,
+        })
+      ),
+      captureCode(() =>
+        verifyAppAttestAttestation({
+          ...candidate,
+          attestation: invalidCOSEObject,
+        })
+      ),
+      captureCode(() =>
+        verifyAppAttestAttestation({
+          ...candidate,
+          clientDataHash: Buffer.alloc(32, 7),
+        })
+      ),
+    ],
+    [
+      "invalid_attestation_object",
+      "invalid_attestation_authenticator_data",
+      "invalid_attestation_cose_key",
+      "invalid_attestation_nonce",
+    ],
+  );
+});
+
+Deno.test("attestation rejects a mismatched key identifier", () => {
+  const candidate = {
+    attestation: Buffer.from(official.attestation, "base64"),
+    clientDataHash: Buffer.from(official.clientDataHash, "base64"),
+    keyID: official.keyId,
+    policy: officialPolicy(),
+  };
   expectCode("invalid_key", () =>
     verifyAppAttestAttestation({
       ...candidate,

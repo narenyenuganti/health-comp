@@ -15,7 +15,10 @@ export type AppAttestEnvironment = "development" | "production";
 export type AppAttestVerificationErrorCode =
   | "invalid_app_identity"
   | "invalid_assertion"
-  | "invalid_attestation"
+  | "invalid_attestation_authenticator_data"
+  | "invalid_attestation_cose_key"
+  | "invalid_attestation_nonce"
+  | "invalid_attestation_object"
   | "invalid_bundle_version"
   | "invalid_certificate"
   | "invalid_client_data"
@@ -535,21 +538,21 @@ function validateAttestationNonce(
   clientDataHash: Uint8Array,
 ) {
   if (clientDataHash.length < 16 || clientDataHash.length > 64) {
-    fail("invalid_attestation");
+    fail("invalid_attestation_nonce");
   }
   const expected = sha256(Buffer.concat([
     authenticatorData,
     Buffer.from(clientDataHash),
   ]));
   if (!equal(decodeAppAttestCertificateNonce(certificateBytes), expected)) {
-    fail("invalid_attestation");
+    fail("invalid_attestation_nonce");
   }
 }
 
 function decodeAttestation(value: Uint8Array) {
-  const decoded = decodeSingleCBOR(value, "invalid_attestation");
+  const decoded = decodeSingleCBOR(value, "invalid_attestation_object");
   if (!exactKeys(decoded, ["fmt", "attStmt", "authData"])) {
-    fail("invalid_attestation");
+    fail("invalid_attestation_object");
   }
   const object = decoded as Record<string, unknown>;
   if (
@@ -557,7 +560,7 @@ function decodeAttestation(value: Uint8Array) {
     !exactKeys(object.attStmt, ["receipt", "x5c"]) ||
     !Buffer.isBuffer(object.authData)
   ) {
-    fail("invalid_attestation");
+    fail("invalid_attestation_object");
   }
   const statement = object.attStmt as Record<string, unknown>;
   if (
@@ -565,23 +568,23 @@ function decodeAttestation(value: Uint8Array) {
     !statement.x5c.every(Buffer.isBuffer) ||
     !Buffer.isBuffer(statement.receipt) || statement.receipt.length === 0
   ) {
-    fail("invalid_attestation");
+    fail("invalid_attestation_object");
   }
   const authData = object.authData as Buffer;
   if (
     authData.length < 88 || authData.length > 4_096 || authData[32] !== 0x40 ||
     authData.readUInt32BE(33) !== 0 || authData.readUInt16BE(53) !== 32
   ) {
-    fail("invalid_attestation");
+    fail("invalid_attestation_authenticator_data");
   }
   let trailing: unknown[];
   try {
     trailing = cbor.decodeAllSync(authData.subarray(87));
   } catch (error) {
-    fail("invalid_attestation", error);
+    fail("invalid_attestation_authenticator_data", error);
   }
   if (trailing.length !== 2 || !(trailing[0] instanceof Map)) {
-    fail("invalid_attestation");
+    fail("invalid_attestation_authenticator_data");
   }
   const cose = trailing[0] as Map<unknown, unknown>;
   if (
@@ -591,7 +594,7 @@ function decodeAttestation(value: Uint8Array) {
     (cose.get(-2) as Buffer).length !== 32 ||
     (cose.get(-3) as Buffer).length !== 32
   ) {
-    fail("invalid_attestation");
+    fail("invalid_attestation_cose_key");
   }
   return {
     authData,
