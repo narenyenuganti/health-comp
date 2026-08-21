@@ -6,11 +6,11 @@ participant-scoped local storage, deterministic on-device scoring, durable
 remote synchronization, notifications, App Attest enforcement, and
 privacy-preserving account deletion.
 
-This source is not yet production-ready. Hosted staging has not been deployed
-and read back from this release unit, no production Supabase project has been
-approved, and the required two-account and physical-device gates remain
-pending. No HTTPS invitation domain has been selected, so universal links are
-explicitly deferred.
+This source is not yet production-ready. Hosted staging is deployed and has
+partial two-account, adversarial, and physical-device readback, but the complete
+lifecycle and physical-service matrix has not passed. No production Supabase
+project has been approved. No HTTPS invitation domain has been selected, so
+universal links are explicitly deferred.
 
 ## Current architecture
 
@@ -44,7 +44,7 @@ reversible fingerprints never leave the device.
 | Environment | Current truth |
 | --- | --- |
 | Development | Disposable local Supabase stack for backend tests plus deterministic DEBUG Test Labs for iOS. The live app requires an HTTPS Supabase URL. |
-| Staging | healthcomp-staging, ref xhfdfdrtxwptrwhvvlhg, was observed ACTIVE_HEALTHY through the authenticated CLI on 2026-08-15 at reviewed base 083515c. That observation predates this Task 18 release unit; migrations, Functions, providers, secrets, schedules, backup state, deployment of this release, and physical-device behavior still require hosted readback. |
+| Staging | healthcomp-staging, ref xhfdfdrtxwptrwhvvlhg, was observed ACTIVE_HEALTHY through the authenticated CLI on 2026-08-20 PDT. Fourteen migrations through 20260811000900, nine Functions, providers, secret names, schedules, and the 15/15 rollback-only adversarial boundary have been read back. `submit-score-revision` version 7 matches selected source `cb21189`. Two-account lifecycle, backup/restore, and required physical-service evidence remain incomplete. |
 | Production | No project has been approved. Do not infer that the inactive generic project is production. |
 
 See the [environment and promotion runbook](docs/runbooks/supabase-environments.md)
@@ -55,7 +55,7 @@ before any hosted change.
 - Swift 5.9, SwiftUI, and The Composable Architecture
 - CompetitionCore, a Foundation-only deterministic domain package
 - HealthKit, UserNotifications, AuthenticationServices, and DeviceCheck
-- Supabase Swift 2.49.0
+- Supabase Swift 2.55.1
 - PostgreSQL 17, pgTAP, Supabase CLI 2.113.0, and Deno 2.9.5
 - XCTest and XCUITest with XcodeGen 2.46.0 as project source of truth
 - Validation-only GitHub Actions with read-only repository permissions and
@@ -168,7 +168,7 @@ swift test --configuration release --package-path Modules/CompetitionCore
 The canonical hosted command matrix is checked into:
 
 - [Backend CI](.github/workflows/backend.yml): secret/layout guards, fresh
-  migration reset, 713 pgTAP assertions, Deno tests including real local JWT
+  migration reset, the complete pgTAP suite, Deno tests including real local JWT
   invitation coverage, database lint, and zero schema diff.
 - [iOS CI](.github/workflows/ci.yml): deterministic XcodeGen, Core Debug and
   Release, HealthCompTests on iOS 18.5, and unsigned Debug, Staging, and Release

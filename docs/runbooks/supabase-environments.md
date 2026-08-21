@@ -6,12 +6,12 @@ required future work.
 
 ## Current environment inventory
 
-Current authenticated environment evidence through 2026-08-19 PDT:
+Current authenticated environment evidence through 2026-08-20 PDT:
 
 | Logical environment | Supabase target | Status | App configuration |
 | --- | --- | --- | --- |
 | Development | Disposable local CLI stack (project ID health-comp) | Verified locally | com.narenyenuganti.HealthComp, sandbox APNs, development App Attest |
-| Staging | healthcomp-staging (xhfdfdrtxwptrwhvvlhg) | ACTIVE_HEALTHY; 14 migrations through 20260811000900 and nine Functions read back; Apple Auth and a topic-restricted server key are configured for the exact staging bundle; Function secrets, worker Vault entries, notification repair, and the corrected finalizer schedule are configured; both hosted jobs have succeeded; SSL enforcement is enabled; the rollback-only hosted database adversarial verifier passed 15/15 with zero residue | com.narenyenuganti.HealthComp.staging, sandbox APNs, development App Attest |
+| Staging | healthcomp-staging (xhfdfdrtxwptrwhvvlhg) | ACTIVE_HEALTHY; 14 migrations through 20260811000900 and nine Functions read back; `submit-score-revision` version 7 matches selected source `cb21189`; Apple Auth and a topic-restricted server key are configured for the exact staging bundle; Function secrets, worker Vault entries, notification repair, and the corrected finalizer schedule are configured; both hosted jobs have succeeded; SSL enforcement is enabled; the rollback-only hosted database adversarial verifier passed 15/15 with zero residue | com.narenyenuganti.HealthComp.staging, sandbox APNs, development App Attest |
 | Production | **TBD** | No project has been approved as HealthComp production | com.narenyenuganti.HealthComp, production APNs, production App Attest |
 
 The 2026-08-15 staging promotion and readback established all of the following:
@@ -43,15 +43,20 @@ The 2026-08-15 staging promotion and readback established all of the following:
   the corrected private five-minute job first succeeded at 2026-08-16 04:00
   UTC with no due competition left unfinalized.
 
-Staging has now supported partial two-account and physical-device verification
-on selected artifact `dd0ed68`. The rollback-only database adversarial boundary
-also passed 15/15 at exact verifier commit `4fca597` with zero synthetic rows
-remaining. These are bounded receipts, not release readiness: the scheduled
-two-account lifecycle, consumed-token replay, profile-scoped local-store
-isolation, remaining physical service gates, deletion, and restore rehearsal
-are still incomplete.
+Staging has supported partial two-account and physical-device verification on
+then-selected artifact `dd0ed68`. Selected artifact `cb21189` has exact-current
+CI, signed-build, state-preserving over-install, and one controlled physical
+launch evidence. That launch produced no changed HealthKit-derived wire event,
+no App Attest Function call, and no accepted score, so App Attest acceptance is
+still unproven. The rollback-only database adversarial boundary passed 15/15 at
+exact verifier commit `4fca597` with zero synthetic rows remaining, and the
+sequential Simulator profile-root teardown/remount boundary passed. These are
+bounded receipts, not release readiness: the scheduled two-account lifecycle,
+consumed-token replay, remaining lifecycle isolation, physical service gates,
+deletion, and restore rehearsal are still incomplete.
 
-The inactive project named “naren-polymath's Project”
+The read-only 2026-08-20 project inventory reconfirmed that the inactive project
+named “naren-polymath's Project”
 (vleyumieoroaipedqpsp) is not production merely because it is the other
 project in the organization. Renaming/reactivating it or creating a fresh
 healthcomp-production project is a material decision. Stop and obtain explicit
@@ -477,11 +482,12 @@ same file through `psql` inside the already isolated local database container,
 so every pull request verifies both the static safety boundary and the runtime
 rollback receipt. A local or CI receipt does not count as hosted staging
 evidence. Even a hosted pass covers only the database adversarial boundary.
-Selected-build create/claim Function routing is proven separately by the
-selected-artifact create/accept flow, its hosted effects, and read-only
-invocation summaries. Neither receipt replaces replay of the selected consumed
-invitation when that token is available or the two endpoints' profile-scoped
-local-store isolation checks.
+Current-source create/claim route continuity is proven separately by the route
+boundaries retained in `cb21189`, while successful create/accept runtime and
+hosted-effect evidence remains historical on then-selected `dd0ed68`; read-only
+invocation summaries support that bounded historical receipt. Neither receipt
+replaces replay of the historical consumed invitation when that token is
+available or the two endpoints' profile-scoped local-store isolation checks.
 
 ## Completion evidence
 
