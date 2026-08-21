@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import {
   appAttestClientDataV1,
   AppAttestVerificationError,
+  type AppAttestVerificationErrorCode,
   type AppAttestVerificationPolicy,
   type VerifiedAppAttestAssertion,
   type VerifiedAppAttestAttestation,
@@ -33,6 +34,9 @@ export interface ScoreSubmissionDependencies
   appAttestPolicy(now: Date): AppAttestVerificationPolicy | null;
   verifyAttestation: typeof verifyAppAttestAttestation;
   verifyAssertion: typeof verifyAppAttestAssertion;
+  reportVerificationFailure?(
+    code: AppAttestVerificationErrorCode,
+  ): void;
 }
 
 type ProofKind = "attestation" | "assertion";
@@ -649,6 +653,9 @@ const defaultDependencies: ScoreSubmissionDependencies = {
     appAttestPolicyFromEnvironment((name) => Deno.env.get(name), now),
   verifyAttestation: verifyAppAttestAttestation,
   verifyAssertion: verifyAppAttestAssertion,
+  reportVerificationFailure: (code) => {
+    console.warn("app_attest_verification_rejected", code);
+  },
 };
 
 async function rpc(
@@ -786,9 +793,15 @@ export async function submitScoreRevisionHandler(
       signCount = verified.signCount;
     }
   } catch (verificationError) {
-    return verificationError instanceof AppAttestVerificationError
-      ? proofRejected()
-      : temporarilyUnavailable();
+    if (verificationError instanceof AppAttestVerificationError) {
+      try {
+        dependencies.reportVerificationFailure?.(verificationError.code);
+      } catch {
+        // Diagnostics must never change the non-enumerating client response.
+      }
+      return proofRejected();
+    }
+    return temporarilyUnavailable();
   }
 
   const authorized = await rpc(serviceClient, "authorize_app_attest_proof", {

@@ -761,9 +761,9 @@ final class CompetitionSyncCoordinatorTests: XCTestCase {
             (.serverContractMismatch, .serverContractMismatch),
             (.accountDeletionUnavailable, .accountDeletionUnavailable),
             (.appAttestUnavailable, .appAttestUnavailable),
-            (.appAttestRejected, .appAttestRejected),
-            (.appAttestContextUnavailable, .appAttestRejected),
-            (.appAttestProofConflict, .appAttestRejected),
+            (.appAttestRejected, .appAttestRejectedTerminal),
+            (.appAttestContextUnavailable, .appAttestRejectedTerminal),
+            (.appAttestProofConflict, .appAttestRejectedTerminal),
             (.operationFailed, .operationFailed),
         ]
         let failedAt = Date(timeIntervalSince1970: 1_786_536_010)
@@ -871,6 +871,328 @@ final class CompetitionSyncCoordinatorTests: XCTestCase {
         XCTAssertEqual(attempts, 1)
         XCTAssertEqual(persistence.count, 1)
         XCTAssertEqual(durable, [])
+    }
+
+    func testRelaunchRetriesLegacyAppAttestRejectedScoreOnce()
+        async throws
+    {
+        let root = makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = JSONCompetitionOutboxStore(
+            rootDirectory: root,
+            fileProtection: .testNoop
+        )
+        let request = try scoreRequest()
+        let response = try scoreResponse(for: request)
+        let failedAt = Date(timeIntervalSince1970: 1_786_536_010)
+        let pending = try await store.enqueue(
+            .scoreRevision(request),
+            enqueuedAt: Date(timeIntervalSince1970: 1_786_536_001)
+        )
+        _ = try await store.update(
+            pending.semanticEventID,
+            expectedGeneration: pending.generation,
+            state: .permanentFailure(
+                .appAttestRejected,
+                failedAt: failedAt
+            )
+        )
+        let probe = CompetitionSyncCoordinatorProbe()
+        let coordinator = CompetitionSyncCoordinator(
+            profileID: profileID,
+            outboxStore: store,
+            remoteAPI: remoteAPI(
+                appendScoreRevision: { submitted in
+                    await probe.recordRemoteCall(
+                        request: submitted,
+                        durableEntries: try await store.entries()
+                    )
+                    return response
+                }
+            ),
+            acceptedScorePersistence: CompetitionAcceptedScorePersistence {
+                _, submitted, accepted, persistedAt in
+                await probe.recordPersistenceCall(
+                    request: submitted,
+                    response: accepted,
+                    receivedAt: persistedAt,
+                    durableEntries: try await store.entries()
+                )
+            },
+            now: { Date(timeIntervalSince1970: 1_786_536_020) }
+        )
+
+        await coordinator.wake()
+        await coordinator.waitUntilIdle()
+
+        let attempts = await probe.remoteCallCount()
+        let persistence = await probe.persistenceObservations()
+        let durable = try await store.entries()
+        XCTAssertEqual(attempts, 1)
+        XCTAssertEqual(persistence.count, 1)
+        XCTAssertEqual(durable, [])
+    }
+
+    func testLegacyAppAttestRejectionRecoversOnlyOnceAcrossRelaunches()
+        async throws
+    {
+        let root = makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = JSONCompetitionOutboxStore(
+            rootDirectory: root,
+            fileProtection: .testNoop
+        )
+        let request = try scoreRequest()
+        let legacyFailureAt = Date(timeIntervalSince1970: 1_786_536_010)
+        let recoveryFailureAt = Date(timeIntervalSince1970: 1_786_536_020)
+        let secondLaunchAt = Date(timeIntervalSince1970: 1_786_536_030)
+        let pending = try await store.enqueue(
+            .scoreRevision(request),
+            enqueuedAt: Date(timeIntervalSince1970: 1_786_536_001)
+        )
+        _ = try await store.update(
+            pending.semanticEventID,
+            expectedGeneration: pending.generation,
+            state: .permanentFailure(
+                .appAttestRejected,
+                failedAt: legacyFailureAt
+            )
+        )
+        let probe = CompetitionSyncCoordinatorProbe()
+        let first = CompetitionSyncCoordinator(
+            profileID: profileID,
+            outboxStore: store,
+            remoteAPI: remoteAPI(
+                appendScoreRevision: { submitted in
+                    await probe.recordRemoteCall(
+                        request: submitted,
+                        durableEntries: try await store.entries()
+                    )
+                    throw CompetitionRemoteFailure.appAttestRejected
+                }
+            ),
+            acceptedScorePersistence: CompetitionAcceptedScorePersistence {
+                _, _, _, _ in
+            },
+            now: { recoveryFailureAt }
+        )
+
+        await first.wake()
+        await first.waitUntilIdle()
+        await first.stop()
+
+        let relaunched = CompetitionSyncCoordinator(
+            profileID: profileID,
+            outboxStore: JSONCompetitionOutboxStore(
+                rootDirectory: root,
+                fileProtection: .testNoop
+            ),
+            remoteAPI: remoteAPI(
+                appendScoreRevision: { submitted in
+                    await probe.recordRemoteCall(
+                        request: submitted,
+                        durableEntries: try await store.entries()
+                    )
+                    throw CompetitionRemoteFailure.appAttestRejected
+                }
+            ),
+            acceptedScorePersistence: CompetitionAcceptedScorePersistence {
+                _, _, _, _ in
+            },
+            now: { secondLaunchAt }
+        )
+
+        await relaunched.wake()
+        await relaunched.waitUntilIdle()
+
+        let attempts = await probe.remoteCallCount()
+        let durable = try await store.entries()
+        XCTAssertEqual(attempts, 1)
+        XCTAssertEqual(
+            durable.only?.state,
+            .permanentFailure(
+                .appAttestRejectedTerminal,
+                failedAt: recoveryFailureAt
+            )
+        )
+    }
+
+    func testLegacyAppAttestRejectionUnavailableRecoveryStaysTerminalAcrossRelaunches()
+        async throws
+    {
+        let root = makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = JSONCompetitionOutboxStore(
+            rootDirectory: root,
+            fileProtection: .testNoop
+        )
+        let request = try scoreRequest()
+        let legacyFailureAt = Date(timeIntervalSince1970: 1_786_536_010)
+        let recoveryFailureAt = Date(timeIntervalSince1970: 1_786_536_020)
+        let secondLaunchAt = Date(timeIntervalSince1970: 1_786_536_030)
+        let pending = try await store.enqueue(
+            .scoreRevision(request),
+            enqueuedAt: Date(timeIntervalSince1970: 1_786_536_001)
+        )
+        _ = try await store.update(
+            pending.semanticEventID,
+            expectedGeneration: pending.generation,
+            state: .permanentFailure(
+                .appAttestRejected,
+                failedAt: legacyFailureAt
+            )
+        )
+        let probe = CompetitionSyncCoordinatorProbe()
+        let first = CompetitionSyncCoordinator(
+            profileID: profileID,
+            outboxStore: store,
+            remoteAPI: remoteAPI(
+                appendScoreRevision: { submitted in
+                    await probe.recordRemoteCall(
+                        request: submitted,
+                        durableEntries: try await store.entries()
+                    )
+                    throw CompetitionRemoteFailure.appAttestUnavailable
+                }
+            ),
+            acceptedScorePersistence: CompetitionAcceptedScorePersistence {
+                _, _, _, _ in
+            },
+            now: { recoveryFailureAt }
+        )
+
+        await first.wake()
+        await first.waitUntilIdle()
+        await first.stop()
+
+        let relaunched = CompetitionSyncCoordinator(
+            profileID: profileID,
+            outboxStore: JSONCompetitionOutboxStore(
+                rootDirectory: root,
+                fileProtection: .testNoop
+            ),
+            remoteAPI: remoteAPI(
+                appendScoreRevision: { submitted in
+                    await probe.recordRemoteCall(
+                        request: submitted,
+                        durableEntries: try await store.entries()
+                    )
+                    throw CompetitionRemoteFailure.appAttestUnavailable
+                }
+            ),
+            acceptedScorePersistence: CompetitionAcceptedScorePersistence {
+                _, _, _, _ in
+            },
+            now: { secondLaunchAt }
+        )
+
+        await relaunched.wake()
+        await relaunched.waitUntilIdle()
+
+        let attempts = await probe.remoteCallCount()
+        let durable = try await store.entries()
+        XCTAssertEqual(attempts, 1)
+        XCTAssertEqual(
+            durable.only?.state,
+            .permanentFailure(
+                .appAttestRejectedTerminal,
+                failedAt: recoveryFailureAt
+            )
+        )
+    }
+
+    func testLegacyAppAttestRejectionRecoveryPreservesProvenanceThroughTransportRetry()
+        async throws
+    {
+        let root = makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = JSONCompetitionOutboxStore(
+            rootDirectory: root,
+            fileProtection: .testNoop
+        )
+        let request = try scoreRequest()
+        let legacyFailureAt = Date(timeIntervalSince1970: 1_786_536_010)
+        let transportFailureAt = Date(timeIntervalSince1970: 1_786_536_020)
+        let retryAt = transportFailureAt.addingTimeInterval(1)
+        let pending = try await store.enqueue(
+            .scoreRevision(request),
+            enqueuedAt: Date(timeIntervalSince1970: 1_786_536_001)
+        )
+        _ = try await store.update(
+            pending.semanticEventID,
+            expectedGeneration: pending.generation,
+            state: .permanentFailure(
+                .appAttestRejected,
+                failedAt: legacyFailureAt
+            )
+        )
+        let probe = CompetitionSyncCoordinatorProbe()
+        let first = CompetitionSyncCoordinator(
+            profileID: profileID,
+            outboxStore: store,
+            remoteAPI: remoteAPI(
+                appendScoreRevision: { submitted in
+                    await probe.recordRemoteCall(
+                        request: submitted,
+                        durableEntries: try await store.entries()
+                    )
+                    throw CompetitionRemoteFailure.retryableTransport
+                }
+            ),
+            acceptedScorePersistence: CompetitionAcceptedScorePersistence {
+                _, _, _, _ in
+            },
+            now: { transportFailureAt },
+            sleepUntil: { _ in throw CancellationError() }
+        )
+
+        await first.wake()
+        await first.waitUntilIdle()
+        await first.stop()
+
+        let afterTransportFailure = try await store.entries()
+        XCTAssertEqual(
+            afterTransportFailure.only?.state,
+            .appAttestRejectionRecovery(
+                attemptCount: 1,
+                retryAt: retryAt
+            )
+        )
+
+        let relaunched = CompetitionSyncCoordinator(
+            profileID: profileID,
+            outboxStore: JSONCompetitionOutboxStore(
+                rootDirectory: root,
+                fileProtection: .testNoop
+            ),
+            remoteAPI: remoteAPI(
+                appendScoreRevision: { submitted in
+                    await probe.recordRemoteCall(
+                        request: submitted,
+                        durableEntries: try await store.entries()
+                    )
+                    throw CompetitionRemoteFailure.appAttestUnavailable
+                }
+            ),
+            acceptedScorePersistence: CompetitionAcceptedScorePersistence {
+                _, _, _, _ in
+            },
+            now: { retryAt }
+        )
+
+        await relaunched.wake()
+        await relaunched.waitUntilIdle()
+
+        let attempts = await probe.remoteCallCount()
+        let durable = try await store.entries()
+        XCTAssertEqual(attempts, 2)
+        XCTAssertEqual(
+            durable.only?.state,
+            .permanentFailure(
+                .appAttestRejectedTerminal,
+                failedAt: retryAt
+            )
+        )
     }
 
     func testRelaunchRecoveryDoesNotSpinIfAppAttestStaysUnavailable()

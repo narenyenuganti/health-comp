@@ -106,7 +106,7 @@ actor CompetitionSyncCoordinator {
     private var retryTask: Task<Void, Never>?
     private var scheduledRetryAt: Date?
     private var isStopped = false
-    private var shouldRecoverPersistedAppAttestUnavailable = true
+    private var shouldRecoverPersistedLegacyAppAttestFailure = true
 
     init(
         profileID: UUID,
@@ -200,7 +200,7 @@ actor CompetitionSyncCoordinator {
 
     private func drainPass() async throws -> Date? {
         let entries = try await outboxStore.entries()
-        if try await recoverPersistedAppAttestUnavailable(in: entries) {
+        if try await recoverPersistedLegacyAppAttestFailures(in: entries) {
             drainRequested = true
             return nil
         }
@@ -212,85 +212,28 @@ actor CompetitionSyncCoordinator {
                 .scoreRevision(request),
                 .pending(attemptCount, retryAt)
             ):
-                let requestedAt = now()
-                if let retryAt, retryAt > requestedAt {
+                if let retryAt = try await processScoreRevision(
+                    entry,
+                    request: request,
+                    attemptCount: attemptCount,
+                    retryAt: retryAt,
+                    isAppAttestRejectionRecovery: false
+                ) {
                     nextRetryAt = earlier(retryAt, than: nextRetryAt)
-                    continue
                 }
-                guard isOnline() else { continue }
-                let response: CompetitionScoreRevisionResponse
-                do {
-                    response = try await remoteAPI.appendScoreRevision(request)
-                } catch CompetitionRemoteFailure.retryableTransport {
-                    let updated = try await outboxStore.update(
-                        entry.semanticEventID,
-                        expectedGeneration: entry.generation,
-                        state: stateAfterRetryableFailure(
-                            attemptCount: attemptCount,
-                            failedAt: requestedAt
-                        )
-                    )
-                    if case let .pending(_, retryAt?) = updated.state {
-                        nextRetryAt = earlier(retryAt, than: nextRetryAt)
-                    }
-                    continue
-                } catch let failure as CompetitionRemoteFailure {
-                    if failure == .cancelled { throw CancellationError() }
-                    _ = try await outboxStore.update(
-                        entry.semanticEventID,
-                        expectedGeneration: entry.generation,
-                        state: .permanentFailure(
-                            permanentFailure(for: failure),
-                            failedAt: requestedAt
-                        )
-                    )
-                    continue
-                } catch is CancellationError {
-                    throw CancellationError()
-                } catch {
-                    _ = try await outboxStore.update(
-                        entry.semanticEventID,
-                        expectedGeneration: entry.generation,
-                        state: .permanentFailure(
-                            .operationFailed,
-                            failedAt: requestedAt
-                        )
-                    )
-                    continue
+            case let (
+                .scoreRevision(request),
+                .appAttestRejectionRecovery(attemptCount, retryAt)
+            ):
+                if let retryAt = try await processScoreRevision(
+                    entry,
+                    request: request,
+                    attemptCount: attemptCount,
+                    retryAt: retryAt,
+                    isAppAttestRejectionRecovery: true
+                ) {
+                    nextRetryAt = earlier(retryAt, than: nextRetryAt)
                 }
-                let receivedAt = now()
-                if response.disposition == .rejected {
-                    guard let rejectionCode = response.rejectionCode else {
-                        throw CompetitionRemoteFailure.serverContractMismatch
-                    }
-                    _ = try await outboxStore.update(
-                        entry.semanticEventID,
-                        expectedGeneration: entry.generation,
-                        state: .permanentFailure(
-                            permanentFailure(for: rejectionCode),
-                            failedAt: receivedAt
-                        )
-                    )
-                    continue
-                }
-                let accepted = try await outboxStore.update(
-                    entry.semanticEventID,
-                    expectedGeneration: entry.generation,
-                    state: .scoreAccepted(
-                        response,
-                        receivedAt: receivedAt
-                    )
-                )
-                try await acceptedScorePersistence.persist(
-                    profileID,
-                    request,
-                    response,
-                    receivedAt
-                )
-                try await outboxStore.remove(
-                    accepted.semanticEventID,
-                    expectedGeneration: accepted.generation
-                )
             case let (
                 .scoreRevision(request),
                 .scoreAccepted(response, receivedAt)
@@ -372,6 +315,7 @@ actor CompetitionSyncCoordinator {
                 // Terminal failures intentionally remain support-inspectable.
                 continue
             case (.scoreRevision, .attestationAcknowledged),
+                 (.finalWindowAttestation, .appAttestRejectionRecovery),
                  (.finalWindowAttestation, .scoreAccepted):
                 throw CompetitionOutboxStoreFailure.invalidDocument
             }
@@ -379,26 +323,140 @@ actor CompetitionSyncCoordinator {
         return nextRetryAt
     }
 
-    private func recoverPersistedAppAttestUnavailable(
+    private func processScoreRevision(
+        _ entry: CompetitionOutboxEntry,
+        request: CompetitionScoreRevisionRequest,
+        attemptCount: Int,
+        retryAt: Date?,
+        isAppAttestRejectionRecovery: Bool
+    ) async throws -> Date? {
+        let requestedAt = now()
+        if let retryAt, retryAt > requestedAt {
+            return retryAt
+        }
+        guard isOnline() else { return nil }
+        let response: CompetitionScoreRevisionResponse
+        do {
+            response = try await remoteAPI.appendScoreRevision(request)
+        } catch CompetitionRemoteFailure.retryableTransport {
+            let updated = try await outboxStore.update(
+                entry.semanticEventID,
+                expectedGeneration: entry.generation,
+                state: stateAfterRetryableFailure(
+                    attemptCount: attemptCount,
+                    failedAt: requestedAt,
+                    isAppAttestRejectionRecovery:
+                        isAppAttestRejectionRecovery
+                )
+            )
+            switch updated.state {
+            case let .pending(_, retryAt?),
+                 let .appAttestRejectionRecovery(_, retryAt?):
+                return retryAt
+            default:
+                return nil
+            }
+        } catch let failure as CompetitionRemoteFailure {
+            if failure == .cancelled { throw CancellationError() }
+            let durableFailure = if isAppAttestRejectionRecovery,
+                                    failure == .appAttestUnavailable
+            {
+                CompetitionOutboxPermanentFailure.appAttestRejectedTerminal
+            } else {
+                permanentFailure(for: failure)
+            }
+            _ = try await outboxStore.update(
+                entry.semanticEventID,
+                expectedGeneration: entry.generation,
+                state: .permanentFailure(
+                    durableFailure,
+                    failedAt: requestedAt
+                )
+            )
+            return nil
+        } catch is CancellationError {
+            throw CancellationError()
+        } catch {
+            _ = try await outboxStore.update(
+                entry.semanticEventID,
+                expectedGeneration: entry.generation,
+                state: .permanentFailure(
+                    .operationFailed,
+                    failedAt: requestedAt
+                )
+            )
+            return nil
+        }
+        let receivedAt = now()
+        if response.disposition == .rejected {
+            guard let rejectionCode = response.rejectionCode else {
+                throw CompetitionRemoteFailure.serverContractMismatch
+            }
+            _ = try await outboxStore.update(
+                entry.semanticEventID,
+                expectedGeneration: entry.generation,
+                state: .permanentFailure(
+                    permanentFailure(for: rejectionCode),
+                    failedAt: receivedAt
+                )
+            )
+            return nil
+        }
+        let accepted = try await outboxStore.update(
+            entry.semanticEventID,
+            expectedGeneration: entry.generation,
+            state: .scoreAccepted(
+                response,
+                receivedAt: receivedAt
+            )
+        )
+        try await acceptedScorePersistence.persist(
+            profileID,
+            request,
+            response,
+            receivedAt
+        )
+        try await outboxStore.remove(
+            accepted.semanticEventID,
+            expectedGeneration: accepted.generation
+        )
+        return nil
+    }
+
+    private func recoverPersistedLegacyAppAttestFailures(
         in entries: [CompetitionOutboxEntry]
     ) async throws -> Bool {
-        guard shouldRecoverPersistedAppAttestUnavailable else { return false }
+        guard shouldRecoverPersistedLegacyAppAttestFailure else {
+            return false
+        }
         var recoveredEntry = false
         for entry in entries {
             guard case .scoreRevision = entry.payload,
-                  case .permanentFailure(.appAttestUnavailable, _) = entry.state
+                  case let .permanentFailure(failure, _) = entry.state,
+                  failure == .appAttestUnavailable
+                    || failure == .appAttestRejected
             else {
                 continue
             }
             try Task.checkCancellation()
+            let recoveredState: CompetitionOutboxState = if failure
+                == .appAttestRejected
+            {
+                .appAttestRejectionRecovery(
+                    attemptCount: 0,
+                    retryAt: nil
+                )
+            } else {
+                .pending(attemptCount: 0, retryAt: nil)
+            }
             _ = try await outboxStore.update(
                 entry.semanticEventID,
                 expectedGeneration: entry.generation,
-                state: .pending(attemptCount: 0, retryAt: nil)
+                state: recoveredState
             )
             recoveredEntry = true
         }
-        shouldRecoverPersistedAppAttestUnavailable = false
+        shouldRecoverPersistedLegacyAppAttestFailure = false
         return recoveredEntry
     }
 
@@ -437,11 +495,15 @@ actor CompetitionSyncCoordinator {
         return try await outboxStore.entries().reduce(nil) {
             earliest,
             entry in
-            guard case let .pending(_, retryAt?) = entry.state,
-                  retryAt > currentDate
-            else {
+            let retryAt: Date
+            switch entry.state {
+            case let .pending(_, pendingRetryAt?),
+                 let .appAttestRejectionRecovery(_, pendingRetryAt?):
+                retryAt = pendingRetryAt
+            default:
                 return earliest
             }
+            guard retryAt > currentDate else { return earliest }
             return earlier(retryAt, than: earliest)
         }
     }
@@ -453,7 +515,8 @@ actor CompetitionSyncCoordinator {
 
     private func stateAfterRetryableFailure(
         attemptCount: Int,
-        failedAt: Date
+        failedAt: Date,
+        isAppAttestRejectionRecovery: Bool = false
     ) -> CompetitionOutboxState {
         guard attemptCount < Int.max else {
             return .permanentFailure(
@@ -462,12 +525,15 @@ actor CompetitionSyncCoordinator {
             )
         }
         let nextAttempt = attemptCount + 1
-        return .pending(
-            attemptCount: nextAttempt,
-            retryAt: failedAt.addingTimeInterval(
-                retryDelay(forAttempt: nextAttempt)
-            )
+        let retryAt = failedAt.addingTimeInterval(
+            retryDelay(forAttempt: nextAttempt)
         )
+        return isAppAttestRejectionRecovery
+            ? .appAttestRejectionRecovery(
+                attemptCount: nextAttempt,
+                retryAt: retryAt
+            )
+            : .pending(attemptCount: nextAttempt, retryAt: retryAt)
     }
 
     private func permanentFailure(
@@ -498,7 +564,7 @@ actor CompetitionSyncCoordinator {
             .appAttestUnavailable
         case .appAttestRejected, .appAttestContextUnavailable,
              .appAttestProofConflict:
-            .appAttestRejected
+            .appAttestRejectedTerminal
         case .operationFailed:
             .operationFailed
         case .cancelled, .retryableTransport:

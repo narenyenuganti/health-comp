@@ -213,6 +213,46 @@ final class AppAttestClientTests: XCTestCase {
         )
     }
 
+    func testRepeatedContextUnavailableRemainsTypedAfterOneRefresh()
+        async throws
+    {
+        let service = AppAttestServiceProbe(
+            attestationResults: [
+                .success(Data("first-attestation".utf8)),
+                .success(Data("refreshed-attestation".utf8)),
+            ]
+        )
+        let remote = AppAttestRemoteProbe(
+            challengeIDs: [challengeID, replacementChallengeID],
+            proofKinds: [.attestation, .attestation],
+            submissionFailures: [
+                .appAttestContextUnavailable,
+                .appAttestContextUnavailable,
+            ]
+        )
+        let fixture = try makeFixture(service: service, remote: remote)
+
+        await XCTAssertThrowsErrorAsync(
+            try await fixture.client.appendScoreRevision(
+                scoreRequest(revision: 1)
+            )
+        ) { error in
+            XCTAssertEqual(
+                error as? CompetitionRemoteFailure,
+                .appAttestContextUnavailable
+            )
+        }
+
+        let generatedKeys = await service.generatedKeys()
+        let challengeRequests = await remote.challengeRequests()
+        let attempts = await service.attestationAttempts()
+        let submissions = await remote.submissions()
+        XCTAssertEqual(generatedKeys, [keyA])
+        XCTAssertEqual(challengeRequests.count, 2)
+        XCTAssertEqual(attempts.map(\.keyID), [keyA, keyA])
+        XCTAssertEqual(submissions.count, 2)
+    }
+
     func testStateRejectsCrossProfileReuseAndCorruption() async throws {
         let directory = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
@@ -405,6 +445,7 @@ private actor AppAttestServiceProbe: AppAttestServiceProtocol {
 private actor AppAttestRemoteProbe {
     private var challengeIDs: [UUID]
     private var proofKinds: [CompetitionAppAttestProofKind]
+    private var submissionFailures: [CompetitionRemoteFailure]
     private var requests: [CompetitionAppAttestChallengeRequest] = []
     private var submitted: [CompetitionAttestedScoreRevisionRequest] = []
 
@@ -412,10 +453,12 @@ private actor AppAttestRemoteProbe {
         challengeIDs: [UUID] = [
             UUID(uuidString: "10000000-0000-4000-8000-000000000001")!,
         ],
-        proofKinds: [CompetitionAppAttestProofKind] = [.attestation]
+        proofKinds: [CompetitionAppAttestProofKind] = [.attestation],
+        submissionFailures: [CompetitionRemoteFailure] = []
     ) {
         self.challengeIDs = challengeIDs
         self.proofKinds = proofKinds
+        self.submissionFailures = submissionFailures
     }
 
     func issue(
@@ -434,6 +477,9 @@ private actor AppAttestRemoteProbe {
         _ request: CompetitionAttestedScoreRevisionRequest
     ) throws -> CompetitionScoreRevisionResponse {
         submitted.append(request)
+        if !submissionFailures.isEmpty {
+            throw submissionFailures.removeFirst()
+        }
         return try CompetitionScoreRevisionResponse(
             disposition: .appended,
             rejectionCode: nil,
