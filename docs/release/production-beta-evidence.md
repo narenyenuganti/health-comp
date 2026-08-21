@@ -94,10 +94,11 @@ acceptance, deletion, or the same-phone replacement lifecycle.
 2. Repeat exact-current native Sign in with Apple, authenticated UI, active
    HealthKit, background observer, and APNs foreground/background/cold-route
    evidence on `cb21189`.
-3. Continue the adversarial matrix above the proven database, selected-build
-   Function-routing, and sequential-Simulator profile-root boundaries: replay
-   the consumed replacement invitation when its token is available and finish
-   the remaining lifecycle isolation cases.
+3. Continue the adversarial matrix above the proven database and sequential-
+   Simulator profile-root boundaries plus current-source Function-route
+   continuity supported by the historical `dd0ed68` runtime receipt: replay the
+   consumed replacement invitation when its token is available and finish the
+   remaining lifecycle isolation cases.
 4. Continue deletion and same-phone replacement-installation gates in the
    checked-in order.
 
