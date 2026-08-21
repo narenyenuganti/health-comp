@@ -42,12 +42,12 @@ Status meanings:
 
 ## Automated matrix
 
-- **PASS:** Exact-current post-merge
+- **PASS:** Selected-application post-merge
   [Backend CI run 32442953606](https://github.com/narenyenuganti/health-comp/actions/runs/32442953606)
   completed successfully on selected application commit `cb21189`, including
   static backend boundaries, migrations, policies, Edge Functions, and the
   checked-in secret/privacy guards.
-- **PASS:** Exact-current post-merge
+- **PASS:** Selected-application post-merge
   [iOS CI run 32442953541](https://github.com/narenyenuganti/health-comp/actions/runs/32442953541)
   completed successfully on selected application commit `cb21189`, including
   deterministic Xcode generation, CompetitionCore Debug and Release tests, all
