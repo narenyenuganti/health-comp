@@ -109,10 +109,12 @@ Status meanings:
   canonical local `HealthCompTests` gate passed all 457 tests without failures
   or skips. The integrated recovery matrix below later passed the expanded
   459-test canonical suite.
-- **PASS:** A signed Staging Simulator build restored the existing
+- **PASS:** On reviewed PR #26 source whose application tree merged as pre-icon
+  commit `ae28c6a`, a signed Staging Simulator build restored the existing
   profile-scoped data and authenticated session, completed staging requests
   with HTTP 200 responses, and produced no `-1005` or missing-HealthKit-
-  entitlement error.
+  entitlement error. This is historical transport evidence, not exact-current
+  Simulator runtime.
 - **PASS:** At `2026-08-19T18:36:33Z`, then-selected application source `dd0ed68`
   was rebuilt from docs-only main `a45c325` as a Staging Simulator bundle.
   Offline checks confirmed the exact staging bundle ID, expected public project
