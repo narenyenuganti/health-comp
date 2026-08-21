@@ -99,6 +99,23 @@ and pinned Edge Runtime fixture, PostgreSQL 17, RLS, pgTAP, XcodeGen.
 > diagnostic seam. Successful physical key registration and assertion renewal
 > remain required evidence.
 
+> **Physical rejection diagnostic checkpoint (2026-08-20):** Function version
+> 6 was deployed from exact `main` commit `d0ccba7`, and HealthComp Staging was
+> reinstalled in place without erasing its authenticated or App Attest state.
+> Exactly one legacy recovery request reached the verifier. It returned HTTP
+> 401 and emitted only `app_attest_verification_rejected invalid_attestation`.
+> The retry window contained one new attestation challenge, zero consumed
+> challenges, zero registered keys, zero submission grants, and zero accepted
+> score revisions. The device retained one `appAttestRejectedTerminal` outbox
+> entry with no retry scheduled, so no further request occurred.
+>
+> That enum value still combines the outer CBOR object, authenticator-data
+> layout, COSE credential key, and certificate nonce binding. The next
+> phone-free diagnostic change separates those four fixed stages without
+> logging any variable proof metadata or changing the client-visible 401.
+> Staging deployment of that diagnostic and any additional physical attempt
+> remain separately approved actions. Physical acceptance is still missing.
+
 ## Task 1: Freeze protocol fixtures and verifier boundary
 
 **Files:**
