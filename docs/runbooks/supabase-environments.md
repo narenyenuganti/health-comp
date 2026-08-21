@@ -482,11 +482,12 @@ same file through `psql` inside the already isolated local database container,
 so every pull request verifies both the static safety boundary and the runtime
 rollback receipt. A local or CI receipt does not count as hosted staging
 evidence. Even a hosted pass covers only the database adversarial boundary.
-Selected-build create/claim Function routing is proven separately by the
-selected-artifact create/accept flow, its hosted effects, and read-only
-invocation summaries. Neither receipt replaces replay of the selected consumed
-invitation when that token is available or the two endpoints' profile-scoped
-local-store isolation checks.
+Current-source create/claim route continuity is proven separately by the route
+boundaries retained in `cb21189`, while successful create/accept runtime and
+hosted-effect evidence remains historical on then-selected `dd0ed68`; read-only
+invocation summaries support that bounded historical receipt. Neither receipt
+replaces replay of the historical consumed invitation when that token is
+available or the two endpoints' profile-scoped local-store isolation checks.
 
 ## Completion evidence
 

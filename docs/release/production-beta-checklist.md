@@ -283,8 +283,9 @@ Status meanings:
   Simulator transport-cache recovery touched only rebuildable alternative-
   service rows and did not alter profile data.
 - **PARTIAL:** The database portion of the adversarial participant-isolation
-  and tamper matrix and the selected-build create/claim Function routing are
-  proven, and the sequential Simulator profile-root boundary now passes.
+  and tamper matrix and current-source create/claim route continuity are
+  proven, and the sequential Simulator profile-root boundary now passes. The
+  successful create/accept runtime receipt remains historical.
   Replay of the consumed replacement invitation when its token is available
   and the remaining lifecycle isolation cases remain pending.
 - **PASS:** Only `submit-score-revision` was advanced to staging version 7 for
@@ -292,7 +293,7 @@ Status meanings:
   and the credential-free probe retained the exact `400 invalid_request`
   fail-closed boundary. No migration, secret, other Function, or production
   resource changed during that deployment.
-- **PARTIAL:** The exact-current physical run began with 9 hosted App Attest
+- **PENDING:** The exact-current physical run began with 9 hosted App Attest
   challenges, 0 consumed challenges, 0 registered keys, 0 grants, 0 consumed
   grants, and 0 accepted score revisions. After the single controlled launch,
   every count was unchanged, bounded hosted logs contained 0
@@ -347,9 +348,11 @@ Status meanings:
   prior selected artifact `9d19937`. At `2026-08-19T06:59Z`, iPhone Mirroring
   read back the authenticated Sharing UI. Then-selected artifact `dd0ed68` later
   preserved that session through over-install and relaunch. This remains a
-  historical supporting receipt; the exact-current receipt below supersedes
-  its former artifact-version limitation. No Apple account identity,
-  authorization payload, token, or private screenshot is included.
+  historical supporting receipt. The later native authorization on then-
+  selected artifact `dd0ed68` superseded the `9d19937` limitation at that time;
+  neither historical receipt proves fresh authorization on current artifact
+  `cb21189`. No Apple account identity, authorization payload, token, or private
+  screenshot is included.
 - **PASS:** In the later user-approved sequence ending at
   `2026-08-19T17:13:03Z`, then-selected artifact `dd0ed68` itself completed sign-out,
   displayed its clean welcome screen, completed fresh native Sign in with
@@ -374,7 +377,7 @@ Status meanings:
 | HealthKit | PARTIAL | Grant, revoke, and re-enable startup paths completed historically, and all app-requested categories were granted on prior artifact `9d19937`; exact-current `cb21189` launched under the retained same-bundle grant but produced no changed privacy-safe wire snapshot. Active-competition derived score and background-observer behavior remain pending |
 | Background observer | PENDING | Durable journal write before completion callback |
 | APNs | PARTIAL | iOS authorization and one active sandbox installation were verified at `2026-08-16T07:04:49.701324Z`; foreground, background, and cold-route delivery remain pending |
-| App Attest | PARTIAL | Selected artifact `cb21189` and staging Function version 7 passed build/deployment guards, but the single physical launch generated no new eligible event, challenge, key, grant, or submission. Real registration, assertion acceptance or classified rejection, replay rejection, and replacement-installation flow remain pending |
+| App Attest | PENDING | Selected artifact `cb21189` and staging Function version 7 passed build/deployment guards, but the single physical launch generated no new eligible event, challenge, key, grant, or submission and therefore did not execute the App Attest service gate. Real registration, assertion acceptance or classified rejection, replay rejection, and replacement-installation flow remain pending |
 | Account deletion | PENDING | Reauthorization, server-confirmed completion, local wipe, no resurrection, and preserved Former competitor history |
 | Universal link | DEFERRED | User-approved private-beta deferral because no HTTPS invitation domain will be provided; custom-scheme fallback is not universal-link evidence |
 | Replacement installation | PENDING | Same-phone remove/reinstall, new installation and App Attest enrollment, retired-installation isolation, and no local-data resurrection |
@@ -400,7 +403,8 @@ Status meanings:
   synthetic cross-account reads and mutations, replayed claims, modified
   points, stale/conflicting revisions, result rewrites, deleted-profile access,
   private-column/raw-table denial, and unregistered-installation cases fail
-  closed. Selected-build create/claim Function routing is also proven;
+  closed. Current-source create/claim route continuity is also proven, while
+  the successful create/accept runtime receipt remains historical;
   consumed-token replay and the remaining lifecycle isolation evidence remain
   pending.
 - **BLOCKED:** Hosted backup/restore rehearsal requires a backup-capable plan
