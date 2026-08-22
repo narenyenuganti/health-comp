@@ -504,13 +504,14 @@ async function syntheticAssertion(extended = true) {
     ...(extended ? [await cbor.encodeAsync(policyExtensions(3, "1"))] : []),
   ]);
   const clientDataHash = createHash("sha256").update(clientData).digest();
-  const nonce = createHash("sha256")
-    .update(Buffer.concat([authenticatorData, clientDataHash]))
-    .digest();
+  const signedData = Buffer.concat([authenticatorData, clientDataHash]);
   const { privateKey, publicKey } = generateKeyPairSync("ec", {
     namedCurve: "prime256v1",
   });
-  const signature = createSign("SHA256").update(nonce).end().sign(privateKey);
+  const signature = createSign("SHA256")
+    .update(signedData)
+    .end()
+    .sign(privateKey);
   return {
     appId,
     clientData,

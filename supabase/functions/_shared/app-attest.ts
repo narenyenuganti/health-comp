@@ -747,9 +747,8 @@ export function verifyAppAttestAssertion(input: {
       fail("invalid_key");
     }
     const clientDataHash = sha256(input.clientData);
-    const nonce = sha256(Buffer.concat([decoded.authData, clientDataHash]));
     const verifier = createVerify("SHA256");
-    verifier.update(nonce);
+    verifier.update(Buffer.concat([decoded.authData, clientDataHash]));
     if (!verifier.verify(publicKey, decoded.signature)) {
       fail("invalid_assertion");
     }
