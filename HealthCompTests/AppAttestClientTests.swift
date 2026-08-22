@@ -213,6 +213,48 @@ final class AppAttestClientTests: XCTestCase {
         )
     }
 
+    func testConcurrentSubmissionsDoNotShareChallengeOrProof() async throws {
+        let service = AppAttestServiceProbe(
+            attestationResults: [.success(Data("attestation".utf8))],
+            assertionResults: [.success(Data("assertion".utf8))]
+        )
+        let remote = AppAttestRemoteProbe(
+            challengeIDs: [challengeID, replacementChallengeID],
+            proofKinds: [.attestation, .assertion],
+            pauseFirstChallenge: true
+        )
+        let fixture = try makeFixture(service: service, remote: remote)
+        let first = Task {
+            try await fixture.client.appendScoreRevision(
+                scoreRequest(revision: 1)
+            )
+        }
+        await remote.waitUntilFirstChallengeIsPaused()
+        let second = Task {
+            try await fixture.client.appendScoreRevision(
+                scoreRequest(revision: 2)
+            )
+        }
+
+        for _ in 0..<100 {
+            if await remote.challengeRequests().count != 1 { break }
+            try await Task.sleep(for: .milliseconds(1))
+        }
+        let requestsBeforeResume = await remote.challengeRequests()
+        await remote.resumeFirstChallenge()
+        _ = try await first.value
+        _ = try await second.value
+
+        let requests = await remote.challengeRequests()
+        let submissions = await remote.submissions()
+        XCTAssertEqual(requestsBeforeResume.count, 1)
+        XCTAssertEqual(Set(requests.map(\.payloadSHA256)).count, 2)
+        XCTAssertEqual(
+            submissions.map(\.appAttest.proofKind),
+            [.attestation, .assertion]
+        )
+    }
+
     func testRepeatedContextUnavailableRemainsTypedAfterOneRefresh()
         async throws
     {
@@ -448,29 +490,55 @@ private actor AppAttestRemoteProbe {
     private var submissionFailures: [CompetitionRemoteFailure]
     private var requests: [CompetitionAppAttestChallengeRequest] = []
     private var submitted: [CompetitionAttestedScoreRevisionRequest] = []
+    private let pauseFirstChallenge: Bool
+    private var firstChallengeContinuation: CheckedContinuation<Void, Never>?
+    private var firstChallengeWaiters: [CheckedContinuation<Void, Never>] = []
 
     init(
         challengeIDs: [UUID] = [
             UUID(uuidString: "10000000-0000-4000-8000-000000000001")!,
         ],
         proofKinds: [CompetitionAppAttestProofKind] = [.attestation],
-        submissionFailures: [CompetitionRemoteFailure] = []
+        submissionFailures: [CompetitionRemoteFailure] = [],
+        pauseFirstChallenge: Bool = false
     ) {
         self.challengeIDs = challengeIDs
         self.proofKinds = proofKinds
         self.submissionFailures = submissionFailures
+        self.pauseFirstChallenge = pauseFirstChallenge
     }
 
     func issue(
         _ request: CompetitionAppAttestChallengeRequest
-    ) throws -> CompetitionAppAttestChallenge {
+    ) async throws -> CompetitionAppAttestChallenge {
+        let challengeID = challengeIDs.removeFirst()
+        let proofKind = proofKinds.removeFirst()
         requests.append(request)
+        if pauseFirstChallenge, requests.count == 1 {
+            await withCheckedContinuation { continuation in
+                firstChallengeContinuation = continuation
+                let waiters = firstChallengeWaiters
+                firstChallengeWaiters.removeAll()
+                waiters.forEach { $0.resume() }
+            }
+        }
         return try CompetitionAppAttestChallenge(
-            challengeID: challengeIDs.removeFirst(),
+            challengeID: challengeID,
             challenge: Data((0..<32).map(UInt8.init)),
             expiresAt: Date(timeIntervalSince1970: 1_700_000_300),
-            proofKind: proofKinds.removeFirst()
+            proofKind: proofKind
         )
+    }
+
+    func waitUntilFirstChallengeIsPaused() async {
+        if firstChallengeContinuation != nil { return }
+        await withCheckedContinuation { firstChallengeWaiters.append($0) }
+    }
+
+    func resumeFirstChallenge() {
+        let continuation = firstChallengeContinuation
+        firstChallengeContinuation = nil
+        continuation?.resume()
     }
 
     func submit(

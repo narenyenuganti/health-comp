@@ -551,6 +551,8 @@ private actor AppAttestClientCoordinator {
     ) async throws -> CompetitionScoreRevisionResponse
     private let now: @Sendable () -> Date
     private var ephemeralProof: EphemeralProof?
+    private var operationIsInProgress = false
+    private var operationWaiters: [CheckedContinuation<Void, Never>] = []
 
     init(
         profileID: UUID,
@@ -575,6 +577,14 @@ private actor AppAttestClientCoordinator {
     }
 
     func appendScoreRevision(
+        _ score: CompetitionScoreRevisionRequest
+    ) async throws -> CompetitionScoreRevisionResponse {
+        try await withOperationGate {
+            try await performAppendScoreRevision(score)
+        }
+    }
+
+    private func performAppendScoreRevision(
         _ score: CompetitionScoreRevisionRequest
     ) async throws -> CompetitionScoreRevisionResponse {
         guard await service.isSupported() else {
@@ -691,6 +701,38 @@ private actor AppAttestClientCoordinator {
                 }
             }
         }
+    }
+
+    private func withOperationGate<Value>(
+        _ operation: () async throws -> Value
+    ) async rethrows -> Value {
+        await acquireOperationGate()
+        do {
+            let result = try await operation()
+            releaseOperationGate()
+            return result
+        } catch {
+            releaseOperationGate()
+            throw error
+        }
+    }
+
+    private func acquireOperationGate() async {
+        guard operationIsInProgress else {
+            operationIsInProgress = true
+            return
+        }
+        await withCheckedContinuation { continuation in
+            operationWaiters.append(continuation)
+        }
+    }
+
+    private func releaseOperationGate() {
+        guard !operationWaiters.isEmpty else {
+            operationIsInProgress = false
+            return
+        }
+        operationWaiters.removeFirst().resume()
     }
 
     private func generateKey() async throws -> String {
