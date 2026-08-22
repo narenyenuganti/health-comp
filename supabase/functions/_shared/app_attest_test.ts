@@ -327,6 +327,58 @@ Deno.test("attestation rejection diagnostics distinguish strict verifier stages"
   );
 });
 
+Deno.test("legacy attestation shape reaches nonce verification and rejects extra CBOR", async () => {
+  const decoded = cbor.decodeFirstSync(
+    Buffer.from(official.attestation, "base64"),
+  ) as {
+    fmt: string;
+    attStmt: { x5c: Buffer[]; receipt: Buffer };
+    authData: Buffer;
+  };
+  const trailing = cbor.decodeAllSync(decoded.authData.subarray(87));
+  if (!(trailing[0] instanceof Map) || trailing.length !== 2) {
+    throw new Error("Official fixture authenticator data changed shape");
+  }
+  const legacyAuthData = Buffer.concat([
+    decoded.authData.subarray(0, 87),
+    await cbor.encodeAsync(trailing[0]),
+  ]);
+  const legacyAttestation = await cbor.encodeAsync({
+    ...decoded,
+    authData: legacyAuthData,
+  });
+  assertEquals(
+    captureCode(() =>
+      verifyAppAttestAttestation({
+        attestation: legacyAttestation,
+        clientDataHash: Buffer.from(official.clientDataHash, "base64"),
+        keyID: official.keyId,
+        policy: officialPolicy(),
+      })
+    ),
+    "invalid_attestation_nonce",
+  );
+
+  const extraAuthData = Buffer.concat([
+    decoded.authData,
+    await cbor.encodeAsync({ unexpected: true }),
+  ]);
+  const extraAttestation = await cbor.encodeAsync({
+    ...decoded,
+    authData: extraAuthData,
+  });
+  expectCode(
+    "invalid_attestation_authenticator_data",
+    () =>
+      verifyAppAttestAttestation({
+        attestation: extraAttestation,
+        clientDataHash: Buffer.from(official.clientDataHash, "base64"),
+        keyID: official.keyId,
+        policy: officialPolicy(),
+      }),
+  );
+});
+
 Deno.test("attestation rejects a mismatched key identifier", () => {
   const candidate = {
     attestation: Buffer.from(official.attestation, "base64"),
@@ -432,7 +484,7 @@ Deno.test("policy extension decoder requires the exact signed shape", async () =
   }
 });
 
-async function syntheticAssertion() {
+async function syntheticAssertion(extended = true) {
   const appId = "1234567890.com.example.myapp";
   const clientData = appAttestClientDataV1({
     challengeID: "10000000-0000-4000-8000-000000000001",
@@ -447,9 +499,9 @@ async function syntheticAssertion() {
   counter.writeUInt32BE(1);
   const authenticatorData = Buffer.concat([
     rpIDHash,
-    Buffer.from([0x40]),
+    Buffer.from([extended ? 0x80 : 0x00]),
     counter,
-    await cbor.encodeAsync(policyExtensions(3, "1")),
+    ...(extended ? [await cbor.encodeAsync(policyExtensions(3, "1"))] : []),
   ]);
   const clientDataHash = createHash("sha256").update(clientData).digest();
   const nonce = createHash("sha256")
@@ -524,5 +576,75 @@ Deno.test("assertion verifies signature identity policy and increasing counter",
       publicKeyPEM: fixture.publicKeyPEM,
       previousSignCount: 0,
       policy,
+    }));
+});
+
+Deno.test("legacy assertion verifies without inventing policy metadata", async () => {
+  const fixture = await syntheticAssertion(false);
+  const result = verifyAppAttestAssertion({
+    assertion: fixture.assertion,
+    clientData: fixture.clientData,
+    publicKeyPEM: fixture.publicKeyPEM,
+    previousSignCount: 0,
+    policy: {
+      appId: fixture.appId,
+      environment: "development",
+      allowedValidationCategories: [3],
+      allowedBundleVersions: ["1"],
+      now: new Date("2026-08-15T00:00:00Z"),
+    },
+  });
+  assertEquals(result.signCount, 1);
+  assertEquals(result.validationCategory as number | null, null);
+  assertEquals(result.bundleVersion as string | null, null);
+});
+
+Deno.test("assertion rejects flag-shape mismatches and extra extension CBOR", async () => {
+  const policyFor = (appId: string): AppAttestVerificationPolicy => ({
+    appId,
+    environment: "development",
+    allowedValidationCategories: [3],
+    allowedBundleVersions: ["1"],
+    now: new Date("2026-08-15T00:00:00Z"),
+  });
+  for (const extended of [false, true]) {
+    const fixture = await syntheticAssertion(extended);
+    const decoded = cbor.decodeFirstSync(fixture.assertion) as {
+      signature: Buffer;
+      authenticatorData: Buffer;
+    };
+    const mismatched = Buffer.from(decoded.authenticatorData);
+    mismatched[32] = extended ? 0x00 : 0x80;
+    expectCode("invalid_assertion", () =>
+      verifyAppAttestAssertion({
+        assertion: cbor.encode({
+          ...decoded,
+          authenticatorData: mismatched,
+        }),
+        clientData: fixture.clientData,
+        publicKeyPEM: fixture.publicKeyPEM,
+        previousSignCount: 0,
+        policy: policyFor(fixture.appId),
+      }));
+  }
+
+  const extended = await syntheticAssertion(true);
+  const decoded = cbor.decodeFirstSync(extended.assertion) as {
+    signature: Buffer;
+    authenticatorData: Buffer;
+  };
+  expectCode("invalid_assertion", () =>
+    verifyAppAttestAssertion({
+      assertion: cbor.encode({
+        ...decoded,
+        authenticatorData: Buffer.concat([
+          decoded.authenticatorData,
+          cbor.encode({ unexpected: true }),
+        ]),
+      }),
+      clientData: extended.clientData,
+      publicKeyPEM: extended.publicKeyPEM,
+      previousSignCount: 0,
+      policy: policyFor(extended.appId),
     }));
 });
