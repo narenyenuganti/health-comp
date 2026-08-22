@@ -35,13 +35,13 @@ represented as universal-link evidence.
 | Paid-team provisioning | Staging development profile for team `23LUYD78QK`, expiring `2027-08-16T05:23:35Z` | PASS |
 | Profile entitlements | Sandbox APNs, Sign in with Apple, HealthKit, HealthKit background delivery, and App Attest authorized | PASS |
 | Physical build | Automatic paid-team signing produced selected source commit `6ee1d2260cfcbe02a950630ef979076c317eca49` for the paired physical iPhone using frozen package resolution. The embedded profile was unexpired, included the selected phone, and authorized exact App ID `23LUYD78QK.com.narenyenuganti.HealthComp.staging`, sandbox APNs, Sign in with Apple, HealthKit with background delivery, and App Attest; the bundle passed strict code-signature validation | PASS |
-| Physical install | On `2026-08-22` PDT, selected source commit `6ee1d22` over-installed successfully as `com.narenyenuganti.HealthComp.staging` without launching. The stable profile subtree remained 17 entries, seven directories, three outbox entries, one App Attest state file, three competition files, and two server cursors. This proves a same-bundle upgrade, not the later remove/reinstall replacement lifecycle that must retire an installation and App Attest key | PASS |
-| Physical launch | Exactly one controlled `6ee1d22` launch began at `2026-08-22T08:29:49Z` and was stopped at `2026-08-22T08:30:51Z` without relaunching. Authenticated Sharing was visible with `Some competition activity could not be refreshed.` No screenshot or private value was retained. The local and hosted receipts below prove the launch generated no new eligible score/App Attest event | PASS |
+| Physical install | On `2026-08-22` PDT, selected source commit `6ee1d22` over-installed successfully as `com.narenyenuganti.HealthComp.staging` without launching. The stable profile subtree remained 17 entries, seven directories, three outbox files, one App Attest state file, three competition files, and two server cursors. This proves a same-bundle upgrade, not the later remove/reinstall replacement lifecycle that must retire an installation and App Attest key | PASS |
+| Physical launch | Two separately approved `6ee1d22` windows each launched exactly once and stopped without an in-window retry: `2026-08-22T08:29:49Z`–`08:30:51Z` and `2026-08-22T22:21:55Z`–`22:23:33Z`. The first showed authenticated Sharing with `Some competition activity could not be refreshed.` The second had no iPhone Mirroring window and is classified only by process, local, and hosted evidence. No screenshot or private value was retained | PASS |
 | Sign in with Apple | In a user-approved physical sequence ending at `2026-08-19T17:13:03Z`, then-selected artifact `dd0ed68` completed sign-out, reached its clean welcome screen, completed fresh native Sign in with Apple, and returned to authenticated Sharing without a warning. Exact-current `6ee1d22` preserved the same-bundle container and launched, but did not repeat native authorization | PARTIAL |
 | Authenticated refresh | The prior `9d19937` relaunch reproduced `Some competition activity could not be refreshed.` and privacy-safe hosted readbacks isolated two terminal descriptors. PR #34 corrected the client boundary, and then-selected artifact `dd0ed68` reached authenticated Sharing without a warning. Exact-current `6ee1d22` reached authenticated Sharing but again displayed the competition-refresh warning; retained server history and the stable profile subtree were not deleted | PARTIAL |
 | APNs registration | On historical physical build `1ca67af`, iOS authorization completed and a read-only staging query returned exactly one `sandbox` / `active` installation updated at `2026-08-16T07:04:49.701324Z`; no installation, profile, or token identifier was selected. Registration and foreground/background/cold delivery on selected release artifact `6ee1d22` remain pending | PARTIAL |
-| HealthKit startup cycle | The physical iPhone completed grant, revoke, and re-enable startup paths historically. On prior artifact `9d19937`, all app-requested categories were granted through the native Health Access sheet. Exact-current `6ee1d22` launched under the retained same-bundle grant but produced no changed privacy-safe wire snapshot. Public HealthKit does not reveal read denial, so active-competition derived score and background-observer behavior remain unverified | PARTIAL |
-| Exact-current App Attest no-new-event receipt | Only `submit-score-revision` was advanced to active staging version 9 from reviewed `6ee1d22`; the credential-free boot probe retained the expected `400 invalid_request` boundary. Before and after the one physical launch, hosted aggregates remained four challenges, one consumed challenge, one key, one grant, one consumed grant, and one accepted score revision. The Function overview showed exactly one invocation since deployment—the pre-launch boot probe—so the physical launch made no submission request. Stable local profile-subtree counts also remained unchanged. The unchanged wire snapshot produced no new eligible attempt; this is neither acceptance nor a classified rejection | PENDING |
+| HealthKit startup cycle | The physical iPhone completed grant, revoke, and re-enable startup paths historically. On prior artifact `9d19937`, all app-requested categories were granted through the native Health Access sheet. Exact-current `6ee1d22` launched under the retained same-bundle grant but produced no new score revision. API Gateway logs prove remote reconciliation succeeded, but the retained evidence cannot distinguish an unchanged privacy-safe wire from a HealthKit summary-read failure. Public HealthKit does not reveal read denial, so active-competition derived score and background-observer behavior remain unverified | PARTIAL |
+| Exact-current App Attest no-new-score-revision receipt | Only `submit-score-revision` was advanced to active staging version 9 from reviewed `6ee1d22`; the credential-free boot probe retained the expected `400 invalid_request` boundary. Hosted aggregates remained four challenges, one consumed challenge, one key, one grant, one consumed grant, and one accepted score revision across both physical launches. The second approved launch ran from `2026-08-22T22:21:55Z` through `2026-08-22T22:23:33Z`; API Gateway logs showed successful HTTP 200 profile bootstrap, installation registration, competition listing, and change fetches plus an HTTP 101 Realtime WebSocket upgrade, while the Function remained at the one pre-launch boot probe. A temporary metadata-only outbox readback found four `appAttestRejectedTerminal` score revisions: Day 1 revision 1 and Day 2 revisions 2 through 4. The app produced no new revision. Current evidence cannot distinguish an unchanged Day 2 wire from a HealthKit summary-read failure; this is neither acceptance nor a new classified rejection | PENDING |
 | Hosted staging preflight | A SELECT-only audit ending at `2026-08-17T07:12:08Z` found two active profiles, two active sandbox installations, two pending competitions, two live unclaimed invitations, zero consumed invitations, and a pending distribution of `[0,2]` across the active profiles. It also found zero App Attest keys, account-deletion records, daily-score revisions, and competition results. No identifier, token, digest, account detail, private screenshot, or HealthKit value was selected or retained | PASS |
 | Staging database adversarial boundary | At `2026-08-20T01:18:06Z`, exact reviewed verifier commit `4fca597757befafc9ed10cafecc4af4b73e65026` ran against `healthcomp-staging` after SSL enforcement was enabled and read back. The certificate-verified session passed 15/15 database assertions, explicitly rolled back, independently found zero synthetic rows remaining, and returned no private values. The sole nonblank privacy-safe receipt has SHA-256 `852fc2d64c0daa93677726cda4fdddf4acd088b68884aa247939188f408660af`. This is database-boundary evidence only; replay of the consumed replacement invitation remains pending, while the separate sequential-Simulator receipt below now proves the profile-root isolation boundary | PASS |
 | Staging expired-invitation cleanup | After both invitations expired, a privacy-safe snapshot returned exact count `2` and opaque scope SHA-256 `0ebe0077d5312b7245ce55065dc2d30437e1af052f14ae98ee391af92542f314`. Following action-time approval, the reviewed guard ran as one explicit serializable transaction through the authenticated Supabase Management API database-query route rather than `psql`; it retained the approved scope checks, timeouts, service-role request claim, cleanup-count assertion, and explicit commit. Dedicated read-only route readback at `2026-08-19T04:16:02.604717Z` found zero pending competitions, two expired competitions, two retained invitation-history rows, zero claimed or consumed invitations, and zero remaining eligible invitations. No identifier or token was selected, no lifecycle row was edited directly, and no replacement invitation was created | PASS |
@@ -56,20 +56,26 @@ The exact-current physical receipt proves that source commit
 `6ee1d2260cfcbe02a950630ef979076c317eca49` can be built with frozen package
 resolution, signed by the paid team, strictly validated, and over-installed on
 the paired iPhone without erasing the profile-scoped container. The stable
-profile subtree remained 17 entries, seven directories, three outbox entries,
+profile subtree remained 17 entries, seven directories, three outbox files,
 one App Attest state file, three competition files, and two server cursors.
-The app process launched exactly once and was stopped without a second launch.
-Authenticated Sharing was visible with a competition-refresh warning, but no
-private screenshot was retained. This does not prove fresh native authorization.
+Each separately approved window launched exactly once and stopped without an
+in-window retry. The first showed authenticated Sharing with a competition-
+refresh warning; the second lacked an iPhone Mirroring window and is classified
+only by process, local, and hosted evidence. No private screenshot was retained.
+This does not prove fresh native authorization.
 
-The same controlled window proves the client did not fabricate or reopen an
-App Attest attempt when the HealthKit-derived wire snapshot was unchanged.
-Staging retained four challenges, one consumed challenge, one key, one grant,
-one consumed grant, and one accepted score revision. The sole Function
-invocation since version-9 deployment was the pre-launch credential-free boot
-probe, so the physical launch made no score-submission request. This is a
-fail-closed no-new-event receipt, not App Attest acceptance or a classified
-rejection.
+The second controlled window proves the client successfully reached hosted
+profile bootstrap, installation registration, competition listing, and change
+fetches over HTTP 200 plus Realtime over HTTP 101 without creating a score
+revision. Staging
+retained four challenges, one consumed challenge, one key, one grant, one
+consumed grant, and one accepted score revision. The sole Function invocation
+since version-9 deployment remained the pre-launch credential-free boot probe.
+The profile-scoped outbox retained four terminal score revisions and no pending
+retry. The available evidence does not distinguish an unchanged Day 2 wire
+from a HealthKit summary-read failure because neither decision is persisted.
+This is a fail-closed no-new-score-revision receipt, not App Attest acceptance
+or a new classified rejection.
 
 Then-selected artifact `dd0ed683a78de216f622e2a958baeda1cb996e46`
 historically proved authenticated Sharing, a warning-free refresh, and fresh
@@ -91,9 +97,10 @@ acceptance, deletion, or the same-phone replacement lifecycle.
 
 ## Immediate continuation
 
-1. Wait for a genuinely changed HealthKit-derived wire snapshot or a new
-   competition day, then obtain fresh approval for exactly one additional
-   physical launch. Read back only privacy-safe App Attest and score receipts.
+1. Wait for the next competition day, then obtain fresh approval for exactly
+   one additional physical launch with iPhone Mirroring open. Read back only
+   privacy-safe App Attest and score receipts; do not infer eligibility from an
+   unrelated Health datum.
 2. Repeat exact-current native Sign in with Apple, authenticated UI, active
    HealthKit, background observer, and APNs foreground/background/cold-route
    evidence on `6ee1d22`.
@@ -132,8 +139,11 @@ acceptance, deletion, or the same-phone replacement lifecycle.
   process-launch receipt. Authenticated Sharing was visible with a competition-
   refresh warning. Fresh native Sign in with Apple, warning-free refresh, and
   active HealthKit behavior on this exact artifact remain unverified.
-- The exact-current App Attest launch produced no newly eligible event or
-  hosted request. No acceptance or classified-rejection receipt exists.
+- The two exact-current App Attest launches produced no new score revision or
+  hosted submission request. The latest launch completed remote reconciliation,
+  but current evidence cannot distinguish an unchanged privacy-safe wire from a
+  HealthKit summary-read failure. No acceptance or new classified-rejection
+  receipt exists.
 - No active-competition accepted score, background-observer, APNs delivery,
   deletion, or same-phone replacement-installation receipt exists.
 - Universal-link evidence is explicitly deferred for this private-beta

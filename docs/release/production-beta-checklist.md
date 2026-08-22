@@ -171,10 +171,11 @@ Status meanings:
   provisioning, exact staging bundle/project configuration, Sign in with Apple,
   HealthKit background delivery, sandbox APNs, and development App Attest. The
   exact bundle over-installed without launching and preserved the stable
-  profile subtree: 17 entries, seven directories, three outbox entries, one
+  profile subtree: 17 entries, seven directories, three outbox files, one
   App Attest state file, three competition files, and two server cursors.
-  Exactly one later controlled launch started the app process and was stopped
-  without a second launch. This proves the exact-current build/install/launch
+  Two separately approved controlled launches each started the app process
+  exactly once and stopped it without an in-window retry. This proves the
+  exact-current build/install/launch
   boundary and authenticated Sharing readback with a competition-refresh
   warning, not fresh Sign in with Apple, active HealthKit, or App Attest
   acceptance.
@@ -300,14 +301,20 @@ Status meanings:
   and the credential-free probe retained the exact `400 invalid_request`
   fail-closed boundary. No migration, secret, other Function, or production
   resource changed during that deployment.
-- **PENDING:** The exact-current physical run began with four hosted App Attest
-  challenges, one consumed challenge, one registered key, one grant, one
-  consumed grant, and one accepted score revision. Every count was unchanged
-  after the single controlled launch. The Function overview showed exactly one
-  version-9 invocation since deployment—the pre-launch credential-free boot
-  probe—so the physical launch made no `submit-score-revision` request. The
-  unchanged HealthKit-derived wire snapshot correctly produced no new eligible
-  event. This is truthful no-new-event evidence, not an App Attest pass or
+- **PENDING:** Two exact-current physical launches began with four hosted App
+  Attest challenges, one consumed challenge, one registered key, one grant,
+  one consumed grant, and one accepted score revision. Every count was
+  unchanged afterward. The second approved launch ran from
+  `2026-08-22T22:21:55Z` through `2026-08-22T22:23:33Z`. Its API Gateway window
+  showed successful HTTP 200 profile bootstrap, installation registration,
+  competition listing, and change fetches plus an HTTP 101 Realtime WebSocket
+  upgrade, while the
+  Function overview remained at the one pre-launch credential-free boot probe.
+  A temporary metadata-only outbox readback found four terminal score
+  revisions: Day 1 revision 1 and Day 2 revisions 2 through 4. The runtime
+  persists neither a successful unchanged-wire decision nor a HealthKit
+  summary-read failure, so the current evidence cannot distinguish them. This
+  is truthful no-new-score-revision evidence, not an App Attest pass or a new
   classified rejection.
 
 ## Paid-team signing and installation
@@ -379,12 +386,12 @@ Status meanings:
 
 | Gate | Status | Required evidence |
 | --- | --- | --- |
-| Signed staging launch | PASS | Selected artifact `6ee1d22` was signed with the paid-team profile, over-installed as `com.narenyenuganti.HealthComp.staging`, preserved its stable profile-subtree counts, reached authenticated Sharing with a competition-refresh warning, launched exactly once, and was stopped afterward |
+| Signed staging launch | PASS | Selected artifact `6ee1d22` was signed with the paid-team profile, over-installed as `com.narenyenuganti.HealthComp.staging`, preserved its stable profile-subtree counts, and completed two separately approved bounded launches with no in-window retry. The first reached authenticated Sharing with a competition-refresh warning; the second lacked an iPhone Mirroring window and is classified only by process, local, and hosted evidence |
 | Sign in with Apple | PARTIAL | Fresh native Sign in with Apple passed on then-selected artifact `dd0ed68`; exact-current `6ee1d22` preserved the authenticated session and reached Sharing, but did not repeat sign-out and native reauthorization |
-| HealthKit | PARTIAL | Grant, revoke, and re-enable startup paths completed historically, and all app-requested categories were granted on prior artifact `9d19937`; exact-current `6ee1d22` launched under the retained same-bundle grant but produced no changed privacy-safe wire snapshot. Active-competition derived score and background-observer behavior remain pending |
+| HealthKit | PARTIAL | Grant, revoke, and re-enable startup paths completed historically, and all app-requested categories were granted on prior artifact `9d19937`; exact-current `6ee1d22` launched under the retained same-bundle grant but produced no new score revision. Hosted logs prove remote reconciliation succeeded, but the retained evidence cannot distinguish an unchanged privacy-safe wire from a HealthKit summary-read failure. Active-competition derived score and background-observer behavior remain pending |
 | Background observer | PENDING | Durable journal write before completion callback |
 | APNs | PARTIAL | iOS authorization and one active sandbox installation were verified at `2026-08-16T07:04:49.701324Z`; foreground, background, and cold-route delivery remain pending |
-| App Attest | PENDING | Selected artifact `6ee1d22` and active staging Function version 9 passed build/deployment guards, but the single physical launch left the four-challenge / one-key / one-consumed-grant / one-accepted-score aggregate unchanged and generated no physical-launch Function invocation. It therefore did not execute a new App Attest service gate. A genuinely new eligible wire event, replay rejection, and replacement-installation flow remain pending |
+| App Attest | PENDING | Selected artifact `6ee1d22` and active staging Function version 9 passed build/deployment guards, but both physical launches left the four-challenge / one-key / one-consumed-grant / one-accepted-score aggregate unchanged and generated no physical-launch Function invocation. The latest launch completed remote reconciliation and retained four terminal score revisions but no new revision, so it did not execute a new App Attest service gate. A new competition-day wire, replay rejection, and replacement-installation flow remain pending |
 | Account deletion | PENDING | Reauthorization, server-confirmed completion, local wipe, no resurrection, and preserved Former competitor history |
 | Universal link | DEFERRED | User-approved private-beta deferral because no HTTPS invitation domain will be provided; custom-scheme fallback is not universal-link evidence |
 | Replacement installation | PENDING | Same-phone remove/reinstall, new installation and App Attest enrollment, retired-installation isolation, and no local-data resurrection |
