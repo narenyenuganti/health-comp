@@ -44,7 +44,7 @@ reversible fingerprints never leave the device.
 | Environment | Current truth |
 | --- | --- |
 | Development | Disposable local Supabase stack for backend tests plus deterministic DEBUG Test Labs for iOS. The live app requires an HTTPS Supabase URL. |
-| Staging | healthcomp-staging, ref xhfdfdrtxwptrwhvvlhg, was observed ACTIVE_HEALTHY through the authenticated CLI on 2026-08-20 PDT. Fourteen migrations through 20260811000900, nine Functions, providers, secret names, schedules, and the 15/15 rollback-only adversarial boundary have been read back. `submit-score-revision` version 7 matches selected source `cb21189`. Two-account lifecycle, backup/restore, and required physical-service evidence remain incomplete. |
+| Staging | healthcomp-staging, ref xhfdfdrtxwptrwhvvlhg, has 14 migrations through 20260811000900, nine Functions, configured providers, secret names, schedules, and a 15/15 rollback-only adversarial receipt. On 2026-08-22 PDT, only `submit-score-revision` was advanced to active version 9 from selected source `6ee1d22`; its credential-free boot probe returned the expected `400 invalid_request`. The one exact-current physical launch produced no eligible submission event, so App Attest acceptance remains unproven. Two-account lifecycle, backup/restore, and required physical-service evidence remain incomplete. |
 | Production | No project has been approved. Do not infer that the inactive generic project is production. |
 
 See the [environment and promotion runbook](docs/runbooks/supabase-environments.md)

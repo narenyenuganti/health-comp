@@ -6,12 +6,12 @@ required future work.
 
 ## Current environment inventory
 
-Current authenticated environment evidence through 2026-08-20 PDT:
+Current authenticated environment evidence through 2026-08-22 PDT:
 
 | Logical environment | Supabase target | Status | App configuration |
 | --- | --- | --- | --- |
 | Development | Disposable local CLI stack (project ID health-comp) | Verified locally | com.narenyenuganti.HealthComp, sandbox APNs, development App Attest |
-| Staging | healthcomp-staging (xhfdfdrtxwptrwhvvlhg) | ACTIVE_HEALTHY; 14 migrations through 20260811000900 and nine Functions read back; `submit-score-revision` version 7 matches selected source `cb21189`; Apple Auth and a topic-restricted server key are configured for the exact staging bundle; Function secrets, worker Vault entries, notification repair, and the corrected finalizer schedule are configured; both hosted jobs have succeeded; SSL enforcement is enabled; the rollback-only hosted database adversarial verifier passed 15/15 with zero residue | com.narenyenuganti.HealthComp.staging, sandbox APNs, development App Attest |
+| Staging | healthcomp-staging (xhfdfdrtxwptrwhvvlhg) | ACTIVE_HEALTHY; 14 migrations through 20260811000900 and nine Functions read back; only `submit-score-revision` was advanced to active version 9 from selected source `6ee1d22` on 2026-08-22 PDT, and its credential-free boot probe retained the expected `400 invalid_request` boundary; Apple Auth and a topic-restricted server key are configured for the exact staging bundle; Function secrets, worker Vault entries, notification repair, and the corrected finalizer schedule are configured; both hosted jobs have succeeded; SSL enforcement is enabled; the rollback-only hosted database adversarial verifier passed 15/15 with zero residue | com.narenyenuganti.HealthComp.staging, sandbox APNs, development App Attest |
 | Production | **TBD** | No project has been approved as HealthComp production | com.narenyenuganti.HealthComp, production APNs, production App Attest |
 
 The 2026-08-15 staging promotion and readback established all of the following:
@@ -44,11 +44,14 @@ The 2026-08-15 staging promotion and readback established all of the following:
   UTC with no due competition left unfinalized.
 
 Staging has supported partial two-account and physical-device verification on
-then-selected artifact `dd0ed68`. Selected artifact `cb21189` has exact-current
-CI, signed-build, state-preserving over-install, and one controlled physical
-launch evidence. That launch produced no changed HealthKit-derived wire event,
-no App Attest Function call, and no accepted score, so App Attest acceptance is
-still unproven. The rollback-only database adversarial boundary passed 15/15 at
+then-selected artifacts. Selected artifact `6ee1d22` has exact-current CI,
+signed-build, state-preserving over-install, and one controlled physical launch
+receipt. Before and after that launch, the hosted aggregate remained four
+challenges, one consumed challenge, one key, one grant, one consumed grant,
+and one accepted score revision. The only version-9 Function invocation was
+the pre-launch credential-free boot probe, so the physical launch produced no
+new eligible wire event or App Attest request and acceptance remains unproven.
+The rollback-only database adversarial boundary passed 15/15 at
 exact verifier commit `4fca597` with zero synthetic rows remaining, and the
 sequential Simulator profile-root teardown/remount boundary passed. These are
 bounded receipts, not release readiness: the scheduled two-account lifecycle,
@@ -483,7 +486,7 @@ so every pull request verifies both the static safety boundary and the runtime
 rollback receipt. A local or CI receipt does not count as hosted staging
 evidence. Even a hosted pass covers only the database adversarial boundary.
 Current-source create/claim route continuity is proven separately by the route
-boundaries retained in `cb21189`, while successful create/accept runtime and
+boundaries retained in `6ee1d22`, while successful create/accept runtime and
 hosted-effect evidence remains historical on then-selected `dd0ed68`; read-only
 invocation summaries support that bounded historical receipt. Neither receipt
 replaces replay of the historical consumed invitation when that token is
