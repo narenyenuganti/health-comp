@@ -1,8 +1,8 @@
 # HealthComp Production Beta Verification Checklist
 
-**Snapshot:** 2026-08-20 PDT
-**Selected application baseline:** `cb211896eb422909bff0561f3fb25b5d4942b06b`
-**Selected release artifact:** `cb211896eb422909bff0561f3fb25b5d4942b06b`;
+**Snapshot:** 2026-08-22 PDT
+**Selected application baseline:** `6ee1d2260cfcbe02a950630ef979076c317eca49`
+**Selected release artifact:** `6ee1d2260cfcbe02a950630ef979076c317eca49`;
 selected for the remaining staging and physical-device gates, but not yet
 cleared for production.
 **Release status:** Not production-ready
@@ -43,25 +43,29 @@ Status meanings:
 ## Automated matrix
 
 - **PASS:** Selected-application post-merge
-  [Backend CI run 32442953606](https://github.com/narenyenuganti/health-comp/actions/runs/32442953606)
-  completed successfully on selected application commit `cb21189`, including
+  [Backend CI run 32560065403](https://github.com/narenyenuganti/health-comp/actions/runs/32560065403)
+  completed successfully on selected application commit `6ee1d22`, including
   static backend boundaries, migrations, policies, Edge Functions, and the
   checked-in secret/privacy guards.
 - **PASS:** Selected-application post-merge
-  [iOS CI run 32442953541](https://github.com/narenyenuganti/health-comp/actions/runs/32442953541)
-  completed successfully on selected application commit `cb21189`, including
+  [iOS CI run 32560065372](https://github.com/narenyenuganti/health-comp/actions/runs/32560065372)
+  completed successfully on selected application commit `6ee1d22`, including
   deterministic Xcode generation, CompetitionCore Debug and Release tests, all
   iOS application-logic tests, unsigned Debug, Staging, and Release device
-  builds, and the clean-tree check. Exact PR #48 head runs
-  [32440813806](https://github.com/narenyenuganti/health-comp/actions/runs/32440813806)
-  and
-  [32440813807](https://github.com/narenyenuganti/health-comp/actions/runs/32440813807)
-  passed the same backend and iOS matrices before merge.
-- **PASS:** PRs #43, #45, #46, #47, and #48 serially integrated the startup-race
+  builds, and the clean-tree check. Exact PR #52 head passed the same backend
+  and iOS matrices before merge.
+- **PASS:** PRs #43, #45, #46, #47, #48, #51, and #52 serially integrated the startup-race
   recovery, hosted-worker boot repair, compatible App Attest verification graph,
-  terminal rejection recovery, and privacy-safe rejection-stage diagnostics.
+  terminal rejection recovery, privacy-safe rejection-stage diagnostics,
+  corrected assertion-signature verification, and client-side submission
+  serialization.
   Each exact PR head passed both required hosted workflows before its guarded
-  merge; `cb21189` is the resulting current integration boundary.
+  merge; `6ee1d22` is the resulting current integration boundary.
+- **PASS:** Earlier post-merge Backend run `32442953606` and iOS run
+  `32442953541` completed successfully on then-selected application commit
+  `cb21189`; its exact PR #48 head runs `32440813806` and `32440813807` passed
+  before merge. Those runs remain lineage evidence, not exact-current
+  automation evidence.
 - **PASS:** Earlier post-merge
   [Backend CI run 32231758224](https://github.com/narenyenuganti/health-comp/actions/runs/32231758224)
   and
@@ -71,7 +75,7 @@ Status meanings:
 - **PASS:** PR #29 selected the white 1024-pixel logo as the app icon, preserved
   all six supplied black and white source assets, and produced an opaque icon
   accepted by Xcode's asset compiler without changing its visible pixels. The
-  reviewed assets remain unchanged in selected merge commit `cb21189`; exact-head
+  reviewed assets remain unchanged in selected merge commit `6ee1d22`; exact-head
   Backend run `32099524516` and iOS run `32099524540` completed successfully.
 - **PASS:** Earlier selected-application iOS run `32023749062` completed
   successfully on pre-icon application commit `ae28c6a`, including
@@ -160,19 +164,20 @@ Status meanings:
   so this proves corrected authenticated transport and a completed startup
   authorization request under the retained same-bundle grant, not fresh native
   Sign in with Apple or active HealthKit behavior. Simulator receipts are not
-  physical-device evidence for `cb21189`.
-- **PASS:** On `2026-08-20` PDT, exact selected artifact `cb21189` was built for
+  physical-device evidence for `6ee1d22`.
+- **PASS:** On `2026-08-22` PDT, exact selected artifact `6ee1d22` was built for
   the paired physical iPhone with frozen package resolution, automatically
   signed by the paid team, and verified for strict code signing, unexpired
   provisioning, exact staging bundle/project configuration, Sign in with Apple,
   HealthKit background delivery, sandbox APNs, and development App Attest. The
-  exact bundle over-installed without launching, preserved the existing app
-  container file count and terminal outbox bytes, and left the hosted aggregate
-  unchanged. Exactly one later controlled launch started the app process; the
-  process was reacquired and stopped after the console connection dropped. No
-  second launch occurred. This proves the exact-current build/install/launch
-  boundary, not authenticated UI, fresh Sign in with Apple, active HealthKit,
-  or App Attest acceptance.
+  exact bundle over-installed without launching and preserved the stable
+  profile subtree: 17 entries, seven directories, three outbox entries, one
+  App Attest state file, three competition files, and two server cursors.
+  Exactly one later controlled launch started the app process and was stopped
+  without a second launch. This proves the exact-current build/install/launch
+  boundary and authenticated Sharing readback with a competition-refresh
+  warning, not fresh Sign in with Apple, active HealthKit, or App Attest
+  acceptance.
 
 ## Hosted staging
 
@@ -238,7 +243,7 @@ Status meanings:
   and returned to authenticated Sharing without a warning. No account identity,
   authorization payload, token, private screenshot, raw HealthKit datum, or
   exact Activity value is retained. This closes that artifact's Sign in with
-  Apple gate only; it does not prove fresh authentication on `cb21189` or create
+  Apple gate only; it does not prove fresh authentication on `6ee1d22` or create
   invitation, convergence, HealthKit activity, background-delivery,
   APNs-delivery, App Attest, deletion, or replacement-installation evidence.
 - **PASS:** Following fresh action-time approval, then-selected artifact
@@ -256,7 +261,7 @@ Status meanings:
 - **PASS:** Application source `dd0ed68` routes live invitation
   creation through `create-competition-invite` and claims through
   `claim-competition-invite`; those route boundaries remain present in selected
-  commit `cb21189`. The then-selected artifact completed both actions above,
+  commit `6ee1d22`. The then-selected artifact completed both actions above,
   and hosted state records their create/consume effects. At
   `2026-08-20T02:32:28Z`, read-only dashboard summaries reported exactly one
   invocation since the last deployment and no errors for each Function. No new
@@ -290,26 +295,26 @@ Status meanings:
   successful create/accept runtime receipt remains historical.
   Replay of the consumed replacement invitation when its token is available
   and the remaining lifecycle isolation cases remain pending.
-- **PASS:** Only `submit-score-revision` was advanced to staging version 7 for
-  selected source `cb21189`. Deployed source matched the reviewed runtime files,
+- **PASS:** Only `submit-score-revision` was advanced to active staging version 9 for
+  selected source `6ee1d22`. Deployed source matched the reviewed runtime files,
   and the credential-free probe retained the exact `400 invalid_request`
   fail-closed boundary. No migration, secret, other Function, or production
   resource changed during that deployment.
-- **PENDING:** The exact-current physical run began with 9 hosted App Attest
-  challenges, 0 consumed challenges, 0 registered keys, 0 grants, 0 consumed
-  grants, and 0 accepted score revisions. After the single controlled launch,
-  every count was unchanged, bounded hosted logs contained 0
-  `app-attest-challenge` and 0 `submit-score-revision` calls, and the local
-  outbox still contained only the prior terminal `appAttestRejectedTerminal`
-  entry with no retry. The unchanged HealthKit-derived wire snapshot correctly
-  produced no new eligible event. This is truthful no-attempt evidence, not an
-  App Attest pass or classified rejection.
+- **PENDING:** The exact-current physical run began with four hosted App Attest
+  challenges, one consumed challenge, one registered key, one grant, one
+  consumed grant, and one accepted score revision. Every count was unchanged
+  after the single controlled launch. The Function overview showed exactly one
+  version-9 invocation since deployment—the pre-launch credential-free boot
+  probe—so the physical launch made no `submit-score-revision` request. The
+  unchanged HealthKit-derived wire snapshot correctly produced no new eligible
+  event. This is truthful no-new-event evidence, not an App Attest pass or
+  classified rejection.
 
 ## Paid-team signing and installation
 
 - **PASS:** Xcode reads the paid Apple Developer team as an Admin team with one
   provisioned device.
-- **PASS:** Automatic signing produced selected application commit `cb21189`
+- **PASS:** Automatic signing produced selected application commit `6ee1d22`
   as a Staging device build for
   `23LUYD78QK.com.narenyenuganti.HealthComp.staging`.
 - **PASS:** The generated staging development profile expires
@@ -327,7 +332,7 @@ Status meanings:
   token, private screenshot, raw HealthKit datum, or exact Activity value. This proves
   prior-artifact signing, installation, icon rendering, launch, and Health
   authorization UI behavior; it does not prove those service paths on current
-  selected artifact `cb21189`, active-competition derived scores, or background
+  selected artifact `6ee1d22`, active-competition derived scores, or background
   delivery.
 - **PASS:** At `2026-08-19T08:18:49Z`, then-selected source commit `dd0ed68` was
   signed with the same paid-team profile and over-installed on the physical
@@ -344,7 +349,7 @@ Status meanings:
   read back at `2026-08-16T07:02:20Z`. No Apple account identity, token, or
   private screenshot was retained. This is historical capability evidence,
   not current-build Sign in with Apple evidence for selected release artifact
-  `cb21189`.
+  `6ee1d22`.
 - **PARTIAL:** After the restored session was signed out, fresh native Sign in
   with Apple authorization completed directly on the physical iPhone for
   prior selected artifact `9d19937`. At `2026-08-19T06:59Z`, iPhone Mirroring
@@ -353,7 +358,7 @@ Status meanings:
   historical supporting receipt. The later native authorization on then-
   selected artifact `dd0ed68` superseded the `9d19937` limitation at that time;
   neither historical receipt proves fresh authorization on current artifact
-  `cb21189`. No Apple account identity, authorization payload, token, or private
+  `6ee1d22`. No Apple account identity, authorization payload, token, or private
   screenshot is included.
 - **PASS:** In the later user-approved sequence ending at
   `2026-08-19T17:13:03Z`, then-selected artifact `dd0ed68` itself completed sign-out,
@@ -361,25 +366,25 @@ Status meanings:
   Apple, and returned to authenticated Sharing without a warning. The evidence
   retains no account identity, authorization payload, token, private
   screenshot, raw HealthKit datum, or exact Activity value.
-- **PASS:** On `2026-08-20` PDT, selected source commit `cb21189` was signed with
+- **PASS:** On `2026-08-22` PDT, selected source commit `6ee1d22` was signed with
   the paid-team profile, passed strict signature and capability validation, and
-  over-installed without erasing the existing profile-scoped app container; its
-  file count and terminal outbox bytes remained unchanged. Exactly one
+  over-installed without erasing the existing profile-scoped app container;
+  the stable profile-subtree counts remained unchanged. Exactly one
   controlled process launch occurred and the app was
-  stopped afterward. This exact-current receipt intentionally does not claim a
-  fresh native Apple authorization, authenticated UI readback, active HealthKit
-  score, or App Attest request.
+  stopped afterward. Authenticated Sharing was visible with a competition-
+  refresh warning. This exact-current receipt does not claim a fresh native
+  Apple authorization, active HealthKit score, or App Attest request.
 
 ## Physical-device gates
 
 | Gate | Status | Required evidence |
 | --- | --- | --- |
-| Signed staging launch | PASS | Selected artifact `cb21189` was signed with the paid-team profile, over-installed as `com.narenyenuganti.HealthComp.staging`, preserved its profile-scoped container and terminal outbox, launched exactly once, and was stopped afterward; authenticated UI readback is not claimed |
-| Sign in with Apple | PARTIAL | Fresh native Sign in with Apple passed on then-selected artifact `dd0ed68`; exact-current `cb21189` preserved the same-bundle container and launched, but did not repeat sign-out and native reauthorization |
-| HealthKit | PARTIAL | Grant, revoke, and re-enable startup paths completed historically, and all app-requested categories were granted on prior artifact `9d19937`; exact-current `cb21189` launched under the retained same-bundle grant but produced no changed privacy-safe wire snapshot. Active-competition derived score and background-observer behavior remain pending |
+| Signed staging launch | PASS | Selected artifact `6ee1d22` was signed with the paid-team profile, over-installed as `com.narenyenuganti.HealthComp.staging`, preserved its stable profile-subtree counts, reached authenticated Sharing with a competition-refresh warning, launched exactly once, and was stopped afterward |
+| Sign in with Apple | PARTIAL | Fresh native Sign in with Apple passed on then-selected artifact `dd0ed68`; exact-current `6ee1d22` preserved the authenticated session and reached Sharing, but did not repeat sign-out and native reauthorization |
+| HealthKit | PARTIAL | Grant, revoke, and re-enable startup paths completed historically, and all app-requested categories were granted on prior artifact `9d19937`; exact-current `6ee1d22` launched under the retained same-bundle grant but produced no changed privacy-safe wire snapshot. Active-competition derived score and background-observer behavior remain pending |
 | Background observer | PENDING | Durable journal write before completion callback |
 | APNs | PARTIAL | iOS authorization and one active sandbox installation were verified at `2026-08-16T07:04:49.701324Z`; foreground, background, and cold-route delivery remain pending |
-| App Attest | PENDING | Selected artifact `cb21189` and staging Function version 7 passed build/deployment guards, but the single physical launch generated no new eligible event, challenge, key, grant, or submission and therefore did not execute the App Attest service gate. Real registration, assertion acceptance or classified rejection, replay rejection, and replacement-installation flow remain pending |
+| App Attest | PENDING | Selected artifact `6ee1d22` and active staging Function version 9 passed build/deployment guards, but the single physical launch left the four-challenge / one-key / one-consumed-grant / one-accepted-score aggregate unchanged and generated no physical-launch Function invocation. It therefore did not execute a new App Attest service gate. A genuinely new eligible wire event, replay rejection, and replacement-installation flow remain pending |
 | Account deletion | PENDING | Reauthorization, server-confirmed completion, local wipe, no resurrection, and preserved Former competitor history |
 | Universal link | DEFERRED | User-approved private-beta deferral because no HTTPS invitation domain will be provided; custom-scheme fallback is not universal-link evidence |
 | Replacement installation | PENDING | Same-phone remove/reinstall, new installation and App Attest enrollment, retired-installation isolation, and no local-data resurrection |
@@ -391,7 +396,7 @@ Status meanings:
   controlled custom-scheme sharing, cold physical acceptance, single hosted
   consumption, two-participant membership, and scheduled-state convergence on
   the approved one-physical-iPhone-plus-Simulator topology. This remains
-  historical runtime evidence after selection advanced to `cb21189`; PR #34
+  historical runtime evidence after selection advanced to `6ee1d22`; PR #34
   continues to preserve terminal history and local journals without the former
   false warning.
 - **PARTIAL:** The replacement competition started on `2026-08-20` in its
