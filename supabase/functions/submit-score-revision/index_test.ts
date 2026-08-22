@@ -376,6 +376,174 @@ Deno.test("assertion renewal uses only registered public state and preserves dup
   assertEquals(calls[1].args.sign_count, 2);
 });
 
+Deno.test("legacy policy metadata is persisted as null and preserved across assertions", async () => {
+  const attestationCalls: RpcCall[] = [];
+  const attestationResponse = await submitScoreRevisionHandler(
+    request(),
+    dependencies({
+      verifyAttestation: () => ({
+        keyID,
+        publicKeyPEM,
+        receipt: new TextEncoder().encode("receipt"),
+        environment: "development",
+        validationCategory: null,
+        bundleVersion: null,
+      }),
+    }, attestationCalls),
+  );
+  assertEquals(attestationResponse.status, 200);
+  assertEquals(attestationCalls[1].args.validation_category, null);
+  assertEquals(attestationCalls[1].args.bundle_version, null);
+
+  const assertionProof = {
+    ...proof,
+    proofKind: "assertion",
+    object: Buffer.from("legacy-assertion").toString("base64"),
+  };
+  const legacyContext = {
+    ...context,
+    proofKind: "assertion",
+    registeredKey: {
+      publicKeyPEM,
+      previousSignCount: 1,
+      environment: "development",
+      validationCategory: null,
+      bundleVersion: null,
+    },
+  };
+  const assertionCalls: RpcCall[] = [];
+  const assertionResponse = await submitScoreRevisionHandler(
+    request({ version: 1, score, appAttest: assertionProof }),
+    dependencies({
+      createServiceClient: () =>
+        rpcClient((name, args) => {
+          assertionCalls.push({ client: "service", name, args });
+          return Promise.resolve({
+            data: name === "load_app_attest_context" ? legacyContext : grant,
+            error: null,
+          });
+        }),
+      verifyAssertion: () => ({
+        signCount: 2,
+        validationCategory: null,
+        bundleVersion: null,
+      }),
+    }, assertionCalls),
+  );
+  assertEquals(assertionResponse.status, 200);
+  assertEquals(assertionCalls[1].args.validation_category, null);
+  assertEquals(assertionCalls[1].args.bundle_version, null);
+});
+
+Deno.test("assertion policy-metadata format transitions fail before authorization", async () => {
+  const assertionProof = {
+    ...proof,
+    proofKind: "assertion",
+    object: Buffer.from("transition-assertion").toString("base64"),
+  };
+  for (
+    const [
+      registeredCategory,
+      registeredVersion,
+      verifiedCategory,
+      verifiedVersion,
+    ] of [
+      [null, null, 3, "1"],
+      [3, "1", null, null],
+    ] as const
+  ) {
+    let authorizationCalled = false;
+    const selectedContext = {
+      ...context,
+      proofKind: "assertion",
+      registeredKey: {
+        publicKeyPEM,
+        previousSignCount: 1,
+        environment: "development",
+        validationCategory: registeredCategory,
+        bundleVersion: registeredVersion,
+      },
+    };
+    const response = await submitScoreRevisionHandler(
+      request({ version: 1, score, appAttest: assertionProof }),
+      dependencies({
+        createServiceClient: () =>
+          rpcClient((name) => {
+            if (name === "authorize_app_attest_proof") {
+              authorizationCalled = true;
+            }
+            return Promise.resolve({ data: selectedContext, error: null });
+          }),
+        verifyAssertion: () => ({
+          signCount: 2,
+          validationCategory: verifiedCategory,
+          bundleVersion: verifiedVersion,
+        }),
+      }),
+    );
+    assertEquals(response.status, 401);
+    assertEquals(
+      (await response.json()).error.code,
+      "app_attest_proof_rejected",
+    );
+    assertEquals(authorizationCalled, false);
+  }
+});
+
+Deno.test("half-null registered policy metadata fails closed before verification", async () => {
+  const assertionProof = {
+    ...proof,
+    proofKind: "assertion",
+    object: Buffer.from("half-null-assertion").toString("base64"),
+  };
+  for (
+    const registeredKey of [
+      {
+        publicKeyPEM,
+        previousSignCount: 1,
+        environment: "development",
+        validationCategory: null,
+        bundleVersion: "1",
+      },
+      {
+        publicKeyPEM,
+        previousSignCount: 1,
+        environment: "development",
+        validationCategory: 3,
+        bundleVersion: null,
+      },
+    ]
+  ) {
+    let verified = false;
+    const response = await submitScoreRevisionHandler(
+      request({ version: 1, score, appAttest: assertionProof }),
+      dependencies({
+        createServiceClient: () =>
+          rpcClient(() =>
+            Promise.resolve({
+              data: {
+                ...context,
+                proofKind: "assertion",
+                registeredKey,
+              },
+              error: null,
+            })
+          ),
+        verifyAssertion: () => {
+          verified = true;
+          return {
+            signCount: 2,
+            validationCategory: null,
+            bundleVersion: null,
+          };
+        },
+      }),
+    );
+    assertEquals(response.status, 503);
+    assertEquals(verified, false);
+  }
+});
+
 Deno.test("submission is POST-only, bearer-authenticated, and configuration-fail-closed", async () => {
   const wrongMethod = await submitScoreRevisionHandler(
     request(undefined, "Bearer user-jwt", "GET"),

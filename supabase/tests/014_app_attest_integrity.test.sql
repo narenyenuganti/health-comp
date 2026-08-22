@@ -4,7 +4,7 @@ set local role postgres;
 create extension if not exists pgtap with schema extensions;
 set local search_path = extensions, public, pg_catalog;
 
-select plan(80);
+select plan(86);
 
 select has_table(
   'private', 'app_attest_challenges',
@@ -330,6 +330,43 @@ select
   '-----BEGIN PUBLIC KEY-----' || chr(10)
     || repeat('A', 120) || chr(10) || '-----END PUBLIC KEY-----';
 
+select is((
+  select array_agg(column_row.is_nullable::text order by column_row.column_name)
+  from information_schema.columns column_row
+  where column_row.table_schema = 'private'
+    and column_row.table_name = 'app_attest_keys'
+    and column_row.column_name in ('bundle_version', 'validation_category')
+), array['YES', 'YES']::text[],
+  'policy metadata columns are nullable only for pre-iOS-27 keys');
+select throws_ok(
+  $$
+    insert into private.app_attest_keys (
+      key_id, profile_id, installation_id, public_key_pem, receipt,
+      environment, validation_category, bundle_version
+    ) select
+      key_3, 'e2000000-0000-4000-8000-000000000003',
+      'e3100000-0000-4000-8000-000000000003', public_key,
+      decode('c3', 'hex'), 'production', null, '1'
+    from app_attest_values
+  $$,
+  '23514', null,
+  'a missing validation category cannot be paired with a bundle version'
+);
+select throws_ok(
+  $$
+    insert into private.app_attest_keys (
+      key_id, profile_id, installation_id, public_key_pem, receipt,
+      environment, validation_category, bundle_version
+    ) select
+      key_3, 'e2000000-0000-4000-8000-000000000003',
+      'e3100000-0000-4000-8000-000000000003', public_key,
+      decode('c3', 'hex'), 'production', 2, null
+    from app_attest_values
+  $$,
+  '23514', null,
+  'a validation category cannot be stored without a bundle version'
+);
+
 create temporary table app_attest_results (
   name text primary key,
   payload jsonb not null
@@ -521,7 +558,7 @@ select throws_ok(
       (select key_1 from app_attest_values),
       'attestation',
       (select public_key from app_attest_values),
-      'cmVjZWlwdC1h', 'production', 2, '1', 0,
+      'cmVjZWlwdC1h', 'production', null, null, 0,
       'e4000000-0000-4000-8000-000000000001',
       'e5000000-0000-4000-8000-000000000001',
       1, 1, '2026-08-15T12:00:00Z',
@@ -546,7 +583,7 @@ select lives_ok(
       (select key_1 from app_attest_values),
       'attestation',
       (select public_key from app_attest_values),
-      'cmVjZWlwdC1h', 'production', 2, '1', 0,
+      'cmVjZWlwdC1h', 'production', null, null, 0,
       'e4000000-0000-4000-8000-000000000001',
       'e5000000-0000-4000-8000-000000000001',
       1, 1, '2026-08-15T12:00:00Z',
@@ -570,12 +607,12 @@ select ok((
            'e3100000-0000-4000-8000-000000000001'::uuid
     and key_row.sign_count = 0
     and key_row.environment = 'production'
-    and key_row.validation_category = 2
-    and key_row.bundle_version = '1'
+    and key_row.validation_category is null
+    and key_row.bundle_version is null
     and convert_from(key_row.receipt, 'UTF8') = 'receipt-a'
   from private.app_attest_keys key_row
   where key_row.key_id = (select key_1 from app_attest_values)
-), 'first attestation stores only the private verifier key receipt and policy');
+), 'legacy attestation stores no invented policy metadata');
 select ok((
   select grant_row.profile_id =
            'e2000000-0000-4000-8000-000000000001'::uuid
@@ -612,7 +649,7 @@ select throws_ok(
       (select key_1 from app_attest_values),
       'attestation',
       (select public_key from app_attest_values),
-      'cmVjZWlwdC1h', 'production', 2, '1', 0,
+      'cmVjZWlwdC1h', 'production', null, null, 0,
       'e4000000-0000-4000-8000-000000000001',
       'e5000000-0000-4000-8000-000000000001',
       1, 1, '2026-08-15T12:00:00Z',
@@ -670,6 +707,12 @@ select is(
   '0',
   'the assertion verifier receives the exact previous counter'
 );
+select ok(
+  (select payload#>'{registeredKey,validationCategory}' = 'null'::jsonb
+     and payload#>'{registeredKey,bundleVersion}' = 'null'::jsonb
+   from app_attest_results where name = 'context_2'),
+  'legacy assertion context returns an explicit null policy-metadata pair'
+);
 select throws_ok(
   $$
     select public.authorize_app_attest_proof(
@@ -679,7 +722,7 @@ select throws_ok(
       'e3100000-0000-4000-8000-000000000001',
       (select payload_2 from app_attest_values),
       (select key_1 from app_attest_values),
-      'assertion', null, null, 'production', 2, '1', 0,
+      'assertion', null, null, 'production', null, null, 0,
       'e4000000-0000-4000-8000-000000000001',
       'e5000000-0000-4000-8000-000000000001',
       1, 1, '2026-08-15T12:00:00Z',
@@ -697,6 +740,25 @@ select ok((
     from app_attest_results where name = 'challenge_2'
   )
 ), 'a rejected counter leaves the challenge retryable');
+select throws_ok(
+  $$
+    select public.authorize_app_attest_proof(
+      'e1000000-0000-4000-8000-000000000001',
+      (select (payload->>'challengeID')::uuid
+       from app_attest_results where name = 'challenge_2'),
+      'e3100000-0000-4000-8000-000000000001',
+      (select payload_2 from app_attest_values),
+      (select key_1 from app_attest_values),
+      'assertion', null, null, 'production', 2, '1', 1,
+      'e4000000-0000-4000-8000-000000000001',
+      'e5000000-0000-4000-8000-000000000001',
+      1, 1, '2026-08-15T12:00:00Z',
+      (select wire_a_1 from app_attest_values)
+    )
+  $$,
+  'P0001', 'app_attest_assertion_rejected',
+  'a legacy key rejects an assertion that introduces policy metadata'
+);
 select lives_ok(
   $$
     insert into app_attest_results (name, payload)
@@ -707,7 +769,7 @@ select lives_ok(
       'e3100000-0000-4000-8000-000000000001',
       (select payload_2 from app_attest_values),
       (select key_1 from app_attest_values),
-      'assertion', null, null, 'production', 2, '1', 1,
+      'assertion', null, null, 'production', null, null, 1,
       'e4000000-0000-4000-8000-000000000001',
       'e5000000-0000-4000-8000-000000000001',
       1, 1, '2026-08-15T12:00:00Z',
@@ -826,7 +888,7 @@ select lives_ok(
       'e3100000-0000-4000-8000-000000000001',
       (select payload_2 from app_attest_values),
       (select key_1 from app_attest_values),
-      'assertion', null, null, 'production', 2, '1', 2,
+      'assertion', null, null, 'production', null, null, 2,
       'e4000000-0000-4000-8000-000000000001',
       'e5000000-0000-4000-8000-000000000001',
       1, 1, '2026-08-15T12:00:00Z',
@@ -905,6 +967,42 @@ select is((
     and installation_id = 'e3100000-0000-4000-8000-000000000001'
 ), (select key_2 from app_attest_values),
   'an installation retains exactly its newest attested key');
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"e1000000-0000-4000-8000-000000000001","role":"authenticated"}',
+  true
+);
+insert into app_attest_results (name, payload)
+select 'challenge_5', public.issue_app_attest_challenge(
+  'e3100000-0000-4000-8000-000000000001',
+  (select payload_2 from app_attest_values),
+  (select key_2 from app_attest_values)
+);
+select set_config('request.jwt.claims', '{"role":"service_role"}', true);
+select throws_ok(
+  $$
+    select public.authorize_app_attest_proof(
+      'e1000000-0000-4000-8000-000000000001',
+      (select (payload->>'challengeID')::uuid
+       from app_attest_results where name = 'challenge_5'),
+      'e3100000-0000-4000-8000-000000000001',
+      (select payload_2 from app_attest_values),
+      (select key_2 from app_attest_values),
+      'assertion', null, null, 'production', null, null, 1,
+      'e4000000-0000-4000-8000-000000000001',
+      'e5000000-0000-4000-8000-000000000002',
+      1, 2, '2026-08-15T13:00:00Z',
+      (select wire_a_2 from app_attest_values)
+    )
+  $$,
+  'P0001', 'app_attest_assertion_rejected',
+  'an extended key rejects an assertion that removes policy metadata'
+);
+delete from private.app_attest_challenges
+where id = (
+  select (payload->>'challengeID')::uuid
+  from app_attest_results where name = 'challenge_5'
+);
 select set_config(
   'request.jwt.claims',
   '{"sub":"e1000000-0000-4000-8000-000000000001","role":"authenticated"}',

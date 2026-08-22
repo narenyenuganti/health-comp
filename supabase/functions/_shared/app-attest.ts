@@ -57,8 +57,8 @@ export interface AppAttestClientDataV1 {
 }
 
 export interface AppAttestPolicyExtensions {
-  validationCategory: number;
-  bundleVersion: string;
+  validationCategory: number | null;
+  bundleVersion: string | null;
 }
 
 export interface VerifiedAppAttestAttestation
@@ -259,6 +259,14 @@ function validatePolicyExtensions(
   extensions: AppAttestPolicyExtensions,
   policy: NormalizedPolicy,
 ) {
+  if (
+    extensions.validationCategory === null && extensions.bundleVersion === null
+  ) return;
+  if (
+    extensions.validationCategory === null || extensions.bundleVersion === null
+  ) {
+    fail("invalid_extensions");
+  }
   if (!policy.allowedValidationCategories.has(extensions.validationCategory)) {
     fail("invalid_validation_category");
   }
@@ -583,7 +591,10 @@ function decodeAttestation(value: Uint8Array) {
   } catch (error) {
     fail("invalid_attestation_authenticator_data", error);
   }
-  if (trailing.length !== 2 || !(trailing[0] instanceof Map)) {
+  if (
+    (trailing.length !== 1 && trailing.length !== 2) ||
+    !(trailing[0] instanceof Map)
+  ) {
     fail("invalid_attestation_authenticator_data");
   }
   const cose = trailing[0] as Map<unknown, unknown>;
@@ -601,7 +612,9 @@ function decodeAttestation(value: Uint8Array) {
     certificateBytes: statement.x5c as Buffer[],
     receipt: statement.receipt as Buffer,
     cose,
-    extensions: decodePolicyExtensionObject(trailing[1]),
+    extensions: trailing.length === 2
+      ? decodePolicyExtensionObject(trailing[1])
+      : { validationCategory: null, bundleVersion: null },
   };
 }
 
@@ -686,8 +699,12 @@ function decodeAssertion(value: Uint8Array) {
   }
   const authData = object.authenticatorData as Buffer;
   const signature = object.signature as Buffer;
+  const legacy = authData.length === 37;
+  const extended = authData.length > 37 && authData.length <= 1_024;
   if (
-    authData.length < 38 || authData.length > 1_024 || authData[32] !== 0x40 ||
+    (!legacy && !extended) ||
+    (legacy && authData[32] !== 0x00) ||
+    (extended && authData[32] !== 0x80) ||
     signature.length < 64 || signature.length > 80
   ) {
     fail("invalid_assertion");
@@ -696,7 +713,9 @@ function decodeAssertion(value: Uint8Array) {
     authData,
     signature,
     signCount: authData.readUInt32BE(33),
-    extensions: decodeAppAttestPolicyExtensions(authData.subarray(37)),
+    extensions: extended
+      ? decodeAppAttestPolicyExtensions(authData.subarray(37))
+      : { validationCategory: null, bundleVersion: null },
   };
 }
 

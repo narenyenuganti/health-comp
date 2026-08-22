@@ -71,8 +71,8 @@ interface RegisteredKeyContext {
   publicKeyPEM: string;
   previousSignCount: number;
   environment: "development" | "production";
-  validationCategory: number;
-  bundleVersion: string;
+  validationCategory: number | null;
+  bundleVersion: string | null;
 }
 
 interface AppAttestContext {
@@ -399,19 +399,14 @@ function parseRegisteredKey(value: unknown): RegisteredKeyContext | null {
     Number(key.previousSignCount) < 0 ||
     Number(key.previousSignCount) > 0xffff_ffff ||
     (key.environment !== "development" && key.environment !== "production") ||
-    !Number.isInteger(key.validationCategory) ||
-    Number(key.validationCategory) < 1 ||
-    Number(key.validationCategory) > 10 ||
-    [7, 8, 9].includes(Number(key.validationCategory)) ||
-    typeof key.bundleVersion !== "string" ||
-    !/^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(key.bundleVersion)
+    !validPolicyMetadata(key.validationCategory, key.bundleVersion)
   ) return null;
   return {
     publicKeyPEM: key.publicKeyPEM,
     previousSignCount: key.previousSignCount as number,
     environment: key.environment,
-    validationCategory: key.validationCategory as number,
-    bundleVersion: key.bundleVersion,
+    validationCategory: key.validationCategory as number | null,
+    bundleVersion: key.bundleVersion as string | null,
   };
 }
 
@@ -573,6 +568,28 @@ function validationCategory(value: unknown): value is number {
     ![7, 8, 9].includes(Number(value));
 }
 
+function validPolicyMetadata(
+  category: unknown,
+  version: unknown,
+  policy?: AppAttestVerificationPolicy,
+): boolean {
+  if (category === null && version === null) return true;
+  return validationCategory(category) &&
+    typeof version === "string" &&
+    /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/.test(version) &&
+    (policy === undefined ||
+      policy.allowedValidationCategories.includes(category) &&
+        policy.allowedBundleVersions.includes(version));
+}
+
+function samePolicyMetadata(
+  verified: VerifiedAppAttestAssertion,
+  registered: RegisteredKeyContext,
+): boolean {
+  return verified.validationCategory === registered.validationCategory &&
+    verified.bundleVersion === registered.bundleVersion;
+}
+
 function validAttestationResult(
   value: VerifiedAppAttestAttestation,
   expectedKeyID: string,
@@ -586,10 +603,11 @@ function validAttestationResult(
     value.publicKeyPEM.includes("-----END PUBLIC KEY-----") &&
     value.receipt instanceof Uint8Array && value.receipt.length >= 1 &&
     value.receipt.length <= 65_536 &&
-    validationCategory(value.validationCategory) &&
-    policy.allowedValidationCategories.includes(value.validationCategory) &&
-    typeof value.bundleVersion === "string" &&
-    policy.allowedBundleVersions.includes(value.bundleVersion);
+    validPolicyMetadata(
+      value.validationCategory,
+      value.bundleVersion,
+      policy,
+    );
 }
 
 function validAssertionResult(
@@ -600,10 +618,11 @@ function validAssertionResult(
   return Number.isInteger(value.signCount) &&
     value.signCount > registeredKey.previousSignCount &&
     value.signCount <= 0xffff_ffff &&
-    validationCategory(value.validationCategory) &&
-    policy.allowedValidationCategories.includes(value.validationCategory) &&
-    typeof value.bundleVersion === "string" &&
-    policy.allowedBundleVersions.includes(value.bundleVersion);
+    validPolicyMetadata(
+      value.validationCategory,
+      value.bundleVersion,
+      policy,
+    );
 }
 
 export function appAttestPolicyFromEnvironment(
@@ -751,8 +770,8 @@ export async function submitScoreRevisionHandler(
   let publicKeyPEM: string | null = null;
   let receiptBase64: string | null = null;
   let verifiedEnvironment: "development" | "production";
-  let verifiedCategory: number;
-  let verifiedBundleVersion: string;
+  let verifiedCategory: number | null;
+  let verifiedBundleVersion: string | null;
   let signCount: number;
   try {
     if (context.proofKind === "attestation") {
@@ -786,6 +805,9 @@ export async function submitScoreRevisionHandler(
       });
       if (!validAssertionResult(verified, registeredKey, policy)) {
         return temporarilyUnavailable();
+      }
+      if (!samePolicyMetadata(verified, registeredKey)) {
+        return proofRejected();
       }
       verifiedEnvironment = registeredKey.environment;
       verifiedCategory = verified.validationCategory;
