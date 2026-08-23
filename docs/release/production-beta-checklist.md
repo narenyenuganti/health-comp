@@ -449,10 +449,13 @@ Status meanings:
   pending.
 - **BLOCKED:** Hosted backup/restore rehearsal requires a backup-capable plan
   and an approved disposable restore target.
-- **BLOCKED:** No production Supabase project has been approved. The current
-  read-only project inventory still contains only healthy staging plus an
-  unrelated inactive project; the runbook explicitly forbids treating that
-  inactive project as production without a separate user decision.
+- **PARTIAL:** A read-only inventory ending at `2026-08-23T06:06:35Z` found a
+  dedicated `healthcomp-production` project active and healthy in the same
+  organization as staging. It has zero deployed Edge Functions and zero
+  configured secret names. No repository link, API-key read, database access,
+  provider inspection, migration inspection, deployment, secret change, or
+  production mutation occurred. Production configuration, promotion, backup
+  policy, and release evidence remain pending.
 
 ## Completion rule
 

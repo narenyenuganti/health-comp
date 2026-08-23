@@ -72,12 +72,19 @@ the scheduled two-account lifecycle, consumed-token replay, remaining lifecycle
 isolation, physical service gates, deletion, and restore rehearsal are still
 incomplete.
 
-The read-only 2026-08-20 project inventory reconfirmed that the inactive project
-named “naren-polymath's Project”
-(vleyumieoroaipedqpsp) is not production merely because it is the other
-project in the organization. Renaming/reactivating it or creating a fresh
-healthcomp-production project is a material decision. Stop and obtain explicit
-approval before either action.
+The read-only project inventory ending at `2026-08-23T06:06:35Z` found the
+dedicated `healthcomp-production` project active and healthy in the same
+organization as staging. Read-only Function and secret-name listings returned
+zero deployed Edge Functions and zero configured secret names. The repository
+remained unlinked, and the audit did not request API keys, a database password,
+secret values, migration history, provider settings, or private rows. The older
+inactive project named “naren-polymath's Project” remains unrelated and must
+not be renamed, reactivated, or treated as HealthComp production.
+
+Project existence is not promotion evidence. Production remains unconfigured
+and must not receive migrations, Functions, schedules, secrets, providers, or
+client traffic until the checked promotion gates and fresh action-time approval
+for those mutations are satisfied.
 
 HealthComp uses local development plus two hosted projects. It does not require
 a third hosted development project.

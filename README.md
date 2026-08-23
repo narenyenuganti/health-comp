@@ -8,9 +8,10 @@ privacy-preserving account deletion.
 
 This source is not yet production-ready. Hosted staging is deployed and has
 partial two-account, adversarial, and physical-device readback, but the complete
-lifecycle and physical-service matrix has not passed. No production Supabase
-project has been approved. No HTTPS invitation domain has been selected, so
-universal links are explicitly deferred.
+lifecycle and physical-service matrix has not passed. A dedicated production
+Supabase project now exists, but it has no deployed Functions or configured
+secret names and has not been promoted. No HTTPS invitation domain has been
+selected, so universal links are explicitly deferred.
 
 ## Current architecture
 
