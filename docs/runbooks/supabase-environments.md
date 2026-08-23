@@ -72,7 +72,13 @@ Sign in with Apple after server-confirmed sign-out, moved from zero local
 profile roots to exactly one Account B root, showed `No Competition`, and
 returned only HTTP 200/204 status markers in the bounded readback. Its preserved
 four-envelope local history journal still produced the truthful historical-
-activity refresh warning. These are bounded receipts, not release readiness:
+activity refresh warning. A later exact-current return from Account B to the
+earlier Account A again completed server-confirmed teardown to zero roots,
+performed exactly one native HealthComp Apple authorization under human
+credential entry, and mounted exactly one Account A root with a distinct
+five-envelope preserved-history journal. That window also returned only HTTP
+200/204 status markers, but retained `No Competition` and the same refresh
+warning. These are bounded receipts, not release readiness:
 the scheduled two-account lifecycle, consumed-token replay, remaining lifecycle
 isolation, physical service gates, deletion, and restore rehearsal are still
 incomplete.

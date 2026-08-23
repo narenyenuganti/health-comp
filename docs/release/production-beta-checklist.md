@@ -1,6 +1,6 @@
 # HealthComp Production Beta Verification Checklist
 
-**Snapshot:** 2026-08-22 PDT
+**Snapshot:** 2026-08-23 PDT
 **Selected application baseline:** `6ee1d2260cfcbe02a950630ef979076c317eca49`
 **Selected release artifact:** `6ee1d2260cfcbe02a950630ef979076c317eca49`;
 selected for the remaining staging and physical-device gates, but not yet
@@ -316,10 +316,24 @@ Status meanings:
   retained. The iOS 18.4
   Simulator transport-cache recovery touched only rebuildable alternative-
   service rows and did not alter profile data.
+- **PASS:** In an exact-current follow-up ending at `2026-08-23T08:36:05Z`,
+  selected source `6ee1d22` completed Account B's server-confirmed sign-out,
+  reached zero profile roots and files, and then authenticated the earlier
+  Account A through exactly one native HealthComp Sign in with Apple attempt.
+  Account A mounted one root with seven files and a preserved five-envelope
+  history journal; no second root was present. The bounded log aggregate
+  contained only HTTP 200/204 markers and zero non-2xx, connection-lost,
+  `-7026`, or missing-entitlement markers. The root remained after app
+  termination. The receipt SHA-256 is
+  `7bdb11a5e30aa71ea1bb8710d3ef0bc5b5bfdd91d61b42bcd184c694fe59e8fe`.
+  The UI still showed `No Competition` and the historical-refresh warning, so
+  this is exact-current sequential profile isolation rather than completed
+  two-account lifecycle convergence.
 - **PARTIAL:** The database portion of the adversarial participant-isolation
   and tamper matrix and current-source create/claim route continuity are
-  proven, and the sequential Simulator profile-root boundary now passes. The
-  successful create/accept runtime receipt remains historical.
+  proven, and both directions of the exact-current sequential Simulator
+  profile-root boundary now pass. The successful create/accept runtime receipt
+  remains historical.
   Replay of the consumed replacement invitation when its token is available
   and the remaining lifecycle isolation cases remain pending.
 - **PASS:** Only `submit-score-revision` was advanced to active staging version 9 for
