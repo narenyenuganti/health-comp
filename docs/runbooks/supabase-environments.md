@@ -6,7 +6,7 @@ required future work.
 
 ## Current environment inventory
 
-Current authenticated environment evidence through 2026-08-22 PDT:
+Current authenticated environment evidence through 2026-08-23 PDT:
 
 | Logical environment | Supabase target | Status | App configuration |
 | --- | --- | --- | --- |
@@ -45,7 +45,7 @@ The 2026-08-15 staging promotion and readback established all of the following:
 
 Staging has supported partial two-account and physical-device verification on
 then-selected artifacts. Selected artifact `6ee1d22` has exact-current CI,
-signed-build, state-preserving over-install, and four separately approved
+signed-build, state-preserving over-install, and five separately approved
 single-launch physical receipts. The first showed authenticated Sharing with a
 historical-activity refresh warning; the second completed hosted reconciliation
 without producing a score revision; the third cold-launched to signed-out
@@ -56,9 +56,14 @@ window, `app-attest-challenge` and `submit-score-revision` both remained at zero
 new invocations and their since-deploy counts remained four and one. Local
 profile-scoped counts were unchanged after both the third and fourth windows.
 The third launch therefore produced no eligible wire event or App Attest
-attempt; the fourth did not establish a session. Fresh native physical Sign in
-with Apple with the user directly present for any non-mirrored system prompt is
-still a prerequisite. App Attest acceptance remains unproven.
+attempt; the fourth did not establish a session. The fifth launched once at
+`2026-08-23T07:08:39Z`, initiated exactly one native Apple authorization action
+at `07:09:19.909Z`, and received direct user confirmation of sign-in after the
+system prompt. A privacy-safe post-confirmation readback found one profile-
+scoped root with ten aggregate files. The mirror became privacy-black and then
+interrupted, so no authenticated-screen screenshot or hosted auth-log receipt
+was retained. This passes the exact-current physical native-authorization gate,
+not warning-free refresh or App Attest acceptance.
 The rollback-only database adversarial boundary passed 15/15 at
 exact verifier commit `4fca597` with zero synthetic rows remaining, and the
 sequential Simulator profile-root teardown/remount boundary passed. On selected

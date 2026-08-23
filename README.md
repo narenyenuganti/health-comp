@@ -45,8 +45,8 @@ reversible fingerprints never leave the device.
 | Environment | Current truth |
 | --- | --- |
 | Development | Disposable local Supabase stack for backend tests plus deterministic DEBUG Test Labs for iOS. The live app requires an HTTPS Supabase URL. |
-| Staging | healthcomp-staging, ref xhfdfdrtxwptrwhvvlhg, has 14 migrations through 20260811000900, nine Functions, configured providers, secret names, schedules, and a 15/15 rollback-only adversarial receipt. On 2026-08-22 PDT, only `submit-score-revision` was advanced to active version 9 from selected source `6ee1d22`; its credential-free boot probe returned the expected `400 invalid_request`. Exact-current native Account B authentication and sequential Simulator profile-root isolation pass, but a preserved-history refresh warning remains. The latest exact-current physical sequence initiated one native Apple-auth transition but returned to Welcome without a session; fresh physical native Sign in with Apple with the user directly present for any non-mirrored prompt remains the prerequisite. App Attest acceptance remains unproven, and two-account lifecycle, backup/restore, and required physical-service evidence remain incomplete. |
-| Production | No project has been approved. Do not infer that the inactive generic project is production. |
+| Staging | healthcomp-staging, ref xhfdfdrtxwptrwhvvlhg, has 14 migrations through 20260811000900, nine Functions, configured providers, secret names, schedules, and a 15/15 rollback-only adversarial receipt. On 2026-08-22 PDT, only `submit-score-revision` was advanced to active version 9 from selected source `6ee1d22`; its credential-free boot probe returned the expected `400 invalid_request`. Exact-current native Account B authentication and sequential Simulator profile-root isolation pass, but a preserved-history refresh warning remains. On 2026-08-23, exactly one fresh physical native Sign in with Apple action completed on selected source `6ee1d22`; the user directly confirmed sign-in, and a privacy-safe post-confirmation readback found one profile-scoped root. The mirror did not expose a post-authenticated screen, so warning-free refresh remains unproven. App Attest acceptance, two-account lifecycle, backup/restore, and the other required physical-service evidence remain incomplete. |
+| Production | The dedicated `healthcomp-production` project exists and is healthy, but has zero deployed Edge Functions, zero configured secret names, no repository link, and no approved promotion. The unrelated inactive generic project is not HealthComp production. |
 
 See the [environment and promotion runbook](docs/runbooks/supabase-environments.md)
 before any hosted change.
@@ -205,8 +205,9 @@ Before a private beta of up to 25 people, the rollout still requires:
 4. two real accounts completing invitation, seven-day score/revision,
    finalization, history, notification, and deletion scenarios in staging;
 5. adversarial participant-isolation and replay/idempotency checks;
-6. physical-device Sign in with Apple, HealthKit, background delivery, APNs,
-   App Attest, and account-deletion evidence;
+6. remaining physical-device HealthKit, background delivery, APNs, App Attest,
+   and account-deletion evidence; exact-current native Sign in with Apple now
+   has a bounded user-confirmed physical receipt;
 7. a successful staging restore rehearsal with matching anonymized counts and
    aggregate result hash.
 

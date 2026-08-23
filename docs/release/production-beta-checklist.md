@@ -407,13 +407,23 @@ Status meanings:
   stopped afterward. Authenticated Sharing was visible with a competition-
   refresh warning. This exact-current receipt does not claim a fresh native
   Apple authorization, active HealthKit score, or App Attest request.
+- **PASS:** In a separately approved exact-current physical sequence on
+  `2026-08-23`, selected source `6ee1d22` launched exactly once at
+  `07:08:39Z`, initiated exactly one native Sign in with Apple action at
+  `07:09:19.909Z`, and the user directly confirmed sign-in after handling the
+  system prompt. A privacy-safe post-confirmation readback found one profile-
+  scoped root with ten aggregate files; it retained no identity, token, file
+  content, profile identifier, HealthKit value, score, or screenshot. The
+  mirror became privacy-black and interrupted, so this passes native physical
+  authorization but not warning-free refresh. Receipt SHA-256:
+  `f6decf0e161e306ab6f340db88e0c0edf50e3fe6fa297e1a3a05d1456aed0441`.
 
 ## Physical-device gates
 
 | Gate | Status | Required evidence |
 | --- | --- | --- |
 | Signed staging launch | PASS | Selected artifact `6ee1d22` was signed with the paid-team profile, over-installed as `com.narenyenuganti.HealthComp.staging`, preserved its stable profile-subtree counts, and completed two separately approved bounded launches with no in-window retry. The first reached authenticated Sharing with a competition-refresh warning; the second lacked an iPhone Mirroring window and is classified only by process, local, and hosted evidence |
-| Sign in with Apple | PARTIAL | Fresh native Sign in with Apple passed on then-selected artifact `dd0ed68`; exact-current `6ee1d22` preserved the authenticated session and reached Sharing, but did not repeat sign-out and native reauthorization |
+| Sign in with Apple | PASS | Selected artifact `6ee1d22` launched once at `2026-08-23T07:08:39Z`, initiated exactly one native authorization action at `07:09:19.909Z`, and the user directly confirmed sign-in after handling the system prompt. A privacy-safe post-confirmation readback found one profile-scoped root with ten aggregate files. The mirror did not provide an authenticated-screen screenshot or hosted auth-log receipt, so warning-free refresh remains a separate partial gate |
 | HealthKit | PARTIAL | Grant, revoke, and re-enable startup paths completed historically, and all app-requested categories were granted on prior artifact `9d19937`; exact-current `6ee1d22` launched under the retained same-bundle grant but produced no new score revision. Hosted logs prove remote reconciliation succeeded, but the retained evidence cannot distinguish an unchanged privacy-safe wire from a HealthKit summary-read failure. Active-competition derived score and background-observer behavior remain pending |
 | Background observer | PENDING | Durable journal write before completion callback |
 | APNs | PARTIAL | iOS authorization and one active sandbox installation were verified at `2026-08-16T07:04:49.701324Z`; foreground, background, and cold-route delivery remain pending |
