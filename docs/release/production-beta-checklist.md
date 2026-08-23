@@ -5,6 +5,9 @@
 **Selected release artifact:** `6ee1d2260cfcbe02a950630ef979076c317eca49`;
 selected for the remaining staging and physical-device gates, but not yet
 cleared for production.
+**Current integrated application candidate:**
+`0e08e2a0dc9f7ccfbcaa1f2c87df10ec184da684`; merged and green, but not yet
+selected because its authenticated staging runtime receipt is inconclusive.
 **Release status:** Not production-ready
 
 Status meanings:
@@ -60,16 +63,19 @@ Status meanings:
   corrected assertion-signature verification, and client-side submission
   serialization.
   Each exact PR head passed both required hosted workflows before its guarded
-  merge; `6ee1d22` is the resulting current integration boundary.
-- **PARTIAL:** PR #62 application-source commit `1a2ddb5` separates a typed
+  merge; `6ee1d22` remains the selected release baseline for the incomplete
+  physical gates.
+- **PASS:** PR #62 application-source commit `1a2ddb5` separates a typed
   on-device Activity-read failure from otherwise valid remote competition
   materialization. Focused runtime/client, HealthKit-provider, and presentation
   tests passed 91/91, including successful cursor persistence, visible remote
   state, a scoped Activity warning, and zero score submission after the failed
-  read. Exact-source Backend run `32634210205` and iOS run `32634210213` passed.
-  The candidate still requires guarded integration, post-merge CI, and an
-  exact-current staging runtime receipt before it can replace selected artifact
-  `6ee1d22`; this does not complete physical HealthKit or App Attest evidence.
+  read. Exact-source Backend run `32634210205` and iOS run `32634210213`, final
+  PR-head Backend run `32635614190` and iOS run `32635614199`, and post-merge
+  Backend run `32636617904` and iOS run `32636617875` all passed. PR #62 merged
+  as current-main candidate `0e08e2a`. Integration is complete, but its staging
+  runtime gate remains partial; this does not complete physical HealthKit or
+  App Attest evidence or replace selected artifact `6ee1d22`.
 - **PASS:** Earlier post-merge Backend run `32442953606` and iOS run
   `32442953541` completed successfully on then-selected application commit
   `cb21189`; its exact PR #48 head runs `32440813806` and `32440813807` passed
@@ -166,6 +172,23 @@ Status meanings:
   refresh. The preserved profile root remained unmounted, maintaining the
   fail-closed cross-profile boundary. This does not prove authenticated staging
   transport or Account B profile mount.
+- **PARTIAL:** Current-main candidate `0e08e2a` was built as the exact staging
+  Simulator bundle with frozen package resolution and the expected simulated
+  Sign in with Apple, HealthKit/background-delivery, sandbox APNs, development
+  App Attest, bundle, and public configuration boundaries. Its state-preserving
+  over-install retained one authenticated profile root and seven profile files;
+  the installed executable matched SHA-256
+  `4308ed164cabe956eaa785038700c16968715cf1516e6e86be5492c622865df7`.
+  Following explicit approval, one Simulator launch action ran at
+  `2026-08-23T18:11:40Z` with no retry. Accessibility exposed only a protected/
+  blank surface, the app was already stopped at settled readback, and neither
+  attributable transport nor diagnostic lines were available. The profile
+  remained one root and seven files with one primary competition journal and
+  two files in its server-cursor directory; no profile file changed after the
+  launch timestamp. Receipt SHA-256:
+  `cc8c28a12bbf1b2b5773c3e479972874de61cb9b74e67b3e13466faef035d6e4`.
+  This proves exact-candidate build/install and authenticated local preservation,
+  not successful runtime execution of the Activity-isolation fix.
 - **PASS:** The integrated PR #26 recovery change
   pins Supabase Swift 2.55.1 and passed 90/90 focused recovery tests, 459/459
   canonical app tests, 241/241 CompetitionCore tests in both Debug and
@@ -470,9 +493,12 @@ Status meanings:
   hosted active competition and reported a generic activity-refresh warning.
   Read-only diagnosis localized that mismatch to a typed on-device Activity
   read aborting the whole per-competition result after successful remote
-  materialization. PR #62 has automated proof of the narrower boundary, but a
-  signed staging build must still show the remote competition plus the truthful
-  Activity-specific warning before this runtime gate advances.
+  materialization. PR #62 is integrated as `0e08e2a` with complete focused,
+  exact-head, and post-merge automation. Its first exact-candidate Simulator
+  launch action retained the authenticated profile but yielded only a protected/
+  blank surface and no attributable transport evidence. A fresh approved launch
+  must still show the remote competition plus the truthful Activity-specific
+  warning before this runtime gate advances.
 - **PARTIAL:** The replacement competition started on `2026-08-20` in its
   frozen `America/Los_Angeles` time zone. The exact-current physical launch did
   not generate a changed Day 1 wire snapshot or accepted score. Day 1
