@@ -6,12 +6,14 @@ rehearsed and its non-identifying integrity receipt has been compared.
 
 ## Current evidence status
 
-As of 2026-08-15:
+As of the read-only inventory ending at `2026-08-23T06:06:35Z`:
 
 - the authenticated healthcomp-staging backup page reports that the project is
   on the Free Plan and that project backups are not included; no restorable
   scheduled backup or PITR window is available;
-- no HealthComp production project has been approved;
+- the dedicated `healthcomp-production` project exists and is active and
+  healthy, but its backup availability, retention, PITR, RPO, and RTO have not
+  been inspected or approved;
 - no staging restore rehearsal has run;
 - no recovery point objective or recovery time objective has been measured;
 - no restore evidence may be reported as passing.
