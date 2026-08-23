@@ -61,6 +61,15 @@ Status meanings:
   serialization.
   Each exact PR head passed both required hosted workflows before its guarded
   merge; `6ee1d22` is the resulting current integration boundary.
+- **PARTIAL:** PR #62 application-source commit `1a2ddb5` separates a typed
+  on-device Activity-read failure from otherwise valid remote competition
+  materialization. Focused runtime/client, HealthKit-provider, and presentation
+  tests passed 91/91, including successful cursor persistence, visible remote
+  state, a scoped Activity warning, and zero score submission after the failed
+  read. Exact-source Backend run `32634210205` and iOS run `32634210213` passed.
+  The candidate still requires guarded integration, post-merge CI, and an
+  exact-current staging runtime receipt before it can replace selected artifact
+  `6ee1d22`; this does not complete physical HealthKit or App Attest evidence.
 - **PASS:** Earlier post-merge Backend run `32442953606` and iOS run
   `32442953541` completed successfully on then-selected application commit
   `cb21189`; its exact PR #48 head runs `32440813806` and `32440813807` passed
@@ -456,6 +465,14 @@ Status meanings:
   historical runtime evidence after selection advanced to `6ee1d22`; PR #34
   continues to preserve terminal history and local journals without the former
   false warning.
+- **PARTIAL:** The exact-current Account A readback proved hosted 200/204
+  transport and a single isolated profile root, while the UI omitted the valid
+  hosted active competition and reported a generic activity-refresh warning.
+  Read-only diagnosis localized that mismatch to a typed on-device Activity
+  read aborting the whole per-competition result after successful remote
+  materialization. PR #62 has automated proof of the narrower boundary, but a
+  signed staging build must still show the remote competition plus the truthful
+  Activity-specific warning before this runtime gate advances.
 - **PARTIAL:** The replacement competition started on `2026-08-20` in its
   frozen `America/Los_Angeles` time zone. The exact-current physical launch did
   not generate a changed Day 1 wire snapshot or accepted score. Day 1
