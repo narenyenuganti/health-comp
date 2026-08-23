@@ -53,10 +53,16 @@ the pre-launch credential-free boot probe, so the physical launch produced no
 new eligible wire event or App Attest request and acceptance remains unproven.
 The rollback-only database adversarial boundary passed 15/15 at
 exact verifier commit `4fca597` with zero synthetic rows remaining, and the
-sequential Simulator profile-root teardown/remount boundary passed. These are
-bounded receipts, not release readiness: the scheduled two-account lifecycle,
-consumed-token replay, remaining lifecycle isolation, physical service gates,
-deletion, and restore rehearsal are still incomplete.
+sequential Simulator profile-root teardown/remount boundary passed. On selected
+source `6ee1d22`, the exact-current Account B follow-up also completed native
+Sign in with Apple after server-confirmed sign-out, moved from zero local
+profile roots to exactly one Account B root, showed `No Competition`, and
+returned only HTTP 200/204 status markers in the bounded readback. Its preserved
+four-envelope local history journal still produced the truthful historical-
+activity refresh warning. These are bounded receipts, not release readiness:
+the scheduled two-account lifecycle, consumed-token replay, remaining lifecycle
+isolation, physical service gates, deletion, and restore rehearsal are still
+incomplete.
 
 The read-only 2026-08-20 project inventory reconfirmed that the inactive project
 named “naren-polymath's Project”
