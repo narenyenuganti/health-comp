@@ -27,6 +27,8 @@ represented as universal-link evidence.
 | Supabase transport | On pre-recovery transport baseline `21af9a7`, the focused transport/authentication/profile-isolation/API gate passed 52 tests and canonical local `HealthCompTests` passed 457/457; the integrated recovery matrix later passed the expanded 459-test canonical suite; CodeRabbit reported no findings | PASS |
 | Historical signed Simulator staging | On reviewed PR #26 source whose application tree merged as pre-icon commit `ae28c6a`, existing profile-scoped data and authentication survived reinstall; authenticated staging requests returned HTTP 200; no `-1005` or missing-HealthKit-entitlement error appeared. This is historical transport evidence, not exact-current Simulator runtime | PASS |
 | Historical Simulator preparation | At `2026-08-19T18:36:33Z`, then-selected application source `dd0ed68` was rebuilt from docs-only main `a45c325` as the Staging Simulator bundle. Offline inspection confirmed the staging bundle ID, expected public project URL, publishable-key shape, blank invitation host, custom-scheme fallback, and Xcode-generated simulated sandbox/development capability values without exposing credentials. The bundle over-installed on the dedicated tester, exactly matched the verified build, preserved all 19 pre-existing data-container files, remained stopped, and was shut down without contacting hosted staging. Its 1.5 GiB DerivedData was removed. This is historical preparation, not exact-current runtime evidence | PASS |
+| Exact-current Simulator preparation | At `2026-08-22T23:48:42Z`, selected application source `6ee1d22` was present as `com.narenyenuganti.HealthComp.staging` on the dedicated iOS 18.4 tester. The installed executable exactly matched the retained 44 MiB build at SHA-256 `b8a8d4b1863326e553cc83a8eb49417b4476e718b0f7b37ffe2df03f6c9ceb70`; the state-preserving data container contained 23 files. Simulator Settings showed an active Apple Account session, but no identity was retained and the display alone does not prove the HealthComp Sign in with Apple profile. The app remained stopped and the worktree was clean after restoring an incidental Xcode resolved-file rewrite. This proves exact-current offline preparation, not authenticated staging runtime | PASS |
+| Exact-current Simulator launch | Following explicit approval, exact staging bundle `com.narenyenuganti.HealthComp.staging` launched once from `2026-08-22T23:55:00Z` through `23:55:30Z`, settled on the clean welcome screen, and was terminated. Sign in with Apple was not pressed; no in-app action occurred. The data-container count remained 23 files and the post-window process count was zero. The bounded log contained two occurrences of Supabase Swift v2.55.1's advisory initial-session warning and two successful network-activity completion markers, but no retained HTTP status marker. Pinned-source inspection confirms that warning is emitted by the SDK's default initial-session path and does not itself prove refresh failed. The receipt cannot distinguish an already-absent session from one removed during terminal refresh. The preserved profile root remained unmounted, maintaining fail-closed cross-profile isolation. This is not authenticated staging transport or Account B profile-mount evidence | PARTIAL |
 | Realtime recovery integration | PR #26 pins Supabase Swift 2.55.1, passed the 90-test focused recovery matrix and 459/459 canonical app tests, passed 241/241 CompetitionCore tests in both Debug and Release, built unsigned Debug/Staging/Release device configurations, generated the project deterministically, and received a zero-finding CodeRabbit source review. A signed Staging Simulator over-install left the data-container file count unchanged at 19, restored the authenticated Sharing UI, and produced 42 process-local HTTP-200 markers with zero `-1005`, HealthKit-entitlement, or crash markers from `2026-08-17 02:46:15.068` through `02:49:22.348` PDT. Early hosted attempts exposed and closed cross-Xcode resolved-file omissions, then exposed the cancellation actor-hop race. The strengthened race passed 100/100 locally and exact-head hosted run `32020898831` passed the complete matrix. PR #26 was guarded-squash-merged as pre-icon application commit `ae28c6a`, whose tree is identical to the reviewed PR head. PR #29 later added only the reviewed app-icon assets and selected `9d19937`. No invitation action occurred | PASS |
 | Staging database | Fourteen ordered, identical local/remote migrations through `20260811000900`; `2026-08-16T05:34:16Z` dry run returned `up to date`; CLI unlinked afterward; hosted lint clean | PASS |
 | Hosted finalizer | Exact private `healthcomp-finalize-due` job; first corrected run succeeded at 2026-08-16 04:00 UTC | PASS |
@@ -97,19 +99,23 @@ acceptance, deletion, or the same-phone replacement lifecycle.
 
 ## Immediate continuation
 
-1. Wait for the next competition day, then obtain fresh approval for exactly
+1. Obtain separate approval for native Sign in with Apple using Account B on
+   the dedicated Simulator, then capture one privacy-safe authenticated
+   profile/transport readback. Do not create, accept, replay, or delete a
+   staging object.
+2. Wait for the next competition day, then obtain fresh approval for exactly
    one additional physical launch with iPhone Mirroring open. Read back only
    privacy-safe App Attest and score receipts; do not infer eligibility from an
    unrelated Health datum.
-2. Repeat exact-current native Sign in with Apple, authenticated UI, active
+3. Repeat exact-current native Sign in with Apple, authenticated UI, active
    HealthKit, background observer, and APNs foreground/background/cold-route
    evidence on `6ee1d22`.
-3. Continue the adversarial matrix above the proven database and sequential-
+4. Continue the adversarial matrix above the proven database and sequential-
    Simulator profile-root boundaries plus current-source Function-route
    continuity supported by the historical `dd0ed68` runtime receipt: replay the
    consumed replacement invitation when its token is available and finish the
    remaining lifecycle isolation cases.
-4. Continue deletion and same-phone replacement-installation gates in the
+5. Continue deletion and same-phone replacement-installation gates in the
    checked-in order.
 
 ## Explicitly unresolved
@@ -125,9 +131,12 @@ acceptance, deletion, or the same-phone replacement lifecycle.
   `6ee1d22` generated no changed Day 1 wire snapshot or accepted score; the
   earlier two expired invitation-history rows remain retained.
 - Selected source `6ee1d22` is installed on the physical iPhone and stopped.
-  The dedicated staging Simulator retains its prior profile-scoped container
-  and historical invitation/convergence receipt; exact-current Simulator
-  runtime has not been repeated.
+  Its exact-current Simulator executable also matches the retained verified
+  build, and the dedicated staging tester preserves its prior profile-scoped
+  container and an active Apple Account session. The approved single launch
+  settled on the clean welcome screen after attempted local-session refresh;
+  Account B was not mounted. Native reauthorization and exact-current
+  authenticated staging runtime have not been repeated.
 - The rollback-only hosted database adversarial receipt passed 15/15 with zero
   residue, current-source create/claim route continuity is proven while the
   successful runtime receipt remains historical, and sequential Simulator

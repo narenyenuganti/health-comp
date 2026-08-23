@@ -131,6 +131,32 @@ Status meanings:
   1.5 GiB DerivedData was removed. This is historical selected-build
   preparation, not exact-current authenticated-runtime, invitation, or
   physical-device evidence.
+- **PASS:** At `2026-08-22T23:48:42Z`, selected application source `6ee1d22`
+  was installed as `com.narenyenuganti.HealthComp.staging` on the dedicated
+  iOS 18.4 tester. The installed executable exactly matched the retained
+  44 MiB build at SHA-256
+  `b8a8d4b1863326e553cc83a8eb49417b4476e718b0f7b37ffe2df03f6c9ceb70`,
+  and the state-preserving data container contained 23 files. Simulator
+  Settings showed an active Apple Account session without retaining an
+  identity, but that display does not prove the HealthComp Sign in with Apple
+  profile. The app remained stopped, no staging request was made, and the
+  worktree was clean after restoring an incidental Xcode resolved-file
+  rewrite. This proves exact-current offline preparation, not authenticated
+  staging runtime.
+- **PARTIAL:** Following explicit approval, exact bundle
+  `com.narenyenuganti.HealthComp.staging` launched once from
+  `2026-08-22T23:55:00Z` through `23:55:30Z`, settled on the clean welcome
+  screen, and was terminated without pressing Sign in with Apple or taking an
+  in-app action. The data-container count remained 23 files and the post-window
+  process count was zero. The bounded process log contained two occurrences of
+  Supabase Swift v2.55.1's advisory initial-session warning and two successful
+  network-activity completion markers, but no retained HTTP status marker.
+  Pinned-source inspection confirms the warning is emitted by the SDK's default
+  initial-session path and is not itself refresh-failure evidence. The receipt
+  cannot distinguish an already-absent session from one removed during terminal
+  refresh. The preserved profile root remained unmounted, maintaining the
+  fail-closed cross-profile boundary. This does not prove authenticated staging
+  transport or Account B profile mount.
 - **PASS:** The integrated PR #26 recovery change
   pins Supabase Swift 2.55.1 and passed 90/90 focused recovery tests, 459/459
   canonical app tests, 241/241 CompetitionCore tests in both Debug and
