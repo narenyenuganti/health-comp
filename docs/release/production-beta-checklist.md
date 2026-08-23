@@ -188,7 +188,24 @@ Status meanings:
   launch timestamp. Receipt SHA-256:
   `cc8c28a12bbf1b2b5773c3e479972874de61cb9b74e67b3e13466faef035d6e4`.
   This proves exact-candidate build/install and authenticated local preservation,
-  not successful runtime execution of the Activity-isolation fix.
+  not successful runtime execution of the Activity-isolation fix. An unrelated
+  storage cleanup later removed the complete Simulator device set. A targeted
+  read-only Time Machine snapshot recovery restored only the dedicated tester
+  and required registry; independent validation matched the exact executable,
+  one profile root, and seven files. The separately approved retry then issued
+  exactly one launch from `2026-08-23T21:36:23Z` through bounded termination at
+  `23:29:26Z`. It reached authenticated Sharing immediately but retained `No
+  Competition` and `Some competition activity could not be refreshed.` A
+  credential-free Simulator-to-staging TLS probe succeeded, while the app
+  process window contained 72 CFNetwork connection-loss / `-1005` markers and
+  no precise HTTP response-status marker. After termination the exact
+  executable, one profile root, seven files, one five-envelope primary journal,
+  and zero-entry inventory remained. Only the inventory document changed; no
+  second profile root appeared, and no pull-to-refresh or other in-app action
+  occurred. Recovery-retry receipt SHA-256:
+  `8dc3a1885446c373dd530f7d0a703af3e08a95270359220f35138a43874450d1`.
+  This advances authenticated session-recovery and local-isolation evidence,
+  not the warning-free remote Activity refresh gate.
 - **PASS:** The integrated PR #26 recovery change
   pins Supabase Swift 2.55.1 and passed 90/90 focused recovery tests, 459/459
   canonical app tests, 241/241 CompetitionCore tests in both Debug and
