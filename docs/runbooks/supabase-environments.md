@@ -45,16 +45,20 @@ The 2026-08-15 staging promotion and readback established all of the following:
 
 Staging has supported partial two-account and physical-device verification on
 then-selected artifacts. Selected artifact `6ee1d22` has exact-current CI,
-signed-build, state-preserving over-install, and three separately approved
+signed-build, state-preserving over-install, and four separately approved
 single-launch physical receipts. The first showed authenticated Sharing with a
 historical-activity refresh warning; the second completed hosted reconciliation
-without producing a score revision; and the third cold-launched to signed-out
-Welcome without recovering a session. In the third launch's bounded dashboard
+without producing a score revision; the third cold-launched to signed-out
+Welcome without an auth action; and the fourth initiated exactly one native
+Apple-auth transition but returned to Welcome without an authenticated session
+or retained credential/two-factor prompt. In the third launch's bounded dashboard
 window, `app-attest-challenge` and `submit-score-revision` both remained at zero
 new invocations and their since-deploy counts remained four and one. Local
-profile-scoped counts were unchanged. The third launch therefore produced no
-eligible wire event or App Attest attempt, and fresh native physical Sign in
-with Apple is now a prerequisite. App Attest acceptance remains unproven.
+profile-scoped counts were unchanged after both the third and fourth windows.
+The third launch therefore produced no eligible wire event or App Attest
+attempt; the fourth did not establish a session. Fresh native physical Sign in
+with Apple with the user directly present for any non-mirrored system prompt is
+still a prerequisite. App Attest acceptance remains unproven.
 The rollback-only database adversarial boundary passed 15/15 at
 exact verifier commit `4fca597` with zero synthetic rows remaining, and the
 sequential Simulator profile-root teardown/remount boundary passed. On selected
