@@ -642,5 +642,11 @@ func competitionIssueSummary(_ issues: [LocalCompetitionClientIssue]) -> String 
     }) {
         return "Some competition activity could not be refreshed."
     }
+    if issues.contains(where: {
+        if case .activityFailures = $0 { return true }
+        return false
+    }) {
+        return "Competition is available, but Activity could not be refreshed."
+    }
     return "The latest competition action could not be completed."
 }

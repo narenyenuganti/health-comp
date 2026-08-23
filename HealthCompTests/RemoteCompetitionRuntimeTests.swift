@@ -1063,6 +1063,125 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
         }
     }
 
+    func testActivityReadFailurePreservesRemoteMaterializationAndCursor()
+        async throws
+    {
+        let root = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let eventsRoot = root.appendingPathComponent(
+            "events",
+            isDirectory: true
+        )
+        let outboxRoot = root.appendingPathComponent(
+            "outbox",
+            isDirectory: true
+        )
+        let cursorsRoot = root.appendingPathComponent(
+            "cursors",
+            isDirectory: true
+        )
+        for directory in [eventsRoot, outboxRoot, cursorsRoot] {
+            try FileManager.default.createDirectory(
+                at: directory,
+                withIntermediateDirectories: false
+            )
+        }
+        let eventStore = makeStore(root: eventsRoot)
+        let outboxStore = JSONCompetitionOutboxStore(
+            rootDirectory: outboxRoot,
+            fileProtection: JSONCompetitionEventStoreFileProtection {
+                _, _ in
+            }
+        )
+        let cacheStore = JSONRemoteCompetitionCacheStore(
+            rootDirectory: cursorsRoot,
+            fileProtection: JSONCompetitionEventStoreFileProtection {
+                _, _ in
+            }
+        )
+        let creatorID = UUID(
+            uuidString: "72000000-0000-4000-8000-000000000001"
+        )!
+        let createdAt = Date(timeIntervalSince1970: 1_786_540_000)
+        let descriptor = try scheduledDescriptor(
+            creatorID: creatorID,
+            inviteeID: profileID,
+            createdAt: createdAt
+        )
+        let page = try scheduledHistoryPage(
+            descriptor: descriptor,
+            creatorID: creatorID,
+            inviteeID: profileID,
+            createdAt: createdAt
+        )
+        let calendar = try CompetitionCalendar(
+            timeZoneIdentifier: "America/Los_Angeles"
+        )
+        let startDay = try CompetitionDay(
+            era: 1,
+            year: 2026,
+            month: 8,
+            day: 13,
+            timeZoneIdentifier: calendar.timeZoneIdentifier
+        )
+        let days = try calendar.sevenDayWindow(startingOn: startDay)
+        let dayOneNoon = try calendar.startOfDay(startDay)
+            .addingTimeInterval(12 * 60 * 60)
+        let source = FixtureActivitySource(
+            fixture: try ActivityFixture(
+                initialInstant: EnvironmentInstant(
+                    wallDate: dayOneNoon,
+                    monotonic: MonotonicInstant(
+                        epochID: "activity-read-failure",
+                        nanoseconds: 1
+                    )
+                ),
+                timeZoneIdentifier: calendar.timeZoneIdentifier,
+                initialDays: days.map { .missing(day: $0) },
+                initialReadState: .failure(.healthDataUnavailable),
+                changes: []
+            )
+        )
+        let probe = RemoteCompetitionRuntimeProbe()
+        let runtime = RemoteCompetitionRuntime(
+            profileID: profileID,
+            store: eventStore,
+            remoteAPI: remoteAPI(
+                listCompetitions: { [descriptor] },
+                fetchChanges: { _, _ in page },
+                appendScoreRevision: { request in
+                    await probe.recordScoreRequest(request)
+                    throw CompetitionRemoteFailure.operationFailed
+                }
+            ),
+            environment: .accelerated(source: source),
+            outboxStore: outboxStore,
+            cacheStore: cacheStore,
+            now: { dayOneNoon }
+        )
+
+        let outcome = await runtime.synchronizeAll()
+
+        XCTAssertEqual(outcome.failures, [])
+        XCTAssertEqual(outcome.successfulCompetitions.count, 1)
+        XCTAssertEqual(
+            outcome.activityFailures.map(\.competitionID),
+            [CompetitionID(competitionID)]
+        )
+        XCTAssertEqual(
+            outcome.activityFailures.map(\.failure),
+            [.healthDataUnavailable]
+        )
+        let cached = try await cacheStore.load(profileID: profileID)
+        XCTAssertEqual(cached.count, 1)
+        XCTAssertEqual(
+            cached.first?.lastSeenServerSequence,
+            descriptor.serverCursor
+        )
+        let scoreRequests = await probe.scoreRequests()
+        XCTAssertEqual(scoreRequests, [])
+    }
+
     func testOwnerHealthRefreshEnqueuesPrivacySafeRevisionAndPersistsAck()
         async throws
     {

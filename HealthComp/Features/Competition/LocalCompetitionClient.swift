@@ -266,6 +266,7 @@ enum LocalCompetitionClientIssue: Error, Equatable, Sendable {
     case remoteUnavailable
     case remoteFailure
     case authorizationUnavailable
+    case activityFailures([CompetitionID])
     case competitionFailures([CompetitionID])
     case commandRejected(CompetitionID)
     case bootstrapIdentityRetired

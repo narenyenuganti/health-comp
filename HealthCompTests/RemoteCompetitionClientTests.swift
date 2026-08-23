@@ -1387,6 +1387,113 @@ final class RemoteCompetitionClientTests: XCTestCase {
         await relaunched.stop()
     }
 
+    func testActivityReadFailurePublishesMaterializedCompetitionAndIssue()
+        async throws
+    {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: root,
+            withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: root) }
+        let profile = AuthenticatedProfile(
+            id: UUID(
+                uuidString: "81000000-0000-4000-8000-000000000001"
+            )!,
+            displayName: "Beta Bob"
+        )
+        let paths = AuthenticatedProfileStoragePaths(
+            profileID: profile.id,
+            rootDirectory: root
+        )
+        for directory in paths.fixedDirectories {
+            try FileManager.default.createDirectory(
+                at: directory,
+                withIntermediateDirectories: true
+            )
+        }
+        let competitionID = UUID(
+            uuidString: "82000000-0000-4000-8000-000000000001"
+        )!
+        let creatorID = UUID(
+            uuidString: "82000000-0000-4000-8000-000000000002"
+        )!
+        let createdAt = Date(timeIntervalSince1970: 1_786_540_000)
+        let descriptor = try scheduledDescriptor(
+            competitionID: competitionID,
+            creatorID: creatorID,
+            inviteeID: profile.id,
+            createdAt: createdAt
+        )
+        let page = try scheduledHistoryPage(
+            descriptor: descriptor,
+            creatorID: creatorID,
+            inviteeID: profile.id,
+            createdAt: createdAt
+        )
+        let calendar = try CompetitionCalendar(
+            timeZoneIdentifier: "America/Los_Angeles"
+        )
+        let startDay = try CompetitionDay(
+            era: 1,
+            year: 2026,
+            month: 8,
+            day: 13,
+            timeZoneIdentifier: calendar.timeZoneIdentifier
+        )
+        let days = try calendar.sevenDayWindow(startingOn: startDay)
+        let dayOneNoon = try calendar.startOfDay(startDay)
+            .addingTimeInterval(12 * 60 * 60)
+        let source = FixtureActivitySource(
+            fixture: try ActivityFixture(
+                initialInstant: EnvironmentInstant(
+                    wallDate: dayOneNoon,
+                    monotonic: MonotonicInstant(
+                        epochID: "client-activity-read-failure",
+                        nanoseconds: 1
+                    )
+                ),
+                timeZoneIdentifier: calendar.timeZoneIdentifier,
+                initialDays: days.map { .missing(day: $0) },
+                initialReadState: .failure(.healthDataUnavailable),
+                changes: []
+            )
+        )
+        let client = CompetitionClient.remote(
+            remoteAPI: remoteAPI(
+                listCompetitions: { [descriptor] },
+                fetchChanges: { _, _ in page }
+            ),
+            environment: .accelerated(source: source)
+        )
+
+        try await client.mountAuthenticatedProfile(profile, paths)
+        var iterator = client.start().makeAsyncIterator()
+        let publication = await awaitNext(&iterator)
+
+        XCTAssertEqual(
+            publication?.dashboard.competitions.map(\.id),
+            [CompetitionID(competitionID)]
+        )
+        XCTAssertEqual(
+            publication?.dashboard.issues,
+            [.activityFailures([CompetitionID(competitionID)])]
+        )
+        XCTAssertEqual(
+            publication.map { competitionIssueSummary($0.dashboard.issues) },
+            "Competition is available, but Activity could not be refreshed."
+        )
+        XCTAssertEqual(
+            competitionIssueSummary([
+                .activityFailures([CompetitionID(competitionID)]),
+                .competitionFailures([CompetitionID(competitionID)]),
+            ]),
+            "Some competition activity could not be refreshed."
+        )
+        await client.stop()
+    }
+
     private func environment() throws -> CompetitionEnvironmentClient {
         let calendar = try CompetitionCalendar(
             timeZoneIdentifier: "America/Los_Angeles"
@@ -1439,6 +1546,110 @@ final class RemoteCompetitionClientTests: XCTestCase {
                     profile: try CompetitionProfilePresentation(
                         id: profile.id,
                         displayName: profile.displayName
+                    )
+                ),
+            ]
+        )
+    }
+
+    private func scheduledDescriptor(
+        competitionID: UUID,
+        creatorID: UUID,
+        inviteeID: UUID,
+        createdAt: Date
+    ) throws -> CompetitionDescriptor {
+        try CompetitionDescriptor(
+            competitionID: competitionID,
+            creatorProfileID: creatorID,
+            timeZoneIdentifier: "America/Los_Angeles",
+            startDay: "2026-08-13",
+            scoringPolicyIdentity: RemoteScoringWireV1.policyIdentity,
+            lifecycle: .scheduled,
+            invitationExpiresAt: createdAt.addingTimeInterval(48 * 60 * 60),
+            bestAvailableDeadline: Date(
+                timeIntervalSince1970: 1_787_299_200
+            ),
+            rematchParentID: nil,
+            nextServerSequence: 4,
+            participants: [
+                try CompetitionParticipantDescriptor(
+                    profileID: creatorID,
+                    role: .creator,
+                    state: .accepted,
+                    profile: try CompetitionProfilePresentation(
+                        id: creatorID,
+                        displayName: "Beta Alice"
+                    )
+                ),
+                try CompetitionParticipantDescriptor(
+                    profileID: inviteeID,
+                    role: .invitee,
+                    state: .accepted,
+                    profile: try CompetitionProfilePresentation(
+                        id: inviteeID,
+                        displayName: "Beta Bob"
+                    )
+                ),
+            ]
+        )
+    }
+
+    private func scheduledHistoryPage(
+        descriptor: CompetitionDescriptor,
+        creatorID: UUID,
+        inviteeID: UUID,
+        createdAt: Date
+    ) throws -> CompetitionChangePage {
+        let acceptedAt = createdAt.addingTimeInterval(3_600)
+        return try CompetitionChangePage(
+            competitionID: descriptor.competitionID,
+            afterServerSequence: 0,
+            snapshotServerSequence: 3,
+            nextServerSequence: 3,
+            hasMore: false,
+            changes: [
+                try CompetitionChange(
+                    serverSequence: 1,
+                    kind: .participantAdded,
+                    entityID: creatorID,
+                    occurredAt: createdAt,
+                    payload: .participant(
+                        try CompetitionParticipantChange(
+                            profileID: creatorID,
+                            role: .creator,
+                            state: .accepted
+                        )
+                    )
+                ),
+                try CompetitionChange(
+                    serverSequence: 2,
+                    kind: .participantAdded,
+                    entityID: inviteeID,
+                    occurredAt: acceptedAt,
+                    payload: .participant(
+                        try CompetitionParticipantChange(
+                            profileID: inviteeID,
+                            role: .invitee,
+                            state: .accepted
+                        )
+                    )
+                ),
+                try CompetitionChange(
+                    serverSequence: 3,
+                    kind: .competitionLifecycleChanged,
+                    entityID: descriptor.competitionID,
+                    occurredAt: acceptedAt,
+                    payload: .lifecycle(
+                        try CompetitionLifecycleChange(
+                            lifecycle: .scheduled,
+                            timeZoneIdentifier: descriptor
+                                .timeZoneIdentifier,
+                            startDay: descriptor.startDay,
+                            bestAvailableDeadline: descriptor
+                                .bestAvailableDeadline,
+                            scoringPolicyIdentity: descriptor
+                                .scoringPolicyIdentity
+                        )
                     )
                 ),
             ]

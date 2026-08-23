@@ -426,6 +426,21 @@ struct RemoteCompetitionRuntimeIDFailure: Equatable, Sendable {
     let failure: RemoteCompetitionRuntimeFailure
 }
 
+struct RemoteCompetitionRuntimeActivityFailure: Equatable, Sendable {
+    let competitionID: CompetitionID
+    let failure: CompetitionActivitySourceError
+}
+
+private struct RemoteCompetitionSynchronizationOutcome {
+    let materialization: RemoteCompetitionMaterialization
+    let activityFailure: CompetitionActivitySourceError?
+}
+
+private struct RemoteOwnerScoreRefreshOutcome {
+    let materialization: RemoteCompetitionMaterialization
+    let activityFailure: CompetitionActivitySourceError?
+}
+
 enum RemoteCompetitionRuntimeIDOutcome: Equatable, Sendable {
     case success(RemoteCompetitionMaterialization)
     case failure(RemoteCompetitionRuntimeIDFailure)
@@ -443,6 +458,17 @@ enum RemoteCompetitionRuntimeIDOutcome: Equatable, Sendable {
 struct RemoteCompetitionRuntimeOutcome: Equatable, Sendable {
     let outcomes: [RemoteCompetitionRuntimeIDOutcome]
     let discoveryFailure: RemoteCompetitionRuntimeFailure?
+    let activityFailures: [RemoteCompetitionRuntimeActivityFailure]
+
+    init(
+        outcomes: [RemoteCompetitionRuntimeIDOutcome],
+        discoveryFailure: RemoteCompetitionRuntimeFailure?,
+        activityFailures: [RemoteCompetitionRuntimeActivityFailure] = []
+    ) {
+        self.outcomes = outcomes
+        self.discoveryFailure = discoveryFailure
+        self.activityFailures = activityFailures
+    }
 
     var successfulJournals: [LoadedCompetitionJournal] {
         outcomes.compactMap { outcome in
@@ -583,6 +609,7 @@ actor RemoteCompetitionRuntime {
         }
 
         var outcomes: [RemoteCompetitionRuntimeIDOutcome] = []
+        var activityFailures: [RemoteCompetitionRuntimeActivityFailure] = []
         var nextCacheByID = Dictionary(
             uniqueKeysWithValues: cachedEntries.map {
                 ($0.descriptor.competitionID, $0)
@@ -615,7 +642,7 @@ actor RemoteCompetitionRuntime {
                 break
             }
             do {
-                let materialization = try await synchronize(
+                let synchronized = try await synchronize(
                     descriptor: descriptor,
                     cachedEntry: nextCacheByID[descriptor.competitionID]
                 )
@@ -624,8 +651,16 @@ actor RemoteCompetitionRuntime {
                     lastSeenServerSequence: descriptor.serverCursor
                 )
                 outcomes.append(
-                    .success(materialization)
+                    .success(synchronized.materialization)
                 )
+                if let failure = synchronized.activityFailure {
+                    activityFailures.append(
+                        RemoteCompetitionRuntimeActivityFailure(
+                            competitionID: competitionID,
+                            failure: failure
+                        )
+                    )
+                }
                 nextCacheByID[descriptor.competitionID] = cacheEntry
             } catch {
                 outcomes.append(
@@ -646,12 +681,14 @@ actor RemoteCompetitionRuntime {
         } catch {
             return RemoteCompetitionRuntimeOutcome(
                 outcomes: outcomes,
-                discoveryFailure: .storageUnavailable
+                discoveryFailure: .storageUnavailable,
+                activityFailures: activityFailures
             )
         }
         return RemoteCompetitionRuntimeOutcome(
             outcomes: outcomes,
-            discoveryFailure: nil
+            discoveryFailure: nil,
+            activityFailures: activityFailures
         )
     }
 
@@ -747,7 +784,7 @@ actor RemoteCompetitionRuntime {
     private func synchronize(
         descriptor: CompetitionDescriptor,
         cachedEntry: RemoteCompetitionCacheEntry?
-    ) async throws -> RemoteCompetitionMaterialization {
+    ) async throws -> RemoteCompetitionSynchronizationOutcome {
         let competitionID = CompetitionID(descriptor.competitionID)
         let existing = try await store.load(competitionID)
         let canResume = cachedEntry.map {
@@ -775,14 +812,20 @@ actor RemoteCompetitionRuntime {
                     descriptor: descriptor,
                     journal: existing
                 )
-                return RemoteCompetitionMaterialization(
-                    descriptor: descriptor,
-                    journal: existing
+                return RemoteCompetitionSynchronizationOutcome(
+                    materialization: RemoteCompetitionMaterialization(
+                        descriptor: descriptor,
+                        journal: existing
+                    ),
+                    activityFailure: nil
                 )
             }
-            return try await materializePending(
-                descriptor: descriptor,
-                history: history
+            return RemoteCompetitionSynchronizationOutcome(
+                materialization: try await materializePending(
+                    descriptor: descriptor,
+                    history: history
+                ),
+                activityFailure: nil
             )
         case .scheduled, .active, .endsToday, .tallying, .completed,
              .archived:
@@ -826,8 +869,11 @@ actor RemoteCompetitionRuntime {
             let refreshed = try await refreshOwnerScores(
                 in: lifecycleReconciled
             )
-            return try await enqueueFinalWindowAttestation(
-                for: refreshed
+            return RemoteCompetitionSynchronizationOutcome(
+                materialization: try await enqueueFinalWindowAttestation(
+                    for: refreshed.materialization
+                ),
+                activityFailure: refreshed.activityFailure
             )
         case .declined, .expired, .cancelled:
             throw RemoteCompetitionRuntimeFailure
@@ -861,26 +907,40 @@ actor RemoteCompetitionRuntime {
 
     private func refreshOwnerScores(
         in materialization: RemoteCompetitionMaterialization
-    ) async throws -> RemoteCompetitionMaterialization {
+    ) async throws -> RemoteOwnerScoreRefreshOutcome {
         guard let environment, let outboxStore, let syncCoordinator,
               let configuration = materialization.journal.projection
                 .competition.remoteConfiguration
         else {
-            return materialization
+            return RemoteOwnerScoreRefreshOutcome(
+                materialization: materialization,
+                activityFailure: nil
+            )
         }
         switch materialization.journal.projection.competition.lifecycle {
         case .active, .endsToday, .tallying:
             break
         case .pendingInvitation, .declined, .expired, .scheduled,
              .completed, .archived:
-            return materialization
+            return RemoteOwnerScoreRefreshOutcome(
+                materialization: materialization,
+                activityFailure: nil
+            )
         }
 
         let window = try CompetitionActivityWindow(
             calendar: configuration.acceptedSchedule.calendar,
             startDay: configuration.acceptedSchedule.startDay
         )
-        let read = try await environment.read(window)
+        let read: ActivityWindowRead
+        do {
+            read = try await environment.read(window)
+        } catch let failure as CompetitionActivitySourceError {
+            return RemoteOwnerScoreRefreshOutcome(
+                materialization: materialization,
+                activityFailure: failure
+            )
+        }
         let evaluatedAt = now()
         let existingOutboxEntries = try await outboxStore.entries()
         let ownerLedger = materialization.journal.projection
@@ -981,9 +1041,12 @@ actor RemoteCompetitionRuntime {
         ) else {
             throw RemoteCompetitionRuntimeFailure.storageUnavailable
         }
-        return RemoteCompetitionMaterialization(
-            descriptor: materialization.descriptor,
-            journal: loaded
+        return RemoteOwnerScoreRefreshOutcome(
+            materialization: RemoteCompetitionMaterialization(
+                descriptor: materialization.descriptor,
+                journal: loaded
+            ),
+            activityFailure: nil
         )
     }
 

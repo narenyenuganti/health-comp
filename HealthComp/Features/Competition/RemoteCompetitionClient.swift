@@ -382,6 +382,13 @@ private actor RemoteCompetitionClientCoordinator {
         if !failedIDs.isEmpty {
             issues.append(.competitionFailures(failedIDs))
         }
+        let activityFailedIDs = outcome.activityFailures.map(\.competitionID)
+            .sorted {
+                $0.rawValue.uuidString < $1.rawValue.uuidString
+            }
+        if !activityFailedIDs.isEmpty {
+            issues.append(.activityFailures(activityFailedIDs))
+        }
         return await publish(
             materializations: outcome.successfulCompetitions,
             profile: profile,
