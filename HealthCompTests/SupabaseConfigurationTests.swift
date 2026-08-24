@@ -58,6 +58,22 @@ final class SupabaseConfigurationTests: XCTestCase {
         )
     }
 
+    func testLiveProviderSharesOneClientAcrossConsumers() throws {
+        let session = URLSession(configuration: .ephemeral)
+        defer { session.invalidateAndCancel() }
+        let provider = SupabaseClientProvider.live(
+            infoDictionary: { self.dictionary() },
+            urlSession: session
+        )
+        let authenticationProvider = provider
+        let competitionProvider = provider
+
+        let authenticationClient = try authenticationProvider.client()
+        let competitionClient = try competitionProvider.client()
+
+        XCTAssertTrue(authenticationClient === competitionClient)
+    }
+
     func testParsesValidPublishableConfiguration() throws {
         let configuration = try SupabaseConfiguration.parse([
             "SUPABASE_URL": "  https://project-ref.supabase.co  ",

@@ -155,14 +155,14 @@ enum SupabaseTransport {
 }
 
 struct SupabaseClientProvider: Sendable {
-    private let makeClient: @Sendable () throws -> SupabaseClient
+    private let sharedClient: SharedSupabaseClient
 
     init(makeClient: @escaping @Sendable () throws -> SupabaseClient) {
-        self.makeClient = makeClient
+        self.sharedClient = SharedSupabaseClient(makeClient: makeClient)
     }
 
     func client() throws -> SupabaseClient {
-        try makeClient()
+        try sharedClient.client()
     }
 
     static func live(
@@ -180,6 +180,25 @@ struct SupabaseClientProvider: Sendable {
                     global: .init(session: urlSession)
                 )
             )
+        }
+    }
+}
+
+private final class SharedSupabaseClient: @unchecked Sendable {
+    private let lock = NSLock()
+    private let makeClient: @Sendable () throws -> SupabaseClient
+    private var cachedClient: SupabaseClient?
+
+    init(makeClient: @escaping @Sendable () throws -> SupabaseClient) {
+        self.makeClient = makeClient
+    }
+
+    func client() throws -> SupabaseClient {
+        try lock.withLock {
+            if let cachedClient { return cachedClient }
+            let client = try makeClient()
+            cachedClient = client
+            return client
         }
     }
 }
