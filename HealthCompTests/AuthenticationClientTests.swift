@@ -218,7 +218,7 @@ final class AuthenticationClientTests: XCTestCase {
     }
 
     @MainActor
-    func testSignOutIsBestEffortWhenSDKLogoutFailsAfterItsLocalRemoval() async {
+    func testSignOutFailsClosedWhenSDKLogoutFails() async {
         let recorder = AuthenticationOperationRecorder()
         let client = SupabaseAuthenticationClient.make(
             operations: .test(
@@ -228,7 +228,15 @@ final class AuthenticationClientTests: XCTestCase {
             appleAuthorization: .unimplemented
         )
 
-        await client.signOut()
+        do {
+            try await client.signOut()
+            XCTFail("A failed logout must not be reported as signed out")
+        } catch {
+            XCTAssertEqual(
+                error as? AuthenticationClientFailure,
+                .operationFailed
+            )
+        }
 
         let operations = await recorder.operations
         XCTAssertEqual(

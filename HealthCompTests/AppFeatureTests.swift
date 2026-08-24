@@ -625,6 +625,65 @@ final class AppFeatureTests: XCTestCase {
     }
 
     @MainActor
+    func testUserSignOutFailureDoesNotCompleteTransition() async {
+        let calls = OrderedCallRecorder()
+        let storage = profileStorageFixture(
+            for: profile,
+            recorder: calls
+        )
+        let store = TestStore(
+            initialState: .authenticated(profile: profile, epoch: 3)
+        ) {
+            AppFeature()
+        } withDependencies: {
+            $0.authenticationClient = .test(
+                signOut: {
+                    calls.record("auth-sign-out")
+                    throw AuthenticationClientFailure.operationFailed
+                }
+            )
+            $0.authenticatedProfileStorage = storage.client
+            $0.competitionClient = .test(
+                stop: { calls.record("runtime-stop") },
+                prepareForProfileTeardown: { requireRemoteRemoval in
+                    calls.record(
+                        "installation-teardown:\(requireRemoteRemoval)"
+                    )
+                }
+            )
+        }
+
+        await store.send(.account(.signOutButtonTapped)) {
+            $0.account.isRequestInFlight = true
+        }
+        await store.receive(.account(.delegate(.signOutRequested))) {
+            $0.authEpoch = 4
+        }
+        await store.receive(
+            .teardownFailed(
+                epoch: 4,
+                reason: .userRequested,
+                failure: .cleanupFailed
+            )
+        ) {
+            $0.phase = .launchFailure
+            $0.profile = nil
+            $0.mainTab = nil
+            $0.account = AccountFeature.State(mode: .launchFailure)
+            $0.account.message = .tryAgain
+        }
+        XCTAssertEqual(
+            calls.calls,
+            [
+                "installation-teardown:true",
+                "runtime-stop",
+                "storage-teardown",
+                "auth-sign-out",
+            ]
+        )
+    }
+
+    @MainActor
     func testRequiredInstallationRemovalFailurePreservesProfileAndAuth()
         async
     {
@@ -1158,7 +1217,7 @@ private extension AuthenticationClient {
         events: @escaping @Sendable () -> AsyncStream<AuthenticationEvent> = {
             AsyncStream { $0.finish() }
         },
-        signOut: @escaping @Sendable () async -> Void = {}
+        signOut: @escaping @Sendable () async throws -> Void = {}
     ) -> Self {
         Self(
             restoreSession: restoreSession,

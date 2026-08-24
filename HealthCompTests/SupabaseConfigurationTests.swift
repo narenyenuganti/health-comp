@@ -1,5 +1,6 @@
 import Foundation
 import ComposableArchitecture
+import Supabase
 import XCTest
 @testable import HealthComp
 
@@ -72,6 +73,137 @@ final class SupabaseConfigurationTests: XCTestCase {
         let competitionClient = try competitionProvider.client()
 
         XCTAssertTrue(authenticationClient === competitionClient)
+    }
+
+    func testAuthStorageVerificationRejectsADeletionFailure() throws {
+        let underlying = AuthStorageStub(removeFailure: true)
+        let storage = FailClosedAuthLocalStorage(underlying: underlying)
+        try storage.store(key: "session-key", value: Data("session".utf8))
+
+        XCTAssertThrowsError(try storage.remove(key: "session-key"))
+        XCTAssertThrowsError(try storage.verifyLastRemoval()) { error in
+            XCTAssertEqual(
+                error as? AuthenticationClientFailure,
+                .operationFailed
+            )
+        }
+    }
+
+    func testAuthStorageVerificationConfirmsDurableDeletion() throws {
+        let underlying = AuthStorageStub()
+        let storage = FailClosedAuthLocalStorage(underlying: underlying)
+        try storage.store(key: "session-key", value: Data("session".utf8))
+
+        try storage.remove(key: "session-key")
+
+        XCTAssertNoThrow(try storage.verifyLastRemoval())
+        XCTAssertNil(try underlying.retrieve(key: "session-key"))
+    }
+
+    func testAuthStorageVerificationRequiresAFreshRemoval() throws {
+        let storage = FailClosedAuthLocalStorage(
+            underlying: AuthStorageStub()
+        )
+        try storage.store(key: "session-key", value: Data("session".utf8))
+        try storage.remove(key: "session-key")
+        try storage.verifyLastRemoval()
+
+        storage.prepareForRemovalVerification()
+
+        XCTAssertThrowsError(try storage.verifyLastRemoval())
+    }
+
+    func testPendingAuthRemovalSuppressesStaleSessionAcrossRelaunch() throws {
+        let underlying = AuthStorageStub(removeFailure: true)
+        let pending = LockedFlag()
+        let storage = FailClosedAuthLocalStorage(
+            underlying: underlying,
+            isRemovalPending: { pending.value },
+            setRemovalPending: { pending.set($0) }
+        )
+        try storage.store(key: "session-key", value: Data("session".utf8))
+        storage.prepareForRemovalVerification()
+
+        let relaunchedStorage = FailClosedAuthLocalStorage(
+            underlying: underlying,
+            isRemovalPending: { pending.value },
+            setRemovalPending: { pending.set($0) }
+        )
+
+        XCTAssertNil(try relaunchedStorage.retrieve(key: "session-key"))
+        XCTAssertTrue(pending.value)
+        XCTAssertNotNil(try underlying.retrieve(key: "session-key"))
+    }
+
+    func testVerifiedAuthRemovalClearsPendingTombstone() throws {
+        let pending = LockedFlag()
+        let storage = FailClosedAuthLocalStorage(
+            underlying: AuthStorageStub(),
+            isRemovalPending: { pending.value },
+            setRemovalPending: { pending.set($0) }
+        )
+        try storage.store(key: "session-key", value: Data("session".utf8))
+        storage.prepareForRemovalVerification()
+        try storage.remove(key: "session-key")
+
+        try storage.verifyLastRemoval()
+
+        XCTAssertFalse(pending.value)
+    }
+
+    func testLiveProviderExposesItsAuthRemovalVerification() throws {
+        let underlying = AuthStorageStub()
+        let storage = FailClosedAuthLocalStorage(underlying: underlying)
+        let provider = SupabaseClientProvider.live(
+            infoDictionary: { self.dictionary() },
+            urlSession: URLSession(configuration: .ephemeral),
+            authStorage: storage
+        )
+        _ = try provider.client()
+        try storage.store(key: "session-key", value: Data("session".utf8))
+        try storage.remove(key: "session-key")
+
+        XCTAssertNoThrow(try provider.verifyAuthSessionRemoved())
+    }
+
+    func testLiveProviderConfirmsGlobalSignOutBeforeLocalRemoval() async throws {
+        let recorder = SupabaseSignOutStubURLProtocol.recorder
+        recorder.reset()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [
+            SupabaseSignOutStubURLProtocol.self,
+        ]
+        let session = URLSession(configuration: configuration)
+        defer {
+            session.invalidateAndCancel()
+            recorder.reset()
+        }
+        let provider = SupabaseClientProvider.live(
+            infoDictionary: { self.dictionary() },
+            urlSession: session
+        )
+
+        try await provider.confirmGlobalSignOut(
+            accessToken: "synthetic-access-token"
+        )
+
+        XCTAssertEqual(
+            recorder.requests,
+            [
+                RecordedTransportRequest(
+                    method: "POST",
+                    path: "/auth/v1/logout"
+                ),
+            ]
+        )
+        XCTAssertEqual(
+            recorder.lastSecurityReceipt,
+            TransportSecurityReceipt(
+                scope: "global",
+                hasAuthorization: true,
+                hasAPIKey: true
+            )
+        )
     }
 
     func testParsesValidPublishableConfiguration() throws {
@@ -327,6 +459,44 @@ final class SupabaseConfigurationTests: XCTestCase {
     }
 }
 
+private final class AuthStorageStub: AuthLocalStorage, @unchecked Sendable {
+    private let lock = NSLock()
+    private let removeFailure: Bool
+    private var values: [String: Data] = [:]
+
+    init(removeFailure: Bool = false) {
+        self.removeFailure = removeFailure
+    }
+
+    func store(key: String, value: Data) throws {
+        lock.withLock { values[key] = value }
+    }
+
+    func retrieve(key: String) throws -> Data? {
+        lock.withLock { values[key] }
+    }
+
+    func remove(key: String) throws {
+        if removeFailure {
+            throw AuthenticationClientFailure.operationFailed
+        }
+        _ = lock.withLock { values.removeValue(forKey: key) }
+    }
+}
+
+private final class LockedFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage = false
+
+    var value: Bool {
+        lock.withLock { storage }
+    }
+
+    func set(_ value: Bool) {
+        lock.withLock { storage = value }
+    }
+}
+
 private final class LockedCounter: @unchecked Sendable {
     private let lock = NSLock()
     private var count = 0
@@ -345,12 +515,23 @@ private struct RecordedTransportRequest: Equatable, Sendable {
     let path: String?
 }
 
+private struct TransportSecurityReceipt: Equatable, Sendable {
+    let scope: String?
+    let hasAuthorization: Bool
+    let hasAPIKey: Bool
+}
+
 private final class LockedTransportRequestRecorder: @unchecked Sendable {
     private let lock = NSLock()
     private var recordedRequests: [RecordedTransportRequest] = []
+    private var securityReceipt: TransportSecurityReceipt?
 
     var requests: [RecordedTransportRequest] {
         lock.withLock { recordedRequests }
+    }
+
+    var lastSecurityReceipt: TransportSecurityReceipt? {
+        lock.withLock { securityReceipt }
     }
 
     func record(_ request: URLRequest) {
@@ -361,11 +542,24 @@ private final class LockedTransportRequestRecorder: @unchecked Sendable {
                     path: request.url?.path
                 )
             )
+            let scope = URLComponents(
+                url: request.url!,
+                resolvingAgainstBaseURL: false
+            )?.queryItems?.first(where: { $0.name == "scope" })?.value
+            securityReceipt = TransportSecurityReceipt(
+                scope: scope,
+                hasAuthorization:
+                    request.value(forHTTPHeaderField: "Authorization") != nil,
+                hasAPIKey: request.value(forHTTPHeaderField: "apikey") != nil
+            )
         }
     }
 
     func reset() {
-        lock.withLock { recordedRequests.removeAll() }
+        lock.withLock {
+            recordedRequests.removeAll()
+            securityReceipt = nil
+        }
     }
 }
 
@@ -398,6 +592,38 @@ private final class SupabaseTransportStubURLProtocol: URLProtocol {
         client?.urlProtocol(
             self,
             didLoad: Data(#"{"error":"invalid_grant"}"#.utf8)
+        )
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
+}
+
+private final class SupabaseSignOutStubURLProtocol: URLProtocol {
+    static let recorder = LockedTransportRequestRecorder()
+
+    override class func canInit(with request: URLRequest) -> Bool {
+        true
+    }
+
+    override class func canonicalRequest(
+        for request: URLRequest
+    ) -> URLRequest {
+        request
+    }
+
+    override func startLoading() {
+        Self.recorder.record(request)
+        let response = HTTPURLResponse(
+            url: request.url!,
+            statusCode: 204,
+            httpVersion: "HTTP/1.1",
+            headerFields: nil
+        )!
+        client?.urlProtocol(
+            self,
+            didReceive: response,
+            cacheStoragePolicy: .notAllowed
         )
         client?.urlProtocolDidFinishLoading(self)
     }

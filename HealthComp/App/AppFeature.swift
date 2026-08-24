@@ -676,7 +676,18 @@ struct AppFeature {
                     }
                 }
                 if reason == .userRequested {
-                    await authenticationClient.signOut()
+                    do {
+                        try await authenticationClient.signOut()
+                    } catch {
+                        await send(
+                            .teardownFailed(
+                                epoch: epoch,
+                                reason: reason,
+                                failure: .cleanupFailed
+                            )
+                        )
+                        return
+                    }
                 }
                 await send(.teardownCompleted(epoch: epoch, reason: reason))
             }

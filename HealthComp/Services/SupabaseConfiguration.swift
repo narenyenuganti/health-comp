@@ -154,33 +154,222 @@ enum SupabaseTransport {
     }
 }
 
+final class FailClosedAuthLocalStorage: AuthLocalStorage, @unchecked Sendable {
+    private struct RemovalState {
+        let key: String
+        let failed: Bool
+    }
+
+    private let underlying: any AuthLocalStorage
+    private let isRemovalPending: @Sendable () -> Bool
+    private let setRemovalPending: @Sendable (Bool) -> Void
+    private let lock = NSLock()
+    private var lastRemoval: RemovalState?
+
+    init(
+        underlying: any AuthLocalStorage,
+        isRemovalPending: @escaping @Sendable () -> Bool = { false },
+        setRemovalPending: @escaping @Sendable (Bool) -> Void = { _ in }
+    ) {
+        self.underlying = underlying
+        self.isRemovalPending = isRemovalPending
+        self.setRemovalPending = setRemovalPending
+    }
+
+    func store(key: String, value: Data) throws {
+        try underlying.store(key: key, value: value)
+        setRemovalPending(false)
+    }
+
+    func retrieve(key: String) throws -> Data? {
+        if isRemovalPending() {
+            try? underlying.remove(key: key)
+            do {
+                if try underlying.retrieve(key: key) == nil {
+                    setRemovalPending(false)
+                }
+            } catch {}
+            return nil
+        }
+        return try underlying.retrieve(key: key)
+    }
+
+    func remove(key: String) throws {
+        do {
+            try underlying.remove(key: key)
+            guard try underlying.retrieve(key: key) == nil else {
+                recordRemoval(key: key, failed: true)
+                throw AuthenticationClientFailure.operationFailed
+            }
+            recordRemoval(key: key, failed: false)
+        } catch {
+            recordRemoval(key: key, failed: true)
+            throw error
+        }
+    }
+
+    func verifyLastRemoval() throws {
+        guard let removal = lock.withLock({ lastRemoval }),
+              !removal.failed
+        else {
+            throw AuthenticationClientFailure.operationFailed
+        }
+        do {
+            guard try underlying.retrieve(key: removal.key) == nil else {
+                throw AuthenticationClientFailure.operationFailed
+            }
+            setRemovalPending(false)
+        } catch {
+            throw AuthenticationClientFailure.operationFailed
+        }
+    }
+
+    func prepareForRemovalVerification() {
+        setRemovalPending(true)
+        lock.withLock { lastRemoval = nil }
+    }
+
+    private func recordRemoval(key: String, failed: Bool) {
+        lock.withLock {
+            lastRemoval = RemovalState(key: key, failed: failed)
+        }
+    }
+}
+
+private final class AuthRemovalPendingStore: @unchecked Sendable {
+    private let defaults: UserDefaults
+    private let key: String
+
+    init(defaults: UserDefaults, key: String) {
+        self.defaults = defaults
+        self.key = key
+    }
+
+    var isPending: Bool {
+        defaults.bool(forKey: key)
+    }
+
+    func setPending(_ isPending: Bool) {
+        defaults.set(isPending, forKey: key)
+    }
+}
+
 struct SupabaseClientProvider: Sendable {
     private let sharedClient: SharedSupabaseClient
+    private let globalSignOutConfirmation:
+        @Sendable (_ accessToken: String) async throws -> Void
+    private let authSessionRemovalPreparation: @Sendable () -> Void
+    private let authSessionRemovalVerification: @Sendable () throws -> Void
 
-    init(makeClient: @escaping @Sendable () throws -> SupabaseClient) {
+    init(
+        makeClient: @escaping @Sendable () throws -> SupabaseClient,
+        confirmGlobalSignOut: @escaping @Sendable (
+            _ accessToken: String
+        ) async throws -> Void = { _ in
+            throw AuthenticationClientFailure.operationFailed
+        },
+        prepareAuthSessionRemovalVerification: @escaping @Sendable () -> Void = {},
+        verifyAuthSessionRemoved: @escaping @Sendable () throws -> Void = {}
+    ) {
         self.sharedClient = SharedSupabaseClient(makeClient: makeClient)
+        self.globalSignOutConfirmation = confirmGlobalSignOut
+        self.authSessionRemovalPreparation =
+            prepareAuthSessionRemovalVerification
+        self.authSessionRemovalVerification = verifyAuthSessionRemoved
     }
 
     func client() throws -> SupabaseClient {
         try sharedClient.client()
     }
 
+    func confirmGlobalSignOut(accessToken: String) async throws {
+        try await globalSignOutConfirmation(accessToken)
+    }
+
+    func verifyAuthSessionRemoved() throws {
+        try authSessionRemovalVerification()
+    }
+
+    func prepareAuthSessionRemovalVerification() {
+        authSessionRemovalPreparation()
+    }
+
     static func live(
         infoDictionary: @escaping @Sendable () -> [String: Any] = {
             Bundle.main.infoDictionary ?? [:]
         },
-        urlSession: URLSession = SupabaseTransport.makeSession()
+        urlSession: URLSession = SupabaseTransport.makeSession(),
+        authStorage injectedAuthStorage: FailClosedAuthLocalStorage? = nil
     ) -> Self {
-        Self {
-            let configuration = try SupabaseConfiguration.parse(infoDictionary())
-            return SupabaseClient(
-                supabaseURL: configuration.url,
-                supabaseKey: configuration.publishableKey,
-                options: SupabaseClientOptions(
-                    global: .init(session: urlSession)
+        let removalPendingKey =
+            "HealthCompSupabaseAuthSessionRemovalPending"
+        let pendingStore = AuthRemovalPendingStore(
+            defaults: .standard,
+            key: removalPendingKey
+        )
+        let authStorage = injectedAuthStorage ?? FailClosedAuthLocalStorage(
+            underlying: KeychainLocalStorage(),
+            isRemovalPending: {
+                pendingStore.isPending
+            },
+            setRemovalPending: { isPending in
+                pendingStore.setPending(isPending)
+            }
+        )
+        return Self(
+            makeClient: {
+                let configuration = try SupabaseConfiguration.parse(
+                    infoDictionary()
                 )
-            )
-        }
+                return SupabaseClient(
+                    supabaseURL: configuration.url,
+                    supabaseKey: configuration.publishableKey,
+                    options: SupabaseClientOptions(
+                        auth: .init(storage: authStorage),
+                        global: .init(session: urlSession)
+                    )
+                )
+            },
+            confirmGlobalSignOut: { accessToken in
+                let configuration = try SupabaseConfiguration.parse(
+                    infoDictionary()
+                )
+                var components = URLComponents(
+                    url: configuration.url
+                        .appendingPathComponent("auth/v1/logout"),
+                    resolvingAgainstBaseURL: false
+                )
+                components?.queryItems = [
+                    URLQueryItem(name: "scope", value: "global"),
+                ]
+                guard let url = components?.url else {
+                    throw AuthenticationClientFailure.operationFailed
+                }
+                var request = URLRequest(url: url)
+                request.httpMethod = "POST"
+                request.setValue(
+                    configuration.publishableKey,
+                    forHTTPHeaderField: "apikey"
+                )
+                request.setValue(
+                    "Bearer \(accessToken)",
+                    forHTTPHeaderField: "Authorization"
+                )
+                let (_, response) = try await urlSession.data(for: request)
+                guard let response = response as? HTTPURLResponse,
+                      (200..<300).contains(response.statusCode)
+                        || [401, 403, 404].contains(response.statusCode)
+                else {
+                    throw AuthenticationClientFailure.operationFailed
+                }
+            },
+            prepareAuthSessionRemovalVerification: {
+                authStorage.prepareForRemovalVerification()
+            },
+            verifyAuthSessionRemoved: {
+                try authStorage.verifyLastRemoval()
+            }
+        )
     }
 }
 
