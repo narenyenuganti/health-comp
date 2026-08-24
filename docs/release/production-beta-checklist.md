@@ -1,13 +1,14 @@
 # HealthComp Production Beta Verification Checklist
 
-**Snapshot:** 2026-08-23 PDT
+**Snapshot:** 2026-08-24 PDT
 **Selected application baseline:** `6ee1d2260cfcbe02a950630ef979076c317eca49`
 **Selected release artifact:** `6ee1d2260cfcbe02a950630ef979076c317eca49`;
 selected for the remaining staging and physical-device gates, but not yet
 cleared for production.
 **Current integrated application candidate:**
-`0e08e2a0dc9f7ccfbcaa1f2c87df10ec184da684`; merged and green, but not yet
-selected because its authenticated staging runtime receipt is inconclusive.
+`fb55f9320d4bf2f7a4e9e392944ba09478627a12`; merged and green, but not yet
+selected because exact-current Account B and physical-device gates are
+incomplete.
 **Release status:** Not production-ready
 
 Status meanings:
@@ -45,6 +46,15 @@ Status meanings:
 
 ## Automated matrix
 
+- **PASS:** PR #70 replaced best-effort authentication sign-out with a server-
+  first global logout, verified local Keychain removal, an identity-free
+  pending-removal tombstone, and a fail-closed UI transition. The final local
+  matrix passed 488/488 application tests, unsigned Staging and Release
+  Simulator builds, the secret scan, and `git diff --check`. Exact-head
+  [Backend run 32778974082](https://github.com/narenyenuganti/health-comp/actions/runs/32778974082)
+  and
+  [iOS run 32778974060](https://github.com/narenyenuganti/health-comp/actions/runs/32778974060)
+  passed before merge as `fb55f93`.
 - **PASS:** Selected-application post-merge
   [Backend CI run 32560065403](https://github.com/narenyenuganti/health-comp/actions/runs/32560065403)
   completed successfully on selected application commit `6ee1d22`, including
@@ -252,6 +262,20 @@ Status meanings:
   This closes the Account A warning-free discovery/materialization sub-gate;
   Account B, remaining lifecycle isolation, physical services, deletion,
   replacement installation, restore, and production remain incomplete.
+- **PARTIAL:** Exact merged main `fb55f93` was rebuilt with the established
+  ignored Staging configuration and state-preservingly over-installed on the
+  dedicated tester. The prior artifact had already removed Account A's profile
+  files while leaving a stale persisted SDK session. The configured exact-main
+  build settled at Welcome with zero profile roots and did not remount Account
+  A after a non-erasing reboot. This proves no stale-session resurrection in
+  that recovered condition, not execution of PR #70's user-requested server-
+  confirmed logout path. Simulator Settings confirmed the distinct second
+  Apple Account was signed in, but two native attempts, including one after a
+  non-erasing reboot, failed before presenting an Apple sheet. The privacy-safe
+  log aggregate contained Apple authentication code `-7026` and
+  AuthenticationServices code `1000`; no Account B profile root was created.
+  Exact-current Account B repetition remains blocked on Simulator Apple Account
+  service recovery and is not claimed as passed.
 - **PASS:** The integrated PR #26 recovery change
   pins Supabase Swift 2.55.1 and passed 90/90 focused recovery tests, 459/459
   canonical app tests, 241/241 CompetitionCore tests in both Debug and
