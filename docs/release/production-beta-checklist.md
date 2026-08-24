@@ -223,6 +223,19 @@ Status meanings:
   This proves one fail-closed exact-candidate refresh attempt and continued
   profile isolation, not remote materialization, score submission, App Attest,
   or warning-free authenticated refresh.
+- **PASS:** Following separate approval, a certificate-verified `psql` session
+  ran one timeout-bounded, repeatable-read, `READ ONLY` Account A staging
+  inventory ending at `2026-08-24T03:40:32Z`. The transaction returned exactly
+  one active profile, one accepted membership in one client-visible scheduled
+  competition, exactly two participant rows for that competition, and one
+  gap-free competition change log with zero detected gaps. The transaction
+  explicitly rolled back. The local profile identifier was used only as an
+  in-memory query parameter; no identifier, name, Apple identity, token, score,
+  Health datum, or row body was returned, displayed, or retained. The 24-key
+  aggregate-only receipt is mode `0600` and has SHA-256
+  `e7af774da15905ebc3a7308237903c35fd8c365d9673a9fe60563c7ae28fe0b3`.
+  This proves current hosted eligibility and gap-free history for Account A;
+  it does not prove the authenticated app request reached or decoded that state.
 - **PASS:** The integrated PR #26 recovery change
   pins Supabase Swift 2.55.1 and passed 90/90 focused recovery tests, 459/459
   canonical app tests, 241/241 CompetitionCore tests in both Debug and
@@ -530,9 +543,13 @@ Status meanings:
   materialization. PR #62 is integrated as `0e08e2a` with complete focused,
   exact-head, and post-merge automation. Its first exact-candidate Simulator
   launch action retained the authenticated profile but yielded only a protected/
-  blank surface and no attributable transport evidence. A fresh approved launch
-  must still show the remote competition plus the truthful Activity-specific
-  warning before this runtime gate advances.
+  blank surface and no attributable transport evidence. A later approved single
+  pull-to-refresh retained `No Competition` and the generic warning. The
+  subsequent read-only hosted inventory now proves Account A has one accepted,
+  two-participant, scheduled, client-visible competition with a gap-free change
+  log. The unresolved boundary is therefore authenticated client discovery or
+  synchronization; another device action is not justified until that boundary
+  is diagnosed without exposing identity or payload data.
 - **PARTIAL:** The replacement competition started on `2026-08-20` in its
   frozen `America/Los_Angeles` time zone. The exact-current physical launch did
   not generate a changed Day 1 wire snapshot or accepted score. Day 1
