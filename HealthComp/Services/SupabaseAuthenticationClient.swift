@@ -213,7 +213,13 @@ enum SupabaseAuthenticationClient {
                 }
             },
             signOut: {
-                try? await operations.remoteSignOut()
+                do {
+                    try await operations.remoteSignOut()
+                } catch let failure as AuthenticationClientFailure {
+                    throw failure
+                } catch {
+                    throw AuthenticationClientFailure.operationFailed
+                }
             }
         )
     }
@@ -364,7 +370,17 @@ private extension SupabaseAuthenticationOperations {
                 try? await client.auth.signOut(scope: .local)
             },
             remoteSignOut: {
-                try await clientBox.client().auth.signOut(scope: .global)
+                let client = try await clientBox.client()
+                guard let accessToken = client.auth.currentSession?.accessToken
+                else {
+                    throw AuthenticationClientFailure.terminalSession
+                }
+                try await provider.confirmGlobalSignOut(
+                    accessToken: accessToken
+                )
+                provider.prepareAuthSessionRemovalVerification()
+                try await client.auth.signOut(scope: .local)
+                try provider.verifyAuthSessionRemoved()
             },
             classifyRefreshFailure: { error in
                 classifyRefreshFailure(error)

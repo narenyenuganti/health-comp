@@ -72,7 +72,7 @@ struct AuthenticationClient: Sendable {
     var updateProfile: @Sendable (String) async throws -> AuthenticatedProfile
     var deleteAccount: @MainActor @Sendable () async throws -> Void
     var events: @Sendable () -> AsyncStream<AuthenticationEvent>
-    var signOut: @Sendable () async -> Void
+    var signOut: @Sendable () async throws -> Void
 
     init(
         restoreSession: @escaping @Sendable () async throws -> AuthenticationSession?,
@@ -85,7 +85,7 @@ struct AuthenticationClient: Sendable {
             throw AuthenticationClientFailure.operationFailed
         },
         events: @escaping @Sendable () -> AsyncStream<AuthenticationEvent>,
-        signOut: @escaping @Sendable () async -> Void
+        signOut: @escaping @Sendable () async throws -> Void
     ) {
         self.restoreSession = restoreSession
         self.signInWithApple = signInWithApple
