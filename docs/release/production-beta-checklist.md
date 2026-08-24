@@ -262,20 +262,27 @@ Status meanings:
   This closes the Account A warning-free discovery/materialization sub-gate;
   Account B, remaining lifecycle isolation, physical services, deletion,
   replacement installation, restore, and production remain incomplete.
-- **PARTIAL:** Exact merged main `fb55f93` was rebuilt with the established
-  ignored Staging configuration and state-preservingly over-installed on the
-  dedicated tester. The prior artifact had already removed Account A's profile
-  files while leaving a stale persisted SDK session. The configured exact-main
-  build settled at Welcome with zero profile roots and did not remount Account
-  A after a non-erasing reboot. This proves no stale-session resurrection in
-  that recovered condition, not execution of PR #70's user-requested server-
-  confirmed logout path. Simulator Settings confirmed the distinct second
-  Apple Account was signed in, but two native attempts, including one after a
-  non-erasing reboot, failed before presenting an Apple sheet. The privacy-safe
-  log aggregate contained Apple authentication code `-7026` and
-  AuthenticationServices code `1000`; no Account B profile root was created.
-  Exact-current Account B repetition remains blocked on Simulator Apple Account
-  service recovery and is not claimed as passed.
+- **PARTIAL:** PR #70 application source `fb55f93`, preserved by evidence-only
+  main `823b8f2`, was rebuilt with the established ignored Staging
+  configuration. The first runtime artifact was incorrectly reused from the
+  unsigned compile gate and had no Mach-O `__entitlements` section; its Apple
+  `-7026` / AuthenticationServices `1000` failures are artifact-selection
+  evidence, not an Account B Apple-service defect. A normal frozen-package
+  Staging build produced a strictly valid locally signed artifact whose arm64
+  executable SHA-256 is
+  `38076f3bab8606639ba8bf3c1fb9e9706a128d5f498baf24610666bb60eea127` and
+  whose embedded Simulator entitlements include Sign in with Apple, HealthKit
+  with background delivery, sandbox APNs, and development App Attest. A state-
+  preserving over-install retained zero profile roots before launch. The
+  corrected artifact then restored the distinct Account B session without
+  consuming another native attempt, reached Sharing with one active competition
+  and no refresh warning, and mounted exactly one root with nine files. The
+  selected process window retained zero selected connection, Apple-auth,
+  missing-entitlement, crash, or fatal markers but no precise HTTP status
+  marker. After termination, the root and files remained, process count was
+  zero, and the Simulator shut down. This proves exact-current Account B
+  restored-session isolation and correct artifact preparation, not fresh native
+  authorization or PR #70's live server-confirmed sign-out path.
 - **PASS:** The integrated PR #26 recovery change
   pins Supabase Swift 2.55.1 and passed 90/90 focused recovery tests, 459/459
   canonical app tests, 241/241 CompetitionCore tests in both Debug and
