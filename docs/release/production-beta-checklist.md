@@ -205,7 +205,24 @@ Status meanings:
   occurred. Recovery-retry receipt SHA-256:
   `8dc3a1885446c373dd530f7d0a703af3e08a95270359220f35138a43874450d1`.
   This advances authenticated session-recovery and local-isolation evidence,
-  not the warning-free remote Activity refresh gate.
+  not the warning-free remote Activity refresh gate. A fresh read-only
+  preflight then revalidated the stopped exact executable, the same profile and
+  journal counts, and credential-free staging TLS. Following explicit
+  approval, the exact bundle launched once from `2026-08-24T00:38:44Z` through
+  `00:41:24Z`; authenticated Sharing again showed `No Competition` plus the
+  historical-refresh warning. Exactly one downward pull-to-refresh gesture was
+  performed, with no retry or other in-app action. The immediate readback and a
+  bounded ten-second observation retained the same UI. After termination, the
+  profile tree was byte-for-byte unchanged at one root, seven files, one
+  five-envelope journal, zero inventory entries, zero outbox entries, and zero
+  App Attest files; no second root appeared. Predetermined log aggregates found
+  zero `-1005`, `-7026`, missing-entitlement, and crash/fatal markers, but no
+  precise attributable HTTP status marker was retained. Pull-refresh receipt
+  SHA-256:
+  `8ca2762c5a4acbb4b431f06ef1e65e174387129a8da0e26819db2c174cd7cedc`.
+  This proves one fail-closed exact-candidate refresh attempt and continued
+  profile isolation, not remote materialization, score submission, App Attest,
+  or warning-free authenticated refresh.
 - **PASS:** The integrated PR #26 recovery change
   pins Supabase Swift 2.55.1 and passed 90/90 focused recovery tests, 459/459
   canonical app tests, 241/241 CompetitionCore tests in both Debug and
