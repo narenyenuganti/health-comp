@@ -1496,7 +1496,7 @@ actor RemoteCompetitionRuntime {
             switch change.payload {
             case let .score(score):
                 guard change.kind == .scoreRevisionRecorded,
-                      change.entityID == score.participantProfileID,
+                      change.serverSequence == score.serverSequence,
                       score.participantProfileID
                         == configuration.owner.profileID
                         || score.participantProfileID
