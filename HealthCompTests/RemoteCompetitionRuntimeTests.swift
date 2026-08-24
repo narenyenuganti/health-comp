@@ -1503,6 +1503,9 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
         let creatorID = UUID(
             uuidString: "72000000-0000-4000-8000-000000000001"
         )!
+        let scoreEntityID = UUID(
+            uuidString: "72000000-0000-4000-8000-000000000003"
+        )!
         let createdAt = Date(timeIntervalSince1970: 1_786_540_000)
         let descriptor = try scheduledDescriptor(
             creatorID: creatorID,
@@ -1532,7 +1535,7 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
         let scoreChange = try CompetitionChange(
             serverSequence: 4,
             kind: .scoreRevisionRecorded,
-            entityID: creatorID,
+            entityID: scoreEntityID,
             occurredAt: createdAt.addingTimeInterval(7_200),
             payload: .score(
                 try CompetitionScoreChange(
