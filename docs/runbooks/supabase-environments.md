@@ -6,13 +6,13 @@ required future work.
 
 ## Current environment inventory
 
-Current authenticated environment evidence through 2026-08-23 PDT:
+Current authenticated environment evidence through 2026-08-24 PDT:
 
 | Logical environment | Supabase target | Status | App configuration |
 | --- | --- | --- | --- |
 | Development | Disposable local CLI stack (project ID health-comp) | Verified locally | com.narenyenuganti.HealthComp, sandbox APNs, development App Attest |
 | Staging | healthcomp-staging (xhfdfdrtxwptrwhvvlhg) | ACTIVE_HEALTHY; 14 migrations through 20260811000900 and nine Functions read back; only `submit-score-revision` was advanced to active version 9 from selected source `6ee1d22` on 2026-08-22 PDT, and its credential-free boot probe retained the expected `400 invalid_request` boundary; Apple Auth and a topic-restricted server key are configured for the exact staging bundle; Function secrets, worker Vault entries, notification repair, and the corrected finalizer schedule are configured; both hosted jobs have succeeded; SSL enforcement is enabled; the rollback-only hosted database adversarial verifier passed 15/15 with zero residue | com.narenyenuganti.HealthComp.staging, sandbox APNs, development App Attest |
-| Production | **TBD** | No project has been approved as HealthComp production | com.narenyenuganti.HealthComp, production APNs, production App Attest |
+| Production | healthcomp-production | Dedicated project exists and is healthy, but has zero deployed Edge Functions, zero configured secret names, no repository link, and no approved promotion | com.narenyenuganti.HealthComp, production APNs, production App Attest |
 
 The 2026-08-15 staging promotion and readback established all of the following:
 
@@ -82,6 +82,16 @@ warning. These are bounded receipts, not release readiness:
 the scheduled two-account lifecycle, consumed-token replay, remaining lifecycle
 isolation, physical service gates, deletion, and restore rehearsal are still
 incomplete.
+
+On 2026-08-24, exact merged main `224840e` advanced the Simulator candidate
+with the shared Supabase client and score-row identifier correction. A bounded,
+state-preserving over-install retained the Account A container; exactly one
+launch and one pull-to-refresh then displayed one authenticated competition
+with no sign-in prompt or refresh warning. The app terminated and the dedicated
+Simulator returned to Shutdown. This closes the prior Account A discovery/
+materialization sub-gate. It does not replace the required Account B repetition,
+two-account lifecycle, physical-service, deletion, replacement-installation,
+restore, or production-promotion evidence.
 
 The read-only project inventory ending at `2026-08-23T06:06:35Z` found the
 dedicated `healthcomp-production` project active and healthy in the same

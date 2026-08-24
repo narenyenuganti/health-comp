@@ -73,9 +73,9 @@ Status meanings:
   read. Exact-source Backend run `32634210205` and iOS run `32634210213`, final
   PR-head Backend run `32635614190` and iOS run `32635614199`, and post-merge
   Backend run `32636617904` and iOS run `32636617875` all passed. PR #62 merged
-  as current-main candidate `0e08e2a`. Integration is complete, but its staging
-  runtime gate remains partial; this does not complete physical HealthKit or
-  App Attest evidence or replace selected artifact `6ee1d22`.
+  as then-current candidate `0e08e2a`. Its historical staging runtime gate was
+  partial and is superseded by the exact-main `224840e` Account A receipt below;
+  neither receipt completes physical HealthKit or App Attest evidence.
 - **PASS:** Earlier post-merge Backend run `32442953606` and iOS run
   `32442953541` completed successfully on then-selected application commit
   `cb21189`; its exact PR #48 head runs `32440813806` and `32440813807` passed
@@ -172,7 +172,7 @@ Status meanings:
   refresh. The preserved profile root remained unmounted, maintaining the
   fail-closed cross-profile boundary. This does not prove authenticated staging
   transport or Account B profile mount.
-- **PARTIAL:** Current-main candidate `0e08e2a` was built as the exact staging
+- **PARTIAL:** Then-current candidate `0e08e2a` was built as the exact staging
   Simulator bundle with frozen package resolution and the expected simulated
   Sign in with Apple, HealthKit/background-delivery, sandbox APNs, development
   App Attest, bundle, and public configuration boundaries. Its state-preserving
@@ -220,9 +220,10 @@ Status meanings:
   precise attributable HTTP status marker was retained. Pull-refresh receipt
   SHA-256:
   `8ca2762c5a4acbb4b431f06ef1e65e174387129a8da0e26819db2c174cd7cedc`.
-  This proves one fail-closed exact-candidate refresh attempt and continued
-  profile isolation, not remote materialization, score submission, App Attest,
-  or warning-free authenticated refresh.
+  This historical attempt proves one fail-closed refresh and continued profile
+  isolation. It is superseded for Account A discovery/materialization by the
+  exact-main `224840e` PASS below, but remains neither score-submission nor App
+  Attest evidence.
 - **PASS:** Following separate approval, a certificate-verified `psql` session
   ran one timeout-bounded, repeatable-read, `READ ONLY` Account A staging
   inventory ending at `2026-08-24T03:40:32Z`. The transaction returned exactly
@@ -236,6 +237,21 @@ Status meanings:
   `e7af774da15905ebc3a7308237903c35fd8c365d9673a9fe60563c7ae28fe0b3`.
   This proves current hosted eligibility and gap-free history for Account A;
   it does not prove the authenticated app request reached or decoded that state.
+- **PASS:** On exact merged main `224840e`, the reviewed score-row identifier
+  correction passed its RED-to-GREEN regression, 57 focused tests, 480/480
+  canonical app tests, secret/configuration guards, and both PR-head and post-
+  merge Backend/iOS CI. A separately approved bounded staging sequence then
+  built that commit, state-preservingly over-installed it without uninstalling,
+  verified the installed arm64 executable slice, launched exactly once, and
+  performed exactly one Account A pull-to-refresh. Privacy-safe settled UI
+  readback found one authenticated competition, no sign-in prompt, and no
+  refresh error. The app terminated, the Simulator returned to Shutdown, and
+  aggregate persistence retained three competition-event files and two server-
+  cursor files. Receipt SHA-256:
+  `66eef307a8c9744d2e10313cb3a6d8a2640b95112fd29bbd21b0a29492161fae`.
+  This closes the Account A warning-free discovery/materialization sub-gate;
+  Account B, remaining lifecycle isolation, physical services, deletion,
+  replacement installation, restore, and production remain incomplete.
 - **PASS:** The integrated PR #26 recovery change
   pins Supabase Swift 2.55.1 and passed 90/90 focused recovery tests, 459/459
   canonical app tests, 241/241 CompetitionCore tests in both Debug and
