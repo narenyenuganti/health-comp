@@ -1,14 +1,13 @@
 # HealthComp Production Beta Verification Checklist
 
-**Snapshot:** 2026-08-24 PDT
+**Snapshot:** 2026-08-25 PDT
 **Selected application baseline:** `6ee1d2260cfcbe02a950630ef979076c317eca49`
 **Selected release artifact:** `6ee1d2260cfcbe02a950630ef979076c317eca49`;
 selected for the remaining staging and physical-device gates, but not yet
 cleared for production.
 **Current integrated application candidate:**
 `fb55f9320d4bf2f7a4e9e392944ba09478627a12`; merged and green, but not yet
-selected because exact-current Account B and physical-device gates are
-incomplete.
+selected because physical-device gates are incomplete.
 **Release status:** Not production-ready
 
 Status meanings:
@@ -260,10 +259,10 @@ Status meanings:
   cursor files. Receipt SHA-256:
   `66eef307a8c9744d2e10313cb3a6d8a2640b95112fd29bbd21b0a29492161fae`.
   This closes the Account A warning-free discovery/materialization sub-gate;
-  Account B, remaining lifecycle isolation, physical services, deletion,
+  remaining lifecycle isolation, physical services, deletion,
   replacement installation, restore, and production remain incomplete.
-- **PARTIAL:** PR #70 application source `fb55f93`, preserved by evidence-only
-  main `823b8f2`, was rebuilt with the established ignored Staging
+- **PASS:** PR #70 application source `fb55f93`, preserved by evidence-only
+  main `1d73abe`, was rebuilt with the established ignored Staging
   configuration. The first runtime artifact was incorrectly reused from the
   unsigned compile gate and had no Mach-O `__entitlements` section; its Apple
   `-7026` / AuthenticationServices `1000` failures are artifact-selection
@@ -280,9 +279,22 @@ Status meanings:
   selected process window retained zero selected connection, Apple-auth,
   missing-entitlement, crash, or fatal markers but no precise HTTP status
   marker. After termination, the root and files remained, process count was
-  zero, and the Simulator shut down. This proves exact-current Account B
-  restored-session isolation and correct artifact preparation, not fresh native
-  authorization or PR #70's live server-confirmed sign-out path.
+  zero, and the Simulator shut down. In the later sequence ending at
+  `2026-08-25T01:49:39Z`, user-requested sign-out received the server global-
+  logout response after remote installation retirement. Local SDK removal
+  verification then failed closed, activated the identity-free removal
+  tombstone, and exposed only the retry surface; profile storage was already
+  zero roots and zero files. The designed recovery suppressed the stale
+  credential and reached Welcome. Exactly one fresh native Account B
+  authorization completed through human password entry, cleared the tombstone,
+  returned to warning-free Sharing with one active competition, and mounted
+  exactly one root with nine files. The bounded aggregate contained zero
+  connection-loss, Apple-auth-failure, missing-entitlement, crash/fatal, and
+  non-2xx markers. Termination left zero app processes and the same one root/
+  nine files before shutdown. Receipt SHA-256:
+  `edf7b209cd193f267021365aaffa73eebf505c855ec6327666a207b90e882d45`.
+  No identity, credential, token, private identifier, score, Health datum, or
+  screenshot was retained.
 - **PASS:** The integrated PR #26 recovery change
   pins Supabase Swift 2.55.1 and passed 90/90 focused recovery tests, 459/459
   canonical app tests, 241/241 CompetitionCore tests in both Debug and
@@ -582,21 +594,18 @@ Status meanings:
   historical runtime evidence after selection advanced to `6ee1d22`; PR #34
   continues to preserve terminal history and local journals without the former
   false warning.
-- **PARTIAL:** The exact-current Account A readback proved hosted 200/204
-  transport and a single isolated profile root, while the UI omitted the valid
-  hosted active competition and reported a generic activity-refresh warning.
-  Read-only diagnosis localized that mismatch to a typed on-device Activity
-  read aborting the whole per-competition result after successful remote
-  materialization. PR #62 is integrated as `0e08e2a` with complete focused,
-  exact-head, and post-merge automation. Its first exact-candidate Simulator
-  launch action retained the authenticated profile but yielded only a protected/
-  blank surface and no attributable transport evidence. A later approved single
-  pull-to-refresh retained `No Competition` and the generic warning. The
-  subsequent read-only hosted inventory now proves Account A has one accepted,
-  two-participant, scheduled, client-visible competition with a gap-free change
-  log. The unresolved boundary is therefore authenticated client discovery or
-  synchronization; another device action is not justified until that boundary
-  is diagnosed without exposing identity or payload data.
+- **PASS:** Historical receipts localized the generic activity warning to
+  terminal-descriptor handling and then to an on-device Activity-read failure
+  masking otherwise valid remote materialization. PR #34 and PR #62 corrected
+  those boundaries. Exact merged main `224840e` then completed one Account A
+  pull-to-refresh with one authenticated competition, no sign-in prompt, and no
+  refresh warning. Current application source `fb55f93` subsequently restored
+  Account B to the same warning-free one-competition state and repeated it
+  after server-confirmed sign-out, zero-root teardown, and exactly one fresh
+  native authorization. Both current-candidate receipts mounted exactly one
+  isolated profile root and retained zero selected connection-loss, Apple-auth-
+  failure, missing-entitlement, crash/fatal, or non-2xx markers. This does not
+  replace physical-service or remaining two-account lifecycle evidence.
 - **PARTIAL:** The replacement competition started on `2026-08-20` in its
   frozen `America/Los_Angeles` time zone. The exact-current physical launch did
   not generate a changed Day 1 wire snapshot or accepted score. Day 1
