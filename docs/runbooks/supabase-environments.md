@@ -89,9 +89,13 @@ state-preserving over-install retained the Account A container; exactly one
 launch and one pull-to-refresh then displayed one authenticated competition
 with no sign-in prompt or refresh warning. The app terminated and the dedicated
 Simulator returned to Shutdown. This closes the prior Account A discovery/
-materialization sub-gate. It does not replace the required Account B repetition,
-two-account lifecycle, physical-service, deletion, replacement-installation,
-restore, or production-promotion evidence.
+materialization sub-gate. On 2026-08-25, current application source `fb55f93`
+then completed server-confirmed Account B sign-out, fail-closed stale-credential
+suppression, zero-root teardown, exactly one fresh native Account B
+authorization, and a warning-free authenticated readback with one isolated
+profile root. It does not replace the remaining two-account lifecycle,
+physical-service, deletion, replacement-installation, restore, or production-
+promotion evidence.
 
 The read-only project inventory ending at `2026-08-23T06:06:35Z` found the
 dedicated `healthcomp-production` project active and healthy in the same
