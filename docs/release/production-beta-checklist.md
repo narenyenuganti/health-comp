@@ -6,8 +6,10 @@
 selected for the remaining staging and physical-device gates, but not yet
 cleared for production.
 **Current integrated application candidate:**
-`fb55f9320d4bf2f7a4e9e392944ba09478627a12`; merged and green, but not yet
-selected because physical-device gates are incomplete.
+`bb2910fa45d45fab3a93010e4a3bccd725832641`; merged and green, but not yet
+selected because physical-device gates are incomplete. Its changes after the
+installed `aa16411` artifact are backend verification and documentation only;
+the selected iOS and project trees are unchanged.
 **Release status:** Not production-ready
 
 Status meanings:
@@ -45,6 +47,22 @@ Status meanings:
 
 ## Automated matrix
 
+- **PASS:** PR #76 captured the physical iOS 26.6 legacy App Attest
+  `invalid_assertion_object` rejection as a RED regression and accepts the
+  signed `0x40` flag only for the exact 37-byte legacy authenticator shape.
+  Exact-head Backend run
+  [32820795651](https://github.com/narenyenuganti/health-comp/actions/runs/32820795651)
+  and iOS run
+  [32820795670](https://github.com/narenyenuganti/health-comp/actions/runs/32820795670)
+  passed before merge as `bb2910f`; post-merge Backend run
+  [32823346533](https://github.com/narenyenuganti/health-comp/actions/runs/32823346533)
+  and iOS run
+  [32823346641](https://github.com/narenyenuganti/health-comp/actions/runs/32823346641)
+  passed on that exact merge commit. The matrix covered static backend
+  boundaries, migrations, policies, adversarial SQL, the full Deno and pinned
+  Edge Runtime suites, deterministic project generation, CompetitionCore
+  Debug and Release tests, iOS application tests, unsigned Debug/Staging/Release
+  device builds, secret guards, and clean-source verification.
 - **PASS:** PR #70 replaced best-effort authentication sign-out with a server-
   first global logout, verified local Keychain removal, an identity-free
   pending-removal tombstone, and a fail-closed UI transition. The final local
@@ -482,16 +500,17 @@ Status meanings:
   secret, other Function, or production resource changed during that
   deployment.
 - **PENDING:** Signed artifact `aa16411` completed fresh native authentication,
-  reached warning-free authenticated Sharing, and attempted one refresh. The
-  bounded hosted window returned four successful challenges, two score requests
-  rejected as malformed, and two score requests rejected with the former
-  aggregate `invalid_assertion` label. The local aggregate retained seven
-  terminal revisions and zero pending entries. PR #74 then added closed
-  assertion-stage diagnostics and only `submit-score-revision` advanced to
-  staging version 10. A later authenticated launch and single refresh gesture
-  generated no eligible revision, challenge, or score request. A genuinely
-  changed or new competition-day wire is still required to classify the
-  failing assertion stage before the smallest verification fix can proceed.
+  reached warning-free authenticated Sharing, and produced one new-day
+  HealthKit-derived score revision. The bounded hosted window contained exactly
+  one HTTP-200 challenge and one HTTP-401 score submission with closed
+  diagnostic `invalid_assertion_object`; the local queue added one terminal
+  App Attest rejection and no pending entry. PR #76 reproduced the exact legacy
+  signed-flag boundary, merged the narrow verification fix as `bb2910f`, and
+  only `submit-score-revision` advanced from staging version 10 to active
+  version 11. All four downloaded assets matched merged main byte-for-byte and
+  the credential-free probe retained `400 invalid_request`; the other eight
+  Function versions were unchanged. A fresh physical acceptance, replay
+  rejection, and replacement-installation enrollment are still required.
 
 ## Paid-team signing and installation
 
@@ -574,10 +593,10 @@ Status meanings:
 | --- | --- | --- |
 | Signed staging launch | PASS | Signed artifact `aa16411` was state-preservingly over-installed as `com.narenyenuganti.HealthComp.staging`, its executable hash was pinned, and exactly one controlled launch reached authenticated Sharing with one active competition and no warning before termination. Its iOS and project source remain unchanged through integrated `6dae97b` |
 | Sign in with Apple | PASS | Signed artifact `aa16411` initiated exactly one native authorization action, the user handled the system prompt, and Mirroring reconnected to warning-free authenticated Sharing. The privacy-safe receipt retains no identity, token, private identifier, Health value, score, request material, or screenshot |
-| HealthKit | PARTIAL | Grant, revoke, and re-enable startup paths completed historically, and all app-requested categories were granted on prior artifact `9d19937`. Current signed artifact `aa16411` launched under the retained same-bundle grant and displayed a derived active-competition state, but its later version-10 refresh produced no new score revision. Background-observer behavior and attributable new HealthKit-derived submission remain pending |
+| HealthKit | PASS | Grant, revoke, and re-enable startup paths completed historically, and all app-requested categories were granted on prior artifact `9d19937`. Current signed artifact `aa16411` launched under the retained same-bundle grant, displayed an active-competition derived score, and its controlled new-day refresh created exactly one HealthKit-derived score revision that reached the hosted App Attest boundary. Background-observer behavior remains a separate pending gate |
 | Background observer | PENDING | Durable journal write before completion callback |
 | APNs | PARTIAL | iOS authorization and one active sandbox installation were verified at `2026-08-16T07:04:49.701324Z`; foreground, background, and cold-route delivery remain pending |
-| App Attest | PENDING | Integrated `6dae97b` and active staging Function version 10 passed exact-source, CI, deployment, and fail-closed boot guards. The installed `aa16411` artifact has the same iOS source. Its latest authenticated physical launch and single refresh retained seven terminal score revisions and zero pending entries while generating no new challenge or score-submission invocation, so no new assertion-stage label was emitted. A genuinely changed or new competition-day wire, acceptance, replay rejection, and replacement-installation flow remain pending |
+| App Attest | PENDING | Installed artifact `aa16411` produced exactly one new-day score revision, one HTTP-200 challenge, and one HTTP-401 version-10 score request with closed diagnostic `invalid_assertion_object`; its queue added one terminal App Attest rejection and no pending entry. PR #76 merged the exact 37-byte legacy signed-flag fix as `bb2910f`, and only `submit-score-revision` advanced to active staging version 11 with byte-identical source and the expected `400 invalid_request` boot guard. Fresh physical acceptance, replay rejection, and replacement-installation enrollment remain pending |
 | Account deletion | PENDING | Reauthorization, server-confirmed completion, local wipe, no resurrection, and preserved Former competitor history |
 | Universal link | DEFERRED | User-approved private-beta deferral because no HTTPS invitation domain will be provided; custom-scheme fallback is not universal-link evidence |
 | Replacement installation | PENDING | Same-phone remove/reinstall, new installation and App Attest enrollment, retired-installation isolation, and no local-data resurrection |

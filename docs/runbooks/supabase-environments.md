@@ -6,12 +6,12 @@ required future work.
 
 ## Current environment inventory
 
-Current authenticated environment evidence through 2026-08-24 PDT:
+Current authenticated environment evidence through 2026-08-25 PDT:
 
 | Logical environment | Supabase target | Status | App configuration |
 | --- | --- | --- | --- |
 | Development | Disposable local CLI stack (project ID health-comp) | Verified locally | com.narenyenuganti.HealthComp, sandbox APNs, development App Attest |
-| Staging | healthcomp-staging (xhfdfdrtxwptrwhvvlhg) | ACTIVE_HEALTHY; 14 migrations through 20260811000900 and nine Functions read back; only `submit-score-revision` was advanced to active version 10 from integrated source `6dae97b` on 2026-08-24 PDT, its downloaded source matched the merged runtime files and import map byte-for-byte, and its credential-free boot probe retained the expected `400 invalid_request` boundary; Apple Auth and a topic-restricted server key are configured for the exact staging bundle; Function secrets, worker Vault entries, notification repair, and the corrected finalizer schedule are configured; both hosted jobs have succeeded; SSL enforcement is enabled; the rollback-only hosted database adversarial verifier passed 15/15 with zero residue | com.narenyenuganti.HealthComp.staging, sandbox APNs, development App Attest |
+| Staging | healthcomp-staging (xhfdfdrtxwptrwhvvlhg) | ACTIVE_HEALTHY; 14 migrations through 20260811000900 and nine Functions read back; only `submit-score-revision` was advanced to active version 11 from merged main `bb2910f` on 2026-08-25 PDT, its downloaded entry point, two shared dependencies, and import map matched merged main byte-for-byte, and its credential-free boot probe retained the expected `400 invalid_request` boundary; Apple Auth and a topic-restricted server key are configured for the exact staging bundle; Function secrets, worker Vault entries, notification repair, and the corrected finalizer schedule are configured; both hosted jobs have succeeded; SSL enforcement is enabled; the rollback-only hosted database adversarial verifier passed 15/15 with zero residue | com.narenyenuganti.HealthComp.staging, sandbox APNs, development App Attest |
 | Production | healthcomp-production | Dedicated project exists and is healthy, but has zero deployed Edge Functions, zero configured secret names, no repository link, and no approved promotion | com.narenyenuganti.HealthComp, production APNs, production App Attest |
 
 The 2026-08-15 staging promotion and readback established all of the following:
@@ -66,12 +66,19 @@ was retained. This passes the exact-current physical native-authorization gate,
 not warning-free refresh or App Attest acceptance.
 After PR #74 merged, only `submit-score-revision` advanced to version 10 with
 closed assertion object, key, and signature-stage diagnostics. The latest
-signed physical artifact has the same iOS source as integrated `6dae97b`. One
-authenticated launch received one pull-to-refresh gesture at
-`2026-08-25T05:40:46Z` and produced no new eligible score revision, challenge,
-or score-submission invocation. The local aggregate retained seven terminal
-entries and zero pending entries. This is
-truthful no-attempt evidence; it does not classify or pass App Attest.
+signed physical artifact has the same iOS and project source as that integrated
+candidate. An authenticated new-day launch then created exactly one score
+revision, received one HTTP-200 challenge, and reached one HTTP-401 score
+submission with closed diagnostic `invalid_assertion_object`. The local queue
+added exactly one terminal App Attest rejection and no pending entry. PR #76
+captured that real iOS 26.6 legacy shape as a RED regression, accepted the
+signed `0x40` flag only for an exact 37-byte authenticator, and merged as
+`bb2910f` after exact-head and post-merge Backend/iOS CI passed. Only
+`submit-score-revision` then advanced to active staging version 11; all four
+downloaded assets matched merged main byte-for-byte and the credential-free
+probe retained `400 invalid_request`. This classifies and repairs the observed
+legacy assertion-object rejection, but physical acceptance, replay rejection,
+and replacement-installation enrollment remain pending.
 The rollback-only database adversarial boundary passed 15/15 at
 exact verifier commit `4fca597` with zero synthetic rows remaining, and the
 sequential Simulator profile-root teardown/remount boundary passed. On selected
