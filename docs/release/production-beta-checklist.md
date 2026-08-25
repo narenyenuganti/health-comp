@@ -626,7 +626,7 @@ Status meanings:
   controlled custom-scheme sharing, cold physical acceptance, single hosted
   consumption, two-participant membership, and scheduled-state convergence on
   the approved one-physical-iPhone-plus-Simulator topology. This remains
-  historical runtime evidence after selection advanced to `6ee1d22`; PR #34
+  historical runtime evidence after selection advanced to `aa16411`; PR #34
   continues to preserve terminal history and local journals without the former
   false warning.
 - **PASS:** Historical receipts localized the generic activity warning to
@@ -642,12 +642,17 @@ Status meanings:
   failure, missing-entitlement, crash/fatal, or non-2xx markers. This does not
   replace physical-service or remaining two-account lifecycle evidence.
 - **PARTIAL:** The replacement competition started on `2026-08-20` in its
-  frozen `America/Los_Angeles` time zone. The exact-current physical launch did
-  not generate a changed Day 1 wire snapshot or accepted score. Day 1
-  convergence, Days 1...7, offline catch-up, tallying/results, history, rematch,
-  mute, archive, and deep-link relaunch remain pending. Sequential Simulator
-  profile-root teardown/remount, non-cross-load of the private outbox, cursor
-  scoping, and remote installation retirement/re-registration now pass.
+  frozen `America/Los_Angeles` time zone. Selected physical artifact `aa16411`
+  now has two accepted revisions across two competition days from one
+  participant. A bounded current-source Account B Simulator launch materialized
+  the opponent's accepted aggregate score in warning-free authenticated
+  Sharing with one isolated nine-file profile root. Receipt SHA-256:
+  `e12fd592672636894d5a0b73724273d1dc3d0768d9a80a922aab5282405a2dfb`.
+  No Account B score revision was created; Days 1...7, offline catch-up,
+  tallying/results, history, rematch, mute, archive, and deep-link relaunch
+  remain pending. Sequential Simulator profile-root teardown/remount, non-
+  cross-load of the private outbox, cursor scoping, and remote installation
+  retirement/re-registration pass.
 - **PARTIAL:** The rollback-only hosted database matrix proved its fixed
   synthetic cross-account reads and mutations, replayed claims, modified
   points, stale/conflicting revisions, result rewrites, deleted-profile access,
