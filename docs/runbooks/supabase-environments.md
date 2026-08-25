@@ -44,7 +44,7 @@ The 2026-08-15 staging promotion and readback established all of the following:
   UTC with no due competition left unfinalized.
 
 Staging has supported partial two-account and physical-device verification on
-then-selected artifacts. Selected artifact `6ee1d22` has exact-current CI,
+then-selected artifacts. Then-selected artifact `6ee1d22` has its named CI,
 signed-build, state-preserving over-install, and five separately approved
 single-launch physical receipts. The first showed authenticated Sharing with a
 historical-activity refresh warning; the second completed hosted reconciliation
@@ -77,8 +77,12 @@ signed `0x40` flag only for an exact 37-byte authenticator, and merged as
 `submit-score-revision` then advanced to active staging version 11; all four
 downloaded assets matched merged main byte-for-byte and the credential-free
 probe retained `400 invalid_request`. This classifies and repairs the observed
-legacy assertion-object rejection, but physical acceptance, replay rejection,
-and replacement-installation enrollment remain pending.
+legacy assertion-object rejection. A later exact single-launch physical window
+accepted one HealthKit-derived score through one consumed challenge and grant;
+aggregate-only replay probes returned the dedicated unavailable error for both
+consumed capabilities and left hosted counts unchanged. Receipt SHA-256:
+`efb3ebf8dc877efc62fc9f682484e12116dd92a133c6a9d659a1dba5a6646f44`.
+Replacement-installation enrollment remains pending.
 The rollback-only database adversarial boundary passed 15/15 at
 exact verifier commit `4fca597` with zero synthetic rows remaining, and the
 sequential Simulator profile-root teardown/remount boundary passed. On selected

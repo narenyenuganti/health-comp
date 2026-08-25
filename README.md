@@ -45,7 +45,7 @@ reversible fingerprints never leave the device.
 | Environment | Current truth |
 | --- | --- |
 | Development | Disposable local Supabase stack for backend tests plus deterministic DEBUG Test Labs for iOS. The live app requires an HTTPS Supabase URL. |
-| Staging | healthcomp-staging, ref xhfdfdrtxwptrwhvvlhg, has 14 migrations through 20260811000900, nine Functions, configured providers, secret names, schedules, and a 15/15 rollback-only adversarial receipt. Only `submit-score-revision` has been advanced beyond the original reviewed deployment, to active version 9 from source `6ee1d22`; its credential-free boot probe returned the expected `400 invalid_request`. Sequential Simulator profile-root isolation and native authentication previously passed in both account directions. On 2026-08-24, exact merged main `224840e` state-preservingly over-installed on the dedicated staging Simulator and passed one Account A authenticated pull-to-refresh: one competition was visible with no sign-in prompt or refresh warning. On 2026-08-25, current application source `fb55f93` completed server-confirmed Account B sign-out, fail-closed stale-credential suppression, zero-root teardown, exactly one fresh native Account B authorization, and a warning-free one-root authenticated readback. These receipts do not select a production artifact. Physical App Attest acceptance, the complete two-account lifecycle, backup/restore, deletion, and the other physical-service evidence remain incomplete. |
+| Staging | healthcomp-staging, ref xhfdfdrtxwptrwhvvlhg, has 14 migrations through 20260811000900, nine Functions, configured providers, secret names, schedules, and a 15/15 rollback-only adversarial receipt. Only `submit-score-revision` has advanced beyond the original reviewed deployment, to active version 11 from merged source `bb2910f`; its downloaded assets matched and its credential-free boot probe returned the expected `400 invalid_request`. Sequential Simulator profile-root isolation and native authentication passed in both account directions. On 2026-08-24, exact merged main `224840e` state-preservingly over-installed on the dedicated staging Simulator and passed one Account A authenticated pull-to-refresh: one competition was visible with no sign-in prompt or refresh warning. On 2026-08-25, current application source `fb55f93` completed server-confirmed Account B sign-out, fail-closed stale-credential suppression, zero-root teardown, exactly one fresh native Account B authorization, and a warning-free one-root authenticated readback. Signed physical artifact `aa16411`, whose application tree is unchanged through integrated `da0fbdc`, then accepted one new HealthKit-derived score through App Attest; exact consumed challenge and grant replays were rejected. These receipts do not select a production artifact. The complete two-account lifecycle, backup/restore, deletion, replacement-installation enrollment, and the other physical-service evidence remain incomplete. |
 | Production | The dedicated `healthcomp-production` project exists and is healthy, but has zero deployed Edge Functions, zero configured secret names, no repository link, and no approved promotion. The unrelated inactive generic project is not HealthComp production. |
 
 See the [environment and promotion runbook](docs/runbooks/supabase-environments.md)
@@ -205,9 +205,10 @@ Before a private beta of up to 25 people, the rollout still requires:
 4. two real accounts completing invitation, seven-day score/revision,
    finalization, history, notification, and deletion scenarios in staging;
 5. adversarial participant-isolation and replay/idempotency checks;
-6. remaining physical-device HealthKit, background delivery, APNs, App Attest,
-   and account-deletion evidence; exact-current native Sign in with Apple now
-   has a bounded user-confirmed physical receipt;
+6. remaining physical-device background delivery, APNs, replacement-
+   installation enrollment, and account-deletion evidence; exact-current
+   native Sign in with Apple, foreground HealthKit, and App Attest acceptance
+   plus consumed challenge/grant replay rejection now have bounded receipts;
 7. a successful staging restore rehearsal with matching anonymized counts and
    aggregate result hash.
 
