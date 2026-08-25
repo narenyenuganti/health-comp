@@ -126,4 +126,3 @@ counts plus the fixed assertion-stage label.
 Correct only the proven failing stage test-first. Do not weaken App Attest or
 claim acceptance until the hosted score submission returns 200 and replay
 remains rejected.
-

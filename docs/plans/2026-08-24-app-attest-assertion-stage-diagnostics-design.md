@@ -63,4 +63,3 @@ Edge Runtime probe. Review and integrate the exact diff before deploying only
 `submit-score-revision` to staging. A new physical attempt remains a separate
 phone-required step and must retain only the resulting closed label and
 aggregate HTTP counts.
-
