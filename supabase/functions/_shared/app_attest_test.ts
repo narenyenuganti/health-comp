@@ -484,7 +484,10 @@ Deno.test("policy extension decoder requires the exact signed shape", async () =
   }
 });
 
-async function syntheticAssertion(extended = true) {
+async function syntheticAssertion(
+  extended = true,
+  additionalFlags = 0,
+) {
   const appId = "1234567890.com.example.myapp";
   const clientData = appAttestClientDataV1({
     challengeID: "10000000-0000-4000-8000-000000000001",
@@ -499,7 +502,7 @@ async function syntheticAssertion(extended = true) {
   counter.writeUInt32BE(1);
   const authenticatorData = Buffer.concat([
     rpIDHash,
-    Buffer.from([extended ? 0x80 : 0x00]),
+    Buffer.from([(extended ? 0x80 : 0x00) | additionalFlags]),
     counter,
     ...(extended ? [await cbor.encodeAsync(policyExtensions(3, "1"))] : []),
   ]);
@@ -598,6 +601,26 @@ Deno.test("legacy assertion verifies without inventing policy metadata", async (
   assertEquals(result.signCount, 1);
   assertEquals(result.validationCategory as number | null, null);
   assertEquals(result.bundleVersion as string | null, null);
+});
+
+Deno.test("legacy assertion accepts Apple's signed authenticator flag", async () => {
+  const fixture = await syntheticAssertion(false, 0x40);
+  assertEquals(
+    verifyAppAttestAssertion({
+      assertion: fixture.assertion,
+      clientData: fixture.clientData,
+      publicKeyPEM: fixture.publicKeyPEM,
+      previousSignCount: 0,
+      policy: {
+        appId: fixture.appId,
+        environment: "development",
+        allowedValidationCategories: [3],
+        allowedBundleVersions: ["1"],
+        now: new Date("2026-08-15T00:00:00Z"),
+      },
+    }),
+    { signCount: 1, validationCategory: null, bundleVersion: null },
+  );
 });
 
 Deno.test("assertion rejection diagnostics distinguish object key and signature stages", async () => {

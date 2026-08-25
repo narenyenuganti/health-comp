@@ -701,12 +701,12 @@ function decodeAssertion(value: Uint8Array) {
   }
   const authData = object.authenticatorData as Buffer;
   const signature = object.signature as Buffer;
-  const legacy = authData.length === 37;
-  const extended = authData.length > 37 && authData.length <= 1_024;
+  const legacy = authData.length === 37 &&
+    (authData[32] === 0x00 || authData[32] === 0x40);
+  const extended = authData.length > 37 && authData.length <= 1_024 &&
+    authData[32] === 0x80;
   if (
     (!legacy && !extended) ||
-    (legacy && authData[32] !== 0x00) ||
-    (extended && authData[32] !== 0x80) ||
     signature.length < 64 || signature.length > 80
   ) {
     fail("invalid_assertion_object");
