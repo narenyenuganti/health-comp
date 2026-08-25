@@ -60,7 +60,7 @@ represented as universal-link evidence.
 | Historical staging replacement invitation | Following fresh action-time approval, then-selected artifact `dd0ed68` created exactly one replacement invitation on the isolated Simulator endpoint. The same opaque custom-scheme link cold-launched that physical artifact and was accepted once. Read-only hosted readback ending at `2026-08-19T21:56:37Z` found one scheduled replacement competition, exactly two participant rows, and exactly one corresponding invitation row with claimant and consumption time present. Both endpoints converged on the scheduled competition after controlled relaunch. No token, identity, private identifier, screenshot, raw HealthKit datum, or exact Activity value is retained; this is not universal-link evidence | PASS |
 | Invitation Function route continuity | Application source `dd0ed68` routes live invitation creation through `create-competition-invite` and claims through `claim-competition-invite`; those route boundaries remain present in selected artifact `aa16411`. The then-selected artifact completed both actions above, and the hosted state records their create/consume effects. A read-only dashboard readback at `2026-08-20T02:32:28Z` reported exactly one invocation since the last deployment and no errors for each Function. No new request was sent, and no token, identity, request body, Function identifier, or execution identifier was retained | PASS |
 | Historical sequential Simulator profile isolation | In a user-approved Account A to signed-out to Account B sequence ending at `2026-08-20T05:56:37Z`, then-selected artifact `dd0ed68` first mounted one Account A profile with three competition-journal files, two server cursors, one installation file, and no outbox, notification-preference, or App Attest file. After server-confirmed installation retirement, sign-out reached the clean welcome screen, reduced `Profiles/v1` to zero profile directories and zero profile files, and moved the aggregate sandbox installation state from two active / three revoked to one active / four revoked while the physical phone was untouched. A distinct Apple account then authenticated directly through HealthComp without enabling full Simulator iCloud sync. The app mounted exactly one Account B root, displayed the prior participant only as the legitimate scheduled opponent, and contained three server-rematerialized competition files, two cursors, one newly active installation, and zero outbox, notification-preference, or App Attest files. Aggregate hosted readback returned two active / four revoked installations. The same profile-transition test remains in the exact-current suite, seeds a private prior-profile outbox, and proves it is absent after teardown and the next profile mount. No Apple account, profile or installation identifier, token, local fingerprint, private screenshot, raw HealthKit datum, or exact Activity value is retained | PASS |
-| Two-account staging convergence | Invitation creation, controlled custom-scheme delivery, cold acceptance, single consumption, two-participant membership, and scheduled-state convergence passed historically on the approved physical-iPhone-plus-Simulator topology. The competition started `2026-08-20` in its frozen `America/Los_Angeles` time zone, but exact-current `6ee1d22` produced no changed Day 1 wire snapshot or accepted score; Day 1 convergence and the remaining lifecycle/isolation cases are incomplete | PARTIAL |
+| Two-account staging convergence | Invitation creation, controlled custom-scheme delivery, cold acceptance, single consumption, two-participant membership, and scheduled-state convergence passed historically on the approved physical-iPhone-plus-Simulator topology. Selected physical artifact `aa16411` later persisted two accepted score revisions across two days from one participant. On current integrated main `224efcb`, the retained verified Account B Simulator executable launched once into warning-free authenticated Sharing and materialized the opponent's accepted aggregate score while retaining exactly one nine-file profile root. Hosted counts remained two revisions from one profile, one competition, and two days; no Account B score, finalization attestation, or result was created. The app terminated and the Simulator shut down. Receipt SHA-256: `e12fd592672636894d5a0b73724273d1dc3d0768d9a80a922aab5282405a2dfb`; it retains no identity, credential, token, identifier, score value, Health value, or screenshot. Seven-day two-participant scoring, finalization/results, and the remaining lifecycle cases are incomplete | PARTIAL |
 
 ## What the physical receipt proves
 
@@ -193,16 +193,20 @@ replacement lifecycle and replacement App Attest enrollment.
   competition-refresh warning; the third reached signed-out Welcome without an
   auth action, and the fourth initiated one native Apple-auth transition but
   returned to Welcome without a session. A fifth window then completed exactly
-  one user-confirmed native Sign in with Apple action on this exact artifact;
-  warning-free refresh and active HealthKit behavior remain unverified.
+  one user-confirmed native Sign in with Apple action on this exact artifact.
+  A later bounded launch reached warning-free authenticated Sharing, displayed
+  an active HealthKit-derived score, and accepted one revision through App
+  Attest.
 - The first two exact-current App Attest launch windows produced no new score
   revision or hosted submission request. The second completed remote
   reconciliation, but its evidence cannot distinguish an unchanged privacy-safe
   wire from a HealthKit summary-read failure. The third was signed out and made
   no App Attest challenge or score Function request, so it is a no-attempt
-  receipt. No acceptance or new classified-rejection receipt exists.
-- No active-competition accepted score, background-observer, APNs delivery,
-  deletion, or same-phone replacement-installation receipt exists.
+  receipt. A later exact physical receipt accepted one revision and proved
+  consumed challenge/grant replay rejection; replacement-installation App
+  Attest enrollment remains pending.
+- No background-observer, APNs delivery, deletion, or same-phone replacement-
+  installation receipt exists.
 - Universal-link evidence is explicitly deferred for this private-beta
   boundary because no HTTPS invitation domain will be provided. Only the
   controlled custom-scheme fallback may be exercised or claimed.
