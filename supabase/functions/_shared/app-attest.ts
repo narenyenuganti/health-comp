@@ -15,6 +15,8 @@ export type AppAttestEnvironment = "development" | "production";
 export type AppAttestVerificationErrorCode =
   | "invalid_app_identity"
   | "invalid_assertion"
+  | "invalid_assertion_object"
+  | "invalid_assertion_signature"
   | "invalid_attestation_authenticator_data"
   | "invalid_attestation_cose_key"
   | "invalid_attestation_nonce"
@@ -686,16 +688,16 @@ export function verifyAppAttestAttestation(input: {
 }
 
 function decodeAssertion(value: Uint8Array) {
-  const decoded = decodeSingleCBOR(value, "invalid_assertion");
+  const decoded = decodeSingleCBOR(value, "invalid_assertion_object");
   if (!exactKeys(decoded, ["authenticatorData", "signature"])) {
-    fail("invalid_assertion");
+    fail("invalid_assertion_object");
   }
   const object = decoded as Record<string, unknown>;
   if (
     !Buffer.isBuffer(object.authenticatorData) ||
     !Buffer.isBuffer(object.signature)
   ) {
-    fail("invalid_assertion");
+    fail("invalid_assertion_object");
   }
   const authData = object.authenticatorData as Buffer;
   const signature = object.signature as Buffer;
@@ -707,7 +709,7 @@ function decodeAssertion(value: Uint8Array) {
     (extended && authData[32] !== 0x80) ||
     signature.length < 64 || signature.length > 80
   ) {
-    fail("invalid_assertion");
+    fail("invalid_assertion_object");
   }
   return {
     authData,
@@ -739,22 +741,23 @@ export function verifyAppAttestAssertion(input: {
   validateAppIdentity(decoded.authData, policy);
   validatePolicyExtensions(decoded.extensions, policy);
   if (decoded.signCount <= input.previousSignCount) fail("invalid_counter");
+  let publicKey: KeyObject;
   try {
-    const publicKey = createPublicKey(input.publicKeyPEM);
-    if (
-      !isP256PublicKey(publicKey)
-    ) {
-      fail("invalid_key");
-    }
+    publicKey = createPublicKey(input.publicKeyPEM);
+  } catch (error) {
+    fail("invalid_key", error);
+  }
+  if (!isP256PublicKey(publicKey)) fail("invalid_key");
+  try {
     const clientDataHash = sha256(input.clientData);
     const verifier = createVerify("SHA256");
     verifier.update(Buffer.concat([decoded.authData, clientDataHash]));
     if (!verifier.verify(publicKey, decoded.signature)) {
-      fail("invalid_assertion");
+      fail("invalid_assertion_signature");
     }
   } catch (error) {
     if (error instanceof AppAttestVerificationError) throw error;
-    fail("invalid_assertion", error);
+    fail("invalid_assertion_signature", error);
   }
   return { signCount: decoded.signCount, ...decoded.extensions };
 }
