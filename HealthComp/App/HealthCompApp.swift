@@ -170,6 +170,10 @@ struct AppRootView: View {
                 ProgressView("Connecting…")
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
 
+            case .tearingDown:
+                ProgressView("Signing out…")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+
             case .signedOut, .settingUpProfile, .launchFailure:
                 AccountView(
                     store: store.scope(state: \.account, action: \.account)

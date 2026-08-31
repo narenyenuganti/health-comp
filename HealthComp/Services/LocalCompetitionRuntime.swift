@@ -306,7 +306,7 @@ actor LocalCompetitionRuntime {
         let outcome = await withMutationGate {
             await performRefreshAll(trigger: signal.trigger)
         }
-        await environment.completeSignal(signal.id)
+        _ = await environment.completeSignal(signal.id)
         return outcome
     }
 
@@ -689,7 +689,7 @@ actor LocalCompetitionRuntime {
             }
         }
         if signal.requiresCompletion {
-            await environment.completeSignal(signal.id)
+            _ = await environment.completeSignal(signal.id)
         }
         if let firstFailure { throw firstFailure }
         return loadedCompetitions

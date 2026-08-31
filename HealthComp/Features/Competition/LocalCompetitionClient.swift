@@ -613,6 +613,8 @@ private actor LocalCompetitionCoordinator {
     private var latestPublication: LocalCompetitionPublication?
     private var signalTask: Task<Void, Never>?
     private var wakeTask: Task<Void, Never>?
+    private let signalOwnershipProfileID = UUID()
+    private var signalOwnershipLease: EnvironmentSignalOwnershipLease?
     private var hasStarted = false
     private var isStopped = false
     private var operationIsInProgress = false
@@ -645,7 +647,9 @@ private actor LocalCompetitionCoordinator {
         await withOperationGate {
             guard !hasStarted, !isStopped else { return }
             hasStarted = true
-            await startSignalPumpBeforeBootstrap()
+            if await beginSignalOwnership() {
+                await startSignalPumpBeforeBootstrap()
+            }
 
             var issues: [LocalCompetitionClientIssue] = []
             do {
@@ -818,11 +822,12 @@ private actor LocalCompetitionCoordinator {
     func stop() async {
         await withOperationGate {
             guard !isStopped else { return }
-            isStopped = true
             signalTask?.cancel()
             signalTask = nil
             wakeTask?.cancel()
             wakeTask = nil
+            guard await retireSignalOwnershipIfNeeded() else { return }
+            isStopped = true
             await environment.synchronizeSummarySubscriptions(to: [])
             hub.finish()
         }
@@ -873,11 +878,50 @@ private actor LocalCompetitionCoordinator {
         }
     }
 
+    private func beginSignalOwnership() async -> Bool {
+        do {
+            let activation = try await environment.activateSignalOwnership(
+                for: signalOwnershipProfileID
+            )
+            do {
+                try await environment.commitSignalOwnershipActivation(
+                    activation
+                )
+            } catch {
+                await environment.rollbackSignalOwnershipActivation(activation)
+                throw error
+            }
+            signalOwnershipLease = activation.lease
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    private func retireSignalOwnershipIfNeeded() async -> Bool {
+        guard let signalOwnershipLease else { return true }
+        do {
+            let pendingSignals = try await environment.quiesceSignalOwnership(
+                signalOwnershipLease
+            )
+            for signal in pendingSignals {
+                guard await environment.completeSignal(signal.id) else {
+                    return false
+                }
+            }
+            try await environment.retireSignalOwnership(signalOwnershipLease)
+            self.signalOwnershipLease = nil
+            return true
+        } catch {
+            return false
+        }
+    }
+
     private func consume(_ signal: EnvironmentSignal) async {
         await withOperationGate {
             guard !isStopped else { return }
             guard let runtime else {
-                await environment.completeSignal(signal.id)
+                _ = await environment.completeSignal(signal.id)
                 _ = await publish(
                     journals: [],
                     issues: [.storageUnavailable]

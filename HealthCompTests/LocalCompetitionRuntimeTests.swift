@@ -1510,6 +1510,10 @@ final class LocalCompetitionRuntimeTests: XCTestCase {
         let environment = CompetitionEnvironmentClient.accelerated(
             source: source
         )
+        let signalOwnership = try await environment.activateSignalOwnership(
+            for: UUID()
+        )
+        try await environment.commitSignalOwnershipActivation(signalOwnership)
         let runtime = LocalCompetitionRuntime(
             environment: environment,
             store: setup.store,
