@@ -1,15 +1,18 @@
 # HealthComp Production Beta Verification Checklist
 
-**Snapshot:** 2026-08-25 PDT
+**Snapshot:** 2026-08-30 PDT
 **Selected application baseline:** `aa16411a2e70b1839a3ef6aa7934a013a4875a0d`
 **Selected release artifact:** `aa16411a2e70b1839a3ef6aa7934a013a4875a0d`;
 selected for the remaining staging and physical-device gates, but not yet
 cleared for production.
 **Current integrated application candidate:**
-`da0fbdca4ae5daced21d27c58faf25776b5edae1`; merged and green, but not yet
-selected because physical-device gates are incomplete. Its changes after the
-installed `aa16411` artifact are backend verification and documentation only;
-the selected iOS and project trees are unchanged.
+`4c38b71e2ede803ae616db02515f699e52fa1d8b`; changes after the installed
+`aa16411` artifact remain backend verification and documentation only, so the
+selected iOS and project trees are unchanged.
+**Reviewed background-durability candidate:**
+`38365d1`; focused receipt, profile-storage, HealthKit-provider, fixture,
+remote-client, and remote-runtime tests pass 96/96. It is not integrated or
+selected for physical evidence yet.
 **Release status:** Not production-ready
 
 Status meanings:
@@ -612,7 +615,7 @@ Status meanings:
 | Signed staging launch | PASS | Signed artifact `aa16411` was state-preservingly over-installed as `com.narenyenuganti.HealthComp.staging`, its executable hash was pinned, and exactly one controlled launch reached authenticated Sharing with one active competition and no warning before termination. Its iOS and project source remain unchanged through integrated `6dae97b` |
 | Sign in with Apple | PASS | Signed artifact `aa16411` initiated exactly one native authorization action, the user handled the system prompt, and Mirroring reconnected to warning-free authenticated Sharing. The privacy-safe receipt retains no identity, token, private identifier, Health value, score, request material, or screenshot |
 | HealthKit | PASS | Grant, revoke, and re-enable startup paths completed historically, and all app-requested categories were granted on prior artifact `9d19937`. Current signed artifact `aa16411` launched under the retained same-bundle grant, displayed an active-competition derived score, and its controlled new-day refresh created exactly one HealthKit-derived score revision that reached the hosted App Attest boundary. Background-observer behavior remains a separate pending gate |
-| Background observer | PENDING | Durable journal write before completion callback |
+| Background observer | PARTIAL | A bounded attempt on signed artifact `aa16411` began only after the app was refreshed and backgrounded and the user later confirmed a genuine Watch event was saved. Nine post-arming aggregate snapshots found no legacy `observerWakeupBackground` marker, so the gate did not pass; the receipt cannot distinguish delayed Watch-to-iPhone synchronization from a missing app wakeup. Privacy-safe receipt SHA-256: `63c8589f4865fe829342186f2ba003fd01b2d24e4771e8a8d2d51d10302169c9`. Reviewed candidate `38365d1` adds a separate bounded, protected, profile-scoped receipt that must persist before callback completion; focused ordering, persistence-failure retry, stop/remount replay, teardown, and signal-identity coverage passes within the 96/96 matrix. A signed integrated physical receipt remains required |
 | APNs | PARTIAL | iOS authorization and one active sandbox installation were verified at `2026-08-16T07:04:49.701324Z`; foreground, background, and cold-route delivery remain pending |
 | App Attest | PARTIAL | Installed artifact `aa16411` produced the exact iOS 26.6 legacy rejection that PR #76 fixed in `bb2910f`; only `submit-score-revision` advanced to active staging version 11 with byte-identical source and the expected `400 invalid_request` boot guard. A later single-launch physical window accepted one new HealthKit-derived revision through one consumed challenge and grant, and exact server-side replay of each consumed capability failed closed with its dedicated contract error. Receipt SHA-256: `efb3ebf8dc877efc62fc9f682484e12116dd92a133c6a9d659a1dba5a6646f44`. Replacement-installation App Attest enrollment remains pending |
 | Account deletion | PENDING | Reauthorization, server-confirmed completion, local wipe, no resurrection, and preserved Former competitor history |

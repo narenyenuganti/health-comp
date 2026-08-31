@@ -15,10 +15,11 @@ represented as universal-link evidence.
 
 | Scope | Current evidence | Disposition |
 | --- | --- | --- |
-| Application source | Current integrated commit `da0fbdca4ae5daced21d27c58faf25776b5edae1` contains the reviewed shared-client seam, score-row identifier correction, fail-closed authentication sign-out boundary, exact-current Account B evidence, closed App Attest assertion-stage diagnostics, the exact 37-byte legacy signed-flag verification repair, and its reviewed staging deployment receipt. Changes after installed artifact `aa16411` are backend verification and documentation only; its iOS and project trees remain unchanged | PASS |
+| Application source | Current integrated commit `4c38b71e2ede803ae616db02515f699e52fa1d8b` contains the reviewed shared-client seam, score-row identifier correction, fail-closed authentication sign-out boundary, exact-current Account B evidence, closed App Attest assertion-stage diagnostics, the exact 37-byte legacy signed-flag verification repair, and later evidence-only updates. Changes after installed artifact `aa16411` are backend verification and documentation only; its iOS and project trees remain unchanged | PASS |
 | Selected physical artifact | Signed staging artifact `aa16411a2e70b1839a3ef6aa7934a013a4875a0d` remains installed and was last exercised on the physical iPhone. Its application and project trees remain unchanged through integrated commit `da0fbdc`; intervening changes are backend verification and documentation only. The artifact is not cleared for production | PARTIAL |
 | Physical authentication and earlier refresh | Signed artifact `aa16411` was state-preservingly over-installed and its executable matched SHA-256 `913a915b6eeae671be5148187a05456ff2d0f30fe6a532c77b8e440775bc795b`. Exactly one launch initiated native Sign in with Apple; after the user handled the system prompt, Mirroring reconnected to authenticated Sharing with one active competition and no warning. One pull-to-refresh gesture was issued. The bounded hosted window contained four HTTP-200 App Attest challenges, two HTTP-400 score requests, and two HTTP-401 score requests with the former fixed `invalid_assertion` diagnostic. Aggregate local persistence contained one profile root, ten files, seven terminal score revisions, zero pending entries, five `appAttestRejectedTerminal` failures, and two `serverContractMismatch` failures. The app terminated with zero remaining processes. Receipt SHA-256: `335d7d21535667540a601c56819412c5ddd361817ac10f6c294306c6feeaf9c9`; it retains no identity, token, private identifier, Health value, score, request/proof material, or screenshot | PARTIAL |
 | Current integrated application candidate | PR #67 supplied one project-wide Supabase client. PR #68 corrected downloaded score changes to accept the backend's score-row `entity_id` while retaining participant and server-sequence validation. PR #70 replaced best-effort sign-out with server-first global logout, verified Keychain removal, an identity-free pending-removal tombstone, and a fail-closed UI transition. PR #73 published the exact-main fresh Account B sign-out, reauthorization, and isolated-profile readback. PR #74 split hosted App Attest assertion rejection into closed object, key, and signature stages without weakening verification or changing the public client response. A later physical new-day wire localized the real iOS 26.6 rejection to `invalid_assertion_object`; PR #76 accepts Apple's signed `0x40` flag only for the exact 37-byte legacy authenticator and merged as `bb2910f`. Exact merged main `224840e` passed state-preserving Account A and Account B staging runtime sequences. The unchanged signed iOS tree at `aa16411` later accepted one physical HealthKit-derived score through App Attest, and exact consumed challenge/grant replays failed closed. Remaining physical-service and lifecycle gates are still incomplete | PARTIAL |
+| Remote HealthKit background durability candidate | A bounded physical attempt on signed artifact `aa16411` started only after refresh and backgrounding, and the user later confirmed a genuine Watch event was saved. Nine post-arming privacy-safe aggregate snapshots found no legacy `observerWakeupBackground` marker or durable file change. This did not pass the gate and cannot distinguish delayed Watch-to-iPhone synchronization from failure of the app's background wakeup path. Receipt SHA-256: `63c8589f4865fe829342186f2ba003fd01b2d24e4771e8a8d2d51d10302169c9`. Reviewed source `38365d1` preserves server-only remote journals and adds a separate bounded, protected, profile-scoped receipt that must commit before HealthKit callback completion. Focused receipt, storage, HealthKit, fixture, remote-client, and remote-runtime coverage passes 96/96, including persistence-failure retry and stop/remount replay. The change is not yet integrated or proven by a signed physical build | PARTIAL |
 | Backend CI | PR #77 exact-head [run 32827132991](https://github.com/narenyenuganti/health-comp/actions/runs/32827132991) and post-merge `da0fbdc` [run 32829494683](https://github.com/narenyenuganti/health-comp/actions/runs/32829494683) completed successfully, including static backend boundaries, migrations, policies, adversarial SQL, the full Deno matrix, pinned Edge Runtime verification, and secret/schema-diff guards | PASS |
 | iOS CI | PR #77 exact-head [run 32827132962](https://github.com/narenyenuganti/health-comp/actions/runs/32827132962) and post-merge `da0fbdc` [run 32829494720](https://github.com/narenyenuganti/health-comp/actions/runs/32829494720) completed successfully: deterministic generation, both Core configurations, application tests, unsigned Debug/Staging/Release device builds, and the clean-tree check passed | PASS |
 | Evidence publication | Evidence-only PR #27 merged as `2d2d5cf` without changing the then-selected pre-icon application artifact. Exact-head [Backend run 32027282748](https://github.com/narenyenuganti/health-comp/actions/runs/32027282748) and [iOS run 32027282728](https://github.com/narenyenuganti/health-comp/actions/runs/32027282728), followed by post-merge [Backend run 32030763547](https://github.com/narenyenuganti/health-comp/actions/runs/32030763547) and [iOS run 32030763718](https://github.com/narenyenuganti/health-comp/actions/runs/32030763718), completed successfully | PASS |
@@ -127,9 +128,12 @@ replacement lifecycle and replacement App Attest enrollment.
 
 ## Immediate continuation
 
-1. Continue the remaining physical background-observer and APNs foreground/
-   background/cold-route evidence on the same build. The foreground HealthKit
-   and App Attest acceptance/replay gates now pass for their exact receipt.
+1. Integrate reviewed background-durability candidate `38365d1`, select and
+   sign the resulting staging build, then repeat the physical background-
+   observer gate against its privacy-safe receipt. Continue APNs foreground/
+   background/cold-route evidence only after that selection. The foreground
+   HealthKit and App Attest acceptance/replay gates pass for their named older
+   artifact but do not substitute for the new background receipt.
    Historical Account B Simulator authentication and isolation evidence remains
    valid for its named artifact; exact-current Account B repetition now passes.
 2. Continue the adversarial matrix above the proven database and sequential-
@@ -205,8 +209,11 @@ replacement lifecycle and replacement App Attest enrollment.
   receipt. A later exact physical receipt accepted one revision and proved
   consumed challenge/grant replay rejection; replacement-installation App
   Attest enrollment remains pending.
-- No background-observer, APNs delivery, deletion, or same-phone replacement-
-  installation receipt exists.
+- One bounded background-observer attempt exists for artifact `aa16411`, but
+  it found no legacy marker and is explicitly inconclusive. Automated
+  durability coverage passes on unintegrated candidate `38365d1`; a signed
+  integrated physical pass remains required. No APNs delivery, deletion, or
+  same-phone replacement-installation receipt exists.
 - Universal-link evidence is explicitly deferred for this private-beta
   boundary because no HTTPS invitation domain will be provided. Only the
   controlled custom-scheme fallback may be exercised or claimed.
