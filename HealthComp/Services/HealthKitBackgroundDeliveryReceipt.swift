@@ -70,6 +70,32 @@ enum HealthKitBackgroundDeliveryReceiptStoreFailure:
     case ioFailure
 }
 
+enum HealthKitBackgroundDeliveryReceiptStoreFaultPoint: Sendable {
+    case temporaryFullSync
+    case temporarySynced
+    case destinationFullSync
+    case directorySync
+}
+
+struct HealthKitBackgroundDeliveryReceiptStoreFaultInjector: Sendable {
+    let failAt: HealthKitBackgroundDeliveryReceiptStoreFaultPoint?
+
+    init(
+        failAt: HealthKitBackgroundDeliveryReceiptStoreFaultPoint? = nil
+    ) {
+        self.failAt = failAt
+    }
+
+    static let none = Self()
+
+    func checkpoint(
+        _ point: HealthKitBackgroundDeliveryReceiptStoreFaultPoint
+    ) throws {
+        guard failAt == point else { return }
+        throw HealthKitBackgroundDeliveryReceiptStoreFailure.ioFailure
+    }
+}
+
 actor HealthKitBackgroundDeliveryReceiptStore {
     private struct Document: Codable, Equatable {
         static let currentVersion: UInt32 = 1
@@ -99,6 +125,8 @@ actor HealthKitBackgroundDeliveryReceiptStore {
 
     private let directory: URL
     private let fileURL: URL
+    private let faultInjector:
+        HealthKitBackgroundDeliveryReceiptStoreFaultInjector
     private let fileProtection: JSONCompetitionEventStoreFileProtection
 
     init(
@@ -110,6 +138,22 @@ actor HealthKitBackgroundDeliveryReceiptStore {
             "background-delivery-receipts.v1.json",
             isDirectory: false
         )
+        self.faultInjector = .none
+        self.fileProtection = fileProtection
+    }
+
+    init(
+        directory: URL,
+        faultInjector:
+            HealthKitBackgroundDeliveryReceiptStoreFaultInjector,
+        fileProtection: JSONCompetitionEventStoreFileProtection = .live
+    ) {
+        self.directory = directory.standardizedFileURL
+        self.fileURL = directory.standardizedFileURL.appendingPathComponent(
+            "background-delivery-receipts.v1.json",
+            isDirectory: false
+        )
+        self.faultInjector = faultInjector
         self.fileProtection = fileProtection
     }
 
@@ -125,7 +169,7 @@ actor HealthKitBackgroundDeliveryReceiptStore {
                 throw HealthKitBackgroundDeliveryReceiptStoreFailure
                     .signalConflict
             }
-            try synchronizeDirectory()
+            try ensureReceiptFileIsDurable()
             return
         }
         document.receipts.append(receipt)
@@ -144,9 +188,11 @@ actor HealthKitBackgroundDeliveryReceiptStore {
         }
         try validateDirectory()
         try reapStaleTemporaryFiles()
-        return try readDocument().receipts.contains {
+        let isContained = try readDocument().receipts.contains {
             $0.signalID == signalID
         }
+        if isContained { try ensureReceiptFileIsDurable() }
+        return isContained
     }
 
     func receipts() throws -> [HealthKitBackgroundDeliveryReceipt] {
@@ -338,6 +384,16 @@ actor HealthKitBackgroundDeliveryReceiptStore {
         guard wroteAll, Self.synchronize(descriptor) else {
             throw HealthKitBackgroundDeliveryReceiptStoreFailure.ioFailure
         }
+        try fullySynchronize(
+            descriptor,
+            failurePoint: .temporaryFullSync
+        )
+        do {
+            try faultInjector.checkpoint(.temporarySynced)
+        } catch {
+            removeTemporary = false
+            throw error
+        }
         guard Darwin.close(descriptor) == 0 else {
             descriptorIsOpen = false
             throw HealthKitBackgroundDeliveryReceiptStoreFailure.ioFailure
@@ -347,6 +403,29 @@ actor HealthKitBackgroundDeliveryReceiptStore {
             throw HealthKitBackgroundDeliveryReceiptStoreFailure.ioFailure
         }
         removeTemporary = false
+        try ensureReceiptFileIsDurable()
+    }
+
+    private func ensureReceiptFileIsDurable() throws {
+        let descriptor = fileURL.path.withCString { path in
+            Darwin.open(path, O_RDWR | O_CLOEXEC | O_NOFOLLOW)
+        }
+        guard descriptor >= 0 else {
+            if errno == ELOOP {
+                throw HealthKitBackgroundDeliveryReceiptStoreFailure
+                    .unsafeFilesystemEntry
+            }
+            throw HealthKitBackgroundDeliveryReceiptStoreFailure.ioFailure
+        }
+        defer { _ = Darwin.close(descriptor) }
+        var metadata = stat()
+        guard Darwin.fstat(descriptor, &metadata) == 0,
+              metadata.st_mode & S_IFMT == S_IFREG,
+              Darwin.fchmod(descriptor, mode_t(0o600)) == 0
+        else {
+            throw HealthKitBackgroundDeliveryReceiptStoreFailure
+                .unsafeFilesystemEntry
+        }
         do {
             try fileProtection.apply(
                 .completeUntilFirstUserAuthentication,
@@ -355,7 +434,14 @@ actor HealthKitBackgroundDeliveryReceiptStore {
         } catch {
             throw HealthKitBackgroundDeliveryReceiptStoreFailure.ioFailure
         }
+        guard Self.synchronize(descriptor) else {
+            throw HealthKitBackgroundDeliveryReceiptStoreFailure.ioFailure
+        }
         try synchronizeDirectory()
+        try fullySynchronize(
+            descriptor,
+            failurePoint: .destinationFullSync
+        )
     }
 
     private func rejectUnsafeDestination() throws {
@@ -403,6 +489,7 @@ actor HealthKitBackgroundDeliveryReceiptStore {
             throw HealthKitBackgroundDeliveryReceiptStoreFailure.ioFailure
         }
         defer { _ = Darwin.close(descriptor) }
+        try faultInjector.checkpoint(.directorySync)
         guard Self.synchronize(descriptor) else {
             throw HealthKitBackgroundDeliveryReceiptStoreFailure.ioFailure
         }
@@ -510,6 +597,17 @@ actor HealthKitBackgroundDeliveryReceiptStore {
             return false
         }
         return true
+    }
+
+    private func fullySynchronize(
+        _ descriptor: Int32,
+        failurePoint: HealthKitBackgroundDeliveryReceiptStoreFaultPoint
+    ) throws {
+        try faultInjector.checkpoint(failurePoint)
+        while Darwin.fcntl(descriptor, F_FULLFSYNC) != 0 {
+            if errno == EINTR { continue }
+            throw HealthKitBackgroundDeliveryReceiptStoreFailure.ioFailure
+        }
     }
 
     private static let encoder: JSONEncoder = {

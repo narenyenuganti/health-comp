@@ -3,7 +3,16 @@ import HealthKit
 import CompetitionCore
 
 struct HealthKitObserverWakeup: @unchecked Sendable {
+    let ownershipScope: EnvironmentSignalOwnershipScope?
     let completion: () -> Void
+
+    init(
+        ownershipScope: EnvironmentSignalOwnershipScope? = nil,
+        completion: @escaping () -> Void
+    ) {
+        self.ownershipScope = ownershipScope
+        self.completion = completion
+    }
 }
 
 struct HealthKitCompetitionDependencies: @unchecked Sendable {
@@ -13,6 +22,7 @@ struct HealthKitCompetitionDependencies: @unchecked Sendable {
     let resolveStandMode: @Sendable () throws -> ActivityStandMode
     let summaryUpdates: @Sendable (CompetitionActivityWindow) -> AsyncStream<[HKActivitySummary]>
     let observerUpdates: @Sendable () -> AsyncStream<HealthKitObserverWakeup>
+    let stopObserverUpdates: @Sendable () async -> Void
     let enableBackgroundDelivery: @Sendable (HKSampleType) async throws -> Void
 
     init(
@@ -22,6 +32,7 @@ struct HealthKitCompetitionDependencies: @unchecked Sendable {
         resolveStandMode: @escaping @Sendable () throws -> ActivityStandMode,
         summaryUpdates: @escaping @Sendable (CompetitionActivityWindow) -> AsyncStream<[HKActivitySummary]>,
         observerUpdates: @escaping @Sendable () -> AsyncStream<HealthKitObserverWakeup>,
+        stopObserverUpdates: @escaping @Sendable () async -> Void,
         enableBackgroundDelivery: @escaping @Sendable (HKSampleType) async throws -> Void = { _ in }
     ) {
         self.isHealthDataAvailable = isHealthDataAvailable
@@ -30,6 +41,7 @@ struct HealthKitCompetitionDependencies: @unchecked Sendable {
         self.resolveStandMode = resolveStandMode
         self.summaryUpdates = summaryUpdates
         self.observerUpdates = observerUpdates
+        self.stopObserverUpdates = stopObserverUpdates
         self.enableBackgroundDelivery = enableBackgroundDelivery
     }
 
@@ -43,7 +55,8 @@ struct HealthKitCompetitionDependencies: @unchecked Sendable {
             readActivitySummaries: { _ in summaries },
             resolveStandMode: { standMode },
             summaryUpdates: { _ in AsyncStream { $0.finish() } },
-            observerUpdates: { AsyncStream { $0.finish() } }
+            observerUpdates: { AsyncStream { $0.finish() } },
+            stopObserverUpdates: {}
         )
     }
 }
@@ -53,30 +66,42 @@ final class HealthKitProvider: HealthDataProvider, @unchecked Sendable {
     // feature/provider instance. The production state is process-rooted so a
     // replacement environment can replay pending signals instead of tearing
     // down callbacks before their journal outcome is persisted.
-    private static let productionSignalState = HealthKitProviderSignalState()
+    private static let productionOwnershipRegistry =
+        HealthKitSignalOwnershipRegistry()
+    private static let productionSignalState = HealthKitProviderSignalState(
+        ownershipRegistry: productionOwnershipRegistry
+    )
 
     private let healthStore: HKHealthStore
     private let userId: UUID
     private let competitionDependencies: HealthKitCompetitionDependencies
     private let signalState: HealthKitProviderSignalState
+    private let ownershipRegistry: HealthKitSignalOwnershipRegistry
 
     init(userId: UUID, healthStore: HKHealthStore = HKHealthStore()) {
+        let ownershipRegistry = Self.productionOwnershipRegistry
         self.userId = userId
         self.healthStore = healthStore
         self.competitionDependencies = Self.liveCompetitionDependencies(
-            healthStore: healthStore
+            healthStore: healthStore,
+            ownershipRegistry: ownershipRegistry
         )
         self.signalState = Self.productionSignalState
+        self.ownershipRegistry = ownershipRegistry
     }
 
     init(
         userId: UUID,
         competitionDependencies: HealthKitCompetitionDependencies
     ) {
+        let ownershipRegistry = HealthKitSignalOwnershipRegistry()
         self.userId = userId
         self.healthStore = HKHealthStore()
         self.competitionDependencies = competitionDependencies
-        self.signalState = HealthKitProviderSignalState()
+        self.signalState = HealthKitProviderSignalState(
+            ownershipRegistry: ownershipRegistry
+        )
+        self.ownershipRegistry = ownershipRegistry
     }
 
     func requestAuthorization() async throws {
@@ -219,16 +244,82 @@ final class HealthKitProvider: HealthDataProvider, @unchecked Sendable {
         )
     }
 
+    func activateSignalOwnership(
+        for profileID: UUID
+    ) async throws -> EnvironmentSignalOwnershipActivation {
+        try ownershipRegistry.activate(for: profileID)
+    }
+
+    func commitSignalOwnershipActivation(
+        _ activation: EnvironmentSignalOwnershipActivation
+    ) async throws {
+        try ownershipRegistry.commit(activation)
+    }
+
+    func rollbackSignalOwnershipActivation(
+        _ activation: EnvironmentSignalOwnershipActivation
+    ) async {
+        ownershipRegistry.rollback(activation)
+    }
+
+    func quiesceSignalOwnership(
+        _ lease: EnvironmentSignalOwnershipLease
+    ) async throws -> [EnvironmentSignal] {
+        let scope = try ownershipRegistry.beginQuiescence(
+            lease
+        )
+        return await signalState.quiesce(ownershipScope: scope)
+    }
+
+    func retireSignalOwnership(
+        _ lease: EnvironmentSignalOwnershipLease
+    ) async throws {
+        let scope = try ownershipRegistry.scope(for: lease)
+        guard !(await signalState.hasPendingCompletionSignal(
+            ownershipScope: scope
+        )) else {
+            throw EnvironmentSignalOwnershipError.pendingCallbacks
+        }
+        try ownershipRegistry.retire(lease)
+    }
+
+    // Direct-provider tests and migration-only callers can still resolve the
+    // current lease by profile. Production coordinators retain and present the
+    // exact lease issued to them.
+    func quiesceSignalOwnership(
+        for profileID: UUID
+    ) async throws -> [EnvironmentSignal] {
+        try await quiesceSignalOwnership(
+            ownershipRegistry.currentLease(for: profileID)
+        )
+    }
+
+    func retireSignalOwnership(for profileID: UUID) async throws {
+        try await retireSignalOwnership(
+            ownershipRegistry.currentLease(for: profileID)
+        )
+    }
+
+    func captureObserverWakeup(
+        completion: @escaping () -> Void
+    ) -> HealthKitObserverWakeup {
+        ownershipRegistry.captureObserverWakeup(completion: completion)
+    }
+
     func signals() async -> AsyncStream<EnvironmentSignal> {
+        guard ownershipRegistry.allowsSignalProduction() else {
+            return AsyncStream { $0.finish() }
+        }
         let stream = await signalState.stream()
         await signalState.startObserverUpdatesIfNeeded(
-            makeStream: competitionDependencies.observerUpdates
+            makeStream: competitionDependencies.observerUpdates,
+            stopProduction: competitionDependencies.stopObserverUpdates
         )
         await ensureBackgroundDelivery()
         return stream
     }
 
-    func completeSignal(_ id: String) async {
+    func completeSignal(_ id: String) async -> Bool {
         await signalState.completeSignal(id)
     }
 
@@ -482,9 +573,26 @@ final class HealthKitProvider: HealthDataProvider, @unchecked Sendable {
     }
 
     private static func liveCompetitionDependencies(
-        healthStore: HKHealthStore
+        healthStore: HKHealthStore,
+        ownershipRegistry: HealthKitSignalOwnershipRegistry
     ) -> HealthKitCompetitionDependencies {
-        HealthKitCompetitionDependencies(
+        let observerDriver = HealthKitObserverUpdateDriver { handler in
+            observerSampleTypes().map { type in
+                let query = HKObserverQuery(
+                    sampleType: type,
+                    predicate: nil
+                ) { _, completion, _ in
+                    handler(completion)
+                }
+                healthStore.execute(query)
+                return { healthStore.stop(query) }
+            }
+        }
+        let observerController = HealthKitObserverUpdateController(
+            driver: observerDriver,
+            ownershipRegistry: ownershipRegistry
+        )
+        return HealthKitCompetitionDependencies(
             isHealthDataAvailable: {
                 HKHealthStore.isHealthDataAvailable()
             },
@@ -538,30 +646,8 @@ final class HealthKitProvider: HealthDataProvider, @unchecked Sendable {
                     continuation.onTermination = { _ in task.cancel() }
                 }
             },
-            observerUpdates: {
-                AsyncStream { continuation in
-                    let queries = observerSampleTypes().map { type in
-                        HKObserverQuery(
-                            sampleType: type,
-                            predicate: nil
-                        ) { _, completion, _ in
-                            continuation.yield(
-                                HealthKitObserverWakeup(
-                                    completion: completion
-                                )
-                            )
-                        }
-                    }
-                    for query in queries {
-                        healthStore.execute(query)
-                    }
-                    continuation.onTermination = { _ in
-                        for query in queries {
-                            healthStore.stop(query)
-                        }
-                    }
-                }
-            },
+            observerUpdates: { observerController.stream() },
+            stopObserverUpdates: { observerController.stop() },
             enableBackgroundDelivery: { type in
                 try await healthStore.enableBackgroundDelivery(
                     for: type,
@@ -649,9 +735,328 @@ final class HealthKitProvider: HealthDataProvider, @unchecked Sendable {
     }
 }
 
+struct HealthKitObserverUpdateDriver: @unchecked Sendable {
+    typealias Completion = () -> Void
+    typealias Handler = (@escaping Completion) -> Void
+    typealias Stop = () -> Void
+
+    private let startOperation: (@escaping Handler) -> [Stop]
+
+    init(_ start: @escaping (@escaping Handler) -> [Stop]) {
+        self.startOperation = start
+    }
+
+    func start(_ handler: @escaping Handler) -> [Stop] {
+        startOperation(handler)
+    }
+}
+
+final class HealthKitObserverUpdateController: @unchecked Sendable {
+    private let condition = NSCondition()
+    private let driver: HealthKitObserverUpdateDriver
+    private let ownershipRegistry: HealthKitSignalOwnershipRegistry
+    private let didRegisterIngress: @Sendable () -> Void
+    private var continuation:
+        AsyncStream<HealthKitObserverWakeup>.Continuation?
+    private var activeEpochID: UUID?
+    private var stopActions: [HealthKitObserverUpdateDriver.Stop] = []
+    private var activeCallbacks = 0
+
+    init(
+        driver: HealthKitObserverUpdateDriver,
+        ownershipRegistry: HealthKitSignalOwnershipRegistry,
+        didRegisterIngress: @escaping @Sendable () -> Void = {}
+    ) {
+        self.driver = driver
+        self.ownershipRegistry = ownershipRegistry
+        self.didRegisterIngress = didRegisterIngress
+    }
+
+    func stream() -> AsyncStream<HealthKitObserverWakeup> {
+        guard let ownershipScope = ownershipRegistry.activeScope() else {
+            return AsyncStream { $0.finish() }
+        }
+        var streamContinuation:
+            AsyncStream<HealthKitObserverWakeup>.Continuation!
+        let stream = AsyncStream<HealthKitObserverWakeup> {
+            streamContinuation = $0
+        }
+        let epochID = UUID()
+        let installed = condition.withLock {
+            guard continuation == nil else { return false }
+            continuation = streamContinuation
+            activeEpochID = epochID
+            return true
+        }
+        guard installed else {
+            streamContinuation.finish()
+            return stream
+        }
+        let stopActions = driver.start { [weak self] completion in
+            self?.receive(
+                epochID: epochID,
+                ownershipScope: ownershipScope,
+                completion: completion
+            )
+        }
+        let retained = condition.withLock {
+            guard activeEpochID == epochID else { return false }
+            self.stopActions = stopActions
+            return true
+        }
+        if !retained { stopActions.forEach { $0() } }
+        return stream
+    }
+
+    func stop() {
+        let stopActions = condition.withLock { self.stopActions }
+        stopActions.forEach { $0() }
+        let continuation = condition.withLock {
+            while activeCallbacks > 0 {
+                condition.wait()
+            }
+            let continuation = self.continuation
+            self.continuation = nil
+            activeEpochID = nil
+            self.stopActions = []
+            return continuation
+        }
+        continuation?.finish()
+    }
+
+    private func receive(
+        epochID: UUID,
+        ownershipScope: EnvironmentSignalOwnershipScope,
+        completion: @escaping () -> Void
+    ) {
+        let captured = condition.withLock { () -> (
+            AsyncStream<HealthKitObserverWakeup>.Continuation
+        )? in
+            guard activeEpochID == epochID,
+                  let continuation
+            else { return nil }
+            activeCallbacks += 1
+            return continuation
+        }
+        guard let captured else { return }
+        didRegisterIngress()
+        captured.yield(
+            HealthKitObserverWakeup(
+                ownershipScope: ownershipScope,
+                completion: completion
+            )
+        )
+        condition.withLock {
+            activeCallbacks -= 1
+            if activeCallbacks == 0 {
+                condition.broadcast()
+            }
+        }
+    }
+}
+
+final class HealthKitSignalOwnershipRegistry: @unchecked Sendable {
+    private enum State {
+        case inactive
+        case activating(
+            EnvironmentSignalOwnershipLease,
+            UUID
+        )
+        case active(EnvironmentSignalOwnershipLease)
+        case quiescing(EnvironmentSignalOwnershipLease)
+    }
+
+    private let lock = NSLock()
+    private var scopesByProfile: [
+        UUID: EnvironmentSignalOwnershipScope
+    ] = [:]
+    private var state = State.inactive
+
+    func activate(
+        for profileID: UUID
+    ) throws -> EnvironmentSignalOwnershipActivation {
+        try lock.withLock {
+            switch state {
+            case .inactive:
+                let scope = EnvironmentSignalOwnershipScope()
+                let lease = EnvironmentSignalOwnershipLease(
+                    profileID: profileID,
+                    scope: scope
+                )
+                let reservationID = UUID()
+                state = .activating(lease, reservationID)
+                return EnvironmentSignalOwnershipActivation(
+                    lease: lease,
+                    reservationID: reservationID
+                )
+            case let .active(activeLease)
+                where activeLease.profileID == profileID:
+                return EnvironmentSignalOwnershipActivation(
+                    lease: EnvironmentSignalOwnershipLease(
+                        profileID: profileID,
+                        scope: activeLease.scope
+                    ),
+                    reservationID: nil,
+                    expectedOwnerID: activeLease.ownerID
+                )
+            case .activating, .active, .quiescing:
+                throw EnvironmentSignalOwnershipError.activeOwnerNotRetired
+            }
+        }
+    }
+
+    func commit(
+        _ activation: EnvironmentSignalOwnershipActivation
+    ) throws {
+        try lock.withLock {
+            if let reservationID = activation.reservationID {
+                guard case let .activating(
+                    pendingLease,
+                    activeReservationID
+                ) = state,
+                pendingLease == activation.lease,
+                activeReservationID == reservationID
+                else {
+                    throw EnvironmentSignalOwnershipError.inactiveOwner
+                }
+                scopesByProfile[pendingLease.profileID] = pendingLease.scope
+                state = .active(pendingLease)
+                return
+            }
+            guard case let .active(activeLease) = state,
+                  activeLease.profileID == activation.lease.profileID,
+                  activeLease.scope == activation.scope,
+                  activeLease.ownerID == activation.expectedOwnerID
+            else {
+                throw EnvironmentSignalOwnershipError.inactiveOwner
+            }
+            state = .active(activation.lease)
+        }
+    }
+
+    func rollback(
+        _ activation: EnvironmentSignalOwnershipActivation
+    ) {
+        guard let reservationID = activation.reservationID else { return }
+        lock.withLock {
+            guard case let .activating(pendingLease, activeReservationID) = state,
+                  pendingLease == activation.lease,
+                  activeReservationID == reservationID
+            else { return }
+            state = .inactive
+        }
+    }
+
+    func beginQuiescence(
+        _ lease: EnvironmentSignalOwnershipLease
+    ) throws -> EnvironmentSignalOwnershipScope {
+        try lock.withLock {
+            switch state {
+            case let .active(activeLease) where activeLease == lease:
+                state = .quiescing(lease)
+                return lease.scope
+            case let .quiescing(activeLease) where activeLease == lease:
+                return lease.scope
+            case .inactive, .activating, .active, .quiescing:
+                throw EnvironmentSignalOwnershipError.inactiveOwner
+            }
+        }
+    }
+
+    func beginQuiescence(
+        for profileID: UUID
+    ) throws -> EnvironmentSignalOwnershipScope {
+        try beginQuiescence(currentLease(for: profileID))
+    }
+
+    func scope(
+        for lease: EnvironmentSignalOwnershipLease
+    ) throws -> EnvironmentSignalOwnershipScope {
+        try lock.withLock {
+            switch state {
+            case let .active(activeLease) where activeLease == lease:
+                return lease.scope
+            case let .quiescing(activeLease) where activeLease == lease:
+                return lease.scope
+            case .inactive, .activating:
+                throw EnvironmentSignalOwnershipError.inactiveOwner
+            case .active, .quiescing:
+                throw EnvironmentSignalOwnershipError.inactiveOwner
+            }
+        }
+    }
+
+    func retire(_ lease: EnvironmentSignalOwnershipLease) throws {
+        try lock.withLock {
+            guard case let .quiescing(activeLease) = state,
+                  activeLease == lease
+            else {
+                throw EnvironmentSignalOwnershipError.inactiveOwner
+            }
+            scopesByProfile[lease.profileID] = nil
+            state = .inactive
+        }
+    }
+
+    func retire(profileID: UUID) throws {
+        try retire(currentLease(for: profileID))
+    }
+
+    func activeScope() -> EnvironmentSignalOwnershipScope? {
+        lock.withLock {
+            switch state {
+            case .inactive, .activating:
+                nil
+            case let .active(lease), let .quiescing(lease):
+                lease.scope
+            }
+        }
+    }
+
+    func currentLease(
+        for profileID: UUID
+    ) throws -> EnvironmentSignalOwnershipLease {
+        try lock.withLock {
+            switch state {
+            case let .active(lease) where lease.profileID == profileID,
+                 let .quiescing(lease) where lease.profileID == profileID:
+                return lease
+            case .inactive, .activating, .active, .quiescing:
+                throw EnvironmentSignalOwnershipError.inactiveOwner
+            }
+        }
+    }
+
+    func allowsSignalProduction() -> Bool {
+        lock.withLock {
+            if case .active = state { return true }
+            return false
+        }
+    }
+
+    func captureObserverWakeup(
+        completion: @escaping () -> Void
+    ) -> HealthKitObserverWakeup {
+        lock.withLock {
+            let scope: EnvironmentSignalOwnershipScope?
+            switch state {
+            case .inactive, .activating:
+                scope = nil
+            case let .active(lease), let .quiescing(lease):
+                scope = lease.scope
+            }
+            return HealthKitObserverWakeup(
+                ownershipScope: scope,
+                completion: completion
+            )
+        }
+    }
+}
+
 private actor HealthKitProviderSignalState {
     private struct SummarySubscription {
         let generation: UUID
+        let ownershipScope: EnvironmentSignalOwnershipScope?
         let task: Task<Void, Never>
     }
 
@@ -662,16 +1067,22 @@ private actor HealthKitProviderSignalState {
 
     private var continuation: AsyncStream<EnvironmentSignal>.Continuation?
     private var continuationToken: UUID?
+    private let ownershipRegistry: HealthKitSignalOwnershipRegistry
     private let signalInstanceID = UUID().uuidString.lowercased()
     private var nextSignalOrdinal: UInt64 = 1
     private var completions: [String: () -> Void] = [:]
     private var pendingCompletionSignals: [EnvironmentSignal] = []
     private var observerTask: Task<Void, Never>?
+    private var stopObserverProduction: (@Sendable () async -> Void)?
     private var summarySubscriptions: [
         CompetitionActivityWindow: SummarySubscription
     ] = [:]
     private var desiredSummaryWindows = Set<CompetitionActivityWindow>()
     private var backgroundDeliveryStates: [HKSampleType: BackgroundDeliveryState] = [:]
+
+    init(ownershipRegistry: HealthKitSignalOwnershipRegistry) {
+        self.ownershipRegistry = ownershipRegistry
+    }
 
     deinit {
         // Production state is process-rooted and does not deinitialize during
@@ -700,18 +1111,60 @@ private actor HealthKitProviderSignalState {
     }
 
     func startObserverUpdatesIfNeeded(
-        makeStream: @escaping @Sendable () -> AsyncStream<HealthKitObserverWakeup>
+        makeStream: @escaping @Sendable () -> AsyncStream<HealthKitObserverWakeup>,
+        stopProduction: @escaping @Sendable () async -> Void
     ) {
+        guard ownershipRegistry.allowsSignalProduction() else {
+            continuation?.finish()
+            continuation = nil
+            continuationToken = nil
+            return
+        }
         guard observerTask == nil else { return }
+        let observerOwnershipScope = ownershipRegistry.activeScope()
         let updates = makeStream()
+        stopObserverProduction = stopProduction
         observerTask = Task { [weak self] in
             for await update in updates {
                 guard !Task.isCancelled else { break }
                 await self?.emit(
                     trigger: .observerWakeupBackground,
-                    completion: update.completion
+                    completion: update.completion,
+                    ownershipScope:
+                        update.ownershipScope ?? observerOwnershipScope
                 )
             }
+        }
+    }
+
+    func quiesce(
+        ownershipScope: EnvironmentSignalOwnershipScope
+    ) async -> [EnvironmentSignal] {
+        if let stopObserverProduction {
+            await stopObserverProduction()
+        }
+        if let observerTask {
+            await observerTask.value
+        }
+        observerTask = nil
+        stopObserverProduction = nil
+
+        let summaryTasks = summarySubscriptions.values.map(\.task)
+        summarySubscriptions = [:]
+        desiredSummaryWindows = []
+        for task in summaryTasks { task.cancel() }
+        for task in summaryTasks { await task.value }
+
+        return pendingCompletionSignals.filter {
+            $0.ownershipScope == ownershipScope
+        }
+    }
+
+    func hasPendingCompletionSignal(
+        ownershipScope: EnvironmentSignalOwnershipScope
+    ) -> Bool {
+        pendingCompletionSignals.contains {
+            $0.ownershipScope == ownershipScope
         }
     }
 
@@ -764,6 +1217,7 @@ private actor HealthKitProviderSignalState {
         to desiredWindows: Set<CompetitionActivityWindow>,
         makeStream: @escaping @Sendable (CompetitionActivityWindow) -> AsyncStream<[HKActivitySummary]>
     ) {
+        guard ownershipRegistry.allowsSignalProduction() else { return }
         let removedWindows = Set(summarySubscriptions.keys)
             .subtracting(desiredWindows)
         for window in removedWindows {
@@ -772,6 +1226,12 @@ private actor HealthKitProviderSignalState {
         }
         self.desiredSummaryWindows = desiredWindows
 
+        let activeOwnershipScope = ownershipRegistry.activeScope()
+        for window in desiredWindows
+        where summarySubscriptions[window]?.ownershipScope
+            != activeOwnershipScope {
+            summarySubscriptions.removeValue(forKey: window)?.task.cancel()
+        }
         for window in desiredWindows where summarySubscriptions[window] == nil {
             startSummaryUpdates(window: window, makeStream: makeStream)
         }
@@ -782,13 +1242,18 @@ private actor HealthKitProviderSignalState {
         makeStream: @escaping @Sendable (CompetitionActivityWindow) -> AsyncStream<[HKActivitySummary]>
     ) {
         let generation = UUID()
+        let ownershipScope = ownershipRegistry.activeScope()
         let updates = makeStream(window)
         let task = Task { [weak self] in
             // Descriptor payloads are deliberately discarded. They are only a
             // wakeup signal for a subsequent authoritative one-shot reread.
             for await _ in updates {
                 guard !Task.isCancelled else { break }
-                await self?.emit(trigger: .summaryUpdate, completion: nil)
+                await self?.emit(
+                    trigger: .summaryUpdate,
+                    completion: nil,
+                    ownershipScope: ownershipScope
+                )
             }
             await self?.summaryUpdatesFinished(
                 generation: generation,
@@ -797,6 +1262,7 @@ private actor HealthKitProviderSignalState {
         }
         summarySubscriptions[window] = SummarySubscription(
             generation: generation,
+            ownershipScope: ownershipScope,
             task: task
         )
     }
@@ -812,22 +1278,32 @@ private actor HealthKitProviderSignalState {
         summarySubscriptions[window] = nil
     }
 
-    func completeSignal(_ id: String) {
+    func completeSignal(_ id: String) -> Bool {
+        guard let pending = pendingCompletionSignals.first(where: {
+            $0.id == id
+        }),
+        pending.ownershipScope == ownershipRegistry.activeScope()
+        else {
+            return false
+        }
         let completion = completions.removeValue(forKey: id)
         pendingCompletionSignals.removeAll { $0.id == id }
         completion?()
+        return completion != nil
     }
 
     private func emit(
         trigger: ActivityRefreshTrigger,
-        completion: (() -> Void)?
+        completion: (() -> Void)?,
+        ownershipScope: EnvironmentSignalOwnershipScope?
     ) {
         let id = "healthkit-signal-\(signalInstanceID)-\(nextSignalOrdinal)"
         nextSignalOrdinal += 1
         let signal = EnvironmentSignal(
             id: id,
             trigger: trigger,
-            requiresCompletion: completion != nil
+            requiresCompletion: completion != nil,
+            ownershipScope: ownershipScope
         )
         if let completion {
             completions[id] = completion

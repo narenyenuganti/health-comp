@@ -113,6 +113,21 @@ struct ActivityFixture: Equatable, Sendable {
 }
 
 actor FixtureActivitySource: CompetitionActivitySource {
+    private struct SignalCompletionOwnership {
+        let scope: EnvironmentSignalOwnershipScope?
+    }
+
+    private struct SignalCountWaiter {
+        let count: Int
+        let continuation: CheckedContinuation<Void, Never>
+    }
+
+    private struct SignalCompletionWaiter {
+        let id: String
+        let minimum: Int
+        let continuation: CheckedContinuation<Void, Never>
+    }
+
     private struct Waiter {
         let date: Date
         let continuation: CheckedContinuation<Void, Error>
@@ -144,8 +159,36 @@ actor FixtureActivitySource: CompetitionActivitySource {
     private let changes: [FixtureActivityChange]
     private var nextChangeIndex = 0
     private var nextSignalOrdinal: UInt64 = 1
+    private var activeSignalOwnershipProfileID: UUID?
+    private var signalOwnershipScope: EnvironmentSignalOwnershipScope?
+    private var activeSignalOwnershipLease: EnvironmentSignalOwnershipLease?
+    private var signalOwnershipScopesByProfile: [
+        UUID: EnvironmentSignalOwnershipScope
+    ] = [:]
+    private var pendingSignalOwnershipProfileID: UUID?
+    private var pendingSignalOwnershipActivation:
+        EnvironmentSignalOwnershipActivation?
+    private var shouldBlockNextSignalOwnershipCommit = false
+    private var signalOwnershipCommitIsBlocked = false
+    private var blockedSignalOwnershipCommitContinuation:
+        CheckedContinuation<Void, Never>?
+    private var signalOwnershipCommitBlockedWaiters: [
+        CheckedContinuation<Void, Never>
+    ] = []
     private var signalContinuations: [UUID: AsyncStream<EnvironmentSignal>.Continuation] = [:]
+    private var signalSubscriptionCount = 0
+    private var signalSubscriptionWaiters: [UUID: SignalCountWaiter] = [:]
+    private var signalSubscriberWaiters: [UUID: SignalCountWaiter] = [:]
     private var signalCompletionCounts: [String: Int] = [:]
+    private var signalCompletionAttemptCounts: [String: Int] = [:]
+    private var signalCompletionOwnerships: [
+        String: SignalCompletionOwnership
+    ] = [:]
+    private var knownOwnedSignalIDs: Set<String> = []
+    private var signalProductionIsQuiesced = false
+    private var signalCompletionWaiters: [
+        UUID: SignalCompletionWaiter
+    ] = [:]
     private var pendingCompletionSignals: [EnvironmentSignal] = []
     private var waiters: [UUID: Waiter] = [:]
     private var shouldBlockNextRead = false
@@ -360,6 +403,160 @@ actor FixtureActivitySource: CompetitionActivitySource {
         summarySubscriptionSyncs.append(.changed(to: desiredWindows))
     }
 
+    func activateSignalOwnership(
+        for profileID: UUID
+    ) throws -> EnvironmentSignalOwnershipActivation {
+        guard pendingSignalOwnershipActivation == nil else {
+            throw EnvironmentSignalOwnershipError.activeOwnerNotRetired
+        }
+        if activeSignalOwnershipProfileID != nil,
+           signalProductionIsQuiesced {
+            throw EnvironmentSignalOwnershipError.activeOwnerNotRetired
+        }
+        guard activeSignalOwnershipProfileID == nil
+            || activeSignalOwnershipProfileID == profileID
+        else {
+            throw EnvironmentSignalOwnershipError.activeOwnerNotRetired
+        }
+        if let signalOwnershipScope {
+            guard let activeSignalOwnershipLease else {
+                throw EnvironmentSignalOwnershipError.inactiveOwner
+            }
+            return EnvironmentSignalOwnershipActivation(
+                lease: EnvironmentSignalOwnershipLease(
+                    profileID: profileID,
+                    scope: signalOwnershipScope
+                ),
+                reservationID: nil,
+                expectedOwnerID: activeSignalOwnershipLease.ownerID
+            )
+        }
+        let lease = EnvironmentSignalOwnershipLease(
+            profileID: profileID,
+            scope: EnvironmentSignalOwnershipScope()
+        )
+        let activation = EnvironmentSignalOwnershipActivation(
+            lease: lease,
+            reservationID: UUID()
+        )
+        pendingSignalOwnershipProfileID = profileID
+        pendingSignalOwnershipActivation = activation
+        return activation
+    }
+
+    func commitSignalOwnershipActivation(
+        _ activation: EnvironmentSignalOwnershipActivation
+    ) async throws {
+        if activation.reservationID == nil {
+            guard let activeSignalOwnershipLease,
+                  activeSignalOwnershipProfileID
+                    == activation.lease.profileID,
+                  signalOwnershipScope == activation.scope,
+                  activeSignalOwnershipLease.ownerID
+                    == activation.expectedOwnerID,
+                  !signalProductionIsQuiesced
+            else {
+                throw EnvironmentSignalOwnershipError.inactiveOwner
+            }
+            self.activeSignalOwnershipLease = activation.lease
+            await blockSignalOwnershipCommitIfRequested()
+            return
+        }
+        guard pendingSignalOwnershipActivation == activation,
+              let profileID = pendingSignalOwnershipProfileID
+        else {
+            throw EnvironmentSignalOwnershipError.inactiveOwner
+        }
+        signalOwnershipScopesByProfile[profileID] = activation.scope
+        activeSignalOwnershipProfileID = profileID
+        signalOwnershipScope = activation.scope
+        activeSignalOwnershipLease = activation.lease
+        signalProductionIsQuiesced = false
+        pendingSignalOwnershipProfileID = nil
+        pendingSignalOwnershipActivation = nil
+        await blockSignalOwnershipCommitIfRequested()
+    }
+
+    func blockNextSignalOwnershipCommit() {
+        shouldBlockNextSignalOwnershipCommit = true
+    }
+
+    func waitUntilSignalOwnershipCommitIsBlocked() async {
+        guard !signalOwnershipCommitIsBlocked else { return }
+        await withCheckedContinuation { continuation in
+            signalOwnershipCommitBlockedWaiters.append(continuation)
+        }
+    }
+
+    func releaseBlockedSignalOwnershipCommit() {
+        blockedSignalOwnershipCommitContinuation?.resume()
+        blockedSignalOwnershipCommitContinuation = nil
+    }
+
+    private func blockSignalOwnershipCommitIfRequested() async {
+        guard shouldBlockNextSignalOwnershipCommit else { return }
+        shouldBlockNextSignalOwnershipCommit = false
+        signalOwnershipCommitIsBlocked = true
+        for waiter in signalOwnershipCommitBlockedWaiters {
+            waiter.resume()
+        }
+        signalOwnershipCommitBlockedWaiters.removeAll()
+        await withCheckedContinuation { continuation in
+            blockedSignalOwnershipCommitContinuation = continuation
+        }
+        signalOwnershipCommitIsBlocked = false
+    }
+
+    func rollbackSignalOwnershipActivation(
+        _ activation: EnvironmentSignalOwnershipActivation
+    ) {
+        guard activation.reservationID != nil,
+              pendingSignalOwnershipActivation == activation
+        else { return }
+        pendingSignalOwnershipProfileID = nil
+        pendingSignalOwnershipActivation = nil
+    }
+
+    func quiesceSignalOwnership(
+        _ lease: EnvironmentSignalOwnershipLease
+    ) throws -> [EnvironmentSignal] {
+        guard activeSignalOwnershipLease == lease,
+              activeSignalOwnershipProfileID == lease.profileID,
+              let signalOwnershipScope
+        else {
+            throw EnvironmentSignalOwnershipError.inactiveOwner
+        }
+        signalProductionIsQuiesced = true
+        let continuations = Array(signalContinuations.values)
+        signalContinuations.removeAll()
+        resumeSignalSubscriberWaiters()
+        continuations.forEach { $0.finish() }
+        return pendingCompletionSignals.filter {
+            $0.ownershipScope == signalOwnershipScope
+        }
+    }
+
+    func retireSignalOwnership(
+        _ lease: EnvironmentSignalOwnershipLease
+    ) throws {
+        guard activeSignalOwnershipLease == lease,
+              activeSignalOwnershipProfileID == lease.profileID,
+              let signalOwnershipScope,
+              signalProductionIsQuiesced
+        else {
+            throw EnvironmentSignalOwnershipError.inactiveOwner
+        }
+        guard !signalCompletionOwnerships.values.contains(where: {
+            $0.scope == signalOwnershipScope
+        }) else {
+            throw EnvironmentSignalOwnershipError.pendingCallbacks
+        }
+        signalOwnershipScopesByProfile[lease.profileID] = nil
+        activeSignalOwnershipProfileID = nil
+        self.signalOwnershipScope = nil
+        activeSignalOwnershipLease = nil
+    }
+
     func desiredSummarySubscriptionWindows() -> Set<CompetitionActivityWindow> {
         desiredSummaryWindows
     }
@@ -371,9 +568,17 @@ actor FixtureActivitySource: CompetitionActivitySource {
     }
 
     func signals() -> AsyncStream<EnvironmentSignal> {
+        guard activeSignalOwnershipLease != nil,
+              !signalProductionIsQuiesced
+        else {
+            return AsyncStream { $0.finish() }
+        }
         let token = UUID()
         return AsyncStream { continuation in
+            signalSubscriptionCount += 1
+            resumeSignalSubscriptionWaiters()
             signalContinuations[token] = continuation
+            resumeSignalSubscriberWaiters()
             if replaysPendingCompletionSignals {
                 for signal in pendingCompletionSignals {
                     continuation.yield(signal)
@@ -389,10 +594,87 @@ actor FixtureActivitySource: CompetitionActivitySource {
         signalContinuations.count
     }
 
-    func completeSignal(_ id: String) async {
+    func signalProductionIsCurrentlyQuiesced() -> Bool {
+        signalProductionIsQuiesced
+    }
+
+    func waitUntilSignalSubscriptionCount(_ minimum: Int) async {
+        guard signalSubscriptionCount < minimum else { return }
+        let waiterID = UUID()
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                guard !Task.isCancelled else {
+                    continuation.resume()
+                    return
+                }
+                signalSubscriptionWaiters[waiterID] = SignalCountWaiter(
+                    count: minimum,
+                    continuation: continuation
+                )
+            }
+        } onCancel: {
+            Task { await self.cancelSignalSubscriptionWaiter(waiterID) }
+        }
+    }
+
+    func waitUntilSignalSubscriberCount(_ expected: Int) async {
+        guard signalContinuations.count != expected else { return }
+        let waiterID = UUID()
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                guard !Task.isCancelled else {
+                    continuation.resume()
+                    return
+                }
+                signalSubscriberWaiters[waiterID] = SignalCountWaiter(
+                    count: expected,
+                    continuation: continuation
+                )
+            }
+        } onCancel: {
+            Task { await self.cancelSignalSubscriberWaiter(waiterID) }
+        }
+    }
+
+    func completeSignal(_ id: String) async -> Bool {
+        signalCompletionAttemptCounts[id, default: 0] += 1
+        if knownOwnedSignalIDs.contains(id) {
+            guard let ownership = signalCompletionOwnerships[id],
+                  ownership.scope == signalOwnershipScope
+            else {
+                return false
+            }
+            signalCompletionOwnerships[id] = nil
+        }
         signalCompletionCounts[id, default: 0] += 1
+        resumeSignalCompletionWaiters()
         if replaysPendingCompletionSignals {
             pendingCompletionSignals.removeAll { $0.id == id }
+        }
+        return true
+    }
+
+    func waitUntilSignalCompletionCount(
+        _ id: String,
+        minimum: Int
+    ) async {
+        guard signalCompletionCounts[id, default: 0] < minimum else { return }
+        let waiterID = UUID()
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                guard !Task.isCancelled else {
+                    continuation.resume()
+                    return
+                }
+                signalCompletionWaiters[waiterID] =
+                    SignalCompletionWaiter(
+                        id: id,
+                        minimum: minimum,
+                        continuation: continuation
+                    )
+            }
+        } onCancel: {
+            Task { await self.cancelSignalCompletionWaiter(waiterID) }
         }
     }
 
@@ -501,6 +783,17 @@ actor FixtureActivitySource: CompetitionActivitySource {
         signalCompletionCounts[id, default: 0]
     }
 
+    func signalCompletionAttemptCount(_ id: String) -> Int {
+        signalCompletionAttemptCounts[id, default: 0]
+    }
+
+    func emitSignal(
+        _ trigger: ActivityRefreshTrigger,
+        ownershipScope: EnvironmentSignalOwnershipScope
+    ) {
+        emit(trigger, ownershipScope: ownershipScope)
+    }
+
     func blockNextRead() {
         shouldBlockNextRead = true
     }
@@ -555,14 +848,29 @@ actor FixtureActivitySource: CompetitionActivitySource {
             : nanoseconds + increment
     }
 
-    private func emit(_ trigger: ActivityRefreshTrigger) {
+    private func emit(
+        _ trigger: ActivityRefreshTrigger,
+        ownershipScope suppliedOwnershipScope:
+            EnvironmentSignalOwnershipScope? = nil
+    ) {
+        guard activeSignalOwnershipLease != nil,
+              !signalProductionIsQuiesced
+        else { return }
         let id = "fixture-signal-\(nextSignalOrdinal)"
         nextSignalOrdinal += 1
+        let ownershipScope = suppliedOwnershipScope ?? signalOwnershipScope
         let signal = EnvironmentSignal(
             id: id,
             trigger: trigger,
-            requiresCompletion: trigger == .observerWakeupBackground
+            requiresCompletion: trigger == .observerWakeupBackground,
+            ownershipScope: ownershipScope
         )
+        if signal.requiresCompletion {
+            knownOwnedSignalIDs.insert(id)
+            signalCompletionOwnerships[id] = SignalCompletionOwnership(
+                scope: signal.ownershipScope
+            )
+        }
         if replaysPendingCompletionSignals, signal.requiresCompletion {
             pendingCompletionSignals.append(signal)
         }
@@ -573,6 +881,54 @@ actor FixtureActivitySource: CompetitionActivitySource {
 
     private func removeSignalContinuation(_ token: UUID) {
         signalContinuations[token] = nil
+        resumeSignalSubscriberWaiters()
+    }
+
+    private func resumeSignalSubscriptionWaiters() {
+        let readyIDs = signalSubscriptionWaiters.compactMap { id, waiter in
+            signalSubscriptionCount >= waiter.count ? id : nil
+        }
+        for id in readyIDs {
+            signalSubscriptionWaiters.removeValue(forKey: id)?
+                .continuation.resume()
+        }
+    }
+
+    private func resumeSignalSubscriberWaiters() {
+        let readyIDs = signalSubscriberWaiters.compactMap { id, waiter in
+            signalContinuations.count == waiter.count ? id : nil
+        }
+        for id in readyIDs {
+            signalSubscriberWaiters.removeValue(forKey: id)?
+                .continuation.resume()
+        }
+    }
+
+    private func resumeSignalCompletionWaiters() {
+        let readyIDs = signalCompletionWaiters.compactMap { id, waiter in
+            signalCompletionCounts[waiter.id, default: 0] >= waiter.minimum
+                ? id
+                : nil
+        }
+        for id in readyIDs {
+            signalCompletionWaiters.removeValue(forKey: id)?
+                .continuation.resume()
+        }
+    }
+
+    private func cancelSignalSubscriptionWaiter(_ id: UUID) {
+        signalSubscriptionWaiters.removeValue(forKey: id)?
+            .continuation.resume()
+    }
+
+    private func cancelSignalSubscriberWaiter(_ id: UUID) {
+        signalSubscriberWaiters.removeValue(forKey: id)?
+            .continuation.resume()
+    }
+
+    private func cancelSignalCompletionWaiter(_ id: UUID) {
+        signalCompletionWaiters.removeValue(forKey: id)?
+            .continuation.resume()
     }
 
     private func resumeReadyWaiters() {

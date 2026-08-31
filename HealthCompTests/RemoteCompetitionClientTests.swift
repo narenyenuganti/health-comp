@@ -230,6 +230,10 @@ final class RemoteCompetitionClientTests: XCTestCase {
         }
         await probe.waitUntilReadStarts()
         let mountTask = Task {
+            try await client.prepareForProfileTeardown(
+                requireRemoteInstallationRemoval: false
+            )
+            await client.stop()
             try await client.mountAuthenticatedProfile(
                 secondProfile,
                 secondPaths
@@ -247,7 +251,7 @@ final class RemoteCompetitionClientTests: XCTestCase {
         await client.stop()
     }
 
-    func testAuthorizationPromptDoesNotBlockProfileRemount()
+    func testAuthorizationPromptFinishesBeforeTerminalProfileRemount()
         async throws
     {
         let root = FileManager.default.temporaryDirectory
@@ -304,14 +308,18 @@ final class RemoteCompetitionClientTests: XCTestCase {
         }
         await authorization.waitUntilRequestStarts()
         let mountTask = Task {
+            try await client.prepareForProfileTeardown(
+                requireRemoteInstallationRemoval: false
+            )
+            await client.stop()
             try await client.mountAuthenticatedProfile(
                 secondProfile,
                 secondPaths
             )
         }
 
-        await fulfillment(of: [secondMount], timeout: 1)
         await authorization.releaseRequest()
+        await fulfillment(of: [secondMount], timeout: 1)
         try await mountTask.value
         let state = await authorizationTask.value
         XCTAssertEqual(state, .authorized)
@@ -448,7 +456,7 @@ final class RemoteCompetitionClientTests: XCTestCase {
         await client.stop()
     }
 
-    func testHealthAuthorizationPromptDoesNotBlockOrPublishAcrossProfileRemount()
+    func testHealthAuthorizationPromptDoesNotPublishAcrossTerminalProfileRemount()
         async throws
     {
         let root = FileManager.default.temporaryDirectory
@@ -533,12 +541,15 @@ final class RemoteCompetitionClientTests: XCTestCase {
         try await client.mountAuthenticatedProfile(firstProfile, firstPaths)
         var firstIterator = client.start().makeAsyncIterator()
         let firstStreamTask = Task {
-            if await firstIterator.next() == nil {
-                firstStreamFinished.fulfill()
-            }
+            while await firstIterator.next() != nil {}
+            firstStreamFinished.fulfill()
         }
         await source.waitUntilAuthorizationRequestIsBlocked()
         let mountTask = Task {
+            try await client.prepareForProfileTeardown(
+                requireRemoteInstallationRemoval: false
+            )
+            await client.stop()
             try await client.mountAuthenticatedProfile(
                 secondProfile,
                 secondPaths
@@ -562,7 +573,7 @@ final class RemoteCompetitionClientTests: XCTestCase {
         )
         XCTAssertEqual(reconciledPublication.publicationRevision, 2)
         let listCount = await lists.listCount()
-        XCTAssertEqual(listCount, 2)
+        XCTAssertEqual(listCount, 3)
         await client.stop()
     }
 
@@ -850,7 +861,13 @@ final class RemoteCompetitionClientTests: XCTestCase {
         let firstPublication = await firstIterator.next()
         XCTAssertEqual(firstPublication?.publicationRevision, 1)
 
+        try await client.prepareForProfileTeardown(
+            requireRemoteInstallationRemoval: false
+        )
+        await client.stop()
         try await client.mountAuthenticatedProfile(secondProfile, secondPaths)
+        let terminalPublication = await firstIterator.next()
+        XCTAssertEqual(terminalPublication?.publicationRevision, 2)
         let firstStreamTermination = await firstIterator.next()
         XCTAssertNil(firstStreamTermination)
 
@@ -862,7 +879,7 @@ final class RemoteCompetitionClientTests: XCTestCase {
         let secondStreamTermination = await secondIterator.next()
         XCTAssertNil(secondStreamTermination)
         let listCount = await probe.listCount()
-        XCTAssertEqual(listCount, 2)
+        XCTAssertEqual(listCount, 3)
     }
 
     func testStartAfterStopCannotRestartUntilAProfileIsMountedAgain()
@@ -1049,9 +1066,11 @@ final class RemoteCompetitionClientTests: XCTestCase {
         XCTAssertEqual(completionCountBeforeReceipt, 0)
 
         await receiptGate.release()
-        for _ in 0 ..< 100
-        where await source.signalCompletionCount("fixture-signal-1") == 0 {
-            await Task.yield()
+        await waitForBoundedAsyncCondition("receipt completion") {
+            await source.waitUntilSignalCompletionCount(
+                "fixture-signal-1",
+                minimum: 1
+            )
         }
         let receiptCount = await receiptGate.receiptCount()
         let finalCompletionCount = await source
@@ -1087,7 +1106,9 @@ final class RemoteCompetitionClientTests: XCTestCase {
         _ = await iterator.next()
 
         try await fixture.source.advance(to: fixture.signalDate)
-        await receiptProbe.waitUntilAttemptCount(1)
+        await waitForBoundedAsyncCondition("first receipt attempt") {
+            await receiptProbe.waitUntilAttemptCount(1)
+        }
         let completionAfterFailure = await fixture.source
             .signalCompletionCount("fixture-signal-1")
         XCTAssertEqual(completionAfterFailure, 0)
@@ -1139,7 +1160,9 @@ final class RemoteCompetitionClientTests: XCTestCase {
         var firstIterator = client.start().makeAsyncIterator()
         _ = await firstIterator.next()
         try await fixture.source.advance(to: fixture.signalDate)
-        await receiptStore.waitUntilCommitCount(1)
+        await waitForBoundedAsyncCondition("interrupted receipt commit") {
+            await receiptStore.waitUntilCommitCount(1)
+        }
 
         let stopTask = Task { await client.stop() }
         await fulfillment(of: [cancellationObserved], timeout: 1)
@@ -1159,12 +1182,14 @@ final class RemoteCompetitionClientTests: XCTestCase {
         )
         var secondIterator = client.start().makeAsyncIterator()
         _ = await secondIterator.next()
-        await receiptStore.waitUntilContainsCount(2)
-        for _ in 0 ..< 100
-        where await fixture.source.signalCompletionCount(
-            "fixture-signal-1"
-        ) == 0 {
-            await Task.yield()
+        await waitForBoundedAsyncCondition("receipt replay lookup") {
+            await receiptStore.waitUntilContainsCount(2)
+        }
+        await waitForBoundedAsyncCondition("remount completion") {
+            await fixture.source.waitUntilSignalCompletionCount(
+                "fixture-signal-1",
+                minimum: 1
+            )
         }
 
         let finalCompletionCount = await fixture.source
@@ -1172,6 +1197,1642 @@ final class RemoteCompetitionClientTests: XCTestCase {
         let commitCount = await receiptStore.commitCount()
         XCTAssertEqual(finalCompletionCount, 1)
         XCTAssertEqual(commitCount, 1)
+        await client.stop()
+    }
+
+    func testTerminalTeardownCancelsBlockedReceiptBeforeJoiningGate()
+        async throws
+    {
+        let fixture = try makeBackgroundSignalFixture(
+            profileID: "81000000-0000-4000-8000-000000000048",
+            epochID: "remote-background-terminal-blocked-receipt",
+            replaysPendingCompletionSignals: true
+        )
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let cancellationObserved = expectation(
+            description: "terminal teardown cancelled receipt persistence"
+        )
+        let cancellationFlag = RemoteLockedFlag()
+        let receiptStore = RemoteBackgroundDeliveryReceiptPersistenceGate {
+            cancellationFlag.setTrue()
+            cancellationObserved.fulfill()
+        }
+        let client = CompetitionClient.remote(
+            remoteAPI: remoteAPI(listCompetitions: { [] }),
+            environment: .accelerated(source: fixture.source),
+            backgroundDeliveryReceiptFactory: { _ in
+                HealthKitBackgroundDeliveryReceiptClient(
+                    contains: { signalID in
+                        await receiptStore.contains(signalID)
+                    },
+                    commit: { receipt in
+                        await receiptStore.commitUntilCancelled(receipt)
+                    }
+                )
+            }
+        )
+        try await client.mountAuthenticatedProfile(
+            fixture.profile,
+            fixture.paths
+        )
+        var iterator = client.start().makeAsyncIterator()
+        _ = await iterator.next()
+        try await fixture.source.advance(to: fixture.signalDate)
+        await waitForBoundedAsyncCondition("blocked terminal receipt") {
+            await receiptStore.waitUntilCommitCount(1)
+        }
+
+        let teardownTask = Task {
+            try await client.prepareForProfileTeardown(
+                requireRemoteInstallationRemoval: false
+            )
+        }
+        await fulfillment(of: [cancellationObserved], timeout: 1)
+        if !cancellationFlag.value {
+            // Rescue the RED path so a regression fails promptly rather than
+            // leaving an unbounded XCTest process behind.
+            await client.stop()
+        }
+        try await teardownTask.value
+
+        let receiptWasStored = await receiptStore.isStored(
+            "fixture-signal-1"
+        )
+        let completionCount = await fixture.source.signalCompletionCount(
+            "fixture-signal-1"
+        )
+        XCTAssertTrue(receiptWasStored)
+        XCTAssertEqual(completionCount, 1)
+        await client.stop()
+    }
+
+    func testTerminalTeardownDrainsNoSubscriberCallbackBeforeStorageDeletion()
+        async throws
+    {
+        let fixture = try makeBackgroundSignalFixture(
+            profileID: "81000000-0000-4000-8000-000000000031",
+            epochID: "remote-background-terminal-drain",
+            replaysPendingCompletionSignals: true
+        )
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let replacementProfile = AuthenticatedProfile(
+            id: UUID(
+                uuidString: "81000000-0000-4000-8000-000000000032"
+            )!,
+            displayName: "Beta Bob"
+        )
+        let replacementPaths = AuthenticatedProfileStoragePaths(
+            profileID: replacementProfile.id,
+            rootDirectory: fixture.root.appendingPathComponent(
+                "replacement-profile",
+                isDirectory: true
+            )
+        )
+        for directory in replacementPaths.fixedDirectories {
+            try FileManager.default.createDirectory(
+                at: directory,
+                withIntermediateDirectories: true
+            )
+        }
+        let receiptProbe = RemoteProfileBoundBackgroundReceiptProbe(
+            blockedProfileID: nil
+        )
+        let client = CompetitionClient.remote(
+            remoteAPI: remoteAPI(listCompetitions: { [] }),
+            environment: .accelerated(source: fixture.source),
+            backgroundDeliveryReceiptFactory: { paths in
+                HealthKitBackgroundDeliveryReceiptClient(
+                    contains: { signalID in
+                        await receiptProbe.contains(
+                            profileID: paths.profileID,
+                            signalID: signalID
+                        )
+                    },
+                    commit: { receipt in
+                        await receiptProbe.commit(
+                            profileID: paths.profileID,
+                            receipt: receipt
+                        )
+                    }
+                )
+            }
+        )
+        try await client.mountAuthenticatedProfile(
+            fixture.profile,
+            fixture.paths
+        )
+        await waitForBoundedAsyncCondition("no origin signal subscriber") {
+            await fixture.source.waitUntilSignalSubscriberCount(0)
+        }
+        let originSubscriberCountBeforeTeardown = await fixture.source
+            .signalSubscriberCount()
+        XCTAssertEqual(originSubscriberCountBeforeTeardown, 0)
+        try await fixture.source.advance(to: fixture.signalDate)
+
+        try await client.prepareForProfileTeardown(
+            requireRemoteInstallationRemoval: false
+        )
+
+        let completionCount = await fixture.source
+            .signalCompletionCount("fixture-signal-1")
+        let completionAttemptCount = await fixture.source
+            .signalCompletionAttemptCount("fixture-signal-1")
+        let commitCount = await receiptProbe.commitCount(
+            profileID: fixture.profile.id
+        )
+        let containsCount = await receiptProbe.containsCount(
+            profileID: fixture.profile.id
+        )
+        XCTAssertEqual(completionCount, 1)
+        XCTAssertEqual(completionAttemptCount, 1)
+        XCTAssertEqual(commitCount, 1)
+        XCTAssertEqual(containsCount, 1)
+        let originSubscriberCountAfterTeardown = await fixture.source
+            .signalSubscriberCount()
+        let signalProductionIsQuiesced = await fixture.source
+            .signalProductionIsCurrentlyQuiesced()
+        XCTAssertEqual(originSubscriberCountAfterTeardown, 0)
+        XCTAssertTrue(signalProductionIsQuiesced)
+        await client.stop()
+        try FileManager.default.removeItem(at: fixture.paths.rootDirectory)
+
+        try await client.mountAuthenticatedProfile(
+            replacementProfile,
+            replacementPaths
+        )
+        var replacementIterator = client.start().makeAsyncIterator()
+        let replacementInitialState = await replacementIterator.next()
+        XCTAssertNotNil(replacementInitialState)
+        await waitForBoundedAsyncCondition("replacement subscription") {
+            await fixture.source.waitUntilSignalSubscriptionCount(1)
+        }
+        try await fixture.source.advance(to: fixture.barrierDate)
+        await waitForBoundedAsyncCondition("replacement barrier receipt") {
+            await receiptProbe.waitUntilCommitted(
+                signalID: "fixture-signal-2",
+                profileID: replacementProfile.id
+            )
+        }
+        await waitForBoundedAsyncCondition("replacement barrier completion") {
+            await fixture.source.waitUntilSignalCompletionCount(
+                "fixture-signal-2",
+                minimum: 1
+            )
+        }
+        let finalOriginContainsCount = await receiptProbe.containsCount(
+            profileID: fixture.profile.id
+        )
+        let finalOriginCommitCount = await receiptProbe.commitCount(
+            profileID: fixture.profile.id
+        )
+        let finalOriginCompletionCount = await fixture.source
+            .signalCompletionCount("fixture-signal-1")
+        let finalOriginCompletionAttempts = await fixture.source
+            .signalCompletionAttemptCount("fixture-signal-1")
+        let replacementContainsIDs = await receiptProbe.containedSignalIDs(
+            profileID: replacementProfile.id
+        )
+        let replacementCommitIDs = await receiptProbe.committedSignalIDs(
+            profileID: replacementProfile.id
+        )
+        XCTAssertEqual(finalOriginContainsCount, containsCount)
+        XCTAssertEqual(finalOriginCommitCount, commitCount)
+        XCTAssertEqual(finalOriginCompletionCount, completionCount)
+        XCTAssertEqual(
+            finalOriginCompletionAttempts,
+            completionAttemptCount
+        )
+        XCTAssertEqual(replacementContainsIDs, ["fixture-signal-2"])
+        XCTAssertEqual(replacementCommitIDs, ["fixture-signal-2"])
+        let replacementCompletionCount = await fixture.source
+            .signalCompletionCount("fixture-signal-2")
+        XCTAssertEqual(replacementCompletionCount, 1)
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: fixture.paths.rootDirectory.path
+            )
+        )
+        await client.stop()
+    }
+
+    func testDifferentProfileCannotMountBeforeOriginOwnershipRetires()
+        async throws
+    {
+        let fixture = try makeBackgroundSignalFixture(
+            profileID: "81000000-0000-4000-8000-000000000033",
+            epochID: "remote-background-owner-activation-guard"
+        )
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let replacementProfile = AuthenticatedProfile(
+            id: UUID(
+                uuidString: "81000000-0000-4000-8000-000000000034"
+            )!,
+            displayName: "Beta Bob"
+        )
+        let replacementPaths = AuthenticatedProfileStoragePaths(
+            profileID: replacementProfile.id,
+            rootDirectory: fixture.root.appendingPathComponent(
+                "replacement-profile",
+                isDirectory: true
+            )
+        )
+        for directory in replacementPaths.fixedDirectories {
+            try FileManager.default.createDirectory(
+                at: directory,
+                withIntermediateDirectories: true
+            )
+        }
+        let client = CompetitionClient.remote(
+            remoteAPI: remoteAPI(listCompetitions: { [] }),
+            environment: .accelerated(source: fixture.source)
+        )
+        let sentinel = fixture.paths.rootDirectory.appendingPathComponent(
+            "ordinary-stop-sentinel"
+        )
+        try Data("origin-retained".utf8).write(to: sentinel)
+        try await client.mountAuthenticatedProfile(
+            fixture.profile,
+            fixture.paths
+        )
+        await client.stop()
+
+        do {
+            try await client.mountAuthenticatedProfile(
+                replacementProfile,
+                replacementPaths
+            )
+            XCTFail("replacement profile mounted before origin retirement")
+        } catch let error as EnvironmentSignalOwnershipError {
+            XCTAssertEqual(error, .activeOwnerNotRetired)
+        } catch {
+            XCTFail("unexpected replacement mount error: \(error)")
+        }
+        XCTAssertTrue(FileManager.default.fileExists(atPath: sentinel.path))
+
+        try await client.mountAuthenticatedProfile(
+            fixture.profile,
+            fixture.paths
+        )
+        XCTAssertTrue(FileManager.default.fileExists(atPath: sentinel.path))
+        await client.stop()
+    }
+
+    func testCancelledBootstrapMountCannotResurrectProfileAfterStop()
+        async throws
+    {
+        let fixture = try makeBackgroundSignalFixture(
+            profileID: "81000000-0000-4000-8000-000000000041",
+            epochID: "remote-cancelled-bootstrap-mount"
+        )
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let replacementProfile = AuthenticatedProfile(
+            id: UUID(
+                uuidString: "81000000-0000-4000-8000-000000000042"
+            )!,
+            displayName: "Beta Bob"
+        )
+        let replacementPaths = AuthenticatedProfileStoragePaths(
+            profileID: replacementProfile.id,
+            rootDirectory: fixture.root.appendingPathComponent(
+                "replacement-profile",
+                isDirectory: true
+            )
+        )
+        for directory in replacementPaths.fixedDirectories {
+            try FileManager.default.createDirectory(
+                at: directory,
+                withIntermediateDirectories: true
+            )
+        }
+        let sentinel = fixture.paths.rootDirectory.appendingPathComponent(
+            "bootstrap-sentinel"
+        )
+        try Data("origin-retained".utf8).write(to: sentinel)
+        let registration = RemoteBlockingCompetitionPushProbe()
+        let lifecycleInvalidated = expectation(
+            description: "stop invalidated bootstrap mount lease"
+        )
+        lifecycleInvalidated.assertForOverFulfill = false
+        let client = CompetitionClient.remote(
+            remoteAPI: remoteAPI(listCompetitions: { [] }),
+            environment: .accelerated(source: fixture.source),
+            pushRegistrationClient: registration.client,
+            installationEnvironment: .sandbox,
+            lifecycleInvalidationObserver: {
+                lifecycleInvalidated.fulfill()
+            }
+        )
+
+        let mountTask = Task {
+            try await client.mountAuthenticatedProfile(
+                fixture.profile,
+                fixture.paths
+            )
+        }
+        await waitForBoundedAsyncCondition("bootstrap register entered") {
+            await registration.waitUntilRegisterStarts()
+        }
+        mountTask.cancel()
+        let stopTask = Task { await client.stop() }
+        await fulfillment(of: [lifecycleInvalidated], timeout: 1)
+        await registration.releaseRegister()
+
+        do {
+            try await mountTask.value
+            XCTFail("cancelled bootstrap mount unexpectedly succeeded")
+        } catch is CancellationError {
+            // The invalidated mount lease must win over late bootstrap work.
+        } catch {
+            XCTFail("unexpected cancelled mount error: \(error)")
+        }
+        await stopTask.value
+
+        var stoppedIterator = client.start().makeAsyncIterator()
+        let stoppedInitialState = await stoppedIterator.next()
+        XCTAssertNil(stoppedInitialState)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: sentinel.path))
+
+        try await client.mountAuthenticatedProfile(
+            replacementProfile,
+            replacementPaths
+        )
+        var replacementIterator = client.start().makeAsyncIterator()
+        let replacementInitialState = await replacementIterator.next()
+        XCTAssertNotNil(replacementInitialState)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: sentinel.path))
+        await client.stop()
+    }
+
+    func testCancelledCommittedSameProfileRemountRemainsTerminallyRetirable()
+        async throws
+    {
+        let fixture = try makeBackgroundSignalFixture(
+            profileID: "81000000-0000-4000-8000-000000000049",
+            epochID: "remote-cancelled-committed-same-profile-remount"
+        )
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let replacementProfile = AuthenticatedProfile(
+            id: UUID(
+                uuidString: "81000000-0000-4000-8000-000000000050"
+            )!,
+            displayName: "Beta Bob"
+        )
+        let replacementPaths = AuthenticatedProfileStoragePaths(
+            profileID: replacementProfile.id,
+            rootDirectory: fixture.root.appendingPathComponent(
+                "cancelled-commit-replacement",
+                isDirectory: true
+            )
+        )
+        for directory in replacementPaths.fixedDirectories {
+            try FileManager.default.createDirectory(
+                at: directory,
+                withIntermediateDirectories: true
+            )
+        }
+        let lifecycleInvalidated = expectation(
+            description: "stop invalidated committed remount lease"
+        )
+        lifecycleInvalidated.assertForOverFulfill = false
+        let client = CompetitionClient.remote(
+            remoteAPI: remoteAPI(listCompetitions: { [] }),
+            environment: .accelerated(source: fixture.source),
+            lifecycleInvalidationObserver: {
+                lifecycleInvalidated.fulfill()
+            }
+        )
+        try await client.mountAuthenticatedProfile(
+            fixture.profile,
+            fixture.paths
+        )
+        await fixture.source.blockNextSignalOwnershipCommit()
+
+        let remountTask = Task {
+            try await client.mountAuthenticatedProfile(
+                fixture.profile,
+                fixture.paths
+            )
+        }
+        await waitForBoundedAsyncCondition("committed remount blocked") {
+            await fixture.source.waitUntilSignalOwnershipCommitIsBlocked()
+        }
+        let stopTask = Task { await client.stop() }
+        await fulfillment(of: [lifecycleInvalidated], timeout: 1)
+        await fixture.source.releaseBlockedSignalOwnershipCommit()
+
+        do {
+            try await remountTask.value
+            XCTFail("invalidated committed remount unexpectedly succeeded")
+        } catch is CancellationError {
+            // The committed source lease must remain terminally recoverable.
+        } catch {
+            XCTFail("unexpected committed remount error: \(error)")
+        }
+        await stopTask.value
+        try await client.prepareForProfileTeardown(
+            requireRemoteInstallationRemoval: false
+        )
+        await client.stop()
+
+        try await client.mountAuthenticatedProfile(
+            replacementProfile,
+            replacementPaths
+        )
+        await client.stop()
+    }
+
+    func testFailedInitialMountReleasesNewOwnershipReservation() async throws {
+        let fixture = try makeBackgroundSignalFixture(
+            profileID: "81000000-0000-4000-8000-000000000037",
+            epochID: "remote-background-failed-new-activation"
+        )
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        try FileManager.default.removeItem(
+            at: fixture.paths.installationsDirectory
+        )
+        try Data("not-a-directory".utf8).write(
+            to: fixture.paths.installationsDirectory
+        )
+        let failedClient = CompetitionClient.remote(
+            remoteAPI: remoteAPI(listCompetitions: { [] }),
+            environment: .accelerated(source: fixture.source),
+            appAttestServiceFactory: {
+                RemoteCompetitionAppAttestServiceProbe()
+            }
+        )
+
+        do {
+            try await failedClient.mountAuthenticatedProfile(
+                fixture.profile,
+                fixture.paths
+            )
+            XCTFail("mount unexpectedly succeeded with invalid storage")
+        } catch let error as CompetitionInstallationStateStoreFailure {
+            XCTAssertEqual(error, .invalidDirectory)
+        } catch {
+            XCTFail("unexpected post-activation storage error: \(error)")
+        }
+
+        let replacementProfile = AuthenticatedProfile(
+            id: UUID(
+                uuidString: "81000000-0000-4000-8000-000000000038"
+            )!,
+            displayName: "Beta Bob"
+        )
+        let replacementPaths = AuthenticatedProfileStoragePaths(
+            profileID: replacementProfile.id,
+            rootDirectory: fixture.root.appendingPathComponent(
+                "replacement-profile",
+                isDirectory: true
+            )
+        )
+        for directory in replacementPaths.fixedDirectories {
+            try FileManager.default.createDirectory(
+                at: directory,
+                withIntermediateDirectories: true
+            )
+        }
+        let replacementClient = CompetitionClient.remote(
+            remoteAPI: remoteAPI(listCompetitions: { [] }),
+            environment: .accelerated(source: fixture.source)
+        )
+
+        try await replacementClient.mountAuthenticatedProfile(
+            replacementProfile,
+            replacementPaths
+        )
+        await replacementClient.stop()
+    }
+
+    func testFailedReplacementMountPreservesReusedOwnershipReservation()
+        async throws
+    {
+        let fixture = try makeBackgroundSignalFixture(
+            profileID: "81000000-0000-4000-8000-000000000039",
+            epochID: "remote-background-failed-reused-activation"
+        )
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let ownerClient = CompetitionClient.remote(
+            remoteAPI: remoteAPI(listCompetitions: { [] }),
+            environment: .accelerated(source: fixture.source)
+        )
+        try await ownerClient.mountAuthenticatedProfile(
+            fixture.profile,
+            fixture.paths
+        )
+        await ownerClient.stop()
+
+        try FileManager.default.removeItem(
+            at: fixture.paths.installationsDirectory
+        )
+        try Data("not-a-directory".utf8).write(
+            to: fixture.paths.installationsDirectory
+        )
+        let failedReplacement = CompetitionClient.remote(
+            remoteAPI: remoteAPI(listCompetitions: { [] }),
+            environment: .accelerated(source: fixture.source),
+            appAttestServiceFactory: {
+                RemoteCompetitionAppAttestServiceProbe()
+            }
+        )
+        do {
+            try await failedReplacement.mountAuthenticatedProfile(
+                fixture.profile,
+                fixture.paths
+            )
+            XCTFail("replacement mount unexpectedly succeeded")
+        } catch let error as CompetitionInstallationStateStoreFailure {
+            XCTAssertEqual(error, .invalidDirectory)
+        } catch {
+            XCTFail("unexpected replacement storage error: \(error)")
+        }
+
+        let otherProfile = AuthenticatedProfile(
+            id: UUID(
+                uuidString: "81000000-0000-4000-8000-000000000040"
+            )!,
+            displayName: "Beta Bob"
+        )
+        let otherPaths = AuthenticatedProfileStoragePaths(
+            profileID: otherProfile.id,
+            rootDirectory: fixture.root.appendingPathComponent(
+                "other-profile",
+                isDirectory: true
+            )
+        )
+        for directory in otherPaths.fixedDirectories {
+            try FileManager.default.createDirectory(
+                at: directory,
+                withIntermediateDirectories: true
+            )
+        }
+        let otherClient = CompetitionClient.remote(
+            remoteAPI: remoteAPI(listCompetitions: { [] }),
+            environment: .accelerated(source: fixture.source)
+        )
+        do {
+            try await otherClient.mountAuthenticatedProfile(
+                otherProfile,
+                otherPaths
+            )
+            XCTFail("failed replacement released a reused reservation")
+        } catch let error as EnvironmentSignalOwnershipError {
+            XCTAssertEqual(error, .activeOwnerNotRetired)
+        } catch {
+            XCTFail("unexpected other-profile mount error: \(error)")
+        }
+
+        try FileManager.default.removeItem(
+            at: fixture.paths.installationsDirectory
+        )
+        try FileManager.default.createDirectory(
+            at: fixture.paths.installationsDirectory,
+            withIntermediateDirectories: true
+        )
+        try await ownerClient.mountAuthenticatedProfile(
+            fixture.profile,
+            fixture.paths
+        )
+        try await ownerClient.prepareForProfileTeardown(
+            requireRemoteInstallationRemoval: false
+        )
+        await ownerClient.stop()
+    }
+
+    func testFailedSameProfileRemountCanTerminallyRetireOriginOwnership()
+        async throws
+    {
+        let fixture = try makeBackgroundSignalFixture(
+            profileID: "81000000-0000-4000-8000-000000000043",
+            epochID: "remote-background-failed-remount-terminal-retirement"
+        )
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let originSentinel = fixture.paths.rootDirectory.appendingPathComponent(
+            "failed-remount-origin-sentinel"
+        )
+        try Data("origin-retained".utf8).write(to: originSentinel)
+        let originClient = CompetitionClient.remote(
+            remoteAPI: remoteAPI(listCompetitions: { [] }),
+            environment: .accelerated(source: fixture.source)
+        )
+        try await originClient.mountAuthenticatedProfile(
+            fixture.profile,
+            fixture.paths
+        )
+        await originClient.stop()
+
+        try FileManager.default.removeItem(
+            at: fixture.paths.installationsDirectory
+        )
+        try Data("not-a-directory".utf8).write(
+            to: fixture.paths.installationsDirectory
+        )
+        let failedRemount = CompetitionClient.remote(
+            remoteAPI: remoteAPI(listCompetitions: { [] }),
+            environment: .accelerated(source: fixture.source),
+            appAttestServiceFactory: {
+                RemoteCompetitionAppAttestServiceProbe()
+            }
+        )
+        do {
+            try await failedRemount.mountAuthenticatedProfile(
+                fixture.profile,
+                fixture.paths
+            )
+            XCTFail("same-profile remount unexpectedly succeeded")
+        } catch let error as CompetitionInstallationStateStoreFailure {
+            XCTAssertEqual(error, .invalidDirectory)
+        } catch {
+            XCTFail("unexpected same-profile remount error: \(error)")
+        }
+        XCTAssertTrue(
+            FileManager.default.fileExists(atPath: originSentinel.path)
+        )
+
+        try FileManager.default.removeItem(
+            at: fixture.paths.installationsDirectory
+        )
+        try FileManager.default.createDirectory(
+            at: fixture.paths.installationsDirectory,
+            withIntermediateDirectories: true
+        )
+        try await failedRemount.prepareForProfileTeardown(
+            requireRemoteInstallationRemoval: false
+        )
+        await failedRemount.stop()
+        try FileManager.default.removeItem(at: fixture.paths.rootDirectory)
+
+        let replacementProfile = AuthenticatedProfile(
+            id: UUID(
+                uuidString: "81000000-0000-4000-8000-000000000044"
+            )!,
+            displayName: "Beta Bob"
+        )
+        let replacementPaths = AuthenticatedProfileStoragePaths(
+            profileID: replacementProfile.id,
+            rootDirectory: fixture.root.appendingPathComponent(
+                "replacement-profile",
+                isDirectory: true
+            )
+        )
+        for directory in replacementPaths.fixedDirectories {
+            try FileManager.default.createDirectory(
+                at: directory,
+                withIntermediateDirectories: true
+            )
+        }
+        let replacementClient = CompetitionClient.remote(
+            remoteAPI: remoteAPI(listCompetitions: { [] }),
+            environment: .accelerated(source: fixture.source)
+        )
+        do {
+            try await replacementClient.mountAuthenticatedProfile(
+                replacementProfile,
+                replacementPaths
+            )
+        } catch {
+            XCTFail(
+                "replacement remained blocked after terminal retirement: "
+                    + "\(error)"
+            )
+            return
+        }
+        await replacementClient.stop()
+    }
+
+    func testTerminalReceiptFailureKeepsCallbackRetryableAndBlocksReplacement()
+        async throws
+    {
+        let fixture = try makeBackgroundSignalFixture(
+            profileID: "81000000-0000-4000-8000-000000000035",
+            epochID: "remote-background-terminal-receipt-retry",
+            replaysPendingCompletionSignals: true
+        )
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let receiptProbe = RemoteBackgroundDeliveryReceiptRetryProbe()
+        let client = CompetitionClient.remote(
+            remoteAPI: remoteAPI(listCompetitions: { [] }),
+            environment: .accelerated(source: fixture.source),
+            backgroundDeliveryReceiptFactory: { _ in
+                HealthKitBackgroundDeliveryReceiptClient { receipt in
+                    try await receiptProbe.commitFailingFirst(receipt)
+                }
+            }
+        )
+        try await client.mountAuthenticatedProfile(
+            fixture.profile,
+            fixture.paths
+        )
+        try await fixture.source.advance(to: fixture.signalDate)
+
+        do {
+            try await client.prepareForProfileTeardown(
+                requireRemoteInstallationRemoval: false
+            )
+            XCTFail("terminal teardown succeeded without a durable receipt")
+        } catch {
+            // The source callback and mounted receipt client remain retryable.
+        }
+        let completionAfterFailure = await fixture.source
+            .signalCompletionCount("fixture-signal-1")
+        let attemptsAfterFailure = await receiptProbe.attemptedReceipts()
+        XCTAssertEqual(completionAfterFailure, 0)
+        XCTAssertEqual(attemptsAfterFailure.count, 1)
+
+        let replacementProfile = AuthenticatedProfile(
+            id: UUID(
+                uuidString: "81000000-0000-4000-8000-000000000047"
+            )!,
+            displayName: "Beta Bob"
+        )
+        let replacementPaths = AuthenticatedProfileStoragePaths(
+            profileID: replacementProfile.id,
+            rootDirectory: fixture.root.appendingPathComponent(
+                "terminal-receipt-replacement",
+                isDirectory: true
+            )
+        )
+        for directory in replacementPaths.fixedDirectories {
+            try FileManager.default.createDirectory(
+                at: directory,
+                withIntermediateDirectories: true
+            )
+        }
+        let replacementClient = CompetitionClient.remote(
+            remoteAPI: remoteAPI(listCompetitions: { [] }),
+            environment: .accelerated(source: fixture.source)
+        )
+        do {
+            try await replacementClient.mountAuthenticatedProfile(
+                replacementProfile,
+                replacementPaths
+            )
+            XCTFail("replacement mounted before terminal receipt retry")
+        } catch let error as EnvironmentSignalOwnershipError {
+            XCTAssertEqual(error, .activeOwnerNotRetired)
+        } catch {
+            XCTFail("unexpected replacement mount error: \(error)")
+        }
+
+        try await client.prepareForProfileTeardown(
+            requireRemoteInstallationRemoval: false
+        )
+        let receipts = await receiptProbe.attemptedReceipts()
+        XCTAssertEqual(receipts.count, 2)
+        XCTAssertEqual(receipts.first, receipts.last)
+        let completionAfterRetry = await fixture.source
+            .signalCompletionCount("fixture-signal-1")
+        XCTAssertEqual(completionAfterRetry, 1)
+        await client.stop()
+        try await replacementClient.mountAuthenticatedProfile(
+            replacementProfile,
+            replacementPaths
+        )
+        await replacementClient.stop()
+    }
+
+    func testConcurrentAndPostSuccessTerminalPreparationIsIdempotent()
+        async throws
+    {
+        let fixture = try makeBackgroundSignalFixture(
+            profileID: "81000000-0000-4000-8000-000000000037",
+            epochID: "remote-background-terminal-idempotent",
+            replaysPendingCompletionSignals: true
+        )
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let receiptProbe = RemoteProfileBoundBackgroundReceiptProbe(
+            blockedProfileID: fixture.profile.id
+        )
+        let client = CompetitionClient.remote(
+            remoteAPI: remoteAPI(listCompetitions: { [] }),
+            environment: .accelerated(source: fixture.source),
+            backgroundDeliveryReceiptFactory: { paths in
+                HealthKitBackgroundDeliveryReceiptClient(
+                    contains: { signalID in
+                        await receiptProbe.contains(
+                            profileID: paths.profileID,
+                            signalID: signalID
+                        )
+                    },
+                    commit: { receipt in
+                        await receiptProbe.commit(
+                            profileID: paths.profileID,
+                            receipt: receipt
+                        )
+                    }
+                )
+            }
+        )
+
+        try await client.mountAuthenticatedProfile(
+            fixture.profile,
+            fixture.paths
+        )
+        try await fixture.source.advance(to: fixture.signalDate)
+        let firstPrepare = Task {
+            try await client.prepareForProfileTeardown(
+                requireRemoteInstallationRemoval: false
+            )
+        }
+        await waitForBoundedAsyncCondition("first prepare receipt commit") {
+            await receiptProbe.waitUntilCommitCount(
+                1,
+                profileID: fixture.profile.id
+            )
+        }
+
+        let concurrentPrepareStarted = expectation(
+            description: "concurrent prepare started"
+        )
+        let concurrentPrepare = Task {
+            concurrentPrepareStarted.fulfill()
+            try await client.prepareForProfileTeardown(
+                requireRemoteInstallationRemoval: false
+            )
+        }
+        await fulfillment(of: [concurrentPrepareStarted], timeout: 1)
+        await receiptProbe.releaseBlockedCommit()
+        try await firstPrepare.value
+        try await concurrentPrepare.value
+
+        try await client.prepareForProfileTeardown(
+            requireRemoteInstallationRemoval: false
+        )
+        let containsCount = await receiptProbe.containsCount(
+            profileID: fixture.profile.id
+        )
+        let commitCount = await receiptProbe.commitCount(
+            profileID: fixture.profile.id
+        )
+        let completionCount = await fixture.source
+            .signalCompletionCount("fixture-signal-1")
+        let completionAttemptCount = await fixture.source
+            .signalCompletionAttemptCount("fixture-signal-1")
+        XCTAssertEqual(containsCount, 1)
+        XCTAssertEqual(commitCount, 1)
+        XCTAssertEqual(completionCount, 1)
+        XCTAssertEqual(completionAttemptCount, 1)
+        await client.stop()
+    }
+
+    func testTerminalTeardownBlocksQueuedRemoteCommands() async throws {
+        let fixture = try makeBackgroundSignalFixture(
+            profileID: "81000000-0000-4000-8000-000000000036",
+            epochID: "remote-background-terminal-command-gate",
+            replaysPendingCompletionSignals: true
+        )
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let token = Data(repeating: 0x42, count: 32)
+            .base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+        let competitionID = UUID(
+            uuidString: "82000000-0000-4000-8000-000000000036"
+        )!
+        let invite = try CompetitionInvite(
+            competitionID: competitionID,
+            token: token
+        )
+        let claim = try CompetitionInviteClaim(competitionID: competitionID)
+        let commandProbe = RemoteCompetitionClientCommandProbe()
+        var api = remoteAPI(
+            listCompetitions: {
+                await commandProbe.recordList()
+                return []
+            },
+            createInvite: { request in
+                await commandProbe.recordCreate(request)
+                return invite
+            },
+            claimInvite: { request in
+                await commandProbe.recordClaim(request)
+                return claim
+            }
+        )
+        api.archiveCompetition = { id in
+            await commandProbe.recordArchive(id)
+        }
+        let receiptProbe = RemoteProfileBoundBackgroundReceiptProbe(
+            blockedProfileID: fixture.profile.id
+        )
+        let client = CompetitionClient.remote(
+            remoteAPI: api,
+            environment: .accelerated(source: fixture.source),
+            backgroundDeliveryReceiptFactory: { paths in
+                HealthKitBackgroundDeliveryReceiptClient(
+                    contains: { signalID in
+                        await receiptProbe.contains(
+                            profileID: paths.profileID,
+                            signalID: signalID
+                        )
+                    },
+                    commit: { receipt in
+                        await receiptProbe.commit(
+                            profileID: paths.profileID,
+                            receipt: receipt
+                        )
+                    }
+                )
+            }
+        )
+        let createRequest = try CompetitionInviteCreationRequest(
+            timeZoneIdentifier: "America/Los_Angeles",
+            rematchParentID: nil,
+            idempotencyKey: UUID(
+                uuidString: "83000000-0000-4000-8000-000000000036"
+            )!
+        )
+        let claimRequest = try CompetitionInviteClaimRequest(token: token)
+
+        try await client.mountAuthenticatedProfile(
+            fixture.profile,
+            fixture.paths
+        )
+        try await fixture.source.advance(to: fixture.signalDate)
+        let prepareTask = Task {
+            try await client.prepareForProfileTeardown(
+                requireRemoteInstallationRemoval: false
+            )
+        }
+        await waitForBoundedAsyncCondition("blocked terminal receipt") {
+            await receiptProbe.waitUntilCommitCount(
+                1,
+                profileID: fixture.profile.id
+            )
+        }
+
+        let commandsStarted = expectation(
+            description: "terminal commands queued"
+        )
+        commandsStarted.expectedFulfillmentCount = 4
+        let reconcileTask = Task {
+            commandsStarted.fulfill()
+            return await client.reconcileAll(.pullToRefresh)
+        }
+        let archiveTask = Task {
+            commandsStarted.fulfill()
+            return await client.archive(CompetitionID(competitionID))
+        }
+        let createTask = Task {
+            commandsStarted.fulfill()
+            do {
+                _ = try await client.createInvite(createRequest)
+                return false
+            } catch let error as EnvironmentSignalOwnershipError {
+                return error == .activeOwnerNotRetired
+            } catch {
+                return false
+            }
+        }
+        let claimTask = Task {
+            commandsStarted.fulfill()
+            do {
+                _ = try await client.claimInvite(claimRequest)
+                return false
+            } catch let error as EnvironmentSignalOwnershipError {
+                return error == .activeOwnerNotRetired
+            } catch {
+                return false
+            }
+        }
+        await fulfillment(of: [commandsStarted], timeout: 1)
+        await receiptProbe.releaseBlockedCommit()
+        try await prepareTask.value
+
+        let reconcilePublication = await reconcileTask.value
+        let archivePublication = await archiveTask.value
+        let createWasBlocked = await createTask.value
+        let claimWasBlocked = await claimTask.value
+        let listCount = await commandProbe.listCount()
+        let createRequests = await commandProbe.createRequests()
+        let claimRequests = await commandProbe.claimRequests()
+        let archiveRequests = await commandProbe.archiveRequests()
+        XCTAssertEqual(
+            reconcilePublication.publicationRevision,
+            archivePublication.publicationRevision
+        )
+        XCTAssertTrue(createWasBlocked)
+        XCTAssertTrue(claimWasBlocked)
+        XCTAssertEqual(listCount, 1)
+        XCTAssertEqual(createRequests, [])
+        XCTAssertEqual(claimRequests, [])
+        XCTAssertEqual(archiveRequests, [])
+        await client.stop()
+    }
+
+    func testCancelledQueuedCreateInviteDoesNotExecuteRemoteWrite()
+        async throws
+    {
+        let fixture = try makeBackgroundSignalFixture(
+            profileID: "81000000-0000-4000-8000-000000000045",
+            epochID: "remote-cancelled-command-gate"
+        )
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let gate = RemoteNotificationOperationGate()
+        let commandProbe = RemoteCompetitionClientCommandProbe()
+        let token = Data(repeating: 0x45, count: 32)
+            .base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+        let invite = try CompetitionInvite(
+            competitionID: UUID(),
+            token: token
+        )
+        let request = try CompetitionInviteCreationRequest(
+            timeZoneIdentifier: "America/Los_Angeles",
+            rematchParentID: nil,
+            idempotencyKey: UUID()
+        )
+        let client = CompetitionClient.remote(
+            remoteAPI: remoteAPI(
+                listCompetitions: {
+                    await gate.enterAndWait()
+                    await commandProbe.recordList()
+                    return []
+                },
+                createInvite: { request in
+                    await commandProbe.recordCreate(request)
+                    return invite
+                }
+            ),
+            environment: .accelerated(source: fixture.source)
+        )
+        try await client.mountAuthenticatedProfile(
+            fixture.profile,
+            fixture.paths
+        )
+        let holdingOperation = Task {
+            await client.reconcileAll(.pullToRefresh)
+        }
+        await gate.waitUntilEntered()
+
+        let cancelledCreate = Task {
+            try await client.createInvite(request)
+        }
+        for _ in 0..<20 { await Task.yield() }
+        cancelledCreate.cancel()
+        await gate.release()
+        _ = await holdingOperation.value
+
+        do {
+            _ = try await cancelledCreate.value
+            XCTFail("cancelled queued invite executed its remote write")
+        } catch {
+            XCTAssertTrue(error is CancellationError)
+        }
+        let createRequests = await commandProbe.createRequests()
+        XCTAssertEqual(createRequests, [])
+        await client.stop()
+    }
+
+    func testCancelledQueuedArchiveDoesNotExecuteRemoteWrite() async throws {
+        let fixture = try makeBackgroundSignalFixture(
+            profileID: "81000000-0000-4000-8000-000000000046",
+            epochID: "remote-cancelled-archive-gate"
+        )
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let gate = RemoteNotificationOperationGate()
+        let commandProbe = RemoteCompetitionClientCommandProbe()
+        let competitionID = CompetitionID(UUID())
+        var api = remoteAPI(listCompetitions: {
+            await gate.enterAndWait()
+            await commandProbe.recordList()
+            return []
+        })
+        api.archiveCompetition = { id in
+            await commandProbe.recordArchive(id)
+        }
+        let client = CompetitionClient.remote(
+            remoteAPI: api,
+            environment: .accelerated(source: fixture.source)
+        )
+        try await client.mountAuthenticatedProfile(
+            fixture.profile,
+            fixture.paths
+        )
+        let holdingOperation = Task {
+            await client.reconcileAll(.pullToRefresh)
+        }
+        await gate.waitUntilEntered()
+
+        let cancelledArchive = Task {
+            await client.archive(competitionID)
+        }
+        for _ in 0..<20 { await Task.yield() }
+        cancelledArchive.cancel()
+        await gate.release()
+        _ = await holdingOperation.value
+        _ = await cancelledArchive.value
+
+        let archiveRequests = await commandProbe.archiveRequests()
+        XCTAssertEqual(archiveRequests, [])
+        await client.stop()
+    }
+
+    func testPendingBackgroundCallbackStaysBoundToOriginProfile()
+        async throws
+    {
+        let fixture = try makeBackgroundSignalFixture(
+            profileID: "81000000-0000-4000-8000-000000000024",
+            epochID: "remote-background-receipt-profile-switch",
+            replaysPendingCompletionSignals: true
+        )
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let replacementProfile = AuthenticatedProfile(
+            id: UUID(
+                uuidString: "81000000-0000-4000-8000-000000000025"
+            )!,
+            displayName: "Beta Bob"
+        )
+        let replacementPaths = AuthenticatedProfileStoragePaths(
+            profileID: replacementProfile.id,
+            rootDirectory: fixture.root.appendingPathComponent(
+                "replacement-profile",
+                isDirectory: true
+            )
+        )
+        for directory in replacementPaths.fixedDirectories {
+            try FileManager.default.createDirectory(
+                at: directory,
+                withIntermediateDirectories: true
+            )
+        }
+        let receiptProbe = RemoteProfileBoundBackgroundReceiptProbe(
+            blockedProfileID: fixture.profile.id
+        )
+        let client = CompetitionClient.remote(
+            remoteAPI: remoteAPI(listCompetitions: { [] }),
+            environment: .accelerated(source: fixture.source),
+            backgroundDeliveryReceiptFactory: { paths in
+                HealthKitBackgroundDeliveryReceiptClient(
+                    contains: { signalID in
+                        await receiptProbe.contains(
+                            profileID: paths.profileID,
+                            signalID: signalID
+                        )
+                    },
+                    commit: { receipt in
+                        await receiptProbe.commit(
+                            profileID: paths.profileID,
+                            receipt: receipt
+                        )
+                    }
+                )
+            }
+        )
+
+        try await client.mountAuthenticatedProfile(
+            fixture.profile,
+            fixture.paths
+        )
+        var originIterator = client.start().makeAsyncIterator()
+        _ = await originIterator.next()
+        await waitForBoundedAsyncCondition("origin signal subscription") {
+            await fixture.source.waitUntilSignalSubscriptionCount(1)
+        }
+        try await fixture.source.advance(to: fixture.signalDate)
+        await waitForBoundedAsyncCondition("origin receipt commit") {
+            await receiptProbe.waitUntilCommitCount(
+                1,
+                profileID: fixture.profile.id
+            )
+        }
+
+        await client.stop()
+        do {
+            try await client.mountAuthenticatedProfile(
+                replacementProfile,
+                replacementPaths
+            )
+            XCTFail("replacement mounted before origin callback retirement")
+        } catch let error as EnvironmentSignalOwnershipError {
+            XCTAssertEqual(error, .activeOwnerNotRetired)
+        } catch {
+            XCTFail("unexpected replacement mount error: \(error)")
+        }
+
+        try await client.mountAuthenticatedProfile(
+            fixture.profile,
+            fixture.paths
+        )
+        var recoveredIterator = client.start().makeAsyncIterator()
+        _ = await recoveredIterator.next()
+        await waitForBoundedAsyncCondition("recovered origin subscription") {
+            await fixture.source.waitUntilSignalSubscriptionCount(2)
+        }
+        await waitForBoundedAsyncCondition("recovered origin completion") {
+            await fixture.source.waitUntilSignalCompletionCount(
+                "fixture-signal-1",
+                minimum: 1
+            )
+        }
+
+        let originContainsCount = await receiptProbe.containsCount(
+            profileID: fixture.profile.id
+        )
+        let originCommitCount = await receiptProbe.commitCount(
+            profileID: fixture.profile.id
+        )
+        let completionAfterOriginRemount = await fixture.source
+            .signalCompletionCount("fixture-signal-1")
+        let completionAttemptsAfterOriginRemount = await fixture.source
+            .signalCompletionAttemptCount("fixture-signal-1")
+        XCTAssertEqual(originContainsCount, 2)
+        XCTAssertEqual(originCommitCount, 1)
+        XCTAssertEqual(completionAfterOriginRemount, 1)
+        XCTAssertEqual(completionAttemptsAfterOriginRemount, 1)
+
+        try await client.prepareForProfileTeardown(
+            requireRemoteInstallationRemoval: false
+        )
+        await client.stop()
+
+        try await client.mountAuthenticatedProfile(
+            replacementProfile,
+            replacementPaths
+        )
+        var replacementIterator = client.start().makeAsyncIterator()
+        _ = await replacementIterator.next()
+        await waitForBoundedAsyncCondition("replacement subscription") {
+            await fixture.source.waitUntilSignalSubscriptionCount(3)
+        }
+        try await fixture.source.advance(to: fixture.barrierDate)
+        await waitForBoundedAsyncCondition("replacement barrier commit") {
+            await receiptProbe.waitUntilCommitted(
+                signalID: "fixture-signal-2",
+                profileID: replacementProfile.id
+            )
+        }
+        await waitForBoundedAsyncCondition("replacement barrier completion") {
+            await fixture.source.waitUntilSignalCompletionCount(
+                "fixture-signal-2",
+                minimum: 1
+            )
+        }
+        let replacementContainsSignalIDs = await receiptProbe
+            .containedSignalIDs(profileID: replacementProfile.id)
+        let replacementCommitSignalIDs = await receiptProbe
+            .committedSignalIDs(profileID: replacementProfile.id)
+        XCTAssertEqual(replacementContainsSignalIDs, ["fixture-signal-2"])
+        XCTAssertEqual(replacementCommitSignalIDs, ["fixture-signal-2"])
+        await client.stop()
+    }
+
+    func testBackgroundCallbackEmittedAfterStopRetainsPriorProfileOwner()
+        async throws
+    {
+        let fixture = try makeBackgroundSignalFixture(
+            profileID: "81000000-0000-4000-8000-000000000026",
+            epochID: "remote-background-no-subscriber-profile-switch",
+            replaysPendingCompletionSignals: true
+        )
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let replacementProfile = AuthenticatedProfile(
+            id: UUID(
+                uuidString: "81000000-0000-4000-8000-000000000027"
+            )!,
+            displayName: "Beta Bob"
+        )
+        let replacementPaths = AuthenticatedProfileStoragePaths(
+            profileID: replacementProfile.id,
+            rootDirectory: fixture.root.appendingPathComponent(
+                "replacement-profile",
+                isDirectory: true
+            )
+        )
+        for directory in replacementPaths.fixedDirectories {
+            try FileManager.default.createDirectory(
+                at: directory,
+                withIntermediateDirectories: true
+            )
+        }
+        let receiptProbe = RemoteProfileBoundBackgroundReceiptProbe(
+            blockedProfileID: nil
+        )
+        let client = CompetitionClient.remote(
+            remoteAPI: remoteAPI(listCompetitions: { [] }),
+            environment: .accelerated(source: fixture.source),
+            backgroundDeliveryReceiptFactory: { paths in
+                HealthKitBackgroundDeliveryReceiptClient(
+                    contains: { signalID in
+                        await receiptProbe.contains(
+                            profileID: paths.profileID,
+                            signalID: signalID
+                        )
+                    },
+                    commit: { receipt in
+                        await receiptProbe.commit(
+                            profileID: paths.profileID,
+                            receipt: receipt
+                        )
+                    }
+                )
+            }
+        )
+
+        try await client.mountAuthenticatedProfile(
+            fixture.profile,
+            fixture.paths
+        )
+        var originIterator = client.start().makeAsyncIterator()
+        _ = await originIterator.next()
+        await waitForBoundedAsyncCondition("origin signal subscription") {
+            await fixture.source.waitUntilSignalSubscriptionCount(1)
+        }
+        await client.stop()
+        try FileManager.default.removeItem(at: fixture.paths.rootDirectory)
+        await waitForBoundedAsyncCondition("zero signal subscribers") {
+            await fixture.source.waitUntilSignalSubscriberCount(0)
+        }
+        let subscriberCountBeforeGapSignal = await fixture.source
+            .signalSubscriberCount()
+        XCTAssertEqual(subscriberCountBeforeGapSignal, 0)
+
+        try await fixture.source.advance(to: fixture.signalDate)
+        do {
+            try await client.mountAuthenticatedProfile(
+                replacementProfile,
+                replacementPaths
+            )
+            XCTFail("replacement mounted before origin callback recovery")
+        } catch let error as EnvironmentSignalOwnershipError {
+            XCTAssertEqual(error, .activeOwnerNotRetired)
+        } catch {
+            XCTFail("unexpected replacement mount error: \(error)")
+        }
+
+        try await client.mountAuthenticatedProfile(
+            fixture.profile,
+            fixture.paths
+        )
+        var recoveredIterator = client.start().makeAsyncIterator()
+        _ = await recoveredIterator.next()
+        await waitForBoundedAsyncCondition("recovered origin receipt") {
+            await receiptProbe.waitUntilCommitted(
+                signalID: "fixture-signal-1",
+                profileID: fixture.profile.id
+            )
+        }
+        await waitForBoundedAsyncCondition("recovered origin completion") {
+            await fixture.source.waitUntilSignalCompletionCount(
+                "fixture-signal-1",
+                minimum: 1
+            )
+        }
+
+        let originContainsCount = await receiptProbe.containsCount(
+            profileID: fixture.profile.id
+        )
+        let originCommitCount = await receiptProbe.commitCount(
+            profileID: fixture.profile.id
+        )
+        let completionAfterOriginRemount = await fixture.source
+            .signalCompletionCount("fixture-signal-1")
+        let completionAttemptsAfterOriginRemount = await fixture.source
+            .signalCompletionAttemptCount("fixture-signal-1")
+        XCTAssertEqual(originContainsCount, 1)
+        XCTAssertEqual(originCommitCount, 1)
+        XCTAssertEqual(completionAfterOriginRemount, 1)
+        XCTAssertEqual(completionAttemptsAfterOriginRemount, 1)
+
+        try await client.prepareForProfileTeardown(
+            requireRemoteInstallationRemoval: false
+        )
+        await client.stop()
+
+        try await client.mountAuthenticatedProfile(
+            replacementProfile,
+            replacementPaths
+        )
+        var replacementIterator = client.start().makeAsyncIterator()
+        _ = await replacementIterator.next()
+        await waitForBoundedAsyncCondition("replacement subscription") {
+            await fixture.source.waitUntilSignalSubscriptionCount(3)
+        }
+        try await fixture.source.advance(to: fixture.barrierDate)
+        await waitForBoundedAsyncCondition("replacement barrier commit") {
+            await receiptProbe.waitUntilCommitted(
+                signalID: "fixture-signal-2",
+                profileID: replacementProfile.id
+            )
+        }
+        await waitForBoundedAsyncCondition("replacement barrier completion") {
+            await fixture.source.waitUntilSignalCompletionCount(
+                "fixture-signal-2",
+                minimum: 1
+            )
+        }
+        let replacementContainsSignalIDs = await receiptProbe
+            .containedSignalIDs(profileID: replacementProfile.id)
+        let replacementCommitSignalIDs = await receiptProbe
+            .committedSignalIDs(profileID: replacementProfile.id)
+        XCTAssertEqual(replacementContainsSignalIDs, ["fixture-signal-2"])
+        XCTAssertEqual(replacementCommitSignalIDs, ["fixture-signal-2"])
+        await client.stop()
+    }
+
+    func testReplacementClientRecoversSameProfileBackgroundCallback()
+        async throws
+    {
+        let fixture = try makeBackgroundSignalFixture(
+            profileID: "81000000-0000-4000-8000-000000000028",
+            epochID: "remote-background-client-replacement",
+            replaysPendingCompletionSignals: true
+        )
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let receiptProbe = RemoteProfileBoundBackgroundReceiptProbe(
+            blockedProfileID: fixture.profile.id
+        )
+        let makeClient = {
+            CompetitionClient.remote(
+                remoteAPI: self.remoteAPI(listCompetitions: { [] }),
+                environment: .accelerated(source: fixture.source),
+                backgroundDeliveryReceiptFactory: { paths in
+                    HealthKitBackgroundDeliveryReceiptClient(
+                        contains: { signalID in
+                            await receiptProbe.contains(
+                                profileID: paths.profileID,
+                                signalID: signalID
+                            )
+                        },
+                        commit: { receipt in
+                            await receiptProbe.commit(
+                                profileID: paths.profileID,
+                                receipt: receipt
+                            )
+                        }
+                    )
+                }
+            )
+        }
+
+        do {
+            let originClient = makeClient()
+            try await originClient.mountAuthenticatedProfile(
+                fixture.profile,
+                fixture.paths
+            )
+            var originIterator = originClient.start().makeAsyncIterator()
+            _ = await originIterator.next()
+            await waitForBoundedAsyncCondition("origin subscription") {
+                await fixture.source.waitUntilSignalSubscriptionCount(1)
+            }
+            try await fixture.source.advance(to: fixture.signalDate)
+            await waitForBoundedAsyncCondition("origin receipt commit") {
+                await receiptProbe.waitUntilCommitCount(
+                    1,
+                    profileID: fixture.profile.id
+                )
+            }
+            await originClient.stop()
+        }
+
+        let replacementClient = makeClient()
+        try await replacementClient.mountAuthenticatedProfile(
+            fixture.profile,
+            fixture.paths
+        )
+        var replacementIterator = replacementClient.start()
+            .makeAsyncIterator()
+        _ = await replacementIterator.next()
+        await waitForBoundedAsyncCondition("replacement subscription") {
+            await fixture.source.waitUntilSignalSubscriptionCount(2)
+        }
+        try await fixture.source.advance(to: fixture.barrierDate)
+        await waitForBoundedAsyncCondition("replacement barrier completion") {
+            await fixture.source.waitUntilSignalCompletionCount(
+                "fixture-signal-2",
+                minimum: 1
+            )
+        }
+
+        let originCompletionCount = await fixture.source
+            .signalCompletionCount("fixture-signal-1")
+        XCTAssertEqual(originCompletionCount, 1)
+        await replacementClient.stop()
+    }
+
+    func testQueuedOriginSummarySignalCannotReconcileReplacementProfile()
+        async throws
+    {
+        let fixture = try makeBackgroundSignalFixture(
+            profileID: "81000000-0000-4000-8000-000000000029",
+            epochID: "remote-summary-profile-switch"
+        )
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let replacementProfile = AuthenticatedProfile(
+            id: UUID(
+                uuidString: "81000000-0000-4000-8000-000000000030"
+            )!,
+            displayName: "Beta Bob"
+        )
+        let replacementPaths = AuthenticatedProfileStoragePaths(
+            profileID: replacementProfile.id,
+            rootDirectory: fixture.root.appendingPathComponent(
+                "replacement-profile",
+                isDirectory: true
+            )
+        )
+        for directory in replacementPaths.fixedDirectories {
+            try FileManager.default.createDirectory(
+                at: directory,
+                withIntermediateDirectories: true
+            )
+        }
+        let listProbe = RemoteCompetitionClientProbe()
+        let receiptProbe = RemoteProfileBoundBackgroundReceiptProbe(
+            blockedProfileID: nil
+        )
+        let client = CompetitionClient.remote(
+            remoteAPI: remoteAPI(listCompetitions: {
+                await listProbe.recordList()
+                return []
+            }),
+            environment: .accelerated(source: fixture.source),
+            backgroundDeliveryReceiptFactory: { paths in
+                HealthKitBackgroundDeliveryReceiptClient(
+                    contains: { signalID in
+                        await receiptProbe.contains(
+                            profileID: paths.profileID,
+                            signalID: signalID
+                        )
+                    },
+                    commit: { receipt in
+                        await receiptProbe.commit(
+                            profileID: paths.profileID,
+                            receipt: receipt
+                        )
+                    }
+                )
+            }
+        )
+
+        try await client.mountAuthenticatedProfile(
+            fixture.profile,
+            fixture.paths
+        )
+        var originIterator = client.start().makeAsyncIterator()
+        _ = await originIterator.next()
+        await waitForBoundedAsyncCondition("origin signal subscription") {
+            await fixture.source.waitUntilSignalSubscriptionCount(1)
+        }
+        let originActivation = try await fixture.source.activateSignalOwnership(
+            for: fixture.profile.id
+        )
+        let originScope = originActivation.scope
+        try await client.prepareForProfileTeardown(
+            requireRemoteInstallationRemoval: false
+        )
+        await client.stop()
+
+        try await client.mountAuthenticatedProfile(
+            replacementProfile,
+            replacementPaths
+        )
+        var replacementIterator = client.start().makeAsyncIterator()
+        _ = await replacementIterator.next()
+        await waitForBoundedAsyncCondition("replacement subscription") {
+            await fixture.source.waitUntilSignalSubscriptionCount(2)
+        }
+        let replacementActivation = try await fixture.source
+            .activateSignalOwnership(
+            for: replacementProfile.id
+        )
+        let replacementScope = replacementActivation.scope
+        await fixture.source.emitSignal(
+            .summaryUpdate,
+            ownershipScope: originScope
+        )
+        await fixture.source.emitSignal(
+            .observerWakeupBackground,
+            ownershipScope: replacementScope
+        )
+        await waitForBoundedAsyncCondition("replacement barrier commit") {
+            await receiptProbe.waitUntilCommitted(
+                signalID: "fixture-signal-2",
+                profileID: replacementProfile.id
+            )
+        }
+        await waitForBoundedAsyncCondition("replacement barrier completion") {
+            await fixture.source.waitUntilSignalCompletionCount(
+                "fixture-signal-2",
+                minimum: 1
+            )
+        }
+
+        let replacementContainsSignalIDs = await receiptProbe
+            .containedSignalIDs(profileID: replacementProfile.id)
+        let replacementCommitSignalIDs = await receiptProbe
+            .committedSignalIDs(profileID: replacementProfile.id)
+        let listCount = await listProbe.listCount()
+        let originCompletionAttempts = await fixture.source
+            .signalCompletionAttemptCount("fixture-signal-1")
+        XCTAssertEqual(listCount, 4)
+        XCTAssertEqual(replacementContainsSignalIDs, ["fixture-signal-2"])
+        XCTAssertEqual(replacementCommitSignalIDs, ["fixture-signal-2"])
+        XCTAssertEqual(originCompletionAttempts, 0)
         await client.stop()
     }
 
@@ -1726,7 +3387,10 @@ final class RemoteCompetitionClientTests: XCTestCase {
         )
         let paths = AuthenticatedProfileStoragePaths(
             profileID: profile.id,
-            rootDirectory: root
+            rootDirectory: root.appendingPathComponent(
+                "origin-profile",
+                isDirectory: true
+            )
         )
         for directory in paths.fixedDirectories {
             try FileManager.default.createDirectory(
@@ -1746,6 +3410,7 @@ final class RemoteCompetitionClientTests: XCTestCase {
         )
         let initialDate = try calendar.startOfDay(startDay)
         let signalDate = initialDate.addingTimeInterval(60)
+        let barrierDate = signalDate.addingTimeInterval(60)
         let source = FixtureActivitySource(
             fixture: try ActivityFixture(
                 initialInstant: EnvironmentInstant(
@@ -1765,6 +3430,11 @@ final class RemoteCompetitionClientTests: XCTestCase {
                         updates: [],
                         triggers: [.observerWakeupBackground]
                     ),
+                    try FixtureActivityChange(
+                        at: barrierDate,
+                        updates: [],
+                        triggers: [.observerWakeupBackground]
+                    ),
                 ]
             ),
             replaysPendingCompletionSignals:
@@ -1775,7 +3445,8 @@ final class RemoteCompetitionClientTests: XCTestCase {
             profile: profile,
             paths: paths,
             source: source,
-            signalDate: signalDate
+            signalDate: signalDate,
+            barrierDate: barrierDate
         )
     }
 
@@ -2072,6 +3743,21 @@ final class RemoteCompetitionClientTests: XCTestCase {
             }
         )
     }
+
+    private func waitForBoundedAsyncCondition(
+        _ description: String,
+        operation: @escaping @Sendable () async -> Void
+    ) async {
+        let completed = expectation(description: description)
+        let waiter = Task {
+            await operation()
+            guard !Task.isCancelled else { return }
+            completed.fulfill()
+        }
+        await fulfillment(of: [completed], timeout: 1)
+        waiter.cancel()
+        await waiter.value
+    }
 }
 
 private actor RemoteCompetitionInstallationProbe {
@@ -2136,15 +3822,19 @@ private struct RemoteBackgroundSignalFixture {
     let paths: AuthenticatedProfileStoragePaths
     let source: FixtureActivitySource
     let signalDate: Date
+    let barrierDate: Date
 }
 
 private struct RemoteBackgroundDeliveryInjectedFailure: Error {}
 
 private actor RemoteBackgroundDeliveryReceiptRetryProbe {
+    private struct AttemptWaiter {
+        let minimum: Int
+        let continuation: CheckedContinuation<Void, Never>
+    }
+
     private var attempts: [HealthKitBackgroundDeliveryReceipt] = []
-    private var attemptWaiters: [
-        (minimum: Int, continuation: CheckedContinuation<Void, Never>)
-    ] = []
+    private var attemptWaiters: [UUID: AttemptWaiter] = [:]
 
     func commitFailingFirst(
         _ receipt: HealthKitBackgroundDeliveryReceipt
@@ -2158,8 +3848,20 @@ private actor RemoteBackgroundDeliveryReceiptRetryProbe {
 
     func waitUntilAttemptCount(_ minimum: Int) async {
         guard attempts.count < minimum else { return }
-        await withCheckedContinuation { continuation in
-            attemptWaiters.append((minimum, continuation))
+        let waiterID = UUID()
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                guard !Task.isCancelled else {
+                    continuation.resume()
+                    return
+                }
+                attemptWaiters[waiterID] = AttemptWaiter(
+                    minimum: minimum,
+                    continuation: continuation
+                )
+            }
+        } onCancel: {
+            Task { await self.cancelAttemptWaiter(waiterID) }
         }
     }
 
@@ -2168,25 +3870,44 @@ private actor RemoteBackgroundDeliveryReceiptRetryProbe {
     }
 
     private func resumeAttemptWaiters() {
-        let ready = attemptWaiters.filter { attempts.count >= $0.minimum }
-        attemptWaiters.removeAll { attempts.count >= $0.minimum }
-        ready.forEach { $0.continuation.resume() }
+        let readyIDs = attemptWaiters.compactMap { id, waiter in
+            attempts.count >= waiter.minimum ? id : nil
+        }
+        for id in readyIDs {
+            attemptWaiters.removeValue(forKey: id)?.continuation.resume()
+        }
+    }
+
+    private func cancelAttemptWaiter(_ id: UUID) {
+        attemptWaiters.removeValue(forKey: id)?.continuation.resume()
+    }
+}
+
+private final class RemoteLockedFlag: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storedValue = false
+
+    var value: Bool { lock.withLock { storedValue } }
+
+    func setTrue() {
+        lock.withLock { storedValue = true }
     }
 }
 
 private actor RemoteBackgroundDeliveryReceiptPersistenceGate {
+    private struct CountWaiter {
+        let minimum: Int
+        let continuation: CheckedContinuation<Void, Never>
+    }
+
     private let onCancellation: @Sendable () -> Void
     private var storedBySignalID: [
         String: HealthKitBackgroundDeliveryReceipt
     ] = [:]
     private var commits: [HealthKitBackgroundDeliveryReceipt] = []
     private var containsCalls = 0
-    private var commitWaiters: [
-        (minimum: Int, continuation: CheckedContinuation<Void, Never>)
-    ] = []
-    private var containsWaiters: [
-        (minimum: Int, continuation: CheckedContinuation<Void, Never>)
-    ] = []
+    private var commitWaiters: [UUID: CountWaiter] = [:]
+    private var containsWaiters: [UUID: CountWaiter] = [:]
     private var commitRelease: CheckedContinuation<Void, Never>?
 
     init(onCancellation: @escaping @Sendable () -> Void) {
@@ -2222,15 +3943,39 @@ private actor RemoteBackgroundDeliveryReceiptPersistenceGate {
 
     func waitUntilCommitCount(_ minimum: Int) async {
         guard commits.count < minimum else { return }
-        await withCheckedContinuation { continuation in
-            commitWaiters.append((minimum, continuation))
+        let waiterID = UUID()
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                guard !Task.isCancelled else {
+                    continuation.resume()
+                    return
+                }
+                commitWaiters[waiterID] = CountWaiter(
+                    minimum: minimum,
+                    continuation: continuation
+                )
+            }
+        } onCancel: {
+            Task { await self.cancelCommitWaiter(waiterID) }
         }
     }
 
     func waitUntilContainsCount(_ minimum: Int) async {
         guard containsCalls < minimum else { return }
-        await withCheckedContinuation { continuation in
-            containsWaiters.append((minimum, continuation))
+        let waiterID = UUID()
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                guard !Task.isCancelled else {
+                    continuation.resume()
+                    return
+                }
+                containsWaiters[waiterID] = CountWaiter(
+                    minimum: minimum,
+                    continuation: continuation
+                )
+            }
+        } onCancel: {
+            Task { await self.cancelContainsWaiter(waiterID) }
         }
     }
 
@@ -2241,17 +3986,199 @@ private actor RemoteBackgroundDeliveryReceiptPersistenceGate {
     func commitCount() -> Int { commits.count }
 
     private func resumeCommitWaiters() {
-        let ready = commitWaiters.filter { commits.count >= $0.minimum }
-        commitWaiters.removeAll { commits.count >= $0.minimum }
-        ready.forEach { $0.continuation.resume() }
+        let readyIDs = commitWaiters.compactMap { id, waiter in
+            commits.count >= waiter.minimum ? id : nil
+        }
+        for id in readyIDs {
+            commitWaiters.removeValue(forKey: id)?.continuation.resume()
+        }
     }
 
     private func resumeContainsWaiters() {
-        let ready = containsWaiters.filter {
-            containsCalls >= $0.minimum
+        let readyIDs = containsWaiters.compactMap { id, waiter in
+            containsCalls >= waiter.minimum ? id : nil
         }
-        containsWaiters.removeAll { containsCalls >= $0.minimum }
-        ready.forEach { $0.continuation.resume() }
+        for id in readyIDs {
+            containsWaiters.removeValue(forKey: id)?.continuation.resume()
+        }
+    }
+
+    private func cancelCommitWaiter(_ id: UUID) {
+        commitWaiters.removeValue(forKey: id)?.continuation.resume()
+    }
+
+    private func cancelContainsWaiter(_ id: UUID) {
+        containsWaiters.removeValue(forKey: id)?.continuation.resume()
+    }
+}
+
+private actor RemoteProfileBoundBackgroundReceiptProbe {
+    private struct CommitWaiter {
+        let profileID: UUID
+        let minimum: Int
+        let continuation: CheckedContinuation<Void, Never>
+    }
+
+    private struct SignalCommitWaiter {
+        let profileID: UUID
+        let signalID: String
+        let continuation: CheckedContinuation<Void, Never>
+    }
+
+    private let blockedProfileID: UUID?
+    private var storedSignalIDsByProfile: [UUID: Set<String>] = [:]
+    private var containsCounts: [UUID: Int] = [:]
+    private var commitCounts: [UUID: Int] = [:]
+    private var containedSignalIDsByProfile: [UUID: [String]] = [:]
+    private var committedSignalIDsByProfile: [UUID: [String]] = [:]
+    private var committedReceiptsByProfile: [
+        UUID: [HealthKitBackgroundDeliveryReceipt]
+    ] = [:]
+    private var commitWaiters: [UUID: CommitWaiter] = [:]
+    private var signalCommitWaiters: [UUID: SignalCommitWaiter] = [:]
+    private var blockedCommitContinuation: CheckedContinuation<Void, Never>?
+
+    init(blockedProfileID: UUID?) {
+        self.blockedProfileID = blockedProfileID
+    }
+
+    func contains(profileID: UUID, signalID: String) -> Bool {
+        containsCounts[profileID, default: 0] += 1
+        containedSignalIDsByProfile[profileID, default: []].append(signalID)
+        return storedSignalIDsByProfile[profileID, default: []]
+            .contains(signalID)
+    }
+
+    func commit(
+        profileID: UUID,
+        receipt: HealthKitBackgroundDeliveryReceipt
+    ) async {
+        commitCounts[profileID, default: 0] += 1
+        committedSignalIDsByProfile[profileID, default: []].append(
+            receipt.signalID
+        )
+        committedReceiptsByProfile[profileID, default: []].append(receipt)
+        resumeCommitWaiters()
+        resumeSignalCommitWaiters()
+        if blockedProfileID == profileID,
+           commitCounts[profileID] == 1 {
+            await withTaskCancellationHandler {
+                await withCheckedContinuation { continuation in
+                    guard !Task.isCancelled else {
+                        continuation.resume()
+                        return
+                    }
+                    blockedCommitContinuation = continuation
+                }
+            } onCancel: {
+                Task { await self.releaseBlockedCommit() }
+            }
+        }
+        storedSignalIDsByProfile[profileID, default: []].insert(
+            receipt.signalID
+        )
+    }
+
+    func waitUntilCommitCount(_ minimum: Int, profileID: UUID) async {
+        guard commitCounts[profileID, default: 0] < minimum else { return }
+        let waiterID = UUID()
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                guard !Task.isCancelled else {
+                    continuation.resume()
+                    return
+                }
+                commitWaiters[waiterID] = CommitWaiter(
+                    profileID: profileID,
+                    minimum: minimum,
+                    continuation: continuation
+                )
+            }
+        } onCancel: {
+            Task { await self.cancelCommitWaiter(waiterID) }
+        }
+    }
+
+    func waitUntilCommitted(signalID: String, profileID: UUID) async {
+        guard !committedSignalIDsByProfile[profileID, default: []]
+            .contains(signalID) else { return }
+        let waiterID = UUID()
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                guard !Task.isCancelled else {
+                    continuation.resume()
+                    return
+                }
+                signalCommitWaiters[waiterID] = SignalCommitWaiter(
+                    profileID: profileID,
+                    signalID: signalID,
+                    continuation: continuation
+                )
+            }
+        } onCancel: {
+            Task { await self.cancelSignalCommitWaiter(waiterID) }
+        }
+    }
+
+    func containsCount(profileID: UUID) -> Int {
+        containsCounts[profileID, default: 0]
+    }
+
+    func commitCount(profileID: UUID) -> Int {
+        commitCounts[profileID, default: 0]
+    }
+
+    func containedSignalIDs(profileID: UUID) -> [String] {
+        containedSignalIDsByProfile[profileID, default: []]
+    }
+
+    func committedSignalIDs(profileID: UUID) -> [String] {
+        committedSignalIDsByProfile[profileID, default: []]
+    }
+
+    func committedReceipts(
+        profileID: UUID
+    ) -> [HealthKitBackgroundDeliveryReceipt] {
+        committedReceiptsByProfile[profileID, default: []]
+    }
+
+    func removeStoredProfile(_ profileID: UUID) {
+        storedSignalIDsByProfile[profileID] = nil
+    }
+
+    func releaseBlockedCommit() {
+        blockedCommitContinuation?.resume()
+        blockedCommitContinuation = nil
+    }
+
+    private func resumeCommitWaiters() {
+        let readyIDs = commitWaiters.compactMap { id, waiter in
+            commitCounts[waiter.profileID, default: 0] >= waiter.minimum
+                ? id
+                : nil
+        }
+        for id in readyIDs {
+            commitWaiters.removeValue(forKey: id)?.continuation.resume()
+        }
+    }
+
+    private func resumeSignalCommitWaiters() {
+        let readyIDs = signalCommitWaiters.compactMap { id, waiter in
+            committedSignalIDsByProfile[waiter.profileID, default: []]
+                .contains(waiter.signalID) ? id : nil
+        }
+        for id in readyIDs {
+            signalCommitWaiters.removeValue(forKey: id)?
+                .continuation.resume()
+        }
+    }
+
+    private func cancelCommitWaiter(_ id: UUID) {
+        commitWaiters.removeValue(forKey: id)?.continuation.resume()
+    }
+
+    private func cancelSignalCommitWaiter(_ id: UUID) {
+        signalCommitWaiters.removeValue(forKey: id)?.continuation.resume()
     }
 }
 
@@ -2357,6 +4284,64 @@ private actor RemoteCompetitionPushProbe {
     private func currentToken() -> String { token }
 
     private func record(_ call: String) { calls.append(call) }
+}
+
+private actor RemoteBlockingCompetitionPushProbe {
+    private var registerStarted = false
+    private var registerReleased = false
+    private var registerStartWaiters: [UUID: CheckedContinuation<Void, Never>] =
+        [:]
+    private var registerReleaseContinuation: CheckedContinuation<Void, Never>?
+
+    nonisolated var client: CompetitionPushRegistrationClient {
+        CompetitionPushRegistrationClient(
+            register: { [weak self] in await self?.blockRegister() },
+            unregister: {},
+            latestToken: { nil },
+            events: {
+                AsyncStream<CompetitionPushRegistrationEvent> {
+                    $0.finish()
+                }
+            }
+        )
+    }
+
+    func waitUntilRegisterStarts() async {
+        guard !registerStarted else { return }
+        let waiterID = UUID()
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                guard !Task.isCancelled else {
+                    continuation.resume()
+                    return
+                }
+                registerStartWaiters[waiterID] = continuation
+            }
+        } onCancel: {
+            Task { await self.cancelRegisterStartWaiter(waiterID) }
+        }
+    }
+
+    func releaseRegister() {
+        registerReleased = true
+        registerReleaseContinuation?.resume()
+        registerReleaseContinuation = nil
+    }
+
+    private func blockRegister() async {
+        registerStarted = true
+        let waiters = registerStartWaiters.values
+        registerStartWaiters = [:]
+        waiters.forEach { $0.resume() }
+        guard !registerReleased else { return }
+        await withCheckedContinuation { continuation in
+            registerReleaseContinuation = continuation
+        }
+    }
+
+    private func cancelRegisterStartWaiter(_ id: UUID) {
+        registerStartWaiters.removeValue(forKey: id)?.resume()
+    }
 }
 
 private actor RemoteCompetitionNotificationProbe {

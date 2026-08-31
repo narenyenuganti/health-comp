@@ -226,6 +226,196 @@ final class HealthKitBackgroundDeliveryReceiptTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: outside), sentinel)
     }
 
+    func testTemporaryFullSyncFailurePreservesExistingReceipt() async throws {
+        let directory = makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let first = makeReceipt(
+            signalID: "healthkit-background:process:full-sync-existing"
+        )
+        let initial = HealthKitBackgroundDeliveryReceiptStore(
+            directory: directory,
+            fileProtection: .backgroundDeliveryTestNoop
+        )
+        try await initial.commit(first)
+        let fileURL = directory.appendingPathComponent(
+            "background-delivery-receipts.v1.json"
+        )
+        let originalData = try Data(contentsOf: fileURL)
+        let interrupted = HealthKitBackgroundDeliveryReceiptStore(
+            directory: directory,
+            faultInjector: .init(failAt: .temporaryFullSync),
+            fileProtection: .backgroundDeliveryTestNoop
+        )
+        let second = makeReceipt(
+            signalID: "healthkit-background:process:full-sync-new",
+            ordinal: 2
+        )
+
+        await XCTAssertThrowsBackgroundDeliveryError(
+            try await interrupted.commit(second),
+            equals: .ioFailure
+        )
+
+        XCTAssertEqual(try Data(contentsOf: fileURL), originalData)
+        XCTAssertEqual(try temporaryFiles(in: directory), [])
+        let recovered = HealthKitBackgroundDeliveryReceiptStore(
+            directory: directory,
+            fileProtection: .backgroundDeliveryTestNoop
+        )
+        let recoveredReceipts = try await recovered.receipts()
+        let containsSecond = try await recovered.contains(second.signalID)
+        XCTAssertEqual(recoveredReceipts, [first])
+        XCTAssertFalse(containsSecond)
+    }
+
+    func testCrashAfterTemporarySyncReapsResidueWithoutPublishing()
+        async throws
+    {
+        let directory = makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let first = makeReceipt(
+            signalID: "healthkit-background:process:temp-crash-existing"
+        )
+        let initial = HealthKitBackgroundDeliveryReceiptStore(
+            directory: directory,
+            fileProtection: .backgroundDeliveryTestNoop
+        )
+        try await initial.commit(first)
+        let fileURL = directory.appendingPathComponent(
+            "background-delivery-receipts.v1.json"
+        )
+        let originalData = try Data(contentsOf: fileURL)
+        let interrupted = HealthKitBackgroundDeliveryReceiptStore(
+            directory: directory,
+            faultInjector: .init(failAt: .temporarySynced),
+            fileProtection: .backgroundDeliveryTestNoop
+        )
+        let second = makeReceipt(
+            signalID: "healthkit-background:process:temp-crash-new",
+            ordinal: 2
+        )
+
+        await XCTAssertThrowsBackgroundDeliveryError(
+            try await interrupted.commit(second),
+            equals: .ioFailure
+        )
+
+        XCTAssertEqual(try Data(contentsOf: fileURL), originalData)
+        XCTAssertEqual(try temporaryFiles(in: directory).count, 1)
+
+        let recovered = HealthKitBackgroundDeliveryReceiptStore(
+            directory: directory,
+            fileProtection: .backgroundDeliveryTestNoop
+        )
+        let recoveredReceipts = try await recovered.receipts()
+        XCTAssertEqual(recoveredReceipts, [first])
+        XCTAssertEqual(try temporaryFiles(in: directory), [])
+    }
+
+    func testVisibleReceiptAfterProtectionFailureNeedsDurableRecovery()
+        async throws
+    {
+        let directory = makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let fileURL = directory.appendingPathComponent(
+            "background-delivery-receipts.v1.json"
+        )
+        let protectionFailure = OneShotBackgroundDeliveryProtectionFailure(
+            target: fileURL
+        )
+        let receipt = makeReceipt(
+            signalID: "healthkit-background:process:protection-recovery"
+        )
+        let interrupted = HealthKitBackgroundDeliveryReceiptStore(
+            directory: directory,
+            fileProtection: JSONCompetitionEventStoreFileProtection {
+                url,
+                protection in
+                try protectionFailure.apply(
+                    url: url,
+                    protection: protection
+                )
+            }
+        )
+
+        await XCTAssertThrowsBackgroundDeliveryError(
+            try await interrupted.commit(receipt),
+            equals: .ioFailure
+        )
+        XCTAssertTrue(FileManager.default.fileExists(atPath: fileURL.path))
+
+        let protection = BackgroundDeliveryProtectionRecorder()
+        let fileSyncBlocked = HealthKitBackgroundDeliveryReceiptStore(
+            directory: directory,
+            faultInjector: .init(failAt: .destinationFullSync),
+            fileProtection: JSONCompetitionEventStoreFileProtection {
+                url,
+                value in
+                protection.record(url: url, protection: value)
+            }
+        )
+        await XCTAssertThrowsBackgroundDeliveryError(
+            try await fileSyncBlocked.contains(receipt.signalID),
+            equals: .ioFailure
+        )
+        XCTAssertEqual(
+            protection.protection(at: fileURL),
+            .completeUntilFirstUserAuthentication
+        )
+
+        let directorySyncBlocked = HealthKitBackgroundDeliveryReceiptStore(
+            directory: directory,
+            faultInjector: .init(failAt: .directorySync),
+            fileProtection: .backgroundDeliveryTestNoop
+        )
+        await XCTAssertThrowsBackgroundDeliveryError(
+            try await directorySyncBlocked.contains(receipt.signalID),
+            equals: .ioFailure
+        )
+
+        let recovered = HealthKitBackgroundDeliveryReceiptStore(
+            directory: directory,
+            fileProtection: .backgroundDeliveryTestNoop
+        )
+        let containsRecovered = try await recovered.contains(receipt.signalID)
+        let recoveredReceipts = try await recovered.receipts()
+        XCTAssertTrue(containsRecovered)
+        XCTAssertEqual(recoveredReceipts, [receipt])
+    }
+
+    func testDirectorySyncFailureAfterRenameNeedsDurableRecovery()
+        async throws
+    {
+        let directory = makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let receipt = makeReceipt(
+            signalID: "healthkit-background:process:directory-recovery"
+        )
+        let interrupted = HealthKitBackgroundDeliveryReceiptStore(
+            directory: directory,
+            faultInjector: .init(failAt: .directorySync),
+            fileProtection: .backgroundDeliveryTestNoop
+        )
+
+        await XCTAssertThrowsBackgroundDeliveryError(
+            try await interrupted.commit(receipt),
+            equals: .ioFailure
+        )
+        let fileURL = directory.appendingPathComponent(
+            "background-delivery-receipts.v1.json"
+        )
+        XCTAssertTrue(FileManager.default.fileExists(atPath: fileURL.path))
+
+        let recovered = HealthKitBackgroundDeliveryReceiptStore(
+            directory: directory,
+            fileProtection: .backgroundDeliveryTestNoop
+        )
+        let containsRecovered = try await recovered.contains(receipt.signalID)
+        let recoveredReceipts = try await recovered.receipts()
+        XCTAssertTrue(containsRecovered)
+        XCTAssertEqual(recoveredReceipts, [receipt])
+    }
+
     private func makeReceipt(
         signalID: String,
         ordinal: Int = 1
@@ -260,6 +450,14 @@ final class HealthKitBackgroundDeliveryReceiptTests: XCTestCase {
         )
         return value.intValue & 0o777
     }
+
+    private func temporaryFiles(in directory: URL) throws -> [String] {
+        try FileManager.default.contentsOfDirectory(atPath: directory.path)
+            .filter {
+                $0.hasPrefix(".background-delivery.")
+                    && $0.hasSuffix(".tmp")
+            }
+    }
 }
 
 private final class BackgroundDeliveryProtectionRecorder:
@@ -274,6 +472,33 @@ private final class BackgroundDeliveryProtectionRecorder:
 
     func protection(at url: URL) -> FileProtectionType? {
         lock.withLock { values[url.standardizedFileURL] }
+    }
+}
+
+private enum BackgroundDeliveryProtectionTestFailure: Error {
+    case injected
+}
+
+private final class OneShotBackgroundDeliveryProtectionFailure:
+    @unchecked Sendable
+{
+    private let lock = NSLock()
+    private let target: URL
+    private var shouldFail = true
+
+    init(target: URL) {
+        self.target = target.standardizedFileURL
+    }
+
+    func apply(url: URL, protection _: FileProtectionType) throws {
+        let fails = lock.withLock {
+            guard shouldFail, url.standardizedFileURL == target else {
+                return false
+            }
+            shouldFail = false
+            return true
+        }
+        if fails { throw BackgroundDeliveryProtectionTestFailure.injected }
     }
 }
 

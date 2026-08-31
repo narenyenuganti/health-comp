@@ -1,6 +1,7 @@
 import XCTest
 import HealthKit
 import CompetitionCore
+import Dispatch
 @testable import HealthComp
 
 final class HealthKitProviderTests: XCTestCase {
@@ -14,7 +15,8 @@ final class HealthKitProviderTests: XCTestCase {
                 readActivitySummaries: { _ in [] },
                 resolveStandMode: { .unknown },
                 summaryUpdates: { _ in AsyncStream { $0.finish() } },
-                observerUpdates: { AsyncStream { $0.finish() } }
+                observerUpdates: { AsyncStream { $0.finish() } },
+                stopObserverUpdates: {}
             )
         )
 
@@ -43,6 +45,7 @@ final class HealthKitProviderTests: XCTestCase {
             resolveStandMode: { .unknown },
             summaryUpdates: { _ in AsyncStream { $0.finish() } },
             observerUpdates: { AsyncStream { $0.finish() } },
+            stopObserverUpdates: {},
             enableBackgroundDelivery: { type in
                 let attempt = attempts.increment(type.identifier)
                 if type == failedType, attempt == 1 {
@@ -54,6 +57,7 @@ final class HealthKitProviderTests: XCTestCase {
             userId: UUID(),
             competitionDependencies: dependencies
         )
+        _ = try await activateOwner(provider)
 
         _ = await provider.signals()
         XCTAssertEqual(attempts.count(for: failedType.identifier), 1)
@@ -84,11 +88,13 @@ final class HealthKitProviderTests: XCTestCase {
                 resolveStandMode: { .unknown },
                 summaryUpdates: { _ in AsyncStream { $0.finish() } },
                 observerUpdates: { AsyncStream { $0.finish() } },
+                stopObserverUpdates: {},
                 enableBackgroundDelivery: { type in
                     try await gate.enable(type.identifier)
                 }
             )
         )
+        _ = try await activateOwner(provider)
         let initialRegistration = Task { await provider.signals() }
         await gate.waitUntilFirstAttemptIsBlocked()
         let authorization = Task {
@@ -129,12 +135,14 @@ final class HealthKitProviderTests: XCTestCase {
                 streamStarts.increment()
                 return updates.stream
             },
-            observerUpdates: { AsyncStream { $0.finish() } }
+            observerUpdates: { AsyncStream { $0.finish() } },
+            stopObserverUpdates: {}
         )
         let provider = HealthKitProvider(
             userId: UUID(),
             competitionDependencies: dependencies
         )
+        _ = try await activateOwner(provider)
 
         _ = try await provider.read(window)
         XCTAssertEqual(streamStarts.value, 0)
@@ -171,9 +179,11 @@ final class HealthKitProviderTests: XCTestCase {
                     starts.increment(requestedWindow)
                     return streams.makeStream(for: requestedWindow)
                 },
-                observerUpdates: { AsyncStream { $0.finish() } }
+                observerUpdates: { AsyncStream { $0.finish() } },
+                stopObserverUpdates: {}
             )
         )
+        _ = try await activateOwner(provider)
 
         await provider.synchronizeSummarySubscriptions(to: [window])
         XCTAssertEqual(starts.count(window), 1)
@@ -226,9 +236,11 @@ final class HealthKitProviderTests: XCTestCase {
                     starts.increment(window)
                     return streams.makeStream(for: window)
                 },
-                observerUpdates: { AsyncStream { $0.finish() } }
+                observerUpdates: { AsyncStream { $0.finish() } },
+                stopObserverUpdates: {}
             )
         )
+        _ = try await activateOwner(provider)
         await provider.synchronizeSummarySubscriptions(
             to: [firstWindow, secondWindow]
         )
@@ -274,22 +286,29 @@ final class HealthKitProviderTests: XCTestCase {
                 readActivitySummaries: { _ in [] },
                 resolveStandMode: { .unknown },
                 summaryUpdates: { _ in TestAsyncStream<[HKActivitySummary]>().stream },
-                observerUpdates: { observerUpdates.stream }
+                observerUpdates: { observerUpdates.stream },
+                stopObserverUpdates: { observerUpdates.finish() }
             )
         )
+        _ = try await activateOwner(provider)
         let signals = await provider.signals()
-        let captured = SignalCapture()
+        let received = expectation(
+            description: "observer callback signal received"
+        )
+        let captured = LockedSignalBox()
         let reader = Task {
             var iterator = signals.makeAsyncIterator()
             if let signal = await iterator.next() {
-                await captured.receive(signal)
+                captured.set(signal)
+                received.fulfill()
             }
         }
         await provider.synchronizeSummarySubscriptions(to: [window])
         observerUpdates.yield(
             HealthKitObserverWakeup(completion: { completion.setTrue() })
         )
-        let signal = await captured.value()
+        await fulfillment(of: [received], timeout: 1)
+        let signal = try XCTUnwrap(captured.value)
 
         await provider.synchronizeSummarySubscriptions(to: [])
 
@@ -320,7 +339,8 @@ final class HealthKitProviderTests: XCTestCase {
                 readActivitySummaries: { _ in throw CancellationError() },
                 resolveStandMode: { .unknown },
                 summaryUpdates: { _ in AsyncStream { $0.finish() } },
-                observerUpdates: { AsyncStream { $0.finish() } }
+                observerUpdates: { AsyncStream { $0.finish() } },
+                stopObserverUpdates: {}
             )
         )
 
@@ -632,7 +652,8 @@ final class HealthKitProviderTests: XCTestCase {
                 readActivitySummaries: { _ in [summary] },
                 resolveStandMode: { throw TestProviderError.unavailable },
                 summaryUpdates: { _ in AsyncStream { $0.finish() } },
-                observerUpdates: { AsyncStream { $0.finish() } }
+                observerUpdates: { AsyncStream { $0.finish() } },
+                stopObserverUpdates: {}
             )
         )
 
@@ -679,19 +700,26 @@ final class HealthKitProviderTests: XCTestCase {
             },
             resolveStandMode: { .standHours },
             summaryUpdates: { _ in summaryUpdates.stream },
-            observerUpdates: { observerUpdates.stream }
+            observerUpdates: { observerUpdates.stream },
+            stopObserverUpdates: { observerUpdates.finish() }
         )
         let provider = HealthKitProvider(
             userId: UUID(),
             competitionDependencies: dependencies
         )
+        _ = try await activateOwner(provider)
         let stream = await provider.signals()
-        let signalReader = Task { () -> [EnvironmentSignal] in
+        let received = expectation(description: "two environment signals")
+        received.expectedFulfillmentCount = 2
+        let signalBox = LockedSignalsBox()
+        let signalReader = Task {
             var iterator = stream.makeAsyncIterator()
-            var result: [EnvironmentSignal] = []
-            if let first = await iterator.next() { result.append(first) }
-            if let second = await iterator.next() { result.append(second) }
-            return result
+            for _ in 0..<2 {
+                if let signal = await iterator.next() {
+                    signalBox.append(signal)
+                    received.fulfill()
+                }
+            }
         }
 
         await provider.synchronizeSummarySubscriptions(to: [window])
@@ -702,7 +730,10 @@ final class HealthKitProviderTests: XCTestCase {
                 completion: { completion.setTrue() }
             )
         )
-        let signals = await signalReader.value
+        await fulfillment(of: [received], timeout: 1)
+        signalReader.cancel()
+        _ = await signalReader.result
+        let signals = signalBox.value
 
         XCTAssertEqual(
             signals.map(\.trigger.rawValue).sorted(),
@@ -740,18 +771,22 @@ final class HealthKitProviderTests: XCTestCase {
             readActivitySummaries: { _ in [] },
             resolveStandMode: { .standHours },
             summaryUpdates: { _ in AsyncStream { $0.finish() } },
-            observerUpdates: { observerUpdates.stream }
+            observerUpdates: { observerUpdates.stream },
+            stopObserverUpdates: { observerUpdates.finish() }
         )
         let provider = HealthKitProvider(
             userId: UUID(),
             competitionDependencies: dependencies
         )
+        _ = try await activateOwner(provider)
         let stream = await provider.signals()
-        let capture = SignalCapture()
+        let captured = expectation(description: "observer signal captured")
+        let signalBox = LockedSignalBox()
         let reader = Task {
             var iterator = stream.makeAsyncIterator()
             if let signal = await iterator.next() {
-                await capture.receive(signal)
+                signalBox.set(signal)
+                captured.fulfill()
             }
             _ = await iterator.next()
         }
@@ -761,7 +796,8 @@ final class HealthKitProviderTests: XCTestCase {
                 completion: { completion.setTrue() }
             )
         )
-        let signal = await capture.value()
+        await fulfillment(of: [captured], timeout: 1)
+        let signal = try XCTUnwrap(signalBox.value)
         reader.cancel()
         _ = await reader.result
         for _ in 0..<10 { await Task.yield() }
@@ -782,12 +818,14 @@ final class HealthKitProviderTests: XCTestCase {
             readActivitySummaries: { _ in [] },
             resolveStandMode: { .unknown },
             summaryUpdates: { _ in AsyncStream { $0.finish() } },
-            observerUpdates: { observerUpdates.stream }
+            observerUpdates: { observerUpdates.stream },
+            stopObserverUpdates: { observerUpdates.finish() }
         )
         let provider = HealthKitProvider(
             userId: UUID(),
             competitionDependencies: dependencies
         )
+        _ = try await activateOwner(provider)
         let firstStream = await provider.signals()
         let firstReader = Task {
             var iterator = firstStream.makeAsyncIterator()
@@ -832,15 +870,21 @@ final class HealthKitProviderTests: XCTestCase {
                 readActivitySummaries: { _ in [] },
                 resolveStandMode: { .unknown },
                 summaryUpdates: { _ in AsyncStream { $0.finish() } },
-                observerUpdates: { observerUpdates.stream }
+                observerUpdates: { observerUpdates.stream },
+                stopObserverUpdates: { observerUpdates.finish() }
             )
         )
+        _ = try await activateOwner(provider)
         let firstStream = await provider.signals()
-        let firstCapture = SignalCapture()
+        let firstCaptured = expectation(
+            description: "first observer signal captured"
+        )
+        let firstSignalBox = LockedSignalBox()
         let firstReader = Task {
             var iterator = firstStream.makeAsyncIterator()
             if let signal = await iterator.next() {
-                await firstCapture.receive(signal)
+                firstSignalBox.set(signal)
+                firstCaptured.fulfill()
             }
             _ = await iterator.next()
         }
@@ -849,7 +893,8 @@ final class HealthKitProviderTests: XCTestCase {
                 completion: { completion.setTrue() }
             )
         )
-        let firstSignal = await firstCapture.value()
+        await fulfillment(of: [firstCaptured], timeout: 1)
+        let firstSignal = try XCTUnwrap(firstSignalBox.value)
 
         firstReader.cancel()
         _ = await firstReader.result
@@ -879,6 +924,483 @@ final class HealthKitProviderTests: XCTestCase {
         replacementReader.cancel()
     }
 
+    func testPendingObserverSignalRetainsEmissionOwnershipScope()
+        async throws
+    {
+        let observerUpdates = TestAsyncStream<HealthKitObserverWakeup>()
+        let completionCount = LockedCounter()
+        let provider = HealthKitProvider(
+            userId: UUID(),
+            competitionDependencies: HealthKitCompetitionDependencies(
+                isHealthDataAvailable: { true },
+                requestAuthorization: { _ in },
+                readActivitySummaries: { _ in [] },
+                resolveStandMode: { .unknown },
+                summaryUpdates: { _ in AsyncStream { $0.finish() } },
+                observerUpdates: { observerUpdates.stream },
+                stopObserverUpdates: { observerUpdates.finish() }
+            )
+        )
+        let originProfileID = UUID()
+        let replacementProfileID = UUID()
+        let originActivation = try await provider.activateSignalOwnership(
+            for: originProfileID
+        )
+        try await provider.commitSignalOwnershipActivation(originActivation)
+        let originScope = originActivation.scope
+        let originStream = await provider.signals()
+        let capturedWakeup = provider.captureObserverWakeup {
+            completionCount.increment()
+        }
+
+        observerUpdates.yield(capturedWakeup)
+        let originSignal = try await firstSignal(
+            from: originStream,
+            description: "origin-owned observer signal"
+        )
+        XCTAssertEqual(originSignal.ownershipScope, originScope)
+        XCTAssertEqual(completionCount.value, 0)
+
+        do {
+            _ = try await provider.activateSignalOwnership(
+                for: replacementProfileID
+            )
+            XCTFail("replacement activated before origin retirement")
+        } catch let error as EnvironmentSignalOwnershipError {
+            XCTAssertEqual(error, .activeOwnerNotRetired)
+        }
+
+        let firstCompletionAccepted = await provider.completeSignal(
+            originSignal.id
+        )
+        XCTAssertTrue(firstCompletionAccepted)
+        XCTAssertEqual(completionCount.value, 1)
+        let duplicateCompletionAccepted = await provider.completeSignal(
+            originSignal.id
+        )
+        XCTAssertFalse(duplicateCompletionAccepted)
+        XCTAssertEqual(completionCount.value, 1)
+
+        let drained = try await provider.quiesceSignalOwnership(
+            for: originProfileID
+        )
+        XCTAssertEqual(drained, [])
+        try await provider.retireSignalOwnership(for: originProfileID)
+        let replacementActivation = try await activateOwner(
+            provider,
+            profileID: replacementProfileID
+        )
+        XCTAssertNotEqual(replacementActivation.scope, originScope)
+        let replacementCompletionAccepted = await provider.completeSignal(
+            originSignal.id
+        )
+        XCTAssertFalse(replacementCompletionAccepted)
+        XCTAssertEqual(completionCount.value, 1)
+    }
+
+    func testStaleSameProfileLeaseCannotQuiesceReplacementOwner()
+        async throws
+    {
+        let provider = HealthKitProvider(
+            userId: UUID(),
+            competitionDependencies: HealthKitCompetitionDependencies(
+                isHealthDataAvailable: { true },
+                requestAuthorization: { _ in },
+                readActivitySummaries: { _ in [] },
+                resolveStandMode: { .unknown },
+                summaryUpdates: { _ in AsyncStream { $0.finish() } },
+                observerUpdates: { AsyncStream { $0.finish() } },
+                stopObserverUpdates: {}
+            )
+        )
+        let profileID = UUID()
+        let origin = try await activateOwner(
+            provider,
+            profileID: profileID
+        )
+        let replacement = try await activateOwner(
+            provider,
+            profileID: profileID
+        )
+
+        do {
+            _ = try await provider.quiesceSignalOwnership(origin.lease)
+            XCTFail("stale same-profile owner quiesced its replacement")
+        } catch let error as EnvironmentSignalOwnershipError {
+            XCTAssertEqual(error, .inactiveOwner)
+        }
+
+        let drained = try await provider.quiesceSignalOwnership(
+            replacement.lease
+        )
+        XCTAssertEqual(drained, [])
+        try await provider.retireSignalOwnership(replacement.lease)
+    }
+
+    func testProfileConvenienceLookupRejectsDifferentActiveOwner()
+        async throws
+    {
+        let provider = HealthKitProvider(
+            userId: UUID(),
+            competitionDependencies: HealthKitCompetitionDependencies(
+                isHealthDataAvailable: { true },
+                requestAuthorization: { _ in },
+                readActivitySummaries: { _ in [] },
+                resolveStandMode: { .unknown },
+                summaryUpdates: { _ in AsyncStream { $0.finish() } },
+                observerUpdates: { AsyncStream { $0.finish() } },
+                stopObserverUpdates: {}
+            )
+        )
+        let owner = try await activateOwner(provider)
+
+        do {
+            _ = try await provider.quiesceSignalOwnership(for: UUID())
+            XCTFail("different profile quiesced the active owner")
+        } catch let error as EnvironmentSignalOwnershipError {
+            XCTAssertEqual(error, .inactiveOwner)
+        }
+
+        let drained = try await provider.quiesceSignalOwnership(owner.lease)
+        XCTAssertEqual(drained, [])
+        try await provider.retireSignalOwnership(owner.lease)
+    }
+
+    func testCompletionBearingObserverWakeupBindsToActiveOwnershipScope()
+        async throws
+    {
+        let observerUpdates = TestAsyncStream<HealthKitObserverWakeup>()
+        let completion = LockedFlag()
+        let provider = HealthKitProvider(
+            userId: UUID(),
+            competitionDependencies: HealthKitCompetitionDependencies(
+                isHealthDataAvailable: { true },
+                requestAuthorization: { _ in },
+                readActivitySummaries: { _ in [] },
+                resolveStandMode: { .unknown },
+                summaryUpdates: { _ in AsyncStream { $0.finish() } },
+                observerUpdates: { observerUpdates.stream },
+                stopObserverUpdates: { observerUpdates.finish() }
+            )
+        )
+        let activation = try await activateOwner(provider)
+        let stream = await provider.signals()
+
+        observerUpdates.yield(
+            HealthKitObserverWakeup {
+                completion.setTrue()
+            }
+        )
+        let signal = try await firstSignal(
+            from: stream,
+            description: "completion-bearing observer wakeup"
+        )
+
+        XCTAssertEqual(signal.ownershipScope, activation.scope)
+        let completionAccepted = await provider.completeSignal(signal.id)
+        XCTAssertTrue(completionAccepted)
+        XCTAssertTrue(completion.value)
+    }
+
+    func testQuiesceUsesObserverStopHookToFinishOpenStream()
+        async throws
+    {
+        let observerUpdates = TestAsyncStream<HealthKitObserverWakeup>()
+        let provider = HealthKitProvider(
+            userId: UUID(),
+            competitionDependencies: HealthKitCompetitionDependencies(
+                isHealthDataAvailable: { true },
+                requestAuthorization: { _ in },
+                readActivitySummaries: { _ in [] },
+                resolveStandMode: { .unknown },
+                summaryUpdates: { _ in AsyncStream { $0.finish() } },
+                observerUpdates: { observerUpdates.stream },
+                stopObserverUpdates: { observerUpdates.finish() }
+            )
+        )
+        let activation = try await activateOwner(provider)
+        _ = await provider.signals()
+        let quiesced = expectation(description: "observer stream quiesced")
+        let task = Task {
+            _ = try await provider.quiesceSignalOwnership(
+                activation.lease
+            )
+            quiesced.fulfill()
+        }
+
+        await fulfillment(of: [quiesced], timeout: 0.1)
+        observerUpdates.finish()
+        _ = try await task.value
+        try await provider.retireSignalOwnership(activation.lease)
+    }
+
+    func testQueuedSummaryUpdateRetainsSubscriptionOwnershipScope()
+        async throws
+    {
+        let calendar = try CompetitionCalendar(timeZoneIdentifier: "UTC")
+        let startDay = try CompetitionDay(
+            era: 1,
+            year: 2026,
+            month: 8,
+            day: 30,
+            timeZoneIdentifier: calendar.timeZoneIdentifier
+        )
+        let window = try CompetitionActivityWindow(
+            calendar: calendar,
+            startDay: startDay
+        )
+        let summaryUpdates = TestAsyncStream<[HKActivitySummary]>()
+        let provider = HealthKitProvider(
+            userId: UUID(),
+            competitionDependencies: HealthKitCompetitionDependencies(
+                isHealthDataAvailable: { true },
+                requestAuthorization: { _ in },
+                readActivitySummaries: { _ in [] },
+                resolveStandMode: { .unknown },
+                summaryUpdates: { _ in summaryUpdates.stream },
+                observerUpdates: { AsyncStream { $0.finish() } },
+                stopObserverUpdates: {}
+            )
+        )
+        let originProfileID = UUID()
+        let originActivation = try await provider.activateSignalOwnership(
+            for: originProfileID
+        )
+        try await provider.commitSignalOwnershipActivation(originActivation)
+        let originScope = originActivation.scope
+        await provider.synchronizeSummarySubscriptions(to: [window])
+        let signals = await provider.signals()
+
+        summaryUpdates.yield([])
+        let signal = try await firstSignal(
+            from: signals,
+            description: "queued origin-owned summary signal"
+        )
+
+        XCTAssertEqual(signal.trigger, .summaryUpdate)
+        XCTAssertEqual(signal.ownershipScope, originScope)
+        let replacementProfileID = UUID()
+        do {
+            _ = try await provider.activateSignalOwnership(
+                for: replacementProfileID
+            )
+            XCTFail("replacement activated before origin retirement")
+        } catch let error as EnvironmentSignalOwnershipError {
+            XCTAssertEqual(error, .activeOwnerNotRetired)
+        }
+        let drained = try await provider.quiesceSignalOwnership(
+            for: originProfileID
+        )
+        XCTAssertEqual(drained, [])
+        try await provider.retireSignalOwnership(for: originProfileID)
+        let replacementActivation = try await activateOwner(
+            provider,
+            profileID: replacementProfileID
+        )
+        XCTAssertNotEqual(signal.ownershipScope, replacementActivation.scope)
+    }
+
+    func testSameWindowSummarySubscriptionRestartsForReplacementOwnership()
+        async throws
+    {
+        let calendar = try CompetitionCalendar(timeZoneIdentifier: "UTC")
+        let startDay = try CompetitionDay(
+            era: 1,
+            year: 2026,
+            month: 8,
+            day: 30,
+            timeZoneIdentifier: calendar.timeZoneIdentifier
+        )
+        let window = try CompetitionActivityWindow(
+            calendar: calendar,
+            startDay: startDay
+        )
+        let originTerminated = expectation(
+            description: "origin summary subscription terminated"
+        )
+        let originUpdates = TestAsyncStream<[HKActivitySummary]> {
+            originTerminated.fulfill()
+        }
+        let replacementUpdates = TestAsyncStream<[HKActivitySummary]>()
+        let updates = LockedStreamSequence(
+            streams: [originUpdates.stream, replacementUpdates.stream]
+        )
+        let provider = HealthKitProvider(
+            userId: UUID(),
+            competitionDependencies: HealthKitCompetitionDependencies(
+                isHealthDataAvailable: { true },
+                requestAuthorization: { _ in },
+                readActivitySummaries: { _ in [] },
+                resolveStandMode: { .unknown },
+                summaryUpdates: { _ in updates.next() },
+                observerUpdates: { AsyncStream { $0.finish() } },
+                stopObserverUpdates: {}
+            )
+        )
+
+        let originProfileID = UUID()
+        let originActivation = try await provider.activateSignalOwnership(
+            for: originProfileID
+        )
+        try await provider.commitSignalOwnershipActivation(originActivation)
+        let originScope = originActivation.scope
+        await provider.synchronizeSummarySubscriptions(to: [window])
+        XCTAssertEqual(updates.requestCount, 1)
+
+        let drained = try await provider.quiesceSignalOwnership(
+            for: originProfileID
+        )
+        XCTAssertEqual(drained, [])
+        await fulfillment(of: [originTerminated], timeout: 1)
+        try await provider.retireSignalOwnership(for: originProfileID)
+
+        let replacementActivation = try await activateOwner(
+            provider,
+            profileID: UUID()
+        )
+        let replacementScope = replacementActivation.scope
+        await provider.synchronizeSummarySubscriptions(to: [window])
+        XCTAssertEqual(updates.requestCount, 2)
+
+        await provider.synchronizeSummarySubscriptions(to: [window])
+        XCTAssertEqual(updates.requestCount, 2)
+
+        let signals = await provider.signals()
+        originUpdates.yield([])
+        replacementUpdates.yield([])
+        let signal = try await firstSignal(
+            from: signals,
+            description: "replacement-owned summary signal"
+        )
+        XCTAssertEqual(signal.trigger, .summaryUpdate)
+        XCTAssertEqual(signal.ownershipScope, replacementScope)
+        XCTAssertNotEqual(signal.ownershipScope, originScope)
+    }
+
+    func testObserverIngressDrainsOriginEpochBeforeReplacementStarts()
+        async throws
+    {
+        let originIngressEntered = expectation(
+            description: "origin observer ingress registered"
+        )
+        let stopStarted = expectation(
+            description: "origin observer queries stopped"
+        )
+        let stopFinished = expectation(
+            description: "origin observer ingress drained"
+        )
+        let releaseOriginIngress = DispatchSemaphore(value: 0)
+        let ingressCount = LockedCounter()
+        let originCompletionCount = LockedCounter()
+        let lateOriginCompletionCount = LockedCounter()
+        let replacementCompletionCount = LockedCounter()
+        let driver = TestHealthKitObserverUpdateDriver(
+            onStop: { stopStarted.fulfill() }
+        )
+        let registry = HealthKitSignalOwnershipRegistry()
+        let controller = HealthKitObserverUpdateController(
+            driver: driver.driver,
+            ownershipRegistry: registry,
+            didRegisterIngress: {
+                guard ingressCount.incrementAndGet() == 1 else { return }
+                originIngressEntered.fulfill()
+                releaseOriginIngress.wait()
+            }
+        )
+        let originProfileID = UUID()
+        let originActivation = try registry.activate(for: originProfileID)
+        try registry.commit(originActivation)
+        let originStream = controller.stream()
+        let originSignalReceived = expectation(
+            description: "origin observer wakeup received"
+        )
+        let originWakeup = LockedObserverWakeupBox()
+        let originReader = Task {
+            var iterator = originStream.makeAsyncIterator()
+            originWakeup.set(await iterator.next())
+            originSignalReceived.fulfill()
+        }
+        let originCallback = Task.detached {
+            driver.fire(at: 0) {
+                originCompletionCount.increment()
+            }
+        }
+        await fulfillment(of: [originIngressEntered], timeout: 1)
+
+        _ = try registry.beginQuiescence(for: originProfileID)
+        let stopCompleted = LockedFlag()
+        let stopTask = Task.detached {
+            controller.stop()
+            stopCompleted.setTrue()
+            stopFinished.fulfill()
+        }
+        await fulfillment(of: [stopStarted], timeout: 1)
+        XCTAssertFalse(stopCompleted.value)
+        do {
+            _ = try registry.activate(for: UUID())
+            XCTFail("replacement activated before origin ingress drained")
+        } catch let error as EnvironmentSignalOwnershipError {
+            XCTAssertEqual(error, .activeOwnerNotRetired)
+        }
+
+        releaseOriginIngress.signal()
+        await fulfillment(
+            of: [originSignalReceived, stopFinished],
+            timeout: 1
+        )
+        await originCallback.value
+        await stopTask.value
+        let capturedOriginWakeup = try XCTUnwrap(originWakeup.value)
+        XCTAssertEqual(
+            capturedOriginWakeup.ownershipScope,
+            originActivation.scope
+        )
+        XCTAssertEqual(originCompletionCount.value, 0)
+        capturedOriginWakeup.completion()
+        XCTAssertEqual(originCompletionCount.value, 1)
+
+        try registry.retire(profileID: originProfileID)
+        let replacementProfileID = UUID()
+        let replacementActivation = try registry.activate(
+            for: replacementProfileID
+        )
+        try registry.commit(replacementActivation)
+        let replacementStream = controller.stream()
+        let replacementSignalReceived = expectation(
+            description: "replacement observer wakeup received"
+        )
+        let replacementWakeup = LockedObserverWakeupBox()
+        let replacementReader = Task {
+            var iterator = replacementStream.makeAsyncIterator()
+            replacementWakeup.set(await iterator.next())
+            replacementSignalReceived.fulfill()
+        }
+        driver.fire(at: 0) {
+            lateOriginCompletionCount.increment()
+        }
+        driver.fire(at: 1) {
+            replacementCompletionCount.increment()
+        }
+        await fulfillment(of: [replacementSignalReceived], timeout: 1)
+        let capturedReplacementWakeup = try XCTUnwrap(
+            replacementWakeup.value
+        )
+        XCTAssertEqual(
+            capturedReplacementWakeup.ownershipScope,
+            replacementActivation.scope
+        )
+        XCTAssertEqual(lateOriginCompletionCount.value, 0)
+        XCTAssertEqual(replacementCompletionCount.value, 0)
+        capturedReplacementWakeup.completion()
+        XCTAssertEqual(replacementCompletionCount.value, 1)
+
+        _ = try registry.beginQuiescence(for: replacementProfileID)
+        controller.stop()
+        try registry.retire(profileID: replacementProfileID)
+        originReader.cancel()
+        replacementReader.cancel()
+    }
+
     func testBackgroundSignalIDsAreDistinctAcrossProviderStates()
         async throws
     {
@@ -902,20 +1424,26 @@ final class HealthKitProviderTests: XCTestCase {
                 observerUpdates: secondUpdates
             )
         )
-        let firstCapture = SignalCapture()
-        let secondCapture = SignalCapture()
+        _ = try await activateOwner(firstProvider)
+        _ = try await activateOwner(secondProvider)
+        let firstReceived = expectation(description: "first provider signal")
+        let secondReceived = expectation(description: "second provider signal")
+        let firstCapture = LockedSignalBox()
+        let secondCapture = LockedSignalBox()
         let firstReader = Task {
             var iterator = await firstProvider.signals()
                 .makeAsyncIterator()
             if let signal = await iterator.next() {
-                await firstCapture.receive(signal)
+                firstCapture.set(signal)
+                firstReceived.fulfill()
             }
         }
         let secondReader = Task {
             var iterator = await secondProvider.signals()
                 .makeAsyncIterator()
             if let signal = await iterator.next() {
-                await secondCapture.receive(signal)
+                secondCapture.set(signal)
+                secondReceived.fulfill()
             }
         }
 
@@ -929,8 +1457,9 @@ final class HealthKitProviderTests: XCTestCase {
                 secondCompletion.setTrue()
             }
         )
-        let firstSignal = await firstCapture.value()
-        let secondSignal = await secondCapture.value()
+        await fulfillment(of: [firstReceived, secondReceived], timeout: 1)
+        let firstSignal = try XCTUnwrap(firstCapture.value)
+        let secondSignal = try XCTUnwrap(secondCapture.value)
 
         XCTAssertEqual(firstSignal.trigger, .observerWakeupBackground)
         XCTAssertEqual(secondSignal.trigger, .observerWakeupBackground)
@@ -945,6 +1474,18 @@ final class HealthKitProviderTests: XCTestCase {
         secondReader.cancel()
     }
 
+    @discardableResult
+    private func activateOwner(
+        _ provider: HealthKitProvider,
+        profileID: UUID = UUID()
+    ) async throws -> EnvironmentSignalOwnershipActivation {
+        let activation = try await provider.activateSignalOwnership(
+            for: profileID
+        )
+        try await provider.commitSignalOwnershipActivation(activation)
+        return activation
+    }
+
     private func signalIdentityDependencies(
         observerUpdates: TestAsyncStream<HealthKitObserverWakeup>
     ) -> HealthKitCompetitionDependencies {
@@ -954,8 +1495,26 @@ final class HealthKitProviderTests: XCTestCase {
             readActivitySummaries: { _ in [] },
             resolveStandMode: { .unknown },
             summaryUpdates: { _ in AsyncStream { $0.finish() } },
-            observerUpdates: { observerUpdates.stream }
+            observerUpdates: { observerUpdates.stream },
+            stopObserverUpdates: { observerUpdates.finish() }
         )
+    }
+
+    private func firstSignal(
+        from stream: AsyncStream<EnvironmentSignal>,
+        description: String
+    ) async throws -> EnvironmentSignal {
+        let received = expectation(description: description)
+        let box = LockedSignalBox()
+        let reader = Task {
+            var iterator = stream.makeAsyncIterator()
+            box.set(await iterator.next())
+            received.fulfill()
+        }
+        await fulfillment(of: [received], timeout: 1)
+        reader.cancel()
+        _ = await reader.result
+        return try XCTUnwrap(box.value)
     }
 
     private func makeActivitySummary(
@@ -1026,6 +1585,30 @@ private final class TestAsyncStream<Element>: @unchecked Sendable {
     }
 }
 
+private final class LockedStreamSequence<Element>: @unchecked Sendable {
+    private let lock = NSLock()
+    private let streams: [AsyncStream<Element>]
+    private var nextIndex = 0
+
+    init(streams: [AsyncStream<Element>]) {
+        self.streams = streams
+    }
+
+    var requestCount: Int {
+        lock.withLock { nextIndex }
+    }
+
+    func next() -> AsyncStream<Element> {
+        lock.withLock {
+            guard nextIndex < streams.count else {
+                return AsyncStream { $0.finish() }
+            }
+            defer { nextIndex += 1 }
+            return streams[nextIndex]
+        }
+    }
+}
+
 private final class LockedWindowCounts: @unchecked Sendable {
     private let lock = NSLock()
     private var storage: [CompetitionActivityWindow: Int] = [:]
@@ -1070,6 +1653,60 @@ private final class LockedCounter: @unchecked Sendable {
 
     func increment() {
         lock.withLock { storage += 1 }
+    }
+
+    func incrementAndGet() -> Int {
+        lock.withLock {
+            storage += 1
+            return storage
+        }
+    }
+}
+
+private final class LockedObserverWakeupBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage: HealthKitObserverWakeup?
+
+    var value: HealthKitObserverWakeup? {
+        lock.withLock { storage }
+    }
+
+    func set(_ value: HealthKitObserverWakeup?) {
+        lock.withLock { storage = value }
+    }
+}
+
+private final class TestHealthKitObserverUpdateDriver: @unchecked Sendable {
+    private let lock = NSLock()
+    private let onStop: @Sendable () -> Void
+    private var handlers: [HealthKitObserverUpdateDriver.Handler] = []
+    private var stopCount = 0
+
+    init(onStop: @escaping @Sendable () -> Void) {
+        self.onStop = onStop
+    }
+
+    var driver: HealthKitObserverUpdateDriver {
+        HealthKitObserverUpdateDriver { [weak self] handler in
+            guard let self else { return [] }
+            self.lock.withLock { self.handlers.append(handler) }
+            return [{ [weak self] in
+                guard let self else { return }
+                let isFirst = self.lock.withLock {
+                    self.stopCount += 1
+                    return self.stopCount == 1
+                }
+                if isFirst { self.onStop() }
+            }]
+        }
+    }
+
+    func fire(
+        at index: Int,
+        completion: @escaping () -> Void
+    ) {
+        let handler = lock.withLock { handlers[index] }
+        handler(completion)
     }
 }
 
@@ -1143,24 +1780,6 @@ private final class LockedFlag: @unchecked Sendable {
     }
 }
 
-private actor SignalCapture {
-    private var signal: EnvironmentSignal?
-    private var waiters: [CheckedContinuation<EnvironmentSignal, Never>] = []
-
-    func receive(_ signal: EnvironmentSignal) {
-        self.signal = signal
-        for waiter in waiters { waiter.resume(returning: signal) }
-        waiters.removeAll()
-    }
-
-    func value() async -> EnvironmentSignal {
-        if let signal { return signal }
-        return await withCheckedContinuation { continuation in
-            waiters.append(continuation)
-        }
-    }
-}
-
 private final class LockedObjectTypeSet: @unchecked Sendable {
     private let lock = NSLock()
     private var storage = Set<HKObjectType>()
@@ -1188,6 +1807,19 @@ private final class LockedSignalBox: @unchecked Sendable {
 
     func set(_ value: EnvironmentSignal?) {
         lock.withLock { storage = value }
+    }
+}
+
+private final class LockedSignalsBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage: [EnvironmentSignal] = []
+
+    var value: [EnvironmentSignal] {
+        lock.withLock { storage }
+    }
+
+    func append(_ signal: EnvironmentSignal) {
+        lock.withLock { storage.append(signal) }
     }
 }
 

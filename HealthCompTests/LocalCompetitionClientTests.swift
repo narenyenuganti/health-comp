@@ -3,6 +3,39 @@ import XCTest
 @testable import HealthComp
 
 final class LocalCompetitionClientTests: XCTestCase {
+    func testLocalClientActivatesFixtureOwnershipBeforeOpeningSignalPump() async throws {
+        let source = FixtureActivitySource(
+            fixture: try ActivityFixture(
+                initialInstant: EnvironmentInstant(
+                    wallDate: Date(timeIntervalSinceReferenceDate: 0),
+                    monotonic: MonotonicInstant(
+                        epochID: "local-client-signal-ownership",
+                        nanoseconds: 0
+                    )
+                ),
+                initialDays: [],
+                changes: []
+            )
+        )
+        let client = LocalCompetitionClient.make(
+            environment: .accelerated(source: source),
+            storeAvailability: .unavailable,
+            configuration: .testing
+        )
+        var publications = client.start().makeAsyncIterator()
+
+        _ = await publications.next()
+
+        let subscriberCount = await source.signalSubscriberCount()
+        XCTAssertEqual(subscriberCount, 1)
+        await client.stop()
+
+        let replacement = try await source.activateSignalOwnership(
+            for: UUID()
+        )
+        try await source.commitSignalOwnershipActivation(replacement)
+    }
+
     func testLaunchWaitsForEveryRereadAndBuffersSignalIntoOneNewerPublication() async throws {
         let setup = try await makeTwoAcceptedCompetitions()
         let signalDate = setup.activeDate.addingTimeInterval(1)

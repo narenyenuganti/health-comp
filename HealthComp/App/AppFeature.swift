@@ -1,6 +1,35 @@
 import ComposableArchitecture
 import Foundation
 
+private actor AppProfileTransitionGate {
+    private var isHeld = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func run<Value: Sendable>(
+        _ operation: @Sendable () async throws -> Value
+    ) async rethrows -> Value {
+        await acquire()
+        defer { release() }
+        return try await operation()
+    }
+
+    private func acquire() async {
+        guard isHeld else {
+            isHeld = true
+            return
+        }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+
+    private func release() {
+        guard !waiters.isEmpty else {
+            isHeld = false
+            return
+        }
+        waiters.removeFirst().resume()
+    }
+}
+
 @Reducer
 struct AppFeature {
     @ObservableState
@@ -11,6 +40,7 @@ struct AppFeature {
             case bootstrappingProfile
             case settingUpProfile
             case authenticated
+            case tearingDown
             case launchFailure
         }
 
@@ -19,6 +49,7 @@ struct AppFeature {
         var mainTab: MainTabFeature.State?
         var profile: AuthenticatedProfile?
         var profileStoragePaths: AuthenticatedProfileStoragePaths?
+        var pendingTeardown: PendingTeardown?
         var authEpoch: UInt64
         var isAuthenticationMonitoring: Bool
 
@@ -30,6 +61,7 @@ struct AppFeature {
             mainTab: MainTabFeature.State? = nil,
             profile: AuthenticatedProfile? = nil,
             profileStoragePaths: AuthenticatedProfileStoragePaths? = nil,
+            pendingTeardown: PendingTeardown? = nil,
             authEpoch: UInt64 = 0,
             isAuthenticationMonitoring: Bool = false
         ) {
@@ -38,6 +70,7 @@ struct AppFeature {
             self.mainTab = mainTab
             self.profile = profile
             self.profileStoragePaths = profileStoragePaths
+            self.pendingTeardown = pendingTeardown
             self.authEpoch = authEpoch
             self.isAuthenticationMonitoring = isAuthenticationMonitoring
         }
@@ -98,6 +131,20 @@ struct AppFeature {
         case accountDeleted
     }
 
+    struct PendingTeardown: Equatable, Sendable {
+        enum Stage: Equatable, Sendable {
+            case prepareRuntime
+            case removeProfileStorage
+            case finishUserSignOut
+        }
+
+        var reason: TeardownReason
+        let profileID: UUID?
+        let stopRuntime: Bool
+        var stage: Stage
+        var isRunning: Bool
+    }
+
     enum Action: Equatable, Sendable {
         case task
         case stop
@@ -115,10 +162,16 @@ struct AppFeature {
             ProfileStorageResponse
         )
         case authenticationEvent(AuthenticationEvent)
+        case teardownStageCompleted(
+            epoch: UInt64,
+            reason: TeardownReason,
+            stage: PendingTeardown.Stage
+        )
         case teardownCompleted(epoch: UInt64, reason: TeardownReason)
         case teardownFailed(
             epoch: UInt64,
             reason: TeardownReason,
+            stage: PendingTeardown.Stage,
             failure: AuthenticatedProfileStorageFailure
         )
         case account(AccountFeature.Action)
@@ -129,10 +182,12 @@ struct AppFeature {
     @Dependency(\.authenticatedProfileStorage)
     private var authenticatedProfileStorage
     @Dependency(\.competitionClient) private var competitionClient
+    private let profileTransitionGate = AppProfileTransitionGate()
 
     private enum CancelID {
         case authenticationEvents
         case authenticationOperation
+        case accountDeletion
         case teardown
     }
 
@@ -145,6 +200,21 @@ struct AppFeature {
             case .task:
                 guard !state.isAuthenticationMonitoring else { return .none }
                 state.isAuthenticationMonitoring = true
+                if var pendingTeardown = state.pendingTeardown {
+                    state.phase = .tearingDown
+                    guard !pendingTeardown.isRunning else {
+                        return authenticationEvents()
+                    }
+                    pendingTeardown.isRunning = true
+                    state.pendingTeardown = pendingTeardown
+                    return .merge(
+                        authenticationEvents(),
+                        resumeTeardown(
+                            epoch: state.authEpoch,
+                            pendingTeardown: pendingTeardown
+                        )
+                    )
+                }
                 state.authEpoch &+= 1
                 state.phase = .launching
                 let epoch = state.authEpoch
@@ -155,6 +225,9 @@ struct AppFeature {
 
             case .stop:
                 state.isAuthenticationMonitoring = false
+                if state.pendingTeardown != nil {
+                    return .cancel(id: CancelID.authenticationEvents)
+                }
                 let shouldStopRuntime = state.profile != nil
                     || state.mainTab != nil
                 return .merge(
@@ -162,7 +235,11 @@ struct AppFeature {
                     .cancel(id: CancelID.authenticationOperation),
                     .cancel(id: CancelID.teardown),
                     shouldStopRuntime
-                        ? .run { _ in await competitionClient.stop() }
+                        ? .run { _ in
+                            await profileTransitionGate.run {
+                                await competitionClient.stop()
+                            }
+                        }
                         : .none
                 )
 
@@ -170,6 +247,16 @@ struct AppFeature {
                 guard epoch == state.authEpoch else { return .none }
                 switch response {
                 case .success(nil):
+                    if state.profile != nil || state.mainTab != nil {
+                        state.account.isRequestInFlight = true
+                        return beginTeardown(
+                            state: &state,
+                            epoch: epoch,
+                            reason: .sessionEnded,
+                            stopRuntime: true,
+                            profileID: state.profile?.id
+                        )
+                    }
                     becomeSignedOut(state: &state, message: nil)
                     return .none
 
@@ -234,19 +321,22 @@ struct AppFeature {
                     return .none
 
                 case .signedOut:
-                    // A user-requested global sign-out emits this event before
-                    // its best-effort SDK operation returns. The in-flight
-                    // teardown already owns the ordered transition.
                     guard state.phase != .signedOut else { return .none }
-                    guard !(
-                        state.phase == .authenticated
-                            && state.account.isRequestInFlight
-                    ) else {
+                    if var pendingTeardown = state.pendingTeardown {
+                        if pendingTeardown.reason == .userRequested,
+                           pendingTeardown.stage != .finishUserSignOut {
+                            pendingTeardown.reason = .sessionEnded
+                            state.pendingTeardown = pendingTeardown
+                        }
                         return .none
                     }
+                    guard !(state.account.isDeletingAccount
+                        && state.account.isRequestInFlight)
+                    else { return .none }
                     state.authEpoch &+= 1
                     state.account.isRequestInFlight = true
-                    return teardown(
+                    return beginTeardown(
+                        state: &state,
                         epoch: state.authEpoch,
                         reason: .sessionEnded,
                         stopRuntime: state.profile != nil
@@ -256,9 +346,15 @@ struct AppFeature {
 
                 case .accountDeleted:
                     guard state.phase != .signedOut else { return .none }
+                    if var pendingTeardown = state.pendingTeardown {
+                        pendingTeardown.reason = .accountDeleted
+                        state.pendingTeardown = pendingTeardown
+                        return .none
+                    }
                     state.authEpoch &+= 1
                     state.account.isRequestInFlight = true
-                    return teardown(
+                    return beginTeardown(
+                        state: &state,
                         epoch: state.authEpoch,
                         reason: .accountDeleted,
                         stopRuntime: state.profile != nil
@@ -287,17 +383,67 @@ struct AppFeature {
                 }
                 return .none
 
+            case let .teardownStageCompleted(epoch, _, stage):
+                guard epoch == state.authEpoch,
+                      var pendingTeardown = state.pendingTeardown,
+                      pendingTeardown.stage == stage,
+                      pendingTeardown.isRunning
+                else {
+                    return .none
+                }
+                switch stage {
+                case .prepareRuntime:
+                    pendingTeardown.stage = .removeProfileStorage
+                    state.pendingTeardown = pendingTeardown
+                    return resumeTeardown(
+                        epoch: epoch,
+                        pendingTeardown: pendingTeardown
+                    )
+
+                case .removeProfileStorage:
+                    pendingTeardown.stage = .finishUserSignOut
+                    state.pendingTeardown = pendingTeardown
+                    return resumeTeardown(
+                        epoch: epoch,
+                        pendingTeardown: pendingTeardown
+                    )
+
+                case .finishUserSignOut:
+                    return .send(
+                        .teardownCompleted(
+                            epoch: epoch,
+                            reason: pendingTeardown.reason
+                        )
+                    )
+                }
+
             case let .teardownCompleted(epoch, reason):
                 guard epoch == state.authEpoch else { return .none }
+                let authoritativeReason = state.pendingTeardown?.reason
+                    ?? reason
                 becomeSignedOut(
                     state: &state,
-                    message: reason == .sessionEnded ? .sessionEnded : nil
+                    message: authoritativeReason == .sessionEnded
+                        ? .sessionEnded
+                        : nil
                 )
                 return .none
 
-            case let .teardownFailed(epoch, _, _):
-                guard epoch == state.authEpoch else { return .none }
-                becomeLaunchFailure(state: &state)
+            case let .teardownFailed(epoch, _, stage, _):
+                guard epoch == state.authEpoch,
+                      var pendingTeardown = state.pendingTeardown,
+                      pendingTeardown.stage == stage,
+                      pendingTeardown.isRunning
+                else {
+                    return .none
+                }
+                pendingTeardown.stage = stage
+                pendingTeardown.isRunning = false
+                state.pendingTeardown = pendingTeardown
+                state.phase = .launchFailure
+                state.mainTab = nil
+                state.account = AccountFeature.State(mode: .launchFailure)
+                state.account.message = .tryAgain
                 return .none
 
             case .account(.delegate(.signInWithAppleRequested)):
@@ -349,7 +495,8 @@ struct AppFeature {
                     if failure == .terminalSession
                         || failure == .sessionExpired {
                         state.authEpoch &+= 1
-                        return teardown(
+                        return beginTeardown(
+                            state: &state,
                             epoch: state.authEpoch,
                             reason: .sessionEnded,
                             stopRuntime: state.profile != nil
@@ -365,13 +512,24 @@ struct AppFeature {
             case .account(.delegate(.retryRequested)):
                 guard state.phase == .launchFailure else { return .none }
                 state.authEpoch &+= 1
+                if var pendingTeardown = state.pendingTeardown {
+                    pendingTeardown.isRunning = true
+                    state.pendingTeardown = pendingTeardown
+                    state.phase = .tearingDown
+                    state.account.isRequestInFlight = true
+                    return resumeTeardown(
+                        epoch: state.authEpoch,
+                        pendingTeardown: pendingTeardown
+                    )
+                }
                 state.phase = .launching
                 return restoreSession(epoch: state.authEpoch)
 
             case .account(.delegate(.signOutRequested)):
                 guard state.phase == .authenticated else { return .none }
                 state.authEpoch &+= 1
-                return teardown(
+                return beginTeardown(
+                    state: &state,
                     epoch: state.authEpoch,
                     reason: .userRequested,
                     stopRuntime: state.mainTab != nil,
@@ -399,7 +557,8 @@ struct AppFeature {
                 switch response {
                 case .success:
                     state.authEpoch &+= 1
-                    return teardown(
+                    return beginTeardown(
+                        state: &state,
                         epoch: state.authEpoch,
                         reason: .accountDeleted,
                         stopRuntime: state.mainTab != nil,
@@ -410,7 +569,8 @@ struct AppFeature {
                     if failure == .terminalSession
                         || failure == .sessionExpired {
                         state.authEpoch &+= 1
-                        return teardown(
+                        return beginTeardown(
+                            state: &state,
                             epoch: state.authEpoch,
                             reason: .sessionEnded,
                             stopRuntime: state.mainTab != nil,
@@ -571,7 +731,7 @@ struct AppFeature {
             }
         }
         .cancellable(
-            id: CancelID.authenticationOperation,
+            id: CancelID.accountDeletion,
             cancelInFlight: true
         )
     }
@@ -582,25 +742,32 @@ struct AppFeature {
     ) -> Effect<Action> {
         .run { send in
             do {
-                let paths = try await authenticatedProfileStorage.mount(
-                    profile.id
-                )
-                do {
-                    try await competitionClient.mountAuthenticatedProfile(
-                        profile,
-                        paths
+                let paths = try await profileTransitionGate.run {
+                    try Task.checkCancellation()
+                    let paths = try await authenticatedProfileStorage.mount(
+                        profile.id
                     )
-                } catch let mountError {
-                    await competitionClient.stop()
                     do {
-                        try await authenticatedProfileStorage.teardown(
-                            profile.id
+                        try Task.checkCancellation()
+                        try await competitionClient.mountAuthenticatedProfile(
+                            profile,
+                            paths
                         )
-                    } catch {
-                        throw error as? AuthenticatedProfileStorageFailure
-                            ?? .cleanupFailed
+                        try Task.checkCancellation()
+                    } catch let mountError {
+                        guard !Task.isCancelled else { throw mountError }
+                        await competitionClient.stop()
+                        do {
+                            try await authenticatedProfileStorage.teardown(
+                                profile.id
+                            )
+                        } catch {
+                            throw error as? AuthenticatedProfileStorageFailure
+                                ?? .cleanupFailed
+                        }
+                        throw mountError
                     }
-                    throw mountError
+                    return paths
                 }
                 await send(
                     .profileStorageResponse(
@@ -628,45 +795,77 @@ struct AppFeature {
         )
     }
 
-    private func teardown(
+    private func beginTeardown(
+        state: inout State,
         epoch: UInt64,
         reason: TeardownReason,
         stopRuntime: Bool,
         profileID: UUID?
     ) -> Effect<Action> {
-        .merge(
+        let pendingTeardown = PendingTeardown(
+            reason: reason,
+            profileID: profileID,
+            stopRuntime: stopRuntime,
+            stage: .prepareRuntime,
+            isRunning: true
+        )
+        state.phase = .tearingDown
+        state.mainTab = nil
+        state.pendingTeardown = pendingTeardown
+        return resumeTeardown(
+            epoch: epoch,
+            pendingTeardown: pendingTeardown
+        )
+    }
+
+    private func resumeTeardown(
+        epoch: UInt64,
+        pendingTeardown: PendingTeardown
+    ) -> Effect<Action> {
+        .concatenate(
             .cancel(id: CancelID.authenticationOperation),
             .run { send in
-                if stopRuntime {
+                switch pendingTeardown.stage {
+                case .prepareRuntime:
                     do {
-                        try await competitionClient
-                            .prepareForProfileTeardown(
-                                requireRemoteInstallationRemoval:
-                                    reason == .userRequested
-                            )
+                        try await profileTransitionGate.run {
+                            if pendingTeardown.stopRuntime {
+                                try await competitionClient
+                                    .prepareForProfileTeardown(
+                                        requireRemoteInstallationRemoval:
+                                            pendingTeardown.reason
+                                                == .userRequested
+                                    )
+                                await competitionClient.stop()
+                            }
+                        }
                     } catch {
-                        await competitionClient.stop()
                         await send(
                             .teardownFailed(
                                 epoch: epoch,
-                                reason: reason,
+                                reason: pendingTeardown.reason,
+                                stage: .prepareRuntime,
                                 failure: .cleanupFailed
                             )
                         )
                         return
                     }
-                    await competitionClient.stop()
-                }
-                if let profileID {
+
+                case .removeProfileStorage:
                     do {
-                        try await authenticatedProfileStorage.teardown(
-                            profileID
-                        )
+                        try await profileTransitionGate.run {
+                            if let profileID = pendingTeardown.profileID {
+                                try await authenticatedProfileStorage.teardown(
+                                    profileID
+                                )
+                            }
+                        }
                     } catch {
                         await send(
                             .teardownFailed(
                                 epoch: epoch,
-                                reason: reason,
+                                reason: pendingTeardown.reason,
+                                stage: .removeProfileStorage,
                                 failure: error as?
                                     AuthenticatedProfileStorageFailure
                                     ?? .cleanupFailed
@@ -674,24 +873,33 @@ struct AppFeature {
                         )
                         return
                     }
-                }
-                if reason == .userRequested {
-                    do {
-                        try await authenticationClient.signOut()
-                    } catch {
-                        await send(
-                            .teardownFailed(
-                                epoch: epoch,
-                                reason: reason,
-                                failure: .cleanupFailed
+
+                case .finishUserSignOut:
+                    if pendingTeardown.reason == .userRequested {
+                        do {
+                            try await authenticationClient.signOut()
+                        } catch {
+                            await send(
+                                .teardownFailed(
+                                    epoch: epoch,
+                                    reason: pendingTeardown.reason,
+                                    stage: .finishUserSignOut,
+                                    failure: .cleanupFailed
+                                )
                             )
-                        )
-                        return
+                            return
+                        }
                     }
                 }
-                await send(.teardownCompleted(epoch: epoch, reason: reason))
+                await send(
+                    .teardownStageCompleted(
+                        epoch: epoch,
+                        reason: pendingTeardown.reason,
+                        stage: pendingTeardown.stage
+                    )
+                )
             }
-            .cancellable(id: CancelID.teardown, cancelInFlight: true)
+            .cancellable(id: CancelID.teardown)
         )
     }
 
@@ -740,6 +948,7 @@ struct AppFeature {
         state.phase = .signedOut
         state.profile = nil
         state.profileStoragePaths = nil
+        state.pendingTeardown = nil
         state.mainTab = nil
         state.account = AccountFeature.State(mode: .signedOut)
         state.account.message = message
@@ -749,6 +958,7 @@ struct AppFeature {
         state.phase = .launchFailure
         state.profile = nil
         state.profileStoragePaths = nil
+        state.pendingTeardown = nil
         state.mainTab = nil
         state.account = AccountFeature.State(mode: .launchFailure)
         state.account.message = .tryAgain

@@ -46,9 +46,13 @@ extension CompetitionClient {
             AuthenticatedProfileStoragePaths
         ) -> HealthKitBackgroundDeliveryReceiptClient = { _ in
             .discarding
-        }
+        },
+        lifecycleInvalidationObserver: @escaping @Sendable () -> Void = {}
     ) -> Self {
         let router = RemoteCompetitionPublicationRouter()
+        let lifecycle = RemoteCompetitionClientLifecycle(
+            didInvalidateMounts: lifecycleInvalidationObserver
+        )
         let coordinator = RemoteCompetitionClientCoordinator(
             remoteAPI: remoteAPI,
             environment: environment,
@@ -96,14 +100,24 @@ extension CompetitionClient {
                 await coordinator.requestNotificationAuthorization()
             },
             waitUntil: { date in try await environment.wait(until: date) },
-            stop: { await coordinator.stop() },
+            stop: {
+                lifecycle.invalidateMounts()
+                await coordinator.stop()
+            },
             prepareForProfileTeardown: { requireRemoteRemoval in
+                lifecycle.invalidateMounts()
                 try await coordinator.prepareForProfileTeardown(
                     requireRemoteInstallationRemoval: requireRemoteRemoval
                 )
             },
             mountAuthenticatedProfile: { profile, paths in
-                try await coordinator.mount(profile: profile, paths: paths)
+                let lease = lifecycle.issueMountLease()
+                try await coordinator.mount(
+                    profile: profile,
+                    paths: paths,
+                    lease: lease,
+                    lifecycle: lifecycle
+                )
             },
             createInvite: { request in
                 try await coordinator.createInvite(request)
@@ -112,6 +126,36 @@ extension CompetitionClient {
                 try await coordinator.claimInvite(request)
             }
         )
+    }
+}
+
+private struct RemoteCompetitionMountLease: Equatable, Sendable {
+    let generation: UInt64
+}
+
+private final class RemoteCompetitionClientLifecycle: @unchecked Sendable {
+    private let lock = NSLock()
+    private let didInvalidateMounts: @Sendable () -> Void
+    private var generation: UInt64 = 0
+
+    init(didInvalidateMounts: @escaping @Sendable () -> Void) {
+        self.didInvalidateMounts = didInvalidateMounts
+    }
+
+    func issueMountLease() -> RemoteCompetitionMountLease {
+        lock.withLock {
+            generation &+= 1
+            return RemoteCompetitionMountLease(generation: generation)
+        }
+    }
+
+    func invalidateMounts() {
+        lock.withLock { generation &+= 1 }
+        didInvalidateMounts()
+    }
+
+    func isCurrent(_ lease: RemoteCompetitionMountLease) -> Bool {
+        lock.withLock { lease.generation == generation }
     }
 }
 
@@ -166,6 +210,15 @@ private struct RemoteCompetitionStoppedTasks {
     let realtime: Task<Void, Never>?
 }
 
+private struct RemoteCompetitionCompletedMount {
+    let stoppedTasks: RemoteCompetitionStoppedTasks
+    let profileID: UUID
+    let ownershipLease: EnvironmentSignalOwnershipLease
+    let ownershipScope: EnvironmentSignalOwnershipScope
+    let runtimeGeneration: UInt64
+    let ownsNewSignalScope: Bool
+}
+
 enum ProfileScopedAppAttestRemoteAPI {
     static func make(
         profileID: UUID,
@@ -193,9 +246,37 @@ enum ProfileScopedAppAttestRemoteAPI {
 }
 
 private actor RemoteCompetitionClientCoordinator {
+    private struct OperationWaiter {
+        let id: UUID
+        let continuation: CheckedContinuation<Bool, Never>
+    }
+
     private struct PendingBackgroundDelivery {
         let signal: EnvironmentSignal
+        let ownershipScope: EnvironmentSignalOwnershipScope
+        var observedGeneration: UInt64?
         var receipt: HealthKitBackgroundDeliveryReceipt?
+    }
+
+    private struct TerminalTeardown {
+        enum Stage {
+            case quiescing
+            case retired
+        }
+
+        let profileID: UUID
+        let ownershipLease: EnvironmentSignalOwnershipLease
+        let ownershipScope: EnvironmentSignalOwnershipScope
+        let runtimeGeneration: UInt64
+        var requiresRemoteInstallationRemoval: Bool
+        var installationPreparationCompleted: Bool
+        var remoteRemovalRequirementSatisfied: Bool
+        var stage: Stage
+    }
+
+    private struct TerminalPreparationWork {
+        let id: UUID
+        let task: Task<Void, Error>
     }
 
     private let remoteAPI: CompetitionRemoteAPI
@@ -230,6 +311,12 @@ private actor RemoteCompetitionClientCoordinator {
     private var pendingBackgroundDeliveries: [
         String: PendingBackgroundDelivery
     ] = [:]
+    private var activeSignalOwnershipScope: EnvironmentSignalOwnershipScope?
+    private var activeSignalOwnershipLease: EnvironmentSignalOwnershipLease?
+    private var recoverableSignalOwnershipActivation:
+        EnvironmentSignalOwnershipActivation?
+    private var terminalTeardown: TerminalTeardown?
+    private var terminalPreparationWork: TerminalPreparationWork?
     private var installationCoordinator: CompetitionInstallationCoordinator?
     private var mountedCompetitionIDs: Set<CompetitionID> = []
     private var hasStarted = false
@@ -237,7 +324,7 @@ private actor RemoteCompetitionClientCoordinator {
     private var healthAuthorizationIssue: CompetitionClientIssue?
     private var runtimeGeneration: UInt64 = 0
     private var operationIsInProgress = false
-    private var operationWaiters: [CheckedContinuation<Void, Never>] = []
+    private var operationWaiters: [OperationWaiter] = []
 
     init(
         remoteAPI: CompetitionRemoteAPI,
@@ -270,8 +357,11 @@ private actor RemoteCompetitionClientCoordinator {
 
     func mount(
         profile: AuthenticatedProfile,
-        paths: AuthenticatedProfileStoragePaths
+        paths: AuthenticatedProfileStoragePaths,
+        lease: RemoteCompetitionMountLease,
+        lifecycle: RemoteCompetitionClientLifecycle
     ) async throws {
+        try Self.validateMountLease(lease, lifecycle: lifecycle)
         guard profile.id == paths.profileID else {
             throw RemoteCompetitionRuntimeFailure.profileMismatch
         }
@@ -279,85 +369,223 @@ private actor RemoteCompetitionClientCoordinator {
            installationEnvironment == nil {
             throw CompetitionPushRegistrationFailure.invalidConfiguration
         }
-        signalTask?.cancel()
-        realtimeTask?.cancel()
-        let stoppedTasks = try await withOperationGate {
-            let stoppedTasks = await stopRuntime()
-            let replacement = LocalCompetitionPublicationHub()
-            router.activate(replacement)
-            self.profile = profile
-            self.hub = replacement
-            self.publicationRevision = 0
-            self.latestPublication = nil
-            self.hasStarted = false
-            self.isStopped = false
-            let installationStore = CompetitionInstallationStateStore(
-                directory: paths.installationsDirectory
-            )
-            var mountedRemoteAPI = remoteAPI
-            if let appAttestServiceFactory {
-                mountedRemoteAPI = try await ProfileScopedAppAttestRemoteAPI
-                    .make(
-                        profileID: profile.id,
-                        paths: paths,
-                        installationStore: installationStore,
-                        remoteAPI: remoteAPI,
-                        service: appAttestServiceFactory()
-                    )
+        let completedMount = try await withCancellableOperationGate {
+            try Self.validateMountLease(lease, lifecycle: lifecycle)
+            guard terminalTeardown == nil else {
+                throw EnvironmentSignalOwnershipError.activeOwnerNotRetired
             }
-            let runtime = RemoteCompetitionRuntime(
-                profileID: profile.id,
-                store: JSONCompetitionEventStore(
-                    rootDirectory: paths.competitionEventsDirectory
-                ),
-                remoteAPI: mountedRemoteAPI,
-                environment: environment,
-                outboxStore: JSONCompetitionOutboxStore(
-                    rootDirectory: paths.outboxDirectory
-                ),
-                cacheStore: JSONRemoteCompetitionCacheStore(
-                    rootDirectory: paths.serverCursorsDirectory
+            // Source activation is the atomic ownership reservation. It must
+            // succeed before the mounted runtime is disturbed, so a rejected
+            // cross-profile mount leaves the origin profile retryable.
+            let signalOwnershipActivation = try await environment
+                .activateSignalOwnership(for: profile.id)
+            var stoppedPriorRuntime = false
+            var committedSignalOwnership = false
+            do {
+                try Self.validateMountLease(lease, lifecycle: lifecycle)
+                let stoppedTasks = await stopRuntime()
+                stoppedPriorRuntime = true
+                try Self.validateMountLease(lease, lifecycle: lifecycle)
+                let replacement = LocalCompetitionPublicationHub()
+                router.activate(replacement)
+                self.profile = profile
+                self.hub = replacement
+                self.publicationRevision = 0
+                self.latestPublication = nil
+                self.hasStarted = false
+                self.isStopped = false
+                let installationStore = CompetitionInstallationStateStore(
+                    directory: paths.installationsDirectory
                 )
-            )
-            self.runtime = runtime
-            let preferences = notificationPreferencesFactory(paths)
-            self.notificationPreferences = preferences
-            self.backgroundDeliveryReceipts = backgroundDeliveryReceiptFactory(
-                paths
-            )
-            if let notificationClient {
-                self.notificationCoordinator = .live(
-                    decisionCommitter: .remote(runtime: runtime),
-                    planner: CompetitionNotificationPlanner(
-                        policy: .liveV1
+                var mountedRemoteAPI = remoteAPI
+                if let appAttestServiceFactory {
+                    mountedRemoteAPI = try await ProfileScopedAppAttestRemoteAPI
+                        .make(
+                            profileID: profile.id,
+                            paths: paths,
+                            installationStore: installationStore,
+                            remoteAPI: remoteAPI,
+                            service: appAttestServiceFactory()
+                        )
+                    try Self.validateMountLease(lease, lifecycle: lifecycle)
+                }
+                let runtime = RemoteCompetitionRuntime(
+                    profileID: profile.id,
+                    store: JSONCompetitionEventStore(
+                        rootDirectory: paths.competitionEventsDirectory
                     ),
-                    notifications: notificationClient,
-                    preferences: preferences
-                )
-            } else {
-                self.notificationCoordinator = .noop
-            }
-            if let pushRegistrationClient,
-               let installationEnvironment {
-                let installationCoordinator =
-                    CompetitionInstallationCoordinator(
-                        remoteAPI: remoteAPI,
-                        registration: pushRegistrationClient,
-                        store: installationStore,
-                        environment: installationEnvironment
+                    remoteAPI: mountedRemoteAPI,
+                    environment: environment,
+                    outboxStore: JSONCompetitionOutboxStore(
+                        rootDirectory: paths.outboxDirectory
+                    ),
+                    cacheStore: JSONRemoteCompetitionCacheStore(
+                        rootDirectory: paths.serverCursorsDirectory
                     )
-                self.installationCoordinator = installationCoordinator
-                try await installationCoordinator.start()
+                )
+                self.runtime = runtime
+                let preferences = notificationPreferencesFactory(paths)
+                self.notificationPreferences = preferences
+                self.backgroundDeliveryReceipts =
+                    backgroundDeliveryReceiptFactory(paths)
+                if let notificationClient {
+                    self.notificationCoordinator = .live(
+                        decisionCommitter: .remote(runtime: runtime),
+                        planner: CompetitionNotificationPlanner(
+                            policy: .liveV1
+                        ),
+                        notifications: notificationClient,
+                        preferences: preferences
+                    )
+                } else {
+                    self.notificationCoordinator = .noop
+                }
+                if let pushRegistrationClient,
+                   let installationEnvironment {
+                    let installationCoordinator =
+                        CompetitionInstallationCoordinator(
+                            remoteAPI: remoteAPI,
+                            registration: pushRegistrationClient,
+                            store: installationStore,
+                            environment: installationEnvironment
+                        )
+                    self.installationCoordinator = installationCoordinator
+                    try await installationCoordinator.start()
+                    try Self.validateMountLease(lease, lifecycle: lifecycle)
+                }
+                try Self.validateMountLease(lease, lifecycle: lifecycle)
+                try await environment.commitSignalOwnershipActivation(
+                    signalOwnershipActivation
+                )
+                committedSignalOwnership = true
+                try Self.validateMountLease(lease, lifecycle: lifecycle)
+                activeSignalOwnershipLease = signalOwnershipActivation.lease
+                activeSignalOwnershipScope = signalOwnershipActivation.scope
+                recoverableSignalOwnershipActivation = nil
+                return RemoteCompetitionCompletedMount(
+                    stoppedTasks: stoppedTasks,
+                    profileID: profile.id,
+                    ownershipLease: signalOwnershipActivation.lease,
+                    ownershipScope: signalOwnershipActivation.scope,
+                    runtimeGeneration: runtimeGeneration,
+                    ownsNewSignalScope:
+                        signalOwnershipActivation.reservationID != nil
+                )
+            } catch {
+                if committedSignalOwnership,
+                   signalOwnershipActivation.reservationID != nil {
+                    _ = try? await environment.quiesceSignalOwnership(
+                        signalOwnershipActivation.lease
+                    )
+                    try? await environment.retireSignalOwnership(
+                        signalOwnershipActivation.lease
+                    )
+                } else if !committedSignalOwnership {
+                    await environment.rollbackSignalOwnershipActivation(
+                        signalOwnershipActivation
+                    )
+                }
+                if stoppedPriorRuntime {
+                    _ = await stopRuntime()
+                    self.profile = nil
+                    hub = nil
+                    latestPublication = nil
+                    publicationRevision = 0
+                    hasStarted = false
+                    isStopped = true
+                    router.finishCurrent()
+                    if signalOwnershipActivation.reservationID == nil {
+                        // The source still belongs to the same profile. Keep
+                        // a takeover token so an explicit terminal teardown
+                        // can atomically claim and retire it, including when
+                        // cancellation arrived just after the new lease was
+                        // committed.
+                        self.profile = profile
+                        recoverableSignalOwnershipActivation =
+                            committedSignalOwnership
+                            ? EnvironmentSignalOwnershipActivation(
+                                lease: signalOwnershipActivation.lease,
+                                reservationID: nil,
+                                expectedOwnerID:
+                                    signalOwnershipActivation.lease.ownerID
+                            )
+                            : signalOwnershipActivation
+                    }
+                }
+                throw error
             }
-            return stoppedTasks
         }
-        await stoppedTasks.signal?.value
-        await stoppedTasks.realtime?.value
+        await completedMount.stoppedTasks.signal?.value
+        await completedMount.stoppedTasks.realtime?.value
+        do {
+            try Self.validateMountLease(lease, lifecycle: lifecycle)
+        } catch {
+            try await abortCompletedMountIfNeeded(completedMount)
+            throw error
+        }
+    }
+
+    private static func validateMountLease(
+        _ lease: RemoteCompetitionMountLease,
+        lifecycle: RemoteCompetitionClientLifecycle
+    ) throws {
+        try Task.checkCancellation()
+        guard lifecycle.isCurrent(lease) else { throw CancellationError() }
+    }
+
+    private func abortCompletedMountIfNeeded(
+        _ completedMount: RemoteCompetitionCompletedMount
+    ) async throws {
+        try await withCancellableOperationGate {
+            guard terminalTeardown == nil,
+                  profile?.id == completedMount.profileID,
+                  activeSignalOwnershipScope
+                    == completedMount.ownershipScope,
+                  activeSignalOwnershipLease
+                    == completedMount.ownershipLease,
+                  runtimeGeneration == completedMount.runtimeGeneration
+            else { return }
+            if completedMount.ownsNewSignalScope {
+                let drained = try await environment.quiesceSignalOwnership(
+                    completedMount.ownershipLease
+                )
+                guard drained.isEmpty else {
+                    throw CompetitionRemoteFailure.retryableTransport
+                }
+                try await environment.retireSignalOwnership(
+                    completedMount.ownershipLease
+                )
+                activeSignalOwnershipLease = nil
+                activeSignalOwnershipScope = nil
+            }
+            let recoverableProfile = profile
+            _ = await stopRuntime()
+            if completedMount.ownsNewSignalScope {
+                profile = nil
+            } else {
+                profile = recoverableProfile
+                recoverableSignalOwnershipActivation =
+                    EnvironmentSignalOwnershipActivation(
+                        lease: completedMount.ownershipLease,
+                        reservationID: nil,
+                        expectedOwnerID:
+                            completedMount.ownershipLease.ownerID
+                    )
+            }
+            hub = nil
+            latestPublication = nil
+            publicationRevision = 0
+            hasStarted = false
+            isStopped = true
+            router.finishCurrent()
+        }
     }
 
     func start() async {
         let generation: UInt64? = await withOperationGate {
-            guard !hasStarted, !isStopped else { return nil }
+            guard terminalTeardown == nil,
+                  !hasStarted,
+                  !isStopped else { return nil }
             hasStarted = true
             return runtimeGeneration
         }
@@ -373,6 +601,7 @@ private actor RemoteCompetitionClientCoordinator {
 
         await withOperationGate {
             guard generation == runtimeGeneration,
+                  terminalTeardown == nil,
                   hasStarted,
                   !isStopped else {
                 return
@@ -388,7 +617,10 @@ private actor RemoteCompetitionClientCoordinator {
         trigger _: ActivityRefreshTrigger
     ) async -> CompetitionPublication {
         await withOperationGate {
-            await performReconciliation()
+            guard terminalTeardown == nil else {
+                return terminalBlockedPublication()
+            }
+            return await performReconciliation()
         }
     }
 
@@ -434,13 +666,17 @@ private actor RemoteCompetitionClientCoordinator {
 
     func reconcileNotifications() async {
         await withOperationGate {
+            guard terminalTeardown == nil else { return }
             await notificationCoordinator.reconcileLatest()
         }
     }
 
     func loadMutedOpponentIdentities() async throws -> Set<String> {
-        try await withOperationGate {
-            try await notificationPreferences.mutedOpponentIdentities()
+        try await withCancellableOperationGate {
+            guard terminalTeardown == nil else {
+                throw EnvironmentSignalOwnershipError.activeOwnerNotRetired
+            }
+            return try await notificationPreferences.mutedOpponentIdentities()
         }
     }
 
@@ -448,7 +684,10 @@ private actor RemoteCompetitionClientCoordinator {
         _ identity: String,
         isMuted: Bool
     ) async throws {
-        try await withOperationGate {
+        try await withCancellableOperationGate {
+            guard terminalTeardown == nil else {
+                throw EnvironmentSignalOwnershipError.activeOwnerNotRetired
+            }
             try await notificationPreferences.setMuted(identity, isMuted)
             await notificationCoordinator.reconcileLatest()
         }
@@ -465,20 +704,26 @@ private actor RemoteCompetitionClientCoordinator {
         async -> CompetitionNotificationAuthorizationState
     {
         guard let notificationClient else { return .denied }
-        do {
-            _ = try await notificationClient.requestAuthorization()
-        } catch {
-            return await notificationClient.authorizationState()
-        }
-        let state = await notificationClient.authorizationState()
-        await withOperationGate {
+        return await withOperationGate {
+            guard terminalTeardown == nil else {
+                return await notificationClient.authorizationState()
+            }
+            do {
+                _ = try await notificationClient.requestAuthorization()
+            } catch {
+                return await notificationClient.authorizationState()
+            }
+            let state = await notificationClient.authorizationState()
             await notificationCoordinator.reconcileLatest()
+            return state
         }
-        return state
     }
 
     func unsupported(_ id: CompetitionID?) async -> CompetitionPublication {
         await withOperationGate {
+            guard terminalTeardown == nil else {
+                return terminalBlockedPublication()
+            }
             let issue = id.map(CompetitionClientIssue.commandRejected)
                 ?? .unimplemented
             return publication(adding: issue)
@@ -486,7 +731,10 @@ private actor RemoteCompetitionClientCoordinator {
     }
 
     func archive(_ id: CompetitionID) async -> CompetitionPublication {
-        await withOperationGate {
+        guard let publication = await withCancellableOperationGateIfActive({
+            guard terminalTeardown == nil else {
+                return terminalBlockedPublication()
+            }
             guard runtime != nil else {
                 return publication(adding: .commandRejected(id))
             }
@@ -496,7 +744,10 @@ private actor RemoteCompetitionClientCoordinator {
             } catch {
                 return publication(adding: .commandRejected(id))
             }
+        }) else {
+            return publication(adding: .commandRejected(id))
         }
+        return publication
     }
 
     private func publication(
@@ -523,7 +774,10 @@ private actor RemoteCompetitionClientCoordinator {
     func createInvite(
         _ request: CompetitionInviteCreationRequest
     ) async throws -> CompetitionInviteCreationOutcome {
-        try await withOperationGate {
+        try await withCancellableOperationGate {
+            guard terminalTeardown == nil else {
+                throw EnvironmentSignalOwnershipError.activeOwnerNotRetired
+            }
             guard runtime != nil else {
                 throw CompetitionRemoteFailure.unauthenticated
             }
@@ -539,7 +793,10 @@ private actor RemoteCompetitionClientCoordinator {
     func claimInvite(
         _ request: CompetitionInviteClaimRequest
     ) async throws -> CompetitionInviteClaimOutcome {
-        try await withOperationGate {
+        try await withCancellableOperationGate {
+            guard terminalTeardown == nil else {
+                throw EnvironmentSignalOwnershipError.activeOwnerNotRetired
+            }
             guard runtime != nil else {
                 throw CompetitionRemoteFailure.unauthenticated
             }
@@ -553,10 +810,30 @@ private actor RemoteCompetitionClientCoordinator {
     }
 
     func stop() async {
-        isStopped = true
-        signalTask?.cancel()
-        realtimeTask?.cancel()
-        let stoppedTasks = await withOperationGate {
+        if terminalTeardown == nil,
+           recoverableSignalOwnershipActivation == nil {
+            // A signal reconciliation can be suspended in profile-scoped
+            // receipt persistence while holding the operation gate. Cancel
+            // the runtime tasks before joining that gate so their cancellation
+            // handlers can release external work and make stop bounded.
+            signalTask?.cancel()
+            realtimeTask?.cancel()
+        }
+        let stoppedTasks: RemoteCompetitionStoppedTasks? =
+            await withOperationGate {
+            if let terminalTeardown,
+               case .quiescing = terminalTeardown.stage {
+                // A failed terminal drain must remain mounted and retryable.
+                // App lifecycle stop is not allowed to erase that context.
+                return nil
+            }
+            if recoverableSignalOwnershipActivation != nil {
+                // A failed same-profile takeover still carries the only
+                // authenticated path to terminally retire the process-rooted
+                // source. Ordinary stop must not discard that capability.
+                return nil
+            }
+            isStopped = true
             let stoppedTasks = await stopRuntime()
             profile = nil
             hub = nil
@@ -564,20 +841,310 @@ private actor RemoteCompetitionClientCoordinator {
             publicationRevision = 0
             hasStarted = false
             router.finishCurrent()
+            if let terminalTeardown,
+               case .retired = terminalTeardown.stage {
+                self.terminalTeardown = nil
+            }
             return stoppedTasks
         }
-        await stoppedTasks.signal?.value
-        await stoppedTasks.realtime?.value
+        await stoppedTasks?.signal?.value
+        await stoppedTasks?.realtime?.value
     }
 
     func prepareForProfileTeardown(
         requireRemoteInstallationRemoval: Bool
     ) async throws {
-        try await withOperationGate {
-            try await installationCoordinator?.prepareForProfileTeardown(
-                requireRemoteRemoval: requireRemoteInstallationRemoval
+        try Task.checkCancellation()
+        if terminalTeardown == nil {
+            // Terminal preparation must be able to join the operation gate
+            // even when signal or realtime work is suspended in an external
+            // dependency. Cancellation preserves completion-bearing signals
+            // in the process-rooted source for the quiesce/drain phase below.
+            signalTask?.cancel()
+            realtimeTask?.cancel()
+        }
+        let work = try await withCancellableOperationGate {
+            () -> TerminalPreparationWork? in
+            try Task.checkCancellation()
+            guard let profile else {
+                guard runtime == nil,
+                      activeSignalOwnershipScope == nil,
+                      activeSignalOwnershipLease == nil,
+                      recoverableSignalOwnershipActivation == nil,
+                      terminalTeardown == nil
+                else {
+                    throw CompetitionRemoteFailure.unauthenticated
+                }
+                // A cancelled bootstrap may have been invalidated before it
+                // committed any profile-owned runtime. That is already a
+                // terminally clean state, so teardown remains idempotent.
+                return nil
+            }
+            if let activation = recoverableSignalOwnershipActivation {
+                guard activation.lease.profileID == profile.id else {
+                    throw EnvironmentSignalOwnershipError.inactiveOwner
+                }
+                try await environment.commitSignalOwnershipActivation(
+                    activation
+                )
+                activeSignalOwnershipLease = activation.lease
+                activeSignalOwnershipScope = activation.scope
+                recoverableSignalOwnershipActivation = nil
+                isStopped = false
+            }
+            if var terminal = terminalTeardown {
+                guard terminal.profileID == profile.id,
+                      terminal.runtimeGeneration == runtimeGeneration
+                else {
+                    throw EnvironmentSignalOwnershipError
+                        .activeOwnerNotRetired
+                }
+                terminal.requiresRemoteInstallationRemoval =
+                    terminal.requiresRemoteInstallationRemoval
+                    || requireRemoteInstallationRemoval
+                terminalTeardown = terminal
+                if case .retired = terminal.stage {
+                    try await satisfyRetiredInstallationRequirementIfNeeded()
+                    return nil
+                }
+                guard activeSignalOwnershipLease == terminal.ownershipLease,
+                      activeSignalOwnershipScope == terminal.ownershipScope
+                else {
+                    throw EnvironmentSignalOwnershipError.inactiveOwner
+                }
+                if let terminalPreparationWork {
+                    return terminalPreparationWork
+                }
+            } else {
+                guard let activeSignalOwnershipLease,
+                      let activeSignalOwnershipScope else {
+                    throw CompetitionRemoteFailure.unauthenticated
+                }
+                terminalTeardown = TerminalTeardown(
+                    profileID: profile.id,
+                    ownershipLease: activeSignalOwnershipLease,
+                    ownershipScope: activeSignalOwnershipScope,
+                    runtimeGeneration: runtimeGeneration,
+                    requiresRemoteInstallationRemoval:
+                        requireRemoteInstallationRemoval,
+                    installationPreparationCompleted: false,
+                    remoteRemovalRequirementSatisfied: false,
+                    stage: .quiescing
+                )
+            }
+
+            let workID = UUID()
+            let task = Task { [weak self] in
+                guard let self else {
+                    throw CompetitionRemoteFailure.unauthenticated
+                }
+                try await self.performTerminalPreparation()
+            }
+            let work = TerminalPreparationWork(id: workID, task: task)
+            terminalPreparationWork = work
+            return work
+        }
+        guard let work else { return }
+        do {
+            try await work.task.value
+        } catch {
+            if terminalPreparationWork?.id == work.id {
+                terminalPreparationWork = nil
+            }
+            throw error
+        }
+        if terminalPreparationWork?.id == work.id {
+            terminalPreparationWork = nil
+        }
+        try await withCancellableOperationGate {
+            try await satisfyRetiredInstallationRequirementIfNeeded()
+        }
+    }
+
+    private func performTerminalPreparation() async throws {
+        let quiescing = try await withCancellableOperationGate { () -> (
+            profileID: UUID,
+            ownershipLease: EnvironmentSignalOwnershipLease,
+            ownershipScope: EnvironmentSignalOwnershipScope,
+            runtimeGeneration: UInt64,
+            signalTask: Task<Void, Never>?
+        ) in
+            guard let profile,
+                  let activeSignalOwnershipLease,
+                  let activeSignalOwnershipScope,
+                  var terminal = terminalTeardown,
+                  case .quiescing = terminal.stage
+            else {
+                throw CompetitionRemoteFailure.unauthenticated
+            }
+            guard terminal.profileID == profile.id,
+                  terminal.ownershipLease == activeSignalOwnershipLease,
+                  terminal.ownershipScope == activeSignalOwnershipScope,
+                  terminal.runtimeGeneration == runtimeGeneration,
+                  !isStopped
+            else {
+                throw CompetitionRemoteFailure.unauthenticated
+            }
+            if !terminal.installationPreparationCompleted
+                || (terminal.requiresRemoteInstallationRemoval
+                    && !terminal.remoteRemovalRequirementSatisfied) {
+                let requiresRemoteRemoval =
+                    terminal.requiresRemoteInstallationRemoval
+                try await installationCoordinator?.prepareForProfileTeardown(
+                    requireRemoteRemoval: requiresRemoteRemoval
+                )
+                guard profile.id == terminal.profileID,
+                      activeSignalOwnershipLease == terminal.ownershipLease,
+                      activeSignalOwnershipScope == terminal.ownershipScope,
+                      runtimeGeneration == terminal.runtimeGeneration,
+                      self.terminalTeardown?.profileID == terminal.profileID,
+                      !isStopped
+                else {
+                    throw CompetitionRemoteFailure.unauthenticated
+                }
+                terminal.installationPreparationCompleted = true
+                terminal.remoteRemovalRequirementSatisfied =
+                    terminal.remoteRemovalRequirementSatisfied
+                    || requiresRemoteRemoval
+                terminalTeardown = terminal
+            }
+            let drainedSignals = try await environment
+                .quiesceSignalOwnership(terminal.ownershipLease)
+            guard profile.id == terminal.profileID,
+                  activeSignalOwnershipLease == terminal.ownershipLease,
+                  activeSignalOwnershipScope == terminal.ownershipScope,
+                  runtimeGeneration == terminal.runtimeGeneration,
+                  !isStopped
+            else {
+                throw CompetitionRemoteFailure.unauthenticated
+            }
+            try mergeDrainedBackgroundDeliveries(
+                drainedSignals,
+                ownershipScope: terminal.ownershipScope,
+                generation: terminal.runtimeGeneration
+            )
+            let task = signalTask
+            task?.cancel()
+            signalTask = nil
+            return (
+                terminal.profileID,
+                terminal.ownershipLease,
+                terminal.ownershipScope,
+                terminal.runtimeGeneration,
+                task
             )
         }
+        await quiescing.signalTask?.value
+
+        try await withCancellableOperationGate {
+            guard profile?.id == quiescing.profileID,
+                  activeSignalOwnershipLease == quiescing.ownershipLease,
+                  activeSignalOwnershipScope == quiescing.ownershipScope,
+                  runtimeGeneration == quiescing.runtimeGeneration,
+                  terminalTeardown?.profileID == quiescing.profileID,
+                  terminalTeardown?.ownershipLease
+                    == quiescing.ownershipLease,
+                  terminalTeardown?.ownershipScope == quiescing.ownershipScope,
+                  terminalTeardown?.runtimeGeneration
+                    == quiescing.runtimeGeneration,
+                  !isStopped
+            else {
+                throw CompetitionRemoteFailure.unauthenticated
+            }
+            guard let terminalTeardown,
+                  case .quiescing = terminalTeardown.stage
+            else {
+                throw EnvironmentSignalOwnershipError.inactiveOwner
+            }
+
+            _ = await performReconciliation()
+            guard !pendingBackgroundDeliveries.values.contains(where: {
+                $0.ownershipScope == quiescing.ownershipScope
+            }) else {
+                throw CompetitionRemoteFailure.retryableTransport
+            }
+            try await environment.retireSignalOwnership(
+                quiescing.ownershipLease
+            )
+            activeSignalOwnershipLease = nil
+            activeSignalOwnershipScope = nil
+            self.terminalTeardown?.stage = .retired
+        }
+    }
+
+    private func satisfyRetiredInstallationRequirementIfNeeded()
+        async throws
+    {
+        guard let profile,
+              var terminal = terminalTeardown,
+              case .retired = terminal.stage,
+              terminal.profileID == profile.id,
+              terminal.runtimeGeneration == runtimeGeneration,
+              !isStopped
+        else {
+            throw CompetitionRemoteFailure.unauthenticated
+        }
+        guard terminal.requiresRemoteInstallationRemoval,
+              !terminal.remoteRemovalRequirementSatisfied
+        else { return }
+        try await installationCoordinator?.prepareForProfileTeardown(
+            requireRemoteRemoval: true
+        )
+        guard self.profile?.id == terminal.profileID,
+              self.terminalTeardown?.profileID == terminal.profileID,
+              self.terminalTeardown?.runtimeGeneration
+                == terminal.runtimeGeneration,
+              !isStopped
+        else {
+            throw CompetitionRemoteFailure.unauthenticated
+        }
+        terminal.installationPreparationCompleted = true
+        terminal.remoteRemovalRequirementSatisfied = true
+        terminalTeardown = terminal
+    }
+
+    private func mergeDrainedBackgroundDeliveries(
+        _ signals: [EnvironmentSignal],
+        ownershipScope: EnvironmentSignalOwnershipScope,
+        generation: UInt64
+    ) throws {
+        for signal in signals {
+            guard signal.requiresCompletion,
+                  signal.ownershipScope == ownershipScope
+            else {
+                throw EnvironmentSignalOwnershipError.inactiveOwner
+            }
+            if var existing = pendingBackgroundDeliveries[signal.id] {
+                guard existing.ownershipScope == ownershipScope else {
+                    throw EnvironmentSignalOwnershipError.inactiveOwner
+                }
+                existing.observedGeneration = generation
+                pendingBackgroundDeliveries[signal.id] = existing
+            } else {
+                pendingBackgroundDeliveries[signal.id] =
+                    PendingBackgroundDelivery(
+                        signal: signal,
+                        ownershipScope: ownershipScope,
+                        observedGeneration: generation,
+                        receipt: nil
+                    )
+            }
+        }
+    }
+
+    private func terminalBlockedPublication() -> CompetitionPublication {
+        latestPublication ?? CompetitionPublication(
+            publicationRevision: publicationRevision,
+            dashboard: CompetitionDashboard(
+                competitions: [],
+                awards: [],
+                issues: [.storageUnavailable],
+                hiddenTerminalCompetitionCount: 0
+            ),
+            evaluatedAt: .distantPast,
+            timeZoneIdentifier: "UTC",
+            source: .remoteParticipants
+        )
     }
 
     private func stopRuntime() async -> RemoteCompetitionStoppedTasks {
@@ -603,7 +1170,8 @@ private actor RemoteCompetitionClientCoordinator {
         notificationCoordinator = .noop
         notificationPreferences = .unavailable
         backgroundDeliveryReceipts = .discarding
-        pendingBackgroundDeliveries.removeAll()
+        activeSignalOwnershipLease = nil
+        activeSignalOwnershipScope = nil
         await installationCoordinator?.stopListening()
         installationCoordinator = nil
         await runtime?.stop()
@@ -612,7 +1180,7 @@ private actor RemoteCompetitionClientCoordinator {
     }
 
     private func startSignals() {
-        guard signalTask == nil else { return }
+        guard terminalTeardown == nil, signalTask == nil else { return }
         let generation = runtimeGeneration
         signalTask = Task { [weak self, environment] in
             let signals = await environment.signals()
@@ -624,7 +1192,9 @@ private actor RemoteCompetitionClientCoordinator {
     }
 
     private func startRealtime() {
-        guard realtimeTask == nil, let profile else { return }
+        guard terminalTeardown == nil,
+              realtimeTask == nil,
+              let profile else { return }
         let generation = runtimeGeneration
         realtimeTask = Task { [weak self, realtimeClient] in
             let wakeUps = await realtimeClient.wakeUps(profile.id)
@@ -643,16 +1213,51 @@ private actor RemoteCompetitionClientCoordinator {
         generation: UInt64
     ) async {
         await withOperationGate {
-            guard generation == runtimeGeneration, !Task.isCancelled else {
+            guard terminalTeardown == nil,
+                  generation == runtimeGeneration,
+                  !Task.isCancelled else {
                 return
             }
-            if signal.requiresCompletion,
-               pendingBackgroundDeliveries[signal.id] == nil {
-                pendingBackgroundDeliveries[signal.id] =
-                    PendingBackgroundDelivery(
-                        signal: signal,
-                        receipt: nil
-                    )
+            guard let activeSignalOwnershipScope else { return }
+            if let signalOwnershipScope = signal.ownershipScope,
+               signalOwnershipScope != activeSignalOwnershipScope {
+                if signal.requiresCompletion,
+                   pendingBackgroundDeliveries[signal.id] == nil {
+                    pendingBackgroundDeliveries[signal.id] =
+                        PendingBackgroundDelivery(
+                            signal: signal,
+                            ownershipScope: signalOwnershipScope,
+                            observedGeneration: nil,
+                            receipt: nil
+                        )
+                }
+                return
+            }
+            if signal.requiresCompletion {
+                guard let signalOwnershipScope = signal.ownershipScope else {
+                    return
+                }
+                let existing = pendingBackgroundDeliveries[signal.id]
+                guard existing?.ownershipScope == nil
+                    || existing?.ownershipScope == signalOwnershipScope
+                else {
+                    return
+                }
+                guard signalOwnershipScope == activeSignalOwnershipScope else {
+                    return
+                }
+                if var existing {
+                    existing.observedGeneration = runtimeGeneration
+                    pendingBackgroundDeliveries[signal.id] = existing
+                } else {
+                    pendingBackgroundDeliveries[signal.id] =
+                        PendingBackgroundDelivery(
+                            signal: signal,
+                            ownershipScope: signalOwnershipScope,
+                            observedGeneration: runtimeGeneration,
+                            receipt: nil
+                        )
+                }
             }
             _ = await performReconciliation()
         }
@@ -661,14 +1266,22 @@ private actor RemoteCompetitionClientCoordinator {
     private func completePendingBackgroundDeliveries(
         using publication: CompetitionPublication
     ) async {
+        guard let activeSignalOwnershipScope else { return }
         for signalID in pendingBackgroundDeliveries.keys.sorted() {
             guard var pending = pendingBackgroundDeliveries[signalID]
             else { continue }
+            guard pending.ownershipScope == activeSignalOwnershipScope,
+                  pending.observedGeneration == runtimeGeneration
+            else { continue }
             do {
                 if try await backgroundDeliveryReceipts.contains(signalID) {
-                    guard !Task.isCancelled, !isStopped else { continue }
-                    await environment.completeSignal(signalID)
-                    pendingBackgroundDeliveries[signalID] = nil
+                    guard canCompleteBackgroundDelivery(
+                        signalID,
+                        ownershipScope: pending.ownershipScope
+                    ) else { continue }
+                    if await environment.completeSignal(signalID) {
+                        pendingBackgroundDeliveries[signalID] = nil
+                    }
                     continue
                 }
                 if pending.receipt == nil {
@@ -683,9 +1296,13 @@ private actor RemoteCompetitionClientCoordinator {
                 }
                 guard let receipt = pending.receipt else { continue }
                 try await backgroundDeliveryReceipts.commit(receipt)
-                guard !Task.isCancelled, !isStopped else { continue }
-                await environment.completeSignal(signalID)
-                pendingBackgroundDeliveries[signalID] = nil
+                guard canCompleteBackgroundDelivery(
+                    signalID,
+                    ownershipScope: pending.ownershipScope
+                ) else { continue }
+                if await environment.completeSignal(signalID) {
+                    pendingBackgroundDeliveries[signalID] = nil
+                }
             } catch {
                 // HealthKit retains the callback until a later canonical
                 // reconciliation commits the same privacy-safe receipt.
@@ -693,12 +1310,30 @@ private actor RemoteCompetitionClientCoordinator {
         }
     }
 
+    private func canCompleteBackgroundDelivery(
+        _ signalID: String,
+        ownershipScope: EnvironmentSignalOwnershipScope
+    ) -> Bool {
+        guard !Task.isCancelled,
+              !isStopped,
+              activeSignalOwnershipScope == ownershipScope,
+              let pending = pendingBackgroundDeliveries[signalID],
+              pending.ownershipScope == ownershipScope,
+              pending.observedGeneration == runtimeGeneration
+        else {
+            return false
+        }
+        return true
+    }
+
     private func consumeRealtime(
         _ wakeUp: CompetitionRealtimeWakeUp,
         generation: UInt64
     ) async {
         await withOperationGate {
-            guard generation == runtimeGeneration, !Task.isCancelled else {
+            guard terminalTeardown == nil,
+                  generation == runtimeGeneration,
+                  !Task.isCancelled else {
                 return
             }
             // The reason and cursor are diagnostic hints only. Durable state is
@@ -722,14 +1357,81 @@ private actor RemoteCompetitionClientCoordinator {
         }
     }
 
+    private func withCancellableOperationGate<Value>(
+        _ operation: () async throws -> Value
+    ) async throws -> Value {
+        guard await acquireCancellableOperationGate() else {
+            throw CancellationError()
+        }
+        do {
+            try Task.checkCancellation()
+            let result = try await operation()
+            releaseOperationGate()
+            return result
+        } catch {
+            releaseOperationGate()
+            throw error
+        }
+    }
+
+    private func withCancellableOperationGateIfActive<Value>(
+        _ operation: () async -> Value
+    ) async -> Value? {
+        guard await acquireCancellableOperationGate() else { return nil }
+        guard !Task.isCancelled else {
+            releaseOperationGate()
+            return nil
+        }
+        let result = await operation()
+        releaseOperationGate()
+        return result
+    }
+
     private func acquireOperationGate() async {
         guard operationIsInProgress else {
             operationIsInProgress = true
             return
         }
-        await withCheckedContinuation { continuation in
-            operationWaiters.append(continuation)
+        _ = await withCheckedContinuation {
+            (continuation: CheckedContinuation<Bool, Never>) in
+            operationWaiters.append(
+                OperationWaiter(id: UUID(), continuation: continuation)
+            )
         }
+    }
+
+    private func acquireCancellableOperationGate() async -> Bool {
+        guard !Task.isCancelled else { return false }
+        guard operationIsInProgress else {
+            operationIsInProgress = true
+            return true
+        }
+        let waiterID = UUID()
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                guard !Task.isCancelled else {
+                    continuation.resume(returning: false)
+                    return
+                }
+                operationWaiters.append(
+                    OperationWaiter(
+                        id: waiterID,
+                        continuation: continuation
+                    )
+                )
+            }
+        } onCancel: {
+            Task { await self.cancelOperationWaiter(waiterID) }
+        }
+    }
+
+    private func cancelOperationWaiter(_ waiterID: UUID) {
+        guard let index = operationWaiters.firstIndex(where: {
+            $0.id == waiterID
+        }) else { return }
+        operationWaiters.remove(at: index).continuation.resume(
+            returning: false
+        )
     }
 
     private func releaseOperationGate() {
@@ -737,7 +1439,7 @@ private actor RemoteCompetitionClientCoordinator {
             operationIsInProgress = false
             return
         }
-        operationWaiters.removeFirst().resume()
+        operationWaiters.removeFirst().continuation.resume(returning: true)
     }
 
     private func publish(

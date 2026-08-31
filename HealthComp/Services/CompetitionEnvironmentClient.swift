@@ -60,10 +60,65 @@ struct ActivityWindowRead: Equatable, Sendable {
     }
 }
 
+struct EnvironmentSignalOwnershipScope: Hashable, Sendable {
+    private let id: UUID
+
+    init() {
+        self.id = UUID()
+    }
+}
+
+struct EnvironmentSignalOwnershipLease: Hashable, Sendable {
+    let profileID: UUID
+    let scope: EnvironmentSignalOwnershipScope
+    let ownerID: UUID
+
+    init(
+        profileID: UUID,
+        scope: EnvironmentSignalOwnershipScope,
+        ownerID: UUID = UUID()
+    ) {
+        self.profileID = profileID
+        self.scope = scope
+        self.ownerID = ownerID
+    }
+}
+
+struct EnvironmentSignalOwnershipActivation: Hashable, Sendable {
+    let lease: EnvironmentSignalOwnershipLease
+    let reservationID: UUID?
+    let expectedOwnerID: UUID?
+
+    var scope: EnvironmentSignalOwnershipScope { lease.scope }
+
+    init(
+        lease: EnvironmentSignalOwnershipLease,
+        reservationID: UUID?,
+        expectedOwnerID: UUID? = nil
+    ) {
+        self.lease = lease
+        self.reservationID = reservationID
+        self.expectedOwnerID = expectedOwnerID
+    }
+}
+
 struct EnvironmentSignal: Equatable, Sendable {
     let id: String
     let trigger: ActivityRefreshTrigger
     let requiresCompletion: Bool
+    let ownershipScope: EnvironmentSignalOwnershipScope?
+
+    init(
+        id: String,
+        trigger: ActivityRefreshTrigger,
+        requiresCompletion: Bool,
+        ownershipScope: EnvironmentSignalOwnershipScope? = nil
+    ) {
+        self.id = id
+        self.trigger = trigger
+        self.requiresCompletion = requiresCompletion
+        self.ownershipScope = ownershipScope
+    }
 }
 
 enum CompetitionActivitySourceError: Error, Equatable, Sendable {
@@ -73,14 +128,35 @@ enum CompetitionActivitySourceError: Error, Equatable, Sendable {
     case unclassifiedQueryFailure
 }
 
+enum EnvironmentSignalOwnershipError: Error, Equatable, Sendable {
+    case activeOwnerNotRetired
+    case inactiveOwner
+    case pendingCallbacks
+}
+
 protocol CompetitionActivitySource: Sendable {
     func requestReadAuthorization() async throws
     func read(_ window: CompetitionActivityWindow) async throws -> ActivityWindowRead
+    func activateSignalOwnership(
+        for profileID: UUID
+    ) async throws -> EnvironmentSignalOwnershipActivation
+    func commitSignalOwnershipActivation(
+        _ activation: EnvironmentSignalOwnershipActivation
+    ) async throws
+    func rollbackSignalOwnershipActivation(
+        _ activation: EnvironmentSignalOwnershipActivation
+    ) async
+    func quiesceSignalOwnership(
+        _ lease: EnvironmentSignalOwnershipLease
+    ) async throws -> [EnvironmentSignal]
+    func retireSignalOwnership(
+        _ lease: EnvironmentSignalOwnershipLease
+    ) async throws
     func synchronizeSummarySubscriptions(
         to desiredWindows: Set<CompetitionActivityWindow>
     ) async
     func signals() async -> AsyncStream<EnvironmentSignal>
-    func completeSignal(_ id: String) async
+    func completeSignal(_ id: String) async -> Bool
 }
 
 struct CompetitionEnvironmentClient: Sendable {
@@ -95,11 +171,26 @@ struct CompetitionEnvironmentClient: Sendable {
     private let contextOperation: @Sendable () async -> CompetitionEnvironmentContext
     private let requestAuthorizationOperation: @Sendable () async throws -> Void
     private let readOperation: @Sendable (CompetitionActivityWindow) async throws -> ActivityWindowRead
+    private let activateSignalOwnershipOperation: @Sendable (
+        UUID
+    ) async throws -> EnvironmentSignalOwnershipActivation
+    private let commitSignalOwnershipActivationOperation: @Sendable (
+        EnvironmentSignalOwnershipActivation
+    ) async throws -> Void
+    private let rollbackSignalOwnershipActivationOperation: @Sendable (
+        EnvironmentSignalOwnershipActivation
+    ) async -> Void
+    private let quiesceSignalOwnershipOperation: @Sendable (
+        EnvironmentSignalOwnershipLease
+    ) async throws -> [EnvironmentSignal]
+    private let retireSignalOwnershipOperation: @Sendable (
+        EnvironmentSignalOwnershipLease
+    ) async throws -> Void
     private let synchronizeSummarySubscriptionsOperation: @Sendable (
         Set<CompetitionActivityWindow>
     ) async -> Void
     private let signalsOperation: @Sendable () async -> AsyncStream<EnvironmentSignal>
-    private let completeSignalOperation: @Sendable (String) async -> Void
+    private let completeSignalOperation: @Sendable (String) async -> Bool
     private let waitOperation: @Sendable (Date) async throws -> Void
 #if DEBUG
     private let advanceFixtureOperation: @Sendable (Date) async throws -> Void
@@ -110,17 +201,39 @@ struct CompetitionEnvironmentClient: Sendable {
         context: @escaping @Sendable () async -> CompetitionEnvironmentContext,
         requestAuthorization: @escaping @Sendable () async throws -> Void,
         read: @escaping @Sendable (CompetitionActivityWindow) async throws -> ActivityWindowRead,
+        activateSignalOwnership: @escaping @Sendable (
+            UUID
+        ) async throws -> EnvironmentSignalOwnershipActivation,
+        commitSignalOwnershipActivation: @escaping @Sendable (
+            EnvironmentSignalOwnershipActivation
+        ) async throws -> Void,
+        rollbackSignalOwnershipActivation: @escaping @Sendable (
+            EnvironmentSignalOwnershipActivation
+        ) async -> Void,
+        quiesceSignalOwnership: @escaping @Sendable (
+            EnvironmentSignalOwnershipLease
+        ) async throws -> [EnvironmentSignal],
+        retireSignalOwnership: @escaping @Sendable (
+            EnvironmentSignalOwnershipLease
+        ) async throws -> Void,
         synchronizeSummarySubscriptions: @escaping @Sendable (
             Set<CompetitionActivityWindow>
         ) async -> Void,
         signals: @escaping @Sendable () async -> AsyncStream<EnvironmentSignal>,
-        completeSignal: @escaping @Sendable (String) async -> Void,
+        completeSignal: @escaping @Sendable (String) async -> Bool,
         wait: @escaping @Sendable (Date) async throws -> Void
     ) {
         self.kind = kind
         self.contextOperation = context
         self.requestAuthorizationOperation = requestAuthorization
         self.readOperation = read
+        self.activateSignalOwnershipOperation = activateSignalOwnership
+        self.commitSignalOwnershipActivationOperation =
+            commitSignalOwnershipActivation
+        self.rollbackSignalOwnershipActivationOperation =
+            rollbackSignalOwnershipActivation
+        self.quiesceSignalOwnershipOperation = quiesceSignalOwnership
+        self.retireSignalOwnershipOperation = retireSignalOwnership
         self.synchronizeSummarySubscriptionsOperation = synchronizeSummarySubscriptions
         self.signalsOperation = signals
         self.completeSignalOperation = completeSignal
@@ -138,11 +251,26 @@ struct CompetitionEnvironmentClient: Sendable {
         context: @escaping @Sendable () async -> CompetitionEnvironmentContext,
         requestAuthorization: @escaping @Sendable () async throws -> Void,
         read: @escaping @Sendable (CompetitionActivityWindow) async throws -> ActivityWindowRead,
+        activateSignalOwnership: @escaping @Sendable (
+            UUID
+        ) async throws -> EnvironmentSignalOwnershipActivation,
+        commitSignalOwnershipActivation: @escaping @Sendable (
+            EnvironmentSignalOwnershipActivation
+        ) async throws -> Void,
+        rollbackSignalOwnershipActivation: @escaping @Sendable (
+            EnvironmentSignalOwnershipActivation
+        ) async -> Void,
+        quiesceSignalOwnership: @escaping @Sendable (
+            EnvironmentSignalOwnershipLease
+        ) async throws -> [EnvironmentSignal],
+        retireSignalOwnership: @escaping @Sendable (
+            EnvironmentSignalOwnershipLease
+        ) async throws -> Void,
         synchronizeSummarySubscriptions: @escaping @Sendable (
             Set<CompetitionActivityWindow>
         ) async -> Void,
         signals: @escaping @Sendable () async -> AsyncStream<EnvironmentSignal>,
-        completeSignal: @escaping @Sendable (String) async -> Void,
+        completeSignal: @escaping @Sendable (String) async -> Bool,
         wait: @escaping @Sendable (Date) async throws -> Void,
         advanceFixture: @escaping @Sendable (Date) async throws -> Void
     ) {
@@ -150,6 +278,13 @@ struct CompetitionEnvironmentClient: Sendable {
         self.contextOperation = context
         self.requestAuthorizationOperation = requestAuthorization
         self.readOperation = read
+        self.activateSignalOwnershipOperation = activateSignalOwnership
+        self.commitSignalOwnershipActivationOperation =
+            commitSignalOwnershipActivation
+        self.rollbackSignalOwnershipActivationOperation =
+            rollbackSignalOwnershipActivation
+        self.quiesceSignalOwnershipOperation = quiesceSignalOwnership
+        self.retireSignalOwnershipOperation = retireSignalOwnership
         self.synchronizeSummarySubscriptionsOperation = synchronizeSummarySubscriptions
         self.signalsOperation = signals
         self.completeSignalOperation = completeSignal
@@ -170,6 +305,21 @@ struct CompetitionEnvironmentClient: Sendable {
                 try await source.requestReadAuthorization()
             },
             read: { window in try await source.read(window) },
+            activateSignalOwnership: { profileID in
+                try await source.activateSignalOwnership(for: profileID)
+            },
+            commitSignalOwnershipActivation: { activation in
+                try await source.commitSignalOwnershipActivation(activation)
+            },
+            rollbackSignalOwnershipActivation: { activation in
+                await source.rollbackSignalOwnershipActivation(activation)
+            },
+            quiesceSignalOwnership: { lease in
+                try await source.quiesceSignalOwnership(lease)
+            },
+            retireSignalOwnership: { lease in
+                try await source.retireSignalOwnership(lease)
+            },
             synchronizeSummarySubscriptions: { windows in
                 await source.synchronizeSummarySubscriptions(to: windows)
             },
@@ -194,6 +344,21 @@ struct CompetitionEnvironmentClient: Sendable {
                 try await source.requestReadAuthorization()
             },
             read: { window in try await source.read(window) },
+            activateSignalOwnership: { profileID in
+                try await source.activateSignalOwnership(for: profileID)
+            },
+            commitSignalOwnershipActivation: { activation in
+                try await source.commitSignalOwnershipActivation(activation)
+            },
+            rollbackSignalOwnershipActivation: { activation in
+                await source.rollbackSignalOwnershipActivation(activation)
+            },
+            quiesceSignalOwnership: { lease in
+                try await source.quiesceSignalOwnership(lease)
+            },
+            retireSignalOwnership: { lease in
+                try await source.retireSignalOwnership(lease)
+            },
             synchronizeSummarySubscriptions: { windows in
                 await source.synchronizeSummarySubscriptions(to: windows)
             },
@@ -238,6 +403,21 @@ struct CompetitionEnvironmentClient: Sendable {
                 try await source.requestReadAuthorization()
             },
             read: { window in try await source.read(window) },
+            activateSignalOwnership: { profileID in
+                try await source.activateSignalOwnership(for: profileID)
+            },
+            commitSignalOwnershipActivation: { activation in
+                try await source.commitSignalOwnershipActivation(activation)
+            },
+            rollbackSignalOwnershipActivation: { activation in
+                await source.rollbackSignalOwnershipActivation(activation)
+            },
+            quiesceSignalOwnership: { lease in
+                try await source.quiesceSignalOwnership(lease)
+            },
+            retireSignalOwnership: { lease in
+                try await source.retireSignalOwnership(lease)
+            },
             synchronizeSummarySubscriptions: { windows in
                 await source.synchronizeSummarySubscriptions(to: windows)
             },
@@ -293,6 +473,36 @@ struct CompetitionEnvironmentClient: Sendable {
         try await readOperation(window)
     }
 
+    func activateSignalOwnership(
+        for profileID: UUID
+    ) async throws -> EnvironmentSignalOwnershipActivation {
+        try await activateSignalOwnershipOperation(profileID)
+    }
+
+    func commitSignalOwnershipActivation(
+        _ activation: EnvironmentSignalOwnershipActivation
+    ) async throws {
+        try await commitSignalOwnershipActivationOperation(activation)
+    }
+
+    func rollbackSignalOwnershipActivation(
+        _ activation: EnvironmentSignalOwnershipActivation
+    ) async {
+        await rollbackSignalOwnershipActivationOperation(activation)
+    }
+
+    func quiesceSignalOwnership(
+        _ lease: EnvironmentSignalOwnershipLease
+    ) async throws -> [EnvironmentSignal] {
+        try await quiesceSignalOwnershipOperation(lease)
+    }
+
+    func retireSignalOwnership(
+        _ lease: EnvironmentSignalOwnershipLease
+    ) async throws {
+        try await retireSignalOwnershipOperation(lease)
+    }
+
     func synchronizeSummarySubscriptions(
         to desiredWindows: Set<CompetitionActivityWindow>
     ) async {
@@ -303,7 +513,7 @@ struct CompetitionEnvironmentClient: Sendable {
         await signalsOperation()
     }
 
-    func completeSignal(_ id: String) async {
+    func completeSignal(_ id: String) async -> Bool {
         await completeSignalOperation(id)
     }
 

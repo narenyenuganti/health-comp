@@ -378,6 +378,10 @@ final class FixtureActivitySourceTests: XCTestCase {
                 ]
             )
         )
+        let activation = try await source.activateSignalOwnership(
+            for: UUID()
+        )
+        try await source.commitSignalOwnershipActivation(activation)
         let signals = await source.signals()
         let signalTask = Task { () -> [EnvironmentSignal] in
             var iterator = signals.makeAsyncIterator()
@@ -411,6 +415,42 @@ final class FixtureActivitySourceTests: XCTestCase {
             emitted.map(\.trigger),
             [.summaryUpdate, .summaryUpdate, .reconciliationProbe]
         )
+    }
+
+    func testInactiveFixtureDoesNotSubscribeOrEmitSignals() async throws {
+        let initialDate = Date(timeIntervalSinceReferenceDate: 8_000)
+        let signalDate = initialDate.addingTimeInterval(60)
+        let source = FixtureActivitySource(
+            fixture: try ActivityFixture(
+                initialInstant: EnvironmentInstant(
+                    wallDate: initialDate,
+                    monotonic: MonotonicInstant(
+                        epochID: "inactive-fixture-signals",
+                        nanoseconds: 0
+                    )
+                ),
+                initialDays: [],
+                changes: [
+                    try FixtureActivityChange(
+                        at: signalDate,
+                        updates: [],
+                        triggers: [.summaryUpdate]
+                    ),
+                ]
+            )
+        )
+        let signals = await source.signals()
+        let nextSignal = Task { () -> EnvironmentSignal? in
+            var iterator = signals.makeAsyncIterator()
+            return await iterator.next()
+        }
+
+        try await source.advance(to: signalDate)
+
+        let inactiveSignal = await nextSignal.value
+        let inactiveSubscriberCount = await source.signalSubscriberCount()
+        XCTAssertNil(inactiveSignal)
+        XCTAssertEqual(inactiveSubscriberCount, 0)
     }
 
     private func snapshot(moveValue: Double) throws -> ActivitySnapshot {
