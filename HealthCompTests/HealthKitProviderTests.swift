@@ -879,6 +879,85 @@ final class HealthKitProviderTests: XCTestCase {
         replacementReader.cancel()
     }
 
+    func testBackgroundSignalIDsAreDistinctAcrossProviderStates()
+        async throws
+    {
+        let firstUpdates = TestAsyncStream<HealthKitObserverWakeup>()
+        let secondUpdates = TestAsyncStream<HealthKitObserverWakeup>()
+        let firstCompletion = LockedFlag()
+        let secondCompletion = LockedFlag()
+        let firstProvider = HealthKitProvider(
+            userId: UUID(
+                uuidString: "71000000-0000-4000-8000-000000000001"
+            )!,
+            competitionDependencies: signalIdentityDependencies(
+                observerUpdates: firstUpdates
+            )
+        )
+        let secondProvider = HealthKitProvider(
+            userId: UUID(
+                uuidString: "72000000-0000-4000-8000-000000000002"
+            )!,
+            competitionDependencies: signalIdentityDependencies(
+                observerUpdates: secondUpdates
+            )
+        )
+        let firstCapture = SignalCapture()
+        let secondCapture = SignalCapture()
+        let firstReader = Task {
+            var iterator = await firstProvider.signals()
+                .makeAsyncIterator()
+            if let signal = await iterator.next() {
+                await firstCapture.receive(signal)
+            }
+        }
+        let secondReader = Task {
+            var iterator = await secondProvider.signals()
+                .makeAsyncIterator()
+            if let signal = await iterator.next() {
+                await secondCapture.receive(signal)
+            }
+        }
+
+        firstUpdates.yield(
+            HealthKitObserverWakeup {
+                firstCompletion.setTrue()
+            }
+        )
+        secondUpdates.yield(
+            HealthKitObserverWakeup {
+                secondCompletion.setTrue()
+            }
+        )
+        let firstSignal = await firstCapture.value()
+        let secondSignal = await secondCapture.value()
+
+        XCTAssertEqual(firstSignal.trigger, .observerWakeupBackground)
+        XCTAssertEqual(secondSignal.trigger, .observerWakeupBackground)
+        XCTAssertNotEqual(firstSignal.id, secondSignal.id)
+        XCTAssertFalse(firstCompletion.value)
+        XCTAssertFalse(secondCompletion.value)
+        await firstProvider.completeSignal(firstSignal.id)
+        await secondProvider.completeSignal(secondSignal.id)
+        XCTAssertTrue(firstCompletion.value)
+        XCTAssertTrue(secondCompletion.value)
+        firstReader.cancel()
+        secondReader.cancel()
+    }
+
+    private func signalIdentityDependencies(
+        observerUpdates: TestAsyncStream<HealthKitObserverWakeup>
+    ) -> HealthKitCompetitionDependencies {
+        HealthKitCompetitionDependencies(
+            isHealthDataAvailable: { true },
+            requestAuthorization: { _ in },
+            readActivitySummaries: { _ in [] },
+            resolveStandMode: { .unknown },
+            summaryUpdates: { _ in AsyncStream { $0.finish() } },
+            observerUpdates: { observerUpdates.stream }
+        )
+    }
+
     private func makeActivitySummary(
         day: CompetitionDay,
         moveValue: Double

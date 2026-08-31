@@ -59,6 +59,7 @@ final class AuthenticatedProfileStorageTests: XCTestCase {
                 "NotificationPreferences",
                 "Installations",
                 "AppAttest",
+                "BackgroundDelivery",
             ]
         )
         for url in [paths.rootDirectory] + paths.fixedDirectories {
@@ -123,9 +124,11 @@ final class AuthenticatedProfileStorageTests: XCTestCase {
             fileProtection: .testNoop
         )
         let paths = try await childStorage.mount(profileA)
-        try FileManager.default.removeItem(at: paths.outboxDirectory)
+        try FileManager.default.removeItem(
+            at: paths.backgroundDeliveryDirectory
+        )
         try FileManager.default.createSymbolicLink(
-            at: paths.outboxDirectory,
+            at: paths.backgroundDeliveryDirectory,
             withDestinationURL: outside
         )
 
@@ -237,6 +240,13 @@ final class AuthenticatedProfileStorageTests: XCTestCase {
             "profile-a-pending.json"
         )
         try Data("A only".utf8).write(to: privateOutbox)
+        let privateBackgroundReceipt = pathsA.backgroundDeliveryDirectory
+            .appendingPathComponent(
+                "background-delivery-receipts.v1.json"
+            )
+        try Data("profile A only".utf8).write(
+            to: privateBackgroundReceipt
+        )
 
         try await storage.teardown(profileA)
         let pathsB = try await storage.mount(profileB)
@@ -245,9 +255,20 @@ final class AuthenticatedProfileStorageTests: XCTestCase {
         XCTAssertFalse(
             FileManager.default.fileExists(atPath: privateOutbox.path)
         )
+        XCTAssertFalse(
+            FileManager.default.fileExists(
+                atPath: privateBackgroundReceipt.path
+            )
+        )
         XCTAssertEqual(
             try FileManager.default.contentsOfDirectory(
                 atPath: pathsB.outboxDirectory.path
+            ),
+            []
+        )
+        XCTAssertEqual(
+            try FileManager.default.contentsOfDirectory(
+                atPath: pathsB.backgroundDeliveryDirectory.path
             ),
             []
         )

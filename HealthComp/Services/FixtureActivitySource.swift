@@ -127,6 +127,7 @@ actor FixtureActivitySource: CompetitionActivitySource {
     private let fixtureTimeZoneIdentifier: String
     private var valuesByDay: [CompetitionDay: FixtureActivityValue]
     private let authorizationState: FixtureHealthAuthorizationState
+    private let replaysPendingCompletionSignals: Bool
     private var authorizationRequests = 0
     private var completedAuthorizationRequests = 0
     private var authorizationCompletionWaiters: [
@@ -145,6 +146,7 @@ actor FixtureActivitySource: CompetitionActivitySource {
     private var nextSignalOrdinal: UInt64 = 1
     private var signalContinuations: [UUID: AsyncStream<EnvironmentSignal>.Continuation] = [:]
     private var signalCompletionCounts: [String: Int] = [:]
+    private var pendingCompletionSignals: [EnvironmentSignal] = []
     private var waiters: [UUID: Waiter] = [:]
     private var shouldBlockNextRead = false
     private var readIsBlocked = false
@@ -162,18 +164,27 @@ actor FixtureActivitySource: CompetitionActivitySource {
         FixtureSummarySubscriptionSynchronization
     ] = []
 
-    init(fixture: ActivityFixture) {
+    init(
+        fixture: ActivityFixture,
+        replaysPendingCompletionSignals: Bool = false
+    ) {
         self.instantValue = fixture.initialInstant
         self.fixtureTimeZoneIdentifier = fixture.timeZoneIdentifier
         self.valuesByDay = Dictionary(
             uniqueKeysWithValues: fixture.initialDays.map { ($0.day, $0) }
         )
         self.authorizationState = fixture.initialAuthorizationState
+        self.replaysPendingCompletionSignals =
+            replaysPendingCompletionSignals
         self.readState = fixture.initialReadState
         self.changes = fixture.changes
     }
 
-    init(fixture: ActivityFixture, restoringAt restoreDate: Date) throws {
+    init(
+        fixture: ActivityFixture,
+        restoringAt restoreDate: Date,
+        replaysPendingCompletionSignals: Bool = false
+    ) throws {
         guard restoreDate.timeIntervalSinceReferenceDate.isFinite else {
             throw FixtureActivitySourceError.nonFiniteDate
         }
@@ -222,6 +233,8 @@ actor FixtureActivitySource: CompetitionActivitySource {
         self.fixtureTimeZoneIdentifier = fixture.timeZoneIdentifier
         self.valuesByDay = valuesByDay
         self.authorizationState = fixture.initialAuthorizationState
+        self.replaysPendingCompletionSignals =
+            replaysPendingCompletionSignals
         self.readState = readState
         self.changes = fixture.changes
         self.nextChangeIndex = restoredChangeCount
@@ -361,6 +374,11 @@ actor FixtureActivitySource: CompetitionActivitySource {
         let token = UUID()
         return AsyncStream { continuation in
             signalContinuations[token] = continuation
+            if replaysPendingCompletionSignals {
+                for signal in pendingCompletionSignals {
+                    continuation.yield(signal)
+                }
+            }
             continuation.onTermination = { [weak self] _ in
                 Task { await self?.removeSignalContinuation(token) }
             }
@@ -373,6 +391,9 @@ actor FixtureActivitySource: CompetitionActivitySource {
 
     func completeSignal(_ id: String) async {
         signalCompletionCounts[id, default: 0] += 1
+        if replaysPendingCompletionSignals {
+            pendingCompletionSignals.removeAll { $0.id == id }
+        }
     }
 
     func wait(until date: Date) async throws {
@@ -542,6 +563,9 @@ actor FixtureActivitySource: CompetitionActivitySource {
             trigger: trigger,
             requiresCompletion: trigger == .observerWakeupBackground
         )
+        if replaysPendingCompletionSignals, signal.requiresCompletion {
+            pendingCompletionSignals.append(signal)
+        }
         for continuation in signalContinuations.values {
             continuation.yield(signal)
         }

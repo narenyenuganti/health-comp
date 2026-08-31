@@ -2,22 +2,6 @@ import CompetitionCore
 import Dependencies
 import Foundation
 
-struct HealthKitBackgroundDeliveryReceipt: Equatable, Sendable {
-    let signalID: String
-    let trigger: ActivityRefreshTrigger
-    let processedAt: Date
-    let publicationRevision: UInt64
-    let hadIssues: Bool
-}
-
-struct HealthKitBackgroundDeliveryReceiptClient: Sendable {
-    let commit: @Sendable (
-        HealthKitBackgroundDeliveryReceipt
-    ) async throws -> Void
-
-    static let discarding = Self(commit: { _ in })
-}
-
 extension CompetitionClient {
     static func live(
         provider: SupabaseClientProvider,
@@ -37,6 +21,9 @@ extension CompetitionClient {
             appAttestServiceFactory: { DeviceCheckAppAttestClient() },
             notificationPreferencesFactory: { _ in
                 .remote(remoteAPI: remoteAPI)
+            },
+            backgroundDeliveryReceiptFactory: { paths in
+                .live(directory: paths.backgroundDeliveryDirectory)
             }
         )
     }
@@ -206,6 +193,11 @@ enum ProfileScopedAppAttestRemoteAPI {
 }
 
 private actor RemoteCompetitionClientCoordinator {
+    private struct PendingBackgroundDelivery {
+        let signal: EnvironmentSignal
+        var receipt: HealthKitBackgroundDeliveryReceipt?
+    }
+
     private let remoteAPI: CompetitionRemoteAPI
     private let environment: CompetitionEnvironmentClient
     private let realtimeClient: CompetitionRealtimeClient
@@ -235,6 +227,9 @@ private actor RemoteCompetitionClientCoordinator {
         .unavailable
     private var backgroundDeliveryReceipts: HealthKitBackgroundDeliveryReceiptClient =
         .discarding
+    private var pendingBackgroundDeliveries: [
+        String: PendingBackgroundDelivery
+    ] = [:]
     private var installationCoordinator: CompetitionInstallationCoordinator?
     private var mountedCompetitionIDs: Set<CompetitionID> = []
     private var hasStarted = false
@@ -400,10 +395,12 @@ private actor RemoteCompetitionClientCoordinator {
     private func performReconciliation() async -> CompetitionPublication {
         var issues = healthAuthorizationIssue.map { [$0] } ?? []
         guard let runtime, let profile else {
-            return publish(
+            let publication = publish(
                 materializations: [],
                 issues: issues + [.storageUnavailable]
             )
+            await completePendingBackgroundDeliveries(using: publication)
+            return publication
         }
         await installationCoordinator?.reconcile()
         let outcome = await runtime.synchronizeAll()
@@ -423,7 +420,7 @@ private actor RemoteCompetitionClientCoordinator {
         if !activityFailedIDs.isEmpty {
             issues.append(.activityFailures(activityFailedIDs))
         }
-        return await publish(
+        let publication = await publish(
             materializations: outcome.successfulCompetitions,
             profile: profile,
             issues: issues,
@@ -431,6 +428,8 @@ private actor RemoteCompetitionClientCoordinator {
                 ? Set(outcome.outcomes.map(\.competitionID))
                 : nil
         )
+        await completePendingBackgroundDeliveries(using: publication)
+        return publication
     }
 
     func reconcileNotifications() async {
@@ -604,6 +603,7 @@ private actor RemoteCompetitionClientCoordinator {
         notificationCoordinator = .noop
         notificationPreferences = .unavailable
         backgroundDeliveryReceipts = .discarding
+        pendingBackgroundDeliveries.removeAll()
         await installationCoordinator?.stopListening()
         installationCoordinator = nil
         await runtime?.stop()
@@ -644,14 +644,51 @@ private actor RemoteCompetitionClientCoordinator {
     ) async {
         await withOperationGate {
             guard generation == runtimeGeneration, !Task.isCancelled else {
-                if signal.requiresCompletion {
-                    await environment.completeSignal(signal.id)
-                }
                 return
             }
+            if signal.requiresCompletion,
+               pendingBackgroundDeliveries[signal.id] == nil {
+                pendingBackgroundDeliveries[signal.id] =
+                    PendingBackgroundDelivery(
+                        signal: signal,
+                        receipt: nil
+                    )
+            }
             _ = await performReconciliation()
-            if signal.requiresCompletion {
-                await environment.completeSignal(signal.id)
+        }
+    }
+
+    private func completePendingBackgroundDeliveries(
+        using publication: CompetitionPublication
+    ) async {
+        for signalID in pendingBackgroundDeliveries.keys.sorted() {
+            guard var pending = pendingBackgroundDeliveries[signalID]
+            else { continue }
+            do {
+                if try await backgroundDeliveryReceipts.contains(signalID) {
+                    guard !Task.isCancelled, !isStopped else { continue }
+                    await environment.completeSignal(signalID)
+                    pendingBackgroundDeliveries[signalID] = nil
+                    continue
+                }
+                if pending.receipt == nil {
+                    pending.receipt = HealthKitBackgroundDeliveryReceipt(
+                        signalID: pending.signal.id,
+                        trigger: pending.signal.trigger,
+                        processedAt: publication.evaluatedAt,
+                        publicationRevision: publication.publicationRevision,
+                        hadIssues: !publication.dashboard.issues.isEmpty
+                    )
+                    pendingBackgroundDeliveries[signalID] = pending
+                }
+                guard let receipt = pending.receipt else { continue }
+                try await backgroundDeliveryReceipts.commit(receipt)
+                guard !Task.isCancelled, !isStopped else { continue }
+                await environment.completeSignal(signalID)
+                pendingBackgroundDeliveries[signalID] = nil
+            } catch {
+                // HealthKit retains the callback until a later canonical
+                // reconciliation commits the same privacy-safe receipt.
             }
         }
     }

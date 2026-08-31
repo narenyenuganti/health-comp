@@ -1061,6 +1061,120 @@ final class RemoteCompetitionClientTests: XCTestCase {
         await client.stop()
     }
 
+    func testBackgroundObserverReceiptFailureRetriesBeforeCompletion()
+        async throws
+    {
+        let fixture = try makeBackgroundSignalFixture(
+            profileID: "81000000-0000-4000-8000-000000000022",
+            epochID: "remote-background-receipt-retry"
+        )
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let receiptProbe = RemoteBackgroundDeliveryReceiptRetryProbe()
+        let client = CompetitionClient.remote(
+            remoteAPI: remoteAPI(listCompetitions: { [] }),
+            environment: .accelerated(source: fixture.source),
+            backgroundDeliveryReceiptFactory: { _ in
+                HealthKitBackgroundDeliveryReceiptClient { receipt in
+                    try await receiptProbe.commitFailingFirst(receipt)
+                }
+            }
+        )
+        try await client.mountAuthenticatedProfile(
+            fixture.profile,
+            fixture.paths
+        )
+        var iterator = client.start().makeAsyncIterator()
+        _ = await iterator.next()
+
+        try await fixture.source.advance(to: fixture.signalDate)
+        await receiptProbe.waitUntilAttemptCount(1)
+        let completionAfterFailure = await fixture.source
+            .signalCompletionCount("fixture-signal-1")
+        XCTAssertEqual(completionAfterFailure, 0)
+
+        _ = await client.reconcileAll(.foreground)
+
+        let receipts = await receiptProbe.attemptedReceipts()
+        let completionAfterRetry = await fixture.source
+            .signalCompletionCount("fixture-signal-1")
+        XCTAssertEqual(receipts.count, 2)
+        XCTAssertEqual(receipts.first, receipts.last)
+        XCTAssertEqual(completionAfterRetry, 1)
+        await client.stop()
+    }
+
+    func testStopLeavesCommittedCallbackPendingAndRemountCompletesReplay()
+        async throws
+    {
+        let fixture = try makeBackgroundSignalFixture(
+            profileID: "81000000-0000-4000-8000-000000000023",
+            epochID: "remote-background-receipt-remount",
+            replaysPendingCompletionSignals: true
+        )
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let cancellationObserved = expectation(
+            description: "pending receipt commit observed cancellation"
+        )
+        let receiptStore = RemoteBackgroundDeliveryReceiptPersistenceGate {
+            cancellationObserved.fulfill()
+        }
+        let client = CompetitionClient.remote(
+            remoteAPI: remoteAPI(listCompetitions: { [] }),
+            environment: .accelerated(source: fixture.source),
+            backgroundDeliveryReceiptFactory: { _ in
+                HealthKitBackgroundDeliveryReceiptClient(
+                    contains: { signalID in
+                        await receiptStore.contains(signalID)
+                    },
+                    commit: { receipt in
+                        await receiptStore.commitUntilCancelled(receipt)
+                    }
+                )
+            }
+        )
+        try await client.mountAuthenticatedProfile(
+            fixture.profile,
+            fixture.paths
+        )
+        var firstIterator = client.start().makeAsyncIterator()
+        _ = await firstIterator.next()
+        try await fixture.source.advance(to: fixture.signalDate)
+        await receiptStore.waitUntilCommitCount(1)
+
+        let stopTask = Task { await client.stop() }
+        await fulfillment(of: [cancellationObserved], timeout: 1)
+        await stopTask.value
+
+        let completionAfterStop = await fixture.source
+            .signalCompletionCount("fixture-signal-1")
+        let receiptWasStored = await receiptStore.isStored(
+            "fixture-signal-1"
+        )
+        XCTAssertEqual(completionAfterStop, 0)
+        XCTAssertTrue(receiptWasStored)
+
+        try await client.mountAuthenticatedProfile(
+            fixture.profile,
+            fixture.paths
+        )
+        var secondIterator = client.start().makeAsyncIterator()
+        _ = await secondIterator.next()
+        await receiptStore.waitUntilContainsCount(2)
+        for _ in 0 ..< 100
+        where await fixture.source.signalCompletionCount(
+            "fixture-signal-1"
+        ) == 0 {
+            await Task.yield()
+        }
+
+        let finalCompletionCount = await fixture.source
+            .signalCompletionCount("fixture-signal-1")
+        let commitCount = await receiptStore.commitCount()
+        XCTAssertEqual(finalCompletionCount, 1)
+        XCTAssertEqual(commitCount, 1)
+        await client.stop()
+    }
+
     func testConcurrentReconciliationsUseOneSerializedCanonicalOperation()
         async throws
     {
@@ -1595,6 +1709,76 @@ final class RemoteCompetitionClientTests: XCTestCase {
         await client.stop()
     }
 
+    private func makeBackgroundSignalFixture(
+        profileID: String,
+        epochID: String,
+        replaysPendingCompletionSignals: Bool = false
+    ) throws -> RemoteBackgroundSignalFixture {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: root,
+            withIntermediateDirectories: true
+        )
+        let profile = AuthenticatedProfile(
+            id: UUID(uuidString: profileID)!,
+            displayName: "Beta Alice"
+        )
+        let paths = AuthenticatedProfileStoragePaths(
+            profileID: profile.id,
+            rootDirectory: root
+        )
+        for directory in paths.fixedDirectories {
+            try FileManager.default.createDirectory(
+                at: directory,
+                withIntermediateDirectories: true
+            )
+        }
+        let calendar = try CompetitionCalendar(
+            timeZoneIdentifier: "America/Los_Angeles"
+        )
+        let startDay = try CompetitionDay(
+            era: 1,
+            year: 2026,
+            month: 8,
+            day: 13,
+            timeZoneIdentifier: calendar.timeZoneIdentifier
+        )
+        let initialDate = try calendar.startOfDay(startDay)
+        let signalDate = initialDate.addingTimeInterval(60)
+        let source = FixtureActivitySource(
+            fixture: try ActivityFixture(
+                initialInstant: EnvironmentInstant(
+                    wallDate: initialDate,
+                    monotonic: MonotonicInstant(
+                        epochID: epochID,
+                        nanoseconds: 1
+                    )
+                ),
+                timeZoneIdentifier: calendar.timeZoneIdentifier,
+                initialDays: try calendar.sevenDayWindow(
+                    startingOn: startDay
+                ).map { .missing(day: $0) },
+                changes: [
+                    try FixtureActivityChange(
+                        at: signalDate,
+                        updates: [],
+                        triggers: [.observerWakeupBackground]
+                    ),
+                ]
+            ),
+            replaysPendingCompletionSignals:
+                replaysPendingCompletionSignals
+        )
+        return RemoteBackgroundSignalFixture(
+            root: root,
+            profile: profile,
+            paths: paths,
+            source: source,
+            signalDate: signalDate
+        )
+    }
+
     private func environment() throws -> CompetitionEnvironmentClient {
         let calendar = try CompetitionCalendar(
             timeZoneIdentifier: "America/Los_Angeles"
@@ -1944,6 +2128,131 @@ private actor RemoteBackgroundDeliveryReceiptGate {
     }
 
     func receiptCount() -> Int { receipts.count }
+}
+
+private struct RemoteBackgroundSignalFixture {
+    let root: URL
+    let profile: AuthenticatedProfile
+    let paths: AuthenticatedProfileStoragePaths
+    let source: FixtureActivitySource
+    let signalDate: Date
+}
+
+private struct RemoteBackgroundDeliveryInjectedFailure: Error {}
+
+private actor RemoteBackgroundDeliveryReceiptRetryProbe {
+    private var attempts: [HealthKitBackgroundDeliveryReceipt] = []
+    private var attemptWaiters: [
+        (minimum: Int, continuation: CheckedContinuation<Void, Never>)
+    ] = []
+
+    func commitFailingFirst(
+        _ receipt: HealthKitBackgroundDeliveryReceipt
+    ) throws {
+        attempts.append(receipt)
+        resumeAttemptWaiters()
+        if attempts.count == 1 {
+            throw RemoteBackgroundDeliveryInjectedFailure()
+        }
+    }
+
+    func waitUntilAttemptCount(_ minimum: Int) async {
+        guard attempts.count < minimum else { return }
+        await withCheckedContinuation { continuation in
+            attemptWaiters.append((minimum, continuation))
+        }
+    }
+
+    func attemptedReceipts() -> [HealthKitBackgroundDeliveryReceipt] {
+        attempts
+    }
+
+    private func resumeAttemptWaiters() {
+        let ready = attemptWaiters.filter { attempts.count >= $0.minimum }
+        attemptWaiters.removeAll { attempts.count >= $0.minimum }
+        ready.forEach { $0.continuation.resume() }
+    }
+}
+
+private actor RemoteBackgroundDeliveryReceiptPersistenceGate {
+    private let onCancellation: @Sendable () -> Void
+    private var storedBySignalID: [
+        String: HealthKitBackgroundDeliveryReceipt
+    ] = [:]
+    private var commits: [HealthKitBackgroundDeliveryReceipt] = []
+    private var containsCalls = 0
+    private var commitWaiters: [
+        (minimum: Int, continuation: CheckedContinuation<Void, Never>)
+    ] = []
+    private var containsWaiters: [
+        (minimum: Int, continuation: CheckedContinuation<Void, Never>)
+    ] = []
+    private var commitRelease: CheckedContinuation<Void, Never>?
+
+    init(onCancellation: @escaping @Sendable () -> Void) {
+        self.onCancellation = onCancellation
+    }
+
+    func contains(_ signalID: String) -> Bool {
+        containsCalls += 1
+        resumeContainsWaiters()
+        return storedBySignalID[signalID] != nil
+    }
+
+    func commitUntilCancelled(
+        _ receipt: HealthKitBackgroundDeliveryReceipt
+    ) async {
+        commits.append(receipt)
+        resumeCommitWaiters()
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                commitRelease = continuation
+            }
+        } onCancel: {
+            Task { await self.cancelCommit() }
+        }
+        storedBySignalID[receipt.signalID] = receipt
+    }
+
+    private func cancelCommit() {
+        onCancellation()
+        commitRelease?.resume()
+        commitRelease = nil
+    }
+
+    func waitUntilCommitCount(_ minimum: Int) async {
+        guard commits.count < minimum else { return }
+        await withCheckedContinuation { continuation in
+            commitWaiters.append((minimum, continuation))
+        }
+    }
+
+    func waitUntilContainsCount(_ minimum: Int) async {
+        guard containsCalls < minimum else { return }
+        await withCheckedContinuation { continuation in
+            containsWaiters.append((minimum, continuation))
+        }
+    }
+
+    func isStored(_ signalID: String) -> Bool {
+        storedBySignalID[signalID] != nil
+    }
+
+    func commitCount() -> Int { commits.count }
+
+    private func resumeCommitWaiters() {
+        let ready = commitWaiters.filter { commits.count >= $0.minimum }
+        commitWaiters.removeAll { commits.count >= $0.minimum }
+        ready.forEach { $0.continuation.resume() }
+    }
+
+    private func resumeContainsWaiters() {
+        let ready = containsWaiters.filter {
+            containsCalls >= $0.minimum
+        }
+        containsWaiters.removeAll { containsCalls >= $0.minimum }
+        ready.forEach { $0.continuation.resume() }
+    }
 }
 
 private actor RemoteCompetitionAppAttestServiceProbe:

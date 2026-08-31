@@ -18,6 +18,7 @@ struct AuthenticatedProfileStoragePaths: Equatable, Sendable {
     let notificationPreferencesDirectory: URL
     let installationsDirectory: URL
     let appAttestDirectory: URL
+    let backgroundDeliveryDirectory: URL
 
     var fixedDirectories: [URL] {
         [
@@ -27,6 +28,7 @@ struct AuthenticatedProfileStoragePaths: Equatable, Sendable {
             notificationPreferencesDirectory,
             installationsDirectory,
             appAttestDirectory,
+            backgroundDeliveryDirectory,
         ]
     }
 
@@ -58,6 +60,11 @@ struct AuthenticatedProfileStoragePaths: Equatable, Sendable {
             "AppAttest",
             isDirectory: true
         )
+        self.backgroundDeliveryDirectory = rootDirectory
+            .appendingPathComponent(
+                "BackgroundDelivery",
+                isDirectory: true
+            )
     }
 }
 

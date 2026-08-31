@@ -662,6 +662,7 @@ private actor HealthKitProviderSignalState {
 
     private var continuation: AsyncStream<EnvironmentSignal>.Continuation?
     private var continuationToken: UUID?
+    private let signalInstanceID = UUID().uuidString.lowercased()
     private var nextSignalOrdinal: UInt64 = 1
     private var completions: [String: () -> Void] = [:]
     private var pendingCompletionSignals: [EnvironmentSignal] = []
@@ -821,7 +822,7 @@ private actor HealthKitProviderSignalState {
         trigger: ActivityRefreshTrigger,
         completion: (() -> Void)?
     ) {
-        let id = "healthkit-signal-\(nextSignalOrdinal)"
+        let id = "healthkit-signal-\(signalInstanceID)-\(nextSignalOrdinal)"
         nextSignalOrdinal += 1
         let signal = EnvironmentSignal(
             id: id,
