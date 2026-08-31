@@ -1,21 +1,23 @@
 # HealthComp Production Beta Verification Checklist
 
-**Snapshot:** 2026-08-30 PDT
-**Selected application baseline:** `aa16411a2e70b1839a3ef6aa7934a013a4875a0d`
+**Snapshot:** 2026-08-31 PDT
+**Selected physical application baseline:**
+`aa16411a2e70b1839a3ef6aa7934a013a4875a0d`
 **Selected release artifact:** `aa16411a2e70b1839a3ef6aa7934a013a4875a0d`;
-selected for the remaining staging and physical-device gates, but not yet
-cleared for production.
+retained as the latest signed physical artifact, but superseded in source by
+the integrated background-durability change and not eligible for that gate or
+production.
 **Current integrated application candidate:**
-`4c38b71e2ede803ae616db02515f699e52fa1d8b`; changes after the installed
-`aa16411` artifact remain backend verification and documentation only, so the
-selected iOS and project trees are unchanged.
-**Reviewed unintegrated background-durability candidate:**
-`92c984e`; independent durability and profile-isolation findings against the
-pre-review `38365d1` candidate are resolved. The exact reviewed candidate passed
+`886bd605b954666f2eeba6b6860a759e4d6e613b`; PR #80 integrated reviewed source
+commit `92c984e` plus lifecycle-race hardening and truthful evidence updates.
+**Integrated background-durability candidate:**
+`886bd60`; independent durability and profile-isolation findings against the
+pre-review `38365d1` candidate are resolved. The exact reviewed PR head passed
 535/535 application tests, 241/241 CompetitionCore tests in both Debug and
 Release, unsigned Debug/Staging/Release device builds, deterministic XcodeGen,
-the package-lock guard, and secret/configuration scans. It is not integrated or
-selected for physical evidence yet.
+the package-lock guard, and secret/configuration scans. Exact-head CI passed;
+post-merge Backend and iOS CI passed on `886bd60`. No signed build of the
+integrated candidate has been selected for physical evidence yet.
 **Release status:** Not production-ready
 
 Status meanings:
@@ -625,10 +627,10 @@ Status meanings:
 
 | Gate | Status | Required evidence |
 | --- | --- | --- |
-| Signed staging launch | PASS | Signed artifact `aa16411` was state-preservingly over-installed as `com.narenyenuganti.HealthComp.staging`, its executable hash was pinned, and exactly one controlled launch reached authenticated Sharing with one active competition and no warning before termination. Its iOS and project source remain unchanged through current integrated main `4c38b71` |
+| Signed staging launch | PASS | Signed artifact `aa16411` was state-preservingly over-installed as `com.narenyenuganti.HealthComp.staging`, its executable hash was pinned, and exactly one controlled launch reached authenticated Sharing with one active competition and no warning before termination. It matches integrated source only through historical main `4c38b71` and predates PR #80's application changes |
 | Sign in with Apple | PASS | Signed artifact `aa16411` initiated exactly one native authorization action, the user handled the system prompt, and Mirroring reconnected to warning-free authenticated Sharing. The privacy-safe receipt retains no identity, token, private identifier, Health value, score, request material, or screenshot |
 | HealthKit | PASS | Grant, revoke, and re-enable startup paths completed historically, and all app-requested categories were granted on prior artifact `9d19937`. Current signed artifact `aa16411` launched under the retained same-bundle grant, displayed an active-competition derived score, and its controlled new-day refresh created exactly one HealthKit-derived score revision that reached the hosted App Attest boundary. Background-observer behavior is tracked separately as a PARTIAL gate after one inconclusive physical attempt |
-| Background observer | PARTIAL | A bounded attempt on signed artifact `aa16411` began only after the app was refreshed and backgrounded and the user later confirmed a genuine Watch event was saved. Nine post-arming aggregate snapshots found no legacy `observerWakeupBackground` marker, so the gate did not pass; the receipt cannot distinguish delayed Watch-to-iPhone synchronization from a missing app wakeup. Privacy-safe receipt SHA-256: `63c8589f4865fe829342186f2ba003fd01b2d24e4771e8a8d2d51d10302169c9`. Reviewed candidate `92c984e` adds the separate bounded, protected, profile-scoped receipt that must persist before callback completion and resolves the independent durability and isolation findings. Its local automated matrix is clean; integration and a signed physical receipt remain required |
+| Background observer | PARTIAL | A bounded attempt on signed artifact `aa16411` began only after the app was refreshed and backgrounded and the user later confirmed a genuine Watch event was saved. Nine post-arming aggregate snapshots found no legacy `observerWakeupBackground` marker, so the gate did not pass; the receipt cannot distinguish delayed Watch-to-iPhone synchronization from a missing app wakeup. Privacy-safe receipt SHA-256: `63c8589f4865fe829342186f2ba003fd01b2d24e4771e8a8d2d51d10302169c9`. PR #80 integrated the separate bounded, protected, profile-scoped receipt that must persist before callback completion and resolves the independent durability and isolation findings. Its automated matrix plus exact-head and post-merge CI are clean; a signed physical receipt from integrated candidate `886bd60` remains required |
 | APNs | PARTIAL | iOS authorization and one active sandbox installation were verified at `2026-08-16T07:04:49.701324Z`; foreground, background, and cold-route delivery remain pending |
 | App Attest | PARTIAL | Installed artifact `aa16411` produced the exact iOS 26.6 legacy rejection that PR #76 fixed in `bb2910f`; only `submit-score-revision` advanced to active staging version 11 with byte-identical source and the expected `400 invalid_request` boot guard. A later single-launch physical window accepted one new HealthKit-derived revision through one consumed challenge and grant, and exact server-side replay of each consumed capability failed closed with its dedicated contract error. Receipt SHA-256: `efb3ebf8dc877efc62fc9f682484e12116dd92a133c6a9d659a1dba5a6646f44`. Replacement-installation App Attest enrollment remains pending |
 | Account deletion | PENDING | Reauthorization, server-confirmed completion, local wipe, no resurrection, and preserved Former competitor history |
