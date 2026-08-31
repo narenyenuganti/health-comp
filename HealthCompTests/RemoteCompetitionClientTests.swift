@@ -960,6 +960,107 @@ final class RemoteCompetitionClientTests: XCTestCase {
         await client.stop()
     }
 
+    func testBackgroundObserverCompletionWaitsForDurableReceipt()
+        async throws
+    {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: root,
+            withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: root) }
+        let profile = AuthenticatedProfile(
+            id: UUID(
+                uuidString: "81000000-0000-4000-8000-000000000021"
+            )!,
+            displayName: "Beta Alice"
+        )
+        let paths = AuthenticatedProfileStoragePaths(
+            profileID: profile.id,
+            rootDirectory: root
+        )
+        for directory in paths.fixedDirectories {
+            try FileManager.default.createDirectory(
+                at: directory,
+                withIntermediateDirectories: true
+            )
+        }
+        let calendar = try CompetitionCalendar(
+            timeZoneIdentifier: "America/Los_Angeles"
+        )
+        let startDay = try CompetitionDay(
+            era: 1,
+            year: 2026,
+            month: 8,
+            day: 13,
+            timeZoneIdentifier: calendar.timeZoneIdentifier
+        )
+        let initialDate = try calendar.startOfDay(startDay)
+        let signalDate = initialDate.addingTimeInterval(60)
+        let source = FixtureActivitySource(
+            fixture: try ActivityFixture(
+                initialInstant: EnvironmentInstant(
+                    wallDate: initialDate,
+                    monotonic: MonotonicInstant(
+                        epochID: "remote-durable-background-receipt",
+                        nanoseconds: 1
+                    )
+                ),
+                timeZoneIdentifier: calendar.timeZoneIdentifier,
+                initialDays: try calendar.sevenDayWindow(
+                    startingOn: startDay
+                ).map { .missing(day: $0) },
+                changes: [
+                    try FixtureActivityChange(
+                        at: signalDate,
+                        updates: [],
+                        triggers: [.observerWakeupBackground]
+                    ),
+                ]
+            )
+        )
+        let receiptStarted = expectation(
+            description: "background receipt commit started"
+        )
+        let receiptGate = RemoteBackgroundDeliveryReceiptGate()
+        let client = CompetitionClient.remote(
+            remoteAPI: remoteAPI(listCompetitions: { [] }),
+            environment: .accelerated(source: source),
+            backgroundDeliveryReceiptFactory: { _ in
+                HealthKitBackgroundDeliveryReceiptClient { receipt in
+                    await receiptGate.record(receipt)
+                    receiptStarted.fulfill()
+                    await receiptGate.waitForRelease()
+                }
+            }
+        )
+
+        try await client.mountAuthenticatedProfile(profile, paths)
+        var iterator = client.start().makeAsyncIterator()
+        _ = await iterator.next()
+        let subscriberCount = await source.signalSubscriberCount()
+        XCTAssertEqual(subscriberCount, 1)
+
+        try await source.advance(to: signalDate)
+        await fulfillment(of: [receiptStarted], timeout: 1)
+        let completionCountBeforeReceipt = await source
+            .signalCompletionCount("fixture-signal-1")
+        XCTAssertEqual(completionCountBeforeReceipt, 0)
+
+        await receiptGate.release()
+        for _ in 0 ..< 100
+        where await source.signalCompletionCount("fixture-signal-1") == 0 {
+            await Task.yield()
+        }
+        let receiptCount = await receiptGate.receiptCount()
+        let finalCompletionCount = await source
+            .signalCompletionCount("fixture-signal-1")
+        XCTAssertEqual(receiptCount, 1)
+        XCTAssertEqual(finalCompletionCount, 1)
+        await client.stop()
+    }
+
     func testConcurrentReconciliationsUseOneSerializedCanonicalOperation()
         async throws
     {
@@ -1818,6 +1919,31 @@ private actor RemoteCompetitionInstallationProbe {
     }
 
     func removalIDs() -> [UUID] { removals }
+}
+
+private actor RemoteBackgroundDeliveryReceiptGate {
+    private var receipts: [HealthKitBackgroundDeliveryReceipt] = []
+    private var isReleased = false
+    private var releaseContinuation: CheckedContinuation<Void, Never>?
+
+    func record(_ receipt: HealthKitBackgroundDeliveryReceipt) {
+        receipts.append(receipt)
+    }
+
+    func waitForRelease() async {
+        guard !isReleased else { return }
+        await withCheckedContinuation { continuation in
+            releaseContinuation = continuation
+        }
+    }
+
+    func release() {
+        isReleased = true
+        releaseContinuation?.resume()
+        releaseContinuation = nil
+    }
+
+    func receiptCount() -> Int { receipts.count }
 }
 
 private actor RemoteCompetitionAppAttestServiceProbe:

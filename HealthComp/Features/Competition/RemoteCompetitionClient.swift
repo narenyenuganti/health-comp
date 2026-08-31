@@ -2,6 +2,22 @@ import CompetitionCore
 import Dependencies
 import Foundation
 
+struct HealthKitBackgroundDeliveryReceipt: Equatable, Sendable {
+    let signalID: String
+    let trigger: ActivityRefreshTrigger
+    let processedAt: Date
+    let publicationRevision: UInt64
+    let hadIssues: Bool
+}
+
+struct HealthKitBackgroundDeliveryReceiptClient: Sendable {
+    let commit: @Sendable (
+        HealthKitBackgroundDeliveryReceipt
+    ) async throws -> Void
+
+    static let discarding = Self(commit: { _ in })
+}
+
 extension CompetitionClient {
     static func live(
         provider: SupabaseClientProvider,
@@ -38,6 +54,11 @@ extension CompetitionClient {
             AuthenticatedProfileStoragePaths
         ) -> CompetitionNotificationPreferencesClient = { _ in
             .constant(mutedOpponentIdentities: [])
+        },
+        backgroundDeliveryReceiptFactory: @escaping @Sendable (
+            AuthenticatedProfileStoragePaths
+        ) -> HealthKitBackgroundDeliveryReceiptClient = { _ in
+            .discarding
         }
     ) -> Self {
         let router = RemoteCompetitionPublicationRouter()
@@ -50,6 +71,7 @@ extension CompetitionClient {
             installationEnvironment: installationEnvironment,
             appAttestServiceFactory: appAttestServiceFactory,
             notificationPreferencesFactory: notificationPreferencesFactory,
+            backgroundDeliveryReceiptFactory: backgroundDeliveryReceiptFactory,
             router: router
         )
         return Self(
@@ -195,6 +217,9 @@ private actor RemoteCompetitionClientCoordinator {
     private let notificationPreferencesFactory: @Sendable (
         AuthenticatedProfileStoragePaths
     ) -> CompetitionNotificationPreferencesClient
+    private let backgroundDeliveryReceiptFactory: @Sendable (
+        AuthenticatedProfileStoragePaths
+    ) -> HealthKitBackgroundDeliveryReceiptClient
     private let router: RemoteCompetitionPublicationRouter
 
     private var profile: AuthenticatedProfile?
@@ -208,6 +233,8 @@ private actor RemoteCompetitionClientCoordinator {
         .noop
     private var notificationPreferences: CompetitionNotificationPreferencesClient =
         .unavailable
+    private var backgroundDeliveryReceipts: HealthKitBackgroundDeliveryReceiptClient =
+        .discarding
     private var installationCoordinator: CompetitionInstallationCoordinator?
     private var mountedCompetitionIDs: Set<CompetitionID> = []
     private var hasStarted = false
@@ -229,6 +256,9 @@ private actor RemoteCompetitionClientCoordinator {
         notificationPreferencesFactory: @escaping @Sendable (
             AuthenticatedProfileStoragePaths
         ) -> CompetitionNotificationPreferencesClient,
+        backgroundDeliveryReceiptFactory: @escaping @Sendable (
+            AuthenticatedProfileStoragePaths
+        ) -> HealthKitBackgroundDeliveryReceiptClient,
         router: RemoteCompetitionPublicationRouter
     ) {
         self.remoteAPI = remoteAPI
@@ -239,6 +269,7 @@ private actor RemoteCompetitionClientCoordinator {
         self.installationEnvironment = installationEnvironment
         self.appAttestServiceFactory = appAttestServiceFactory
         self.notificationPreferencesFactory = notificationPreferencesFactory
+        self.backgroundDeliveryReceiptFactory = backgroundDeliveryReceiptFactory
         self.router = router
     }
 
@@ -296,6 +327,9 @@ private actor RemoteCompetitionClientCoordinator {
             self.runtime = runtime
             let preferences = notificationPreferencesFactory(paths)
             self.notificationPreferences = preferences
+            self.backgroundDeliveryReceipts = backgroundDeliveryReceiptFactory(
+                paths
+            )
             if let notificationClient {
                 self.notificationCoordinator = .live(
                     decisionCommitter: .remote(runtime: runtime),
@@ -569,6 +603,7 @@ private actor RemoteCompetitionClientCoordinator {
         mountedCompetitionIDs = []
         notificationCoordinator = .noop
         notificationPreferences = .unavailable
+        backgroundDeliveryReceipts = .discarding
         await installationCoordinator?.stopListening()
         installationCoordinator = nil
         await runtime?.stop()
