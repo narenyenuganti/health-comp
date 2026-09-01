@@ -1,24 +1,28 @@
 # HealthComp Production Beta Verification Checklist
 
-**Snapshot:** 2026-08-31 PDT
+**Snapshot:** 2026-09-01 PDT
 **Selected application baseline:**
 `c3a8fb2ad7d15d1ebba390acc85a5a17a67dc928`
 **Selected release artifact:** `HealthComp-Staging-c3a8fb2-20260831.app`;
 built from exact evidence main `c3a8fb2`, whose application source is
-`886bd60`. The artifact is signed and validated but not installed, launched,
-or cleared for production.
+`886bd60`. The artifact is signed, validated, state-preservingly installed,
+and physically exercised for authenticated-session continuity and observer-
+callback receipt durability. An attributable HealthKit background wake remains
+pending, and the artifact is not cleared for production.
 **Current integrated application candidate:**
-`c3a8fb2ad7d15d1ebba390acc85a5a17a67dc928`; PR #80 integrated reviewed source
-commit `92c984e` plus lifecycle-race hardening, and PR #81 integrated the
-truthful evidence update without changing the application tree.
-**Integrated background-durability candidate:**
+`7218065b26282bc20ae4ce59b69647daecb9ec29`; PR #80 integrated reviewed source
+commit `92c984e` plus lifecycle-race hardening, and evidence-only PRs #81 and
+#82 integrated truthful release updates without changing the application tree.
+**Integrated observer-callback durability candidate:**
 `886bd60`; independent durability and profile-isolation findings against the
 pre-review `38365d1` candidate are resolved. The exact reviewed PR head passed
 535/535 application tests, 241/241 CompetitionCore tests in both Debug and
 Release, unsigned Debug/Staging/Release device builds, deterministic XcodeGen,
 the package-lock guard, and secret/configuration scans. Exact-head CI passed;
-post-merge Backend and iOS CI passed on both `886bd60` and evidence main
-`c3a8fb2`. The selected signed artifact has not been installed or exercised.
+post-merge Backend and iOS CI passed on `886bd60`, `c3a8fb2`, and evidence main
+`7218065`. The selected signed artifact now passes state-preserving physical
+installation, authenticated-session continuity, and observer-callback receipt
+durability during one manual launch; an attributable background wake is pending.
 **Release status:** Not production-ready
 
 Status meanings:
@@ -64,8 +68,10 @@ Status meanings:
   [32829494683](https://github.com/narenyenuganti/health-comp/actions/runs/32829494683)
   and iOS run
   [32829494720](https://github.com/narenyenuganti/health-comp/actions/runs/32829494720),
-  completed successfully. The selected iOS and project trees remain unchanged
-  from installed artifact `aa16411`.
+  completed successfully. At the PR #77 evidence boundary, the selected iOS and
+  project trees remained unchanged from then-installed artifact `aa16411`;
+  later PRs advanced application source to `886bd60` and selected artifact to
+  `c3a8fb2`.
 - **PASS:** PR #76 captured the physical iOS 26.6 legacy App Attest
   `invalid_assertion_object` rejection as a RED regression and accepts the
   signed `0x40` flag only for the exact 37-byte legacy authenticator shape.
@@ -109,8 +115,9 @@ Status meanings:
   corrected assertion-signature verification, and client-side submission
   serialization.
   Each exact PR head passed both required hosted workflows before its guarded
-  merge; those commits remain historical lineage for selected physical artifact
-  `aa16411`, which is the release baseline for the incomplete physical gates.
+  merge; those commits remain historical lineage for then-selected physical
+  artifact `aa16411`. Current selected artifact `c3a8fb2` includes later
+  application source `886bd60` and is the baseline for incomplete physical gates.
 - **PASS:** PR #62 application-source commit `1a2ddb5` separates a typed
   on-device Activity-read failure from otherwise valid remote competition
   materialization. Focused runtime/client, HealthKit-provider, and presentation
@@ -472,7 +479,7 @@ Status meanings:
 - **PASS:** Application source `dd0ed68` routes live invitation
   creation through `create-competition-invite` and claims through
   `claim-competition-invite`; those route boundaries remain present in selected
-  artifact and current integrated main `c3a8fb2`. The then-selected
+  artifact `c3a8fb2` and current integrated main `7218065`. The then-selected
   artifact completed both actions above,
   and hosted state records their create/consume effects. At
   `2026-08-20T02:32:28Z`, read-only dashboard summaries reported exactly one
@@ -564,8 +571,14 @@ Status meanings:
 - **PASS:** The generated staging development profile expires
   `2027-08-16T05:23:35Z` and authorizes sandbox APNs, Sign in with Apple,
   HealthKit, HealthKit background delivery, and App Attest.
-- **PARTIAL:** Selected artifact `c3a8fb2` has not been installed or launched;
-  the existing on-device installation remains then-selected artifact `aa16411`.
+- **PASS:** On `2026-09-01`, selected artifact `c3a8fb2` over-installed the
+  historical same-bundle app without erasing data. Before and after installation,
+  aggregate profile state remained exactly one root, ten files, and 48,118 bytes.
+  Exactly one launch restored authenticated Sharing without a sign-in prompt or
+  warning. The app terminated with zero remaining processes, all temporary
+  snapshot roots were removed, and iPhone Mirroring was minimized. Privacy-safe
+  receipt SHA-256:
+  `0383fde3ee55bceff2dbccbdf0a14195687471c12211822ad5f410a40c92e1e7`.
 - **PASS:** Build 1 from prior selected source commit
   `9d199377f5d72cb7bc90133c190e4e7681abfb41` was signed with the paid-team
   profile, freshly installed after device inventory confirmed that no
@@ -595,7 +608,7 @@ Status meanings:
   read back at `2026-08-16T07:02:20Z`. No Apple account identity, token, or
   private screenshot was retained. This is historical capability evidence,
   not current-build Sign in with Apple evidence for selected release artifact
-  `aa16411`.
+  `c3a8fb2`.
 - **PARTIAL:** After the restored session was signed out, fresh native Sign in
   with Apple authorization completed directly on the physical iPhone for
   prior selected artifact `9d19937`. At `2026-08-19T06:59Z`, iPhone Mirroring
@@ -604,7 +617,7 @@ Status meanings:
   historical supporting receipt. The later native authorization on then-
   selected artifact `dd0ed68` superseded the `9d19937` limitation at that time;
   neither historical receipt proves fresh authorization on current artifact
-  `aa16411`. No Apple account identity, authorization payload, token, or private
+  `c3a8fb2`. No Apple account identity, authorization payload, token, or private
   screenshot is included.
 - **PASS:** In the later user-approved sequence ending at
   `2026-08-19T17:13:03Z`, then-selected artifact `dd0ed68` itself completed sign-out,
@@ -619,7 +632,7 @@ Status meanings:
   controlled process launch occurred and the app was
   stopped afterward. Authenticated Sharing was visible with a competition-
   refresh warning. This historical receipt for named source `6ee1d22` does not
-  prove the selected `aa16411` artifact's fresh native Apple authorization,
+  prove selected artifact `c3a8fb2`'s fresh native Apple authorization,
   active HealthKit score, or App Attest request.
 - **PASS:** In a separately approved historical physical sequence on
   `2026-08-23`, then-selected source `6ee1d22` launched exactly once at
@@ -636,12 +649,12 @@ Status meanings:
 
 | Gate | Status | Required evidence |
 | --- | --- | --- |
-| Signed staging launch | PARTIAL | Selected artifact `c3a8fb2` is signed, strictly validated, and retained with executable SHA-256 `8f6acb0b2f6be8dc912ba31854e9fa19b7507c281c55d659d5838083257621cb`, but it has not been installed or launched. The earlier warning-free launch on then-selected artifact `aa16411` remains historical |
-| Sign in with Apple | PARTIAL | Then-selected artifact `aa16411` completed one native authorization and warning-free authenticated readback. Current selected artifact `c3a8fb2` has not initiated or restored a physical authenticated session, so exact-selected evidence remains required |
-| HealthKit | PARTIAL | Grant, revoke, and re-enable startup paths completed historically, and then-selected artifact `aa16411` displayed an active-competition derived score and submitted one HealthKit-derived revision. Selected artifact `c3a8fb2` carries the HealthKit and background-delivery entitlements but has not been installed or exercised |
-| Background observer | PARTIAL | A bounded attempt on then-selected artifact `aa16411` found no durable observer marker and did not pass. Privacy-safe receipt SHA-256: `63c8589f4865fe829342186f2ba003fd01b2d24e4771e8a8d2d51d10302169c9`. PR #80 integrated the bounded, protected, profile-scoped receipt that must persist before callback completion; selected signed artifact `c3a8fb2` contains that source, but the exact physical observer receipt remains required |
+| Signed staging launch | PASS | Selected artifact `c3a8fb2` is signed, strictly validated, retained, state-preservingly installed, and launched exactly once. Its executable SHA-256 is `8f6acb0b2f6be8dc912ba31854e9fa19b7507c281c55d659d5838083257621cb`; the launch restored warning-free authenticated Sharing and terminated cleanly. Receipt SHA-256: `0383fde3ee55bceff2dbccbdf0a14195687471c12211822ad5f410a40c92e1e7` |
+| Sign in with Apple | PARTIAL | Then-selected artifact `aa16411` completed one fresh native authorization and warning-free authenticated readback. Selected artifact `c3a8fb2` then preserved and restored that physical authenticated session through a state-preserving over-install without a sign-in prompt or warning. This proves selected-artifact authenticated-session continuity, but the exact selected artifact has not completed a fresh native authorization |
+| HealthKit | PARTIAL | Grant, revoke, and re-enable startup paths completed historically; then-selected artifact `aa16411` displayed an active-competition derived score and submitted one HealthKit-derived revision. Selected artifact `c3a8fb2` physically received and durably recorded six issue-free HealthKit observer callbacks under the reviewed completion contract. The exact selected artifact has not repeated the authorization and foreground-submission paths |
+| Background observer | PARTIAL | During one manual foreground launch, selected artifact `c3a8fb2` produced six unique observer-callback receipts under the application's internal `observerWakeupBackground` label; all were issue-free, carried positive publication revisions, and were durably committed before callback completion. [Apple documents](https://developer.apple.com/documentation/healthkit/executing-observer-queries) that matching observer updates can also be delivered as an app launches, and the receipt retained no app-state or system-wake provenance. This passes callback durability but not an attributable HealthKit background wake. Receipt SHA-256: `0383fde3ee55bceff2dbccbdf0a14195687471c12211822ad5f410a40c92e1e7` |
 | APNs | PARTIAL | iOS authorization and one active sandbox installation were verified at `2026-08-16T07:04:49.701324Z`; foreground, background, and cold-route delivery remain pending |
-| App Attest | PARTIAL | Then-selected artifact `aa16411` accepted one HealthKit-derived revision through one consumed challenge and grant, and exact server-side replay of each capability failed closed. Receipt SHA-256: `efb3ebf8dc877efc62fc9f682484e12116dd92a133c6a9d659a1dba5a6646f44`. Selected artifact `c3a8fb2` has not been installed or exercised; replacement-installation App Attest enrollment also remains pending |
+| App Attest | PARTIAL | Then-selected artifact `aa16411` accepted one HealthKit-derived revision through one consumed challenge and grant, and exact server-side replay of each capability failed closed. Receipt SHA-256: `efb3ebf8dc877efc62fc9f682484e12116dd92a133c6a9d659a1dba5a6646f44`. Selected artifact `c3a8fb2` is now installed and authenticated, but it did not perform a new App Attest submission in this bounded window; replacement-installation enrollment remains pending |
 | Account deletion | PENDING | Reauthorization, server-confirmed completion, local wipe, no resurrection, and preserved Former competitor history |
 | Universal link | DEFERRED | User-approved private-beta deferral because no HTTPS invitation domain will be provided; custom-scheme fallback is not universal-link evidence |
 | Replacement installation | PENDING | Same-phone remove/reinstall, new installation and App Attest enrollment, retired-installation isolation, and no local-data resurrection |
@@ -653,7 +666,8 @@ Status meanings:
   controlled custom-scheme sharing, cold physical acceptance, single hosted
   consumption, two-participant membership, and scheduled-state convergence on
   the approved one-physical-iPhone-plus-Simulator topology. This remains
-  historical runtime evidence after selection advanced to `aa16411`; PR #34
+  historical runtime evidence after selection advanced through `aa16411` to
+  `c3a8fb2`; PR #34
   continues to preserve terminal history and local journals without the former
   false warning.
 - **PASS:** Historical receipts localized the generic activity warning to
