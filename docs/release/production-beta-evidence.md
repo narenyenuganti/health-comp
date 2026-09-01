@@ -65,6 +65,27 @@ represented as universal-link evidence.
 | Historical sequential Simulator profile isolation | In a user-approved Account A to signed-out to Account B sequence ending at `2026-08-20T05:56:37Z`, then-selected artifact `dd0ed68` first mounted one Account A profile with three competition-journal files, two server cursors, one installation file, and no outbox, notification-preference, or App Attest file. After server-confirmed installation retirement, sign-out reached the clean welcome screen, reduced `Profiles/v1` to zero profile directories and zero profile files, and moved the aggregate sandbox installation state from two active / three revoked to one active / four revoked while the physical phone was untouched. A distinct Apple account then authenticated directly through HealthComp without enabling full Simulator iCloud sync. The app mounted exactly one Account B root, displayed the prior participant only as the legitimate scheduled opponent, and contained three server-rematerialized competition files, two cursors, one newly active installation, and zero outbox, notification-preference, or App Attest files. Aggregate hosted readback returned two active / four revoked installations. The same profile-transition test remains in the exact-current suite, seeds a private prior-profile outbox, and proves it is absent after teardown and the next profile mount. No Apple account, profile or installation identifier, token, local fingerprint, private screenshot, raw HealthKit datum, or exact Activity value is retained | PASS |
 | Two-account staging convergence | Invitation creation, controlled custom-scheme delivery, cold acceptance, single consumption, two-participant membership, and scheduled-state convergence passed historically on the approved physical-iPhone-plus-Simulator topology. Then-selected physical artifact `aa16411` later persisted two accepted score revisions across two days from one participant. On historical integrated main `224efcb`, the retained verified Account B Simulator executable launched once into warning-free authenticated Sharing and materialized the opponent's accepted aggregate score while retaining exactly one nine-file profile root. Hosted counts remained two revisions from one profile, one competition, and two days; no Account B score, finalization attestation, or result was created. The app terminated and the Simulator shut down. Receipt SHA-256: `e12fd592672636894d5a0b73724273d1dc3d0768d9a80a922aab5282405a2dfb`; it retains no identity, credential, token, identifier, score value, Health value, or screenshot. Seven-day two-participant scoring, finalization/results, and the remaining lifecycle cases are incomplete | PARTIAL |
 
+## Observer-delivery provenance correction candidate
+
+Unmerged source commit `76b797d` roots a fail-closed lifecycle classifier at
+the process. Unknown, initial inactive, and initial background states remain
+foreground; background is recognized only after this process observed active-
+to-background; will-enter-foreground clears background synchronously. The
+observer trigger is snapshotted before any controller lock, hook, or async
+yield. Both observer triggers retain completion ownership and persist through
+the unchanged schema-v1 protected receipt, while non-observer triggers remain
+invalid.
+
+Local verification passed 546/546 application tests, 241/241 CompetitionCore
+tests in Debug and Release, unsigned Debug/Staging/Release device builds,
+deterministic XcodeGen, an unchanged package lock, secret/layout guards, and
+independent standards/spec reviews with no Critical or Important findings. The
+deployed `BackgroundDelivery` directory,
+`background-delivery-receipts.v1.json` filename, temporary-file prefix,
+five-field schema, retention, durability, privacy validation, and teardown
+behavior remain unchanged. This proves the automated candidate only, not
+merged CI or a physical background wake.
+
 ## What the physical receipt proves
 
 The historical physical receipts prove that then-selected source commit
@@ -129,22 +150,30 @@ identifier, challenge identifier, or App Attest material. The successful
 submission,
 physical App Attest acceptance, durable persistence, and consumed challenge/
 grant replay rejection. Selected-artifact evidence now proves physical observer-
-callback durability during one manual foreground launch, but not an attributable
-HealthKit background wake. Current evidence also does not prove fresh selected-
-artifact Sign in with Apple, foreground HealthKit submission, a selected-artifact
-App Attest assertion, APNs foreground/background/cold-route delivery, deletion,
-or the same-phone replacement lifecycle and replacement App Attest enrollment.
+callback durability during one manual foreground launch, but its six pre-fix
+background-labelled receipts are excluded from attributable HealthKit
+background-wake evidence. Source commit `76b797d` corrects the future
+classification boundary, but has not yet supplied merged CI or a newly selected
+signed-artifact physical receipt. Current evidence also does not prove fresh
+selected-artifact Sign in with Apple, foreground HealthKit submission, a
+selected-artifact App Attest assertion, APNs foreground/background/cold-route
+delivery, deletion, or the same-phone replacement lifecycle and replacement
+App Attest enrollment.
 
 ## Immediate continuation
 
-1. Capture an attributable HealthKit background wake on selected artifact
-   `c3a8fb2`, with the app already backgrounded and app-lifecycle or process-start
-   evidence that distinguishes a system wake from observer delivery during a
-   manual launch. State-preserving install, warning-free session restoration, and
-   observer-callback durability already pass; fresh selected-artifact Sign in with
-   Apple, foreground HealthKit submission, and App Attest assertion remain pending.
-2. Continue APNs foreground/background/cold-route evidence on selected artifact
-   `c3a8fb2`.
+1. Review and integrate `76b797d`, require exact-head and post-merge CI, then
+   build and select one new signed Staging artifact. With the old app stopped,
+   capture an exact transient pre-install observer-receipt baseline; after the
+   state-preserving install, compare process-scoped signal identities only in
+   memory. Launch the new process to active, place it in background, provoke one
+   controlled HealthKit update, and accept only a newly appended
+   `observerWakeupBackground` receipt from that new process. Retain only aggregate
+   counts and artifact provenance. The six pre-fix `c3a8fb2` receipts do not
+   qualify. Fresh selected-artifact Sign in with Apple, foreground HealthKit
+   submission, and App Attest assertion also remain pending.
+2. Continue APNs foreground/background/cold-route evidence on that same newly
+   selected artifact.
 3. Continue the adversarial matrix above the proven database and sequential-
    Simulator profile-root boundaries plus current-source Function-route
    continuity supported by the historical `dd0ed68` runtime receipt. The old
@@ -230,9 +259,12 @@ or the same-phone replacement lifecycle and replacement App Attest enrollment.
   resolved the independent durability and isolation findings. Selected artifact
   `c3a8fb2` then persisted six unique, issue-free, positive-revision physical
   observer-callback receipts under that commit-before-completion contract during
-  one manual foreground launch. Callback durability passes, but an attributable
-  HealthKit background wake remains pending. No APNs delivery, deletion, or
-  same-phone replacement-installation receipt exists.
+  one manual foreground launch. Callback durability passes, but those pre-fix
+  background-labelled receipts are excluded from provenance. `76b797d` supplies
+  the automated fail-closed classification fix; merged CI, a newly selected
+  signed artifact, and the exact baseline/new-process physical receipt remain
+  pending. No APNs delivery, deletion, or same-phone replacement-installation
+  receipt exists.
 - Universal-link evidence is explicitly deferred for this private-beta
   boundary because no HTTPS invitation domain will be provided. Only the
   controlled custom-scheme fallback may be exercised or claimed.
