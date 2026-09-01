@@ -125,10 +125,10 @@ final class AuthenticatedProfileStorageTests: XCTestCase {
         )
         let paths = try await childStorage.mount(profileA)
         try FileManager.default.removeItem(
-            at: paths.backgroundDeliveryDirectory
+            at: paths.observerDeliveryDirectory
         )
         try FileManager.default.createSymbolicLink(
-            at: paths.backgroundDeliveryDirectory,
+            at: paths.observerDeliveryDirectory,
             withDestinationURL: outside
         )
 
@@ -240,7 +240,7 @@ final class AuthenticatedProfileStorageTests: XCTestCase {
             "profile-a-pending.json"
         )
         try Data("A only".utf8).write(to: privateOutbox)
-        let privateBackgroundReceipt = pathsA.backgroundDeliveryDirectory
+        let privateBackgroundReceipt = pathsA.observerDeliveryDirectory
             .appendingPathComponent(
                 "background-delivery-receipts.v1.json"
             )
@@ -268,7 +268,7 @@ final class AuthenticatedProfileStorageTests: XCTestCase {
         )
         XCTAssertEqual(
             try FileManager.default.contentsOfDirectory(
-                atPath: pathsB.backgroundDeliveryDirectory.path
+                atPath: pathsB.observerDeliveryDirectory.path
             ),
             []
         )

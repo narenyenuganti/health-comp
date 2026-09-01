@@ -3,13 +3,16 @@ import HealthKit
 import CompetitionCore
 
 struct HealthKitObserverWakeup: @unchecked Sendable {
+    let trigger: ActivityRefreshTrigger
     let ownershipScope: EnvironmentSignalOwnershipScope?
     let completion: () -> Void
 
     init(
+        trigger: ActivityRefreshTrigger,
         ownershipScope: EnvironmentSignalOwnershipScope? = nil,
         completion: @escaping () -> Void
     ) {
+        self.trigger = trigger
         self.ownershipScope = ownershipScope
         self.completion = completion
     }
@@ -301,9 +304,13 @@ final class HealthKitProvider: HealthDataProvider, @unchecked Sendable {
     }
 
     func captureObserverWakeup(
+        trigger: ActivityRefreshTrigger,
         completion: @escaping () -> Void
     ) -> HealthKitObserverWakeup {
-        ownershipRegistry.captureObserverWakeup(completion: completion)
+        ownershipRegistry.captureObserverWakeup(
+            trigger: trigger,
+            completion: completion
+        )
     }
 
     func signals() async -> AsyncStream<EnvironmentSignal> {
@@ -590,7 +597,10 @@ final class HealthKitProvider: HealthDataProvider, @unchecked Sendable {
         }
         let observerController = HealthKitObserverUpdateController(
             driver: observerDriver,
-            ownershipRegistry: ownershipRegistry
+            ownershipRegistry: ownershipRegistry,
+            triggerSnapshot: {
+                HealthKitObserverDeliveryClassifier.production.currentTrigger()
+            }
         )
         return HealthKitCompetitionDependencies(
             isHealthDataAvailable: {
@@ -755,6 +765,7 @@ final class HealthKitObserverUpdateController: @unchecked Sendable {
     private let condition = NSCondition()
     private let driver: HealthKitObserverUpdateDriver
     private let ownershipRegistry: HealthKitSignalOwnershipRegistry
+    private let triggerSnapshot: @Sendable () -> ActivityRefreshTrigger
     private let didRegisterIngress: @Sendable () -> Void
     private var continuation:
         AsyncStream<HealthKitObserverWakeup>.Continuation?
@@ -765,10 +776,12 @@ final class HealthKitObserverUpdateController: @unchecked Sendable {
     init(
         driver: HealthKitObserverUpdateDriver,
         ownershipRegistry: HealthKitSignalOwnershipRegistry,
+        triggerSnapshot: @escaping @Sendable () -> ActivityRefreshTrigger,
         didRegisterIngress: @escaping @Sendable () -> Void = {}
     ) {
         self.driver = driver
         self.ownershipRegistry = ownershipRegistry
+        self.triggerSnapshot = triggerSnapshot
         self.didRegisterIngress = didRegisterIngress
     }
 
@@ -829,6 +842,7 @@ final class HealthKitObserverUpdateController: @unchecked Sendable {
         ownershipScope: EnvironmentSignalOwnershipScope,
         completion: @escaping () -> Void
     ) {
+        let trigger = triggerSnapshot()
         let captured = condition.withLock { () -> (
             AsyncStream<HealthKitObserverWakeup>.Continuation
         )? in
@@ -842,6 +856,7 @@ final class HealthKitObserverUpdateController: @unchecked Sendable {
         didRegisterIngress()
         captured.yield(
             HealthKitObserverWakeup(
+                trigger: trigger,
                 ownershipScope: ownershipScope,
                 completion: completion
             )
@@ -1035,6 +1050,7 @@ final class HealthKitSignalOwnershipRegistry: @unchecked Sendable {
     }
 
     func captureObserverWakeup(
+        trigger: ActivityRefreshTrigger,
         completion: @escaping () -> Void
     ) -> HealthKitObserverWakeup {
         lock.withLock {
@@ -1046,6 +1062,7 @@ final class HealthKitSignalOwnershipRegistry: @unchecked Sendable {
                 scope = lease.scope
             }
             return HealthKitObserverWakeup(
+                trigger: trigger,
                 ownershipScope: scope,
                 completion: completion
             )
@@ -1128,7 +1145,7 @@ private actor HealthKitProviderSignalState {
             for await update in updates {
                 guard !Task.isCancelled else { break }
                 await self?.emit(
-                    trigger: .observerWakeupBackground,
+                    trigger: update.trigger,
                     completion: update.completion,
                     ownershipScope:
                         update.ownershipScope ?? observerOwnershipScope

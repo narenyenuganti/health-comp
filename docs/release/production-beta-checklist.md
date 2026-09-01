@@ -23,6 +23,18 @@ post-merge Backend and iOS CI passed on `886bd60`, `c3a8fb2`, and evidence main
 `7218065`. The selected signed artifact now passes state-preserving physical
 installation, authenticated-session continuity, and observer-callback receipt
 durability during one manual launch; an attributable background wake is pending.
+**Observer-delivery provenance correction candidate:**
+`76b797d`; this unmerged source candidate replaces the background-only observer
+label with a process-rooted lifecycle classifier that fails closed to foreground
+until the process has observed active-to-background. The trigger is snapshotted
+as the first synchronous observer-ingress operation and is preserved through
+completion ownership and the unchanged schema-v1 durable receipt. Local
+verification passed 546/546 application tests, 241/241 CompetitionCore tests in
+both Debug and Release, unsigned Debug/Staging/Release device builds,
+deterministic XcodeGen, package-lock preservation, the repository secret/layout
+guards, and independent standards/spec reviews with no Critical or Important
+findings. This is automated candidate evidence only: it is not merged CI,
+signed-artifact, or physical background-wake evidence.
 **Release status:** Not production-ready
 
 Status meanings:
@@ -652,7 +664,7 @@ Status meanings:
 | Signed staging launch | PASS | Selected artifact `c3a8fb2` is signed, strictly validated, retained, state-preservingly installed, and launched exactly once. Its executable SHA-256 is `8f6acb0b2f6be8dc912ba31854e9fa19b7507c281c55d659d5838083257621cb`; the launch restored warning-free authenticated Sharing and terminated cleanly. Receipt SHA-256: `0383fde3ee55bceff2dbccbdf0a14195687471c12211822ad5f410a40c92e1e7` |
 | Sign in with Apple | PARTIAL | Then-selected artifact `aa16411` completed one fresh native authorization and warning-free authenticated readback. Selected artifact `c3a8fb2` then preserved and restored that physical authenticated session through a state-preserving over-install without a sign-in prompt or warning. This proves selected-artifact authenticated-session continuity, but the exact selected artifact has not completed a fresh native authorization |
 | HealthKit | PARTIAL | Grant, revoke, and re-enable startup paths completed historically; then-selected artifact `aa16411` displayed an active-competition derived score and submitted one HealthKit-derived revision. Selected artifact `c3a8fb2` physically received and durably recorded six issue-free HealthKit observer callbacks under the reviewed completion contract. The exact selected artifact has not repeated the authorization and foreground-submission paths |
-| Background observer | PARTIAL | During one manual foreground launch, selected artifact `c3a8fb2` produced six unique observer-callback receipts under the application's internal `observerWakeupBackground` label; all were issue-free, carried positive publication revisions, and were durably committed before callback completion. [Apple documents](https://developer.apple.com/documentation/healthkit/executing-observer-queries) that matching observer updates can also be delivered as an app launches, and the receipt retained no app-state or system-wake provenance. This passes callback durability but not an attributable HealthKit background wake. Receipt SHA-256: `0383fde3ee55bceff2dbccbdf0a14195687471c12211822ad5f410a40c92e1e7` |
+| Background observer | PARTIAL | During one manual foreground launch, selected artifact `c3a8fb2` produced six unique observer-callback receipts under the pre-fix internal `observerWakeupBackground` label; all were issue-free, carried positive publication revisions, and were durably committed before callback completion. [Apple documents](https://developer.apple.com/documentation/healthkit/executing-observer-queries) that matching observer updates can also be delivered as an app launches, and that artifact retained no app-state or system-wake provenance. Those six receipts pass callback durability only and are explicitly excluded from background-wake attribution. After `76b797d` is reviewed, integrated, and rebuilt as one newly selected signed artifact, the physical verifier must record an exact transient pre-install receipt baseline while the old app is stopped, compare process-scoped signal identities only in memory, observe the new process active and then backgrounded, and accept only a newly appended `observerWakeupBackground` receipt from that new process. It must retain only aggregate counts and artifact provenance. The physical gate remains pending. Historical receipt SHA-256: `0383fde3ee55bceff2dbccbdf0a14195687471c12211822ad5f410a40c92e1e7` |
 | APNs | PARTIAL | iOS authorization and one active sandbox installation were verified at `2026-08-16T07:04:49.701324Z`; foreground, background, and cold-route delivery remain pending |
 | App Attest | PARTIAL | Then-selected artifact `aa16411` accepted one HealthKit-derived revision through one consumed challenge and grant, and exact server-side replay of each capability failed closed. Receipt SHA-256: `efb3ebf8dc877efc62fc9f682484e12116dd92a133c6a9d659a1dba5a6646f44`. Selected artifact `c3a8fb2` is now installed and authenticated, but it did not perform a new App Attest submission in this bounded window; replacement-installation enrollment remains pending |
 | Account deletion | PENDING | Reauthorization, server-confirmed completion, local wipe, no resurrection, and preserved Former competitor history |
