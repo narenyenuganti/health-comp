@@ -1,17 +1,18 @@
+import CompetitionCore
 import Darwin
 import Foundation
 import XCTest
 
 @testable import HealthComp
 
-final class HealthKitBackgroundDeliveryReceiptTests: XCTestCase {
+final class HealthKitObserverDeliveryReceiptTests: XCTestCase {
     func testCommitRoundTripsPrivacySafeReceiptAndIdenticalRetryIsIdempotent()
         async throws
     {
         let directory = makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
-        let protection = BackgroundDeliveryProtectionRecorder()
-        let store = HealthKitBackgroundDeliveryReceiptStore(
+        let protection = ObserverDeliveryProtectionRecorder()
+        let store = HealthKitObserverDeliveryReceiptStore(
             directory: directory,
             fileProtection: JSONCompetitionEventStoreFileProtection {
                 url,
@@ -66,18 +67,85 @@ final class HealthKitBackgroundDeliveryReceiptTests: XCTestCase {
         )
     }
 
+    func testSchemaVersionOneRoundTripsBothObserverDeliveryTriggers()
+        async throws
+    {
+        let directory = makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = HealthKitObserverDeliveryReceiptStore(
+            directory: directory,
+            fileProtection: .observerDeliveryTestNoop
+        )
+        let foreground = makeReceipt(
+            signalID: "healthkit-observer:process:foreground",
+            ordinal: 1,
+            trigger: .observerWakeupForeground
+        )
+        let background = makeReceipt(
+            signalID: "healthkit-observer:process:background",
+            ordinal: 2,
+            trigger: .observerWakeupBackground
+        )
+
+        try await store.commit(foreground)
+        try await store.commit(background)
+
+        let receipts = try await store.receipts()
+        XCTAssertEqual(receipts, [foreground, background])
+        let fileURL = directory.appendingPathComponent(
+            "background-delivery-receipts.v1.json"
+        )
+        let data = try Data(contentsOf: fileURL)
+        let raw = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: data) as? [String: Any]
+        )
+        XCTAssertEqual(raw["schema_version"] as? Int, 1)
+        let entries = try XCTUnwrap(raw["receipts"] as? [[String: Any]])
+        XCTAssertEqual(
+            entries.compactMap { $0["trigger"] as? String },
+            ["observerWakeupForeground", "observerWakeupBackground"]
+        )
+        XCTAssertTrue(entries.allSatisfy {
+            Set($0.keys) == [
+                "had_issues",
+                "processed_at",
+                "publication_revision",
+                "signal_id",
+                "trigger",
+            ]
+        })
+    }
+
+    func testNonObserverTriggerIsRejected() async throws {
+        let directory = makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let store = HealthKitObserverDeliveryReceiptStore(
+            directory: directory,
+            fileProtection: .observerDeliveryTestNoop
+        )
+        let invalid = makeReceipt(
+            signalID: "healthkit-observer:process:not-observer",
+            trigger: .summaryUpdate
+        )
+
+        await XCTAssertThrowsObserverDeliveryError(
+            try await store.commit(invalid),
+            equals: .invalidReceipt
+        )
+    }
+
     func testConflictingSignalReuseIsRejectedWithoutChangingReceipt()
         async throws
     {
         let directory = makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
-        let store = HealthKitBackgroundDeliveryReceiptStore(
+        let store = HealthKitObserverDeliveryReceiptStore(
             directory: directory,
-            fileProtection: .backgroundDeliveryTestNoop
+            fileProtection: .observerDeliveryTestNoop
         )
         let original = makeReceipt(signalID: "healthkit-background:process:2")
         try await store.commit(original)
-        let conflict = HealthKitBackgroundDeliveryReceipt(
+        let conflict = HealthKitObserverDeliveryReceipt(
             signalID: original.signalID,
             trigger: original.trigger,
             processedAt: original.processedAt,
@@ -85,7 +153,7 @@ final class HealthKitBackgroundDeliveryReceiptTests: XCTestCase {
             hadIssues: true
         )
 
-        await XCTAssertThrowsBackgroundDeliveryError(
+        await XCTAssertThrowsObserverDeliveryError(
             try await store.commit(conflict),
             equals: .signalConflict
         )
@@ -98,11 +166,11 @@ final class HealthKitBackgroundDeliveryReceiptTests: XCTestCase {
     {
         let directory = makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
-        let store = HealthKitBackgroundDeliveryReceiptStore(
+        let store = HealthKitObserverDeliveryReceiptStore(
             directory: directory,
-            fileProtection: .backgroundDeliveryTestNoop
+            fileProtection: .observerDeliveryTestNoop
         )
-        let receipt = HealthKitBackgroundDeliveryReceipt(
+        let receipt = HealthKitObserverDeliveryReceipt(
             signalID: "healthkit-background:process:submillisecond",
             trigger: .observerWakeupBackground,
             processedAt: Date(
@@ -133,9 +201,9 @@ final class HealthKitBackgroundDeliveryReceiptTests: XCTestCase {
     func testRetentionIsBoundedToNewest128Receipts() async throws {
         let directory = makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
-        let store = HealthKitBackgroundDeliveryReceiptStore(
+        let store = HealthKitObserverDeliveryReceiptStore(
             directory: directory,
-            fileProtection: .backgroundDeliveryTestNoop
+            fileProtection: .observerDeliveryTestNoop
         )
 
         for ordinal in 1 ... 129 {
@@ -162,11 +230,11 @@ final class HealthKitBackgroundDeliveryReceiptTests: XCTestCase {
     func testInvalidReceiptAndInvalidDocumentAreRejected() async throws {
         let directory = makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: directory) }
-        let store = HealthKitBackgroundDeliveryReceiptStore(
+        let store = HealthKitObserverDeliveryReceiptStore(
             directory: directory,
-            fileProtection: .backgroundDeliveryTestNoop
+            fileProtection: .observerDeliveryTestNoop
         )
-        let invalid = HealthKitBackgroundDeliveryReceipt(
+        let invalid = HealthKitObserverDeliveryReceipt(
             signalID: "contains private whitespace",
             trigger: .observerWakeupBackground,
             processedAt: Date(timeIntervalSince1970: 1_788_000_000),
@@ -174,7 +242,7 @@ final class HealthKitBackgroundDeliveryReceiptTests: XCTestCase {
             hadIssues: false
         )
 
-        await XCTAssertThrowsBackgroundDeliveryError(
+        await XCTAssertThrowsObserverDeliveryError(
             try await store.commit(invalid),
             equals: .invalidReceipt
         )
@@ -182,14 +250,14 @@ final class HealthKitBackgroundDeliveryReceiptTests: XCTestCase {
             "background-delivery-receipts.v1.json"
         )
         try Data("{}".utf8).write(to: fileURL)
-        await XCTAssertThrowsBackgroundDeliveryError(
+        await XCTAssertThrowsObserverDeliveryError(
             try await store.receipts(),
             equals: .invalidDocument
         )
         try Data(repeating: 0x20, count: 64 * 1024 + 1).write(
             to: fileURL
         )
-        await XCTAssertThrowsBackgroundDeliveryError(
+        await XCTAssertThrowsObserverDeliveryError(
             try await store.receipts(),
             equals: .invalidDocument
         )
@@ -212,12 +280,12 @@ final class HealthKitBackgroundDeliveryReceiptTests: XCTestCase {
             at: fileURL,
             withDestinationURL: outside
         )
-        let store = HealthKitBackgroundDeliveryReceiptStore(
+        let store = HealthKitObserverDeliveryReceiptStore(
             directory: directory,
-            fileProtection: .backgroundDeliveryTestNoop
+            fileProtection: .observerDeliveryTestNoop
         )
 
-        await XCTAssertThrowsBackgroundDeliveryError(
+        await XCTAssertThrowsObserverDeliveryError(
             try await store.commit(
                 makeReceipt(signalID: "healthkit-background:process:3")
             ),
@@ -232,35 +300,35 @@ final class HealthKitBackgroundDeliveryReceiptTests: XCTestCase {
         let first = makeReceipt(
             signalID: "healthkit-background:process:full-sync-existing"
         )
-        let initial = HealthKitBackgroundDeliveryReceiptStore(
+        let initial = HealthKitObserverDeliveryReceiptStore(
             directory: directory,
-            fileProtection: .backgroundDeliveryTestNoop
+            fileProtection: .observerDeliveryTestNoop
         )
         try await initial.commit(first)
         let fileURL = directory.appendingPathComponent(
             "background-delivery-receipts.v1.json"
         )
         let originalData = try Data(contentsOf: fileURL)
-        let interrupted = HealthKitBackgroundDeliveryReceiptStore(
+        let interrupted = HealthKitObserverDeliveryReceiptStore(
             directory: directory,
             faultInjector: .init(failAt: .temporaryFullSync),
-            fileProtection: .backgroundDeliveryTestNoop
+            fileProtection: .observerDeliveryTestNoop
         )
         let second = makeReceipt(
             signalID: "healthkit-background:process:full-sync-new",
             ordinal: 2
         )
 
-        await XCTAssertThrowsBackgroundDeliveryError(
+        await XCTAssertThrowsObserverDeliveryError(
             try await interrupted.commit(second),
             equals: .ioFailure
         )
 
         XCTAssertEqual(try Data(contentsOf: fileURL), originalData)
         XCTAssertEqual(try temporaryFiles(in: directory), [])
-        let recovered = HealthKitBackgroundDeliveryReceiptStore(
+        let recovered = HealthKitObserverDeliveryReceiptStore(
             directory: directory,
-            fileProtection: .backgroundDeliveryTestNoop
+            fileProtection: .observerDeliveryTestNoop
         )
         let recoveredReceipts = try await recovered.receipts()
         let containsSecond = try await recovered.contains(second.signalID)
@@ -276,26 +344,26 @@ final class HealthKitBackgroundDeliveryReceiptTests: XCTestCase {
         let first = makeReceipt(
             signalID: "healthkit-background:process:temp-crash-existing"
         )
-        let initial = HealthKitBackgroundDeliveryReceiptStore(
+        let initial = HealthKitObserverDeliveryReceiptStore(
             directory: directory,
-            fileProtection: .backgroundDeliveryTestNoop
+            fileProtection: .observerDeliveryTestNoop
         )
         try await initial.commit(first)
         let fileURL = directory.appendingPathComponent(
             "background-delivery-receipts.v1.json"
         )
         let originalData = try Data(contentsOf: fileURL)
-        let interrupted = HealthKitBackgroundDeliveryReceiptStore(
+        let interrupted = HealthKitObserverDeliveryReceiptStore(
             directory: directory,
             faultInjector: .init(failAt: .temporarySynced),
-            fileProtection: .backgroundDeliveryTestNoop
+            fileProtection: .observerDeliveryTestNoop
         )
         let second = makeReceipt(
             signalID: "healthkit-background:process:temp-crash-new",
             ordinal: 2
         )
 
-        await XCTAssertThrowsBackgroundDeliveryError(
+        await XCTAssertThrowsObserverDeliveryError(
             try await interrupted.commit(second),
             equals: .ioFailure
         )
@@ -303,9 +371,9 @@ final class HealthKitBackgroundDeliveryReceiptTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: fileURL), originalData)
         XCTAssertEqual(try temporaryFiles(in: directory).count, 1)
 
-        let recovered = HealthKitBackgroundDeliveryReceiptStore(
+        let recovered = HealthKitObserverDeliveryReceiptStore(
             directory: directory,
-            fileProtection: .backgroundDeliveryTestNoop
+            fileProtection: .observerDeliveryTestNoop
         )
         let recoveredReceipts = try await recovered.receipts()
         XCTAssertEqual(recoveredReceipts, [first])
@@ -320,13 +388,13 @@ final class HealthKitBackgroundDeliveryReceiptTests: XCTestCase {
         let fileURL = directory.appendingPathComponent(
             "background-delivery-receipts.v1.json"
         )
-        let protectionFailure = OneShotBackgroundDeliveryProtectionFailure(
+        let protectionFailure = OneShotObserverDeliveryProtectionFailure(
             target: fileURL
         )
         let receipt = makeReceipt(
             signalID: "healthkit-background:process:protection-recovery"
         )
-        let interrupted = HealthKitBackgroundDeliveryReceiptStore(
+        let interrupted = HealthKitObserverDeliveryReceiptStore(
             directory: directory,
             fileProtection: JSONCompetitionEventStoreFileProtection {
                 url,
@@ -338,14 +406,14 @@ final class HealthKitBackgroundDeliveryReceiptTests: XCTestCase {
             }
         )
 
-        await XCTAssertThrowsBackgroundDeliveryError(
+        await XCTAssertThrowsObserverDeliveryError(
             try await interrupted.commit(receipt),
             equals: .ioFailure
         )
         XCTAssertTrue(FileManager.default.fileExists(atPath: fileURL.path))
 
-        let protection = BackgroundDeliveryProtectionRecorder()
-        let fileSyncBlocked = HealthKitBackgroundDeliveryReceiptStore(
+        let protection = ObserverDeliveryProtectionRecorder()
+        let fileSyncBlocked = HealthKitObserverDeliveryReceiptStore(
             directory: directory,
             faultInjector: .init(failAt: .destinationFullSync),
             fileProtection: JSONCompetitionEventStoreFileProtection {
@@ -354,7 +422,7 @@ final class HealthKitBackgroundDeliveryReceiptTests: XCTestCase {
                 protection.record(url: url, protection: value)
             }
         )
-        await XCTAssertThrowsBackgroundDeliveryError(
+        await XCTAssertThrowsObserverDeliveryError(
             try await fileSyncBlocked.contains(receipt.signalID),
             equals: .ioFailure
         )
@@ -363,19 +431,19 @@ final class HealthKitBackgroundDeliveryReceiptTests: XCTestCase {
             .completeUntilFirstUserAuthentication
         )
 
-        let directorySyncBlocked = HealthKitBackgroundDeliveryReceiptStore(
+        let directorySyncBlocked = HealthKitObserverDeliveryReceiptStore(
             directory: directory,
             faultInjector: .init(failAt: .directorySync),
-            fileProtection: .backgroundDeliveryTestNoop
+            fileProtection: .observerDeliveryTestNoop
         )
-        await XCTAssertThrowsBackgroundDeliveryError(
+        await XCTAssertThrowsObserverDeliveryError(
             try await directorySyncBlocked.contains(receipt.signalID),
             equals: .ioFailure
         )
 
-        let recovered = HealthKitBackgroundDeliveryReceiptStore(
+        let recovered = HealthKitObserverDeliveryReceiptStore(
             directory: directory,
-            fileProtection: .backgroundDeliveryTestNoop
+            fileProtection: .observerDeliveryTestNoop
         )
         let containsRecovered = try await recovered.contains(receipt.signalID)
         let recoveredReceipts = try await recovered.receipts()
@@ -391,13 +459,13 @@ final class HealthKitBackgroundDeliveryReceiptTests: XCTestCase {
         let receipt = makeReceipt(
             signalID: "healthkit-background:process:directory-recovery"
         )
-        let interrupted = HealthKitBackgroundDeliveryReceiptStore(
+        let interrupted = HealthKitObserverDeliveryReceiptStore(
             directory: directory,
             faultInjector: .init(failAt: .directorySync),
-            fileProtection: .backgroundDeliveryTestNoop
+            fileProtection: .observerDeliveryTestNoop
         )
 
-        await XCTAssertThrowsBackgroundDeliveryError(
+        await XCTAssertThrowsObserverDeliveryError(
             try await interrupted.commit(receipt),
             equals: .ioFailure
         )
@@ -406,9 +474,9 @@ final class HealthKitBackgroundDeliveryReceiptTests: XCTestCase {
         )
         XCTAssertTrue(FileManager.default.fileExists(atPath: fileURL.path))
 
-        let recovered = HealthKitBackgroundDeliveryReceiptStore(
+        let recovered = HealthKitObserverDeliveryReceiptStore(
             directory: directory,
-            fileProtection: .backgroundDeliveryTestNoop
+            fileProtection: .observerDeliveryTestNoop
         )
         let containsRecovered = try await recovered.contains(receipt.signalID)
         let recoveredReceipts = try await recovered.receipts()
@@ -418,11 +486,12 @@ final class HealthKitBackgroundDeliveryReceiptTests: XCTestCase {
 
     private func makeReceipt(
         signalID: String,
-        ordinal: Int = 1
-    ) -> HealthKitBackgroundDeliveryReceipt {
-        HealthKitBackgroundDeliveryReceipt(
+        ordinal: Int = 1,
+        trigger: ActivityRefreshTrigger = .observerWakeupBackground
+    ) -> HealthKitObserverDeliveryReceipt {
+        HealthKitObserverDeliveryReceipt(
             signalID: signalID,
-            trigger: .observerWakeupBackground,
+            trigger: trigger,
             processedAt: Date(
                 timeIntervalSince1970: 1_788_000_000
                     + TimeInterval(ordinal)
@@ -460,7 +529,7 @@ final class HealthKitBackgroundDeliveryReceiptTests: XCTestCase {
     }
 }
 
-private final class BackgroundDeliveryProtectionRecorder:
+private final class ObserverDeliveryProtectionRecorder:
     @unchecked Sendable
 {
     private let lock = NSLock()
@@ -475,11 +544,11 @@ private final class BackgroundDeliveryProtectionRecorder:
     }
 }
 
-private enum BackgroundDeliveryProtectionTestFailure: Error {
+private enum ObserverDeliveryProtectionTestFailure: Error {
     case injected
 }
 
-private final class OneShotBackgroundDeliveryProtectionFailure:
+private final class OneShotObserverDeliveryProtectionFailure:
     @unchecked Sendable
 {
     private let lock = NSLock()
@@ -498,26 +567,26 @@ private final class OneShotBackgroundDeliveryProtectionFailure:
             shouldFail = false
             return true
         }
-        if fails { throw BackgroundDeliveryProtectionTestFailure.injected }
+        if fails { throw ObserverDeliveryProtectionTestFailure.injected }
     }
 }
 
 private extension JSONCompetitionEventStoreFileProtection {
-    static let backgroundDeliveryTestNoop = Self { _, _ in }
+    static let observerDeliveryTestNoop = Self { _, _ in }
 }
 
-private func XCTAssertThrowsBackgroundDeliveryError<T>(
+private func XCTAssertThrowsObserverDeliveryError<T>(
     _ expression: @autoclosure () async throws -> T,
-    equals expected: HealthKitBackgroundDeliveryReceiptStoreFailure,
+    equals expected: HealthKitObserverDeliveryReceiptStoreFailure,
     file: StaticString = #filePath,
     line: UInt = #line
 ) async {
     do {
         _ = try await expression()
-        XCTFail("Expected background delivery failure", file: file, line: line)
+        XCTFail("Expected observer delivery failure", file: file, line: line)
     } catch {
         XCTAssertEqual(
-            error as? HealthKitBackgroundDeliveryReceiptStoreFailure,
+            error as? HealthKitObserverDeliveryReceiptStoreFailure,
             expected,
             file: file,
             line: line

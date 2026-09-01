@@ -453,6 +453,60 @@ final class FixtureActivitySourceTests: XCTestCase {
         XCTAssertEqual(inactiveSubscriberCount, 0)
     }
 
+    func testOnlyHealthKitObserverDeliverySignalsRequireCompletion()
+        async throws
+    {
+        let initialDate = Date(timeIntervalSinceReferenceDate: 9_000)
+        let signalDate = initialDate.addingTimeInterval(60)
+        let source = FixtureActivitySource(
+            fixture: try ActivityFixture(
+                initialInstant: EnvironmentInstant(
+                    wallDate: initialDate,
+                    monotonic: MonotonicInstant(
+                        epochID: "fixture-observer-delivery-completion",
+                        nanoseconds: 0
+                    )
+                ),
+                initialDays: [],
+                changes: [
+                    try FixtureActivityChange(
+                        at: signalDate,
+                        updates: [],
+                        triggers: [
+                            .observerWakeupForeground,
+                            .observerWakeupBackground,
+                            .summaryUpdate,
+                        ]
+                    ),
+                ]
+            )
+        )
+        let activation = try await source.activateSignalOwnership(for: UUID())
+        try await source.commitSignalOwnershipActivation(activation)
+        let stream = await source.signals()
+        let signals = Task { () -> [EnvironmentSignal] in
+            var iterator = stream.makeAsyncIterator()
+            var values: [EnvironmentSignal] = []
+            while values.count < 3, let signal = await iterator.next() {
+                values.append(signal)
+            }
+            return values
+        }
+
+        try await source.advance(to: signalDate)
+        let emitted = await signals.value
+
+        XCTAssertEqual(
+            emitted.map(\.trigger),
+            [
+                .observerWakeupForeground,
+                .observerWakeupBackground,
+                .summaryUpdate,
+            ]
+        )
+        XCTAssertEqual(emitted.map(\.requiresCompletion), [true, true, false])
+    }
+
     private func snapshot(moveValue: Double) throws -> ActivitySnapshot {
         ActivitySnapshot(
             moveMode: .activeEnergyKilocalories,

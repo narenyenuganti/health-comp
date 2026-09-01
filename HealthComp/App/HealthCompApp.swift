@@ -56,6 +56,9 @@ enum HealthCompLiveComposition {
 struct HealthCompApp: App {
     @UIApplicationDelegateAdaptor(HealthCompAppDelegate.self)
     private var appDelegate
+    @Environment(\.scenePhase) private var scenePhase
+    private let observerDeliveryLifecycle =
+        HealthKitObserverDeliveryLifecycleBridge.production
 #if DEBUG
     private let launchDecision: CompetitionTestLabLaunchDecision
     private let multiUserLaunchDecision:
@@ -134,6 +137,11 @@ struct HealthCompApp: App {
             AppRootView(store: store)
 #endif
         }
+        .onChange(of: scenePhase, initial: true) { _, phase in
+            observerDeliveryLifecycle.observe(
+                phase.healthKitObserverLifecyclePhase
+            )
+        }
     }
 
 #if DEBUG
@@ -158,6 +166,14 @@ struct HealthCompApp: App {
         }
     }
 #endif
+}
+
+private extension ScenePhase {
+    var healthKitObserverLifecyclePhase: HealthKitObserverLifecyclePhase {
+        if self == .active { return .active }
+        if self == .background { return .background }
+        return .inactive
+    }
 }
 
 struct AppRootView: View {

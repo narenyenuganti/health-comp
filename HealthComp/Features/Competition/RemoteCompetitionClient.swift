@@ -22,8 +22,8 @@ extension CompetitionClient {
             notificationPreferencesFactory: { _ in
                 .remote(remoteAPI: remoteAPI)
             },
-            backgroundDeliveryReceiptFactory: { paths in
-                .live(directory: paths.backgroundDeliveryDirectory)
+            observerDeliveryReceiptFactory: { paths in
+                .live(directory: paths.observerDeliveryDirectory)
             }
         )
     }
@@ -42,9 +42,9 @@ extension CompetitionClient {
         ) -> CompetitionNotificationPreferencesClient = { _ in
             .constant(mutedOpponentIdentities: [])
         },
-        backgroundDeliveryReceiptFactory: @escaping @Sendable (
+        observerDeliveryReceiptFactory: @escaping @Sendable (
             AuthenticatedProfileStoragePaths
-        ) -> HealthKitBackgroundDeliveryReceiptClient = { _ in
+        ) -> HealthKitObserverDeliveryReceiptClient = { _ in
             .discarding
         },
         lifecycleInvalidationObserver: @escaping @Sendable () -> Void = {}
@@ -62,7 +62,7 @@ extension CompetitionClient {
             installationEnvironment: installationEnvironment,
             appAttestServiceFactory: appAttestServiceFactory,
             notificationPreferencesFactory: notificationPreferencesFactory,
-            backgroundDeliveryReceiptFactory: backgroundDeliveryReceiptFactory,
+            observerDeliveryReceiptFactory: observerDeliveryReceiptFactory,
             router: router
         )
         return Self(
@@ -251,11 +251,11 @@ private actor RemoteCompetitionClientCoordinator {
         let continuation: CheckedContinuation<Bool, Never>
     }
 
-    private struct PendingBackgroundDelivery {
+    private struct PendingObserverDelivery {
         let signal: EnvironmentSignal
         let ownershipScope: EnvironmentSignalOwnershipScope
         var observedGeneration: UInt64?
-        var receipt: HealthKitBackgroundDeliveryReceipt?
+        var receipt: HealthKitObserverDeliveryReceipt?
     }
 
     private struct TerminalTeardown {
@@ -290,9 +290,9 @@ private actor RemoteCompetitionClientCoordinator {
     private let notificationPreferencesFactory: @Sendable (
         AuthenticatedProfileStoragePaths
     ) -> CompetitionNotificationPreferencesClient
-    private let backgroundDeliveryReceiptFactory: @Sendable (
+    private let observerDeliveryReceiptFactory: @Sendable (
         AuthenticatedProfileStoragePaths
-    ) -> HealthKitBackgroundDeliveryReceiptClient
+    ) -> HealthKitObserverDeliveryReceiptClient
     private let router: RemoteCompetitionPublicationRouter
 
     private var profile: AuthenticatedProfile?
@@ -306,10 +306,10 @@ private actor RemoteCompetitionClientCoordinator {
         .noop
     private var notificationPreferences: CompetitionNotificationPreferencesClient =
         .unavailable
-    private var backgroundDeliveryReceipts: HealthKitBackgroundDeliveryReceiptClient =
+    private var observerDeliveryReceipts: HealthKitObserverDeliveryReceiptClient =
         .discarding
-    private var pendingBackgroundDeliveries: [
-        String: PendingBackgroundDelivery
+    private var pendingObserverDeliveries: [
+        String: PendingObserverDelivery
     ] = [:]
     private var activeSignalOwnershipScope: EnvironmentSignalOwnershipScope?
     private var activeSignalOwnershipLease: EnvironmentSignalOwnershipLease?
@@ -338,9 +338,9 @@ private actor RemoteCompetitionClientCoordinator {
         notificationPreferencesFactory: @escaping @Sendable (
             AuthenticatedProfileStoragePaths
         ) -> CompetitionNotificationPreferencesClient,
-        backgroundDeliveryReceiptFactory: @escaping @Sendable (
+        observerDeliveryReceiptFactory: @escaping @Sendable (
             AuthenticatedProfileStoragePaths
-        ) -> HealthKitBackgroundDeliveryReceiptClient,
+        ) -> HealthKitObserverDeliveryReceiptClient,
         router: RemoteCompetitionPublicationRouter
     ) {
         self.remoteAPI = remoteAPI
@@ -351,7 +351,7 @@ private actor RemoteCompetitionClientCoordinator {
         self.installationEnvironment = installationEnvironment
         self.appAttestServiceFactory = appAttestServiceFactory
         self.notificationPreferencesFactory = notificationPreferencesFactory
-        self.backgroundDeliveryReceiptFactory = backgroundDeliveryReceiptFactory
+        self.observerDeliveryReceiptFactory = observerDeliveryReceiptFactory
         self.router = router
     }
 
@@ -426,8 +426,8 @@ private actor RemoteCompetitionClientCoordinator {
                 self.runtime = runtime
                 let preferences = notificationPreferencesFactory(paths)
                 self.notificationPreferences = preferences
-                self.backgroundDeliveryReceipts =
-                    backgroundDeliveryReceiptFactory(paths)
+                self.observerDeliveryReceipts =
+                    observerDeliveryReceiptFactory(paths)
                 if let notificationClient {
                     self.notificationCoordinator = .live(
                         decisionCommitter: .remote(runtime: runtime),
@@ -631,7 +631,7 @@ private actor RemoteCompetitionClientCoordinator {
                 materializations: [],
                 issues: issues + [.storageUnavailable]
             )
-            await completePendingBackgroundDeliveries(using: publication)
+            await completePendingObserverDeliveries(using: publication)
             return publication
         }
         await installationCoordinator?.reconcile()
@@ -660,7 +660,7 @@ private actor RemoteCompetitionClientCoordinator {
                 ? Set(outcome.outcomes.map(\.competitionID))
                 : nil
         )
-        await completePendingBackgroundDeliveries(using: publication)
+        await completePendingObserverDeliveries(using: publication)
         return publication
     }
 
@@ -1018,7 +1018,7 @@ private actor RemoteCompetitionClientCoordinator {
             else {
                 throw CompetitionRemoteFailure.unauthenticated
             }
-            try mergeDrainedBackgroundDeliveries(
+            try mergeDrainedObserverDeliveries(
                 drainedSignals,
                 ownershipScope: terminal.ownershipScope,
                 generation: terminal.runtimeGeneration
@@ -1058,7 +1058,7 @@ private actor RemoteCompetitionClientCoordinator {
             }
 
             _ = await performReconciliation()
-            guard !pendingBackgroundDeliveries.values.contains(where: {
+            guard !pendingObserverDeliveries.values.contains(where: {
                 $0.ownershipScope == quiescing.ownershipScope
             }) else {
                 throw CompetitionRemoteFailure.retryableTransport
@@ -1103,7 +1103,7 @@ private actor RemoteCompetitionClientCoordinator {
         terminalTeardown = terminal
     }
 
-    private func mergeDrainedBackgroundDeliveries(
+    private func mergeDrainedObserverDeliveries(
         _ signals: [EnvironmentSignal],
         ownershipScope: EnvironmentSignalOwnershipScope,
         generation: UInt64
@@ -1114,15 +1114,15 @@ private actor RemoteCompetitionClientCoordinator {
             else {
                 throw EnvironmentSignalOwnershipError.inactiveOwner
             }
-            if var existing = pendingBackgroundDeliveries[signal.id] {
+            if var existing = pendingObserverDeliveries[signal.id] {
                 guard existing.ownershipScope == ownershipScope else {
                     throw EnvironmentSignalOwnershipError.inactiveOwner
                 }
                 existing.observedGeneration = generation
-                pendingBackgroundDeliveries[signal.id] = existing
+                pendingObserverDeliveries[signal.id] = existing
             } else {
-                pendingBackgroundDeliveries[signal.id] =
-                    PendingBackgroundDelivery(
+                pendingObserverDeliveries[signal.id] =
+                    PendingObserverDelivery(
                         signal: signal,
                         ownershipScope: ownershipScope,
                         observedGeneration: generation,
@@ -1169,7 +1169,7 @@ private actor RemoteCompetitionClientCoordinator {
         mountedCompetitionIDs = []
         notificationCoordinator = .noop
         notificationPreferences = .unavailable
-        backgroundDeliveryReceipts = .discarding
+        observerDeliveryReceipts = .discarding
         activeSignalOwnershipLease = nil
         activeSignalOwnershipScope = nil
         await installationCoordinator?.stopListening()
@@ -1222,9 +1222,9 @@ private actor RemoteCompetitionClientCoordinator {
             if let signalOwnershipScope = signal.ownershipScope,
                signalOwnershipScope != activeSignalOwnershipScope {
                 if signal.requiresCompletion,
-                   pendingBackgroundDeliveries[signal.id] == nil {
-                    pendingBackgroundDeliveries[signal.id] =
-                        PendingBackgroundDelivery(
+                   pendingObserverDeliveries[signal.id] == nil {
+                    pendingObserverDeliveries[signal.id] =
+                        PendingObserverDelivery(
                             signal: signal,
                             ownershipScope: signalOwnershipScope,
                             observedGeneration: nil,
@@ -1237,7 +1237,7 @@ private actor RemoteCompetitionClientCoordinator {
                 guard let signalOwnershipScope = signal.ownershipScope else {
                     return
                 }
-                let existing = pendingBackgroundDeliveries[signal.id]
+                let existing = pendingObserverDeliveries[signal.id]
                 guard existing?.ownershipScope == nil
                     || existing?.ownershipScope == signalOwnershipScope
                 else {
@@ -1248,10 +1248,10 @@ private actor RemoteCompetitionClientCoordinator {
                 }
                 if var existing {
                     existing.observedGeneration = runtimeGeneration
-                    pendingBackgroundDeliveries[signal.id] = existing
+                    pendingObserverDeliveries[signal.id] = existing
                 } else {
-                    pendingBackgroundDeliveries[signal.id] =
-                        PendingBackgroundDelivery(
+                    pendingObserverDeliveries[signal.id] =
+                        PendingObserverDelivery(
                             signal: signal,
                             ownershipScope: signalOwnershipScope,
                             observedGeneration: runtimeGeneration,
@@ -1263,45 +1263,45 @@ private actor RemoteCompetitionClientCoordinator {
         }
     }
 
-    private func completePendingBackgroundDeliveries(
+    private func completePendingObserverDeliveries(
         using publication: CompetitionPublication
     ) async {
         guard let activeSignalOwnershipScope else { return }
-        for signalID in pendingBackgroundDeliveries.keys.sorted() {
-            guard var pending = pendingBackgroundDeliveries[signalID]
+        for signalID in pendingObserverDeliveries.keys.sorted() {
+            guard var pending = pendingObserverDeliveries[signalID]
             else { continue }
             guard pending.ownershipScope == activeSignalOwnershipScope,
                   pending.observedGeneration == runtimeGeneration
             else { continue }
             do {
-                if try await backgroundDeliveryReceipts.contains(signalID) {
-                    guard canCompleteBackgroundDelivery(
+                if try await observerDeliveryReceipts.contains(signalID) {
+                    guard canCompleteObserverDelivery(
                         signalID,
                         ownershipScope: pending.ownershipScope
                     ) else { continue }
                     if await environment.completeSignal(signalID) {
-                        pendingBackgroundDeliveries[signalID] = nil
+                        pendingObserverDeliveries[signalID] = nil
                     }
                     continue
                 }
                 if pending.receipt == nil {
-                    pending.receipt = HealthKitBackgroundDeliveryReceipt(
+                    pending.receipt = HealthKitObserverDeliveryReceipt(
                         signalID: pending.signal.id,
                         trigger: pending.signal.trigger,
                         processedAt: publication.evaluatedAt,
                         publicationRevision: publication.publicationRevision,
                         hadIssues: !publication.dashboard.issues.isEmpty
                     )
-                    pendingBackgroundDeliveries[signalID] = pending
+                    pendingObserverDeliveries[signalID] = pending
                 }
                 guard let receipt = pending.receipt else { continue }
-                try await backgroundDeliveryReceipts.commit(receipt)
-                guard canCompleteBackgroundDelivery(
+                try await observerDeliveryReceipts.commit(receipt)
+                guard canCompleteObserverDelivery(
                     signalID,
                     ownershipScope: pending.ownershipScope
                 ) else { continue }
                 if await environment.completeSignal(signalID) {
-                    pendingBackgroundDeliveries[signalID] = nil
+                    pendingObserverDeliveries[signalID] = nil
                 }
             } catch {
                 // HealthKit retains the callback until a later canonical
@@ -1310,14 +1310,14 @@ private actor RemoteCompetitionClientCoordinator {
         }
     }
 
-    private func canCompleteBackgroundDelivery(
+    private func canCompleteObserverDelivery(
         _ signalID: String,
         ownershipScope: EnvironmentSignalOwnershipScope
     ) -> Bool {
         guard !Task.isCancelled,
               !isStopped,
               activeSignalOwnershipScope == ownershipScope,
-              let pending = pendingBackgroundDeliveries[signalID],
+              let pending = pendingObserverDeliveries[signalID],
               pending.ownershipScope == ownershipScope,
               pending.observedGeneration == runtimeGeneration
         else {

@@ -862,7 +862,7 @@ actor FixtureActivitySource: CompetitionActivitySource {
         let signal = EnvironmentSignal(
             id: id,
             trigger: trigger,
-            requiresCompletion: trigger == .observerWakeupBackground,
+            requiresCompletion: trigger.isHealthKitObserverDelivery,
             ownershipScope: ownershipScope
         )
         if signal.requiresCompletion {

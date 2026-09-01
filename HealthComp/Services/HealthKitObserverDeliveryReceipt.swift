@@ -2,7 +2,7 @@ import CompetitionCore
 import Darwin
 import Foundation
 
-struct HealthKitBackgroundDeliveryReceipt: Codable, Equatable, Sendable {
+struct HealthKitObserverDeliveryReceipt: Codable, Equatable, Sendable {
     let signalID: String
     let trigger: ActivityRefreshTrigger
     let processedAt: Date
@@ -18,10 +18,10 @@ struct HealthKitBackgroundDeliveryReceipt: Codable, Equatable, Sendable {
     }
 }
 
-struct HealthKitBackgroundDeliveryReceiptClient: Sendable {
+struct HealthKitObserverDeliveryReceiptClient: Sendable {
     let contains: @Sendable (_ signalID: String) async throws -> Bool
     let commit: @Sendable (
-        HealthKitBackgroundDeliveryReceipt
+        HealthKitObserverDeliveryReceipt
     ) async throws -> Void
 
     init(
@@ -29,7 +29,7 @@ struct HealthKitBackgroundDeliveryReceiptClient: Sendable {
             _ in false
         },
         commit: @escaping @Sendable (
-            HealthKitBackgroundDeliveryReceipt
+            HealthKitObserverDeliveryReceipt
         ) async throws -> Void
     ) {
         self.contains = contains
@@ -40,7 +40,7 @@ struct HealthKitBackgroundDeliveryReceiptClient: Sendable {
         directory: URL,
         fileProtection: JSONCompetitionEventStoreFileProtection = .live
     ) -> Self {
-        let store = HealthKitBackgroundDeliveryReceiptStore(
+        let store = HealthKitObserverDeliveryReceiptStore(
             directory: directory,
             fileProtection: fileProtection
         )
@@ -57,7 +57,7 @@ struct HealthKitBackgroundDeliveryReceiptClient: Sendable {
     static let discarding = Self(commit: { _ in })
 }
 
-enum HealthKitBackgroundDeliveryReceiptStoreFailure:
+enum HealthKitObserverDeliveryReceiptStoreFailure:
     Error,
     Equatable,
     Sendable
@@ -70,18 +70,18 @@ enum HealthKitBackgroundDeliveryReceiptStoreFailure:
     case ioFailure
 }
 
-enum HealthKitBackgroundDeliveryReceiptStoreFaultPoint: Sendable {
+enum HealthKitObserverDeliveryReceiptStoreFaultPoint: Sendable {
     case temporaryFullSync
     case temporarySynced
     case destinationFullSync
     case directorySync
 }
 
-struct HealthKitBackgroundDeliveryReceiptStoreFaultInjector: Sendable {
-    let failAt: HealthKitBackgroundDeliveryReceiptStoreFaultPoint?
+struct HealthKitObserverDeliveryReceiptStoreFaultInjector: Sendable {
+    let failAt: HealthKitObserverDeliveryReceiptStoreFaultPoint?
 
     init(
-        failAt: HealthKitBackgroundDeliveryReceiptStoreFaultPoint? = nil
+        failAt: HealthKitObserverDeliveryReceiptStoreFaultPoint? = nil
     ) {
         self.failAt = failAt
     }
@@ -89,28 +89,28 @@ struct HealthKitBackgroundDeliveryReceiptStoreFaultInjector: Sendable {
     static let none = Self()
 
     func checkpoint(
-        _ point: HealthKitBackgroundDeliveryReceiptStoreFaultPoint
+        _ point: HealthKitObserverDeliveryReceiptStoreFaultPoint
     ) throws {
         guard failAt == point else { return }
-        throw HealthKitBackgroundDeliveryReceiptStoreFailure.ioFailure
+        throw HealthKitObserverDeliveryReceiptStoreFailure.ioFailure
     }
 }
 
-actor HealthKitBackgroundDeliveryReceiptStore {
+actor HealthKitObserverDeliveryReceiptStore {
     private struct Document: Codable, Equatable {
         static let currentVersion: UInt32 = 1
         static let maximumReceiptCount = 128
         static let maximumEncodedBytes = 64 * 1024
 
         let schemaVersion: UInt32
-        var receipts: [HealthKitBackgroundDeliveryReceipt]
+        var receipts: [HealthKitObserverDeliveryReceipt]
 
         enum CodingKeys: String, CodingKey {
             case schemaVersion = "schema_version"
             case receipts
         }
 
-        init(receipts: [HealthKitBackgroundDeliveryReceipt]) {
+        init(receipts: [HealthKitObserverDeliveryReceipt]) {
             self.schemaVersion = Self.currentVersion
             self.receipts = receipts
         }
@@ -126,7 +126,7 @@ actor HealthKitBackgroundDeliveryReceiptStore {
     private let directory: URL
     private let fileURL: URL
     private let faultInjector:
-        HealthKitBackgroundDeliveryReceiptStoreFaultInjector
+        HealthKitObserverDeliveryReceiptStoreFaultInjector
     private let fileProtection: JSONCompetitionEventStoreFileProtection
 
     init(
@@ -145,7 +145,7 @@ actor HealthKitBackgroundDeliveryReceiptStore {
     init(
         directory: URL,
         faultInjector:
-            HealthKitBackgroundDeliveryReceiptStoreFaultInjector,
+            HealthKitObserverDeliveryReceiptStoreFaultInjector,
         fileProtection: JSONCompetitionEventStoreFileProtection = .live
     ) {
         self.directory = directory.standardizedFileURL
@@ -157,7 +157,7 @@ actor HealthKitBackgroundDeliveryReceiptStore {
         self.fileProtection = fileProtection
     }
 
-    func commit(_ receipt: HealthKitBackgroundDeliveryReceipt) throws {
+    func commit(_ receipt: HealthKitObserverDeliveryReceipt) throws {
         let receipt = try Self.canonicalReceipt(receipt)
         try validateDirectory()
         try reapStaleTemporaryFiles()
@@ -166,7 +166,7 @@ actor HealthKitBackgroundDeliveryReceiptStore {
             $0.signalID == receipt.signalID
         }) {
             guard existing == receipt else {
-                throw HealthKitBackgroundDeliveryReceiptStoreFailure
+                throw HealthKitObserverDeliveryReceiptStoreFailure
                     .signalConflict
             }
             try ensureReceiptFileIsDurable()
@@ -183,7 +183,7 @@ actor HealthKitBackgroundDeliveryReceiptStore {
 
     func contains(_ signalID: String) throws -> Bool {
         guard Self.isValidSignalID(signalID) else {
-            throw HealthKitBackgroundDeliveryReceiptStoreFailure
+            throw HealthKitObserverDeliveryReceiptStoreFailure
                 .invalidReceipt
         }
         try validateDirectory()
@@ -195,7 +195,7 @@ actor HealthKitBackgroundDeliveryReceiptStore {
         return isContained
     }
 
-    func receipts() throws -> [HealthKitBackgroundDeliveryReceipt] {
+    func receipts() throws -> [HealthKitObserverDeliveryReceipt] {
         try validateDirectory()
         try reapStaleTemporaryFiles()
         return try readDocument().receipts
@@ -216,7 +216,7 @@ actor HealthKitBackgroundDeliveryReceiptStore {
                 == document.receipts.count,
               document.receipts.allSatisfy(Self.isValid)
         else {
-            throw HealthKitBackgroundDeliveryReceiptStoreFailure
+            throw HealthKitObserverDeliveryReceiptStoreFailure
                 .invalidDocument
         }
         return document
@@ -238,7 +238,7 @@ actor HealthKitBackgroundDeliveryReceiptStore {
               let verifiedData = try? Self.encoder.encode(verified),
               verifiedData == data
         else {
-            throw HealthKitBackgroundDeliveryReceiptStoreFailure
+            throw HealthKitObserverDeliveryReceiptStoreFailure
                 .invalidDocument
         }
         try rejectUnsafeDestination()
@@ -247,14 +247,14 @@ actor HealthKitBackgroundDeliveryReceiptStore {
 
     private func validateDirectory() throws {
         guard directory.isFileURL else {
-            throw HealthKitBackgroundDeliveryReceiptStoreFailure
+            throw HealthKitObserverDeliveryReceiptStoreFailure
                 .invalidDirectory
         }
         let descriptor = directory.path.withCString { path in
             Darwin.open(path, O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW)
         }
         guard descriptor >= 0 else {
-            throw HealthKitBackgroundDeliveryReceiptStoreFailure
+            throw HealthKitObserverDeliveryReceiptStoreFailure
                 .invalidDirectory
         }
         defer { _ = Darwin.close(descriptor) }
@@ -263,7 +263,7 @@ actor HealthKitBackgroundDeliveryReceiptStore {
               metadata.st_mode & S_IFMT == S_IFDIR,
               Darwin.fchmod(descriptor, mode_t(0o700)) == 0
         else {
-            throw HealthKitBackgroundDeliveryReceiptStoreFailure
+            throw HealthKitObserverDeliveryReceiptStoreFailure
                 .invalidDirectory
         }
         do {
@@ -272,7 +272,7 @@ actor HealthKitBackgroundDeliveryReceiptStore {
                 to: directory
             )
         } catch {
-            throw HealthKitBackgroundDeliveryReceiptStoreFailure.ioFailure
+            throw HealthKitObserverDeliveryReceiptStoreFailure.ioFailure
         }
     }
 
@@ -283,24 +283,24 @@ actor HealthKitBackgroundDeliveryReceiptStore {
         guard descriptor >= 0 else {
             if errno == ENOENT { return nil }
             if errno == ELOOP {
-                throw HealthKitBackgroundDeliveryReceiptStoreFailure
+                throw HealthKitObserverDeliveryReceiptStoreFailure
                     .unsafeFilesystemEntry
             }
-            throw HealthKitBackgroundDeliveryReceiptStoreFailure.ioFailure
+            throw HealthKitObserverDeliveryReceiptStoreFailure.ioFailure
         }
         defer { _ = Darwin.close(descriptor) }
         var metadata = stat()
         guard Darwin.fstat(descriptor, &metadata) == 0,
               metadata.st_mode & S_IFMT == S_IFREG
         else {
-            throw HealthKitBackgroundDeliveryReceiptStoreFailure
+            throw HealthKitObserverDeliveryReceiptStoreFailure
                 .unsafeFilesystemEntry
         }
         guard metadata.st_size > 0,
               metadata.st_size <= Document.maximumEncodedBytes,
               Darwin.fchmod(descriptor, mode_t(0o600)) == 0
         else {
-            throw HealthKitBackgroundDeliveryReceiptStoreFailure
+            throw HealthKitObserverDeliveryReceiptStoreFailure
                 .invalidDocument
         }
         do {
@@ -309,7 +309,7 @@ actor HealthKitBackgroundDeliveryReceiptStore {
                 to: fileURL
             )
         } catch {
-            throw HealthKitBackgroundDeliveryReceiptStoreFailure.ioFailure
+            throw HealthKitObserverDeliveryReceiptStoreFailure.ioFailure
         }
         var data = Data(count: Int(metadata.st_size))
         let readCount = data.withUnsafeMutableBytes { buffer -> Int in
@@ -328,7 +328,7 @@ actor HealthKitBackgroundDeliveryReceiptStore {
             return offset
         }
         guard readCount == data.count else {
-            throw HealthKitBackgroundDeliveryReceiptStoreFailure.ioFailure
+            throw HealthKitObserverDeliveryReceiptStoreFailure.ioFailure
         }
         return data
     }
@@ -345,7 +345,7 @@ actor HealthKitBackgroundDeliveryReceiptStore {
             )
         }
         guard descriptor >= 0 else {
-            throw HealthKitBackgroundDeliveryReceiptStoreFailure.ioFailure
+            throw HealthKitObserverDeliveryReceiptStoreFailure.ioFailure
         }
         var descriptorIsOpen = true
         var removeTemporary = true
@@ -356,7 +356,7 @@ actor HealthKitBackgroundDeliveryReceiptStore {
             }
         }
         guard Darwin.fchmod(descriptor, mode_t(0o600)) == 0 else {
-            throw HealthKitBackgroundDeliveryReceiptStoreFailure.ioFailure
+            throw HealthKitObserverDeliveryReceiptStoreFailure.ioFailure
         }
         do {
             try fileProtection.apply(
@@ -364,7 +364,7 @@ actor HealthKitBackgroundDeliveryReceiptStore {
                 to: temporaryURL
             )
         } catch {
-            throw HealthKitBackgroundDeliveryReceiptStoreFailure.ioFailure
+            throw HealthKitObserverDeliveryReceiptStoreFailure.ioFailure
         }
         let wroteAll = data.withUnsafeBytes { buffer -> Bool in
             guard let baseAddress = buffer.baseAddress else { return false }
@@ -382,7 +382,7 @@ actor HealthKitBackgroundDeliveryReceiptStore {
             return true
         }
         guard wroteAll, Self.synchronize(descriptor) else {
-            throw HealthKitBackgroundDeliveryReceiptStoreFailure.ioFailure
+            throw HealthKitObserverDeliveryReceiptStoreFailure.ioFailure
         }
         try fullySynchronize(
             descriptor,
@@ -396,11 +396,11 @@ actor HealthKitBackgroundDeliveryReceiptStore {
         }
         guard Darwin.close(descriptor) == 0 else {
             descriptorIsOpen = false
-            throw HealthKitBackgroundDeliveryReceiptStoreFailure.ioFailure
+            throw HealthKitObserverDeliveryReceiptStoreFailure.ioFailure
         }
         descriptorIsOpen = false
         guard Darwin.rename(temporaryURL.path, fileURL.path) == 0 else {
-            throw HealthKitBackgroundDeliveryReceiptStoreFailure.ioFailure
+            throw HealthKitObserverDeliveryReceiptStoreFailure.ioFailure
         }
         removeTemporary = false
         try ensureReceiptFileIsDurable()
@@ -412,10 +412,10 @@ actor HealthKitBackgroundDeliveryReceiptStore {
         }
         guard descriptor >= 0 else {
             if errno == ELOOP {
-                throw HealthKitBackgroundDeliveryReceiptStoreFailure
+                throw HealthKitObserverDeliveryReceiptStoreFailure
                     .unsafeFilesystemEntry
             }
-            throw HealthKitBackgroundDeliveryReceiptStoreFailure.ioFailure
+            throw HealthKitObserverDeliveryReceiptStoreFailure.ioFailure
         }
         defer { _ = Darwin.close(descriptor) }
         var metadata = stat()
@@ -423,7 +423,7 @@ actor HealthKitBackgroundDeliveryReceiptStore {
               metadata.st_mode & S_IFMT == S_IFREG,
               Darwin.fchmod(descriptor, mode_t(0o600)) == 0
         else {
-            throw HealthKitBackgroundDeliveryReceiptStoreFailure
+            throw HealthKitObserverDeliveryReceiptStoreFailure
                 .unsafeFilesystemEntry
         }
         do {
@@ -432,10 +432,10 @@ actor HealthKitBackgroundDeliveryReceiptStore {
                 to: fileURL
             )
         } catch {
-            throw HealthKitBackgroundDeliveryReceiptStoreFailure.ioFailure
+            throw HealthKitObserverDeliveryReceiptStoreFailure.ioFailure
         }
         guard Self.synchronize(descriptor) else {
-            throw HealthKitBackgroundDeliveryReceiptStoreFailure.ioFailure
+            throw HealthKitObserverDeliveryReceiptStoreFailure.ioFailure
         }
         try synchronizeDirectory()
         try fullySynchronize(
@@ -449,7 +449,7 @@ actor HealthKitBackgroundDeliveryReceiptStore {
         case .absent, .regularFile:
             return
         case .directory, .other:
-            throw HealthKitBackgroundDeliveryReceiptStoreFailure
+            throw HealthKitObserverDeliveryReceiptStoreFailure
                 .unsafeFilesystemEntry
         }
     }
@@ -463,18 +463,18 @@ actor HealthKitBackgroundDeliveryReceiptStore {
                 options: []
             )
         } catch {
-            throw HealthKitBackgroundDeliveryReceiptStoreFailure.ioFailure
+            throw HealthKitObserverDeliveryReceiptStoreFailure.ioFailure
         }
         var removedAny = false
         for entry in entries
         where Self.isTemporaryFilename(entry.lastPathComponent) {
             guard try entryKind(at: entry) == .regularFile else {
-                throw HealthKitBackgroundDeliveryReceiptStoreFailure
+                throw HealthKitObserverDeliveryReceiptStoreFailure
                     .unsafeFilesystemEntry
             }
             while Darwin.unlink(entry.path) != 0 {
                 if errno == EINTR { continue }
-                throw HealthKitBackgroundDeliveryReceiptStoreFailure.ioFailure
+                throw HealthKitObserverDeliveryReceiptStoreFailure.ioFailure
             }
             removedAny = true
         }
@@ -486,12 +486,12 @@ actor HealthKitBackgroundDeliveryReceiptStore {
             Darwin.open(path, O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW)
         }
         guard descriptor >= 0 else {
-            throw HealthKitBackgroundDeliveryReceiptStoreFailure.ioFailure
+            throw HealthKitObserverDeliveryReceiptStoreFailure.ioFailure
         }
         defer { _ = Darwin.close(descriptor) }
         try faultInjector.checkpoint(.directorySync)
         guard Self.synchronize(descriptor) else {
-            throw HealthKitBackgroundDeliveryReceiptStoreFailure.ioFailure
+            throw HealthKitObserverDeliveryReceiptStoreFailure.ioFailure
         }
     }
 
@@ -500,7 +500,7 @@ actor HealthKitBackgroundDeliveryReceiptStore {
         let result = url.path.withCString { Darwin.lstat($0, &metadata) }
         guard result == 0 else {
             if errno == ENOENT { return .absent }
-            throw HealthKitBackgroundDeliveryReceiptStoreFailure.ioFailure
+            throw HealthKitObserverDeliveryReceiptStoreFailure.ioFailure
         }
         switch metadata.st_mode & S_IFMT {
         case S_IFREG:
@@ -513,9 +513,9 @@ actor HealthKitBackgroundDeliveryReceiptStore {
     }
 
     private static func isValid(
-        _ receipt: HealthKitBackgroundDeliveryReceipt
+        _ receipt: HealthKitObserverDeliveryReceipt
     ) -> Bool {
-        guard receipt.trigger == .observerWakeupBackground,
+        guard receipt.trigger.isHealthKitObserverDelivery,
               receipt.processedAt.timeIntervalSinceReferenceDate.isFinite,
               receipt.publicationRevision > 0,
               Self.isValidSignalID(receipt.signalID)
@@ -536,20 +536,20 @@ actor HealthKitBackgroundDeliveryReceiptStore {
     }
 
     private static func canonicalReceipt(
-        _ receipt: HealthKitBackgroundDeliveryReceipt
-    ) throws -> HealthKitBackgroundDeliveryReceipt {
+        _ receipt: HealthKitObserverDeliveryReceipt
+    ) throws -> HealthKitObserverDeliveryReceipt {
         guard Self.isValid(receipt),
               let data = try? Self.encoder.encode(receipt),
               data.count <= Document.maximumEncodedBytes,
               let canonical = try? Self.decoder.decode(
-                  HealthKitBackgroundDeliveryReceipt.self,
+                  HealthKitObserverDeliveryReceipt.self,
                   from: data
               ),
               Self.isValid(canonical),
               let verifiedData = try? Self.encoder.encode(canonical),
               verifiedData == data
         else {
-            throw HealthKitBackgroundDeliveryReceiptStoreFailure
+            throw HealthKitObserverDeliveryReceiptStoreFailure
                 .invalidReceipt
         }
         return canonical
@@ -601,12 +601,12 @@ actor HealthKitBackgroundDeliveryReceiptStore {
 
     private func fullySynchronize(
         _ descriptor: Int32,
-        failurePoint: HealthKitBackgroundDeliveryReceiptStoreFaultPoint
+        failurePoint: HealthKitObserverDeliveryReceiptStoreFaultPoint
     ) throws {
         try faultInjector.checkpoint(failurePoint)
         while Darwin.fcntl(descriptor, F_FULLFSYNC) != 0 {
             if errno == EINTR { continue }
-            throw HealthKitBackgroundDeliveryReceiptStoreFailure.ioFailure
+            throw HealthKitObserverDeliveryReceiptStoreFailure.ioFailure
         }
     }
 

@@ -1040,12 +1040,12 @@ final class RemoteCompetitionClientTests: XCTestCase {
         let receiptStarted = expectation(
             description: "background receipt commit started"
         )
-        let receiptGate = RemoteBackgroundDeliveryReceiptGate()
+        let receiptGate = RemoteObserverDeliveryReceiptGate()
         let client = CompetitionClient.remote(
             remoteAPI: remoteAPI(listCompetitions: { [] }),
             environment: .accelerated(source: source),
-            backgroundDeliveryReceiptFactory: { _ in
-                HealthKitBackgroundDeliveryReceiptClient { receipt in
+            observerDeliveryReceiptFactory: { _ in
+                HealthKitObserverDeliveryReceiptClient { receipt in
                     await receiptGate.record(receipt)
                     receiptStarted.fulfill()
                     await receiptGate.waitForRelease()
@@ -1083,17 +1083,17 @@ final class RemoteCompetitionClientTests: XCTestCase {
     func testBackgroundObserverReceiptFailureRetriesBeforeCompletion()
         async throws
     {
-        let fixture = try makeBackgroundSignalFixture(
+        let fixture = try makeObserverSignalFixture(
             profileID: "81000000-0000-4000-8000-000000000022",
             epochID: "remote-background-receipt-retry"
         )
         defer { try? FileManager.default.removeItem(at: fixture.root) }
-        let receiptProbe = RemoteBackgroundDeliveryReceiptRetryProbe()
+        let receiptProbe = RemoteObserverDeliveryReceiptRetryProbe()
         let client = CompetitionClient.remote(
             remoteAPI: remoteAPI(listCompetitions: { [] }),
             environment: .accelerated(source: fixture.source),
-            backgroundDeliveryReceiptFactory: { _ in
-                HealthKitBackgroundDeliveryReceiptClient { receipt in
+            observerDeliveryReceiptFactory: { _ in
+                HealthKitObserverDeliveryReceiptClient { receipt in
                     try await receiptProbe.commitFailingFirst(receipt)
                 }
             }
@@ -1120,6 +1120,117 @@ final class RemoteCompetitionClientTests: XCTestCase {
             .signalCompletionCount("fixture-signal-1")
         XCTAssertEqual(receipts.count, 2)
         XCTAssertEqual(receipts.first, receipts.last)
+        XCTAssertEqual(
+            receipts.map(\.trigger),
+            [.observerWakeupBackground, .observerWakeupBackground]
+        )
+        XCTAssertEqual(completionAfterRetry, 1)
+        await client.stop()
+    }
+
+    func testForegroundObserverCompletionWaitsForDurableReceiptAndPreservesTrigger()
+        async throws
+    {
+        let fixture = try makeObserverSignalFixture(
+            profileID: "81000000-0000-4000-8000-000000000058",
+            epochID: "remote-durable-foreground-receipt",
+            trigger: .observerWakeupForeground
+        )
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let receiptStarted = expectation(
+            description: "foreground observer receipt commit started"
+        )
+        let receiptGate = RemoteObserverDeliveryReceiptGate()
+        let client = CompetitionClient.remote(
+            remoteAPI: remoteAPI(listCompetitions: { [] }),
+            environment: .accelerated(source: fixture.source),
+            observerDeliveryReceiptFactory: { _ in
+                HealthKitObserverDeliveryReceiptClient { receipt in
+                    await receiptGate.record(receipt)
+                    receiptStarted.fulfill()
+                    await receiptGate.waitForRelease()
+                }
+            }
+        )
+        try await client.mountAuthenticatedProfile(
+            fixture.profile,
+            fixture.paths
+        )
+        var iterator = client.start().makeAsyncIterator()
+        _ = await iterator.next()
+
+        try await fixture.source.advance(to: fixture.signalDate)
+        await fulfillment(of: [receiptStarted], timeout: 1)
+        let receiptsBeforeCommit = await receiptGate.recordedReceipts()
+        let completionBeforeCommit = await fixture.source
+            .signalCompletionCount("fixture-signal-1")
+        XCTAssertEqual(
+            receiptsBeforeCommit.map(\.trigger),
+            [.observerWakeupForeground]
+        )
+        XCTAssertEqual(completionBeforeCommit, 0)
+
+        await receiptGate.release()
+        await waitForBoundedAsyncCondition("foreground receipt completion") {
+            await fixture.source.waitUntilSignalCompletionCount(
+                "fixture-signal-1",
+                minimum: 1
+            )
+        }
+        let completionAfterCommit = await fixture.source
+            .signalCompletionCount("fixture-signal-1")
+        XCTAssertEqual(completionAfterCommit, 1)
+        await client.stop()
+    }
+
+    func testForegroundObserverReceiptFailureRetriesBeforeCompletionAndPreservesTrigger()
+        async throws
+    {
+        let fixture = try makeObserverSignalFixture(
+            profileID: "81000000-0000-4000-8000-000000000059",
+            epochID: "remote-foreground-receipt-retry",
+            trigger: .observerWakeupForeground
+        )
+        defer { try? FileManager.default.removeItem(at: fixture.root) }
+        let receiptProbe = RemoteObserverDeliveryReceiptRetryProbe()
+        let client = CompetitionClient.remote(
+            remoteAPI: remoteAPI(listCompetitions: { [] }),
+            environment: .accelerated(source: fixture.source),
+            observerDeliveryReceiptFactory: { _ in
+                HealthKitObserverDeliveryReceiptClient { receipt in
+                    try await receiptProbe.commitFailingFirst(receipt)
+                }
+            }
+        )
+        try await client.mountAuthenticatedProfile(
+            fixture.profile,
+            fixture.paths
+        )
+        var iterator = client.start().makeAsyncIterator()
+        _ = await iterator.next()
+
+        try await fixture.source.advance(to: fixture.signalDate)
+        await waitForBoundedAsyncCondition("first foreground receipt attempt") {
+            await receiptProbe.waitUntilAttemptCount(1)
+        }
+        let firstAttempts = await receiptProbe.attemptedReceipts()
+        let completionAfterFailure = await fixture.source
+            .signalCompletionCount("fixture-signal-1")
+        XCTAssertEqual(
+            firstAttempts.map(\.trigger),
+            [.observerWakeupForeground]
+        )
+        XCTAssertEqual(completionAfterFailure, 0)
+
+        _ = await client.reconcileAll(.foreground)
+
+        let attempts = await receiptProbe.attemptedReceipts()
+        let completionAfterRetry = await fixture.source
+            .signalCompletionCount("fixture-signal-1")
+        XCTAssertEqual(
+            attempts.map(\.trigger),
+            [.observerWakeupForeground, .observerWakeupForeground]
+        )
         XCTAssertEqual(completionAfterRetry, 1)
         await client.stop()
     }
@@ -1127,7 +1238,7 @@ final class RemoteCompetitionClientTests: XCTestCase {
     func testStopLeavesCommittedCallbackPendingAndRemountCompletesReplay()
         async throws
     {
-        let fixture = try makeBackgroundSignalFixture(
+        let fixture = try makeObserverSignalFixture(
             profileID: "81000000-0000-4000-8000-000000000023",
             epochID: "remote-background-receipt-remount",
             replaysPendingCompletionSignals: true
@@ -1136,14 +1247,14 @@ final class RemoteCompetitionClientTests: XCTestCase {
         let cancellationObserved = expectation(
             description: "pending receipt commit observed cancellation"
         )
-        let receiptStore = RemoteBackgroundDeliveryReceiptPersistenceGate {
+        let receiptStore = RemoteObserverDeliveryReceiptPersistenceGate {
             cancellationObserved.fulfill()
         }
         let client = CompetitionClient.remote(
             remoteAPI: remoteAPI(listCompetitions: { [] }),
             environment: .accelerated(source: fixture.source),
-            backgroundDeliveryReceiptFactory: { _ in
-                HealthKitBackgroundDeliveryReceiptClient(
+            observerDeliveryReceiptFactory: { _ in
+                HealthKitObserverDeliveryReceiptClient(
                     contains: { signalID in
                         await receiptStore.contains(signalID)
                     },
@@ -1203,7 +1314,7 @@ final class RemoteCompetitionClientTests: XCTestCase {
     func testTerminalTeardownCancelsBlockedReceiptBeforeJoiningGate()
         async throws
     {
-        let fixture = try makeBackgroundSignalFixture(
+        let fixture = try makeObserverSignalFixture(
             profileID: "81000000-0000-4000-8000-000000000048",
             epochID: "remote-background-terminal-blocked-receipt",
             replaysPendingCompletionSignals: true
@@ -1213,15 +1324,15 @@ final class RemoteCompetitionClientTests: XCTestCase {
             description: "terminal teardown cancelled receipt persistence"
         )
         let cancellationFlag = RemoteLockedFlag()
-        let receiptStore = RemoteBackgroundDeliveryReceiptPersistenceGate {
+        let receiptStore = RemoteObserverDeliveryReceiptPersistenceGate {
             cancellationFlag.setTrue()
             cancellationObserved.fulfill()
         }
         let client = CompetitionClient.remote(
             remoteAPI: remoteAPI(listCompetitions: { [] }),
             environment: .accelerated(source: fixture.source),
-            backgroundDeliveryReceiptFactory: { _ in
-                HealthKitBackgroundDeliveryReceiptClient(
+            observerDeliveryReceiptFactory: { _ in
+                HealthKitObserverDeliveryReceiptClient(
                     contains: { signalID in
                         await receiptStore.contains(signalID)
                     },
@@ -1269,7 +1380,7 @@ final class RemoteCompetitionClientTests: XCTestCase {
     func testTerminalTeardownDrainsNoSubscriberCallbackBeforeStorageDeletion()
         async throws
     {
-        let fixture = try makeBackgroundSignalFixture(
+        let fixture = try makeObserverSignalFixture(
             profileID: "81000000-0000-4000-8000-000000000031",
             epochID: "remote-background-terminal-drain",
             replaysPendingCompletionSignals: true
@@ -1294,14 +1405,14 @@ final class RemoteCompetitionClientTests: XCTestCase {
                 withIntermediateDirectories: true
             )
         }
-        let receiptProbe = RemoteProfileBoundBackgroundReceiptProbe(
+        let receiptProbe = RemoteProfileBoundObserverReceiptProbe(
             blockedProfileID: nil
         )
         let client = CompetitionClient.remote(
             remoteAPI: remoteAPI(listCompetitions: { [] }),
             environment: .accelerated(source: fixture.source),
-            backgroundDeliveryReceiptFactory: { paths in
-                HealthKitBackgroundDeliveryReceiptClient(
+            observerDeliveryReceiptFactory: { paths in
+                HealthKitObserverDeliveryReceiptClient(
                     contains: { signalID in
                         await receiptProbe.contains(
                             profileID: paths.profileID,
@@ -1418,7 +1529,7 @@ final class RemoteCompetitionClientTests: XCTestCase {
     func testDifferentProfileCannotMountBeforeOriginOwnershipRetires()
         async throws
     {
-        let fixture = try makeBackgroundSignalFixture(
+        let fixture = try makeObserverSignalFixture(
             profileID: "81000000-0000-4000-8000-000000000033",
             epochID: "remote-background-owner-activation-guard"
         )
@@ -1480,7 +1591,7 @@ final class RemoteCompetitionClientTests: XCTestCase {
     func testCancelledBootstrapMountCannotResurrectProfileAfterStop()
         async throws
     {
-        let fixture = try makeBackgroundSignalFixture(
+        let fixture = try makeObserverSignalFixture(
             profileID: "81000000-0000-4000-8000-000000000041",
             epochID: "remote-cancelled-bootstrap-mount"
         )
@@ -1566,7 +1677,7 @@ final class RemoteCompetitionClientTests: XCTestCase {
     func testCancelledCommittedSameProfileRemountRemainsTerminallyRetirable()
         async throws
     {
-        let fixture = try makeBackgroundSignalFixture(
+        let fixture = try makeObserverSignalFixture(
             profileID: "81000000-0000-4000-8000-000000000049",
             epochID: "remote-cancelled-committed-same-profile-remount"
         )
@@ -1642,7 +1753,7 @@ final class RemoteCompetitionClientTests: XCTestCase {
     }
 
     func testFailedInitialMountReleasesNewOwnershipReservation() async throws {
-        let fixture = try makeBackgroundSignalFixture(
+        let fixture = try makeObserverSignalFixture(
             profileID: "81000000-0000-4000-8000-000000000037",
             epochID: "remote-background-failed-new-activation"
         )
@@ -1707,7 +1818,7 @@ final class RemoteCompetitionClientTests: XCTestCase {
     func testFailedReplacementMountPreservesReusedOwnershipReservation()
         async throws
     {
-        let fixture = try makeBackgroundSignalFixture(
+        let fixture = try makeObserverSignalFixture(
             profileID: "81000000-0000-4000-8000-000000000039",
             epochID: "remote-background-failed-reused-activation"
         )
@@ -1802,7 +1913,7 @@ final class RemoteCompetitionClientTests: XCTestCase {
     func testFailedSameProfileRemountCanTerminallyRetireOriginOwnership()
         async throws
     {
-        let fixture = try makeBackgroundSignalFixture(
+        let fixture = try makeObserverSignalFixture(
             profileID: "81000000-0000-4000-8000-000000000043",
             epochID: "remote-background-failed-remount-terminal-retirement"
         )
@@ -1903,18 +2014,18 @@ final class RemoteCompetitionClientTests: XCTestCase {
     func testTerminalReceiptFailureKeepsCallbackRetryableAndBlocksReplacement()
         async throws
     {
-        let fixture = try makeBackgroundSignalFixture(
+        let fixture = try makeObserverSignalFixture(
             profileID: "81000000-0000-4000-8000-000000000035",
             epochID: "remote-background-terminal-receipt-retry",
             replaysPendingCompletionSignals: true
         )
         defer { try? FileManager.default.removeItem(at: fixture.root) }
-        let receiptProbe = RemoteBackgroundDeliveryReceiptRetryProbe()
+        let receiptProbe = RemoteObserverDeliveryReceiptRetryProbe()
         let client = CompetitionClient.remote(
             remoteAPI: remoteAPI(listCompetitions: { [] }),
             environment: .accelerated(source: fixture.source),
-            backgroundDeliveryReceiptFactory: { _ in
-                HealthKitBackgroundDeliveryReceiptClient { receipt in
+            observerDeliveryReceiptFactory: { _ in
+                HealthKitObserverDeliveryReceiptClient { receipt in
                     try await receiptProbe.commitFailingFirst(receipt)
                 }
             }
@@ -1994,20 +2105,20 @@ final class RemoteCompetitionClientTests: XCTestCase {
     func testConcurrentAndPostSuccessTerminalPreparationIsIdempotent()
         async throws
     {
-        let fixture = try makeBackgroundSignalFixture(
+        let fixture = try makeObserverSignalFixture(
             profileID: "81000000-0000-4000-8000-000000000037",
             epochID: "remote-background-terminal-idempotent",
             replaysPendingCompletionSignals: true
         )
         defer { try? FileManager.default.removeItem(at: fixture.root) }
-        let receiptProbe = RemoteProfileBoundBackgroundReceiptProbe(
+        let receiptProbe = RemoteProfileBoundObserverReceiptProbe(
             blockedProfileID: fixture.profile.id
         )
         let client = CompetitionClient.remote(
             remoteAPI: remoteAPI(listCompetitions: { [] }),
             environment: .accelerated(source: fixture.source),
-            backgroundDeliveryReceiptFactory: { paths in
-                HealthKitBackgroundDeliveryReceiptClient(
+            observerDeliveryReceiptFactory: { paths in
+                HealthKitObserverDeliveryReceiptClient(
                     contains: { signalID in
                         await receiptProbe.contains(
                             profileID: paths.profileID,
@@ -2076,7 +2187,7 @@ final class RemoteCompetitionClientTests: XCTestCase {
     }
 
     func testTerminalTeardownBlocksQueuedRemoteCommands() async throws {
-        let fixture = try makeBackgroundSignalFixture(
+        let fixture = try makeObserverSignalFixture(
             profileID: "81000000-0000-4000-8000-000000000036",
             epochID: "remote-background-terminal-command-gate",
             replaysPendingCompletionSignals: true
@@ -2113,14 +2224,14 @@ final class RemoteCompetitionClientTests: XCTestCase {
         api.archiveCompetition = { id in
             await commandProbe.recordArchive(id)
         }
-        let receiptProbe = RemoteProfileBoundBackgroundReceiptProbe(
+        let receiptProbe = RemoteProfileBoundObserverReceiptProbe(
             blockedProfileID: fixture.profile.id
         )
         let client = CompetitionClient.remote(
             remoteAPI: api,
             environment: .accelerated(source: fixture.source),
-            backgroundDeliveryReceiptFactory: { paths in
-                HealthKitBackgroundDeliveryReceiptClient(
+            observerDeliveryReceiptFactory: { paths in
+                HealthKitObserverDeliveryReceiptClient(
                     contains: { signalID in
                         await receiptProbe.contains(
                             profileID: paths.profileID,
@@ -2224,7 +2335,7 @@ final class RemoteCompetitionClientTests: XCTestCase {
     func testCancelledQueuedCreateInviteDoesNotExecuteRemoteWrite()
         async throws
     {
-        let fixture = try makeBackgroundSignalFixture(
+        let fixture = try makeObserverSignalFixture(
             profileID: "81000000-0000-4000-8000-000000000045",
             epochID: "remote-cancelled-command-gate"
         )
@@ -2288,7 +2399,7 @@ final class RemoteCompetitionClientTests: XCTestCase {
     }
 
     func testCancelledQueuedArchiveDoesNotExecuteRemoteWrite() async throws {
-        let fixture = try makeBackgroundSignalFixture(
+        let fixture = try makeObserverSignalFixture(
             profileID: "81000000-0000-4000-8000-000000000046",
             epochID: "remote-cancelled-archive-gate"
         )
@@ -2334,7 +2445,7 @@ final class RemoteCompetitionClientTests: XCTestCase {
     func testPendingBackgroundCallbackStaysBoundToOriginProfile()
         async throws
     {
-        let fixture = try makeBackgroundSignalFixture(
+        let fixture = try makeObserverSignalFixture(
             profileID: "81000000-0000-4000-8000-000000000024",
             epochID: "remote-background-receipt-profile-switch",
             replaysPendingCompletionSignals: true
@@ -2359,14 +2470,14 @@ final class RemoteCompetitionClientTests: XCTestCase {
                 withIntermediateDirectories: true
             )
         }
-        let receiptProbe = RemoteProfileBoundBackgroundReceiptProbe(
+        let receiptProbe = RemoteProfileBoundObserverReceiptProbe(
             blockedProfileID: fixture.profile.id
         )
         let client = CompetitionClient.remote(
             remoteAPI: remoteAPI(listCompetitions: { [] }),
             environment: .accelerated(source: fixture.source),
-            backgroundDeliveryReceiptFactory: { paths in
-                HealthKitBackgroundDeliveryReceiptClient(
+            observerDeliveryReceiptFactory: { paths in
+                HealthKitObserverDeliveryReceiptClient(
                     contains: { signalID in
                         await receiptProbe.contains(
                             profileID: paths.profileID,
@@ -2483,7 +2594,7 @@ final class RemoteCompetitionClientTests: XCTestCase {
     func testBackgroundCallbackEmittedAfterStopRetainsPriorProfileOwner()
         async throws
     {
-        let fixture = try makeBackgroundSignalFixture(
+        let fixture = try makeObserverSignalFixture(
             profileID: "81000000-0000-4000-8000-000000000026",
             epochID: "remote-background-no-subscriber-profile-switch",
             replaysPendingCompletionSignals: true
@@ -2508,14 +2619,14 @@ final class RemoteCompetitionClientTests: XCTestCase {
                 withIntermediateDirectories: true
             )
         }
-        let receiptProbe = RemoteProfileBoundBackgroundReceiptProbe(
+        let receiptProbe = RemoteProfileBoundObserverReceiptProbe(
             blockedProfileID: nil
         )
         let client = CompetitionClient.remote(
             remoteAPI: remoteAPI(listCompetitions: { [] }),
             environment: .accelerated(source: fixture.source),
-            backgroundDeliveryReceiptFactory: { paths in
-                HealthKitBackgroundDeliveryReceiptClient(
+            observerDeliveryReceiptFactory: { paths in
+                HealthKitObserverDeliveryReceiptClient(
                     contains: { signalID in
                         await receiptProbe.contains(
                             profileID: paths.profileID,
@@ -2636,21 +2747,21 @@ final class RemoteCompetitionClientTests: XCTestCase {
     func testReplacementClientRecoversSameProfileBackgroundCallback()
         async throws
     {
-        let fixture = try makeBackgroundSignalFixture(
+        let fixture = try makeObserverSignalFixture(
             profileID: "81000000-0000-4000-8000-000000000028",
             epochID: "remote-background-client-replacement",
             replaysPendingCompletionSignals: true
         )
         defer { try? FileManager.default.removeItem(at: fixture.root) }
-        let receiptProbe = RemoteProfileBoundBackgroundReceiptProbe(
+        let receiptProbe = RemoteProfileBoundObserverReceiptProbe(
             blockedProfileID: fixture.profile.id
         )
         let makeClient = {
             CompetitionClient.remote(
                 remoteAPI: self.remoteAPI(listCompetitions: { [] }),
                 environment: .accelerated(source: fixture.source),
-                backgroundDeliveryReceiptFactory: { paths in
-                    HealthKitBackgroundDeliveryReceiptClient(
+                observerDeliveryReceiptFactory: { paths in
+                    HealthKitObserverDeliveryReceiptClient(
                         contains: { signalID in
                             await receiptProbe.contains(
                                 profileID: paths.profileID,
@@ -2717,7 +2828,7 @@ final class RemoteCompetitionClientTests: XCTestCase {
     func testQueuedOriginSummarySignalCannotReconcileReplacementProfile()
         async throws
     {
-        let fixture = try makeBackgroundSignalFixture(
+        let fixture = try makeObserverSignalFixture(
             profileID: "81000000-0000-4000-8000-000000000029",
             epochID: "remote-summary-profile-switch"
         )
@@ -2742,7 +2853,7 @@ final class RemoteCompetitionClientTests: XCTestCase {
             )
         }
         let listProbe = RemoteCompetitionClientProbe()
-        let receiptProbe = RemoteProfileBoundBackgroundReceiptProbe(
+        let receiptProbe = RemoteProfileBoundObserverReceiptProbe(
             blockedProfileID: nil
         )
         let client = CompetitionClient.remote(
@@ -2751,8 +2862,8 @@ final class RemoteCompetitionClientTests: XCTestCase {
                 return []
             }),
             environment: .accelerated(source: fixture.source),
-            backgroundDeliveryReceiptFactory: { paths in
-                HealthKitBackgroundDeliveryReceiptClient(
+            observerDeliveryReceiptFactory: { paths in
+                HealthKitObserverDeliveryReceiptClient(
                     contains: { signalID in
                         await receiptProbe.contains(
                             profileID: paths.profileID,
@@ -3370,11 +3481,12 @@ final class RemoteCompetitionClientTests: XCTestCase {
         await client.stop()
     }
 
-    private func makeBackgroundSignalFixture(
+    private func makeObserverSignalFixture(
         profileID: String,
         epochID: String,
+        trigger: ActivityRefreshTrigger = .observerWakeupBackground,
         replaysPendingCompletionSignals: Bool = false
-    ) throws -> RemoteBackgroundSignalFixture {
+    ) throws -> RemoteObserverSignalFixture {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(
@@ -3428,19 +3540,19 @@ final class RemoteCompetitionClientTests: XCTestCase {
                     try FixtureActivityChange(
                         at: signalDate,
                         updates: [],
-                        triggers: [.observerWakeupBackground]
+                        triggers: [trigger]
                     ),
                     try FixtureActivityChange(
                         at: barrierDate,
                         updates: [],
-                        triggers: [.observerWakeupBackground]
+                        triggers: [trigger]
                     ),
                 ]
             ),
             replaysPendingCompletionSignals:
                 replaysPendingCompletionSignals
         )
-        return RemoteBackgroundSignalFixture(
+        return RemoteObserverSignalFixture(
             root: root,
             profile: profile,
             paths: paths,
@@ -3791,12 +3903,12 @@ private actor RemoteCompetitionInstallationProbe {
     func removalIDs() -> [UUID] { removals }
 }
 
-private actor RemoteBackgroundDeliveryReceiptGate {
-    private var receipts: [HealthKitBackgroundDeliveryReceipt] = []
+private actor RemoteObserverDeliveryReceiptGate {
+    private var receipts: [HealthKitObserverDeliveryReceipt] = []
     private var isReleased = false
     private var releaseContinuation: CheckedContinuation<Void, Never>?
 
-    func record(_ receipt: HealthKitBackgroundDeliveryReceipt) {
+    func record(_ receipt: HealthKitObserverDeliveryReceipt) {
         receipts.append(receipt)
     }
 
@@ -3814,9 +3926,13 @@ private actor RemoteBackgroundDeliveryReceiptGate {
     }
 
     func receiptCount() -> Int { receipts.count }
+
+    func recordedReceipts() -> [HealthKitObserverDeliveryReceipt] {
+        receipts
+    }
 }
 
-private struct RemoteBackgroundSignalFixture {
+private struct RemoteObserverSignalFixture {
     let root: URL
     let profile: AuthenticatedProfile
     let paths: AuthenticatedProfileStoragePaths
@@ -3825,24 +3941,24 @@ private struct RemoteBackgroundSignalFixture {
     let barrierDate: Date
 }
 
-private struct RemoteBackgroundDeliveryInjectedFailure: Error {}
+private struct RemoteObserverDeliveryInjectedFailure: Error {}
 
-private actor RemoteBackgroundDeliveryReceiptRetryProbe {
+private actor RemoteObserverDeliveryReceiptRetryProbe {
     private struct AttemptWaiter {
         let minimum: Int
         let continuation: CheckedContinuation<Void, Never>
     }
 
-    private var attempts: [HealthKitBackgroundDeliveryReceipt] = []
+    private var attempts: [HealthKitObserverDeliveryReceipt] = []
     private var attemptWaiters: [UUID: AttemptWaiter] = [:]
 
     func commitFailingFirst(
-        _ receipt: HealthKitBackgroundDeliveryReceipt
+        _ receipt: HealthKitObserverDeliveryReceipt
     ) throws {
         attempts.append(receipt)
         resumeAttemptWaiters()
         if attempts.count == 1 {
-            throw RemoteBackgroundDeliveryInjectedFailure()
+            throw RemoteObserverDeliveryInjectedFailure()
         }
     }
 
@@ -3865,7 +3981,7 @@ private actor RemoteBackgroundDeliveryReceiptRetryProbe {
         }
     }
 
-    func attemptedReceipts() -> [HealthKitBackgroundDeliveryReceipt] {
+    func attemptedReceipts() -> [HealthKitObserverDeliveryReceipt] {
         attempts
     }
 
@@ -3894,7 +4010,7 @@ private final class RemoteLockedFlag: @unchecked Sendable {
     }
 }
 
-private actor RemoteBackgroundDeliveryReceiptPersistenceGate {
+private actor RemoteObserverDeliveryReceiptPersistenceGate {
     private struct CountWaiter {
         let minimum: Int
         let continuation: CheckedContinuation<Void, Never>
@@ -3902,9 +4018,9 @@ private actor RemoteBackgroundDeliveryReceiptPersistenceGate {
 
     private let onCancellation: @Sendable () -> Void
     private var storedBySignalID: [
-        String: HealthKitBackgroundDeliveryReceipt
+        String: HealthKitObserverDeliveryReceipt
     ] = [:]
-    private var commits: [HealthKitBackgroundDeliveryReceipt] = []
+    private var commits: [HealthKitObserverDeliveryReceipt] = []
     private var containsCalls = 0
     private var commitWaiters: [UUID: CountWaiter] = [:]
     private var containsWaiters: [UUID: CountWaiter] = [:]
@@ -3921,7 +4037,7 @@ private actor RemoteBackgroundDeliveryReceiptPersistenceGate {
     }
 
     func commitUntilCancelled(
-        _ receipt: HealthKitBackgroundDeliveryReceipt
+        _ receipt: HealthKitObserverDeliveryReceipt
     ) async {
         commits.append(receipt)
         resumeCommitWaiters()
@@ -4012,7 +4128,7 @@ private actor RemoteBackgroundDeliveryReceiptPersistenceGate {
     }
 }
 
-private actor RemoteProfileBoundBackgroundReceiptProbe {
+private actor RemoteProfileBoundObserverReceiptProbe {
     private struct CommitWaiter {
         let profileID: UUID
         let minimum: Int
@@ -4032,7 +4148,7 @@ private actor RemoteProfileBoundBackgroundReceiptProbe {
     private var containedSignalIDsByProfile: [UUID: [String]] = [:]
     private var committedSignalIDsByProfile: [UUID: [String]] = [:]
     private var committedReceiptsByProfile: [
-        UUID: [HealthKitBackgroundDeliveryReceipt]
+        UUID: [HealthKitObserverDeliveryReceipt]
     ] = [:]
     private var commitWaiters: [UUID: CommitWaiter] = [:]
     private var signalCommitWaiters: [UUID: SignalCommitWaiter] = [:]
@@ -4051,7 +4167,7 @@ private actor RemoteProfileBoundBackgroundReceiptProbe {
 
     func commit(
         profileID: UUID,
-        receipt: HealthKitBackgroundDeliveryReceipt
+        receipt: HealthKitObserverDeliveryReceipt
     ) async {
         commitCounts[profileID, default: 0] += 1
         committedSignalIDsByProfile[profileID, default: []].append(
@@ -4138,7 +4254,7 @@ private actor RemoteProfileBoundBackgroundReceiptProbe {
 
     func committedReceipts(
         profileID: UUID
-    ) -> [HealthKitBackgroundDeliveryReceipt] {
+    ) -> [HealthKitObserverDeliveryReceipt] {
         committedReceiptsByProfile[profileID, default: []]
     }
 

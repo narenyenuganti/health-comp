@@ -305,7 +305,10 @@ final class HealthKitProviderTests: XCTestCase {
         }
         await provider.synchronizeSummarySubscriptions(to: [window])
         observerUpdates.yield(
-            HealthKitObserverWakeup(completion: { completion.setTrue() })
+            HealthKitObserverWakeup(
+                trigger: .observerWakeupBackground,
+                completion: { completion.setTrue() }
+            )
         )
         await fulfillment(of: [received], timeout: 1)
         let signal = try XCTUnwrap(captured.value)
@@ -727,6 +730,7 @@ final class HealthKitProviderTests: XCTestCase {
         summaryUpdates.yield([untrustedPayload])
         observerUpdates.yield(
             HealthKitObserverWakeup(
+                trigger: .observerWakeupBackground,
                 completion: { completion.setTrue() }
             )
         )
@@ -793,6 +797,7 @@ final class HealthKitProviderTests: XCTestCase {
 
         observerUpdates.yield(
             HealthKitObserverWakeup(
+                trigger: .observerWakeupBackground,
                 completion: { completion.setTrue() }
             )
         )
@@ -847,7 +852,12 @@ final class HealthKitProviderTests: XCTestCase {
         for _ in 0..<10 { await Task.yield() }
         XCTAssertFalse(observerStopped.value)
 
-        observerUpdates.yield(HealthKitObserverWakeup(completion: {}))
+        observerUpdates.yield(
+            HealthKitObserverWakeup(
+                trigger: .observerWakeupBackground,
+                completion: {}
+            )
+        )
         await fulfillment(of: [received], timeout: 1)
         firstReader.cancel()
         secondReader.cancel()
@@ -890,6 +900,7 @@ final class HealthKitProviderTests: XCTestCase {
         }
         observerUpdates.yield(
             HealthKitObserverWakeup(
+                trigger: .observerWakeupBackground,
                 completion: { completion.setTrue() }
             )
         )
@@ -949,7 +960,9 @@ final class HealthKitProviderTests: XCTestCase {
         try await provider.commitSignalOwnershipActivation(originActivation)
         let originScope = originActivation.scope
         let originStream = await provider.signals()
-        let capturedWakeup = provider.captureObserverWakeup {
+        let capturedWakeup = provider.captureObserverWakeup(
+            trigger: .observerWakeupBackground
+        ) {
             completionCount.increment()
         }
 
@@ -1087,7 +1100,9 @@ final class HealthKitProviderTests: XCTestCase {
         let stream = await provider.signals()
 
         observerUpdates.yield(
-            HealthKitObserverWakeup {
+            HealthKitObserverWakeup(
+                trigger: .observerWakeupBackground
+            ) {
                 completion.setTrue()
             }
         )
@@ -1277,6 +1292,129 @@ final class HealthKitProviderTests: XCTestCase {
         XCTAssertNotEqual(signal.ownershipScope, originScope)
     }
 
+    func testObserverIngressSnapshotsTriggerBeforeIngressHookAndAsyncConsumption()
+        async throws
+    {
+        let ingressHookEntered = expectation(
+            description: "observer ingress hook entered"
+        )
+        let wakeupReceived = expectation(
+            description: "classified observer wakeup received"
+        )
+        let releaseIngressHook = DispatchSemaphore(value: 0)
+        let triggerSource = LockedActivityRefreshTrigger(
+            .observerWakeupBackground
+        )
+        let completionCount = LockedCounter()
+        let driver = TestHealthKitObserverUpdateDriver(onStop: {})
+        let registry = HealthKitSignalOwnershipRegistry()
+        let controller = HealthKitObserverUpdateController(
+            driver: driver.driver,
+            ownershipRegistry: registry,
+            triggerSnapshot: { triggerSource.value },
+            didRegisterIngress: {
+                ingressHookEntered.fulfill()
+                releaseIngressHook.wait()
+            }
+        )
+        let profileID = UUID()
+        let activation = try registry.activate(for: profileID)
+        try registry.commit(activation)
+        let stream = controller.stream()
+        let wakeupBox = LockedObserverWakeupBox()
+        let reader = Task {
+            var iterator = stream.makeAsyncIterator()
+            wakeupBox.set(await iterator.next())
+            wakeupReceived.fulfill()
+        }
+        let fireTask = Task.detached {
+            driver.fire(at: 0) {
+                completionCount.increment()
+            }
+        }
+        await fulfillment(of: [ingressHookEntered], timeout: 1)
+
+        triggerSource.set(.observerWakeupForeground)
+        releaseIngressHook.signal()
+
+        await fulfillment(of: [wakeupReceived], timeout: 1)
+        await fireTask.value
+        let wakeup = try XCTUnwrap(wakeupBox.value)
+        XCTAssertEqual(wakeup.trigger, .observerWakeupBackground)
+        XCTAssertEqual(completionCount.value, 0)
+        wakeup.completion()
+        XCTAssertEqual(completionCount.value, 1)
+
+        _ = try registry.beginQuiescence(for: profileID)
+        controller.stop()
+        try registry.retire(profileID: profileID)
+        reader.cancel()
+    }
+
+    func testForegroundAndBackgroundObserverWakeupsPreserveTriggersAndCompletionOwnership()
+        async throws
+    {
+        let observerUpdates = TestAsyncStream<HealthKitObserverWakeup>()
+        let completionCount = LockedCounter()
+        let provider = HealthKitProvider(
+            userId: UUID(),
+            competitionDependencies: HealthKitCompetitionDependencies(
+                isHealthDataAvailable: { true },
+                requestAuthorization: { _ in },
+                readActivitySummaries: { _ in [] },
+                resolveStandMode: { .unknown },
+                summaryUpdates: { _ in AsyncStream { $0.finish() } },
+                observerUpdates: { observerUpdates.stream },
+                stopObserverUpdates: { observerUpdates.finish() }
+            )
+        )
+        let activation = try await activateOwner(provider)
+        let stream = await provider.signals()
+        let received = expectation(description: "two observer signals received")
+        received.expectedFulfillmentCount = 2
+        let signalBox = LockedSignalsBox()
+        let reader = Task {
+            var iterator = stream.makeAsyncIterator()
+            for _ in 0..<2 {
+                if let signal = await iterator.next() {
+                    signalBox.append(signal)
+                    received.fulfill()
+                }
+            }
+        }
+
+        observerUpdates.yield(
+            HealthKitObserverWakeup(
+                trigger: .observerWakeupForeground,
+                completion: { completionCount.increment() }
+            )
+        )
+        observerUpdates.yield(
+            HealthKitObserverWakeup(
+                trigger: .observerWakeupBackground,
+                completion: { completionCount.increment() }
+            )
+        )
+
+        await fulfillment(of: [received], timeout: 1)
+        let signals = signalBox.value
+        XCTAssertEqual(
+            signals.map(\.trigger),
+            [.observerWakeupForeground, .observerWakeupBackground]
+        )
+        XCTAssertTrue(signals.allSatisfy(\.requiresCompletion))
+        XCTAssertEqual(completionCount.value, 0)
+        for signal in signals {
+            let accepted = await provider.completeSignal(signal.id)
+            XCTAssertTrue(accepted)
+        }
+        XCTAssertEqual(completionCount.value, 2)
+
+        _ = try await provider.quiesceSignalOwnership(activation.lease)
+        try await provider.retireSignalOwnership(activation.lease)
+        reader.cancel()
+    }
+
     func testObserverIngressDrainsOriginEpochBeforeReplacementStarts()
         async throws
     {
@@ -1301,6 +1439,7 @@ final class HealthKitProviderTests: XCTestCase {
         let controller = HealthKitObserverUpdateController(
             driver: driver.driver,
             ownershipRegistry: registry,
+            triggerSnapshot: { .observerWakeupBackground },
             didRegisterIngress: {
                 guard ingressCount.incrementAndGet() == 1 else { return }
                 originIngressEntered.fulfill()
@@ -1448,12 +1587,16 @@ final class HealthKitProviderTests: XCTestCase {
         }
 
         firstUpdates.yield(
-            HealthKitObserverWakeup {
+            HealthKitObserverWakeup(
+                trigger: .observerWakeupBackground
+            ) {
                 firstCompletion.setTrue()
             }
         )
         secondUpdates.yield(
-            HealthKitObserverWakeup {
+            HealthKitObserverWakeup(
+                trigger: .observerWakeupBackground
+            ) {
                 secondCompletion.setTrue()
             }
         )
@@ -1672,6 +1815,23 @@ private final class LockedObserverWakeupBox: @unchecked Sendable {
     }
 
     func set(_ value: HealthKitObserverWakeup?) {
+        lock.withLock { storage = value }
+    }
+}
+
+private final class LockedActivityRefreshTrigger: @unchecked Sendable {
+    private let lock = NSLock()
+    private var storage: ActivityRefreshTrigger
+
+    init(_ value: ActivityRefreshTrigger) {
+        self.storage = value
+    }
+
+    var value: ActivityRefreshTrigger {
+        lock.withLock { storage }
+    }
+
+    func set(_ value: ActivityRefreshTrigger) {
         lock.withLock { storage = value }
     }
 }
