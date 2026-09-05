@@ -236,6 +236,15 @@ final class LocalCompetitionLifecycleUITests: XCTestCase {
         )
         XCTAssertFalse(app.otherElements["competition.ownerRings"].exists)
         XCTAssertTrue(app.staticTexts["Day 1"].exists)
+        let unavailableDay = app.descendants(matching: .any)["competition.day.1"]
+        scrollToElement(unavailableDay)
+        let unavailableLabel = unavailableDay.label
+        XCTAssertTrue(unavailableLabel.contains("Day 1, Today, scores so far"))
+        XCTAssertTrue(unavailableLabel.contains(
+            "Naren, Activity source is temporarily unavailable, --"
+        ))
+        XCTAssertTrue(unavailableLabel.contains("Alex,"))
+        XCTAssertFalse(unavailableLabel.contains("unavailable, 0 points"))
         capture("light-small-unavailable")
     }
 
@@ -555,6 +564,7 @@ final class LocalCompetitionLifecycleUITests: XCTestCase {
         reuseRunID: Bool = false
     ) {
         if app.state != .notRunning { app.terminate() }
+        app = XCUIApplication()
         XCUIDevice.shared.appearance = appearanceArguments.contains("Dark")
             ? .dark
             : .light
