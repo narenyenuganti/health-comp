@@ -46,6 +46,7 @@ jobs:
           bash -n scripts/test-recovery-foreign-key-static.sh
           bash scripts/test-recovery-foreign-key-static.sh
           bash scripts/test-recovery-foreign-key-integrity.sh --static
+          bash scripts/test-recovery-state-acceptance.sh --static
           sh scripts/test-verify-invitation-functions.sh
           sh scripts/test-staging-adversarial-sql.sh
           sh scripts/test-verify-app-attest-dependency-graph.sh
@@ -66,6 +67,7 @@ jobs:
           set -euo pipefail
           schema_diff="$(mktemp "$RUNNER_TEMP/healthcomp-schema-diff.XXXXXX")"
           foreign_key_output=''
+          state_output=''
 
           cleanup() {
             supabase stop --no-backup >/dev/null 2>&1 || true
@@ -73,12 +75,16 @@ jobs:
             if [[ -n "$foreign_key_output" ]]; then
               rm -f -- "$foreign_key_output"
             fi
+            if [[ -n "$state_output" ]]; then
+              rm -f -- "$state_output"
+            fi
           }
           trap cleanup EXIT
           trap 'exit 130' INT
           trap 'exit 143' TERM
           trap 'exit 129' HUP
           foreign_key_output="$(mktemp "$RUNNER_TEMP/healthcomp-fk-check.XXXXXX")"
+          state_output="$(mktemp "$RUNNER_TEMP/healthcomp-state-check.XXXXXX")"
 
           supabase start
           supabase db reset
@@ -119,27 +125,43 @@ jobs:
               --host=/var/run/postgresql --username=postgres \
               --dbname=healthcomp_recovery_fixture --set=ON_ERROR_STOP=on
           docker exec "$database_containers" mkdir \
-            /tmp/healthcomp-recovery-checks /tmp/healthcomp-recovery-checks/tests
+            /tmp/healthcomp-recovery-checks \
+            /tmp/healthcomp-recovery-checks/scripts \
+            /tmp/healthcomp-recovery-checks/scripts/tests \
+            /tmp/healthcomp-recovery-checks/supabase \
+            /tmp/healthcomp-recovery-checks/supabase/migrations
           for recovery_file in recovery-history-integrity.sql \
             recovery-history-integrity-query.sql test-recovery-history-wrapper.sh \
-            recovery-foreign-key-integrity.sql test-recovery-foreign-key-integrity.sh; do
+            recovery-foreign-key-integrity.sql test-recovery-foreign-key-integrity.sh \
+            recovery-state-acceptance.sql recovery-state-acceptance-query.sql \
+            test-recovery-state-acceptance.sh; do
             docker cp "scripts/$recovery_file" \
-              "$database_containers:/tmp/healthcomp-recovery-checks/$recovery_file"
+              "$database_containers:/tmp/healthcomp-recovery-checks/scripts/$recovery_file"
           done
           docker cp scripts/tests/recovery-foreign-key-fixtures.sql \
-            "$database_containers:/tmp/healthcomp-recovery-checks/tests/recovery-foreign-key-fixtures.sql"
+            "$database_containers:/tmp/healthcomp-recovery-checks/scripts/tests/recovery-foreign-key-fixtures.sql"
+          docker cp scripts/tests/recovery-state-fixtures.sql \
+            "$database_containers:/tmp/healthcomp-recovery-checks/scripts/tests/recovery-state-fixtures.sql"
+          docker cp supabase/migrations/20260811000200_add_competition_rls.sql \
+            "$database_containers:/tmp/healthcomp-recovery-checks/supabase/migrations/20260811000200_add_competition_rls.sql"
           # The fixture guard requires the image's local superuser. Supabase's
           # postgres role is not a superuser; actual-schema checks keep that role.
           docker exec \
             --env PGHOST=/var/run/postgresql --env PGUSER=supabase_admin \
             --env PGDATABASE=healthcomp_recovery_fixture \
             "$database_containers" bash \
-              /tmp/healthcomp-recovery-checks/test-recovery-history-wrapper.sh
+              /tmp/healthcomp-recovery-checks/scripts/test-recovery-history-wrapper.sh
           # The FK suite owns exact synthetic objects and verifies empty cleanup.
           docker exec \
             --env PGHOST=/var/run/postgresql --env PGUSER=supabase_admin \
             "$database_containers" bash \
-              /tmp/healthcomp-recovery-checks/test-recovery-foreign-key-integrity.sh
+              /tmp/healthcomp-recovery-checks/scripts/test-recovery-foreign-key-integrity.sh
+          # State fixtures preserve existing API roles and verify exact empty
+          # cleanup before any real-schema checks. No hosted project is used.
+          docker exec \
+            --env PGHOST=/var/run/postgresql --env PGUSER=supabase_admin \
+            "$database_containers" bash \
+              /tmp/healthcomp-recovery-checks/scripts/test-recovery-state-acceptance.sh
           docker exec "$database_containers" dropdb \
             --host=/var/run/postgresql --username=postgres healthcomp_recovery_fixture
 
@@ -149,13 +171,13 @@ jobs:
             --no-psqlrc --no-password --quiet --tuples-only --no-align \
             --host=/var/run/postgresql --username=postgres --dbname=postgres \
             --set=ON_ERROR_STOP=on \
-            --file=/tmp/healthcomp-recovery-checks/recovery-history-integrity.sql
+            --file=/tmp/healthcomp-recovery-checks/scripts/recovery-history-integrity.sql
 
           # Fresh ordinary-role connection; require exit zero and no output bytes.
           # Never print captured output, including unexpected database diagnostics.
           if ! docker exec "$database_containers" psql -XqAt --no-password \
             --host=/var/run/postgresql --username=postgres --dbname=postgres \
-            --file=/tmp/healthcomp-recovery-checks/recovery-foreign-key-integrity.sql \
+            --file=/tmp/healthcomp-recovery-checks/scripts/recovery-foreign-key-integrity.sql \
             >"$foreign_key_output" 2>&1; then
             echo "Foreign-key schema compatibility check failed." >&2
             exit 1
@@ -164,6 +186,18 @@ jobs:
             echo "Foreign-key schema compatibility check produced unexpected output." >&2
             exit 1
           fi
+
+          # Exact 31-field empty-state receipt from the actual migrated schema,
+          # not just synthetic projections. Never print rejected output/errors.
+          if ! docker exec "$database_containers" psql -XqAt --no-password \
+            --host=/var/run/postgresql --username=postgres --dbname=postgres \
+            --file=/tmp/healthcomp-recovery-checks/scripts/recovery-state-acceptance.sql \
+            >"$state_output" 2>&1; then
+            echo "State schema compatibility check failed." >&2
+            exit 1
+          fi
+          bash scripts/test-recovery-state-acceptance.sh --check-empty-receipt <"$state_output"
+          echo "State schema compatibility passed: exact empty receipt, 17 application tables."
 
           deno test \
             --config supabase/functions/deno.json \
