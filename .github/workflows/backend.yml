@@ -115,8 +115,10 @@ jobs:
             docker cp "scripts/$recovery_file" \
               "$database_containers:/tmp/healthcomp-recovery-checks/$recovery_file"
           done
+          # The fixture guard requires the image's local superuser. Supabase's
+          # postgres role is not a superuser; actual-schema checks keep that role.
           docker exec \
-            --env PGHOST=/var/run/postgresql --env PGUSER=postgres \
+            --env PGHOST=/var/run/postgresql --env PGUSER=supabase_admin \
             --env PGDATABASE=healthcomp_recovery_fixture \
             "$database_containers" bash \
               /tmp/healthcomp-recovery-checks/test-recovery-history-wrapper.sh
