@@ -68,20 +68,43 @@ enum MultiUserCompetitionTestLabLaunchParser {
 
 struct MultiUserCompetitionTestLabRootView: View {
     let configuration: MultiUserCompetitionTestLabConfiguration
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         VStack(spacing: 0) {
             Text("REMOTE UI TEST LAB")
-                .font(.caption2.weight(.bold))
+                .font(.body.weight(.bold))
                 .foregroundStyle(.secondary)
                 .padding(.vertical, 6)
                 .frame(maxWidth: .infinity)
                 .background(.thinMaterial)
                 .accessibilityIdentifier("multiuser.testlab.banner")
+                .accessibilityValue(renderedConfigurationAccessibilityValue)
 
             scenarioView
         }
         .accessibilityIdentifier("multiuser.testlab.root")
+    }
+
+    private var renderedConfigurationAccessibilityValue: String {
+        let appearance = colorScheme == .dark ? "Dark" : "Light"
+        let contentSize: String = switch dynamicTypeSize {
+        case .xSmall: "xSmall"
+        case .small: "small"
+        case .medium: "medium"
+        case .large: "large"
+        case .xLarge: "xLarge"
+        case .xxLarge: "xxLarge"
+        case .xxxLarge: "xxxLarge"
+        case .accessibility1: "accessibility1"
+        case .accessibility2: "accessibility2"
+        case .accessibility3: "accessibility3"
+        case .accessibility4: "accessibility4"
+        case .accessibility5: "accessibility5"
+        @unknown default: "unknown"
+        }
+        return "Appearance: \(appearance); Dynamic Type: \(contentSize)"
     }
 
     @ViewBuilder

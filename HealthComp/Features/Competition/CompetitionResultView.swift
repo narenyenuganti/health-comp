@@ -79,10 +79,7 @@ struct CompetitionResultView: View {
             Text("Final score")
                 .font(.headline)
 
-            ViewThatFits(in: .horizontal) {
-                HStack(spacing: 24) { finalScoreOwners }
-                VStack(spacing: 18) { finalScoreOwners }
-            }
+            CompetitionFinalScoreLayout { finalScoreOwners }
         }
         .frame(maxWidth: .infinity)
         .padding(20)
@@ -414,6 +411,67 @@ func competitionResultSubtitle(
             : "\(opponentDisplayName)’s seven-day Activity total finished ahead."
     case .tie:
         "Both seven-day totals finished even."
+    }
+}
+
+// Keep one owner hierarchy while fitting the native stack to available width.
+struct CompetitionFinalScoreLayout: Layout {
+    func sizeThatFits(
+        proposal: ProposedViewSize,
+        subviews: Subviews,
+        cache: inout ()
+    ) -> CGSize {
+        let contentProposal = contentSizedProposal(proposal)
+        let layout = fittingLayout(proposal: contentProposal, subviews: subviews)
+        var layoutCache = layout.makeCache(subviews: subviews)
+        return layout.sizeThatFits(
+            proposal: contentProposal, subviews: subviews, cache: &layoutCache
+        )
+    }
+
+    func placeSubviews(
+        in bounds: CGRect,
+        proposal: ProposedViewSize,
+        subviews: Subviews,
+        cache: inout ()
+    ) {
+        let contentProposal = contentSizedProposal(proposal)
+        let layout = fittingLayout(proposal: contentProposal, subviews: subviews)
+        var layoutCache = layout.makeCache(subviews: subviews)
+        _ = layout.sizeThatFits(
+            proposal: contentProposal, subviews: subviews, cache: &layoutCache
+        )
+        layout.placeSubviews(
+            in: bounds, proposal: contentProposal, subviews: subviews,
+            cache: &layoutCache
+        )
+    }
+
+    private func contentSizedProposal(_ proposal: ProposedViewSize) -> ProposedViewSize {
+        // This text-only card uses its ideal size for unbounded dimensions.
+        // Preserve finite width when only height is unbounded so names wrap.
+        ProposedViewSize(
+            width: proposal.width.flatMap { $0.isFinite ? $0 : nil },
+            height: proposal.height.flatMap { $0.isFinite ? $0 : nil }
+        )
+    }
+
+    private func fittingLayout(
+        proposal: ProposedViewSize,
+        subviews: Subviews
+    ) -> AnyLayout {
+        let horizontal = AnyLayout(HStackLayout(spacing: 24))
+        guard let width = proposal.width, width.isFinite else {
+            return horizontal
+        }
+        var horizontalCache = horizontal.makeCache(subviews: subviews)
+        let idealWidth = horizontal.sizeThatFits(
+            proposal: .unspecified, subviews: subviews,
+            cache: &horizontalCache
+        ).width
+        return idealWidth <= width
+            ? horizontal
+            : AnyLayout(VStackLayout(spacing: 18))
     }
 }
 

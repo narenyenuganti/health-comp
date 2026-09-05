@@ -1,10 +1,10 @@
 # HealthComp Production Beta Verification Checklist
 
-**Snapshot:** 2026-09-01 PDT
-**Selected application baseline:**
+**Snapshot:** 2026-09-04 PDT
+**Selected physical build commit:**
 `c5932ed2ff83c157f0703472a279474cb0240cc4`
 **Selected release artifact:** `HealthComp-Staging-c5932ed-20260901.app`;
-built from exact evidence main `c5932ed2ff83c157f0703472a279474cb0240cc4`,
+built from exact build commit `c5932ed2ff83c157f0703472a279474cb0240cc4`,
 whose application source is `76b797d2fc706d40121dd85478c3edbedac04e38`.
 The retained 23,180 KiB artifact is signed and passes strict offline signing,
 configuration, entitlement, source-cleanliness, and frozen-package validation.
@@ -15,15 +15,21 @@ SHA-256 `c98c3880971fbc0c02f3402b95ca5f85096243ce75d6f71222e5958602fa23a4`;
 the package-lock SHA-256 is
 `436fe2d4c83e2e7bbe1f236afb6dcb81b0d5b530e4fa75aaf920a6da51519a21`.
 Scratch build state and the copied configuration were removed while the root
-configuration was preserved. The artifact has not been installed, launched,
-or physically exercised, inherits no physical evidence from older artifacts,
-and is not cleared for production. Previously selected artifact `c3a8fb2`
+configuration was preserved. A September 2 receipt subsequently proves its
+state-preserving physical installation and authenticated retained-session
+launch. A later September 2 window produced six clean new background-classified
+receipts, but the final process differed from the armed process; the full
+background-provenance gate remains unpassed. The selected artifact inherits no
+physical evidence from older artifacts and is not cleared for production.
+Previously selected artifact `c3a8fb2`
 remains the named historical source for its state-preserving install,
 authenticated-session continuity, and six pre-fix observer-callback receipts.
-**Current integrated application baseline:**
-`c5932ed2ff83c157f0703472a279474cb0240cc4`; PR #84 integrated reviewed
+**Current integrated evidence main:**
+`32c5df7ee4951ffa32965217d6c51ea4c07e10de`; PR #84 integrated reviewed
 observer-delivery provenance source `76b797d` plus truthful release updates.
-The application tree is unchanged by PR #84's later evidence-only commit.
+PR #85 changed only the two release ledgers. Application and backend source
+remain identical to selected build commit `c5932ed`; this evidence-only advance
+does not select a new binary.
 **Integrated observer-callback durability candidate:**
 `886bd60`; independent durability and profile-isolation findings against the
 pre-review `38365d1` candidate are resolved. The exact reviewed PR head passed
@@ -47,14 +53,23 @@ both Debug and Release, unsigned Debug/Staging/Release device builds,
 deterministic XcodeGen, package-lock preservation, the repository secret/layout
 guards, and independent standards/spec reviews with no Critical or Important
 findings. Exact-head Backend and iOS CI passed on PR head `b2bc965`; post-merge
-Backend and iOS CI passed on exact merge commit `c5932ed`. The selected signed
-artifact now passes offline validation only; installation, launch, and an
-attributable physical background-wake receipt remain pending.
+Backend and iOS CI passed on exact merge commit `c5932ed`. Selected-artifact
+installation, retained-session continuity, and new observer-receipt persistence
+now have dated physical evidence; attributable background-wake provenance is
+still incomplete because the delayed final readback could not prove process
+continuity.
 **Release status:** Not production-ready
+
+This snapshot reconciles retained physical evidence and the September 4
+read-only hosted inventory below. Device/process/authentication state, jobs,
+provider/key validity, and plan entitlements were not refreshed. All mutable
+facts remain scoped to their dated readback; no older armed process is assumed
+to remain running.
 
 Status meanings:
 
-- **PASS** — direct current-state evidence exists for the stated scope.
+- **PASS** — direct evidence exists for the stated source, artifact, and dated
+  scope; mutable runtime or hosted state is not thereby verified today.
 - **PARTIAL** — some required evidence exists, but the gate is not complete.
 - **BLOCKED** — a named external input or environment change is required.
 - **PENDING** — the gate has not yet been executed.
@@ -87,6 +102,14 @@ Status meanings:
 
 ## Automated matrix
 
+- **PASS:** Evidence-only PR #85 advanced integrated main to `32c5df7`.
+  [Backend run 33573624938](https://github.com/narenyenuganti/health-comp/actions/runs/33573624938)
+  and [iOS run 33573624883](https://github.com/narenyenuganti/health-comp/actions/runs/33573624883)
+  completed successfully on exact `32c5df7` on September 2 UTC; the September 4
+  takeover audit verified their completed run/job metadata. These are retained
+  successful executions, not reruns. Application/backend source is unchanged
+  from selected build `c5932ed`. The iOS job runs `HealthCompTests`; it does not
+  establish completion of the separate full XCUITest/release interaction matrix.
 - **PASS:** PR #84 integrated reviewed observer-delivery provenance source
   `76b797d` as merge commit `c5932ed`. Exact-head Backend run
   [33563672310](https://github.com/narenyenuganti/health-comp/actions/runs/33563672310)
@@ -97,8 +120,8 @@ Status meanings:
   and iOS run
   [33566573134](https://github.com/narenyenuganti/health-comp/actions/runs/33566573134)
   passed on exact merge commit `c5932ed`. The source is now selected in the
-  signed, offline-validated artifact named above; its physical install and an
-  attributable background-wake receipt remain pending.
+  signed artifact named above. Its physical install and retained-session launch
+  passed on September 2; an attributable background-wake receipt remains pending.
 - **PASS:** Evidence-only PR #77 merged as `da0fbdc`. Exact-head Backend run
   [32827132991](https://github.com/narenyenuganti/health-comp/actions/runs/32827132991)
   and iOS run
@@ -328,7 +351,7 @@ Status meanings:
   Health datum, or row body was returned, displayed, or retained. The 24-key
   aggregate-only receipt is mode `0600` and has SHA-256
   `e7af774da15905ebc3a7308237903c35fd8c365d9673a9fe60563c7ae28fe0b3`.
-  This proves current hosted eligibility and gap-free history for Account A;
+  This proves hosted eligibility and gap-free history for Account A in that window;
   it does not prove the authenticated app request reached or decoded that state.
 - **PASS:** On exact merged main `224840e`, the reviewed score-row identifier
   correction passed its RED-to-GREEN regression, 57 focused tests, 480/480
@@ -431,6 +454,29 @@ Status meanings:
 
 ## Hosted staging
 
+These are dated deployment and readback receipts. The September 4 inventory
+refreshes project/Function state, aggregate lifecycle counts, and backup-list
+availability only; provider/key validity, job health, and plan entitlements
+remain last-observed setup facts.
+
+- **PASS (inventory scope only):** The September 4 inventory, recorded at
+  `2026-09-04T21:37:41Z`, used existing CLI authentication and a SELECT-only
+  aggregate query. The inventory found staging
+  `ACTIVE_HEALTHY`, nine `ACTIVE` Functions including `submit-score-revision`
+  version 11, and fifteen applied migrations. Staging had two active profiles,
+  zero anonymized profiles, three competitions, zero unfinished competitions,
+  one completed/archived competition, zero overdue unfinalized competitions,
+  two accepted score revisions from one distinct submitting profile, zero
+  final-window attestations, one `best_available` result, zero stable results,
+  one award, and one consumed invitation. These counts do not identify which
+  account submitted and do not complete both-account scoring or lifecycle
+  evidence. Production was `INACTIVE`. The staging backup list was empty and
+  PITR was disabled, but plan entitlements/pricing were not verified. No jobs,
+  delivery, authenticated app session, or physical service was exercised.
+  Receipt `hosted-release-readonly-inventory-2026-09-04T213741Z.json` has SHA-256
+  `bbb263d9c3036fb8b20a70df78cf1c25c5c12da53cd8a0377dacd1a5c7519a42`;
+  it contains no credentials, private identifiers, or row bodies.
+
 - **PASS:** The current Staging target is `xhfdfdrtxwptrwhvvlhg`. Approval of a
   future Production environment must verify a different project reference
   before any promotion.
@@ -451,8 +497,10 @@ Status meanings:
   migration applied with exact gap-free local/remote parity. The CLI was
   unlinked afterward and no project-ref file remained.
 - **PASS:** The corrected five-minute finalizer and one-minute notification
-  repair jobs have both completed successfully.
-- **PASS:** Apple Auth, environment-scoped Function secrets, worker Vault
+  repair jobs completed successfully in the retained August setup/readback
+  windows; continued job health requires a fresh readback.
+- **PASS:** In the retained August setup/readback windows, Apple Auth,
+  environment-scoped Function secrets, worker Vault
   values, and the topic-restricted sandbox APNs key were read back without
   exposing secret values.
 - **PASS:** A SELECT-only hosted inventory ending at
@@ -518,7 +566,7 @@ Status meanings:
 - **PASS:** Application source `dd0ed68` routes live invitation
   creation through `create-competition-invite` and claims through
   `claim-competition-invite`; those route boundaries remain present in selected
-  artifact and current integrated main `c5932ed`. The then-selected
+  artifact `c5932ed` and integrated evidence main `32c5df7`. The then-selected
   artifact completed both actions above,
   and hosted state records their create/consume effects. At
   `2026-08-20T02:32:28Z`, read-only dashboard summaries reported exactly one
@@ -597,10 +645,11 @@ Status meanings:
 
 ## Paid-team signing and installation
 
-- **PASS:** Xcode reads the paid Apple Developer team as an Admin team with one
-  provisioned device.
+- **PASS:** The retained signing setup readback found the paid Apple Developer
+  team as an Admin team with one provisioned device; account membership is a
+  last-observed fact.
 - **PASS:** Automatic signing produced selected artifact
-  `HealthComp-Staging-c5932ed-20260901.app` from exact evidence main `c5932ed`
+  `HealthComp-Staging-c5932ed-20260901.app` from exact build commit `c5932ed`
   and application source `76b797d` as a 23,180 KiB Staging device build for
   `23LUYD78QK.com.narenyenuganti.HealthComp.staging`. Its executable matched
   SHA-256 `1658b606f986ce39fc878673fc3b5b7e7fe495e72f386109be1181f4397a6e71`.
@@ -623,9 +672,29 @@ Status meanings:
   snapshot roots were removed, and iPhone Mirroring was minimized. Privacy-safe
   receipt SHA-256:
   `0383fde3ee55bceff2dbccbdf0a14195687471c12211822ad5f410a40c92e1e7`.
-- **PENDING:** Current selected artifact `c5932ed` has not been installed or
-  launched. Its offline build receipt does not prove container preservation,
-  authenticated runtime, observer delivery, or any physical service gate.
+- **PASS:** On September 2 UTC, selected artifact `c5932ed` over-installed
+  without erasing profile state. Pre-install state contained one profile root,
+  eleven files, and thirteen observer receipts; post-install state was preserved
+  exactly. One launch reached authenticated Sharing with no sign-in/setup,
+  connection-error, or Health-prompt surface. This proves installation and
+  retained-session continuity, not fresh native authorization or an accepted
+  foreground score/App Attest submission. Receipt
+  `physical-background-observer-process-replaced-c5932ed-2026-09-02T064419Z.json`
+  has SHA-256 `1ba673b9763339a4a06ce0c88726c59464c5f57c2eb4664ce7f7521bfb453c83`.
+  Its background gate remained false: no new receipt appeared and the final
+  process differed from the armed process. No crash report was found in that
+  window; the cause of process replacement was not established.
+- **PARTIAL:** A later September 2 window on the same selected artifact
+  increased the sealed event baseline from 38 to 44 receipts. All six new
+  receipts were unique `observerWakeupBackground` entries, issue-free, and
+  carried positive publication revisions; no foreground or disqualifying new
+  receipt appeared, and all preexisting receipts were unchanged. The final
+  readback found a different process, so same-process provenance was unproven
+  and `gate_passed` remained `false`. Receipt
+  `physical-background-observer-receipts-process-continuity-unproven-c5932ed-2026-09-02T221010Z.json`
+  has SHA-256 `79bf470b8af7320b1b31b1ee7c2d073cdb0fa972dd9021dc48b1f1d077762bb7`.
+  These selected-artifact receipts establish their dated subset only; current
+  phone state requires a fresh readback.
 - **PASS:** Build 1 from prior selected source commit
   `9d199377f5d72cb7bc90133c190e4e7681abfb41` was signed with the paid-team
   profile, freshly installed after device inventory confirmed that no
@@ -696,25 +765,27 @@ Status meanings:
 
 | Gate | Status | Required evidence |
 | --- | --- | --- |
-| Signed staging launch | PARTIAL | Selected artifact `c5932ed` is signed, strictly validated, and retained with executable SHA-256 `1658b606f986ce39fc878673fc3b5b7e7fe495e72f386109be1181f4397a6e71`; build receipt SHA-256 is `c98c3880971fbc0c02f3402b95ca5f85096243ce75d6f71222e5958602fa23a4`. Installation, launch, and authenticated runtime remain pending. Previously selected `c3a8fb2`'s clean launch receipt is historical and does not transfer |
-| Sign in with Apple | PARTIAL | Then-selected artifact `aa16411` completed one fresh native authorization and warning-free authenticated readback. Previously selected artifact `c3a8fb2` preserved and restored that session through a state-preserving over-install. Exact selected artifact `c5932ed` has not been installed or completed a fresh native authorization |
-| HealthKit | PARTIAL | Grant, revoke, and re-enable startup paths completed historically; then-selected artifact `aa16411` displayed an active-competition derived score and submitted one HealthKit-derived revision. Previously selected `c3a8fb2` physically received and durably recorded six issue-free callbacks under the pre-fix provenance contract. Exact selected artifact `c5932ed` has not repeated authorization, foreground submission, or observer delivery |
-| Background observer | PARTIAL | During one manual foreground launch, previously selected `c3a8fb2` produced six unique observer-callback receipts under the pre-fix internal `observerWakeupBackground` label; all were issue-free, carried positive publication revisions, and were durably committed before callback completion. [Apple documents](https://developer.apple.com/documentation/healthkit/executing-observer-queries) that matching observer updates can also be delivered as an app launches, and that artifact retained no app-state or system-wake provenance. Those six receipts pass callback durability only and are explicitly excluded from background-wake attribution. Selected artifact `c5932ed` contains the integrated classifier and passes offline validation. With old `c3a8fb2` stopped, the physical verifier must capture the transient baseline, state-preservingly install `c5932ed`, observe its new process active and then backgrounded, compare signal identities only in memory, and accept only a newly appended `observerWakeupBackground` receipt from that process. It must retain only aggregate counts and artifact provenance. Historical receipt SHA-256: `0383fde3ee55bceff2dbccbdf0a14195687471c12211822ad5f410a40c92e1e7` |
+| Signed staging launch | PASS | Selected artifact `c5932ed` is signed and strictly validated with executable SHA-256 `1658b606f986ce39fc878673fc3b5b7e7fe495e72f386109be1181f4397a6e71`. The September 2 selected installation receipt above proves state-preserving over-install and authenticated retained-session launch without a sign-in/setup, connection-error, or Health-prompt surface. It does not assert current phone state |
+| Sign in with Apple | PARTIAL | Then-selected artifact `aa16411` completed one fresh native authorization and warning-free authenticated readback. Selected artifact `c5932ed` later preserved and restored the authenticated session through its September 2 over-install/launch. Fresh native authorization on the selected artifact remains pending |
+| HealthKit | PARTIAL | Grant, revoke, and re-enable startup paths completed historically; then-selected artifact `aa16411` displayed an active-competition derived score and submitted one HealthKit-derived revision. Selected artifact `c5932ed` produced six new clean background-classified observer receipts with positive publication revisions on September 2. Fresh selected-artifact authorization, foreground accepted submission, and attributable background-wake evidence remain incomplete |
+| Background observer | PARTIAL | Historical `c3a8fb2`'s six pre-fix labels prove callback durability only and remain excluded from attribution. Selected artifact `c5932ed` contains the corrected classifier and produced six new unique, issue-free, positive-revision `observerWakeupBackground` receipts with unchanged preexisting receipts on September 2. The final process differed from the armed process, so the full gate remains false; receipt SHA-256 is `79bf470b8af7320b1b31b1ee7c2d073cdb0fa972dd9021dc48b1f1d077762bb7`. Revalidate the installed artifact and establish a fresh active-to-background process and post-transition baseline, then coordinate a real Watch save with immediate readback. Accept only new qualifying receipts with the same process and retain only aggregate facts. Reinstall only if current artifact validation requires it; the old armed baseline cannot establish current state |
 | APNs | PARTIAL | iOS authorization and one active sandbox installation were verified at `2026-08-16T07:04:49.701324Z`; foreground, background, and cold-route delivery remain pending |
-| App Attest | PARTIAL | Then-selected artifact `aa16411` accepted one HealthKit-derived revision through one consumed challenge and grant, and exact server-side replay of each capability failed closed. Receipt SHA-256: `efb3ebf8dc877efc62fc9f682484e12116dd92a133c6a9d659a1dba5a6646f44`. Previously selected `c3a8fb2` was installed and authenticated but did not submit a new assertion in that bounded window. Exact selected artifact `c5932ed` has not been installed or submitted an assertion; replacement-installation enrollment remains pending |
+| App Attest | PARTIAL | Then-selected artifact `aa16411` accepted one HealthKit-derived revision through one consumed challenge and grant, and exact server-side replay of each capability failed closed. Receipt SHA-256: `efb3ebf8dc877efc62fc9f682484e12116dd92a133c6a9d659a1dba5a6646f44`. Selected artifact `c5932ed` has installation and retained-session evidence but no attributable accepted foreground assertion receipt. Selected-artifact acceptance and replacement-installation enrollment remain pending |
 | Account deletion | PENDING | Reauthorization, server-confirmed completion, local wipe, no resurrection, and preserved Former competitor history |
 | Universal link | DEFERRED | User-approved private-beta deferral because no HTTPS invitation domain will be provided; custom-scheme fallback is not universal-link evidence |
 | Replacement installation | PENDING | Same-phone remove/reinstall, new installation and App Attest enrollment, retired-installation isolation, and no local-data resurrection |
 
 ## Multi-user and operational gates
 
-- **PARTIAL:** Both dedicated accounts have authenticated staging profiles.
+- **PARTIAL:** The retained account readbacks established two authenticated
+  staging profiles in their dated windows; their current sessions were not
+  refreshed for this snapshot.
   Then-selected artifact `dd0ed68` completed one replacement invitation,
   controlled custom-scheme sharing, cold physical acceptance, single hosted
   consumption, two-participant membership, and scheduled-state convergence on
   the approved one-physical-iPhone-plus-Simulator topology. This remains
   historical runtime evidence after selection advanced through `aa16411` and
-  `c3a8fb2`; current offline selection is `c5932ed`. PR #34
+  `c3a8fb2`; current selected artifact is `c5932ed`. PR #34
   continues to preserve terminal history and local journals without the former
   false warning.
 - **PASS:** Historical receipts localized the generic activity warning to
@@ -731,8 +802,9 @@ Status meanings:
   replace physical-service or remaining two-account lifecycle evidence.
 - **PARTIAL:** The replacement competition started on `2026-08-20` in its
   frozen `America/Los_Angeles` time zone. Then-selected physical artifact `aa16411`
-  now has two accepted revisions across two competition days from one
-  participant. A bounded current-source Account B Simulator launch materialized
+  had two accepted revisions across two competition days from one
+  participant at the August 25 readback. A bounded named-source Account B
+  Simulator launch materialized
   the opponent's accepted aggregate score in warning-free authenticated
   Sharing with one isolated nine-file profile root. Receipt SHA-256:
   `e12fd592672636894d5a0b73724273d1dc3d0768d9a80a922aab5282405a2dfb`.
@@ -741,6 +813,15 @@ Status meanings:
   remain pending. Sequential Simulator profile-root teardown/remount, non-
   cross-load of the private outbox, cursor scoping, and remote installation
   retirement/re-registration pass.
+- **PARTIAL:** The September 4 inventory now records one completed/archived
+  competition, one `best_available` result, one award, and no unfinished or
+  overdue unfinalized competition. Accepted revisions still come from only one
+  distinct profile, with no final-window attestations or stable result.
+  Aggregate counts cannot identify that profile as Account A or B. Waiting on
+  the existing competition cannot close the remaining two-account scoring and
+  full lifecycle gates. Preserve its completed history while preparing the
+  missing two-participant evidence; Account B's own accepted score remains
+  unproven by the retained account-specific receipts.
 - **PARTIAL:** The rollback-only hosted database matrix proved its fixed
   synthetic cross-account reads and mutations, replayed claims, modified
   points, stale/conflicting revisions, result rewrites, deleted-profile access,
@@ -753,15 +834,21 @@ Status meanings:
   rollback-only synthetic verifier does not substitute for this lifecycle
   check. Create exactly one fresh transient staging invitation, consume it
   once, replay it once, and retain only privacy-safe aggregate evidence.
-- **BLOCKED:** Hosted backup/restore rehearsal requires a backup-capable plan
-  and an approved disposable restore target.
+- **BLOCKED:** The September 4 staging inventory lists zero backups and PITR
+  disabled. Restore rehearsal and an approved disposable target remain absent;
+  plan entitlements/pricing require verification before deciding whether paid
+  resources are required.
 - **PARTIAL:** A read-only inventory ending at `2026-08-23T06:06:35Z` found a
   dedicated `healthcomp-production` project active and healthy in the same
-  organization as staging. It has zero deployed Edge Functions and zero
+  organization as staging. At that readback it had zero deployed Edge Functions and zero
   configured secret names. No repository link, API-key read, database access,
   provider inspection, migration inspection, deployment, secret change, or
   production mutation occurred. Production configuration, promotion, backup
   policy, and release evidence remain pending.
+- **PARTIAL:** September 4 project inventory reports `healthcomp-production`
+  as `INACTIVE`, superseding its August 23 active/healthy status. This readback
+  did not inspect production configuration or deploy anything; production
+  activation/preparation and the complete promotion gate remain pending.
 
 ## Completion rule
 

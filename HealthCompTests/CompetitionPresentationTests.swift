@@ -1,8 +1,69 @@
 import CompetitionCore
+import SwiftUI
+import UIKit
 import XCTest
 @testable import HealthComp
 
 final class CompetitionPresentationTests: XCTestCase {
+    @MainActor
+    func testFinalScoreLayoutReturnsFiniteSizesForEveryProposalShape() throws {
+        let measurements = measureFinalScoreLayout()
+        for proposal in FinalScoreLayoutProposal.allCases {
+            let sizes = try XCTUnwrap(
+                measurements[proposal],
+                "The hosted layout did not measure \(proposal)."
+            )
+            XCTAssertFalse(sizes.isEmpty)
+            for size in sizes {
+                XCTAssertTrue(size.width.isFinite, "\(proposal): \(size)")
+                XCTAssertTrue(size.height.isFinite, "\(proposal): \(size)")
+                XCTAssertGreaterThanOrEqual(size.width, 0, "\(proposal): \(size)")
+                XCTAssertGreaterThanOrEqual(size.height, 0, "\(proposal): \(size)")
+            }
+        }
+    }
+
+    @MainActor
+    func testFinalScoreLayoutUsesLessHeightAtWideThanNarrowWidth() throws {
+        let measurements = measureFinalScoreLayout()
+        let narrow = try XCTUnwrap(measurements[.narrow]?.last)
+        let wide = try XCTUnwrap(measurements[.wide]?.last)
+
+        XCTAssertGreaterThan(narrow.height, 0)
+        XCTAssertGreaterThan(wide.height, 0)
+        XCTAssertLessThan(
+            wide.height,
+            narrow.height,
+            "Wide layout must need less vertical room for these score fixtures."
+        )
+    }
+
+    @MainActor
+    private func measureFinalScoreLayout() -> [FinalScoreLayoutProposal: [CGSize]] {
+        let recorder = FinalScoreLayoutMeasurements()
+        let canvasSize = CGSize(width: 720, height: 960)
+        let root = FinalScoreProposalProbeLayout(recorder: recorder) {
+            CompetitionFinalScoreLayout {
+                FinalScoreProbeOwner(name: "Beta Alice", points: "3,520")
+                Text("–")
+                    .font(.title2.weight(.medium))
+                    .accessibilityHidden(true)
+                FinalScoreProbeOwner(name: "Former competitor", points: "3,410")
+            }
+        }
+        .environment(\.dynamicTypeSize, .large)
+
+        // A finite, unattached host drives real SwiftUI layout without a window.
+        // Only the test parent sends special proposals to its LayoutSubview.
+        let host = UIHostingController(rootView: root)
+        host.loadViewIfNeeded()
+        host.view.frame = CGRect(origin: .zero, size: canvasSize)
+        host.view.setNeedsLayout()
+        _ = host.sizeThatFits(in: canvasSize)
+        host.view.layoutIfNeeded()
+        return recorder.sizes
+    }
+
     func testArchivedRemoteHistoryCannotBeDeletedLocally() {
         XCTAssertEqual(
             competitionResultDataControl(
@@ -699,5 +760,109 @@ final class CompetitionPresentationTests: XCTestCase {
             evaluatedAt: completedAt,
             timeZoneIdentifier: "UTC"
         )
+    }
+}
+
+private enum FinalScoreLayoutProposal: CaseIterable {
+    case zero
+    case unspecified
+    case infinite
+    case nilWidthFiniteHeight
+    case finiteWidthNilHeight
+    case finiteWidthInfiniteHeight
+    case infiniteWidthFiniteHeight
+    case narrow
+    case wide
+
+    var size: ProposedViewSize {
+        switch self {
+        case .zero:
+            .zero
+        case .unspecified:
+            .unspecified
+        case .infinite:
+            .infinity
+        case .nilWidthFiniteHeight:
+            ProposedViewSize(width: nil, height: 400)
+        case .finiteWidthNilHeight:
+            ProposedViewSize(width: 320, height: nil)
+        case .finiteWidthInfiniteHeight:
+            ProposedViewSize(width: 320, height: .infinity)
+        case .infiniteWidthFiniteHeight:
+            ProposedViewSize(width: .infinity, height: 400)
+        case .narrow:
+            ProposedViewSize(width: 160, height: 600)
+        case .wide:
+            ProposedViewSize(width: 640, height: 600)
+        }
+    }
+}
+
+private final class FinalScoreLayoutMeasurements {
+    private let lock = NSLock()
+    private var storage: [FinalScoreLayoutProposal: [CGSize]] = [:]
+
+    var sizes: [FinalScoreLayoutProposal: [CGSize]] {
+        lock.lock()
+        defer { lock.unlock() }
+        return storage
+    }
+
+    func append(_ size: CGSize, for proposal: FinalScoreLayoutProposal) {
+        lock.lock()
+        defer { lock.unlock() }
+        storage[proposal, default: []].append(size)
+    }
+}
+
+private struct FinalScoreProposalProbeLayout: Layout {
+    let recorder: FinalScoreLayoutMeasurements
+
+    func sizeThatFits(
+        proposal: ProposedViewSize,
+        subviews: Subviews,
+        cache: inout ()
+    ) -> CGSize {
+        if let child = subviews.first {
+            for proposal in FinalScoreLayoutProposal.allCases {
+                let size = child.sizeThatFits(proposal.size)
+                recorder.append(size, for: proposal)
+            }
+        }
+        return CGSize(width: 720, height: 960)
+    }
+
+    func placeSubviews(
+        in bounds: CGRect,
+        proposal: ProposedViewSize,
+        subviews: Subviews,
+        cache: inout ()
+    ) {
+        for child in subviews {
+            child.place(
+                at: bounds.origin,
+                anchor: .topLeading,
+                proposal: ProposedViewSize(width: bounds.width, height: bounds.height)
+            )
+        }
+    }
+}
+
+private struct FinalScoreProbeOwner: View {
+    let name: String
+    let points: String
+
+    var body: some View {
+        VStack(spacing: 5) {
+            Text(name)
+                .font(.subheadline.weight(.semibold))
+            Text(points)
+                .font(.system(.largeTitle, design: .rounded, weight: .bold))
+                .monospacedDigit()
+            Text("points")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity)
     }
 }

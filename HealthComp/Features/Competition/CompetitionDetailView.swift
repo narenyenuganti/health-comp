@@ -241,36 +241,44 @@ struct CompetitionDetailView: View {
 
             Group {
                 if dynamicTypeSize.isAccessibilitySize {
-                    VStack(spacing: 0) {
-                        ForEach(
-                            Array(competition.days.enumerated()),
-                            id: \.element.ordinal
-                        ) { index, day in
-                            CompetitionPairedDayRow(
-                                day: day,
-                                currentDayOrdinal: competition.currentDayOrdinal,
-                                ownerName: competition.ownerDisplayName,
-                                opponentName: competition.opponentDisplayName
-                            )
-                            if index < competition.days.count - 1 {
-                                Divider().padding(.leading, 16)
-                            }
-                        }
-                    }
+                    pairedDayRows
                 } else {
-                    CompetitionSevenDayChart(
-                        days: competition.days,
-                        currentDayOrdinal: competition.currentDayOrdinal,
-                        ownerName: competition.ownerDisplayName,
-                        opponentName: competition.opponentDisplayName
-                    )
+                    ViewThatFits(in: .horizontal) {
+                        CompetitionSevenDayChart(
+                            days: competition.days,
+                            currentDayOrdinal: competition.currentDayOrdinal,
+                            ownerName: competition.ownerDisplayName,
+                            opponentName: competition.opponentDisplayName
+                        )
+                        pairedDayRows
+                    }
                 }
             }
+            .frame(maxWidth: .infinity)
             .background(
                 .background,
                 in: RoundedRectangle(cornerRadius: 22, style: .continuous)
             )
             .shadow(color: .black.opacity(0.05), radius: 10, y: 4)
+        }
+    }
+
+    private var pairedDayRows: some View {
+        VStack(spacing: 0) {
+            ForEach(
+                Array(competition.days.enumerated()),
+                id: \.element.ordinal
+            ) { index, day in
+                CompetitionPairedDayRow(
+                    day: day,
+                    currentDayOrdinal: competition.currentDayOrdinal,
+                    ownerName: competition.ownerDisplayName,
+                    opponentName: competition.opponentDisplayName
+                )
+                if index < competition.days.count - 1 {
+                    Divider().padding(.leading, 16)
+                }
+            }
         }
     }
 
@@ -340,7 +348,7 @@ private struct CompetitionSevenDayChart: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 16)
-        .frame(maxWidth: .infinity)
+        .fixedSize(horizontal: true, vertical: false)
     }
 }
 
@@ -383,7 +391,7 @@ private struct CompetitionPairedDayColumn: View {
             Text("D\(day.ordinal)")
                 .font(.caption2.weight(.semibold))
         }
-        .frame(maxWidth: .infinity)
+        .fixedSize(horizontal: true, vertical: false)
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("competition.day.\(day.ordinal)")
         .accessibilityLabel(
@@ -518,32 +526,33 @@ private struct CompetitionPairedDayRow: View {
     let opponentName: String
 
     var body: some View {
-        HStack(spacing: 12) {
+        VStack(alignment: .leading, spacing: 12) {
             VStack(alignment: .leading, spacing: 2) {
-                Text("Day \(day.ordinal)")
+                Text(day.ordinal == currentDayOrdinal
+                     ? "Day \(day.ordinal) · Today"
+                     : "Day \(day.ordinal)")
                     .font(.subheadline.weight(.semibold))
                 Text("\(day.day.month)/\(day.day.day)")
                     .font(.caption.monospacedDigit())
                     .foregroundStyle(.secondary)
             }
-            .frame(width: 62, alignment: .leading)
-
-            Spacer(minLength: 0)
+            .frame(maxWidth: .infinity, alignment: .leading)
 
             PairedDayScore(
-                initials: "NY",
+                name: ownerName,
                 points: day.ownerAcceptedPoints,
                 status: ownerStatus
             )
             PairedDayScore(
-                initials: "A",
+                name: opponentName,
                 points: day.opponentRevealedPoints,
                 status: opponentStatus
             )
         }
+        .fixedSize(horizontal: false, vertical: true)
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .frame(minHeight: 64)
+        .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)
         .accessibilityElement(children: .ignore)
         .accessibilityIdentifier("competition.day.\(day.ordinal)")
         .accessibilityLabel(
@@ -566,13 +575,13 @@ private struct CompetitionPairedDayRow: View {
 }
 
 private struct PairedDayScore: View {
-    let initials: String
+    let name: String
     let points: Double?
     let status: String
 
     var body: some View {
-        VStack(alignment: .trailing, spacing: 2) {
-            Text(initials)
+        VStack(alignment: .leading, spacing: 2) {
+            Text(name)
                 .font(.caption2.weight(.bold))
                 .foregroundStyle(.secondary)
             Text(competitionPointsText(points))
@@ -582,7 +591,8 @@ private struct PairedDayScore: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
-        .frame(minWidth: 58, alignment: .trailing)
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
