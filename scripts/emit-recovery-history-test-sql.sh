@@ -17,8 +17,10 @@ done
 
 emit_recovery_function() {
   local recovery_name="$1" recovery_migration="$2" recovery_matches
-  recovery_matches="$(rg -l -F "create or replace function private.$recovery_name(" \
-    "$recovery_root/supabase/migrations")"
+  # Fixed migration files only. POSIX grep is present on the CI runner; ripgrep
+  # is useful interactively but is not a required workflow dependency.
+  recovery_matches="$(grep -l -F "create or replace function private.$recovery_name(" \
+    "$recovery_root"/supabase/migrations/*.sql)"
   if [[ "$recovery_matches" != "$recovery_root/supabase/migrations/$recovery_migration" ]]; then
     printf '%s\n' 'Canonical recovery helper definition missing or ambiguous.' >&2
     return 1
