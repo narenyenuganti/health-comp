@@ -4,9 +4,35 @@ This runbook separates Supabase platform database recovery from a CLI logical
 export. Neither path is credited until a staging restore has actually been
 rehearsed and its non-identifying integrity receipt has been compared.
 
+## Execution readiness
+
+**NOT QUALIFIED FOR EXECUTION.** The examples below are a reviewed procedure
+draft, not an approved export/restore command sequence. Do not link, export,
+import, create a target, or change a hosted setting from this document until
+all of these prerequisites have their own verified evidence:
+
+- explicit source/destination identity, capacity/cost, encrypted workspace,
+  downtime window, operator, and action-time approval;
+- one common recovery point covering the source receipts and every export,
+  with an approved, enforceable freeze of all relevant writers or a separately
+  validated shared-snapshot procedure;
+- certificate and hostname verification on every database connection,
+  including the actual dump process inside any container;
+- destination quarantine verified before any import and maintained while
+  imported schedules, network work, Auth data, and grants are present;
+- a target-validated managed-schema/artifact manifest and an empty destination;
+- independently completed deletion evidence, non-vacuous retained-history
+  checks, and validated aggregate-only integrity queries for every required
+  result format and competition;
+- a reviewed forward-repair rehearsal and defined recovery measurements.
+
+Missing evidence is a stop, not permission to weaken a check. Static snippet
+tests and a successful dump cannot close these prerequisites or Task 18.
+
 ## Current evidence status
 
-As of the read-only inventory ending at `2026-08-23T06:06:35Z`:
+The following is **historical**, from the read-only inventory ending at
+`2026-08-23T06:06:35Z`; it is not current project-health or entitlement proof:
 
 - the authenticated healthcomp-staging backup page reports that the project is
   on the Free Plan and that project backups are not included; no restorable
@@ -21,6 +47,8 @@ As of the read-only inventory ending at `2026-08-23T06:06:35Z`:
 Read the matching project's Database Backups page immediately before planning
 a recovery. Backup availability, retention, and PITR depend on current project
 configuration and plan; this repository does not prove any of them.
+See the dated [release evidence](../release/production-beta-evidence.md) for
+later observations. None is permission to start a restore.
 
 ## Recovery boundaries
 
@@ -79,20 +107,24 @@ The logical export is useful for portability and deterministic verification,
 but is not equivalent to a platform snapshot or PITR.
 
 - The default schema dump excludes Supabase-managed schemas such as auth,
-  storage, realtime, cron, Vault, and migration history because a destination
-  Supabase project supplies their definitions.
+  storage, realtime, cron, Vault, and migration history. Validate the exact
+  definitions supplied by the actual destination instead of assuming them.
 - A data-only dump intentionally includes application data and may include
   auth and storage table data while excluding internal migration tables and
   several platform schemas. It is highly sensitive even when HealthComp uses
   only Apple sign-in.
+- In CLI 2.113.0, cron/network schemas are not excluded by the default data
+  list. This does not prove that every operational payload is exported; it
+  does require containment of any imported jobs or network work. Explicit
+  schema selection changes the default exclusion behavior.
 - Vault data is excluded. In-flight account-deletion refresh tokens and the
   notification worker URL/token are not a complete logical-backup surface.
 - The ordinary data dump excludes `supabase_migrations`. Export its data as a
-  fourth, explicit migration-history artifact so a fresh destination records
-  exactly the application migrations whose schema is being restored. Do not
-  synthesize that history with migration repair.
+  separate history artifact, and validate whether the destination also needs
+  a separately reviewed history-schema artifact. Do not assume four files are
+  sufficient or synthesize missing history with migration repair.
 - Function code, Function secrets, provider settings, and project settings are
-  not recreated by the four SQL files.
+  not recreated by the SQL artifacts.
 - Storage database rows are not the same as object bytes. HealthComp does not
   currently rely on Storage for competition data, but future use requires a
   separate object backup procedure.
@@ -101,6 +133,29 @@ Logical dump files can contain emails, provider identifiers, session/auth
 metadata, profile UUIDs, display names, score revisions, results, device
 tokens, and support events. Never commit, attach, paste, index, or upload them
 to an unapproved service.
+
+### Pinned CLI and connection restrictions
+
+CLI 2.113.0 source at `03880bb15379c308a73b078d98780eef1eb1bd63`
+expands resolved connection values, including the password, into `db dump
+--dry-run` stdout. `--file` does not redirect that dry-run output. Never capture
+a credential-bearing or linked dry-run as a preflight receipt. Review the
+public pinned scripts or credential-free synthetic inputs instead.
+
+Its dump path passes host/port/user/password/database into the container, but
+does not itself forward host certificate-verification variables or mount a
+host CA file. Merely exporting `PGSSLMODE` on the Mac does not establish dump
+transport. The draft CLI invocations below remain unqualified until an exact
+execution procedure proves verification inside the dump process. This static
+finding is not a claim of plaintext traffic or a live target configuration.
+
+For direct `psql` receipt/import sessions, require `sslmode=verify-full` and a
+reviewed readable CA through `sslrootcert`/`PGSSLROOTCERT`, with the exact
+hostname bound to the intended project. Refuse missing/invalid CA or hostname
+verification; do not fall back to `require`, `prefer`, or disabled TLS. Apply
+the requirement independently to source, destination, and any pooler route.
+Keep password entry in the human's private terminal. Raw import errors may
+include row contents: retain only allowlisted error categories, not transcripts.
 
 ## Staging restore rehearsal
 
@@ -116,15 +171,29 @@ Record:
 - source ref xhfdfdrtxwptrwhvvlhg and live project-name readback;
 - destination ref and a name that clearly includes restore-rehearsal;
 - matching PostgreSQL major version 17;
-- chosen logical snapshot timestamp;
+- recovery-point/cutoff timestamp and how it is established;
 - operator and approver;
-- named owner of the source migration/DDL freeze for the complete export
-  window;
+- named owner and bounded duration of the complete source write freeze,
+  including app/API, Auth, scheduled workers, network work, migrations, DDL,
+  and administrative writers relevant to the exported state;
 - encrypted local workspace and cleanup owner.
 
 Disable Apple provider sign-in, schedules, external Function calls, and app
 distribution on the destination. Do not install production or staging secret
 values. The new project's credentials must remain isolated from app builds.
+
+Prove containment before the first import, including what prevents restored
+active jobs or queued network requests from executing during data loading.
+Default table-privilege revocation alone is insufficient. If the destination
+cannot remain quarantined throughout schema/data import and validation, stop
+before importing anything. Record only aggregate control outcomes.
+
+Do not claim a source write freeze merely from unchanged migration versions or
+table counts. Use a reviewed enforcement and breach-detection procedure that
+covers all relevant writers; if any writer cannot be covered, stop and design
+a consistent alternative. Keep the freeze through source receipt capture,
+every artifact, and after-export validation. Any breach invalidates the entire
+attempt, even if before/after counts happen to match.
 
 ### 2. Capture source integrity evidence
 
@@ -132,9 +201,17 @@ Run the non-identifying receipt query in the source immediately before export.
 Keep the output in the restricted rehearsal record; do not keep individual
 rows, IDs, names, scores, or result hashes.
 
+All statements below share a repeatable-read snapshot. This does **not** bind
+separate dump sessions to that snapshot; the qualified common-recovery-point
+procedure remains mandatory. `row_security = off` makes a query fail when RLS
+would apply rather than silently producing filtered counts; it does not grant
+access or bypass RLS. Stop on permission/visibility errors, never grant broader
+application privileges to make the receipt pass.
+
 ~~~sql
-begin transaction read only;
+begin transaction isolation level repeatable read read only;
 set local statement_timeout = '30s';
+set local row_security = off;
 
 select pg_catalog.jsonb_build_object(
   'profiles_total', (
@@ -180,7 +257,7 @@ select
   pg_catalog.count(*) as result_count,
   pg_catalog.encode(
     extensions.digest(
-      pg_catalog.coalesce(
+      coalesce(
         pg_catalog.string_agg(
           pg_catalog.encode(ordered_result.immutable_hash, 'hex'),
           '' order by ordered_result.immutable_hash
@@ -230,7 +307,9 @@ erase, so encryption from the outset and controlled key disposal are required.
 
 ### 4. Link the source explicitly and export
 
-Start from a clean checkout of the reviewed commit:
+Only after the execution-readiness gate is satisfied, start from a clean
+checkout of the reviewed commit. The following is still an unqualified draft,
+not permission to link or use the CLI export path without verified transport:
 
 ~~~bash
 set -euo pipefail
@@ -251,16 +330,21 @@ supabase migration list --linked \
 Require every displayed local version to have the identical remote version,
 with no local-only, remote-only, duplicate, repaired, or SupabaseLegacy row.
 Compare that reviewed table to `migrations-expected.txt`. From this readback
-until the after-export readback succeeds, freeze Supabase migration deploys,
-dashboard DDL, and operator schema changes. A named owner must enforce the
-freeze; any schema change invalidates all four dumps.
+until after-export validation succeeds, maintain the complete source write
+freeze from step 1. Any schema or relevant data change invalidates the entire
+artifact set. Matching migration versions alone do not validate that freeze.
 
 Let the CLI prompt securely for the database password. Do not place it in a
 command, file under the repository, or captured transcript.
 
-Generate the four artifacts serially. The dedicated migration-history dump is
-data-only because the fresh Supabase destination already owns the managed
-`supabase_migrations` schema:
+The draft below illustrates four serial artifacts; it does not establish the
+final manifest. First read back the new destination's migration-history
+definitions without exposing statements or private data. If definitions are
+absent or incompatible, stop and review a separate history-schema artifact,
+its import order and empty-target checks. Do not run an existence-dependent
+query against a missing table, silently create substitute definitions, or
+mark versions applied. Current Supabase guidance treats history schema and
+data separately; actual managed-target compatibility must be demonstrated.
 
 ~~~bash
 set -euo pipefail
@@ -293,12 +377,17 @@ supabase unlink
 trap - EXIT
 ~~~
 
-The exact before/after equality is the release of the source migration freeze.
-If it fails, discard every dump from that attempt and start again after the
-source history is understood; do not restore a mixed snapshot.
+Exact before/after migration equality is necessary but not sufficient. Capture
+the same source receipt again under the still-enforced freeze and compare it,
+then verify the freeze's independent breach evidence and artifact manifest.
+Release only through the named operator's recorded decision. On any mismatch
+or breach, quarantine the artifacts for approved disposal and begin a new
+attempt after diagnosis; never restore a mixed recovery point.
 
-Confirm all four files are non-empty, readable only by the current user, and
-not inside Git. Hash them without displaying content:
+Confirm every artifact in the approved manifest is non-empty, readable only
+by the current user, and outside Git. The draft four-file check below must be
+updated if a history-schema artifact is required; a fifth file must not be
+silently omitted from verification, import, or cleanup. Hash without content:
 
 ~~~bash
 set -euo pipefail
@@ -322,8 +411,9 @@ is referenced by any app configuration.
 
 Use the destination's direct database host and operator username. Never put
 its password or full connection URI in a command. Force psql to prompt with
---password. Before schema restore, apply Supabase's required default-privilege
-boundary:
+--password. Verify the step-1 quarantine and every session's certificate/host
+policy first. Before schema restore, apply Supabase's required default-privilege
+boundary; this is not the quarantine mechanism:
 
 ~~~bash
 set -euo pipefail
@@ -362,9 +452,12 @@ them and do not weaken network restrictions.
 
 ### 6. Restore serially
 
-Review generated SQL headers and sizes without exposing row content. Then run
-roles, schema, application data, and migration-history data in that order,
-stopping on the first error.
+After the readiness gate, exact manifest, verified transport and pre-import
+quarantine are proven, review SQL headers and sizes without exposing rows.
+Follow the qualified import order, including any reviewed history-schema
+artifact. The four-artifact example below applies only to a destination whose
+managed history definitions have already passed compatibility/empty checks.
+Stop on the first error and maintain quarantine throughout the operation.
 
 Both CLI-generated data files must set `session_replication_role` to `replica`
 before their data statements and reset the same session afterward. Require one
@@ -388,8 +481,9 @@ done
 
 Session settings do not cross connections. The wrapper below verifies an
 `origin` session, establishes `replica` before each import, lets each generated
-file reset that same session, and fails unless `origin` is restored after each
-file.
+file reset that same session, and immediately checks `origin` after each
+file. Do not insert a wrapper reset before those assertions: it would mask a
+dump that failed to restore its session settings.
 
 ~~~bash
 set -euo pipefail
@@ -428,7 +522,6 @@ $healthcomp_origin_before$;
 
 set session_replication_role = replica;
 \i data.sql
-reset session_replication_role;
 
 do $healthcomp_origin_after_data$
 begin
@@ -440,7 +533,6 @@ $healthcomp_origin_after_data$;
 
 set session_replication_role = replica;
 \i migration-history.sql
-reset session_replication_role;
 
 do $healthcomp_origin_after_history$
 begin
@@ -487,6 +579,28 @@ Require exact equality. Also verify:
 8. provider, Function, secret, Vault, schedule, and app configuration remain
    deliberately disabled on the rehearsal target.
 
+These requirements need validated aggregate-only checks before execution, not
+an operator's inference from matching table totals. In particular:
+
+- check the support runbook's gap-free predicate across **every competition**,
+  including empty logs, and compare checked/invalid counts with zero invalid;
+- verify stored result content under each established version-specific hash
+  contract, not only equality of the stored hashes. The existing
+  `competition_result_immutable_hash_check` exempts version-1 frozen windows;
+  its presence is not full coverage. Stop for any format without a validated
+  verification rule; never expose individual hashes or weaken the contract;
+- require independently completed deletion evidence and at least one genuine
+  anonymized participant with preserved shared history. Zero-anonymized or
+  fabricated deletion fixtures cannot close the hosted preservation gate;
+- verify terminal unnamed/Auth-unlinked profiles, preserved immutable shared
+  history, appropriate installation/session retirement, and unresolved-Vault
+  quarantine using the account-deletion contract. Aggregate counts alone do
+  not identify or reconcile deletions after a recovery point.
+
+The examples in this document do not yet implement every acceptance check.
+Until complete validated coverage is attached, a matching count/hash receipt
+is partial evidence and the rehearsal cannot be credited as passing.
+
 Bind restored application history to the reviewed checkout mechanically. The
 query emits version values only, never migration statements:
 
@@ -518,8 +632,9 @@ foreign key whose referencing table is in public or private and fails on the
 first orphan without returning row contents:
 
 ~~~sql
-begin transaction read only;
+begin transaction isolation level repeatable read read only;
 set local statement_timeout = '30s';
+set local row_security = off;
 
 do $healthcomp_fk_audit$
 declare
@@ -616,17 +731,35 @@ aggregate result hash match, security invariants pass, and every non-database
 environment surface is recorded as intentionally absent or separately
 verified.
 
-### 8. Record evidence and clean up
+### 8. Rehearse a reviewed forward repair
+
+Task 18 also requires rollback or forward repair. Before executing the restore,
+approve one bounded rehearsal of the immutable forward-migration process on
+the disposable target: record the selected reviewed change, expected pre/post
+behavior, stop/cleanup path, and acceptance queries. Do not invent a live
+migration, alter completed history, or rewrite migration versions here. If no
+reviewed repair and acceptance scenario exists, this gate is still open.
+
+After that rehearsal, recheck the complete integrity/privacy receipt and the
+target's quarantine. Record actual execution and outcomes separately from the
+initial restore. A clean restore alone does not satisfy forward-repair proof.
+
+### 9. Record evidence and clean up
 
 The anonymized receipt contains only:
 
 - source commit and source/destination environment labels;
-- snapshot and rehearsal timestamps;
+- independently established recovery-point/cutoff and freeze start/end;
+- rehearsal start (before target provisioning/export), export/import bounds,
+  and end (after all integrity/privacy and forward-repair acceptance checks);
+- recovery-point age at the recorded restore/import start and elapsed time to a **validated
+  quarantined database**, including provisioning/export/import/verification;
 - PostgreSQL and CLI versions;
 - migration version list;
 - aggregate table counts;
 - result count and aggregate result hash;
 - command exit statuses and elapsed time;
+- forward-repair scenario reference and its actual acceptance outcome;
 - RLS/grant/invariant outcomes;
 - exact missing environment surfaces and blockers;
 - approver for destination deletion and local artifact disposal.
@@ -635,11 +768,19 @@ It must not contain project credentials, connection URIs, IDs from data rows,
 names, emails, individual result hashes, scores, tokens, SQL dump excerpts, or
 Apple identifiers.
 
+If a recovery point cannot be established or a phase did not run, record the
+measurement as unavailable, not zero. These observed durations are not an
+approved production RPO/RTO and do not measure restoration of the disabled
+Auth/Functions/APNs/app environment. Production data-loss/downtime objectives
+and ongoing backup/retention policy require a separate explicit decision.
+
 After evidence acceptance and explicit approval, delete the disposable hosted
 project through the dashboard. For local artifacts, first verify the exact
 temporary path begins with the recorded healthcomp-staging-backup prefix and
-contains only the four expected SQL files plus
-`migrations-{expected,before,after,restored}.txt`. Dispose of the encrypted
+matches the exact approved artifact manifest, including any reviewed
+history-schema file and `migrations-{expected,before,after,restored}.txt`.
+Unexpected files or an unapproved target are a stop, not a broader deletion
+authorization. Dispose of the encrypted
 volume or
 its encryption key according to policy, then remove that exact directory. Do
 not recursively delete a workspace root, home directory, TMPDIR, or unresolved
@@ -699,3 +840,11 @@ recovered project must not reopen.
 - [Supabase CLI db dump](https://supabase.com/docs/reference/cli/supabase-db-dump)
 - [Supabase migration and restore guide](https://supabase.com/docs/guides/platform/migrating-to-supabase)
 - [Supabase point-in-time recovery](https://supabase.com/docs/guides/platform/backups#point-in-time-recovery)
+- [Supabase logical restore and migration history](https://supabase.com/docs/guides/platform/migrating-within-supabase/backup-restore)
+- [CLI 2.113.0 dump handler](https://github.com/supabase/cli/blob/03880bb15379c308a73b078d98780eef1eb1bd63/apps/cli/src/legacy/commands/db/dump/dump.handler.ts)
+- [CLI 2.113.0 dump environment](https://github.com/supabase/cli/blob/03880bb15379c308a73b078d98780eef1eb1bd63/apps/cli/src/legacy/commands/db/shared/legacy-pg-dump.env.ts)
+- [CLI 2.113.0 container options](https://github.com/supabase/cli/blob/03880bb15379c308a73b078d98780eef1eb1bd63/apps/cli/src/legacy/commands/db/shared/legacy-pg-dump.run.ts)
+- [PostgreSQL transaction isolation](https://www.postgresql.org/docs/17/sql-set-transaction.html)
+- [PostgreSQL certificate and hostname verification](https://www.postgresql.org/docs/17/libpq-ssl.html)
+- [PostgreSQL conditional expressions](https://www.postgresql.org/docs/17/functions-conditional.html)
+- [PostgreSQL row-visibility guard](https://www.postgresql.org/docs/17/runtime-config-client.html#GUC-ROW-SECURITY)
