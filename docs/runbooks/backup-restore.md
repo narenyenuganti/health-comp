@@ -601,6 +601,56 @@ The examples in this document do not yet implement every acceptance check.
 Until complete validated coverage is attached, a matching count/hash receipt
 is partial evidence and the rehearsal cannot be credited as passing.
 
+#### Aggregate history component
+
+`scripts/recovery-history-integrity.sql` wraps the SELECT-only
+`scripts/recovery-history-integrity-query.sql` in a repeatable-read, read-only
+transaction with complete-visibility failure, UTC, a 30-second statement
+timeout, stop-on-error, SQLSTATE-only errors, and rollback. Invoke the wrapper
+as a top-level file using a fresh noninteractive `psql -X` session with quiet,
+tuples-only, unaligned output. Transport, credentials and the common recovery
+point still require the execution prerequisites above; this wrapper is not
+an export runner and cannot bind separate connections to the same snapshot.
+Its mode assertion cannot prove freshness or detect every existing transaction.
+Do not capture verbose query/error output, use an existing transaction, or
+treat a failed command's partial output as a receipt.
+
+Its version-1 receipt has exactly twelve aggregate fields: receipt version;
+checked/invalid competition counts; total/orphan change-row counts; total,
+format-2 checked/invalid, legacy-unverified and unsupported result counts;
+and two aggregate hash comparisons. It emits no individual identifiers,
+scores, timestamps, row contents or per-result hashes. Require zero invalid
+sequences, orphan changes, invalid format-2 results, legacy-unverified results
+and unsupported results before crediting this component. Compare all fields
+between the source and restore; require the separately established nonempty
+and genuine-deletion history as well. Zero counts are not evidence of that
+history. The receipt deliberately has no overall pass/readiness field.
+
+The sequence predicate includes every competition, empty logs, null rows and
+duplicate/gapped sequences, but cannot prove that earlier contents were never
+rewritten. Format-2 checks use frozen commitments and the established
+`healthcomp-result-v1` derivation, with necessary stored-window/outcome rules;
+they do not prove prior accepted attestations or re-finalize results. Format
+1 remains explicitly unverified because the repository does not establish a
+stored-content hash derivation for it. Unknown formats also stop qualification.
+No migration is changed or historical result converted to pass these checks.
+
+The stored-hash aggregate alone omits changes to completion time and top-level
+server sequence. The separate complete-result fingerprint includes every
+stored result column, normalizing timestamps and binary hashes independently
+of session rendering and sorting deterministically. Both include legacy and
+anonymized retained results without filtering on current membership/profile
+state. Matching fingerprints still require separate schema/FK, deletion,
+grant/RLS, configuration, quarantine and recovery-point verification.
+
+Backend CI exercises the actual query with synthetic PostgreSQL-17 fixtures,
+the real immutable canonical helper definitions, and malformed-history
+controls. Separate substituted-query probes test the wrapper's transaction
+and error boundaries; the actual wrapper/query also runs against the fully
+migrated CI schema. These local/CI checks are component qualification, not a
+hosted backup, genuine deletion, restore, forward-repair or production pass.
+**NOT QUALIFIED FOR EXECUTION remains in force for the operational runbook.**
+
 Bind restored application history to the reviewed checkout mechanically. The
 query emits version values only, never migration statements:
 

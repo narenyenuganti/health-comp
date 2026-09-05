@@ -40,6 +40,8 @@ jobs:
           bash scripts/test-verify-no-secrets.sh
           bash scripts/test-backup-runbook.sh
           bash scripts/test-backup-runbook-checks.sh
+          bash -n scripts/emit-recovery-history-test-sql.sh
+          bash -n scripts/test-recovery-history-wrapper.sh
           sh scripts/test-verify-invitation-functions.sh
           sh scripts/test-staging-adversarial-sql.sh
           sh scripts/test-verify-app-attest-dependency-graph.sh
@@ -96,6 +98,40 @@ jobs:
               --username=postgres \
               --dbname=postgres \
             < scripts/staging-adversarial-rollback.sql
+
+          # Separate empty, disposable fixture database; never a linked project.
+          # createdb fails if the exact name already exists; do not reuse it.
+          docker exec "$database_containers" createdb \
+            --host=/var/run/postgresql --username=postgres --template=template0 \
+            healthcomp_recovery_fixture
+          bash scripts/emit-recovery-history-test-sql.sh | \
+            docker exec -i "$database_containers" psql \
+              --no-psqlrc --no-password --quiet --tuples-only --no-align \
+              --host=/var/run/postgresql --username=postgres \
+              --dbname=healthcomp_recovery_fixture --set=ON_ERROR_STOP=on
+          docker exec "$database_containers" mkdir /tmp/healthcomp-recovery-checks
+          for recovery_file in recovery-history-integrity.sql \
+            recovery-history-integrity-query.sql test-recovery-history-wrapper.sh; do
+            docker cp "scripts/$recovery_file" \
+              "$database_containers:/tmp/healthcomp-recovery-checks/$recovery_file"
+          done
+          # The fixture guard requires the image's local superuser. Supabase's
+          # postgres role is not a superuser; actual-schema checks keep that role.
+          docker exec \
+            --env PGHOST=/var/run/postgresql --env PGUSER=supabase_admin \
+            --env PGDATABASE=healthcomp_recovery_fixture \
+            "$database_containers" bash \
+              /tmp/healthcomp-recovery-checks/test-recovery-history-wrapper.sh
+          docker exec "$database_containers" dropdb \
+            --host=/var/run/postgresql --username=postgres healthcomp_recovery_fixture
+
+          # Actual query + wrapper against the real, fully migrated CI schema.
+          # This is compatibility evidence, not a populated hosted restore.
+          docker exec "$database_containers" psql \
+            --no-psqlrc --no-password --quiet --tuples-only --no-align \
+            --host=/var/run/postgresql --username=postgres --dbname=postgres \
+            --set=ON_ERROR_STOP=on \
+            --file=/tmp/healthcomp-recovery-checks/recovery-history-integrity.sql
 
           deno test \
             --config supabase/functions/deno.json \
