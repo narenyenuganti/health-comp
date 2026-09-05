@@ -569,8 +569,10 @@ Require exact equality. Also verify:
 
 1. all checked-in lowercase migration versions appear once and in order;
 2. no SupabaseLegacy version appears;
-3. RLS and force-RLS remain enabled on protected public/private tables;
-4. grants do not give anon or authenticated direct access to private tables;
+3. RLS and FORCE RLS match each table's immutable migration-defined baseline
+   below, rather than a blanket all-table flag;
+4. effective table/column privileges and exact policy definitions match the
+   restrictive application baseline below, including PUBLIC/inherited access;
 5. completed result hashes and append-only server sequences are internally
    valid;
 6. anonymized profiles remain terminal, unnamed, and unlinked from Auth;
@@ -650,6 +652,98 @@ and error boundaries; the actual wrapper/query also runs against the fully
 migrated CI schema. These local/CI checks are component qualification, not a
 hosted backup, genuine deletion, restore, forward-repair or production pass.
 **NOT QUALIFIED FOR EXECUTION remains in force for the operational runbook.**
+
+#### Aggregate authorization and deletion-state component
+
+`scripts/recovery-state-acceptance.sql` is the fresh top-level entry file for
+the SELECT-only `scripts/recovery-state-acceptance-query.sql`. Run it using a
+fresh noninteractive `psql -XqAt --file` connection with separately verified
+transport and the same recovery-point prerequisites as the history component.
+It applies repeatable-read/read-only, `row_security=off`, UTC, a 30-second
+statement timeout, `search_path=pg_catalog`, stop-on-error, SQLSTATE-only errors
+without context, and rollback. The effective mode/origin guard cannot prove
+connection freshness. Any SQL/visibility failure or unexpected output means
+there is no usable receipt. Do not grant extra access to make a failed audit
+pass. Operator files do not write data, create objects, change roles or read
+Vault secrets.
+
+Require exactly 31 native nonnegative integer fields, with no extra keys or
+output. The two fixed criteria are `receipt_version=1` and
+`application_tables_checked=17`. These 19 violation counters must all be zero:
+
+- `application_tables_missing_or_unsupported`, `application_tables_unexpected`
+- `rls_flag_mismatches`, `table_privilege_mismatches`,
+  `column_privilege_mismatches`, `policy_mismatches`
+- `profiles_invalid_shape`, `deletion_records_invalid_shape`,
+  `deletion_phase_profile_mismatches`
+- `deactivated_profiles_with_active_installations`,
+  `deactivated_profiles_with_live_notification_work`,
+  `deactivated_profiles_with_mute_links`,
+  `deactivated_profiles_with_app_attest_rows`,
+  `revoked_installations_with_app_attest_rows`
+- `anonymized_profiles_with_nonanonymized_participants`,
+  `deactivated_profiles_with_unfinished_competitions`,
+  `deactivated_profiles_with_unconsumed_cancelled_invites`
+- `completed_deletions_with_bad_completion_event_count`,
+  `completion_events_without_completed_deletion`
+
+The other ten fields are diagnostics: `profiles_checked`,
+`profiles_anonymized`, `deletion_records_checked`, `deletions_prepared`,
+`deletions_token_ready`, `deletions_apple_revoked`,
+`deletions_auth_delete_pending`, `deletions_completed`,
+`anonymized_profiles_without_completed_deletion`, and
+`anonymized_profiles_in_results`. Compare all fields between source and target
+at the established common point. Nonzero violation counts are rejection
+evidence even when psql exits zero. The receipt has no overall readiness field.
+
+The 17-table authorization baseline is 11 public tables with RLS/no FORCE, five
+private tables with both flags, and private `competition_notification_mutes`
+with neither flag but revoked raw access. The five FORCE-protected tables are
+`competition_notification_work`, `account_deletions`, `app_attest_keys`,
+`app_attest_challenges`, and `app_attest_submission_grants`. Require ordinary
+nonpartitioned/noninherited tables with the predicate's native column types;
+unsupported/missing relations must reject qualification, not disappear from
+the denominator. Extra public/private tables, views, materialized views or
+foreign tables are also rejected.
+
+Effective table and column privileges are checked for `anon`, `authenticated`,
+`service_role`, and PUBLIC, including inherited grants and grant options.
+Only authenticated has whole-table SELECT on competitions, participants,
+revisions, finalization attestations, results and awards, plus column-only
+SELECT on profile id/display_name. It has no current installation SELECT.
+Eight exact authenticated-only permissive SELECT policies are required;
+role sets, commands, USING expressions and absent WITH CHECK are checked,
+without executing the policy helpers. Intentional private-schema helper
+USAGE/EXECUTE is not raw-table access. Full helper definitions, constraints,
+owners, managed-role configuration and schema compatibility remain separate
+requirements; do not edit historical migrations to fit a different baseline.
+
+`prepared` remains nondestructive. `token_ready`/`apple_revoked` require a
+deleting profile; `auth_delete_pending`/`completed` require anonymous
+presentation. A valid pending profile is anonymous while private Auth/Apple
+references remain: that increases the diagnostic anonymous-without-completed
+count, not a corruption count or completion credit. Every unfinished phase
+still requires the account-deletion quarantine/reconciliation procedure.
+Neither null references nor the completed phase independently prove managed
+Auth/session retirement, provider revocation or safe external-service resumption.
+
+Retirement counts each affected profile or revoked installation once.
+Notification work is checked in both profile directions, including any
+retained lease-token/expiry/APNs-hash nullness on terminal rows; values are
+never returned. Cancelled competitions must not retain unconsumed invitations
+for deactivated participants. Consumed invitations and unrelated active
+profiles remain valid. Completion-event counts distinguish a missing/duplicate
+completion marker from an event without a completed record. Retained-result
+participation counts anonymous profiles once across all retained results,
+without exposing identities, names, individual timestamps, scores or hashes.
+
+Real PostgreSQL 17 fixtures exercise valid phases, malformed states, effective
+permissions, policy changes, full/filtered visibility and wrapper error controls.
+Backend CI separately checks the actual migrated empty schema as ordinary
+postgres. Synthetic/empty receipts do not prove genuine physical deletion,
+preserved shared history, post-recovery-point deletion reconciliation, backup,
+restore, forward repair or production readiness. **NOT QUALIFIED FOR EXECUTION
+remains in force until all operational prerequisites genuinely pass.**
 
 Bind restored application history to the reviewed checkout mechanically. The
 query emits version values only, never migration statements:
