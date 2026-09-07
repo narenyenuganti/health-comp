@@ -63,6 +63,12 @@ jobs:
           fi
           git diff --exit-code -- HealthComp.xcodeproj
 
+      - name: Verify app-owned privacy manifest
+        run: |
+          set -euo pipefail
+          bash scripts/verify-app-privacy-manifest.sh
+          bash scripts/test-app-privacy-manifest.sh
+
       - name: Test CompetitionCore in Debug and Release
         run: |
           set -euo pipefail
@@ -109,6 +115,8 @@ jobs:
               COMPILER_INDEX_STORE_ENABLE=NO \
               SUPABASE_URL="$SUPABASE_URL" \
               SUPABASE_PUBLISHABLE_KEY="$SUPABASE_PUBLISHABLE_KEY"
+            bash scripts/verify-app-privacy-manifest.sh --app-bundle \
+              "$RUNNER_TEMP/HealthComp-DerivedData/Build/Products/${configuration}-iphoneos/HealthComp.app"
           done
 
       - name: Verify source tree remains clean
