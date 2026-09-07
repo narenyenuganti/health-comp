@@ -51,6 +51,7 @@ private actor SupabaseCompetitionRealtimeClientBox {
 
     private var generation: UInt64 = 0
     private var openingTask: Task<Void, Never>?
+    private var stoppingTask: Task<Void, Never>?
     private var continuation:
         AsyncStream<CompetitionRealtimeWakeUp>.Continuation?
 
@@ -65,9 +66,14 @@ private actor SupabaseCompetitionRealtimeClientBox {
     func stream(
         profileID: UUID
     ) async -> AsyncStream<CompetitionRealtimeWakeUp> {
-        await stopCurrent()
         generation &+= 1
         let activeGeneration = generation
+        await stopCurrent()
+        // Actor reentrancy permits another stream/stop request during cleanup.
+        // Only the latest still-admitted request may create a channel afterward.
+        guard activeGeneration == generation, !Task.isCancelled else {
+            return AsyncStream { $0.finish() }
+        }
         let (stream, continuation) = AsyncStream<CompetitionRealtimeWakeUp>
             .makeStream()
         continuation.onTermination = { [weak self] _ in
@@ -105,11 +111,17 @@ private actor SupabaseCompetitionRealtimeClientBox {
                             )
                         }
                     )
+                    // A driver may finish opening despite cancellation. The
+                    // retirement task awaits us, so clean that late resource
+                    // before allowing it to report settlement or admit a successor.
+                    if Task.isCancelled { await driver.stop() }
                     return
                 } catch is CancellationError {
+                    await driver.stop()
                     return
                 } catch {
                     await driver.stop()
+                    guard !Task.isCancelled else { return }
                     do {
                         try await retryDelay(failureCount)
                     } catch {
@@ -123,6 +135,7 @@ private actor SupabaseCompetitionRealtimeClientBox {
     }
 
     func stop() async {
+        generation &+= 1
         await stopCurrent()
     }
 
@@ -130,20 +143,31 @@ private actor SupabaseCompetitionRealtimeClientBox {
         guard generation == self.generation, continuation != nil else {
             return
         }
+        self.generation &+= 1
         await stopCurrent()
     }
 
     private func stopCurrent() async {
+        if let stoppingTask {
+            await stoppingTask.value
+            return
+        }
         guard openingTask != nil || continuation != nil else { return }
-        generation &+= 1
         let openingTask = self.openingTask
         let continuation = self.continuation
         self.openingTask = nil
         self.continuation = nil
         openingTask?.cancel()
         continuation?.finish()
-        await driver.stop()
-        await openingTask?.value
+        // Retain cleanup ownership until both the driver and opening work have
+        // settled. Clearing active fields must not admit a concurrent opener.
+        let stoppingTask = Task {
+            await driver.stop()
+            await openingTask?.value
+            self.stoppingTask = nil
+        }
+        self.stoppingTask = stoppingTask
+        await stoppingTask.value
     }
 }
 
@@ -174,7 +198,6 @@ private actor SupabaseCompetitionRealtimeDriverBox {
     }
 
     private let provider: SupabaseClientProvider
-    private var cachedClient: SupabaseClient?
     private var activeChannel: ActiveChannel?
 
     init(provider: SupabaseClientProvider) {
@@ -241,10 +264,7 @@ private actor SupabaseCompetitionRealtimeDriverBox {
     }
 
     private func client() throws -> SupabaseClient {
-        if let cachedClient { return cachedClient }
-        let client = try provider.client()
-        cachedClient = client
-        return client
+        try provider.client()
     }
 
     private nonisolated static func cursorHint(

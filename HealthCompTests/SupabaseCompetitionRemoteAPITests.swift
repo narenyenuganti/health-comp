@@ -571,6 +571,40 @@ final class SupabaseCompetitionRemoteAPITests: XCTestCase {
         XCTAssertEqual(requestCount, 1)
     }
 
+    func testCancelledDiscoveryDoesNotRetryALateTransportFailure() async {
+        await assertCancelledHeldDiscovery(.failure(.network))
+    }
+
+    func testCancelledDiscoveryDoesNotPublishALateSuccessfulResponse() async {
+        await assertCancelledHeldDiscovery(.response(200, Data("[]".utf8)))
+    }
+
+    private func assertCancelledHeldDiscovery(_ result: CompetitionTransportStub) async {
+        let entered = expectation(description: "discovery transport entered")
+        let transport = HeldDiscoveryTransport(entered: entered, result: result)
+        let api = SupabaseCompetitionRemoteAPI.make(
+            transport: CompetitionRemoteTransport { _ in try await transport.send() }
+        )
+        let operation = Task { () -> CompetitionRemoteFailure? in
+            do {
+                _ = try await api.listCompetitions()
+                return nil
+            } catch let failure as CompetitionRemoteFailure {
+                return failure
+            } catch {
+                XCTFail("Unexpected error type: \(type(of: error))")
+                return nil
+            }
+        }
+        await fulfillment(of: [entered], timeout: 2)
+        operation.cancel()
+        await transport.release()
+        let failure = await operation.value
+        XCTAssertEqual(failure, .cancelled)
+        let count = await transport.count
+        XCTAssertEqual(count, 1)
+    }
+
     func testAttestationAcknowledgmentCannotFabricateDomainState() async throws {
         let harness = CompetitionTransportHarness(stubs: [
             .response(200, try jsonData([
@@ -880,5 +914,37 @@ private actor CompetitionTransportHarness {
 
     func requestCount() -> Int {
         requests.count
+    }
+}
+
+private actor HeldDiscoveryTransport {
+    let entered: XCTestExpectation
+    let result: CompetitionTransportStub
+    var count = 0
+    var continuation: CheckedContinuation<Void, Never>?
+
+    init(entered: XCTestExpectation, result: CompetitionTransportStub) {
+        self.entered = entered
+        self.result = result
+    }
+
+    func send() async throws -> CompetitionRemoteTransportResponse {
+        count += 1
+        if count == 1 {
+            await withCheckedContinuation {
+                continuation = $0
+                entered.fulfill()
+            }
+        }
+        switch result {
+        case let .failure(error): throw error
+        case let .response(status, data):
+            return CompetitionRemoteTransportResponse(statusCode: status, data: data)
+        }
+    }
+
+    func release() {
+        continuation?.resume()
+        continuation = nil
     }
 }

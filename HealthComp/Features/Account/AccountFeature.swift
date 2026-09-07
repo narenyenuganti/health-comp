@@ -19,6 +19,8 @@ struct AccountFeature {
         var isRequestInFlight = false
         var isDeleteConfirmationPresented = false
         var isDeletingAccount = false
+        var isBrowserSignInAvailable = false
+        var isBrowserDeletionAvailable = false
         var message: Message?
 
         init(mode: Mode, displayName: String = "") {
@@ -54,14 +56,19 @@ struct AccountFeature {
     enum Action: Equatable, Sendable {
         enum Delegate: Equatable, Sendable {
             case signInWithAppleRequested
+            case signInWithAppleInBrowserRequested
             case displayNameSubmitted(String)
             case displayNameUpdateRequested(String)
             case retryRequested
             case signOutRequested
             case deleteAccountRequested
+            case deleteAccountInBrowserRequested
         }
 
         case displayNameChanged(String)
+        case appeared
+        case browserSignInButtonTapped
+        case browserDeleteConfirmationAccepted
         case signInButtonTapped
         case submitDisplayNameButtonTapped
         case editDisplayNameButtonTapped
@@ -79,9 +86,34 @@ struct AccountFeature {
         case delegate(Delegate)
     }
 
+    @Dependency(\.authenticationClient) var authenticationClient
+
     var body: some ReducerOf<Self> {
         Reduce { state, action in
             switch action {
+            case .appeared:
+                state.isBrowserSignInAvailable = authenticationClient.signInWithAppleInBrowser != nil
+                state.isBrowserDeletionAvailable = authenticationClient.deleteAccountInBrowser != nil
+                return .none
+
+            case .browserSignInButtonTapped:
+                guard state.mode == .signedOut,
+                      state.isBrowserSignInAvailable,
+                      authenticationClient.signInWithAppleInBrowser != nil,
+                      !state.isRequestInFlight else { return .none }
+                beginRequest(state: &state)
+                return .send(.delegate(.signInWithAppleInBrowserRequested))
+
+            case .browserDeleteConfirmationAccepted:
+                guard state.mode == .authenticated,
+                      state.isBrowserDeletionAvailable,
+                      authenticationClient.deleteAccountInBrowser != nil,
+                      state.isDeleteConfirmationPresented,
+                      !state.isRequestInFlight else { return .none }
+                state.isDeleteConfirmationPresented = false
+                state.isDeletingAccount = true
+                beginRequest(state: &state)
+                return .send(.delegate(.deleteAccountInBrowserRequested))
             case let .displayNameChanged(value):
                 state.displayName = value
                 state.message = nil
@@ -241,7 +273,7 @@ struct AccountFeature {
         case .reauthenticationRequired:
             .reauthenticationRequired
         case .refreshRetryable, .nonceGenerationFailed,
-             .displayNameRequired, .operationFailed:
+             .displayNameRequired, .operationFailed, .retirementRequired:
             .tryAgain
         }
     }

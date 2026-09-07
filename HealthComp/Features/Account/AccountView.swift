@@ -66,9 +66,21 @@ struct AccountView: View {
                         )
                     }
                 }
+            if store.mode == .signedOut, store.isBrowserSignInAvailable {
+                Button {
+                    store.send(.browserSignInButtonTapped)
+                } label: {
+                    Text("Sign in with Apple in Browser")
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                }
+                .buttonStyle(.bordered)
+                .disabled(store.isRequestInFlight)
+                .accessibilityIdentifier("account.sign-in-with-apple.browser")
+            }
             Spacer()
         }
         .padding(24)
+        .task { store.send(.appeared) }
         .animation(.easeInOut(duration: 0.2), value: store.message)
     }
 

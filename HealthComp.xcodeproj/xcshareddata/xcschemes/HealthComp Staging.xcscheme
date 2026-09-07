@@ -41,23 +41,12 @@
       <Testables>
          <TestableReference
             skipped = "NO"
-            parallelizable = "YES">
-            <BuildableReference
-               BuildableIdentifier = "primary"
-               BlueprintIdentifier = "2BBEE518756FBCE194988772"
-               BuildableName = "HealthCompTests.xctest"
-               BlueprintName = "HealthCompTests"
-               ReferencedContainer = "container:HealthComp.xcodeproj">
-            </BuildableReference>
-         </TestableReference>
-         <TestableReference
-            skipped = "NO"
             parallelizable = "NO">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "6D88451406311CBA275A4B71"
-               BuildableName = "HealthCompUITests.xctest"
-               BlueprintName = "HealthCompUITests"
+               BlueprintIdentifier = "FB06C373FC6B63B49278D15B"
+               BuildableName = "HealthCompStagingTests.xctest"
+               BlueprintName = "HealthCompStagingTests"
                ReferencedContainer = "container:HealthComp.xcodeproj">
             </BuildableReference>
          </TestableReference>

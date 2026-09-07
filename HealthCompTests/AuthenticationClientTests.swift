@@ -4,6 +4,63 @@ import XCTest
 
 final class AuthenticationClientTests: XCTestCase {
     @MainActor
+    func testTerminalRefreshDefersCleanupToConfiguredRetirement() async throws {
+        let recorder = AuthenticationOperationRecorder()
+        var operations = SupabaseAuthenticationOperations.test(
+            recorder: recorder,
+            currentSession: .init(userID: UUID(), expiresAt: Date(timeIntervalSince1970: 99)),
+            refreshResult: .failure(.terminalSession)
+        )
+        operations.clearLocalSession = {
+            await recorder.record("premature-cleanup")
+            throw AuthenticationClientFailure.operationFailed
+        }
+        let client = SupabaseAuthenticationClient.make(
+            operations: operations, appleAuthorization: .unimplemented,
+            finishRetirement: { await recorder.record("retire") },
+            now: { Date(timeIntervalSince1970: 100) }
+        )
+        do {
+            _ = try await client.restoreSession()
+            XCTFail("Terminal refresh must not restore a session.")
+        } catch { XCTAssertEqual(error as? AuthenticationClientFailure, .terminalSession) }
+        let beforeRetirement = await recorder.operations
+        XCTAssertEqual(beforeRetirement, ["currentSession", "refreshSession"])
+        try await XCTUnwrap(client.finishRetirement)()
+        let afterRetirement = await recorder.operations
+        XCTAssertEqual(afterRetirement, ["currentSession", "refreshSession", "retire"])
+    }
+
+    @MainActor
+    func testRetirementExcludesRestorationUntilSettlement() async throws {
+        let recorder = AuthenticationOperationRecorder()
+        let entered = expectation(description: "retirement held")
+        let barrier = AuthenticationRetirementBarrier()
+        let client = SupabaseAuthenticationClient.make(
+            operations: .test(recorder: recorder, currentSession: nil),
+            appleAuthorization: .unimplemented,
+            finishRetirement: { await barrier.wait(entered: entered) }
+        )
+        let finish = try XCTUnwrap(client.finishRetirement)
+        let retirement = Task { try await finish() }
+        await fulfillment(of: [entered], timeout: 1)
+        do {
+            _ = try await client.restoreSession()
+            XCTFail("Restore must not overlap retirement.")
+        } catch {
+            XCTAssertEqual(error as? AuthenticationClientFailure, .operationFailed)
+        }
+        let during = await recorder.operations
+        XCTAssertTrue(during.isEmpty)
+        await barrier.release()
+        try await retirement.value
+        let restored = try await client.restoreSession()
+        XCTAssertNil(restored)
+        let after = await recorder.operations
+        XCTAssertEqual(after, ["currentSession"])
+    }
+
+    @MainActor
     func testAdapterRestoresNoSessionWithoutRefreshing() async throws {
         let recorder = AuthenticationOperationRecorder()
         let client = SupabaseAuthenticationClient.make(
@@ -106,6 +163,42 @@ final class AuthenticationClientTests: XCTestCase {
             events.append(event)
         }
         XCTAssertEqual(events, [])
+    }
+
+    @MainActor
+    func testTerminalRefreshCleanupFailureIsExplicitAndCanBeRetried() async {
+        let recorder = AuthenticationOperationRecorder()
+        let expired = SupabaseAuthenticationSession(
+            userID: UUID(uuidString: "91000000-0000-4000-8000-000000000001")!,
+            expiresAt: Date(timeIntervalSince1970: 99)
+        )
+        var operations = SupabaseAuthenticationOperations.test(
+            recorder: recorder,
+            currentSession: expired,
+            refreshResult: .failure(.terminalSession)
+        )
+        operations.clearLocalSession = {
+            await recorder.record("clearLocalSession")
+            throw NSError(domain: "SyntheticStorageFailure", code: 1)
+        }
+        let client = SupabaseAuthenticationClient.make(
+            operations: operations,
+            appleAuthorization: .unimplemented,
+            now: { Date(timeIntervalSince1970: 100) }
+        )
+        for _ in 0..<2 {
+            do {
+                _ = try await client.restoreSession()
+                XCTFail("Cleanup failure must not restore a session")
+            } catch {
+                XCTAssertEqual(error as? AuthenticationClientFailure, .operationFailed)
+            }
+        }
+        let recorded = await recorder.operations
+        XCTAssertEqual(recorded, [
+            "currentSession", "refreshSession", "clearLocalSession",
+            "currentSession", "refreshSession", "clearLocalSession",
+        ])
     }
 
     @MainActor
@@ -378,6 +471,20 @@ final class AuthenticationClientTests: XCTestCase {
             JSONSerialization.jsonObject(with: data) as? [String: Any]
         )
         return object.keys.sorted()
+    }
+}
+
+private actor AuthenticationRetirementBarrier {
+    private var continuation: CheckedContinuation<Void, Never>?
+    func wait(entered: XCTestExpectation) async {
+        await withCheckedContinuation {
+            continuation = $0
+            entered.fulfill()
+        }
+    }
+    func release() {
+        continuation?.resume()
+        continuation = nil
     }
 }
 
