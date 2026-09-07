@@ -28,12 +28,13 @@ source_policies() {
 # dependency-free parser rejects leaked strings, duplicate/unknown/missing keys,
 # negative/fractional values, additional output, and false zero-count candidates.
 receipt_keys='receipt_version application_tables_checked application_tables_missing_or_unsupported application_tables_unexpected rls_flag_mismatches table_privilege_mismatches column_privilege_mismatches policy_mismatches profiles_checked profiles_invalid_shape profiles_anonymized deletion_records_checked deletion_records_invalid_shape deletion_phase_profile_mismatches deletions_prepared deletions_token_ready deletions_apple_revoked deletions_auth_delete_pending deletions_completed anonymized_profiles_without_completed_deletion deactivated_profiles_with_active_installations deactivated_profiles_with_live_notification_work deactivated_profiles_with_mute_links deactivated_profiles_with_app_attest_rows revoked_installations_with_app_attest_rows anonymized_profiles_with_nonanonymized_participants deactivated_profiles_with_unfinished_competitions deactivated_profiles_with_unconsumed_cancelled_invites completed_deletions_with_bad_completion_event_count completion_events_without_completed_deletion anonymized_profiles_in_results'
-empty_expected='receipt_version=1,application_tables_checked=17'
+receipt_keys+=' browser_requests_remaining deletion_client_binding_invalid'
+empty_expected='receipt_version=2,application_tables_checked=18'
 seed_expected="$empty_expected,profiles_checked=7,profiles_anonymized=2,deletion_records_checked=5,deletions_prepared=1,deletions_token_ready=1,deletions_apple_revoked=1,deletions_auth_delete_pending=1,deletions_completed=1,anonymized_profiles_without_completed_deletion=1,anonymized_profiles_in_results=2"
 receipt_matches() {
   awk -v keys="$receipt_keys" -v expected="$1" -v unsupported="${2:-0}" '
     BEGIN {
-      n=split(keys, names, " "); if (n != 31) exit 1
+      n=split(keys, names, " "); if (n != 33) exit 1
       for (i=1; i<=n; i++) { allowed[names[i]]=1; wanted[names[i]]="0" }
       m=split(expected, pairs, ",")
       for (i=1; i<=m; i++) {
@@ -60,7 +61,7 @@ receipt_matches() {
     END {
       if (NR != 1 || bad) exit 1
       for (key in allowed) if (!(key in seen)) exit 1
-      if (unsupported && (actual["receipt_version"] != 1 ||
+      if (unsupported && (actual["receipt_version"] != 2 ||
           actual["application_tables_missing_or_unsupported"] < 1)) exit 1
     }
   '
@@ -82,13 +83,14 @@ static_receipt_controls() {
   receipt_matches "$(expected_rows profiles_invalid_shape=1)" <<<"$bad" || fail static_override_receipt
   if receipt_matches "$(expected_rows profiles_invalid_shape=1)" <<<"$good"; then fail static_false_zero_accepted; fi
   for bad in \
-    "${good/\"receipt_version\":1/\"receipt_version\":1,\"receipt_version\":1}" \
-    "${good/\"receipt_version\":1/\"unexpected_key\":1}" \
-    "${good/\"receipt_version\":1/\"receipt_version\":\"1\"}" \
-    "${good/\"receipt_version\":1/\"receipt_version\":null}" \
-    "${good/\"receipt_version\":1/\"receipt_version\":-1}" \
-    "${good/\"receipt_version\":1/\"receipt_version\":1.5}" \
-    "${good/\"receipt_version\":1/\"receipt_version\":1e0}" \
+    "${good/\"receipt_version\":2/\"receipt_version\":1}" \
+    "${good/\"receipt_version\":2/\"receipt_version\":2,\"receipt_version\":2}" \
+    "${good/\"receipt_version\":2/\"unexpected_key\":1}" \
+    "${good/\"receipt_version\":2/\"receipt_version\":\"1\"}" \
+    "${good/\"receipt_version\":2/\"receipt_version\":null}" \
+    "${good/\"receipt_version\":2/\"receipt_version\":-1}" \
+    "${good/\"receipt_version\":2/\"receipt_version\":2.5}" \
+    "${good/\"receipt_version\":2/\"receipt_version\":2e0}" \
     "$good"$'\n'"$good"; do
     if receipt_matches "$seed_expected" <<<"$bad"; then fail static_invalid_receipt_accepted; fi
   done
@@ -200,7 +202,7 @@ drop table if exists public.profiles, public.competitions, public.competition_pa
  public.competition_awards, public.device_installations, public.support_events,
  private.competition_notification_mutes, private.competition_notification_work,
  private.account_deletions, private.app_attest_keys, private.app_attest_challenges,
- private.app_attest_submission_grants;
+ private.app_attest_submission_grants, private.apple_deletion_web_requests;
 drop function private.current_profile_id(), private.can_view_profile(uuid), private.is_competition_participant(uuid);
 drop schema private;
 drop role healthcomp_recovery_state_inherited;
@@ -313,6 +315,16 @@ SQL
 run_receipt malformed_profile_canary "$empty_expected,profiles_checked=1,profiles_invalid_shape=1"
 seed
 run_receipt every_phase_and_unaffected_controls "$seed_expected"
+
+for phase in pending code_ready claimed cancelled expired; do
+  case_rows "restored_browser_$phase" browser_requests_remaining=1 <<<"insert into private.apple_deletion_web_requests(phase) values ('$phase');"
+done
+for assignment in "apple_client_id=null" "apple_client_id=''" "apple_client_id=' '" "apple_client_id=E'bad\\nclient'" "apple_client_id=repeat('x',256)"; do
+  case_rows "token_client_$assignment" deletion_client_binding_invalid=1 <<<"update private.account_deletions set $assignment where phase='token_ready';"
+done
+case_rows invalid_optional_client deletion_client_binding_invalid=1 <<'SQL'
+update private.account_deletions set apple_client_id=' ' where phase='completed';
+SQL
 
 # Each expected vector starts with the complete baseline, then overrides explicit
 # affected counters. Every unrelated field must remain unchanged, not merely >=0.
@@ -472,6 +484,10 @@ case_metadata inherited_grant 'table_privilege_mismatches=1,column_privilege_mis
   'revoke select on private.competition_notification_mutes from healthcomp_recovery_state_inherited; revoke healthcomp_recovery_state_inherited from authenticated;'
 case_metadata service_role_raw_access table_privilege_mismatches=1 \
   'grant delete on private.account_deletions to service_role;' 'revoke delete on private.account_deletions from service_role;'
+case_metadata browser_raw_access table_privilege_mismatches=1 \
+  'grant delete on private.apple_deletion_web_requests to service_role;' 'revoke delete on private.apple_deletion_web_requests from service_role;'
+case_metadata browser_force_removed rls_flag_mismatches=1 \
+  'alter table private.apple_deletion_web_requests no force row level security;' 'alter table private.apple_deletion_web_requests force row level security;'
 case_metadata public_rls_disabled rls_flag_mismatches=1 \
   'alter table public.profiles disable row level security;' 'alter table public.profiles enable row level security;'
 case_metadata public_force_added rls_flag_mismatches=1 \
@@ -530,6 +546,12 @@ unsupported_case inheritance \
 unsupported_case unsupported_column_type \
   'alter table public.profiles alter column auth_user_id type text using auth_user_id::text;' \
   'alter table public.profiles alter column auth_user_id type uuid using auth_user_id::uuid;'
+unsupported_case browser_owner_column_type \
+  'alter table private.apple_deletion_web_requests alter column profile_id type text using profile_id::text;' \
+  'alter table private.apple_deletion_web_requests alter column profile_id type uuid using profile_id::uuid;'
+unsupported_case missing_deletion_client_binding \
+  'alter table private.account_deletions rename column apple_client_id to recovery_saved_client;' \
+  'alter table private.account_deletions rename column recovery_saved_client to apple_client_id;'
 
 # The built-in non-superuser reader must successfully see the real seeded rows
 # with RLS disabled, before the same role is used for the filtered rejection.
@@ -541,12 +563,12 @@ set_fixture_rls() {
     public.participant_finalization_attestations public.competition_results \
     public.competition_awards public.device_installations public.support_events \
     private.account_deletions private.competition_notification_work private.app_attest_keys \
-    private.app_attest_challenges private.app_attest_submission_grants; do
+    private.app_attest_challenges private.app_attest_submission_grants private.apple_deletion_web_requests; do
     printf 'alter table %s %s row level security;\n' "$relation" "$action"
   done
 }
 set_fixture_rls disable | mutate unfiltered_visibility_setup
-run_receipt actual_query_full_visibility "$seed_expected,rls_flag_mismatches=16" "$operator" 'set role pg_read_all_data;'
+run_receipt actual_query_full_visibility "$seed_expected,rls_flag_mismatches=17" "$operator" 'set role pg_read_all_data;'
 set_fixture_rls enable | mutate unfiltered_visibility_restore
 run_receipt visibility_flags_restored "$seed_expected"
 

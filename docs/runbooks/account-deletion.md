@@ -42,6 +42,75 @@ The authorization code, nonce, Apple refresh token, provider identifier,
 access token, and service-role key must never enter logs, tickets, screenshots,
 analytics, shell history, or SQL output.
 
+## Staging browser candidate — not enabled or deployed
+
+The local candidate adds `apple-deletion-begin`, `apple-deletion-callback`,
+and `apple-deletion-complete`. They return an empty, noncacheable 503 unless
+`HEALTHCOMP_ENABLE_APPLE_WEB_SIGN_IN=YES`, the project is the exact configured
+staging project, and a separate `APPLE_WEB_SIGN_IN_CLIENT_ID` is present.
+Do not enable the app control just because these source entrypoints exist.
+
+Begin and complete validate the bearer using Auth before any privileged state
+operation. The external Apple callback cannot supply a Supabase JWT; its
+per-function gateway verification is disabled, while the handler requires the
+bounded form-post and a matching unexpired, single-use server state. It only
+escrows a code and redirects an opaque handle. It never exchanges tokens,
+changes the app session or deletes an account. Completion requires the verified
+owner plus the in-memory claim verifier, validates Apple's returned identity,
+and enters the same durable phase machine as native deletion. Managed Supabase
+OAuth codes are not accepted as Apple deletion authorization codes.
+
+The browser claim is consumed before code exchange. A lost claim/exchange
+response before token persistence requires fresh authorization; never replay
+the consumed grant. After `token_ready`, completion accepts `{ "resume": true }`
+over the authenticated session and revokes with the persisted client binding,
+without requiring the in-memory claim. Keep the configured web client/key
+available for unfinished web deletions even if browser UI is withdrawn. Simply
+turning off the server opt-in also disables this web resume endpoint and is not
+a safe completed rollback when such deletions remain.
+
+### Coordinated staging deployment gate
+
+No deployment command is approved or executed by this document. Before a
+separately scoped promotion, require the exact reviewed migration/worker
+revision, focused and full integration evidence, Services ID association,
+registered HTTPS return URI, key authorization and rotation ownership.
+
+Migration `20260906001100` removes the public two-argument token writer and adds
+the bound three-argument writer. The old worker and new migration are **not** a
+compatible pair; neither are the new worker and old schema. Contain deletion
+traffic and drain old workers before the migration preflight. The preflight
+must find zero legacy `token_ready` records, or abort for verified remediation;
+never infer a client binding or overwrite a durable token. Keep traffic
+contained while applying the exact forward migration chain and replacing the
+native worker plus the paired browser workers. If containment/drain cannot be
+established, stop rather than race the migration with an old token exchange.
+
+Verify the persisted migration and function revisions together, then qualify
+native deletion compatibility and the paired web path in staging before
+exposing the browser option. On any failure keep the affected path contained;
+do not roll back to the unbound worker, repair migration history, reset phases,
+or mark deletion complete. `scripts/test-deletion-client-migration.sh` qualifies
+legacy refusal and later-phase compatibility only on an empty local database
+reset to the exact pre-binding migration. It creates synthetic state through
+the old APIs, executes the actual forward migration, verifies refusal preserves
+state/API availability, verifies later-phase migration, and rolls everything
+back. Backend CI runs this before resetting to and testing the full chain.
+This local rehearsal is not a hosted preflight or evidence of real Apple
+revocation. Independent review and actual contained deployment preflight remain
+required before promotion. Recovery of backups uses
+the additional temporary-grant invalidation rules in `backup-restore.md`.
+
+The browser body reader has a five-second deadline. Each browser endpoint also
+shares one 60-second transport abort budget across Auth, RPC and Apple requests,
+preserving Apple's shorter per-request timeout. Endpoint exit retires the shared
+transport scope and prevents later dispatch through it. The endpoint awaits the
+real transport rather than detaching deletion work with a timeout race. These
+limits do not prove remote rollback, non-acceptance or settled side effects after
+an abort; hosted interruption and recovery evidence remain qualification gates.
+No local test is a real Apple, hosted deletion, physical-device or production
+acceptance receipt.
+
 ## Durable phase machine
 
 | Phase | Durable state | Safe recovery behavior |

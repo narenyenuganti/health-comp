@@ -4,6 +4,7 @@ import {
   AccountDeletionHTTPError,
   AppleClientSecretConfiguration,
   AppleTokenExchange,
+  continueAccountDeletion,
   createAppleClientSecret,
   createAppleTokenClient,
   createLiveDependencies,
@@ -74,6 +75,7 @@ function progress(
     phase,
     appleProviderId: phase === "completed" ? null : appleProviderID,
     authUserId,
+    appleClientId: phase === "prepared" ? null : clientID,
   };
 }
 
@@ -150,6 +152,36 @@ Deno.test("live dependencies do not require Apple secrets before authentication"
     "SUPABASE_ANON_KEY",
     "SUPABASE_SERVICE_ROLE_KEY",
   ]);
+});
+
+Deno.test("live deletion adapters route Auth and RPC through the configured fetch", async () => {
+  const paths: string[] = [];
+  const live = createLiveDependencies({
+    environment: (name) => ({
+      SUPABASE_URL: "https://example.invalid",
+      SUPABASE_ANON_KEY: "synthetic-anon",
+      SUPABASE_SERVICE_ROLE_KEY: "synthetic-service",
+    }[name] ?? ""),
+    fetch: (input, init) => {
+      const req = new Request(input, init);
+      paths.push(new URL(req.url).pathname);
+      if (paths.length === 1) {
+        return Promise.resolve(Response.json({ id: authUserID }));
+      }
+      return Promise.resolve(
+        Response.json({
+          profile_id: profileID,
+          phase: "prepared",
+          auth_user_id: authUserID,
+          apple_provider_id: appleProviderID,
+          apple_client_id: null,
+        }),
+      );
+    },
+  });
+  assertEquals(await live.authenticate("Bearer synthetic-user"), authUserID);
+  assertEquals((await live.begin(authUserID)).phase, "prepared");
+  assertEquals(paths, ["/auth/v1/user", "/rest/v1/rpc/begin_account_deletion"]);
 });
 
 Deno.test("delete account rejects malformed or expansive reauthentication input", async () => {
@@ -274,6 +306,110 @@ Deno.test("Apple token identity is bound to provider, client, nonce, and lifetim
     assertEquals(await response.json(), { error: "apple_identity_mismatch" });
     assertEquals(stored, false);
   }
+});
+
+Deno.test("deletion persists the exchanging client identity with its token", async () => {
+  let storedArguments: unknown[] = [];
+  const response = await deleteAccountHandler(
+    request(),
+    dependencies({
+      storeAppleToken: async (...args) => {
+        storedArguments = args;
+        return { ...progress("token_ready"), appleClientId: clientID };
+      },
+    }),
+  );
+  assertEquals(response.status, 200);
+  assertEquals(storedArguments, [
+    profileID,
+    "test-refresh-token-for-account-deletion",
+    clientID,
+  ]);
+});
+
+Deno.test("deletion retry uses persisted client identity instead of current exchange client", async () => {
+  let revokedArguments: unknown[] = [];
+  const storedClientID = "com.example.HealthComp.staging.web";
+  const response = await deleteAccountHandler(
+    request(),
+    dependencies({
+      begin: async () => ({
+        ...progress("token_ready"),
+        appleClientId: storedClientID,
+      }),
+      revokeAppleToken: async (...args) => {
+        revokedArguments = args;
+      },
+    }),
+  );
+  assertEquals(response.status, 200);
+  assertEquals(revokedArguments, [
+    "test-refresh-token-for-account-deletion",
+    storedClientID,
+  ]);
+});
+
+Deno.test("deletion refuses unbound legacy token without loading or revoking it", async () => {
+  let tokenCalls = 0;
+  const response = await deleteAccountHandler(
+    request(),
+    dependencies({
+      begin: async () => ({ ...progress("token_ready"), appleClientId: null }),
+      loadAppleToken: async () => {
+        tokenCalls++;
+        return "legacy-refresh-token";
+      },
+      revokeAppleToken: async () => {
+        tokenCalls++;
+      },
+    }),
+  );
+  assertEquals(response.status, 503);
+  assertEquals(tokenCalls, 0);
+});
+
+Deno.test("shared deletion workflow resumes durable token without requesting another grant", async () => {
+  let grantCalls = 0;
+  const response = await continueAccountDeletion(
+    authUserID,
+    dependencies({
+      begin: async () => progress("token_ready"),
+    }),
+    async () => {
+      grantCalls++;
+      throw new Error("consumed grant must not be replayed");
+    },
+  );
+  assertEquals(response.status, 200);
+  assertEquals(grantCalls, 0);
+});
+
+Deno.test("shared deletion workflow validates and stores the supplied web grant binding", async () => {
+  const webClient = "com.example.staging.web";
+  const webNonce = "e".repeat(64);
+  const stored: unknown[][] = [];
+  const response = await continueAccountDeletion(
+    authUserID,
+    dependencies({
+      exchangeAuthorizationCode: async () => {
+        throw new Error("native exchange must not run");
+      },
+      storeAppleToken: async (...args) => {
+        stored.push(args);
+        return { ...progress("token_ready"), appleClientId: webClient };
+      },
+    }),
+    async () => ({
+      clientID: webClient,
+      nonce: webNonce,
+      tokens: {
+        refreshToken: "synthetic-web-refresh-token",
+        idToken: fakeAppleIDToken({ aud: webClient, nonce: webNonce }),
+      },
+    }),
+  );
+  assertEquals(response.status, 200);
+  assertEquals(stored, [[profileID, "synthetic-web-refresh-token", webClient]]);
 });
 
 Deno.test("token-ready retry resumes without exchanging the single-use code", async () => {
@@ -441,6 +577,40 @@ Deno.test("Apple token client validates exchange and successful revocation reque
     new URLSearchParams(await requests[1].text()).get("token_type_hint"),
     "refresh_token",
   );
+});
+
+Deno.test("Apple web token exchange carries its configured return URI only to token exchange", async () => {
+  const requests: Request[] = [];
+  const configuration = {
+    clientID: "com.example.HealthComp.staging.web",
+    redirectURI:
+      "https://staging.example.invalid/functions/v1/apple-deletion-callback",
+    clientSecret: async () => "signed-web-client-secret",
+    fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
+      requests.push(new Request(input, init));
+      return requests.length === 1
+        ? Response.json({
+          refresh_token: "returned-web-refresh-token",
+          id_token: fakeAppleIDToken(),
+        })
+        : new Response(null, { status: 200 });
+    },
+  };
+  const tokenClient = createAppleTokenClient(configuration);
+  const exchange = await tokenClient.exchangeAuthorizationCode(
+    "fresh-web-code",
+  );
+  await tokenClient.revoke(exchange.refreshToken);
+
+  const tokenBody = new URLSearchParams(await requests[0].text());
+  assertEquals(tokenBody.get("redirect_uri"), configuration.redirectURI);
+  assertEquals(tokenBody.get("client_id"), configuration.clientID);
+  assertEquals(tokenBody.get("client_secret"), "signed-web-client-secret");
+  assertEquals(tokenBody.get("code"), "fresh-web-code");
+  const revokeBody = new URLSearchParams(await requests[1].text());
+  assertEquals(revokeBody.get("redirect_uri"), null);
+  assertEquals(revokeBody.get("client_id"), configuration.clientID);
+  assertEquals(revokeBody.get("token"), "returned-web-refresh-token");
 });
 
 Deno.test("Apple token client treats unsuccessful revocation as retryable", async () => {

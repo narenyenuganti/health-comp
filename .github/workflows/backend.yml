@@ -47,6 +47,7 @@ jobs:
           bash scripts/test-recovery-foreign-key-static.sh
           bash scripts/test-recovery-foreign-key-integrity.sh --static
           bash scripts/test-recovery-state-acceptance.sh --static
+          bash -n scripts/test-deletion-client-migration.sh
           sh scripts/test-verify-invitation-functions.sh
           sh scripts/test-staging-adversarial-sql.sh
           sh scripts/test-verify-app-attest-dependency-graph.sh
@@ -87,6 +88,10 @@ jobs:
           state_output="$(mktemp "$RUNNER_TEMP/healthcomp-state-check.XXXXXX")"
 
           supabase start
+          # Rehearse the actual forward migration with an existing synthetic
+          # legacy token before qualifying the full current schema below.
+          supabase db reset --local --version 20260822001000
+          bash scripts/test-deletion-client-migration.sh
           supabase db reset
           supabase test db
 
@@ -187,7 +192,7 @@ jobs:
             exit 1
           fi
 
-          # Exact 31-field empty-state receipt from the actual migrated schema,
+          # Exact 33-field v2 empty-state receipt from the actual migrated schema,
           # not just synthetic projections. Never print rejected output/errors.
           if ! docker exec "$database_containers" psql -XqAt --no-password \
             --host=/var/run/postgresql --username=postgres --dbname=postgres \
@@ -197,7 +202,7 @@ jobs:
             exit 1
           fi
           bash scripts/test-recovery-state-acceptance.sh --check-empty-receipt <"$state_output"
-          echo "State schema compatibility passed: exact empty receipt, 17 application tables."
+          echo "State schema compatibility passed: exact v2 empty receipt, 18 application tables."
 
           deno test \
             --config supabase/functions/deno.json \

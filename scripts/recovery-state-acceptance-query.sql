@@ -18,6 +18,7 @@ with expected_tables(schema_name, table_name, expected_rls, expected_force, auth
     ('private', 'competition_notification_mutes', false, false, false),
     ('private', 'competition_notification_work', true, true, false),
     ('private', 'account_deletions', true, true, false),
+    ('private', 'apple_deletion_web_requests', true, true, false),
     ('private', 'app_attest_keys', true, true, false),
     ('private', 'app_attest_challenges', true, true, false),
     ('private', 'app_attest_submission_grants', true, true, false)
@@ -51,8 +52,11 @@ required_column_groups(table_name, type_name, column_names) as (
     ('competition_notification_work', 'timestamptz', array['lease_expires_at']),
     ('competition_notification_work', 'bytea', array['leased_apns_token_sha256']),
     ('account_deletions', 'uuid', array['profile_id','auth_user_id']),
-    ('account_deletions', 'text', array['apple_provider_id','phase']),
+    ('account_deletions', 'text', array['apple_provider_id','phase','apple_client_id']),
     ('account_deletions', 'timestamptz', array['started_at','updated_at','completed_at']),
+    ('apple_deletion_web_requests', 'uuid', array['profile_id','auth_user_id']),
+    ('apple_deletion_web_requests', 'text', array['request_id','state_digest','verifier_digest','nonce','apple_client_id','redirect_uri','phase']),
+    ('apple_deletion_web_requests', 'timestamptz', array['created_at','expires_at']),
     ('app_attest_keys', 'uuid', array['profile_id','installation_id']),
     ('app_attest_challenges', 'uuid', array['profile_id','installation_id']),
     ('app_attest_submission_grants', 'uuid', array['profile_id','installation_id'])
@@ -136,7 +140,7 @@ policy_checks as (
 ),
 profiles as materialized (select id, auth_user_id, display_name, state,
   anonymized_at, created_at, updated_at from only public.profiles),
-deletions as materialized (select profile_id, auth_user_id, apple_provider_id,
+deletions as materialized (select profile_id, auth_user_id, apple_provider_id, apple_client_id,
   phase, started_at, updated_at, completed_at from only private.account_deletions),
 deactivated as (select id, state from profiles where state in ('deleting','anonymized')),
 attest_rows as materialized (
@@ -149,7 +153,18 @@ completion_events as materialized (
   where kind = 'account_deletion' and code = 'completed'
 )
 select pg_catalog.json_build_object(
-  'receipt_version', 1,
+  'receipt_version', 2,
+  -- Any restored operation must be invalidated, regardless of its phase or
+  -- expiry. Vault code-secret absence is a separate recovery gate.
+  'browser_requests_remaining', (select count(*) from only private.apple_deletion_web_requests),
+  -- Schema shape only: association with the actual allowlisted Apple client
+  -- and existence of its durable Vault token remain separate prerequisites.
+  'deletion_client_binding_invalid', (select count(*) from deletions where (
+    (phase is distinct from 'token_ready' or apple_client_id is not null)
+    and (apple_client_id is null or (
+      pg_catalog.char_length(apple_client_id) between 1 and 255
+      and apple_client_id !~ '[[:space:][:cntrl:]]'
+    ))) is not true),
   'application_tables_checked', (select count(*) from table_catalog where supported),
   'application_tables_missing_or_unsupported', (select count(*) from table_catalog where supported is not true),
   'application_tables_unexpected', (select count(*) from scoped_relations s where not exists (

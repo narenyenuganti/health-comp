@@ -19,7 +19,7 @@ select has_function(
   'the server can durably prepare account deletion'
 );
 select has_function(
-  'public', 'store_account_deletion_apple_token', array['uuid', 'text'],
+  'public', 'store_account_deletion_apple_token', array['uuid', 'text', 'text'],
   'the server can escrow a revocation token in Vault'
 );
 select has_function(
@@ -495,7 +495,7 @@ select is((
 select throws_ok(
   $$
     select public.store_account_deletion_apple_token(
-      'd2000000-0000-4000-8000-000000000001', 'short'
+      'd2000000-0000-4000-8000-000000000001', 'short', 'com.example.native'
     )
   $$,
   '22023', 'invalid_apple_refresh_token',
@@ -505,7 +505,7 @@ select lives_ok(
   $$
     select public.store_account_deletion_apple_token(
       'd2000000-0000-4000-8000-000000000001',
-      'test-refresh-token-for-account-deletion'
+      'test-refresh-token-for-account-deletion', 'com.example.native'
     )
   $$,
   'a valid Apple refresh token is escrowed in Vault'

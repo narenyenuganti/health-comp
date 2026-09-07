@@ -1,6 +1,7 @@
 -- Synthetic projected schema only. The guarded harness owns this empty database.
 -- No Auth/Vault objects, live tokens, migration execution, or product triggers.
--- Source column types: migrations 00100, 00450, 00650, 00700, 00750, 00800.
+-- Source column types: migrations 00100, 00450, 00650, 00700, 00750, 00800,
+-- and the September 6 client-binding/web-request forward migrations.
 -- CHECK/FK/NOT NULL constraints are intentionally absent so corruption is testable.
 -- Real migrated-schema compatibility is a separate CI invocation of the operator.
 \if :build_schema
@@ -30,7 +31,12 @@ create table private.competition_notification_work (
 );
 create table private.account_deletions (
   profile_id uuid, auth_user_id uuid, apple_provider_id text, phase text,
-  started_at timestamptz, updated_at timestamptz, completed_at timestamptz
+  started_at timestamptz, updated_at timestamptz, completed_at timestamptz, apple_client_id text
+);
+create table private.apple_deletion_web_requests (
+  request_id text, state_digest text, verifier_digest text, nonce text,
+  profile_id uuid, auth_user_id uuid, apple_client_id text, redirect_uri text,
+  phase text, created_at timestamptz, expires_at timestamptz
 );
 create table private.app_attest_keys (key_id text, profile_id uuid, installation_id uuid);
 create table private.app_attest_challenges (id uuid, profile_id uuid, installation_id uuid);
@@ -64,6 +70,8 @@ alter table public.device_installations enable row level security;
 alter table public.support_events enable row level security;
 alter table private.account_deletions enable row level security;
 alter table private.account_deletions force row level security;
+alter table private.apple_deletion_web_requests enable row level security;
+alter table private.apple_deletion_web_requests force row level security;
 alter table private.competition_notification_work enable row level security;
 alter table private.competition_notification_work force row level security;
 alter table private.app_attest_keys enable row level security;
@@ -86,7 +94,7 @@ truncate public.profiles, public.competitions, public.competition_participants,
   public.competition_awards, public.device_installations, public.support_events,
   private.competition_notification_mutes, private.competition_notification_work,
   private.account_deletions, private.app_attest_keys, private.app_attest_challenges,
-  private.app_attest_submission_grants;
+  private.app_attest_submission_grants, private.apple_deletion_web_requests;
 insert into public.profiles
 select md5('profile-' || n)::uuid,
   case when n in (4, 5) then null else md5('auth-' || n)::uuid end,
@@ -101,7 +109,8 @@ select md5('profile-' || n)::uuid,
   case when n = 5 then null else 'synthetic-apple-' || n end,
   (array['prepared','token_ready','apple_revoked','auth_delete_pending','completed'])[n],
   '2026-09-01 10:00:00+00', '2026-09-01 12:00:00+00',
-  case when n = 5 then '2026-09-01 12:00:00+00'::timestamptz end
+  case when n = 5 then '2026-09-01 12:00:00+00'::timestamptz end,
+  case when n = 2 then 'com.example.web' else null end
 from generate_series(1, 5) n;
 insert into public.support_events values
   (md5('completion-5')::uuid, md5('profile-5')::uuid, 'account_deletion', 'completed'),
