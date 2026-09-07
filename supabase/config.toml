@@ -399,6 +399,20 @@ verify_jwt = false
 [functions.delete-account]
 verify_jwt = false
 
+# These handlers are disabled unless explicitly opted into the exact staging
+# project. Begin/complete verify the bearer with Auth before privileged work.
+[functions.apple-deletion-begin]
+verify_jwt = false
+
+[functions.apple-deletion-complete]
+verify_jwt = false
+
+# Apple's form-post callback has no Supabase JWT. The handler must validate
+# bounded form input and atomically match live state before escrowing a code.
+# It never exchanges a token or performs account deletion itself.
+[functions.apple-deletion-callback]
+verify_jwt = false
+
 # The function verifies the bearer access token with Auth before issuing a
 # challenge. Disabling the legacy gateway verifier also supports projects that
 # use asymmetric JWT signing keys.

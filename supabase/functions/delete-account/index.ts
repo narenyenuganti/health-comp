@@ -12,11 +12,18 @@ export interface DeletionProgress {
   phase: DeletionPhase;
   appleProviderId: string | null;
   authUserId: string | null;
+  appleClientId?: string | null;
 }
 
 export interface AppleTokenExchange {
   refreshToken: string;
   idToken: string;
+}
+
+export interface DeletionAuthorization {
+  clientID: string;
+  nonce: string;
+  tokens: AppleTokenExchange;
 }
 
 export interface DeleteAccountDependencies {
@@ -28,9 +35,10 @@ export interface DeleteAccountDependencies {
   storeAppleToken(
     profileID: string,
     refreshToken: string,
+    appleClientID: string,
   ): Promise<DeletionProgress>;
   loadAppleToken(profileID: string): Promise<string>;
-  revokeAppleToken(token: string): Promise<void>;
+  revokeAppleToken(token: string, appleClientID: string): Promise<void>;
   markAppleRevoked(profileID: string): Promise<DeletionProgress>;
   anonymize(profileID: string): Promise<DeletionProgress>;
   deleteAuthUser(authUserID: string): Promise<void>;
@@ -222,34 +230,59 @@ export async function deleteAccountHandler(
     return jsonResponse(401, { error: "authentication_required" });
   }
 
+  return continueAccountDeletion(authUserID, dependencies, async () => {
+    const clientID = dependencies.appleClientID;
+    return {
+      clientID,
+      nonce: body.nonce,
+      tokens: await dependencies.exchangeAuthorizationCode(
+        body.authorizationCode,
+      ),
+    };
+  });
+}
+
+// Internal workflow: caller must supply the identity verified by authenticate.
+// Authorization is requested only before durable token storage, never on resume.
+export async function continueAccountDeletion(
+  authUserID: string,
+  dependencies: DeleteAccountDependencies,
+  authorize: () => Promise<DeletionAuthorization>,
+): Promise<Response> {
   try {
     let progress = await dependencies.begin(authUserID);
 
     if (progress.phase === "prepared") {
-      const tokenExchange = await dependencies.exchangeAuthorizationCode(
-        body.authorizationCode,
-      );
+      const grant = await authorize();
       validateAppleIdentity(
-        tokenExchange.idToken,
+        grant.tokens.idToken,
         progress.appleProviderId,
-        dependencies.appleClientID,
-        body.nonce,
+        grant.clientID,
+        grant.nonce,
         dependencies.now(),
       );
       progress = requirePhase(
         await dependencies.storeAppleToken(
           progress.profileId,
-          tokenExchange.refreshToken,
+          grant.tokens.refreshToken,
+          grant.clientID,
         ),
         "token_ready",
       );
     }
 
     if (progress.phase === "token_ready") {
+      const boundClientID = progress.appleClientId;
+      if (!boundClientID || !validConfigurationValue(boundClientID, 255)) {
+        throw new AccountDeletionHTTPError(
+          503,
+          "account_deletion_client_binding_required",
+        );
+      }
       const storedToken = await dependencies.loadAppleToken(
         progress.profileId,
       );
-      await dependencies.revokeAppleToken(storedToken);
+      await dependencies.revokeAppleToken(storedToken, boundClientID);
       progress = requirePhase(
         await dependencies.markAppleRevoked(progress.profileId),
         "apple_revoked",
@@ -399,6 +432,9 @@ export async function createAppleClientSecret(
 
 interface AppleTokenClientConfiguration {
   clientID: string;
+  // Server-owned return URI from the original web authorization request.
+  // Native authorization omits this; never populate it from callback input.
+  redirectURI?: string;
   clientSecret(): Promise<string>;
   fetch: typeof fetch;
 }
@@ -438,6 +474,9 @@ export function createAppleTokenClient(
       const response = await post("token", {
         code,
         grant_type: "authorization_code",
+        ...(configuration.redirectURI === undefined
+          ? {}
+          : { redirect_uri: configuration.redirectURI }),
       });
       const text = await response.text();
       if (!response.ok) {
@@ -536,6 +575,9 @@ function normalizeProgress(value: unknown): DeletionProgress {
     authUserId: typeof record.auth_user_id === "string"
       ? record.auth_user_id
       : null,
+    appleClientId: typeof record.apple_client_id === "string"
+      ? record.apple_client_id
+      : null,
   };
 }
 
@@ -550,6 +592,7 @@ export function createLiveDependencies(
   const serviceRoleKey = configuration.environment("SUPABASE_SERVICE_ROLE_KEY");
   const admin = createClient(supabaseURL, serviceRoleKey, {
     auth: { persistSession: false, autoRefreshToken: false },
+    global: { fetch: configuration.fetch },
   });
 
   function appleConfiguration(): AppleClientSecretConfiguration {
@@ -587,7 +630,10 @@ export function createLiveDependencies(
     authenticate: async (authorization) => {
       const userClient = createClient(supabaseURL, supabaseAnonKey, {
         auth: { persistSession: false, autoRefreshToken: false },
-        global: { headers: { Authorization: authorization } },
+        global: {
+          headers: { Authorization: authorization },
+          fetch: configuration.fetch,
+        },
       });
       const { data, error } = await userClient.auth.getUser();
       if (error || !data.user) throw error ?? new Error("missing user");
@@ -602,13 +648,14 @@ export function createLiveDependencies(
       ),
     exchangeAuthorizationCode: (code) =>
       appleTokenClient().exchangeAuthorizationCode(code),
-    storeAppleToken: async (targetProfileID, refreshToken) =>
+    storeAppleToken: async (targetProfileID, refreshToken, appleClientID) =>
       normalizeProgress(
         await rpc(
           "store_account_deletion_apple_token",
           {
             target_profile_id: targetProfileID,
             refresh_token: refreshToken,
+            apple_client_id: appleClientID,
           },
         ),
       ),
@@ -619,7 +666,19 @@ export function createLiveDependencies(
       if (typeof value !== "string") throw new Error("missing Apple token");
       return value;
     },
-    revokeAppleToken: (token) => appleTokenClient().revoke(token),
+    revokeAppleToken: (token, boundClientID) => {
+      // Browser clients will require a separately configured allowlist entry.
+      // Never sign for an arbitrary client read from durable progress.
+      if (
+        boundClientID !== configuration.environment("APPLE_SIGN_IN_CLIENT_ID")
+      ) {
+        throw new AccountDeletionHTTPError(
+          503,
+          "account_deletion_client_binding_unsupported",
+        );
+      }
+      return appleTokenClient().revoke(token);
+    },
     markAppleRevoked: async (targetProfileID) =>
       normalizeProgress(
         await rpc(

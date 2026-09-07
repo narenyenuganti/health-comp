@@ -667,10 +667,12 @@ there is no usable receipt. Do not grant extra access to make a failed audit
 pass. Operator files do not write data, create objects, change roles or read
 Vault secrets.
 
-Require exactly 31 native nonnegative integer fields, with no extra keys or
-output. The two fixed criteria are `receipt_version=1` and
-`application_tables_checked=17`. These 19 violation counters must all be zero:
+Require exactly 33 native nonnegative integer fields, with no extra keys or
+output. The two fixed criteria are `receipt_version=2` and
+`application_tables_checked=18`. Version 1 receipts do not qualify this candidate.
+These 21 violation counters must all be zero on the contained recovery target:
 
+- `browser_requests_remaining`, `deletion_client_binding_invalid`
 - `application_tables_missing_or_unsupported`, `application_tables_unexpected`
 - `rls_flag_mismatches`, `table_privilege_mismatches`,
   `column_privilege_mismatches`, `policy_mismatches`
@@ -693,14 +695,18 @@ The other ten fields are diagnostics: `profiles_checked`,
 `deletions_auth_delete_pending`, `deletions_completed`,
 `anonymized_profiles_without_completed_deletion`, and
 `anonymized_profiles_in_results`. Compare all fields between source and target
-at the established common point. Nonzero violation counts are rejection
+at the established common point. Source browser requests can be nonzero before
+recovery invalidation; require zero on the target after the reviewed cleanup,
+not equality of this counter with the pre-cleanup source. Preserve all durable
+state comparisons. Nonzero violation counts are rejection
 evidence even when psql exits zero. The receipt has no overall readiness field.
 
-The 17-table authorization baseline is 11 public tables with RLS/no FORCE, five
+The 18-table authorization baseline is 11 public tables with RLS/no FORCE, six
 private tables with both flags, and private `competition_notification_mutes`
-with neither flag but revoked raw access. The five FORCE-protected tables are
+with neither flag but revoked raw access. The six FORCE-protected tables are
 `competition_notification_work`, `account_deletions`, `app_attest_keys`,
-`app_attest_challenges`, and `app_attest_submission_grants`. Require ordinary
+`app_attest_challenges`, `app_attest_submission_grants`, and
+`apple_deletion_web_requests`. Require ordinary
 nonpartitioned/noninherited tables with the predicate's native column types;
 unsupported/missing relations must reject qualification, not disappear from
 the denominator. Extra public/private tables, views, materialized views or
@@ -726,6 +732,15 @@ count, not a corruption count or completion credit. Every unfinished phase
 still requires the account-deletion quarantine/reconciliation procedure.
 Neither null references nor the completed phase independently prove managed
 Auth/session retirement, provider revocation or safe external-service resumption.
+
+Client binding is mandatory in `token_ready`; any stored binding must be
+nonempty, at most 255 characters, and contain no whitespace/control characters.
+This shape check does not prove membership in the configured Apple client
+allowlist, a valid signing credential, or the durable Vault token's presence.
+`browser_requests_remaining` counts every row, not just apparently usable phases:
+restored cancelled/consumed/expired operations must also be invalidated. The
+aggregate query does not inspect Vault; separately prove temporary code-secret
+absence under the reviewed recovery cleanup boundary.
 
 Retirement counts each affected profile or revoked installation once.
 Notification work is checked in both profile directions, including any
@@ -1045,6 +1060,53 @@ receipt or a separately reviewed privacy design for a minimal external ledger
 and deterministic re-deletion. Do not invent that ledger during an incident.
 
 ## Special account-deletion recovery rule
+
+### Browser-grant recovery boundary (local candidate; not qualified)
+
+The staging browser deletion candidate adds
+`private.apple_deletion_web_requests` and temporary Vault secrets named with
+the exact `healthcomp_web_deletion_code:` prefix. These are short-lived
+authorization operations, not durable deletion progress. A backup can capture
+a request before it was consumed or cancelled, so checking only its restored
+phase or expiry is insufficient to establish freshness.
+
+Before reopening a restored candidate, keep all app traffic, callback workers
+and scheduled workers contained. A reviewed recovery operation must invalidate
+**all** restored browser requests, including pending and code-ready requests,
+and remove their temporary code secrets, including any orphaned secrets with
+that exact prefix. Require aggregate zero-row/zero-secret evidence and prove
+that old callback states and claim verifiers cannot resume authorization.
+Never display secret contents or retained private identifiers. A fresh browser
+authorization is required after service resumes.
+
+Do not apply this cleanup to `private.account_deletions`, its durable Apple
+refresh tokens/client binding, or competition history. The durable phase rules
+below still apply independently. In particular, discarding a temporary web code
+must not reset a token-ready deletion or recreate an anonymized identity.
+
+The local candidate provides the invoker-rights, non-API helper
+`private.invalidate_apple_deletion_web_requests_for_recovery()` in forward
+migration `20260906001300`. It deletes requests using their existing cleanup
+trigger, then deletes orphaned temporary code secrets with literal prefix
+matching. A table lock serializes these database changes, but does not stop an
+already admitted external Apple exchange. Operator containment is mandatory;
+the eventual reviewed invocation must supply bounded transaction/lock timeouts.
+Do not use the helper as a substitute for stopping workers or as a live-account
+cleanup endpoint.
+
+Local synthetic SQL tests cover restored states, old callback/claim rejection,
+literal-prefix scope, repeat invocation, denied API execution privileges and
+preservation of durable tokens, deletion records and anonymized history. These
+are not a hosted backup/restore rehearsal or independent review. No operational
+cleanup command is qualified here. The candidate recovery-state query, fixture
+harness and backend CI now use the v2/18-table contract above, including the
+new table's shape, RLS, privileges, remaining requests and durable client-binding
+shape. Do not suppress a violation or reuse a historical v1 receipt.
+Local component receipts do not establish hosted browser-grant recovery acceptance. This is a
+release/recovery gate for the candidate, not authorization to run cleanup on a
+hosted project.
+
+### Durable deletion progress
 
 The logical dump excludes Vault. A token_ready deletion in a logical restore
 may have no Apple refresh token and cannot be safely completed or rolled back
