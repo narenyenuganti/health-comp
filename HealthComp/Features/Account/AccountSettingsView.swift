@@ -112,6 +112,7 @@ struct AccountSettingsView: View {
             }
         }
         .navigationTitle("Account")
+        .task { store.send(.appeared) }
         .navigationBarTitleDisplayMode(.inline)
         .overlay {
             if store.isRequestInFlight {
@@ -138,6 +139,12 @@ struct AccountSettingsView: View {
                 store.send(.deleteAccountConfirmationAccepted)
             }
             .accessibilityIdentifier("account.delete.confirm")
+            if store.isBrowserDeletionAvailable {
+                Button("Delete with Apple in Browser", role: .destructive) {
+                    store.send(.browserDeleteConfirmationAccepted)
+                }
+                .accessibilityIdentifier("account.delete.browser.confirm")
+            }
             Button("Cancel", role: .cancel) {
                 store.send(.deleteAccountConfirmationCancelled)
             }

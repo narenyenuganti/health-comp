@@ -4,6 +4,378 @@ import XCTest
 @testable import HealthComp
 
 final class AppFeatureTests: XCTestCase {
+    @MainActor
+    func testCancelledPersistedSignInRetirementIsRecoverableWithoutRestoringOrSigningOutGlobally() async {
+        for action in [
+            AppFeature.Action.signInResponse(epoch: 0, .failure(.retirementRequired)),
+            .restoreSessionResponse(epoch: 0, .failure(.retirementRequired)),
+        ] {
+            let calls = OrderedCallRecorder()
+            var authentication = AuthenticationClient.test(signOut: { calls.record("global-logout") })
+            authentication.finishRetirement = {
+                calls.record("retire")
+                if calls.calls.count == 1 { throw AuthenticationClientFailure.operationFailed }
+            }
+            let store = TestStore(initialState: AppFeature.State()) { AppFeature() } withDependencies: {
+                $0.authenticationClient = authentication
+            }
+            store.exhaustivity = .off(showSkippedAssertions: false)
+            await store.send(action)
+            await store.finish()
+            await store.skipReceivedActions(strict: false)
+            XCTAssertEqual(store.state.phase, .launchFailure)
+            XCTAssertEqual(store.state.pendingTeardown?.stage, .retireAuthentication)
+            XCTAssertEqual(calls.calls, ["retire"])
+            await store.send(.account(.delegate(.retryRequested)))
+            await store.finish()
+            await store.skipReceivedActions(strict: false)
+            XCTAssertEqual(calls.calls, ["retire", "retire"])
+            XCTAssertEqual(store.state.phase, .signedOut)
+            XCTAssertNil(store.state.pendingTeardown)
+            XCTAssertNil(store.state.account.message)
+        }
+    }
+
+    @MainActor
+    func testConfirmedDeletionRetirementRetryDoesNotRepeatServerOrProfileTeardown() async {
+        for inBrowser in [false, true] {
+            let calls = OrderedCallRecorder()
+            let storage = profileStorageFixture(for: profile, recorder: calls)
+            var authentication = AuthenticationClient.test(
+                deleteAccount: { calls.record("server-confirmed") }
+            )
+            authentication.deleteAccountInBrowser = { calls.record("server-confirmed") }
+            authentication.finishRetirement = {
+                calls.record("retire")
+                if calls.calls.filter({ $0 == "retire" }).count == 1 {
+                    throw AuthenticationClientFailure.operationFailed
+                }
+            }
+            var initial = AppFeature.State.authenticated(profile: profile, epoch: 3)
+            initial.account.isDeletingAccount = true
+            initial.account.isRequestInFlight = true
+            initial.account.isBrowserDeletionAvailable = inBrowser
+            let store = TestStore(initialState: initial) { AppFeature() } withDependencies: {
+                $0.authenticationClient = authentication
+                $0.authenticatedProfileStorage = storage.client
+                $0.competitionClient = .test(
+                    stop: { calls.record("runtime-stop") },
+                    prepareForProfileTeardown: { _ in calls.record("runtime-prepare") }
+                )
+            }
+            store.exhaustivity = .off(showSkippedAssertions: false)
+            await store.send(.account(.delegate(inBrowser ? .deleteAccountInBrowserRequested : .deleteAccountRequested)))
+            await store.finish()
+            await store.skipReceivedActions(strict: false)
+            XCTAssertEqual(store.state.phase, .launchFailure)
+            XCTAssertEqual(store.state.pendingTeardown?.stage, .retireAuthentication)
+            XCTAssertEqual(store.state.pendingTeardown?.reason, .accountDeleted)
+            XCTAssertEqual(calls.calls, ["server-confirmed", "runtime-prepare", "runtime-stop", "storage-teardown", "retire"])
+            await store.send(.account(.delegate(.retryRequested)))
+            await store.finish()
+            await store.skipReceivedActions(strict: false)
+            XCTAssertEqual(calls.calls, ["server-confirmed", "runtime-prepare", "runtime-stop", "storage-teardown", "retire", "retire"])
+            XCTAssertEqual(store.state.phase, .signedOut)
+            XCTAssertNil(store.state.pendingTeardown)
+        }
+    }
+
+    @MainActor
+    func testNoProfileTerminalPathsAwaitRetirementAndRetainFailureForRetry() async {
+        let cases: [(AppFeature.Action, AccountFeature.Message?)] = [
+            (.restoreSessionResponse(epoch: 0, .success(nil)), nil),
+            (.restoreSessionResponse(epoch: 0, .failure(.terminalSession)), .sessionEnded),
+            (.restoreSessionResponse(epoch: 0, .failure(.sessionExpired)), .sessionEnded),
+            (.bootstrapProfileResponse(epoch: 0, .failure(.terminalSession)), .sessionEnded),
+        ]
+        for (action, message) in cases {
+            let calls = OrderedCallRecorder()
+            var authentication = AuthenticationClient.test(
+                signOut: { calls.record("remote-sign-out") }
+            )
+            authentication.finishRetirement = {
+                calls.record("retire")
+                if calls.calls.count == 1 { throw AuthenticationClientFailure.operationFailed }
+            }
+            let store = TestStore(initialState: AppFeature.State()) { AppFeature() } withDependencies: {
+                $0.authenticationClient = authentication
+            }
+            store.exhaustivity = .off(showSkippedAssertions: false)
+            await store.send(action)
+            await store.finish()
+            await store.skipReceivedActions(strict: false)
+            XCTAssertEqual(store.state.phase, .launchFailure)
+            XCTAssertEqual(store.state.pendingTeardown?.stage, .retireAuthentication)
+            XCTAssertEqual(calls.calls, ["retire"])
+            guard store.state.phase == .launchFailure else { continue }
+            await store.send(.account(.delegate(.retryRequested)))
+            await store.finish()
+            await store.skipReceivedActions(strict: false)
+            XCTAssertEqual(calls.calls, ["retire", "retire"])
+            XCTAssertEqual(store.state.phase, .signedOut)
+            XCTAssertNil(store.state.pendingTeardown)
+            XCTAssertEqual(store.state.account.message, message)
+        }
+    }
+
+    @MainActor
+    func testRetirementRetryDoesNotRepeatConfirmedRemoteSignOut() async {
+        let calls = OrderedCallRecorder()
+        var authentication = AuthenticationClient.test(signOut: { calls.record("sign-out") })
+        authentication.finishRetirement = {
+            calls.record("retire")
+            if calls.calls.filter({ $0 == "retire" }).count == 1 {
+                throw AuthenticationClientFailure.operationFailed
+            }
+        }
+        var initial = AppFeature.State.signedOut(epoch: 4)
+        initial.phase = .tearingDown
+        initial.pendingTeardown = AppFeature.PendingTeardown(
+            reason: .userRequested, profileID: nil, stopRuntime: false,
+            stage: .finishUserSignOut, isRunning: false
+        )
+        let store = TestStore(initialState: initial) { AppFeature() } withDependencies: {
+            $0.authenticationClient = authentication
+        }
+        store.exhaustivity = .off(showSkippedAssertions: false)
+        await store.send(.task)
+        await store.finish()
+        await store.skipReceivedActions(strict: false)
+        XCTAssertEqual(store.state.phase, .launchFailure)
+        XCTAssertEqual(store.state.pendingTeardown?.stage, .retireAuthentication)
+        await store.send(.account(.delegate(.retryRequested)))
+        await store.finish()
+        await store.skipReceivedActions(strict: false)
+        XCTAssertEqual(calls.calls, ["sign-out", "retire", "retire"])
+        XCTAssertEqual(store.state.phase, .signedOut)
+        XCTAssertNil(store.state.pendingTeardown)
+    }
+
+    @MainActor
+    func testRetirementFailurePreventsTeardownCompletion() async {
+        let attempted = expectation(description: "retirement attempted")
+        var authentication = AuthenticationClient.test()
+        authentication.finishRetirement = {
+            attempted.fulfill()
+            throw AuthenticationClientFailure.operationFailed
+        }
+        var initial = AppFeature.State.signedOut(epoch: 4)
+        initial.phase = .tearingDown
+        initial.pendingTeardown = AppFeature.PendingTeardown(
+            reason: .sessionEnded, profileID: nil, stopRuntime: false,
+            stage: .finishUserSignOut, isRunning: false
+        )
+        let store = TestStore(initialState: initial) { AppFeature() } withDependencies: {
+            $0.authenticationClient = authentication
+        }
+        store.exhaustivity = .off(showSkippedAssertions: false)
+        await store.send(.task)
+        await fulfillment(of: [attempted], timeout: 1)
+        await store.finish()
+        await store.skipReceivedActions(strict: false)
+        XCTAssertEqual(store.state.phase, .launchFailure)
+        XCTAssertNotNil(store.state.pendingTeardown)
+        XCTAssertEqual(store.state.pendingTeardown?.isRunning, false)
+    }
+
+    @MainActor
+    func testSuccessfulAuthenticationCancelsThePreviousListener() async {
+        let oldCancelled = expectation(description: "previous listener cancelled")
+        let renewed = expectation(description: "replacement listener subscribed")
+        let initialSubscription = expectation(description: "initial listener subscribed")
+        let (oldEvents, oldContinuation) = AsyncStream<AuthenticationEvent>.makeStream()
+        let (newEvents, newContinuation) = AsyncStream<AuthenticationEvent>.makeStream()
+        defer { oldContinuation.finish(); newContinuation.finish() }
+        oldContinuation.onTermination = { _ in oldCancelled.fulfill() }
+        let calls = OrderedCallRecorder()
+        let store = TestStore(initialState: AppFeature.State()) { AppFeature() } withDependencies: {
+            $0.authenticationClient = .test(
+                restoreSession: { nil },
+                bootstrapProfile: { _ in throw AuthenticationClientFailure.displayNameRequired },
+                events: {
+                    calls.record("subscribe")
+                    if calls.calls.count == 1 {
+                        initialSubscription.fulfill()
+                        return oldEvents
+                    }
+                    renewed.fulfill()
+                    return newEvents
+                }
+            )
+        }
+        await store.send(.task) {
+            $0.authEpoch = 1
+            $0.isAuthenticationMonitoring = true
+        }
+        await store.receive(.restoreSessionResponse(epoch: 1, .success(nil))) {
+            $0.phase = .signedOut
+            $0.account = AccountFeature.State(mode: .signedOut)
+        }
+        await fulfillment(of: [initialSubscription], timeout: 1)
+        await store.send(.signInResponse(epoch: 1, .success(session))) {
+            $0.phase = .bootstrappingProfile
+        }
+        await store.receive(.bootstrapProfileResponse(epoch: 1, .failure(.displayNameRequired))) {
+            $0.phase = .settingUpProfile
+            $0.account = AccountFeature.State(mode: .settingUpProfile)
+        }
+        await fulfillment(of: [oldCancelled, renewed], timeout: 1)
+        XCTAssertEqual(calls.calls, ["subscribe", "subscribe"])
+        newContinuation.finish()
+        await store.finish()
+    }
+
+    @MainActor
+    func testSuccessfulAuthenticationDoesNotStartStoppedMonitoring() async {
+        let store = TestStore(initialState: .signedOut(epoch: 1)) { AppFeature() } withDependencies: {
+            $0.authenticationClient = .test(
+                bootstrapProfile: { _ in throw AuthenticationClientFailure.displayNameRequired },
+                events: {
+                    XCTFail("Stopped monitoring must not acquire an event subscription.")
+                    return AsyncStream { $0.finish() }
+                }
+            )
+        }
+        await store.send(.signInResponse(epoch: 1, .success(session))) {
+            $0.phase = .bootstrappingProfile
+        }
+        await store.receive(.bootstrapProfileResponse(epoch: 1, .failure(.displayNameRequired))) {
+            $0.phase = .settingUpProfile
+            $0.account = AccountFeature.State(mode: .settingUpProfile)
+        }
+        await store.finish()
+        XCTAssertFalse(store.state.isAuthenticationMonitoring)
+    }
+
+    @MainActor
+    func testSuccessfulAuthenticationRenewsMonitoringForTheActiveOwner() async throws {
+        let registry = SharedClientLifetime { AuthenticationEventTestOwner() }
+        let oldOwner = try registry.client()
+        let oldOrigin = AuthenticationEventOrigin(registry: registry, owner: oldOwner)
+        try await registry.retire(oldOwner) { _ in }
+        let newOwner = try registry.beginFreshLifetime()
+        let newOrigin = AuthenticationEventOrigin(registry: registry, owner: newOwner)
+        let subscribed = expectation(description: "fresh authentication listener")
+        let (events, continuation) = AsyncStream<AuthenticationEvent>.makeStream()
+        defer { continuation.finish() }
+        var initial = AppFeature.State.signedOut(epoch: 1)
+        initial.isAuthenticationMonitoring = true
+        let store = TestStore(initialState: initial) { AppFeature() } withDependencies: {
+            $0.authenticationClient = .test(
+                bootstrapProfile: { _ in throw AuthenticationClientFailure.displayNameRequired },
+                events: {
+                    subscribed.fulfill()
+                    return events
+                }
+            )
+        }
+        await store.send(.signInResponse(epoch: 1, .success(session))) {
+            $0.phase = .bootstrappingProfile
+        }
+        await store.receive(.bootstrapProfileResponse(epoch: 1, .failure(.displayNameRequired))) {
+            $0.phase = .settingUpProfile
+            $0.account = AccountFeature.State(mode: .settingUpProfile)
+        }
+        await fulfillment(of: [subscribed], timeout: 1)
+        // A queued old-owner event remains harmless; a fresh-owner event reaches
+        // the reducer through the renewed stream without re-stamping either one.
+        let stale = AuthenticationEvent.owned(oldOrigin, .signedOut)
+        continuation.yield(stale)
+        await store.receive(.authenticationEvent(stale))
+        let fresh = AuthenticationEvent.owned(newOrigin, .sessionRefreshed(session))
+        continuation.yield(fresh)
+        await store.receive(.authenticationEvent(fresh))
+        continuation.finish()
+        await store.finish()
+    }
+
+    func testAuthenticationEventMappingPreservesOriginalOwner() throws {
+        let registry = SharedClientLifetime { AuthenticationEventTestOwner() }
+        let owner = try registry.client()
+        let origin = AuthenticationEventOrigin(registry: registry, owner: owner)
+        XCTAssertEqual(
+            SupabaseAuthenticationEvent.owned(origin, .signedOut).appValue,
+            .owned(origin, .signedOut)
+        )
+        XCTAssertEqual(
+            SupabaseAuthenticationEvent.owned(origin, .accountDeleted).appValue,
+            .owned(origin, .accountDeleted)
+        )
+        XCTAssertNil(SupabaseAuthenticationEvent.owned(origin, .ignored).appValue)
+    }
+
+    @MainActor
+    func testQueuedEventsFromRetiredOwnerCannotChangeCurrentState() async throws {
+        let registry = SharedClientLifetime { AuthenticationEventTestOwner() }
+        let first = try registry.client()
+        let origin = AuthenticationEventOrigin(registry: registry, owner: first)
+        let queued: [AuthenticationEvent] = [
+            .owned(origin, .signedOut), .owned(origin, .accountDeleted),
+        ]
+        try await registry.retire(first) { _ in }
+        _ = try registry.beginFreshLifetime()
+        for event in queued {
+            let store = TestStore(initialState: .authenticated(profile: profile, epoch: 10)) {
+                AppFeature()
+            }
+            await store.send(.authenticationEvent(event))
+        }
+    }
+
+    @MainActor
+    func testBrowserSignInUsesOptionalRouteAndQuietCancellation() async {
+        var authentication = AuthenticationClient.test(signInWithApple: {
+            XCTFail("Browser choice invoked native sign-in")
+            throw AuthenticationClientFailure.operationFailed
+        })
+        authentication.signInWithAppleInBrowser = { throw AuthenticationClientFailure.cancelled }
+        let store = TestStore(initialState: .signedOut(epoch: 4)) {
+            AppFeature()
+        } withDependencies: { $0.authenticationClient = authentication }
+        await store.send(.account(.appeared)) { $0.account.isBrowserSignInAvailable = true }
+        await store.send(.account(.browserSignInButtonTapped)) { $0.account.isRequestInFlight = true }
+        await store.receive(.account(.delegate(.signInWithAppleInBrowserRequested))) { $0.authEpoch = 5 }
+        await store.receive(.signInResponse(epoch: 5, .failure(.cancelled))) {
+            $0.account.isRequestInFlight = false
+        }
+        XCTAssertEqual(store.state.phase, .signedOut)
+        XCTAssertNil(store.state.account.message)
+        await store.send(.account(.browserSignInButtonTapped)) { $0.account.isRequestInFlight = true }
+        await store.receive(.account(.delegate(.signInWithAppleInBrowserRequested))) { $0.authEpoch = 6 }
+        await store.receive(.signInResponse(epoch: 6, .failure(.cancelled))) {
+            $0.account.isRequestInFlight = false
+        }
+    }
+
+    @MainActor
+    func testConfirmedBrowserDeletionUsesOptionalRouteAndPreservesStateOnCancellation() async {
+        var authentication = AuthenticationClient.test(deleteAccount: {
+            XCTFail("Browser choice invoked native deletion")
+            throw AuthenticationClientFailure.operationFailed
+        })
+        authentication.deleteAccountInBrowser = { throw AuthenticationClientFailure.cancelled }
+        let store = TestStore(initialState: .authenticated(profile: profile, epoch: 3)) {
+            AppFeature()
+        } withDependencies: { $0.authenticationClient = authentication }
+        await store.send(.account(.appeared)) { $0.account.isBrowserDeletionAvailable = true }
+        await store.send(.account(.deleteAccountButtonTapped)) { $0.account.isDeleteConfirmationPresented = true }
+        await store.send(.account(.browserDeleteConfirmationAccepted)) {
+            $0.account.isDeleteConfirmationPresented = false
+            $0.account.isDeletingAccount = true
+            $0.account.isRequestInFlight = true
+        }
+        await store.receive(.account(.delegate(.deleteAccountInBrowserRequested))) { $0.authEpoch = 4 }
+        await store.receive(.accountDeletionResponse(epoch: 4, .failure(.cancelled)))
+        await store.receive(.account(.operationFailed(.cancelled))) {
+            $0.account.isDeletingAccount = false
+            $0.account.isRequestInFlight = false
+        }
+        XCTAssertEqual(store.state.phase, .authenticated)
+        XCTAssertEqual(store.state.profile, profile)
+        XCTAssertNotNil(store.state.mainTab)
+        XCTAssertNil(store.state.pendingTeardown)
+    }
+
     private let session = AuthenticationSession(
         userID: UUID(uuidString: "93000000-0000-4000-8000-000000000001")!,
         expiresAt: Date(timeIntervalSince1970: 2_000_000_000)
@@ -1209,6 +1581,35 @@ final class AppFeatureTests: XCTestCase {
     }
 
     @MainActor
+    func testEarlySignedOutCannotCompleteDeletionBeforeCleanupFailure() async {
+        var initial = AppFeature.State.authenticated(profile: profile, epoch: 4)
+        initial.account.isDeletingAccount = true
+        initial.account.isRequestInFlight = true
+        let store = TestStore(initialState: initial) {
+            AppFeature()
+        }
+
+        // The SDK may emit this before local removal verification settles.
+        await store.send(.authenticationEvent(.signedOut))
+        XCTAssertEqual(store.state.phase, .authenticated)
+        XCTAssertEqual(store.state.profile, profile)
+        XCTAssertNil(store.state.pendingTeardown)
+
+        await store.send(
+            .accountDeletionResponse(epoch: 4, .failure(.operationFailed))
+        )
+        await store.receive(.account(.operationFailed(.operationFailed))) {
+            $0.account.isRequestInFlight = false
+            $0.account.isDeletingAccount = false
+            $0.account.message = .tryAgain
+        }
+        XCTAssertEqual(store.state.phase, .authenticated)
+        XCTAssertEqual(store.state.profile, profile)
+        XCTAssertNotNil(store.state.mainTab)
+        XCTAssertNil(store.state.pendingTeardown)
+    }
+
+    @MainActor
     func testAccountDeletionFailurePreservesAuthenticatedLocalState() async {
         let calls = OrderedCallRecorder()
         let storage = profileStorageFixture(for: profile, recorder: calls)
@@ -1334,12 +1735,17 @@ final class AppFeatureTests: XCTestCase {
 
     @MainActor
     func testSignedOutAndDeletedEventsTearDownAuthenticatedMain() async {
+        let registry = SharedClientLifetime { AuthenticationEventTestOwner() }
+        guard let owner = try? registry.client() else { return XCTFail("Missing test owner") }
+        let origin = AuthenticationEventOrigin(registry: registry, owner: owner)
         for (event, reason) in [
             (
                 AuthenticationEvent.signedOut,
                 AppFeature.TeardownReason.sessionEnded
             ),
             (.accountDeleted, .accountDeleted),
+            (.owned(origin, .signedOut), .sessionEnded),
+            (.owned(origin, .accountDeleted), .accountDeleted),
         ] {
             let calls = OrderedCallRecorder()
             let storage = profileStorageFixture(
@@ -1804,6 +2210,8 @@ final class AppFeatureTests: XCTestCase {
         }
     }
 }
+
+private final class AuthenticationEventTestOwner: Sendable {}
 
 private final class OrderedCallRecorder: @unchecked Sendable {
     private let lock = NSLock()

@@ -5,6 +5,95 @@ import XCTest
 @testable import HealthComp
 
 final class CompetitionRealtimeClientTests: XCTestCase {
+    func testStopCleansAnOpeningThatCompletesAfterCancellation() async {
+        await assertStoppedLateOpening(.success)
+    }
+
+    func testStopCleansLateCancellationWithoutRetrying() async {
+        await assertStoppedLateOpening(.cancellation)
+    }
+
+    func testStopCleansLateTransportFailureWithoutRetrying() async {
+        await assertStoppedLateOpening(.transportFailure)
+    }
+
+    private func assertStoppedLateOpening(_ outcome: LateRealtimeOpeningProbe.Outcome) async {
+        let opening = expectation(description: "opening held")
+        let initialStop = expectation(description: "initial cleanup attempted")
+        let probe = LateRealtimeOpeningProbe(
+            opening: opening, initialStop: initialStop, outcome: outcome
+        )
+        let client = CompetitionRealtimeClient.supabase(
+            driver: probe.driver,
+            retryDelay: { _ in XCTFail("A stopped opening must not schedule retry work.") }
+        )
+        var events = (await client.wakeUps(UUID())).makeAsyncIterator()
+        await fulfillment(of: [opening], timeout: 2)
+        let stopping = Task { await client.stop() }
+        await fulfillment(of: [initialStop], timeout: 2)
+        await probe.completeOpening()
+        await stopping.value
+        let active = await probe.isActive
+        XCTAssertFalse(active, "Stop must clean resources created by a late opening.")
+        let terminal = await events.next()
+        XCTAssertNil(terminal)
+    }
+
+    func testReplacementWaitsForInFlightStopSettlement() async {
+        let firstOpen = expectation(description: "first profile opened")
+        let stopEntered = expectation(description: "old cleanup entered")
+        let prematureOpen = expectation(description: "replacement opened before cleanup")
+        prematureOpen.isInverted = true
+        let probe = HeldRealtimeStopProbe(
+            firstOpen: firstOpen, stopEntered: stopEntered, prematureOpen: prematureOpen
+        )
+        let client = CompetitionRealtimeClient.supabase(driver: probe.driver)
+        var first = (await client.wakeUps(UUID())).makeAsyncIterator()
+        await fulfillment(of: [firstOpen], timeout: 2)
+        let firstWakeup = await first.next()
+        XCTAssertEqual(firstWakeup?.reason, .subscribed)
+        let stopping = Task { await client.stop() }
+        await fulfillment(of: [stopEntered], timeout: 2)
+        let replacement = Task { await client.wakeUps(UUID()) }
+        await fulfillment(of: [prematureOpen], timeout: 0.2)
+        await probe.releaseStop()
+        await stopping.value
+        var second = (await replacement.value).makeAsyncIterator()
+        let oldTerminal = await first.next()
+        XCTAssertNil(oldTerminal)
+        let nextWakeup = await second.next()
+        XCTAssertEqual(nextWakeup?.reason, .subscribed)
+        await client.stop()
+    }
+
+    func testConcurrentStopCallersAwaitTheSameCleanup() async {
+        let firstOpen = expectation(description: "profile opened")
+        let stopEntered = expectation(description: "cleanup held")
+        let prematureOpen = expectation(description: "no replacement requested")
+        prematureOpen.isInverted = true
+        let earlyStopReturn = expectation(description: "second stop returned before cleanup")
+        earlyStopReturn.isInverted = true
+        let probe = HeldRealtimeStopProbe(
+            firstOpen: firstOpen, stopEntered: stopEntered, prematureOpen: prematureOpen
+        )
+        let client = CompetitionRealtimeClient.supabase(driver: probe.driver)
+        var events = (await client.wakeUps(UUID())).makeAsyncIterator()
+        await fulfillment(of: [firstOpen], timeout: 2)
+        _ = await events.next()
+        let firstStop = Task { await client.stop() }
+        await fulfillment(of: [stopEntered], timeout: 2)
+        let secondStop = Task {
+            await client.stop()
+            earlyStopReturn.fulfill()
+        }
+        await fulfillment(of: [earlyStopReturn, prematureOpen], timeout: 0.2)
+        await probe.releaseStop()
+        await firstStop.value
+        await secondStop.value
+        let terminal = await events.next()
+        XCTAssertNil(terminal)
+    }
+
     func testDuplicateOutOfOrderAndReconnectWakeupsRefetchDurableState()
         async throws
     {
@@ -246,6 +335,105 @@ final class CompetitionRealtimeClientTests: XCTestCase {
                 changes: []
             )
         )
+    }
+}
+
+private actor LateRealtimeOpeningProbe {
+    enum Outcome: Sendable { case success, cancellation, transportFailure }
+    let outcome: Outcome
+    let opening: XCTestExpectation
+    let initialStop: XCTestExpectation
+    var continuation: CheckedContinuation<Void, Never>?
+    var isActive = false
+    var stops = 0
+
+    init(opening: XCTestExpectation, initialStop: XCTestExpectation, outcome: Outcome) {
+        self.opening = opening
+        self.initialStop = initialStop
+        self.outcome = outcome
+    }
+
+    nonisolated var driver: SupabaseCompetitionRealtimeDriver {
+        SupabaseCompetitionRealtimeDriver(
+            open: { _, _, subscribed in
+                try await self.open()
+                subscribed()
+            },
+            stop: { await self.stop() }
+        )
+    }
+
+    func open() async throws {
+        await withCheckedContinuation {
+            continuation = $0
+            opening.fulfill()
+        }
+        // Model an asynchronous driver completion that does not honor cancellation.
+        isActive = true
+        switch outcome {
+        case .success: return
+        case .cancellation: throw CancellationError()
+        case .transportFailure: throw CompetitionRemoteFailure.retryableTransport
+        }
+    }
+
+    func stop() {
+        isActive = false
+        stops += 1
+        if stops == 1 { initialStop.fulfill() }
+    }
+
+    func completeOpening() {
+        continuation?.resume()
+        continuation = nil
+    }
+}
+
+private actor HeldRealtimeStopProbe {
+    let firstOpen: XCTestExpectation
+    let stopEntered: XCTestExpectation
+    let prematureOpen: XCTestExpectation
+    var opens = 0
+    var stops = 0
+    var released = false
+    var continuation: CheckedContinuation<Void, Never>?
+
+    init(firstOpen: XCTestExpectation, stopEntered: XCTestExpectation,
+         prematureOpen: XCTestExpectation) {
+        self.firstOpen = firstOpen
+        self.stopEntered = stopEntered
+        self.prematureOpen = prematureOpen
+    }
+
+    nonisolated var driver: SupabaseCompetitionRealtimeDriver {
+        SupabaseCompetitionRealtimeDriver(
+            open: { _, _, subscribed in
+                await self.recordOpen()
+                subscribed()
+            },
+            stop: { await self.holdFirstStop() }
+        )
+    }
+
+    func recordOpen() {
+        opens += 1
+        if opens == 1 { firstOpen.fulfill() }
+        else if !released { prematureOpen.fulfill() }
+    }
+
+    func holdFirstStop() async {
+        stops += 1
+        guard stops == 1 else { return }
+        await withCheckedContinuation {
+            continuation = $0
+            stopEntered.fulfill()
+        }
+    }
+
+    func releaseStop() {
+        released = true
+        continuation?.resume()
+        continuation = nil
     }
 }
 

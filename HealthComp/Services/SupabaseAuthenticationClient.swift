@@ -13,10 +13,23 @@ struct SupabaseAuthenticationSession: Equatable, Sendable {
 }
 
 enum SupabaseAuthenticationEvent: Equatable, Sendable {
+    indirect case owned(AuthenticationEventOrigin, SupabaseAuthenticationEvent)
     case tokenRefreshed(SupabaseAuthenticationSession)
     case signedOut
     case accountDeleted
     case ignored
+
+    var appValue: AuthenticationEvent? {
+        switch self {
+        case let .owned(origin, event):
+            if case .owned = event { return nil }
+            return event.appValue.map { .owned(origin, $0) }
+        case let .tokenRefreshed(session): return .sessionRefreshed(session.appValue)
+        case .signedOut: return .signedOut
+        case .accountDeleted: return .accountDeleted
+        case .ignored: return nil
+        }
+    }
 }
 
 struct SupabaseAuthenticationOperations: Sendable {
@@ -37,7 +50,7 @@ struct SupabaseAuthenticationOperations: Sendable {
         throw AuthenticationClientFailure.operationFailed
     }
     var events: @Sendable () -> AsyncStream<SupabaseAuthenticationEvent>
-    var clearLocalSession: @Sendable () async -> Void
+    var clearLocalSession: @Sendable () async throws -> Void
     var remoteSignOut: @Sendable () async throws -> Void
     var classifyRefreshFailure: @Sendable (
         _ error: any Error
@@ -80,12 +93,15 @@ enum SupabaseAuthenticationClient {
     static func make(
         operations: SupabaseAuthenticationOperations,
         appleAuthorization: AppleAuthorizationClient,
+        browserDeletion: (@MainActor @Sendable () async throws -> Void)? = nil,
+        browserSignIn: (@MainActor @Sendable () async throws -> AuthenticationSession)? = nil,
+        finishRetirement: (@Sendable () async throws -> Void)? = nil,
         nonce: @escaping @Sendable () throws -> AppleSignInNonce = {
             try AppleSignInNonce.generate()
         },
         now: @escaping @Sendable () -> Date = { Date() }
     ) -> AuthenticationClient {
-        AuthenticationClient(
+        var client = AuthenticationClient(
             restoreSession: {
                 let current: SupabaseAuthenticationSession?
                 do {
@@ -109,8 +125,14 @@ enum SupabaseAuthenticationClient {
                     return try await operations.refreshSession().appValue
                 } catch {
                     let failure = operations.classifyRefreshFailure(error)
-                    if failure == .terminalSession {
-                        await operations.clearLocalSession()
+                    if failure == .terminalSession, finishRetirement == nil {
+                        do {
+                            try await operations.clearLocalSession()
+                        } catch {
+                            // Do not present ordinary session expiry when local
+                            // retirement could not be confirmed. Keep retry available.
+                            throw AuthenticationClientFailure.operationFailed
+                        }
                     }
                     throw failure
                 }
@@ -187,24 +209,19 @@ enum SupabaseAuthenticationClient {
                 guard receipt.status == .deleted else {
                     throw AuthenticationClientFailure.operationFailed
                 }
-                await operations.clearLocalSession()
+                // Preserve the server receipt for the app's post-runtime,
+                // retryable retirement stage when that boundary is configured.
+                if finishRetirement == nil {
+                    try await operations.clearLocalSession()
+                }
             },
             events: {
                 AsyncStream { continuation in
                     let task = Task {
                         for await event in operations.events() {
                             guard !Task.isCancelled else { break }
-                            switch event {
-                            case let .tokenRefreshed(session):
-                                continuation.yield(
-                                    .sessionRefreshed(session.appValue)
-                                )
-                            case .signedOut:
-                                continuation.yield(.signedOut)
-                            case .accountDeleted:
-                                continuation.yield(.accountDeleted)
-                            case .ignored:
-                                continue
+                            if let appEvent = event.appValue {
+                                continuation.yield(appEvent)
                             }
                         }
                         continuation.finish()
@@ -222,15 +239,151 @@ enum SupabaseAuthenticationClient {
                 }
             }
         )
+        if let browserDeletion {
+            client.deleteAccountInBrowser = {
+                do {
+                    try await browserDeletion()
+                } catch is CancellationError {
+                    throw AuthenticationClientFailure.cancelled
+                } catch AppleWebAuthenticationSessionFailure.cancelled {
+                    throw AuthenticationClientFailure.cancelled
+                } catch let failure as AuthenticationClientFailure {
+                    throw failure
+                } catch {
+                    throw AuthenticationClientFailure.operationFailed
+                }
+                if finishRetirement == nil {
+                    try await operations.clearLocalSession()
+                }
+            }
+        }
+        let gate = ExplicitAuthenticationOperationGate()
+        if let finishRetirement {
+            client.finishRetirement = {
+                try await gate.run { try await finishRetirement() }
+            }
+        }
+        // Restoration can refresh or retire a session, so it participates in
+        // the same explicit-operation ownership as sign-in and sign-out.
+        let restoreSession = client.restoreSession
+        client.restoreSession = {
+            try await gate.run { try await restoreSession() }
+        }
+        let bootstrapProfile = client.bootstrapProfile
+        client.bootstrapProfile = { displayName in
+            try await gate.run { try await bootstrapProfile(displayName) }
+        }
+        let updateProfile = client.updateProfile
+        client.updateProfile = { displayName in
+            try await gate.run { try await updateProfile(displayName) }
+        }
+        let nativeSignIn = client.signInWithApple
+        client.signInWithApple = {
+            try await gate.run { try await nativeSignIn() }
+        }
+        let nativeDeletion = client.deleteAccount
+        client.deleteAccount = {
+            try await gate.run { try await nativeDeletion() }
+        }
+        let signOut = client.signOut
+        client.signOut = {
+            try await gate.run { try await signOut() }
+        }
+        if let browserDeletion = client.deleteAccountInBrowser {
+            client.deleteAccountInBrowser = {
+                try await gate.run { try await browserDeletion() }
+            }
+        }
+        if let browserSignIn {
+            client.signInWithAppleInBrowser = {
+                try await gate.run {
+                    do {
+                        return try await browserSignIn()
+                    } catch is CancellationError {
+                        throw AuthenticationClientFailure.cancelled
+                    } catch AppleWebAuthenticationSessionFailure.cancelled {
+                        throw AuthenticationClientFailure.cancelled
+                    } catch let failure as AuthenticationClientFailure {
+                        throw failure
+                    } catch {
+                        throw AuthenticationClientFailure.operationFailed
+                    }
+                }
+            }
+        }
+        return client
     }
 
     static func live(
         provider: SupabaseClientProvider,
-        appleAuthorization: AppleAuthorizationClient = .live
+        appleAuthorization: AppleAuthorizationClient = .live,
+        infoDictionary: [String: Any] = Bundle.main.infoDictionary ?? [:],
+        browser: AppleWebAuthenticationSessionClient = .live
     ) -> AuthenticationClient {
-        make(
-            operations: .live(provider: provider),
-            appleAuthorization: appleAuthorization
+        let clientBox = SupabaseAuthenticationClientBox(provider: provider)
+        let operations = SupabaseAuthenticationOperations.live(
+            provider: provider, clientBox: clientBox
+        )
+        let ownedAppleAuthorization = AppleAuthorizationClient(
+            authorize: { challenge in
+                // Reject unfinished retirement before asking for credentials.
+                _ = try await clientBox.beginAuthentication()
+                return try await appleAuthorization.authorize(challenge)
+            },
+            reauthorizeForDeletion: appleAuthorization.reauthorizeForDeletion
+        )
+        let browserDeletion: (@MainActor @Sendable () async throws -> Void)?
+        let browserSignIn: (@MainActor @Sendable () async throws -> AuthenticationSession)?
+        if let configuration = StagingAppleWebAuthenticationConfiguration.parse(infoDictionary) {
+            let transport = SupabaseAppleWebDeletionTransport(provider: provider)
+            browserSignIn = {
+                try Task.checkCancellation()
+                let client = try await clientBox.beginAuthentication()
+                guard client.auth.currentSession == nil else {
+                    throw AuthenticationClientFailure.operationFailed
+                }
+                let authorizationURL = try client.auth.getOAuthSignInURL(
+                    provider: .apple, redirectTo: configuration.redirectURL
+                )
+                let callback = try await browser.authenticate(
+                    authorizationURL, configuration.redirectURL.scheme!
+                )
+                try Task.checkCancellation()
+                let code = try configuration.authorizationCode(from: callback)
+                guard client.auth.currentSession == nil else {
+                    throw AuthenticationClientFailure.operationFailed
+                }
+                let session = try await client.auth.exchangeCodeForSession(authCode: code)
+                return try await clientBox.acceptExchangedSession(session).appValue
+            }
+            browserDeletion = {
+                let operation = AppleWebAccountDeletionClient(
+                    configuration: configuration,
+                    clientID: configuration.clientID,
+                    browser: browser,
+                    secrets: {
+                        // Independent secure random draws; only their SHA-256
+                        // hex challenges leave this in-memory operation.
+                        try AppleWebDeletionBeginRequest(
+                            claimVerifier: AppleSignInNonce.generate().challenge,
+                            nonce: AppleSignInNonce.generate().challenge
+                        )
+                    },
+                    begin: { try await transport.begin($0) },
+                    complete: { try await transport.complete($0) }
+                )
+                try await operation.deleteConfirmedAccount()
+            }
+        } else {
+            browserDeletion = nil
+            browserSignIn = nil
+        }
+        return make(
+            operations: operations,
+            appleAuthorization: ownedAppleAuthorization,
+            browserDeletion: browserDeletion,
+            browserSignIn: browserSignIn,
+            finishRetirement: { try await clientBox.finishRetirement() }
         )
     }
 
@@ -268,27 +421,28 @@ enum SupabaseAuthenticationClient {
 }
 
 private extension SupabaseAuthenticationOperations {
-    static func live(provider: SupabaseClientProvider) -> Self {
-        let clientBox = SupabaseAuthenticationClientBox(provider: provider)
+    static func live(
+        provider: SupabaseClientProvider,
+        clientBox: SupabaseAuthenticationClientBox
+    ) -> Self {
         return Self(
             currentSession: {
-                guard let session = try await clientBox.client().auth.currentSession
-                else { return nil }
-                return SupabaseAuthenticationSession(session)
+                try await clientBox.currentSession()
             },
             refreshSession: {
                 let session = try await clientBox.client().auth.refreshSession()
                 return SupabaseAuthenticationSession(session)
             },
             exchangeAppleIDToken: { identityToken, rawNonce in
-                let session = try await clientBox.client().auth.signInWithIdToken(
+                let client = try await clientBox.beginAuthentication()
+                let session = try await client.auth.signInWithIdToken(
                     credentials: OpenIDConnectCredentials(
                         provider: .apple,
                         idToken: identityToken,
                         nonce: rawNonce
                     )
                 )
-                return SupabaseAuthenticationSession(session)
+                return try await clientBox.acceptExchangedSession(session)
             },
             bootstrapProfile: { suggestedDisplayName in
                 struct Parameters: Encodable {
@@ -335,52 +489,54 @@ private extension SupabaseAuthenticationOperations {
             },
             events: {
                 AsyncStream { continuation in
-                    let task = Task {
-                        do {
-                            let client = try await clientBox.client()
-                            for await change in client.auth.authStateChanges {
+                    do {
+                        let owner = try provider.authenticationLifetime()
+                        let origin = provider.eventOrigin(for: owner)
+                        let task = try owner.eventTasks.start {
+                            defer { continuation.finish() }
+                            for await change in owner.client.auth.authStateChanges {
                                 guard !Task.isCancelled else { break }
+                                let event: SupabaseAuthenticationEvent
                                 switch change.event {
                                 case .tokenRefreshed:
-                                    if let session = change.session {
-                                        continuation.yield(
-                                            .tokenRefreshed(
-                                                SupabaseAuthenticationSession(
-                                                    session
-                                                )
-                                            )
-                                        )
-                                    }
+                                    guard let session = change.session else { continue }
+                                    event = .tokenRefreshed(SupabaseAuthenticationSession(session))
                                 case .signedOut:
-                                    continuation.yield(.signedOut)
+                                    event = .signedOut
                                 case .userDeleted:
-                                    continuation.yield(.accountDeleted)
+                                    event = .accountDeleted
                                 default:
-                                    continuation.yield(.ignored)
+                                    event = .ignored
                                 }
+                                continuation.yield(.owned(origin, event))
                             }
-                        } catch {}
+                        }
+                        continuation.onTermination = { _ in task.cancel() }
+                    } catch {
                         continuation.finish()
                     }
-                    continuation.onTermination = { _ in task.cancel() }
                 }
             },
             clearLocalSession: {
-                guard let client = try? await clientBox.client() else { return }
-                try? await client.auth.signOut(scope: .local)
+                do {
+                    let owner = try provider.authenticationLifetime()
+                    try owner.prepareAuthSessionRemovalVerification()
+                    try await owner.client.auth.signOut(scope: .local)
+                    try owner.verifyAuthSessionRemoved()
+                } catch {
+                    throw AuthenticationClientFailure.operationFailed
+                }
             },
             remoteSignOut: {
-                let client = try await clientBox.client()
-                guard let accessToken = client.auth.currentSession?.accessToken
+                let owner = try provider.authenticationLifetime()
+                guard let accessToken = owner.client.auth.currentSession?.accessToken
                 else {
                     throw AuthenticationClientFailure.terminalSession
                 }
-                try await provider.confirmGlobalSignOut(
-                    accessToken: accessToken
-                )
-                provider.prepareAuthSessionRemovalVerification()
-                try await client.auth.signOut(scope: .local)
-                try provider.verifyAuthSessionRemoved()
+                try await owner.confirmGlobalSignOut(accessToken)
+                // App teardown records this confirmation before the separate,
+                // retryable storage retirement stage. Do not perform a second
+                // SDK logout or lose this receipt to a local cleanup failure.
             },
             classifyRefreshFailure: { error in
                 classifyRefreshFailure(error)
@@ -428,6 +584,22 @@ private extension SupabaseAuthenticationOperations {
     }
 }
 
+// Owns explicit app operations only. It does not claim to drain SDK refresh
+// work or queued Auth/Functions/Realtime events; those need separate evidence.
+private actor ExplicitAuthenticationOperationGate {
+    private var active = false
+
+    func run<Value: Sendable>(
+        _ operation: @Sendable () async throws -> Value
+    ) async throws -> Value {
+        guard !active else { throw AuthenticationClientFailure.operationFailed }
+        guard !Task.isCancelled else { throw AuthenticationClientFailure.cancelled }
+        active = true
+        defer { active = false }
+        return try await operation()
+    }
+}
+
 private struct AccountDeletionErrorResponse: Decodable {
     let error: String
 }
@@ -441,19 +613,117 @@ private extension SupabaseAuthenticationSession {
     }
 }
 
-private actor SupabaseAuthenticationClientBox {
+actor SupabaseAuthenticationClientBox {
     private let provider: SupabaseClientProvider
-    private var cachedClient: SupabaseClient?
+    private enum Phase {
+        case active
+        case retiring
+        case failed(SupabaseAuthenticationLifetime)
+        case retired
+    }
+    private var phase: Phase = .active
+    private var cancelledAuthenticationPending = false
+    private var cancelledAccessToken: String?
 
     init(provider: SupabaseClientProvider) {
         self.provider = provider
     }
 
     func client() throws -> SupabaseClient {
-        if let cachedClient { return cachedClient }
-        let client = try provider.client()
-        cachedClient = client
-        return client
+        guard case .active = phase else {
+            throw AuthenticationClientFailure.operationFailed
+        }
+        return try provider.client()
+    }
+
+    func currentSession() throws -> SupabaseAuthenticationSession? {
+        switch phase {
+        case .retired:
+            // Reopening the signed-out app is a read, not fresh admission.
+            return nil
+        case .active:
+            return try provider.client().auth.currentSession.map(SupabaseAuthenticationSession.init)
+        case .retiring, .failed:
+            throw cancelledAuthenticationPending
+                ? AuthenticationClientFailure.retirementRequired : .operationFailed
+        }
+    }
+
+    func acceptExchangedSession(_ session: Session) async throws -> SupabaseAuthenticationSession {
+        if Task.isCancelled {
+            // Both native and browser exchanges may persist after cancellation.
+            // Await uncancelled cleanup while the explicit operation gate stays
+            // held. No fire-and-forget work or second account can pass this gate.
+            try await Task {
+                try await self.cancelPersistedAuthentication(accessToken: session.accessToken)
+            }.value
+            throw AuthenticationClientFailure.cancelled
+        }
+        return SupabaseAuthenticationSession(session)
+    }
+
+    private func cancelPersistedAuthentication(accessToken: String) async throws {
+        guard case .active = phase else {
+            throw AuthenticationClientFailure.retirementRequired
+        }
+        // Captured directly from this exchange, never reacquired from storage
+        // after the pending-removal marker hides the cancelled session.
+        cancelledAuthenticationPending = true
+        cancelledAccessToken = accessToken
+        do { try await finishRetirement() }
+        catch { throw AuthenticationClientFailure.retirementRequired }
+    }
+
+    private func confirmCancelledAuthentication(_ owner: SupabaseAuthenticationLifetime) async throws {
+        guard let accessToken = cancelledAccessToken else { return }
+        try owner.prepareAuthSessionRemovalVerification()
+        try await owner.confirmLocalSignOut(accessToken)
+        // A later storage failure must not repeat confirmed server logout.
+        cancelledAccessToken = nil
+    }
+
+    func finishRetirement() async throws {
+        try Task.checkCancellation()
+        let owner: SupabaseAuthenticationLifetime
+        switch phase {
+        case .active:
+            owner = try provider.authenticationLifetime()
+        case let .failed(retainedOwner):
+            owner = retainedOwner
+        case .retiring:
+            throw AuthenticationClientFailure.operationFailed
+        case .retired:
+            return
+        }
+        // Keep the original owner across suspension and failure. Ordinary
+        // provider access intentionally remains unavailable during recovery.
+        phase = .retiring
+        do {
+            try await provider.retireAuthenticationLifetime(owner) {
+                try await self.confirmCancelledAuthentication(owner)
+            }
+            cancelledAuthenticationPending = false
+            phase = .retired
+        } catch {
+            phase = .failed(owner)
+            throw error
+        }
+    }
+
+    func beginAuthentication() throws -> SupabaseClient {
+        try Task.checkCancellation()
+        switch phase {
+        case .active, .retired:
+            let owner = try provider.beginFreshAuthenticationLifetime()
+            phase = .active
+            guard owner.client.auth.currentSession == nil else {
+                throw AuthenticationClientFailure.operationFailed
+            }
+            return owner.client
+        case .retiring, .failed:
+            throw cancelledAuthenticationPending
+                ? AuthenticationClientFailure.retirementRequired : .operationFailed
+        }
     }
 }
 

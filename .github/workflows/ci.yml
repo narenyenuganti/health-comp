@@ -37,7 +37,7 @@ jobs:
             printf 'Expected Xcode 16.4, got: %s\n' "${xcode_version%%$'\n'*}" >&2
             exit 1
           fi
-          brew install xcodegen
+          brew install xcodegen ripgrep
           xcodegen_version="$(xcodegen --version)"
           if [[ "$xcodegen_version" != "Version: 2.46.0" ]]; then
             printf 'Expected XcodeGen 2.46.0, got: %s\n' "$xcodegen_version" >&2
@@ -63,6 +63,14 @@ jobs:
           fi
           git diff --exit-code -- HealthComp.xcodeproj
 
+      - name: Verify staging browser boundaries
+        run: |
+          set -euo pipefail
+          bash scripts/test-staging-apple-web-build-contract.sh
+          bash scripts/test-staging-apple-web-contract.sh
+          bash scripts/test-apple-web-session-lifetime.sh
+          bash scripts/test-apple-web-deletion-operation.sh
+
       - name: Verify app-owned privacy manifest
         run: |
           set -euo pipefail
@@ -83,6 +91,8 @@ jobs:
       - name: Test iOS application logic
         run: |
           set -euo pipefail
+          # Local ad-hoc Simulator signing embeds the entitlements required by
+          # real Keychain tests. It needs no Apple account or signing certificate.
           xcodebuild test \
             -project HealthComp.xcodeproj \
             -scheme HealthComp \
@@ -90,10 +100,40 @@ jobs:
             -destination 'platform=iOS Simulator,OS=18.5,name=iPhone 16 Pro' \
             -derivedDataPath "$RUNNER_TEMP/HealthComp-DerivedData" \
             -only-testing:HealthCompTests \
+            -parallel-testing-enabled NO \
+            -maximum-concurrent-test-simulator-destinations 1 \
+            -maximum-parallel-testing-workers 1 \
             -onlyUsePackageVersionsFromResolvedFile \
             -skipMacroValidation \
             -skipPackagePluginValidation \
-            CODE_SIGNING_ALLOWED=NO \
+            CODE_SIGNING_ALLOWED=YES \
+            CODE_SIGN_IDENTITY=- \
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            SUPABASE_URL="$SUPABASE_URL" \
+            SUPABASE_PUBLISHABLE_KEY="$SUPABASE_PUBLISHABLE_KEY"
+
+      - name: Test release-style Staging browser configuration
+        run: |
+          set -euo pipefail
+          # Dedicated tests avoid importing DEBUG-only Test Lab fixtures.
+          # Testability permits @testable imports without enabling DEBUG.
+          xcodebuild test \
+            -project HealthComp.xcodeproj \
+            -scheme 'HealthComp Staging' \
+            -configuration Staging \
+            -destination 'platform=iOS Simulator,OS=18.5,name=iPhone 16 Pro' \
+            -derivedDataPath "$RUNNER_TEMP/HealthComp-DerivedData" \
+            -only-testing:HealthCompStagingTests \
+            -parallel-testing-enabled NO \
+            -maximum-concurrent-test-simulator-destinations 1 \
+            -maximum-parallel-testing-workers 1 \
+            -jobs 2 \
+            -onlyUsePackageVersionsFromResolvedFile \
+            -skipMacroValidation \
+            -skipPackagePluginValidation \
+            CODE_SIGNING_ALLOWED=YES \
+            CODE_SIGN_IDENTITY=- \
+            ENABLE_TESTABILITY=YES \
             COMPILER_INDEX_STORE_ENABLE=NO \
             SUPABASE_URL="$SUPABASE_URL" \
             SUPABASE_PUBLISHABLE_KEY="$SUPABASE_PUBLISHABLE_KEY"

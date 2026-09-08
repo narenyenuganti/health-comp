@@ -129,6 +129,8 @@ struct AppFeature {
         case userRequested
         case sessionEnded
         case accountDeleted
+        case restoredWithoutSession
+        case cancelledAuthentication
     }
 
     struct PendingTeardown: Equatable, Sendable {
@@ -136,6 +138,7 @@ struct AppFeature {
             case prepareRuntime
             case removeProfileStorage
             case finishUserSignOut
+            case retireAuthentication
         }
 
         var reason: TeardownReason
@@ -257,6 +260,13 @@ struct AppFeature {
                             profileID: state.profile?.id
                         )
                     }
+                    if authenticationClient.finishRetirement != nil {
+                        return beginTeardown(
+                            state: &state, epoch: epoch,
+                            reason: .restoredWithoutSession,
+                            stopRuntime: false, profileID: nil
+                        )
+                    }
                     becomeSignedOut(state: &state, message: nil)
                     return .none
 
@@ -277,7 +287,16 @@ struct AppFeature {
                     state.phase = .bootstrappingProfile
                     state.account.isRequestInFlight = false
                     state.account.message = nil
-                    return bootstrapProfile(nil, epoch: epoch)
+                    // The prior owner's event stream may have ended during
+                    // retirement. Bind monitoring to the now-active owner;
+                    // queued events retain their original ownership envelope.
+                    return .merge(
+                        bootstrapProfile(nil, epoch: epoch),
+                        state.isAuthenticationMonitoring ? authenticationEvents() : .none
+                    )
+
+                case .failure(.retirementRequired):
+                    return handleLaunchFailure(.retirementRequired, state: &state)
 
                 case let .failure(failure):
                     becomeSignedOut(
@@ -316,52 +335,8 @@ struct AppFeature {
                 }
 
             case let .authenticationEvent(event):
-                switch event {
-                case .sessionRefreshed:
-                    return .none
+                return handleAuthenticationEvent(event, state: &state)
 
-                case .signedOut:
-                    guard state.phase != .signedOut else { return .none }
-                    if var pendingTeardown = state.pendingTeardown {
-                        if pendingTeardown.reason == .userRequested,
-                           pendingTeardown.stage != .finishUserSignOut {
-                            pendingTeardown.reason = .sessionEnded
-                            state.pendingTeardown = pendingTeardown
-                        }
-                        return .none
-                    }
-                    guard !(state.account.isDeletingAccount
-                        && state.account.isRequestInFlight)
-                    else { return .none }
-                    state.authEpoch &+= 1
-                    state.account.isRequestInFlight = true
-                    return beginTeardown(
-                        state: &state,
-                        epoch: state.authEpoch,
-                        reason: .sessionEnded,
-                        stopRuntime: state.profile != nil
-                            || state.mainTab != nil,
-                        profileID: state.profile?.id
-                    )
-
-                case .accountDeleted:
-                    guard state.phase != .signedOut else { return .none }
-                    if var pendingTeardown = state.pendingTeardown {
-                        pendingTeardown.reason = .accountDeleted
-                        state.pendingTeardown = pendingTeardown
-                        return .none
-                    }
-                    state.authEpoch &+= 1
-                    state.account.isRequestInFlight = true
-                    return beginTeardown(
-                        state: &state,
-                        epoch: state.authEpoch,
-                        reason: .accountDeleted,
-                        stopRuntime: state.profile != nil
-                            || state.mainTab != nil,
-                        profileID: state.profile?.id
-                    )
-                }
 
             case let .profileStorageResponse(epoch, profile, response):
                 guard epoch == state.authEpoch,
@@ -408,7 +383,13 @@ struct AppFeature {
                         pendingTeardown: pendingTeardown
                     )
 
-                case .finishUserSignOut:
+                case .finishUserSignOut, .retireAuthentication:
+                    if stage == .finishUserSignOut,
+                       authenticationClient.finishRetirement != nil {
+                        pendingTeardown.stage = .retireAuthentication
+                        state.pendingTeardown = pendingTeardown
+                        return resumeTeardown(epoch: epoch, pendingTeardown: pendingTeardown)
+                    }
                     return .send(
                         .teardownCompleted(
                             epoch: epoch,
@@ -450,6 +431,13 @@ struct AppFeature {
                 guard state.phase == .signedOut else { return .none }
                 state.authEpoch &+= 1
                 return signInWithApple(epoch: state.authEpoch)
+
+            case .account(.delegate(.signInWithAppleInBrowserRequested)):
+                guard state.phase == .signedOut,
+                      state.account.isBrowserSignInAvailable,
+                      state.account.isRequestInFlight else { return .none }
+                state.authEpoch &+= 1
+                return signInWithApple(epoch: state.authEpoch, inBrowser: true)
 
             case let .account(.delegate(.displayNameSubmitted(name))):
                 guard state.phase == .settingUpProfile else { return .none }
@@ -546,6 +534,15 @@ struct AppFeature {
                 state.authEpoch &+= 1
                 return deleteAccount(epoch: state.authEpoch)
 
+            case .account(.delegate(.deleteAccountInBrowserRequested)):
+                guard state.phase == .authenticated,
+                      state.account.isBrowserDeletionAvailable,
+                      state.account.isDeletingAccount,
+                      state.account.isRequestInFlight,
+                      state.profile != nil else { return .none }
+                state.authEpoch &+= 1
+                return deleteAccount(epoch: state.authEpoch, inBrowser: true)
+
             case let .accountDeletionResponse(epoch, response):
                 guard epoch == state.authEpoch,
                       state.phase == .authenticated,
@@ -589,6 +586,62 @@ struct AppFeature {
         }
     }
 
+    private func handleAuthenticationEvent(
+        _ event: AuthenticationEvent, state: inout State
+    ) -> Effect<Action> {
+        switch event {
+        case let .owned(origin, payload):
+            if case .owned = payload { return .none }
+            return origin.withActiveOwner {
+                handleAuthenticationEvent(payload, state: &state)
+            } ?? .none
+        case .sessionRefreshed:
+            return .none
+
+        case .signedOut:
+            guard state.phase != .signedOut else { return .none }
+            if var pendingTeardown = state.pendingTeardown {
+                if pendingTeardown.reason == .userRequested,
+                   pendingTeardown.stage != .finishUserSignOut {
+                    pendingTeardown.reason = .sessionEnded
+                    state.pendingTeardown = pendingTeardown
+                }
+                return .none
+            }
+            guard !(state.account.isDeletingAccount
+                && state.account.isRequestInFlight)
+            else { return .none }
+            state.authEpoch &+= 1
+            state.account.isRequestInFlight = true
+            return beginTeardown(
+                state: &state,
+                epoch: state.authEpoch,
+                reason: .sessionEnded,
+                stopRuntime: state.profile != nil
+                    || state.mainTab != nil,
+                profileID: state.profile?.id
+            )
+
+        case .accountDeleted:
+            guard state.phase != .signedOut else { return .none }
+            if var pendingTeardown = state.pendingTeardown {
+                pendingTeardown.reason = .accountDeleted
+                state.pendingTeardown = pendingTeardown
+                return .none
+            }
+            state.authEpoch &+= 1
+            state.account.isRequestInFlight = true
+            return beginTeardown(
+                state: &state,
+                epoch: state.authEpoch,
+                reason: .accountDeleted,
+                stopRuntime: state.profile != nil
+                    || state.mainTab != nil,
+                profileID: state.profile?.id
+            )
+        }
+    }
+
     private func authenticationEvents() -> Effect<Action> {
         .run { send in
             for await event in authenticationClient.events() {
@@ -626,14 +679,18 @@ struct AppFeature {
         )
     }
 
-    private func signInWithApple(epoch: UInt64) -> Effect<Action> {
+    private func signInWithApple(epoch: UInt64, inBrowser: Bool = false) -> Effect<Action> {
         .run { send in
             do {
+                let operation = inBrowser
+                    ? authenticationClient.signInWithAppleInBrowser
+                    : authenticationClient.signInWithApple
+                guard let operation else { throw AuthenticationClientFailure.operationFailed }
                 await send(
                     .signInResponse(
                         epoch: epoch,
                         .success(
-                            try await authenticationClient.signInWithApple()
+                            try await operation()
                         )
                     )
                 )
@@ -714,10 +771,14 @@ struct AppFeature {
         )
     }
 
-    private func deleteAccount(epoch: UInt64) -> Effect<Action> {
+    private func deleteAccount(epoch: UInt64, inBrowser: Bool = false) -> Effect<Action> {
         .run { send in
             do {
-                try await authenticationClient.deleteAccount()
+                let operation = inBrowser
+                    ? authenticationClient.deleteAccountInBrowser
+                    : authenticationClient.deleteAccount
+                guard let operation else { throw AuthenticationClientFailure.operationFailed }
+                try await operation()
                 await send(
                     .accountDeletionResponse(epoch: epoch, .success)
                 )
@@ -890,6 +951,24 @@ struct AppFeature {
                             return
                         }
                     }
+
+                case .retireAuthentication:
+                    do {
+                        guard let finishRetirement = authenticationClient.finishRetirement else {
+                            throw AuthenticationClientFailure.operationFailed
+                        }
+                        try await finishRetirement()
+                    } catch {
+                        await send(
+                            .teardownFailed(
+                                epoch: epoch,
+                                reason: pendingTeardown.reason,
+                                stage: .retireAuthentication,
+                                failure: .cleanupFailed
+                            )
+                        )
+                        return
+                    }
                 }
                 await send(
                     .teardownStageCompleted(
@@ -908,7 +987,27 @@ struct AppFeature {
         state: inout State
     ) -> Effect<Action> {
         switch failure {
+        case .retirementRequired:
+            guard authenticationClient.finishRetirement != nil else {
+                becomeLaunchFailure(state: &state)
+                return .none
+            }
+            return beginTeardown(
+                state: &state, epoch: state.authEpoch,
+                reason: .cancelledAuthentication,
+                stopRuntime: state.profile != nil || state.mainTab != nil,
+                profileID: state.profile?.id
+            )
+
         case .terminalSession, .sessionExpired:
+            if authenticationClient.finishRetirement != nil {
+                return beginTeardown(
+                    state: &state, epoch: state.authEpoch,
+                    reason: .sessionEnded,
+                    stopRuntime: state.profile != nil || state.mainTab != nil,
+                    profileID: state.profile?.id
+                )
+            }
             becomeSignedOut(state: &state, message: .sessionEnded)
 
         case .displayNameRequired:
@@ -951,6 +1050,8 @@ struct AppFeature {
         state.pendingTeardown = nil
         state.mainTab = nil
         state.account = AccountFeature.State(mode: .signedOut)
+        state.account.isBrowserSignInAvailable = authenticationClient.signInWithAppleInBrowser != nil
+        state.account.isBrowserDeletionAvailable = authenticationClient.deleteAccountInBrowser != nil
         state.account.message = message
     }
 
@@ -985,7 +1086,7 @@ struct AppFeature {
         case .reauthenticationRequired:
             .reauthenticationRequired
         case .refreshRetryable, .nonceGenerationFailed,
-             .displayNameRequired, .operationFailed:
+             .displayNameRequired, .operationFailed, .retirementRequired:
             .tryAgain
         }
     }

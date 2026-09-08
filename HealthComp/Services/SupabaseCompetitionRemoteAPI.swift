@@ -795,7 +795,6 @@ private actor SupabaseCompetitionClientBox {
         """
 
     private let provider: SupabaseClientProvider
-    private var cachedClient: SupabaseClient?
 
     init(provider: SupabaseClientProvider) {
         self.provider = provider
@@ -895,9 +894,6 @@ private actor SupabaseCompetitionClientBox {
     }
 
     private func client() throws -> SupabaseClient {
-        if let cachedClient { return cachedClient }
-        let client = try provider.client()
-        cachedClient = client
-        return client
+        try provider.client()
     }
 }

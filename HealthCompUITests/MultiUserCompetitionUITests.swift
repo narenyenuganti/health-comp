@@ -494,11 +494,22 @@ final class MultiUserCompetitionUITests: XCTestCase {
     private func centerRemoteDayForScreenshot(_ day: XCUIElement) {
         let scrollView = app.scrollViews.firstMatch
         XCTAssertTrue(scrollView.exists)
-        for _ in 0..<6 {
+        var geometry: [String] = []
+        func attachGeometry() {
+            let attachment = XCTAttachment(string: geometry.joined(separator: "\n"))
+            attachment.name = "remote-day-centering-geometry"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+        }
+        for iteration in 0..<6 {
             let viewport = visibleRemoteScrollFrame(scrollView)
             XCTAssertGreaterThan(viewport.height, 0)
             let dayFrame = day.frame
-            if viewport.contains(dayFrame) { return }
+            geometry.append("iteration=\(iteration); viewport=\(viewport); day=\(dayFrame)")
+            if viewport.contains(dayFrame) {
+                attachGeometry()
+                return
+            }
             let offset = (dayFrame.midY - viewport.midY) / viewport.height
             let distance = min(0.35, max(0.08, abs(offset)))
             let startY = offset > 0 ? 0.7 : 0.3
@@ -511,9 +522,12 @@ final class MultiUserCompetitionUITests: XCTestCase {
             )
             start.press(forDuration: 0.05, thenDragTo: end)
         }
+        geometry.append("final viewport=\(visibleRemoteScrollFrame(scrollView)); day=\(day.frame)")
+        attachGeometry()
         XCTAssertTrue(
             visibleRemoteScrollFrame(scrollView).contains(day.frame),
-            "The full fixture day must be visible before capturing visual evidence."
+            "The full fixture day must be visible before capturing visual evidence. "
+                + "viewport=\(visibleRemoteScrollFrame(scrollView)); day=\(day.frame)"
         )
     }
 

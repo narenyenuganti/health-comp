@@ -46,13 +46,40 @@ struct AccountDeletionReceipt: Codable, Equatable, Sendable {
 }
 
 enum AuthenticationEvent: Equatable, Sendable {
+    indirect case owned(AuthenticationEventOrigin, AuthenticationEvent)
     case sessionRefreshed(AuthenticationSession)
     case signedOut
     case accountDeleted
 }
 
+/// Carries original client ownership through queues without exposing identity.
+/// The callback is synchronous and must not reenter the owning registry.
+final class AuthenticationEventOrigin: Equatable, Sendable {
+    private let perform: @Sendable (() -> Void) throws -> Void
+
+    init<Client>(registry: SharedClientLifetime<Client>, owner: Client) {
+        self.perform = { operation in
+            try registry.withActiveOwner(owner, operation: operation)
+        }
+    }
+
+    func withActiveOwner<Result>(_ operation: () -> Result) -> Result? {
+        var result: Result?
+        do { try perform { result = operation() } }
+        catch { return nil }
+        return result
+    }
+
+    static func == (lhs: AuthenticationEventOrigin, rhs: AuthenticationEventOrigin) -> Bool {
+        lhs === rhs
+    }
+}
+
 enum AuthenticationClientFailure: Error, Equatable, Sendable {
     case cancelled
+    // A cancelled exchange persisted a session whose retirement is incomplete.
+    // Do not restore it or admit another account; retry the retirement callback.
+    case retirementRequired
     case invalidCredential
     case nonceMismatch
     case nonceGenerationFailed
@@ -68,11 +95,19 @@ enum AuthenticationClientFailure: Error, Equatable, Sendable {
 struct AuthenticationClient: Sendable {
     var restoreSession: @Sendable () async throws -> AuthenticationSession?
     var signInWithApple: @MainActor @Sendable () async throws -> AuthenticationSession
+    var signInWithAppleInBrowser: (@MainActor @Sendable () async throws -> AuthenticationSession)? = nil
     var bootstrapProfile: @Sendable (String?) async throws -> AuthenticatedProfile
     var updateProfile: @Sendable (String) async throws -> AuthenticatedProfile
+    // With finishRetirement configured, deletion success is the server receipt;
+    // the app must still complete runtime/profile teardown and retirement.
     var deleteAccount: @MainActor @Sendable () async throws -> Void
+    var deleteAccountInBrowser: (@MainActor @Sendable () async throws -> Void)? = nil
     var events: @Sendable () -> AsyncStream<AuthenticationEvent>
     var signOut: @Sendable () async throws -> Void
+    // Configured only by clients that support explicit lifetime retirement.
+    // The app calls this after runtime/profile teardown and any required remote
+    // sign-out/deletion confirmation, including terminal-session recovery.
+    var finishRetirement: (@Sendable () async throws -> Void)? = nil
 
     init(
         restoreSession: @escaping @Sendable () async throws -> AuthenticationSession?,
