@@ -37,7 +37,7 @@ jobs:
             printf 'Expected Xcode 16.4, got: %s\n' "${xcode_version%%$'\n'*}" >&2
             exit 1
           fi
-          brew install xcodegen
+          brew install xcodegen ripgrep
           xcodegen_version="$(xcodegen --version)"
           if [[ "$xcodegen_version" != "Version: 2.46.0" ]]; then
             printf 'Expected XcodeGen 2.46.0, got: %s\n' "$xcodegen_version" >&2
