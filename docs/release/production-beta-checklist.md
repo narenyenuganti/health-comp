@@ -2,18 +2,19 @@
 
 ## Current qualification checkpoint — September 9, 2026
 
-Application/backend candidate `b24ecbd5437144b1c03364302343edda610af667`
-has successful exact-source post-merge Backend and iOS CI. The paired browser
-deletion backend was deployed to staging; an exact-source, browser-enabled
-Simulator artifact recovered an existing Apple-linked profile. **The September 9
-readback found the same profile on the phone and Simulator, so distinct second-account
-qualification is not yet demonstrated.**
+The paired browser deletion backend was deployed from `b24ecbd`. Subsequent
+source `db8273468748e359c8242cb0aaf08ab52f7e50d5` integrated the independently
+reviewed, exact-head-CI-passing scoreless-owner replay correction. **The later
+September 9 login established a distinct existing alternate profile**, following
+zero-root sign-out. Its db82734 Simulator build now reconstructs completed history
+without the old warning. Manual refresh, full two-account lifecycle and physical
+qualification remain incomplete; the alternate profile still has no accepted score.
 
 See the [current staging checkpoint](staging-browser-qualification-2026-09-09.md)
-for deployment provenance, runtime evidence, limits, and remaining gates. No new
-physical release artifact is selected by this documentation update. The
-September 4 physical evidence below remains historical and does not qualify the
-changed authentication source. Release status remains **not production-ready**.
+for deployment provenance, runtime evidence, limits, and remaining gates. A signed
+db82734 physical package is prepared and validated but has not been installed or
+runtime-qualified. The September 4 physical evidence below remains historical
+and does not qualify the changed source. Release status remains **not production-ready**.
 
 ## Historical physical/source snapshot — September 4, 2026
 

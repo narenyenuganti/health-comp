@@ -7,14 +7,15 @@ data, exact Activity values, and reversible local fingerprints.
 ## Current qualification checkpoint — September 9, 2026
 
 The [staging browser checkpoint](staging-browser-qualification-2026-09-09.md)
-records candidate `b24ecbd5437144b1c03364302343edda610af667`, its successful
-post-merge CI, the September 8 staging migration/worker promotion, and the exact
-Simulator artifact's existing-profile browser login. A September 9 read-only
-comparison found the same profile on the phone and Simulator; it is not a
-distinct-account or identity-merging conclusion. Two-account qualification
-remains incomplete pending clarification and further evidence.
+records the b24ecbd staging backend promotion and the later independently reviewed
+db82734 completed-history correction with successful exact-head PR CI. The earlier
+same-profile browser login was followed by zero-root sign-out and a verified
+distinct existing alternate-account login. Its state-preserved db82734 Simulator
+build now reconstructs the completed result without inventing owner score rows.
+Manual refresh and full two-account lifecycle qualification remain incomplete.
 
-No physical artifact is selected or qualified by this documentation update.
+A signed db82734 physical package is prepared and validated but has not been
+installed or runtime-qualified. No physical service pass is inferred from it.
 All older PASS entries below retain only their stated artifact, timestamp, and
 scope. The original rollout objective remains incomplete and the app is not
 production-ready.
