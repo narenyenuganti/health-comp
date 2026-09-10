@@ -277,6 +277,122 @@ final class RemoteCompetitionReplayTests: XCTestCase {
         ))
     }
 
+    func testBestAvailableResultReplaysWithNoOwnerScoreHistory() throws {
+        var journal = try remoteJournalPrefix()
+        let ownerDays = try deadlineMissingFixtureDays()
+        var remoteDays = ownerDays
+        remoteDays[0] = try remoteFixtureDays(
+            participant: fixtureRemote,
+            base: 200,
+            missingOrdinal: nil
+        )[0]
+        let score = try remoteFixtureScore(
+            participant: fixtureRemote,
+            day: remoteDays[0]
+        )
+        _ = try journal.append(
+            [.remoteScoreRevisionRecorded(score)],
+            expectedCursor: journal.cursor
+        )
+        XCTAssertNil(try CompetitionReplayer.replay(journal)
+            .remoteScoreLedgers[fixtureOwner.profileID])
+        let result = try fixtureResult(
+            ownerDays: ownerDays,
+            remoteDays: remoteDays,
+            basis: .bestAvailable,
+            confirmedAt: fixtureDeadline
+        )
+
+        _ = try journal.append(
+            [.sharedResultConfirmed(result)],
+            expectedCursor: journal.cursor
+        )
+        let completedCursor = journal.cursor
+        _ = try journal.append(
+            [.sharedResultConfirmed(result)],
+            expectedCursor: completedCursor
+        )
+        XCTAssertEqual(journal.cursor, completedCursor)
+
+        let projection = try CompetitionReplayer.replay(journal)
+        XCTAssertEqual(projection.sharedResult?.resultHash, result.resultHash)
+        XCTAssertNil(projection.remoteScoreLedgers[fixtureOwner.profileID])
+        guard case let .completed(completed) = projection.competition.lifecycle
+        else { return XCTFail("Expected the server-confirmed result to replay") }
+        XCTAssertEqual(completed.basis, .bestAvailable)
+        XCTAssertEqual(completed.snapshot.userPoints, 0)
+        XCTAssertEqual(completed.snapshot.opponentPoints, 2.01)
+    }
+
+    func testBestAvailableResultReplaysWhenNeitherParticipantHasScores() throws {
+        var journal = try remoteJournalPrefix()
+        let days = try deadlineMissingFixtureDays()
+        let result = try fixtureResult(
+            ownerDays: days, remoteDays: days,
+            basis: .bestAvailable, confirmedAt: fixtureDeadline
+        )
+
+        _ = try journal.append([.sharedResultConfirmed(result)], expectedCursor: journal.cursor)
+
+        let projection = try CompetitionReplayer.replay(journal)
+        XCTAssertTrue(projection.remoteScoreLedgers.isEmpty)
+        XCTAssertEqual(projection.sharedResult?.resultHash, result.resultHash)
+        guard case let .completed(completed) = projection.competition.lifecycle
+        else { return XCTFail("Expected the server-confirmed tie to replay") }
+        XCTAssertEqual(completed.snapshot.userPoints, 0)
+        XCTAssertEqual(completed.snapshot.opponentPoints, 0)
+        XCTAssertNil(projection.sharedResult?.winner)
+    }
+
+    func testMissingOwnerLedgerDoesNotAcceptUncachedOwnerResultRows() throws {
+        var journal = try remoteJournalPrefix()
+        let before = journal.cursor
+        var ownerDays = try deadlineMissingFixtureDays()
+        ownerDays[0] = try remoteFixtureDays(
+            participant: fixtureOwner, base: 100, missingOrdinal: nil
+        )[0]
+        let result = try fixtureResult(
+            ownerDays: ownerDays, remoteDays: deadlineMissingFixtureDays(),
+            basis: .bestAvailable, confirmedAt: fixtureDeadline
+        )
+
+        XCTAssertThrowsError(try journal.append(
+            [.sharedResultConfirmed(result)], expectedCursor: journal.cursor
+        ))
+        XCTAssertEqual(journal.cursor, before)
+        XCTAssertNil(try CompetitionReplayer.replay(journal).sharedResult)
+    }
+
+    func testMissingOwnerLedgerDoesNotAcceptResultBeforeDeadline() throws {
+        var journal = try remoteJournalPrefix()
+        let before = journal.cursor
+        let days = try deadlineMissingFixtureDays()
+        let result = try fixtureResult(
+            ownerDays: days, remoteDays: days, basis: .bestAvailable,
+            confirmedAt: fixtureDeadline.addingTimeInterval(-1)
+        )
+
+        XCTAssertThrowsError(try journal.append(
+            [.sharedResultConfirmed(result)], expectedCursor: journal.cursor
+        ))
+        XCTAssertEqual(journal.cursor, before)
+    }
+
+    func testMissingOwnerLedgerDoesNotAcceptStableResultWithMissingDays() throws {
+        var journal = try remoteJournalPrefix()
+        let before = journal.cursor
+        let days = try deadlineMissingFixtureDays()
+        let result = try fixtureResult(
+            ownerDays: days, remoteDays: days,
+            basis: .stable, confirmedAt: fixtureDeadline
+        )
+
+        XCTAssertThrowsError(try journal.append(
+            [.sharedResultConfirmed(result)], expectedCursor: journal.cursor
+        ))
+        XCTAssertEqual(journal.cursor, before)
+    }
+
     func testRemoteJournalRejectsLocalActivityAndFinalizationPaths() throws {
         var journal = try remoteJournalPrefix()
         let schedule = try XCTUnwrap(CompetitionReplayer.replay(journal).competition.schedule)
@@ -533,6 +649,58 @@ final class RemoteCompetitionReplayTests: XCTestCase {
         let result = try SharedCompetitionResult(competitionID: fixtureCompetitionID, owner: fixtureOwner, remote: fixtureRemote, windows: [ownerWindow, remoteWindow], winner: winner, basis: fixtureCase.basis, resultHash: hash, confirmedAt: fixtureDeadline, serverSequence: 99)
         _ = try journal.append([.sharedResultConfirmed(result)], expectedCursor: journal.cursor)
         return journal
+    }
+
+    private func deadlineMissingFixtureDays() throws -> [SharedResultDay] {
+        try (1...7).map { ordinal in
+            try SharedResultDay(
+                ordinal: ordinal,
+                status: .unavailable,
+                source: .deadlineMissing,
+                centiPoints: nil,
+                reason: "missing",
+                wireContentSHA256: nil,
+                clientRevision: nil,
+                serverSequence: nil,
+                scoringPolicyIdentity: nil
+            )
+        }
+    }
+
+    private func fixtureResult(
+        ownerDays: [SharedResultDay],
+        remoteDays: [SharedResultDay],
+        basis: RemoteFinalizationBasis,
+        confirmedAt: Date
+    ) throws -> SharedCompetitionResult {
+        let ownerWindow = try remoteFixtureWindow(participant: fixtureOwner, days: ownerDays)
+        let remoteWindow = try remoteFixtureWindow(participant: fixtureRemote, days: remoteDays)
+        let winner: RemoteParticipant? = ownerWindow.totalCentiPoints == remoteWindow.totalCentiPoints
+            ? nil
+            : (ownerWindow.totalCentiPoints > remoteWindow.totalCentiPoints ? fixtureOwner : fixtureRemote)
+        let hash = try RemoteFinalizationWireV1.resultHash(
+            competitionID: fixtureCompetitionID.rawValue,
+            participantA: fixtureOwner.profileID,
+            totalA: ownerWindow.totalCentiPoints,
+            commitmentA: ownerWindow.windowCommitment,
+            participantB: fixtureRemote.profileID,
+            totalB: remoteWindow.totalCentiPoints,
+            commitmentB: remoteWindow.windowCommitment,
+            outcome: winner == nil ? "tie" : "winner",
+            winner: winner?.profileID,
+            basis: basis.rawValue
+        )
+        return try SharedCompetitionResult(
+            competitionID: fixtureCompetitionID,
+            owner: fixtureOwner,
+            remote: fixtureRemote,
+            windows: [ownerWindow, remoteWindow],
+            winner: winner,
+            basis: basis,
+            resultHash: hash,
+            confirmedAt: confirmedAt,
+            serverSequence: 999
+        )
     }
 
     private func remoteFixtureScore(participant: RemoteParticipant, day: SharedResultDay) throws -> RemoteScoreRevision {

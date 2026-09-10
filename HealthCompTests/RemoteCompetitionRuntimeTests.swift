@@ -2280,6 +2280,41 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
         XCTAssertEqual(completed.basis, .bestAvailable)
         XCTAssertEqual(completed.snapshot.userPoints, 300)
         XCTAssertEqual(completed.snapshot.opponentPoints, 0)
+
+        // The same immutable result must also reconstruct for the participant
+        // who never submitted a score, without borrowing the first user's store.
+        let scorelessRoot = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: scorelessRoot) }
+        let scorelessRuntime = RemoteCompetitionRuntime(
+            profileID: creatorID,
+            store: makeStore(root: scorelessRoot),
+            remoteAPI: remoteAPI(
+                listCompetitions: { [descriptor] },
+                fetchChanges: { _, _ in page }
+            ),
+            now: { completedAt }
+        )
+
+        let scorelessOutcome = await scorelessRuntime.synchronizeAll()
+
+        XCTAssertEqual(scorelessOutcome.failures, [])
+        let scorelessProjection = try XCTUnwrap(
+            scorelessOutcome.successfulCompetitions.first?.journal.projection
+        )
+        XCTAssertEqual(scorelessProjection.sharedResult?.resultHash, immutableHash)
+        XCTAssertNil(scorelessProjection.remoteScoreLedgers[creatorID])
+        XCTAssertEqual(
+            scorelessProjection.competition.remoteConfiguration?.owner.profileID,
+            creatorID
+        )
+        guard case let .completed(scorelessCompleted) = scorelessProjection
+            .competition.lifecycle
+        else {
+            return XCTFail("Expected completion for the scoreless participant")
+        }
+        XCTAssertEqual(scorelessCompleted.basis, .bestAvailable)
+        XCTAssertEqual(scorelessCompleted.snapshot.userPoints, 0)
+        XCTAssertEqual(scorelessCompleted.snapshot.opponentPoints, 300)
     }
 
     func testDeadlineWithMissingOwnerDayEnqueuesBestAvailableAttestation()
