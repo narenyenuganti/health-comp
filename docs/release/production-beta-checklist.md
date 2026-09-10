@@ -1,5 +1,22 @@
 # HealthComp Production Beta Verification Checklist
 
+## Current qualification checkpoint — September 9, 2026
+
+Application/backend candidate `b24ecbd5437144b1c03364302343edda610af667`
+has successful exact-source post-merge Backend and iOS CI. The paired browser
+deletion backend was deployed to staging; an exact-source, browser-enabled
+Simulator artifact recovered an existing Apple-linked profile. **The September 9
+readback found the same profile on the phone and Simulator, so distinct second-account
+qualification is not yet demonstrated.**
+
+See the [current staging checkpoint](staging-browser-qualification-2026-09-09.md)
+for deployment provenance, runtime evidence, limits, and remaining gates. No new
+physical release artifact is selected by this documentation update. The
+September 4 physical evidence below remains historical and does not qualify the
+changed authentication source. Release status remains **not production-ready**.
+
+## Historical physical/source snapshot — September 4, 2026
+
 **Snapshot:** 2026-09-04 PDT
 **Selected physical build commit:**
 `c5932ed2ff83c157f0703472a279474cb0240cc4`
