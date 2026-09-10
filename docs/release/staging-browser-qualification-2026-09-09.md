@@ -126,16 +126,19 @@ not an application or server-contract failure.
    Apple account was used, perform the separately scoped fresh login with the
    other existing account and verify the distinct profile. If different Apple
    accounts were used, preserve sessions and diagnose identity binding first.
-2. Qualify native/browser identity continuity, cancellation, server-confirmed
-   sign-out, zero prior local data, and sequential two-account isolation on the
-   selected candidate. The historical receipts remain scoped to their old builds.
+2. Select and validate an exact signed physical artifact before using the phone
+   for any new candidate-specific identity or score evidence. Qualify native/browser
+   identity continuity, cancellation, server-confirmed sign-out, zero prior local
+   data, and sequential two-account isolation on the selected candidate. The
+   historical receipts remain scoped to their old builds.
 3. Establish a fresh agreed competition scope; obtain both accounts' own genuinely
    accepted derived scores and complete offline catch-up, seven-day finalization,
    results/history, rematch/mute/archive, and invitation consumption/replay.
-4. Select and qualify an exact signed physical artifact. Obtain its required
-   HealthKit, attributable background delivery, APNs routing, App Attest acceptance,
-   and one-phone replacement-enrollment evidence. No old physical PASS transfers
-   merely because source tests or Simulator execution passed.
+4. Complete the selected physical artifact's required HealthKit, attributable
+   background delivery, APNs routing, App Attest acceptance, and one-phone
+   replacement-enrollment evidence. Defer destructive replacement until evidence
+   needed by unfinished scoring/lifecycle work is preserved. No old physical PASS
+   transfers merely because source tests or Simulator execution passed.
 5. After preserving evidence needed by scoring/lifecycle gates, perform the
    explicitly scoped physical test-account deletion and paired browser
    reauthorization. Verify remote completion, local wipe/no resurrection, and
