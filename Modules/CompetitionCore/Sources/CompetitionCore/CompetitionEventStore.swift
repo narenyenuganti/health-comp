@@ -1586,9 +1586,17 @@ public enum CompetitionReplayer {
                       result.competitionID == configuration.competitionID,
                       result.owner == configuration.owner,
                       result.remote == configuration.remote,
-                      let ownerResultWindow = try? result.window(for: configuration.owner),
-                      let ownerLedger = workingRemoteLedgers[configuration.owner.profileID]
+                      let ownerResultWindow = try? result.window(for: configuration.owner)
                 else { throw CompetitionJournalError.invalidDomainTransition(sequence: sequence) }
+                // A participant can reach the deadline with no accepted rows.
+                // Validate that empty history without manufacturing score evidence.
+                let ownerLedger = try workingRemoteLedgers[configuration.owner.profileID]
+                    ?? RemoteScoreLedger(
+                        competitionID: configuration.competitionID,
+                        participant: configuration.owner,
+                        acceptedSchedule: configuration.acceptedSchedule,
+                        scoringPolicyIdentity: configuration.scoringPolicyIdentity
+                    )
                 if result.basis == .stable {
                     guard result.windows.allSatisfy({ $0.days.allSatisfy { $0.source == .acceptedRevision } }) else { throw CompetitionJournalError.invalidDomainTransition(sequence: sequence) }
                 } else {
