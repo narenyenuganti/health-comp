@@ -4,9 +4,25 @@ This file records anonymized, reproducible rollout receipts. It excludes Apple
 account details, device identifiers, tokens, private screenshots, raw HealthKit
 data, exact Activity values, and reversible local fingerprints.
 
+## Current qualification checkpoint — September 9, 2026
+
+The [staging browser checkpoint](staging-browser-qualification-2026-09-09.md)
+records the b24ecbd staging backend promotion and the later independently reviewed
+db82734 completed-history correction with successful exact-head PR CI. The earlier
+same-profile browser login was followed by zero-root sign-out and a verified
+distinct existing alternate-account login. Its state-preserved db82734 Simulator
+build now reconstructs the completed result without inventing owner score rows.
+Manual refresh and full two-account lifecycle qualification remain incomplete.
+
+A signed db82734 physical package is prepared and validated but has not been
+installed or runtime-qualified. No physical service pass is inferred from it.
+All older PASS entries below retain only their stated artifact, timestamp, and
+scope. The original rollout objective remains incomplete and the app is not
+production-ready.
+
 ## Evidence snapshot
 
-**Snapshot:** September 4, 2026 PDT. Integrated evidence main is
+**Historical snapshot:** September 4, 2026 PDT. Integrated evidence main is
 `32c5df7ee4951ffa32965217d6c51ea4c07e10de`; selected physical build commit is
 `c5932ed2ff83c157f0703472a279474cb0240cc4`, containing reviewed application
 source `76b797d2fc706d40121dd85478c3edbedac04e38`. Between selected build and

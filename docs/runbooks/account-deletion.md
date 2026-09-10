@@ -24,7 +24,7 @@ A deletion is complete only when all of the following are true:
 An app alert, a local sign-out, an anonymized profile alone, or an operator SQL
 change is not proof of completion.
 
-## User-initiated path
+## Native user-initiated path
 
 1. The signed-in user opens account settings and confirms permanent deletion.
 2. The app performs fresh Sign in with Apple reauthorization with a new nonce.
@@ -42,9 +42,19 @@ The authorization code, nonce, Apple refresh token, provider identifier,
 access token, and service-role key must never enter logs, tickets, screenshots,
 analytics, shell history, or SQL output.
 
-## Staging browser candidate — not enabled or deployed
+## Staging browser path — deployed for qualification, acceptance pending
 
-The local candidate adds `apple-deletion-begin`, `apple-deletion-callback`,
+The September 8, 2026 promotion receipt records the coordinated staging migration
+and native/browser worker update from `b24ecbd`. At that readback the server opt-in
+was enabled and the tracked app default remained off. One Simulator artifact was
+subsequently privately opted in for qualification. The [dated staging
+checkpoint](../release/staging-browser-qualification-2026-09-09.md) distinguishes
+deployment and browser login from real paired deletion, revocation, physical
+execution, and preserved-history acceptance, which remain incomplete. Production
+was not changed. Revalidate mutable state before any later operation; this dated
+status is not an authorization to delete an account or widen exposure.
+
+The paired path uses `apple-deletion-begin`, `apple-deletion-callback`,
 and `apple-deletion-complete`. They return an empty, noncacheable 503 unless
 `HEALTHCOMP_ENABLE_APPLE_WEB_SIGN_IN=YES`, the project is the exact configured
 staging project, and a separate `APPLE_WEB_SIGN_IN_CLIENT_ID` is present.

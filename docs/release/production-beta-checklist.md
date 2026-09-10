@@ -1,5 +1,23 @@
 # HealthComp Production Beta Verification Checklist
 
+## Current qualification checkpoint — September 9, 2026
+
+The paired browser deletion backend was deployed from `b24ecbd`. Subsequent
+source `db8273468748e359c8242cb0aaf08ab52f7e50d5` integrated the independently
+reviewed, exact-head-CI-passing scoreless-owner replay correction. **The later
+September 9 login established a distinct existing alternate profile**, following
+zero-root sign-out. Its db82734 Simulator build now reconstructs completed history
+without the old warning. Manual refresh, full two-account lifecycle and physical
+qualification remain incomplete; the alternate profile still has no accepted score.
+
+See the [current staging checkpoint](staging-browser-qualification-2026-09-09.md)
+for deployment provenance, runtime evidence, limits, and remaining gates. A signed
+db82734 physical package is prepared and validated but has not been installed or
+runtime-qualified. The September 4 physical evidence below remains historical
+and does not qualify the changed source. Release status remains **not production-ready**.
+
+## Historical physical/source snapshot — September 4, 2026
+
 **Snapshot:** 2026-09-04 PDT
 **Selected physical build commit:**
 `c5932ed2ff83c157f0703472a279474cb0240cc4`
