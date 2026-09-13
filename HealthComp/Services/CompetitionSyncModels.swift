@@ -2874,11 +2874,10 @@ struct CompetitionChangePage: Codable, Equatable, Sendable {
                 throw CompetitionWireContractError.serverContractMismatch
             }
         case let .profilePresentation(value):
+            // Deletion may redact a historical name-change event in place.
             guard change.entityID == value.profileID,
                   change.kind != .profileAnonymized
-                      || value.displayName == "Former competitor",
-                  change.kind != .profilePresentationChanged
-                      || value.displayName != "Former competitor"
+                      || value.displayName == "Former competitor"
             else {
                 throw CompetitionWireContractError.serverContractMismatch
             }
