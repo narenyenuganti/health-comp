@@ -39,13 +39,40 @@ update public.profiles set state='anonymized',auth_user_id=null,
 create temporary table original_history as select * from public.competition_change_log;
 create temporary table original_profiles as select * from public.profiles;
 create temporary table original_competitions as select * from public.competitions;
+
+-- Inject a mixed mutation into the real backfill UPDATE before its row guard.
+-- The old name is still present, so the redaction preconditions are eligible.
+create function pg_temp.tamper_history_redaction() returns trigger
+language plpgsql as $$
+begin
+  case tg_argv[0]
+    when 'time' then new.occurred_at := old.occurred_at + interval '1 second';
+    when 'identity' then new.entity_id := 'f8200000-0000-4000-8000-000000000002';
+    when 'payload' then new.payload_snapshot := new.payload_snapshot || '{"extra":"unapproved"}'::jsonb;
+  end case;
+  return new;
+end;
+$$;
 do $test$
-declare first_pass jsonb;
+declare first_pass jsonb; mutation text; refused boolean;
 begin
   if (select count(*) from original_history where entity_id='f8200000-0000-4000-8000-000000000001'
       and change_kind='profile_presentation_changed'
       and payload_snapshot->>'display_name'='Legacy deleting changed') <> 1
   then raise exception 'historical_name_fixture_required'; end if;
+  foreach mutation in array array['time','identity','payload'] loop
+    -- PostgreSQL fires same-event triggers by name: this precedes reject_*.
+    execute format('create trigger a_test_redaction_tamper before update on public.competition_change_log
+      for each row execute function pg_temp.tamper_history_redaction(%L)', mutation);
+    refused := false;
+    begin
+      execute (select sql from history_test_source);
+    exception when sqlstate '55000' then
+      refused := sqlerrm = 'competition_change_log is append-only';
+    end;
+    if not refused then raise exception 'mixed_redaction_mutation_was_not_rejected: %', mutation; end if;
+    drop trigger a_test_redaction_tamper on public.competition_change_log;
+  end loop;
   execute (select sql from history_test_source);
   if exists(
     select 1 from original_history old_row full join public.competition_change_log new_row
