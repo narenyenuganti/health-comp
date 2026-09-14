@@ -12,6 +12,7 @@ enum MultiUserCompetitionTestLabScenario:
     Sendable
 {
     case sharing
+    case sharingCustomScheme = "sharing-custom-scheme"
     case coldClaim = "cold-claim"
     case warmClaim = "warm-claim"
     case signedOutClaim = "signed-out-claim"
@@ -110,8 +111,10 @@ struct MultiUserCompetitionTestLabRootView: View {
     @ViewBuilder
     private var scenarioView: some View {
         switch configuration.scenario {
-        case .sharing:
-            MultiUserCompetitionSharingTestLabView()
+        case .sharing, .sharingCustomScheme:
+            MultiUserCompetitionSharingTestLabView(
+                usesCustomScheme: configuration.scenario == .sharingCustomScheme
+            )
         case .coldClaim, .warmClaim, .signedOutClaim,
              .unavailableClaim, .offlineClaim:
             MultiUserCompetitionClaimTestLabView(
@@ -137,6 +140,7 @@ struct MultiUserCompetitionTestLabConfigurationErrorView: View {
 }
 
 private struct MultiUserCompetitionSharingTestLabView: View {
+    let usesCustomScheme: Bool
     @State private var path: [CompetitionID] = []
     @State private var inviteStatus: CompetitionFeature.InviteCreationStatus =
         .idle
@@ -146,28 +150,52 @@ private struct MultiUserCompetitionSharingTestLabView: View {
     @State private var rematchStatus: CompetitionFeature.InviteCreationStatus =
         .idle
     @State private var rematchLink: CompetitionInviteShareLink?
+    @State private var pastedInvitationStatus = "Not checked"
 
     var body: some View {
-        NavigationStack(path: $path) {
-            CompetitionSharingView(
-                publication: publication,
-                inviteCreationStatus: inviteStatus,
-                createdInviteLink: inviteLink,
-                createInvite: createInvite,
-                selectCompetition: { path.append($0) },
-                reinvite: {},
-                isReinviteInFlight: false,
-                notificationsMuted: false,
-                notificationMuteIsInFlight: false,
-                notificationPreferenceSaveFailed: false,
-                notificationAuthorization: .authorized,
-                notificationOpponentDisplayName: "Priya",
-                notificationAuthorizationRequestIsInFlight: false,
-                requestNotificationAuthorization: {},
-                toggleNotifications: {}
-            )
-            .navigationDestination(for: CompetitionID.self) { id in
-                destination(id)
+        VStack(spacing: 0) {
+            NavigationStack(path: $path) {
+                CompetitionSharingView(
+                    publication: publication,
+                    inviteCreationStatus: inviteStatus,
+                    createdInviteLink: inviteLink,
+                    createInvite: createInvite,
+                    selectCompetition: { path.append($0) },
+                    reinvite: {},
+                    isReinviteInFlight: false,
+                    notificationsMuted: false,
+                    notificationMuteIsInFlight: false,
+                    notificationPreferenceSaveFailed: false,
+                    notificationAuthorization: .authorized,
+                    notificationOpponentDisplayName: "Priya",
+                    notificationAuthorizationRequestIsInFlight: false,
+                    requestNotificationAuthorization: {},
+                    toggleNotifications: {}
+                )
+                .navigationDestination(for: CompetitionID.self) { id in
+                    destination(id)
+                }
+            }
+            if usesCustomScheme {
+                HStack {
+                    PasteButton(payloadType: String.self) { strings in
+                        let text = strings.first ?? ""
+                        let expectedLink = rematchLink == nil
+                            ? "healthcomp://invite/UVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVE"
+                            : "healthcomp://invite/UlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlI"
+                        if text.contains(expectedLink) {
+                            pastedInvitationStatus = "Complete invitation link"
+                        } else if text == "Open this private link to join my seven-day HealthComp competition."
+                            || text == "Open this private link to join our HealthComp rematch." {
+                            pastedInvitationStatus = "Message only"
+                        } else {
+                            pastedInvitationStatus = "Missing invitation link"
+                        }
+                    }
+                    Text(pastedInvitationStatus)
+                }
+                .padding()
+                .background(.regularMaterial)
             }
         }
         .accessibilityIdentifier("multiuser.sharing.root")
@@ -222,7 +250,10 @@ private struct MultiUserCompetitionSharingTestLabView: View {
 
     private func createInvite() {
         inviteStatus = .ready
-        inviteLink = MultiUserCompetitionTestLabFixtures.shareLink(byte: 0x51)
+        inviteLink = MultiUserCompetitionTestLabFixtures.shareLink(
+            byte: 0x51,
+            usesCustomScheme: usesCustomScheme
+        )
     }
 
     private func handle(_ action: CompetitionFeature.Action) {
@@ -233,7 +264,8 @@ private struct MultiUserCompetitionSharingTestLabView: View {
             rematchParentID = id
             rematchStatus = .ready
             rematchLink = MultiUserCompetitionTestLabFixtures.shareLink(
-                byte: 0x52
+                byte: 0x52,
+                usesCustomScheme: usesCustomScheme
             )
         default:
             break
@@ -259,7 +291,8 @@ private struct MultiUserCompetitionClaimTestLabView: View {
         let initialStatus: MainTabFeature.InviteClaimStatus = switch scenario {
         case .unavailableClaim: .unavailable
         case .offlineClaim: .retryable
-        case .sharing, .coldClaim, .warmClaim, .signedOutClaim, .account:
+        case .sharing, .sharingCustomScheme, .coldClaim, .warmClaim,
+             .signedOutClaim, .account:
             .ready
         }
         _status = State(initialValue: initialStatus)
@@ -495,13 +528,19 @@ private enum MultiUserCompetitionTestLabFixtures {
         )
     }
 
-    static func shareLink(byte: UInt8) -> CompetitionInviteShareLink {
+    static func shareLink(
+        byte: UInt8,
+        usesCustomScheme: Bool
+    ) -> CompetitionInviteShareLink {
         let rawToken = Data(repeating: byte, count: 32)
             .base64EncodedString()
             .replacingOccurrences(of: "+", with: "-")
             .replacingOccurrences(of: "/", with: "_")
             .replacingOccurrences(of: "=", with: "")
         let token = CompetitionInviteClaimToken(rawValue: rawToken)!
+        if usesCustomScheme {
+            return CompetitionInviteShareLink(fallbackToken: token)!
+        }
         return CompetitionInviteShareLink(
             host: "invites.ui.healthcomp.test",
             token: token

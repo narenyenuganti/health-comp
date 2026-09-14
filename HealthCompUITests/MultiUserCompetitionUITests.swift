@@ -13,6 +13,71 @@ final class MultiUserCompetitionUITests: XCTestCase {
         app = nil
     }
 
+    func testCopyCustomSchemeInvitationIncludesTheCompleteLink() throws {
+        launch(.sharingCustomScheme)
+        defer { app.terminate() }
+        let create = app.buttons["competition.create.button"]
+        scrollToElement(create)
+        create.tap()
+        assertSharedInvitationCopiesCompleteLink(
+            app.buttons["competition.create.share"]
+        )
+    }
+
+    func testCopyCustomSchemeRematchIncludesTheCompleteLink() throws {
+        launch(.sharingCustomScheme)
+        defer { app.terminate() }
+        XCTAssertTrue(app.navigationBars["Sharing"].waitForExistence(timeout: 3))
+        app.scrollViews.firstMatch.swipeUp()
+        let completed = sharingCard(state: "completed", name: "Former competitor")
+        scrollToElement(completed)
+        completed.tap()
+        XCTAssertTrue(app.navigationBars["Result"].waitForExistence(timeout: 3))
+        app.scrollViews.firstMatch.swipeUp()
+        let create = app.buttons["competition.rematch.create"]
+        scrollToElement(create)
+        create.tap()
+        assertSharedInvitationCopiesCompleteLink(
+            app.buttons["competition.rematch.share"]
+        )
+    }
+
+    private func assertSharedInvitationCopiesCompleteLink(_ share: XCUIElement) {
+        XCTAssertTrue(share.waitForExistence(timeout: 3))
+        share.tap()
+
+        let copy = app.cells.matching(
+            NSPredicate(format: "label == %@", "Copy")
+        ).firstMatch
+        guard copy.waitForExistence(timeout: 5) else {
+            XCTFail("The system share sheet must offer Copy.")
+            return
+        }
+        copy.tap()
+        XCTAssertTrue(copy.waitForNonExistence(timeout: 5))
+        let paste = app.buttons.matching(
+            NSPredicate(format: "label == %@", "Paste")
+        ).firstMatch
+        XCTAssertTrue(paste.waitForExistence(timeout: 3))
+        paste.tap()
+        let status = app.staticTexts.matching(
+            NSPredicate(format: "label IN %@", [
+                "Not checked", "Complete invitation link", "Message only",
+                "Missing invitation link"
+            ])
+        ).firstMatch
+        let pasted = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "label != %@", "Not checked"),
+            object: status
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [pasted], timeout: 5), .completed)
+        XCTAssertEqual(
+            status.label,
+            "Complete invitation link",
+            "System Copy must include the complete invitation link in plain text, not only its message."
+        )
+    }
+
     func testCreateRemoteUpdatesHistoryAnonymizationRematchAndArchive() throws {
         launch(.sharing)
 
@@ -563,6 +628,7 @@ final class MultiUserCompetitionUITests: XCTestCase {
 
     private enum Scenario: String {
         case sharing
+        case sharingCustomScheme = "sharing-custom-scheme"
         case coldClaim = "cold-claim"
         case warmClaim = "warm-claim"
         case signedOutClaim = "signed-out-claim"

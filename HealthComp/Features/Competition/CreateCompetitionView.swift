@@ -55,11 +55,8 @@ struct CreateCompetitionView: View {
         case .ready:
             if let shareLink {
                 ShareLink(
-                    item: shareLink.url,
-                    subject: Text("Join my HealthComp competition"),
-                    message: Text(
-                        "Open this private link to join my seven-day HealthComp competition."
-                    )
+                    item: shareLink.url.absoluteString,
+                    subject: Text("Join my HealthComp competition")
                 ) {
                     Label("Share Private Invitation", systemImage: "square.and.arrow.up")
                         .frame(maxWidth: .infinity)
