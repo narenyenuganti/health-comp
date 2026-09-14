@@ -48,6 +48,7 @@ jobs:
           bash scripts/test-recovery-foreign-key-integrity.sh --static
           bash scripts/test-recovery-state-acceptance.sh --static
           bash -n scripts/test-deletion-client-migration.sh
+          bash -n scripts/test-deleted-profile-history-migration.sh
           sh scripts/test-verify-invitation-functions.sh
           sh scripts/test-staging-adversarial-sql.sh
           sh scripts/test-verify-app-attest-dependency-graph.sh
@@ -92,6 +93,8 @@ jobs:
           # legacy token before qualifying the full current schema below.
           supabase db reset --local --version 20260822001000
           bash scripts/test-deletion-client-migration.sh
+          supabase db reset --local --version 20260906001300
+          bash scripts/test-deleted-profile-history-migration.sh
           supabase db reset
           supabase test db
 

@@ -4,7 +4,7 @@ set local role postgres;
 create extension if not exists pgtap with schema extensions;
 set local search_path = extensions, public, pg_catalog;
 
-select plan(77);
+select plan(87);
 
 select has_table(
   'private', 'account_deletions',
@@ -181,6 +181,50 @@ insert into public.competition_participants (
   );
 
 set constraints all immediate;
+
+-- Exercise the public presentation/feed seam before deletion so the final
+-- privacy assertion cannot pass merely because no historical name was stored.
+set local role authenticated;
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"d1000000-0000-4000-8000-000000000001","role":"authenticated"}',
+  true
+);
+select lives_ok(
+  $$select public.update_current_profile('Alice Before Deletion')$$,
+  'the deleting participant changes their presentation before deletion'
+);
+select is((
+  select count(*)
+  from jsonb_array_elements(public.fetch_competition_changes(
+    'd3000000-0000-4000-8000-000000000003', 0, 200
+  )->'changes') change_row
+  where change_row->>'kind' = 'profile_presentation_changed'
+    and change_row->'payload'->>'display_name' = 'Alice Before Deletion'
+), 1::bigint, 'the public feed contains the pre-deletion presentation');
+reset role;
+
+set local role authenticated;
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"d1000000-0000-4000-8000-000000000002","role":"authenticated"}',
+  true
+);
+select lives_ok(
+  $$select public.update_current_profile('Bob Retained')$$,
+  'the remaining participant has independent historical presentation'
+);
+reset role;
+select throws_ok(
+  $$update public.competition_change_log
+    set payload_snapshot = jsonb_set(payload_snapshot, '{display_name}', '"Former competitor"')
+    where entity_id = 'd2000000-0000-4000-8000-000000000002'
+      and change_kind = 'profile_presentation_changed'$$,
+  '55000', 'competition_change_log is append-only',
+  'even the owner cannot redact an active participant presentation'
+);
+create temporary table history_before_deletion as
+select * from public.competition_change_log;
 
 insert into public.competition_invites (
   id, competition_id, token_digest, expires_at
@@ -959,6 +1003,70 @@ select throws_ok(
   $$,
   '55000', 'completed_account_deletion_is_terminal',
   'completed deletion progress is immutable on every update path'
+);
+
+set local role authenticated;
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"d1000000-0000-4000-8000-000000000002","role":"authenticated"}',
+  true
+);
+select is((
+  select count(*)
+  from jsonb_array_elements(public.fetch_competition_changes(
+    'd3000000-0000-4000-8000-000000000003', 0, 200
+  )->'changes') change_row
+  where change_row->>'kind' in (
+    'profile_presentation_changed', 'profile_anonymized'
+  )
+    and change_row->'payload'->>'profile_id' =
+      'd2000000-0000-4000-8000-000000000001'
+    and change_row->'payload'->>'display_name'
+      is distinct from 'Former competitor'
+), 0::bigint,
+  'completed deletion never replays prior display names to the opponent');
+reset role;
+
+select is((
+  select count(*) from history_before_deletion before_row
+  left join public.competition_change_log after_row
+    using (competition_id, server_seq)
+  where to_jsonb(after_row) is distinct from case
+    when before_row.entity_id = 'd2000000-0000-4000-8000-000000000001'
+      and before_row.change_kind = 'profile_presentation_changed'
+    then jsonb_set(to_jsonb(before_row), '{payload_snapshot,display_name}', '"Former competitor"')
+    else to_jsonb(before_row)
+  end
+), 0::bigint,
+  'deletion changes only the approved name field and preserves all prior rows');
+select is((
+  select count(*) from (
+    select competition_id from public.competition_change_log
+    group by competition_id
+    having min(server_seq) <> 1 or max(server_seq) <> count(*)
+  ) gaps
+), 0::bigint, 'redaction and terminal events preserve gap-free history');
+select throws_ok(
+  $$update public.competition_change_log
+    set payload_snapshot = jsonb_set(payload_snapshot, '{display_name}', '"Restored name"')
+    where entity_id = 'd2000000-0000-4000-8000-000000000001'
+      and change_kind = 'profile_presentation_changed'$$,
+  '55000', 'competition_change_log is append-only',
+  'a redacted historical name cannot be restored'
+);
+select throws_ok(
+  $$update public.competition_change_log set occurred_at = occurred_at + interval '1 second'
+    where entity_id = 'd2000000-0000-4000-8000-000000000001'
+      and change_kind = 'profile_presentation_changed'$$,
+  '55000', 'competition_change_log is append-only',
+  'the redaction exception never permits another event field to change'
+);
+select throws_ok(
+  $$delete from public.competition_change_log
+    where entity_id = 'd2000000-0000-4000-8000-000000000001'
+      and change_kind = 'profile_presentation_changed'$$,
+  '55000', 'competition_change_log is append-only',
+  'redacted historical events remain undeletable'
 );
 
 select * from finish();

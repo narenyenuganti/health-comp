@@ -434,6 +434,41 @@ final class CompetitionSyncModelsTests: XCTestCase {
         XCTAssertEqual(award.type, .sevenDayFinisher)
     }
 
+    func testChangePageAcceptsRedactedHistoricalPresentationWithoutRelaxingIdentity() throws {
+        var object = try changePageObject()
+        var changes = try XCTUnwrap(object["changes"] as? [[String: Any]])
+        var payload = try XCTUnwrap(changes[2]["payload"] as? [String: Any])
+        payload["display_name"] = "Former competitor"
+        changes[2]["payload"] = payload
+        object["changes"] = changes
+
+        let page = try CompetitionWireCodec.decode(
+            CompetitionChangePage.self, from: jsonData(object), contract: .changePage
+        )
+        XCTAssertEqual(page.changes.map(\.serverSequence), Array(1...7).map(Int64.init))
+        XCTAssertEqual(page.changes[2].kind, .profilePresentationChanged)
+        guard case let .profilePresentation(presentation) = page.changes[2].payload else {
+            return XCTFail("Expected redacted historical presentation")
+        }
+        XCTAssertEqual(presentation.displayName, "Former competitor")
+
+        changes[2]["entity_id"] = participantAID.uuidString.lowercased()
+        object["changes"] = changes
+        XCTAssertThrowsError(try CompetitionWireCodec.decode(
+            CompetitionChangePage.self, from: jsonData(object), contract: .changePage
+        ))
+    }
+
+    func testChangePageRejectsIdentifyingAnonymizationPayload() throws {
+        var object = try changePageObject()
+        var changes = try XCTUnwrap(object["changes"] as? [[String: Any]])
+        changes[2]["kind"] = "profile_anonymized"
+        object["changes"] = changes
+        XCTAssertThrowsError(try CompetitionWireCodec.decode(
+            CompetitionChangePage.self, from: jsonData(object), contract: .changePage
+        ))
+    }
+
     func testChangePageRejectsUnknownFieldsWrongTypesAndPrivacyShapes() throws {
         let valid = try changePageObject()
         var invalidValues: [Any] = []

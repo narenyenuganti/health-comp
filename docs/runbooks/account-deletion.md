@@ -24,6 +24,27 @@ A deletion is complete only when all of the following are true:
 An app alert, a local sign-out, an anonymized profile alone, or an operator SQL
 change is not proof of completion.
 
+### Historical-name redaction exception
+
+The September 13 approved privacy exception permits only historical
+`display_name` fields in `profile_presentation_changed` and `profile_anonymized`
+snapshots to become `Former competitor` for an anonymized profile. Event
+identity, sequence/order, all other payload fields, scores, results and other
+participants remain immutable. This is not a general history-editing API.
+
+Forward migration `20260913001400` redacts prior names in the existing profile
+anonymization transaction and backfills already-anonymized profiles. Deploy
+the compatible iOS history reader before this migration: older clients reject
+a redacted historical name-change event. Never restore names or edit past
+migration files to roll back. Stop if a historical payload fails validation.
+This source contract is not a staging or production deployment receipt.
+
+`scripts/test-deleted-profile-history-migration.sh` requires an empty local
+database at `20260906001300`; it rehearses the actual forward migration with
+synthetic legacy history, verifies field preservation and idempotence, then
+rolls back. Local tests do not establish hosted deployment, physical deletion,
+backup erasure, or removal of data already copied by another participant.
+
 ## Native user-initiated path
 
 1. The signed-in user opens account settings and confirms permanent deletion.
