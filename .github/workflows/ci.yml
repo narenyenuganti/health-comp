@@ -88,6 +88,20 @@ jobs:
             --package-path Modules/CompetitionCore \
             --scratch-path "$RUNNER_TEMP/CompetitionCore-Release"
 
+      - name: Prepare pinned iOS Simulator
+        timeout-minutes: 10
+        run: |
+          set -euo pipefail
+          xcrun simctl list runtimes
+          xcrun simctl list devices available
+          # Own one exact device instead of relying on the runner's device catalog.
+          simulator_id="$(xcrun simctl create \
+            'HealthComp CI' \
+            com.apple.CoreSimulator.SimDeviceType.iPhone-16-Pro \
+            com.apple.CoreSimulator.SimRuntime.iOS-18-5)"
+          printf 'HEALTHCOMP_CI_SIMULATOR_ID=%s\n' "$simulator_id" >> "$GITHUB_ENV"
+          xcrun simctl bootstatus "$simulator_id" -b
+
       - name: Test iOS application logic
         run: |
           set -euo pipefail
@@ -97,7 +111,7 @@ jobs:
             -project HealthComp.xcodeproj \
             -scheme HealthComp \
             -configuration Debug \
-            -destination 'platform=iOS Simulator,OS=18.5,name=iPhone 16 Pro' \
+            -destination "platform=iOS Simulator,id=$HEALTHCOMP_CI_SIMULATOR_ID" \
             -derivedDataPath "$RUNNER_TEMP/HealthComp-DerivedData" \
             -only-testing:HealthCompTests \
             -parallel-testing-enabled NO \
@@ -121,7 +135,7 @@ jobs:
             -project HealthComp.xcodeproj \
             -scheme 'HealthComp Staging' \
             -configuration Staging \
-            -destination 'platform=iOS Simulator,OS=18.5,name=iPhone 16 Pro' \
+            -destination "platform=iOS Simulator,id=$HEALTHCOMP_CI_SIMULATOR_ID" \
             -derivedDataPath "$RUNNER_TEMP/HealthComp-DerivedData" \
             -only-testing:HealthCompStagingTests \
             -parallel-testing-enabled NO \
@@ -165,3 +179,9 @@ jobs:
           git diff --check
           git diff --exit-code
           [[ -z "$(git status --porcelain --untracked-files=all)" ]]
+
+      - name: Remove dedicated CI Simulator
+        if: ${{ always() && env.HEALTHCOMP_CI_SIMULATOR_ID != '' }}
+        run: |
+          xcrun simctl shutdown "$HEALTHCOMP_CI_SIMULATOR_ID" || true
+          xcrun simctl delete "$HEALTHCOMP_CI_SIMULATOR_ID"

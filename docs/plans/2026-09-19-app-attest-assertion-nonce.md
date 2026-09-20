@@ -63,3 +63,20 @@ status in failures. Two subsequent fresh runs passed both public fixtures and
 the assertion payload-tampering control, without changing crypto code. The
 initial transient is not diagnosed or claimed fixed. Each probe removed its
 container and temporary files. No Xcode build or hosted mutation was performed.
+
+## CI destination qualification
+
+Exact-head Backend CI passed (787 database assertions, 136 Deno tests,
+separate invitation integration13/13, and pinned runtime). iOS CI twice failed
+before app tests with exit70: no available iOS18.5/iPhone16Pro destination.
+Both attempts passed Core246/246 in Debug and Release. The runner's reported
+image is identical to a previous passing main run and still documents that
+Simulator, so image metadata alone is not proof of runtime availability.
+
+The CI workflow now lists runtime/device availability, creates exactly one
+iPhone16Pro with the pinned iOS18.5 runtime, waits for its boot, and passes that
+device ID to both existing test suites. Missing/unbootable runtime fails the
+bounded preparation step; there is no version fallback or skipped test. An
+always-run cleanup deletes only that created CI device. No local Simulator or
+phone is used. The original failure's registration/runtime cause remains
+unresolved until the new workflow produces direct evidence.
