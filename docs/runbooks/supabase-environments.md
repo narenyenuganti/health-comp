@@ -4,9 +4,19 @@ This runbook is the source of truth for selecting, configuring, and promoting
 HealthComp environments. It intentionally separates verified state from
 required future work.
 
-## Current environment inventory
+## Latest scoped update: September 20, 2026
 
-Current authenticated environment evidence through 2026-08-25 PDT:
+The App Attest assertion-signature correction at `e78aadc` passed exact-main
+Backend and iOS CI. Only `submit-score-revision` advanced to staging version 14;
+all four downloaded assets matched that commit, and the credential-free boot
+probe returned `400 invalid_request`. See the [qualification checkpoint](../release/staging-assertion-nonce-qualification-2026-09-20.md)
+for the command, source hashes, CI results, and remaining physical boundary.
+This is not physical assertion acceptance, a full hosted-state re-audit, or
+production promotion. The older observations below remain dated evidence.
+
+## Dated environment inventory
+
+Baseline authenticated environment evidence through 2026-08-25 PDT:
 
 | Logical environment | Supabase target | Status | App configuration |
 | --- | --- | --- | --- |
@@ -329,6 +339,7 @@ serially:
 ~~~bash
 supabase functions deploy \
   --project-ref "$SUPABASE_PROJECT_REF" \
+  --import-map supabase/functions/deno.json \
   --jobs 1
 supabase functions list --project-ref "$SUPABASE_PROJECT_REF"
 ~~~
@@ -336,6 +347,11 @@ supabase functions list --project-ref "$SUPABASE_PROJECT_REF"
 Do not add no-verify-jwt on the command line. The reviewed
 supabase/config.toml is authoritative for Functions that perform their own
 modern bearer verification. Do not use prune.
+
+Pass the shared import map explicitly, including for a single named Function.
+CLI 2.113.0 API deployment did not auto-discover `supabase/functions/deno.json`;
+omitting it caused bundling to reject the bare `cbor` import before activation.
+Use an explicit Function name when approval covers only that Function.
 
 Read back deployed function names and versions. Smoke tests must use dedicated
 staging identities and must not print access tokens, invite tokens, emails,
