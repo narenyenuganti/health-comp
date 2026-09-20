@@ -77,22 +77,24 @@ if [ "$ready" != true ]; then
   exit 1
 fi
 
-status=$(curl --silent --show-error --max-time 15 \
-  --output "$response_file" \
-  --write-out '%{http_code}' \
-  --request POST \
-  --header 'content-type: application/json' \
-  --data-binary \
-  "@$repository_root/supabase/tests/fixtures/app-attest-official-2026.json" \
-  "http://127.0.0.1:$host_port/verify")
+for fixture_name in app-attest-official-2026.json app-attest-assertion-public.json; do
+  status=$(curl --silent --show-error --max-time 15 \
+    --output "$response_file" \
+    --write-out '%{http_code}' \
+    --request POST \
+    --header 'content-type: application/json' \
+    --data-binary \
+    "@$repository_root/supabase/tests/fixtures/$fixture_name" \
+    "http://127.0.0.1:$host_port/verify")
 
-if [ "$status" != 200 ] ||
-  ! jq --exit-status '. == {"ok": true}' "$response_file" >/dev/null; then
-  echo "Real App Attest verification failed in the pinned Edge Runtime user worker." >&2
-  jq --compact-output \
-    '{category: (.category // "unknown"), code: (.code // "unknown"), causeCategory: (.causeCategory // "unknown"), causeCode: (.causeCode // "unknown")}' \
-    "$response_file" >&2 || true
-  exit 1
-fi
+  if [ "$status" != 200 ] ||
+    ! jq --exit-status '. == {"ok": true}' "$response_file" >/dev/null; then
+    echo "App Attest fixture $fixture_name failed with HTTP $status in the pinned Edge Runtime user worker." >&2
+    jq --compact-output \
+      '{category: (.category // "unknown"), code: (.code // "unknown"), causeCategory: (.causeCategory // "unknown"), causeCode: (.causeCode // "unknown")}' \
+      "$response_file" >&2 || true
+    exit 1
+  fi
+done
 
-echo "Real App Attest verification passed in the pinned Edge Runtime user worker."
+echo "Public attestation and assertion fixtures passed in the pinned Edge Runtime user worker."

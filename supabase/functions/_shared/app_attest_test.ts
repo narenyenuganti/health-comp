@@ -12,6 +12,9 @@ import {
   verifyAppAttestAssertion,
   verifyAppAttestAttestation,
 } from "./app-attest.ts";
+import publicAssertion from "../../tests/fixtures/app-attest-assertion-public.json" with {
+  type: "json",
+};
 
 interface OfficialFixture {
   version: number;
@@ -484,6 +487,75 @@ Deno.test("policy extension decoder requires the exact signed shape", async () =
   }
 });
 
+Deno.test("published assertion verifies independently of the synthetic signer", async () => {
+  const input = {
+    assertion: Buffer.from(publicAssertion.assertion, "base64"),
+    clientData: Buffer.from(publicAssertion.payload),
+    publicKeyPEM: publicAssertion.publicKeyPEM,
+    previousSignCount: 0,
+    policy: {
+      appId: publicAssertion.appId,
+      environment: "development" as const,
+      allowedValidationCategories: [3],
+      allowedBundleVersions: ["1"],
+      now: new Date("2026-09-20T00:00:00Z"),
+    },
+  };
+  assertEquals(verifyAppAttestAssertion(input), {
+    signCount: 1,
+    validationCategory: null,
+    bundleVersion: null,
+  });
+  expectCode(
+    "invalid_counter",
+    () => verifyAppAttestAssertion({ ...input, previousSignCount: 1 }),
+  );
+  expectCode("invalid_app_identity", () =>
+    verifyAppAttestAssertion({
+      ...input,
+      policy: { ...input.policy, appId: "1234567890.com.example.other" },
+    }));
+  expectCode("invalid_assertion_signature", () =>
+    verifyAppAttestAssertion({
+      ...input,
+      clientData: Buffer.from(publicAssertion.payload + " "),
+    }));
+  const decoded = cbor.decodeFirstSync(input.assertion) as {
+    signature: Buffer;
+    authenticatorData: Buffer;
+  };
+  const tamperedSignature = Buffer.from(decoded.signature);
+  tamperedSignature[tamperedSignature.length - 1] ^= 1;
+  const tamperedAssertion = await cbor.encodeAsync({
+    ...decoded,
+    signature: tamperedSignature,
+  });
+  expectCode(
+    "invalid_assertion_signature",
+    () => verifyAppAttestAssertion({ ...input, assertion: tamperedAssertion }),
+  );
+
+  // Do not accept the former, synthetic-only convention as a fallback.
+  const { privateKey, publicKey } = generateKeyPairSync("ec", {
+    namedCurve: "prime256v1",
+  });
+  const signature = createSign("SHA256").update(Buffer.concat([
+    decoded.authenticatorData,
+    createHash("sha256").update(input.clientData).digest(),
+  ])).sign(privateKey);
+  const wrongMessageAssertion = await cbor.encodeAsync({
+    ...decoded,
+    signature,
+  });
+  expectCode("invalid_assertion_signature", () =>
+    verifyAppAttestAssertion({
+      ...input,
+      assertion: wrongMessageAssertion,
+      publicKeyPEM: publicKey.export({ type: "spki", format: "pem" })
+        .toString(),
+    }));
+});
+
 async function syntheticAssertion(
   extended = true,
   additionalFlags = 0,
@@ -507,12 +579,14 @@ async function syntheticAssertion(
     ...(extended ? [await cbor.encodeAsync(policyExtensions(3, "1"))] : []),
   ]);
   const clientDataHash = createHash("sha256").update(clientData).digest();
-  const signedData = Buffer.concat([authenticatorData, clientDataHash]);
+  const nonce = createHash("sha256")
+    .update(Buffer.concat([authenticatorData, clientDataHash]))
+    .digest();
   const { privateKey, publicKey } = generateKeyPairSync("ec", {
     namedCurve: "prime256v1",
   });
   const signature = createSign("SHA256")
-    .update(signedData)
+    .update(nonce)
     .end()
     .sign(privateKey);
   return {

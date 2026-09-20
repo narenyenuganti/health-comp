@@ -750,8 +750,10 @@ export function verifyAppAttestAssertion(input: {
   if (!isP256PublicKey(publicKey)) fail("invalid_key");
   try {
     const clientDataHash = sha256(input.clientData);
+    const nonce = sha256(Buffer.concat([decoded.authData, clientDataHash]));
+    // App Attest signs the nonce; createVerify hashes that message internally.
     const verifier = createVerify("SHA256");
-    verifier.update(Buffer.concat([decoded.authData, clientDataHash]));
+    verifier.update(nonce);
     if (!verifier.verify(publicKey, decoded.signature)) {
       fail("invalid_assertion_signature");
     }
