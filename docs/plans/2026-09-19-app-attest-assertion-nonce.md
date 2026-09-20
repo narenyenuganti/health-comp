@@ -80,3 +80,19 @@ bounded preparation step; there is no version fallback or skipped test. An
 always-run cleanup deletes only that created CI device. No local Simulator or
 phone is used. The original failure's registration/runtime cause remains
 unresolved until the new workflow produces direct evidence.
+
+The explicit-device run35486857822 cleared that destination boundary. Core
+passed246/246 in both configurations; iOS application tests passed628/628 and
+release-style Staging tests passed54/54. Unsigned Debug and Staging device
+builds succeeded. The75-minute job limit then cancelled the Release build;
+logs show dependency compilation completing and the application compile starting
+only28seconds before cancellation, not a reported compiler error or stalled test.
+The clean-tree step was skipped; exact-ID Simulator cleanup succeeded. Full
+iOS qualification therefore remains incomplete.
+
+Increase only the existing job timeout to90minutes. The unchanged serial cold
+matrix needs room to finish; runner-speed variance remains possible, and a later
+Release compiler error is not ruled out until the actual build completes. No
+configuration, architecture, optimization, test selection, worker limit, or
+cleanup is changed. The actual hosted workflow is the RED-to-GREEN gate; a
+seconds-long local timing assertion would not faithfully test this failure.
