@@ -1,6 +1,77 @@
 # HealthComp Production Beta Verification Checklist
 
-## Current qualification checkpoint — September 9, 2026
+## Current qualification checkpoint — September 21, 2026 UTC
+
+**Not production-ready.** This checkpoint supersedes the current-artifact and
+missing-score statements in the historical snapshots below. It does not transfer
+older physical passes to a newer binary or close the full rollout goal.
+
+### Selected artifact and deployed verifier
+
+The retained signed physical package is `healthcomp-staging-physical-3100604-browser`,
+built from `3100604a0667facbe2c68ba3041c3a09cf1a3bfe`. Its executable SHA-256 is
+`33fff0c7aae3e2c85bb38bff47e2e92341998c87f27f52aeb1736e894a5791c3`.
+The September 21 preflight passed strict/deep signature and provisioning checks;
+installed bundle/version/build metadata matched the retained package. This was
+not a fresh hash of the executable on the phone. Application, project, test and
+configuration sources are unchanged through `a049072` (README-only PR #103).
+
+The separately deployed staging `submit-score-revision` verifier was promoted
+from merged `e78aadc` (PR #100) to version 14. Its four downloaded source/config
+assets matched that reviewed source byte-for-byte at promotion. The September 21
+readback still reported version 14; it did not repeat the source download.
+No production promotion is qualified by these checks.
+The [September 20 verifier checkpoint](staging-assertion-nonce-qualification-2026-09-20.md)
+records the source/CI/promotion evidence; the later physical results follow below.
+
+### Newly established physical and hosted evidence
+
+- **PASS, own-score dependency only:** September 20 at 02:41:56 UTC,
+  owner-assisted READ ONLY aggregates found both accepted participants in the
+  preserved September 15 competition had their own available score. The
+  alternate physical profile's score was bound to consumed enrollment evidence,
+  an active sandbox installation and a registered development key. This replaces
+  the September 9 statement that the alternate profile has no accepted score;
+  it does not prove all seven days or two-endpoint convergence.
+- **PASS, pre-existing-key assertion continuity:** One authorized physical
+  launch on September 21 at 05:25:33 UTC produced one new available revision.
+  The bound consumed assertion used a key registered before the fresh baseline
+  and advanced its counter from 1 to 2. Score, grant, challenge, key and active
+  installation bindings were verified without retaining scores or Health values.
+- **PASS, scoped database-contract replay denial:** At 05:25:48 UTC, the exact
+  stored context/grant arguments were rejected while their original validity
+  windows were still open. Protected state was unchanged and the transaction
+  rolled back. This used owner-assisted JWT claims: it is not captured-byte
+  HTTP/cryptographic replay or an independent API-role permission test.
+- **PARTIAL, real lifecycle:** The preserved competition runs September 15–21
+  in `America/Los_Angeles`, followed by September 22 grace and fallback
+  finalization at September 23 00:00 local time. At 05:27:20 UTC it had no result.
+  The earlier 04:48:48 UTC readback found the existing five-minute finalizer
+  healthy. Neither observation proves future finalization or client convergence.
+- **PARTIAL, recovery source state:** The September 21 06:19:43 UTC READ ONLY
+  inventory matched all 18 application tables with zero catalog/access-policy
+  or state-invariant violations. It found two profiles but no completed deletion
+  or anonymized result. Zero such records is missing non-vacuous evidence, not a
+  deletion/history pass. No export or restore ran; the
+  [recovery runbook](../runbooks/backup-restore.md) remains not qualified for execution.
+
+The stopped staging Simulator's local inventory was also inspected on September
+21. Its one profile is the same preserved competition's creator role used by the
+phone, not the invitee. No launch or account switch followed. Do not use that
+session as independent counterpart evidence or infer current authentication from
+its cached profile. Account labels and display names are not identity proof.
+
+### Gates still required
+
+Attributable physical background-observer delivery; physical APNs delivery and
+routes; actual seven-day finalization and two-account results/lifecycle;
+physical deletion, revocation, local cleanup and preserved anonymized history;
+same-phone retirement/remove-reinstall/replacement-key checks; a contained real
+backup/restore and forward-repair rehearsal; final privacy/release qualification;
+and production promotion/smoke checks. Universal links remain explicitly deferred
+under the approved one-phone/two-account beta boundary below, not passed.
+
+## Historical qualification checkpoint — September 9, 2026
 
 The paired browser deletion backend was deployed from `b24ecbd`. Subsequent
 source `db8273468748e359c8242cb0aaf08ab52f7e50d5` integrated the independently
@@ -10,7 +81,7 @@ zero-root sign-out. Its db82734 Simulator build now reconstructs completed histo
 without the old warning. Manual refresh, full two-account lifecycle and physical
 qualification remain incomplete; the alternate profile still has no accepted score.
 
-See the [current staging checkpoint](staging-browser-qualification-2026-09-09.md)
+See the [September 9 staging checkpoint](staging-browser-qualification-2026-09-09.md)
 for deployment provenance, runtime evidence, limits, and remaining gates. A signed
 db82734 physical package is prepared and validated but has not been installed or
 runtime-qualified. The September 4 physical evidence below remains historical
