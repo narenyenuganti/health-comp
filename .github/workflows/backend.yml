@@ -42,6 +42,7 @@ jobs:
           bash scripts/test-backup-runbook-checks.sh
           bash -n scripts/emit-recovery-history-test-sql.sh
           bash -n scripts/test-recovery-history-wrapper.sh
+          bash -n scripts/test-recovery-common-snapshot.sh
           bash -n scripts/test-recovery-foreign-key-integrity.sh
           bash -n scripts/test-recovery-foreign-key-static.sh
           bash scripts/test-recovery-foreign-key-static.sh
@@ -142,7 +143,7 @@ jobs:
             recovery-history-integrity-query.sql test-recovery-history-wrapper.sh \
             recovery-foreign-key-integrity.sql test-recovery-foreign-key-integrity.sh \
             recovery-state-acceptance.sql recovery-state-acceptance-query.sql \
-            test-recovery-state-acceptance.sh; do
+            test-recovery-state-acceptance.sh test-recovery-common-snapshot.sh; do
             docker cp "scripts/$recovery_file" \
               "$database_containers:/tmp/healthcomp-recovery-checks/scripts/$recovery_file"
           done
@@ -170,6 +171,12 @@ jobs:
             --env PGHOST=/var/run/postgresql --env PGUSER=supabase_admin \
             "$database_containers" bash \
               /tmp/healthcomp-recovery-checks/scripts/test-recovery-state-acceptance.sh
+          # Native table export and receipt share one held MVCC snapshot;
+          # an unbound dump must diverge after a committed synthetic change.
+          docker exec \
+            --env PGHOST=/var/run/postgresql --env PGUSER=supabase_admin \
+            "$database_containers" timeout --kill-after=5s 90s bash \
+              /tmp/healthcomp-recovery-checks/scripts/test-recovery-common-snapshot.sh
           docker exec "$database_containers" dropdb \
             --host=/var/run/postgresql --username=postgres healthcomp_recovery_fixture
 
