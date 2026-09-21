@@ -175,7 +175,7 @@ jobs:
           # an unbound dump must diverge after a committed synthetic change.
           docker exec \
             --env PGHOST=/var/run/postgresql --env PGUSER=supabase_admin \
-            "$database_containers" timeout --kill-after=5s 90s bash \
+            "$database_containers" timeout -k 5 90 bash \
               /tmp/healthcomp-recovery-checks/scripts/test-recovery-common-snapshot.sh
           docker exec "$database_containers" dropdb \
             --host=/var/run/postgresql --username=postgres healthcomp_recovery_fixture
