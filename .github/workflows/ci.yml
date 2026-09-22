@@ -77,6 +77,9 @@ jobs:
           bash scripts/verify-app-privacy-manifest.sh
           bash scripts/test-app-privacy-manifest.sh
 
+      - name: Verify staging-only HealthKit diagnostic output
+        run: bash scripts/test-healthkit-delivery-diagnostics.sh
+
       - name: Test CompetitionCore in Debug and Release
         run: |
           set -euo pipefail

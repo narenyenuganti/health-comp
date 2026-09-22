@@ -121,6 +121,7 @@
 		F1927C81415BCF5009F8B628 /* SharedClientLifetimeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC1082ED31F47789C75550D1 /* SharedClientLifetimeTests.swift */; };
 		F3EAD9609CA950CEC8D1EF92 /* tie.json in Resources */ = {isa = PBXBuildFile; fileRef = 0118EA02318F4382081CC94F /* tie.json */; };
 		F82EC37B40E95BB1575E2265 /* MultiUserCompetitionTestLabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2AB9F656F17E85A71D01764 /* MultiUserCompetitionTestLabView.swift */; };
+		F8A2F0C658F37F8EB109E773 /* HealthKitDeliveryDiagnostic.swift in Sources */ = {isa = PBXBuildFile; fileRef = 613A2B77D4E8A26D6A05F569 /* HealthKitDeliveryDiagnostic.swift */; };
 		FB55F2BA75D48FA01A4B55F6 /* AppleWebAccountDeletionClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF7183065EBF2A1841506F8C /* AppleWebAccountDeletionClient.swift */; };
 		FC8A2EF23ABB03B443068994 /* CompetitionPushRegistrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4EC30544C4C442E5FDC2FE1 /* CompetitionPushRegistrationTests.swift */; };
 		FCBE3190F8C0EC00C856D0C1 /* CompetitionCore in Frameworks */ = {isa = PBXBuildFile; productRef = A4B592CE0EEB704D9D9B4288 /* CompetitionCore */; };
@@ -193,6 +194,7 @@
 		56A0E571C32EF5F1137939B1 /* win.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = win.json; sourceTree = "<group>"; };
 		5EA3F1951C080758224B44E2 /* HealthMetric.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthMetric.swift; sourceTree = "<group>"; };
 		612908337833B2EAE7FD7D41 /* HealthCompUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = HealthCompUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		613A2B77D4E8A26D6A05F569 /* HealthKitDeliveryDiagnostic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthKitDeliveryDiagnostic.swift; sourceTree = "<group>"; };
 		616B7E5CE526F649E00317C3 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		620B41081DED3A911320E1F0 /* LocalCompetitionClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalCompetitionClient.swift; sourceTree = "<group>"; };
 		6619D758FF31EC86B6996330 /* HealthCompAppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthCompAppDelegate.swift; sourceTree = "<group>"; };
@@ -373,6 +375,7 @@
 				C4D8E971E96397AB14D983D3 /* DeviceCheckAppAttestClient.swift */,
 				C0DD763262122302C88AA2F5 /* FixtureActivitySource.swift */,
 				DC8F09779188D9A1FE1C4BF7 /* HealthDataProvider.swift */,
+				613A2B77D4E8A26D6A05F569 /* HealthKitDeliveryDiagnostic.swift */,
 				45FD58C85D5EE740BBE2307B /* HealthKitObserverDeliveryClassifier.swift */,
 				A780BC141606A4C228FCF9F7 /* HealthKitObserverDeliveryReceipt.swift */,
 				4E1EFEB41E5D4ADC7484F272 /* HealthKitProvider.swift */,
@@ -765,6 +768,7 @@
 				1F1E059933150A061C760DD6 /* HealthCompApp.swift in Sources */,
 				510A05F868BEFC10DAAF9862 /* HealthCompAppDelegate.swift in Sources */,
 				1E677D5B9D0BBC6F7A873642 /* HealthDataProvider.swift in Sources */,
+				F8A2F0C658F37F8EB109E773 /* HealthKitDeliveryDiagnostic.swift in Sources */,
 				3FC0C839F3D290C09C54C9D4 /* HealthKitObserverDeliveryClassifier.swift in Sources */,
 				70101A539FF9514383C092A6 /* HealthKitObserverDeliveryReceipt.swift in Sources */,
 				4876547B798FDFBA4EEFDE75 /* HealthKitProvider.swift in Sources */,
