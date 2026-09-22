@@ -843,6 +843,7 @@ final class HealthKitObserverUpdateController: @unchecked Sendable {
         completion: @escaping () -> Void
     ) {
         let trigger = triggerSnapshot()
+        HealthKitDeliveryDiagnostic.callbackArrived.record()
         let captured = condition.withLock { () -> (
             AsyncStream<HealthKitObserverWakeup>.Continuation
         )? in
@@ -1214,10 +1215,13 @@ private actor HealthKitProviderSignalState {
                     initiatedRegistration = true
                     let id = UUID()
                     let task = Task {
+                        HealthKitDeliveryDiagnostic.registrationStarted.record()
                         do {
                             try await enable(type)
+                            HealthKitDeliveryDiagnostic.registrationSucceeded.record()
                             return true
                         } catch {
+                            HealthKitDeliveryDiagnostic.registrationFailed.record()
                             return false
                         }
                     }
@@ -1306,6 +1310,9 @@ private actor HealthKitProviderSignalState {
         let completion = completions.removeValue(forKey: id)
         pendingCompletionSignals.removeAll { $0.id == id }
         completion?()
+        if completion != nil {
+            HealthKitDeliveryDiagnostic.completionCalled.record()
+        }
         return completion != nil
     }
 

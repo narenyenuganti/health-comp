@@ -1275,6 +1275,7 @@ private actor RemoteCompetitionClientCoordinator {
             else { continue }
             do {
                 if try await observerDeliveryReceipts.contains(signalID) {
+                    HealthKitDeliveryDiagnostic.receiptAlreadyStored.record()
                     guard canCompleteObserverDelivery(
                         signalID,
                         ownershipScope: pending.ownershipScope
@@ -1296,6 +1297,7 @@ private actor RemoteCompetitionClientCoordinator {
                 }
                 guard let receipt = pending.receipt else { continue }
                 try await observerDeliveryReceipts.commit(receipt)
+                HealthKitDeliveryDiagnostic.receiptStored.record()
                 guard canCompleteObserverDelivery(
                     signalID,
                     ownershipScope: pending.ownershipScope
@@ -1304,6 +1306,7 @@ private actor RemoteCompetitionClientCoordinator {
                     pendingObserverDeliveries[signalID] = nil
                 }
             } catch {
+                HealthKitDeliveryDiagnostic.receiptPersistenceFailed.record()
                 // HealthKit retains the callback until a later canonical
                 // reconciliation commits the same privacy-safe receipt.
             }

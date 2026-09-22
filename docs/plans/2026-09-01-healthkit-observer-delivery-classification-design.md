@@ -136,3 +136,33 @@ pre-install baseline, compare signal identities only transiently, and retain
 only a privacy-safe aggregate showing a newly appended receipt from the new
 artifact/process after the controlled transition. Foreground, ambiguous, and
 pre-fix receipts remain valid durability evidence but cannot satisfy that gate.
+
+## Staging diagnostic qualification (September 22)
+
+The user approved local preparation of fixed-label diagnostics after a physical
+window produced no new durable receipt. `HealthKitDeliveryDiagnostic` uses
+Apple unified logging only when `HEALTHCOMP_STAGING` is compiled. It accepts
+eight closed labels: registration started/succeeded/failed, callback arrived,
+receipt stored/already stored/persistence failed, and completion called. No
+arbitrary message, error description, sample type, Health value, score, account,
+profile, signal identifier or token is accepted. Debug and Release emit nothing.
+
+The callback label follows the synchronous trigger snapshot and precedes the
+epoch guard; it proves arrival, not ownership or successful processing. Receipt
+labels follow successful persistence/readback or a persistence error. Completion
+is logged only after invoking the owned HealthKit completion. Registration
+labels cover each attempted type without identifying that type. No lifecycle
+phase, correlation identifier, new receipt field or application file is added.
+
+Native logs may be delayed or dropped and include OS-managed metadata. They are
+diagnostic hints, not durable receipts or physical acceptance evidence; absence
+does not prove a stage never ran. Future capture must filter the exact subsystem
+and category and retain only allowlisted aggregate results. No raw device-wide
+log export is authorized. The existing continuity and new-background-receipt
+requirements still apply. This local approval does not authorize phone install
+or launch, hosted changes, or production changes.
+
+`bash scripts/test-healthkit-delivery-diagnostics.sh` checks real current-process
+log output in Debug, Release and Staging, with a synthetic capture-ready marker
+so unavailable logging cannot pass as disabled output. Existing provider and
+remote-client tests remain the callback ownership/order regression boundary.
