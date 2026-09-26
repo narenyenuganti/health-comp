@@ -5,6 +5,63 @@ import XCTest
 
 final class AppFeatureTests: XCTestCase {
     @MainActor
+    func testProfileRecoveryAfterTerminalSessionLossRetiresBeforeAllowingSignIn() async throws {
+        for deliversSignedOutEvent in [false, true] {
+            let calls = OrderedCallRecorder()
+            let registry = SharedClientLifetime { AuthenticationEventTestOwner() }
+            let owner = try registry.client()
+            let origin = AuthenticationEventOrigin(registry: registry, owner: owner)
+            var authentication = AuthenticationClient.test(
+                signOut: { calls.record("unexpected-global-logout") }
+            )
+            authentication.signOutCurrentSession = {
+                calls.record("local-logout-attempt")
+                throw calls.calls.count == 1
+                    ? AuthenticationClientFailure.operationFailed : .terminalSession
+            }
+            authentication.finishRetirement = {
+                calls.record("retire")
+                if calls.calls.filter({ $0 == "retire" }).count == 1 {
+                    throw AuthenticationClientFailure.operationFailed
+                }
+            }
+            let initial = AppFeature.State(
+                phase: .launchFailure,
+                account: AccountFeature.State(mode: .profileConflict)
+            )
+            let store = TestStore(initialState: initial) { AppFeature() } withDependencies: {
+                $0.authenticationClient = authentication
+                $0.authenticatedProfileStorage = profileStorageFixture(for: profile, recorder: calls).client
+                $0.competitionClient = .test(stop: { calls.record("unexpected-runtime-stop") })
+            }
+            store.exhaustivity = .off(showSkippedAssertions: false)
+            await store.send(.account(.signOutButtonTapped))
+            await store.finish()
+            await store.skipReceivedActions(strict: false)
+            XCTAssertEqual(store.state.phase, .launchFailure)
+            if deliversSignedOutEvent {
+                await store.send(.authenticationEvent(.owned(origin, .signedOut)))
+            }
+            await store.send(.account(.delegate(.retryRequested)))
+            await store.finish()
+            await store.skipReceivedActions(strict: false)
+            XCTAssertEqual(store.state.phase, .launchFailure)
+            XCTAssertEqual(store.state.pendingTeardown?.stage, .retireAuthentication)
+            XCTAssertEqual(store.state.pendingTeardown?.reason, .sessionEnded)
+            XCTAssertEqual(calls.calls, ["local-logout-attempt", "local-logout-attempt", "retire"])
+            await store.send(.account(.delegate(.signInWithAppleRequested)))
+            XCTAssertEqual(store.state.phase, .launchFailure)
+            await store.send(.account(.delegate(.retryRequested)))
+            await store.finish()
+            await store.skipReceivedActions(strict: false)
+            XCTAssertEqual(store.state.phase, .signedOut)
+            XCTAssertEqual(store.state.account.message, .sessionEnded)
+            XCTAssertNil(store.state.pendingTeardown)
+            XCTAssertEqual(calls.calls, ["local-logout-attempt", "local-logout-attempt", "retire", "retire"])
+        }
+    }
+
+    @MainActor
     func testProfileConflictExplainsRecoveryAndPreservesExistingHistory() async throws {
         let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)

@@ -367,13 +367,19 @@ struct AppFeature {
                 }
                 return .none
 
-            case let .teardownStageCompleted(epoch, _, stage):
+            case let .teardownStageCompleted(epoch, reason, stage):
                 guard epoch == state.authEpoch,
                       var pendingTeardown = state.pendingTeardown,
                       pendingTeardown.stage == stage,
                       pendingTeardown.isRunning
                 else {
                     return .none
+                }
+                if pendingTeardown.reason == .profileConflict,
+                   reason == .sessionEnded, stage == .finishUserSignOut {
+                    // A terminal session permits local retirement, but is not
+                    // a receipt for a successful remote logout.
+                    pendingTeardown.reason = .sessionEnded
                 }
                 switch stage {
                 case .prepareRuntime:
@@ -969,6 +975,15 @@ struct AppFeature {
                             } else {
                                 try await authenticationClient.signOut()
                             }
+                        } catch AuthenticationClientFailure.terminalSession
+                            where pendingTeardown.reason == .profileConflict {
+                            await send(
+                                .teardownStageCompleted(
+                                    epoch: epoch, reason: .sessionEnded,
+                                    stage: .finishUserSignOut
+                                )
+                            )
+                            return
                         } catch {
                             await send(
                                 .teardownFailed(
