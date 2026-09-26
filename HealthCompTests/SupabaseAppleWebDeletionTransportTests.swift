@@ -5,6 +5,61 @@ import XCTest
 @testable import HealthComp
 
 final class SupabaseAppleWebDeletionTransportTests: XCTestCase {
+    @MainActor
+    func testProfileRecoveryConfirmsOnlyCurrentSessionBeforeRetryableRetirement() async throws {
+        enum Failure: CaseIterable { case none, remote, storage }
+        for failure in Failure.allCases {
+            let session = try JSONSerialization.data(withJSONObject: [
+                "access_token": "synthetic-conflict-token", "refresh_token": "synthetic-refresh",
+                "token_type": "bearer", "expires_in": 3600,
+                "expires_at": Date().addingTimeInterval(3600).timeIntervalSince1970,
+                "user": ["id": "12000000-0000-4000-8000-000000000001",
+                         "app_metadata": [:], "user_metadata": [:], "aud": "authenticated",
+                         "created_at": "2026-09-01T00:00:00Z", "updated_at": "2026-09-01T00:00:00Z"] as [String: Any],
+            ])
+            let fixture = WebDeletionHTTPFixture(responses: failure == .remote
+                ? [(500, Data()), (204, Data())] : [(204, Data())])
+            defer { fixture.close() }
+            let memory = WebDeletionMemoryStorage()
+            let key = "sb-fixture-auth-token"
+            try memory.store(key: key, value: session)
+            try memory.store(key: "unrelated", value: Data("preserve".utf8))
+            let backing = FailClosedAuthLocalStorage(underlying: memory, sessionKey: { key })
+            let provider = fixture.liveProvider(storage: backing)
+            let owner = try provider.authenticationLifetime()
+            let auth = SupabaseAuthenticationClient.live(provider: provider, infoDictionary: [:])
+            let logout = try XCTUnwrap(auth.signOutCurrentSession)
+            let retire = try XCTUnwrap(auth.finishRetirement)
+            XCTAssertNotNil(try owner.client.auth.currentSession)
+            if failure == .remote {
+                do { try await logout(); XCTFail("Remote failure must block recovery") }
+                catch { XCTAssertEqual(error as? AuthenticationClientFailure, .operationFailed) }
+                XCTAssertNotNil(try memory.retrieve(key: key))
+                XCTAssertTrue(try provider.client() === owner.client)
+            }
+            try await logout()
+            // Confirmation does not prematurely remove the local session.
+            XCTAssertNotNil(try memory.retrieve(key: key))
+            if failure == .storage {
+                memory.setSessionRemovalFailure(true)
+                do { try await retire(); XCTFail("Failed cleanup must block admission") }
+                catch { XCTAssertThrowsError(try provider.beginFreshAuthenticationLifetime()) }
+                memory.setSessionRemovalFailure(false)
+            }
+            try await retire()
+            XCTAssertNil(try memory.retrieve(key: key))
+            XCTAssertEqual(try memory.retrieve(key: "unrelated"), Data("preserve".utf8))
+            let restored = try await auth.restoreSession()
+            XCTAssertNil(restored)
+            let requests = fixture.requests
+            XCTAssertEqual(requests.count, failure == .remote ? 2 : 1)
+            XCTAssertTrue(requests.allSatisfy {
+                $0.url?.path == "/auth/v1/logout" && $0.url?.query == "scope=local"
+                    && $0.value(forHTTPHeaderField: "Authorization") == "Bearer synthetic-conflict-token"
+            })
+        }
+    }
+
 #if HEALTHCOMP_STAGING
     @MainActor
     func testCancelledBrowserPersistenceUsesLiveStorageAndConfirmsOnlyItsSessionLogout() async throws {

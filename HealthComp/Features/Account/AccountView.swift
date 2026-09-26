@@ -112,6 +112,14 @@ struct AccountView: View {
             .frame(maxWidth: .infinity, minHeight: 50)
             .accessibilityIdentifier("account.retry")
 
+        case .profileConflict:
+            Button("Use Another Account") {
+                store.send(.signOutButtonTapped)
+            }
+            .buttonStyle(.borderedProminent)
+            .frame(maxWidth: .infinity, minHeight: 50)
+            .accessibilityIdentifier("account.recover-profile")
+
         case .authenticated:
             Button("Sign Out", role: .destructive) {
                 store.send(.signOutButtonTapped)
@@ -127,6 +135,7 @@ struct AccountView: View {
         case .signedOut: "Welcome to HealthComp"
         case .settingUpProfile: "Choose your display name"
         case .launchFailure: "Unable to connect"
+        case .profileConflict: "Sign in with the original account"
         case .authenticated: "Account"
         }
     }
@@ -139,6 +148,8 @@ struct AccountView: View {
             "Your competitor will see this name. You can change it later."
         case .launchFailure:
             "Your local data is safe. Check your connection and retry."
+        case .profileConflict:
+            "Only this device’s session will be signed out. Saved history and your other devices are unchanged."
         case .authenticated:
             "Signing out removes this profile’s local competition cache from this device."
         }
@@ -162,7 +173,7 @@ enum AccountProgressAppearance {
         switch mode {
         case .signedOut:
             colorScheme == .dark ? .black : .white
-        case .settingUpProfile, .launchFailure:
+        case .settingUpProfile, .launchFailure, .profileConflict:
             .white
         case .authenticated:
             .primary

@@ -131,6 +131,7 @@ struct AppFeature {
         case accountDeleted
         case restoredWithoutSession
         case cancelledAuthentication
+        case profileConflict
     }
 
     struct PendingTeardown: Equatable, Sendable {
@@ -353,6 +354,14 @@ struct AppFeature {
                         displayName: profile.displayName
                     )
                     state.mainTab = MainTabFeature.State()
+                case .failure(.profileTransitionRequiresCleanup):
+                    let isUnmounted = state.profileStoragePaths == nil && state.mainTab == nil
+                    becomeLaunchFailure(state: &state)
+                    state.account.message = .profileConflict
+                    if isUnmounted, authenticationClient.signOutCurrentSession != nil,
+                       authenticationClient.finishRetirement != nil {
+                        state.account.mode = .profileConflict
+                    }
                 case .success, .failure:
                     becomeLaunchFailure(state: &state)
                 }
@@ -424,7 +433,8 @@ struct AppFeature {
                 state.phase = .launchFailure
                 state.mainTab = nil
                 state.account = AccountFeature.State(mode: .launchFailure)
-                state.account.message = .tryAgain
+                state.account.message = pendingTeardown.reason == .profileConflict
+                    ? .profileRecoveryFailed : .tryAgain
                 return .none
 
             case .account(.delegate(.signInWithAppleRequested)):
@@ -514,6 +524,17 @@ struct AppFeature {
                 return restoreSession(epoch: state.authEpoch)
 
             case .account(.delegate(.signOutRequested)):
+                if state.phase == .launchFailure, state.account.mode == .profileConflict,
+                   state.pendingTeardown == nil, state.profile == nil,
+                   state.profileStoragePaths == nil, state.mainTab == nil,
+                   authenticationClient.signOutCurrentSession != nil,
+                   authenticationClient.finishRetirement != nil {
+                    state.authEpoch &+= 1
+                    return beginTeardown(
+                        state: &state, epoch: state.authEpoch,
+                        reason: .profileConflict, stopRuntime: false, profileID: nil
+                    )
+                }
                 guard state.phase == .authenticated else { return .none }
                 state.authEpoch &+= 1
                 return beginTeardown(
@@ -867,7 +888,9 @@ struct AppFeature {
             reason: reason,
             profileID: profileID,
             stopRuntime: stopRuntime,
-            stage: .prepareRuntime,
+            // A rejected, unmounted account owns neither the retained profile
+            // nor its runtime. Recover only its authentication session.
+            stage: reason == .profileConflict ? .finishUserSignOut : .prepareRuntime,
             isRunning: true
         )
         state.phase = .tearingDown
@@ -936,9 +959,16 @@ struct AppFeature {
                     }
 
                 case .finishUserSignOut:
-                    if pendingTeardown.reason == .userRequested {
+                    if pendingTeardown.reason == .userRequested || pendingTeardown.reason == .profileConflict {
                         do {
-                            try await authenticationClient.signOut()
+                            if pendingTeardown.reason == .profileConflict {
+                                guard let signOut = authenticationClient.signOutCurrentSession else {
+                                    throw AuthenticationClientFailure.operationFailed
+                                }
+                                try await signOut()
+                            } else {
+                                try await authenticationClient.signOut()
+                            }
                         } catch {
                             await send(
                                 .teardownFailed(

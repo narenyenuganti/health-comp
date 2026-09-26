@@ -5,6 +5,87 @@ import XCTest
 
 final class AppFeatureTests: XCTestCase {
     @MainActor
+    func testProfileConflictExplainsRecoveryAndPreservesExistingHistory() async throws {
+        let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: false)
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let originalID = UUID()
+        let originalStorage = AuthenticatedProfileStorage.live(
+            applicationSupportDirectory: directory, fileProtection: .init { _, _ in }
+        )
+        let paths = try await originalStorage.mount(originalID)
+        let history = paths.competitionEventsDirectory.appendingPathComponent("preserved-history")
+        let bytes = Data("original account history".utf8)
+        try bytes.write(to: history)
+        let calls = OrderedCallRecorder()
+        let originalProfile = AuthenticatedProfile(id: originalID, displayName: "Original")
+        var authentication = AuthenticationClient.test(
+            signInWithApple: { AuthenticationSession(userID: originalID, expiresAt: .distantFuture) },
+            bootstrapProfile: { _ in originalProfile },
+            signOut: { calls.record("global-logout") }
+        )
+        authentication.signOutCurrentSession = {
+            calls.record("current-session-logout")
+            if calls.calls.filter({ $0 == "current-session-logout" }).count == 1 {
+                throw AuthenticationClientFailure.operationFailed
+            }
+        }
+        authentication.finishRetirement = {
+            calls.record("retire")
+            if calls.calls.filter({ $0 == "retire" }).count == 1 {
+                throw AuthenticationClientFailure.operationFailed
+            }
+        }
+        // A new storage instance reproduces a cold launch with another session.
+        let store = TestStore(initialState: AppFeature.State(authEpoch: 7)) { AppFeature() } withDependencies: {
+            $0.authenticationClient = authentication
+            $0.competitionClient = .test(stop: { calls.record("runtime-stop") })
+            $0.authenticatedProfileStorage = .live(
+                applicationSupportDirectory: directory, fileProtection: .init { _, _ in }
+            )
+        }
+        store.exhaustivity = .off(showSkippedAssertions: false)
+        await store.send(.bootstrapProfileResponse(epoch: 7, .success(profile)))
+        await store.finish()
+        await store.skipReceivedActions(strict: false)
+        XCTAssertEqual(store.state.phase, .launchFailure)
+        XCTAssertEqual(store.state.account.message?.text,
+                       "This device has saved history for a different account. Sign in with the original account to continue.")
+        XCTAssertNil(store.state.mainTab)
+        XCTAssertNil(store.state.profileStoragePaths)
+        XCTAssertEqual(try Data(contentsOf: history), bytes)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: paths.rootDirectory.deletingLastPathComponent().path).count, 1)
+
+        await store.send(.account(.signOutButtonTapped))
+        await store.finish()
+        await store.skipReceivedActions(strict: false)
+        XCTAssertEqual(store.state.phase, .launchFailure)
+        XCTAssertEqual(store.state.pendingTeardown?.stage, .finishUserSignOut)
+        XCTAssertEqual(calls.calls, ["current-session-logout"])
+        await store.send(.account(.delegate(.signInWithAppleRequested)))
+        await store.send(.account(.delegate(.retryRequested)))
+        await store.finish()
+        await store.skipReceivedActions(strict: false)
+        XCTAssertEqual(store.state.phase, .launchFailure)
+        XCTAssertEqual(store.state.pendingTeardown?.stage, .retireAuthentication)
+        XCTAssertEqual(calls.calls, ["current-session-logout", "current-session-logout", "retire"])
+        XCTAssertEqual(try Data(contentsOf: history), bytes)
+        await store.send(.account(.delegate(.retryRequested)))
+        await store.finish()
+        await store.skipReceivedActions(strict: false)
+        XCTAssertEqual(store.state.phase, .signedOut)
+        XCTAssertEqual(calls.calls, ["current-session-logout", "current-session-logout", "retire", "retire"])
+        XCTAssertEqual(try Data(contentsOf: history), bytes)
+        guard store.state.phase == .signedOut else { return }
+        await store.send(.account(.signInButtonTapped))
+        await store.finish()
+        await store.skipReceivedActions(strict: false)
+        XCTAssertEqual(store.state.phase, .authenticated)
+        XCTAssertEqual(store.state.profile?.id, originalID)
+        XCTAssertEqual(try Data(contentsOf: history), bytes)
+    }
+
+    @MainActor
     func testCancelledPersistedSignInRetirementIsRecoverableWithoutRestoringOrSigningOutGlobally() async {
         for action in [
             AppFeature.Action.signInResponse(epoch: 0, .failure(.retirementRequired)),
