@@ -9,6 +9,7 @@ struct AccountFeature {
             case signedOut
             case settingUpProfile
             case launchFailure
+            case profileConflict
             case authenticated
         }
 
@@ -35,6 +36,8 @@ struct AccountFeature {
         case invalidDisplayName
         case reauthenticationRequired
         case sessionEnded
+        case profileConflict
+        case profileRecoveryFailed
         case tryAgain
 
         var text: String {
@@ -47,6 +50,10 @@ struct AccountFeature {
                 "Confirm with Sign in with Apple to delete your account."
             case .sessionEnded:
                 "Your session ended. Sign in again to continue."
+            case .profileConflict:
+                "This device has saved history for a different account. Sign in with the original account to continue."
+            case .profileRecoveryFailed:
+                "Could not finish signing out on this device. Your saved history is safe. Try again."
             case .tryAgain:
                 "HealthComp could not connect. Please try again."
             }

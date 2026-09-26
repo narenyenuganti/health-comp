@@ -96,6 +96,7 @@ enum SupabaseAuthenticationClient {
         browserDeletion: (@MainActor @Sendable () async throws -> Void)? = nil,
         browserSignIn: (@MainActor @Sendable () async throws -> AuthenticationSession)? = nil,
         finishRetirement: (@Sendable () async throws -> Void)? = nil,
+        signOutCurrentSession: (@Sendable () async throws -> Void)? = nil,
         nonce: @escaping @Sendable () throws -> AppleSignInNonce = {
             try AppleSignInNonce.generate()
         },
@@ -258,6 +259,11 @@ enum SupabaseAuthenticationClient {
             }
         }
         let gate = ExplicitAuthenticationOperationGate()
+        if let signOutCurrentSession {
+            client.signOutCurrentSession = {
+                try await gate.run { try await signOutCurrentSession() }
+            }
+        }
         if let finishRetirement {
             client.finishRetirement = {
                 try await gate.run { try await finishRetirement() }
@@ -383,7 +389,16 @@ enum SupabaseAuthenticationClient {
             appleAuthorization: ownedAppleAuthorization,
             browserDeletion: browserDeletion,
             browserSignIn: browserSignIn,
-            finishRetirement: { try await clientBox.finishRetirement() }
+            finishRetirement: { try await clientBox.finishRetirement() },
+            signOutCurrentSession: {
+                let owner = try provider.authenticationLifetime()
+                guard let accessToken = owner.client.auth.currentSession?.accessToken else {
+                    throw AuthenticationClientFailure.terminalSession
+                }
+                // Preserve retryable storage until the server confirms this
+                // session only. App teardown separately records and retires it.
+                try await owner.confirmLocalSignOut(accessToken)
+            }
         )
     }
 

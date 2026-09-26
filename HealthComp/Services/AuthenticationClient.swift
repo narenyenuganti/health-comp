@@ -104,6 +104,10 @@ struct AuthenticationClient: Sendable {
     var deleteAccountInBrowser: (@MainActor @Sendable () async throws -> Void)? = nil
     var events: @Sendable () -> AsyncStream<AuthenticationEvent>
     var signOut: @Sendable () async throws -> Void
+    // Confirms only the current server session's logout, without clearing local
+    // history or other sessions. Unmounted-profile recovery must then retire
+    // the authentication lifetime before offering a fresh sign-in.
+    var signOutCurrentSession: (@Sendable () async throws -> Void)? = nil
     // Configured only by clients that support explicit lifetime retirement.
     // The app calls this after runtime/profile teardown and any required remote
     // sign-out/deletion confirmation, including terminal-session recovery.
