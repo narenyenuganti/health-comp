@@ -23,6 +23,14 @@ struct MainTabFeature {
         case failure(CompetitionRemoteFailure)
     }
 
+    struct PermissionOnboarding: Equatable, Sendable {
+        var steps: [PermissionOnboardingStep]
+        var index = 0
+        var isRequesting = false
+
+        var step: PermissionOnboardingStep { steps[index] }
+    }
+
     @ObservableState
     struct State: Equatable {
         var competition: CompetitionFeature.State
@@ -34,6 +42,8 @@ struct MainTabFeature {
         var claimRouteSequenceInFlight: UInt64?
         var pendingClaimNavigation: PendingClaimNavigation?
         var inviteClaimStatus: InviteClaimStatus
+        /// Shown instead of Home; the competition starts once it finishes.
+        var onboarding: PermissionOnboarding?
 
         init(
             competition: CompetitionFeature.State = CompetitionFeature.State(),
@@ -44,7 +54,8 @@ struct MainTabFeature {
             lastHandledClaimRouteSequence: UInt64 = 0,
             claimRouteSequenceInFlight: UInt64? = nil,
             pendingClaimNavigation: PendingClaimNavigation? = nil,
-            inviteClaimStatus: InviteClaimStatus = .idle
+            inviteClaimStatus: InviteClaimStatus = .idle,
+            onboarding: PermissionOnboarding? = nil
         ) {
             self.competition = competition
             self.path = path
@@ -55,6 +66,7 @@ struct MainTabFeature {
             self.claimRouteSequenceInFlight = claimRouteSequenceInFlight
             self.pendingClaimNavigation = pendingClaimNavigation
             self.inviteClaimStatus = inviteClaimStatus
+            self.onboarding = onboarding
         }
     }
 
@@ -82,12 +94,17 @@ struct MainTabFeature {
         case dismissRetryableClaim
         case dismissClaimStatus
         case pathChanged([CompetitionID])
+        case onboardingChecked([PermissionOnboardingStep])
+        case onboardingContinueTapped
+        case onboardingNotNowTapped
+        case onboardingStepCompleted
         case competition(CompetitionFeature.Action)
     }
 
     @Dependency(\.competitionRoutingClient) var competitionRoutingClient
     @Dependency(\.competitionClient) var competitionClient
     @Dependency(\.continuousClock) var continuousClock
+    @Dependency(\.permissionOnboardingClient) var permissionOnboardingClient
 
     private enum CancelID {
         case routes
@@ -104,8 +121,19 @@ struct MainTabFeature {
         Reduce { state, action in
             switch action {
             case .task:
+                // The competition starts after onboarding: starting it asks
+                // iOS for Health access, which the Health screen explains.
                 return .merge(
-                    .send(.competition(.task)),
+                    state.onboarding == nil
+                        ? .run { send in
+                            await send(
+                                .onboardingChecked(
+                                    await permissionOnboardingClient
+                                        .pendingSteps()
+                                )
+                            )
+                        }
+                        : .none,
                     .run { send in
                         for await envelope in competitionRoutingClient.routes() {
                             guard !Task.isCancelled else { return }
@@ -115,7 +143,10 @@ struct MainTabFeature {
                     .cancellable(id: CancelID.routes, cancelInFlight: true)
                 )
 
+            // iOS permission prompts make the scene inactive and active
+            // again before the competition has started.
             case .scenePhaseChanged(.active):
+                guard state.onboarding == nil else { return .none }
                 return .send(.competition(.sceneBecameActive))
 
             case .scenePhaseChanged(.inactive),
@@ -123,7 +154,57 @@ struct MainTabFeature {
                 return .none
 
             case .timeZoneChanged:
+                guard state.onboarding == nil else { return .none }
                 return .send(.competition(.timeZoneChanged))
+
+            case let .onboardingChecked(steps):
+                guard !steps.isEmpty else {
+                    return .send(.competition(.task))
+                }
+                state.onboarding = PermissionOnboarding(steps: steps)
+                return .none
+
+            case .onboardingContinueTapped:
+                guard let onboarding = state.onboarding,
+                      !onboarding.isRequesting
+                else {
+                    return .none
+                }
+                state.onboarding?.isRequesting = true
+                let step = onboarding.step
+                return .run { send in
+                    switch step {
+                    case .health:
+                        await permissionOnboardingClient.requestHealthAccess()
+                    case .notifications:
+                        await permissionOnboardingClient.requestNotifications()
+                    }
+                    await send(.onboardingStepCompleted)
+                }
+
+            case .onboardingNotNowTapped:
+                guard let onboarding = state.onboarding,
+                      onboarding.step == .notifications,
+                      !onboarding.isRequesting
+                else {
+                    return .none
+                }
+                state.onboarding?.isRequesting = true
+                return .run { send in
+                    await permissionOnboardingClient.deferNotifications()
+                    await send(.onboardingStepCompleted)
+                }
+
+            case .onboardingStepCompleted:
+                guard var onboarding = state.onboarding else { return .none }
+                onboarding.index += 1
+                onboarding.isRequesting = false
+                guard onboarding.index < onboarding.steps.count else {
+                    state.onboarding = nil
+                    return .send(.competition(.task))
+                }
+                state.onboarding = onboarding
+                return .none
 
             case .stop:
                 state.claimRouteSequenceInFlight = nil

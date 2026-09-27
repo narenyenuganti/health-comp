@@ -11,6 +11,43 @@ struct MainTabView: View {
     @Environment(\.scenePhase) private var scenePhase
 
     var body: some View {
+        Group {
+            if let onboarding = store.onboarding {
+                PermissionOnboardingView(
+                    step: onboarding.step,
+                    isRequesting: onboarding.isRequesting,
+                    continueTapped: { store.send(.onboardingContinueTapped) },
+                    notNowTapped: { store.send(.onboardingNotNowTapped) }
+                )
+            } else {
+                home
+            }
+        }
+        .task {
+            await store.send(.task).finish()
+        }
+        .onChange(of: scenePhase) { _, newValue in
+            store.send(.scenePhaseChanged(Self.sceneState(newValue)))
+        }
+        .onReceive(
+            NotificationCenter.default.publisher(
+                for: Notification.Name.NSSystemTimeZoneDidChange
+            )
+        ) { _ in
+            store.send(.timeZoneChanged)
+        }
+        .sheet(isPresented: claimSheetPresented) {
+            ClaimCompetitionView(
+                status: store.inviteClaimStatus,
+                accept: { store.send(.acceptClaimTapped) },
+                decline: { store.send(.declineClaimTapped) },
+                retry: { store.send(.retryClaimTapped) },
+                dismiss: { store.send(.dismissClaimStatus) }
+            )
+        }
+    }
+
+    private var home: some View {
         NavigationStack(path: navigationPath) {
             Group {
                 if let publication = store.competition.publication {
@@ -85,28 +122,6 @@ struct MainTabView: View {
                 destination(for: id)
                     .toolbarRole(.editor)
             }
-        }
-        .task {
-            await store.send(.task).finish()
-        }
-        .onChange(of: scenePhase) { _, newValue in
-            store.send(.scenePhaseChanged(Self.sceneState(newValue)))
-        }
-        .onReceive(
-            NotificationCenter.default.publisher(
-                for: Notification.Name.NSSystemTimeZoneDidChange
-            )
-        ) { _ in
-            store.send(.timeZoneChanged)
-        }
-        .sheet(isPresented: claimSheetPresented) {
-            ClaimCompetitionView(
-                status: store.inviteClaimStatus,
-                accept: { store.send(.acceptClaimTapped) },
-                decline: { store.send(.declineClaimTapped) },
-                retry: { store.send(.retryClaimTapped) },
-                dismiss: { store.send(.dismissClaimStatus) }
-            )
         }
     }
 

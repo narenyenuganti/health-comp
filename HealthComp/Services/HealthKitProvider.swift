@@ -483,7 +483,7 @@ final class HealthKitProvider: HealthDataProvider, @unchecked Sendable {
         return calendar
     }
 
-    private static func competitionReadTypes() -> Set<HKObjectType> {
+    static func competitionReadTypes() -> Set<HKObjectType> {
         var types = Set<HKObjectType>(observerSampleTypes())
         types.insert(HKObjectType.activitySummaryType())
         types.insert(HKCharacteristicType(.wheelchairUse))

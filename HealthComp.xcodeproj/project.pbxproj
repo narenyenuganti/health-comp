@@ -63,6 +63,7 @@
 		633C2CCC1EFC5F2546E47402 /* RemoteCompetitionRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = C552868F11DF18D3E8FB90CE /* RemoteCompetitionRuntime.swift */; };
 		63626B6583F3AA09DED4C760 /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = 765098240911111A6F629AE3 /* Supabase */; };
 		664893A2DD239F6897D6B582 /* CompetitionDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45B4CB5326E660812EDE995E /* CompetitionDetailView.swift */; };
+		6679DA44778F5B36AB876329 /* PermissionOnboardingClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = F300FAED4747AA225EB143F2 /* PermissionOnboardingClient.swift */; };
 		68146909378E552F35D6697F /* HealthMetric.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EA3F1951C080758224B44E2 /* HealthMetric.swift */; };
 		6889DEEA038530AC44D1DD99 /* FixtureActivitySourceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CC1985FE34C77217A5DAAD0 /* FixtureActivitySourceTests.swift */; };
 		68E7EF63C482B3C302F04EBD /* MainTabFeature.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1D8B3EF060D8C52F2299C95 /* MainTabFeature.swift */; };
@@ -96,6 +97,7 @@
 		A933CF46EE745663C924FB92 /* FixtureActivitySource.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DD763262122302C88AA2F5 /* FixtureActivitySource.swift */; };
 		A9355407464950BBE1C920E6 /* CompetitionWeekChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = 017114B95D382E56A88C9F3A /* CompetitionWeekChart.swift */; };
 		AC27EE6DEBA9224CB7ACEAC3 /* SharedClientLifetime.swift in Sources */ = {isa = PBXBuildFile; fileRef = 515A5EEE3F6C865C5972A3B4 /* SharedClientLifetime.swift */; };
+		ACF7EB6354E49BC655F483DD /* PermissionOnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AAE86094E6A2B9B96B850BC /* PermissionOnboardingView.swift */; };
 		B0B792E1A5FDFA8112255420 /* AppAttestClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85C80155A733869ABAC1F483 /* AppAttestClientTests.swift */; };
 		B23F0459A115348014EF4500 /* CompetitionInviteView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F72580283C9D599F21484EB9 /* CompetitionInviteView.swift */; };
 		B29FF2F0455C354D914ED698 /* HealthKitProviderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF7DE04D723EFB17C6B0F55E /* HealthKitProviderTests.swift */; };
@@ -188,6 +190,7 @@
 		45FD58C85D5EE740BBE2307B /* HealthKitObserverDeliveryClassifier.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthKitObserverDeliveryClassifier.swift; sourceTree = "<group>"; };
 		461F8BCB14AE6E70D8BB4DBE /* CompetitionPresentationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionPresentationTests.swift; sourceTree = "<group>"; };
 		491111F52C594F7DF05E48C4 /* remote-stable-tie.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "remote-stable-tie.json"; sourceTree = "<group>"; };
+		4AAE86094E6A2B9B96B850BC /* PermissionOnboardingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionOnboardingView.swift; sourceTree = "<group>"; };
 		4D01015283BC66E2ECA9609D /* HealthCompApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthCompApp.swift; sourceTree = "<group>"; };
 		4D9D6378727AB26B2A45AE28 /* JSONCompetitionOutboxStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JSONCompetitionOutboxStoreTests.swift; sourceTree = "<group>"; };
 		4E1EFEB41E5D4ADC7484F272 /* HealthKitProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthKitProvider.swift; sourceTree = "<group>"; };
@@ -270,6 +273,7 @@
 		EF9D8272E5FD39A82970617A /* AccountView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountView.swift; sourceTree = "<group>"; };
 		EFDE31FDBC7C2D97BF245903 /* CompetitionCore */ = {isa = PBXFileReference; lastKnownFileType = folder; name = CompetitionCore; path = Modules/CompetitionCore; sourceTree = SOURCE_ROOT; };
 		F2AB9F656F17E85A71D01764 /* MultiUserCompetitionTestLabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MultiUserCompetitionTestLabView.swift; sourceTree = "<group>"; };
+		F300FAED4747AA225EB143F2 /* PermissionOnboardingClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionOnboardingClient.swift; sourceTree = "<group>"; };
 		F5065DD1FD5208553FB4EF03 /* AppleWebAuthenticationSessionClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleWebAuthenticationSessionClient.swift; sourceTree = "<group>"; };
 		F5293E4F02146184E21401B1 /* CompetitionRemoteAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionRemoteAPI.swift; sourceTree = "<group>"; };
 		F58C1E73A183AACEC251330E /* CompetitionSyncCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionSyncCoordinator.swift; sourceTree = "<group>"; };
@@ -387,6 +391,7 @@
 				44597F797F2AC9BA7029B1DF /* JSONCompetitionEventStore.swift */,
 				8249239D6EC13DC41463D081 /* JSONCompetitionOutboxStore.swift */,
 				16F2F6B05D0D979314129070 /* LocalCompetitionRuntime.swift */,
+				F300FAED4747AA225EB143F2 /* PermissionOnboardingClient.swift */,
 				C552868F11DF18D3E8FB90CE /* RemoteCompetitionRuntime.swift */,
 				515A5EEE3F6C865C5972A3B4 /* SharedClientLifetime.swift */,
 				E3A18A121BDE529295DC3BAD /* StagingAppleWebAuthenticationConfiguration.swift */,
@@ -465,6 +470,7 @@
 			children = (
 				C1D8B3EF060D8C52F2299C95 /* MainTabFeature.swift */,
 				8DE98F9A6E165CAF241964EA /* MainTabView.swift */,
+				4AAE86094E6A2B9B96B850BC /* PermissionOnboardingView.swift */,
 			);
 			path = MainTab;
 			sourceTree = "<group>";
@@ -787,6 +793,8 @@
 				68E7EF63C482B3C302F04EBD /* MainTabFeature.swift in Sources */,
 				3E9AFCB2C2C40C2F0662D72E /* MainTabView.swift in Sources */,
 				F82EC37B40E95BB1575E2265 /* MultiUserCompetitionTestLabView.swift in Sources */,
+				6679DA44778F5B36AB876329 /* PermissionOnboardingClient.swift in Sources */,
+				ACF7EB6354E49BC655F483DD /* PermissionOnboardingView.swift in Sources */,
 				225DA345431BFB3F6665C1F1 /* RemoteCompetitionClient.swift in Sources */,
 				633C2CCC1EFC5F2546E47402 /* RemoteCompetitionRuntime.swift in Sources */,
 				AC27EE6DEBA9224CB7ACEAC3 /* SharedClientLifetime.swift in Sources */,

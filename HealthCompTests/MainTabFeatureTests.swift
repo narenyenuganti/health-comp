@@ -22,10 +22,124 @@ final class MainTabFeatureTests: XCTestCase {
         }
 
         await store.send(.task)
+        await store.receive(.onboardingChecked([]))
         await store.receive(.competition(.task))
         await store.finish()
 
         XCTAssertEqual(recorder.startCount, 1)
+    }
+
+    @MainActor
+    func testOnboardingExplainsHealthAndNotificationsBeforeTheCompetitionStarts()
+        async {
+        let recorder = MainTabLifecycleRecorder()
+        let permissions = PermissionOnboardingRecorder(
+            steps: [.health, .notifications]
+        )
+        let store = TestStore(initialState: MainTabFeature.State()) {
+            MainTabFeature()
+        } withDependencies: {
+            $0.localCompetitionClient = recorder.client
+            $0.permissionOnboardingClient = permissions.client
+        }
+
+        await store.send(.task)
+        await store.receive(.onboardingChecked([.health, .notifications])) {
+            $0.onboarding = MainTabFeature.PermissionOnboarding(
+                steps: [.health, .notifications]
+            )
+        }
+        // Health can't be skipped, and prompts toggling the scene don't
+        // reach the competition before it starts.
+        await store.send(.onboardingNotNowTapped)
+        await store.send(.scenePhaseChanged(.active))
+
+        await store.send(.onboardingContinueTapped) {
+            $0.onboarding?.isRequesting = true
+        }
+        await store.receive(.onboardingStepCompleted) {
+            $0.onboarding?.index = 1
+            $0.onboarding?.isRequesting = false
+        }
+        XCTAssertEqual(recorder.startCount, 0)
+
+        await store.send(.onboardingContinueTapped) {
+            $0.onboarding?.isRequesting = true
+        }
+        await store.receive(.onboardingStepCompleted) {
+            $0.onboarding = nil
+        }
+        await store.receive(.competition(.task))
+        await store.finish()
+
+        XCTAssertEqual(permissions.calls, ["health", "notifications"])
+        XCTAssertEqual(recorder.startCount, 1)
+        XCTAssertEqual(recorder.reconcileTriggers, [])
+    }
+
+    @MainActor
+    func testNotNowDefersNotificationsAndStartsTheCompetition() async {
+        let recorder = MainTabLifecycleRecorder()
+        let permissions = PermissionOnboardingRecorder(steps: [.notifications])
+        let store = TestStore(initialState: MainTabFeature.State()) {
+            MainTabFeature()
+        } withDependencies: {
+            $0.localCompetitionClient = recorder.client
+            $0.permissionOnboardingClient = permissions.client
+        }
+
+        await store.send(.task)
+        await store.receive(.onboardingChecked([.notifications])) {
+            $0.onboarding = MainTabFeature.PermissionOnboarding(
+                steps: [.notifications]
+            )
+        }
+        await store.send(.onboardingNotNowTapped) {
+            $0.onboarding?.isRequesting = true
+        }
+        await store.receive(.onboardingStepCompleted) {
+            $0.onboarding = nil
+        }
+        await store.receive(.competition(.task))
+        await store.finish()
+
+        XCTAssertEqual(permissions.calls, ["deferNotifications"])
+        XCTAssertEqual(recorder.startCount, 1)
+    }
+
+    func testOnboardingShowsOnlyPermissionsIOSHasNotAskedFor() {
+        XCTAssertEqual(
+            PermissionOnboardingClient.steps(
+                healthNeedsRequest: true,
+                notificationState: .notDetermined,
+                notificationsDeferred: false
+            ),
+            [.health, .notifications]
+        )
+        XCTAssertEqual(
+            PermissionOnboardingClient.steps(
+                healthNeedsRequest: true,
+                notificationState: .denied,
+                notificationsDeferred: false
+            ),
+            [.health]
+        )
+        XCTAssertEqual(
+            PermissionOnboardingClient.steps(
+                healthNeedsRequest: false,
+                notificationState: .notDetermined,
+                notificationsDeferred: true
+            ),
+            []
+        )
+        XCTAssertEqual(
+            PermissionOnboardingClient.steps(
+                healthNeedsRequest: false,
+                notificationState: .authorized,
+                notificationsDeferred: false
+            ),
+            []
+        )
     }
 
     @MainActor
@@ -111,6 +225,7 @@ final class MainTabFeatureTests: XCTestCase {
         }
 
         await store.send(.task)
+        await store.receive(.onboardingChecked([]))
         await store.receive(.competition(.task))
         let envelope = routing.enqueue(.competition(id))
         await store.receive(.routeReceived(envelope)) {
@@ -839,6 +954,35 @@ private final class MainTabLifecycleRecorder: @unchecked Sendable {
                 self?.lock.withLock { self?.stops += 1 }
             }
         )
+    }
+}
+
+private final class PermissionOnboardingRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private let steps: [PermissionOnboardingStep]
+    private var recorded: [String] = []
+
+    init(steps: [PermissionOnboardingStep]) {
+        self.steps = steps
+    }
+
+    var calls: [String] { lock.withLock { recorded } }
+
+    var client: PermissionOnboardingClient {
+        PermissionOnboardingClient(
+            pendingSteps: { [steps] in steps },
+            requestHealthAccess: { [weak self] in self?.record("health") },
+            requestNotifications: { [weak self] in
+                self?.record("notifications")
+            },
+            deferNotifications: { [weak self] in
+                self?.record("deferNotifications")
+            }
+        )
+    }
+
+    private func record(_ call: String) {
+        lock.withLock { recorded.append(call) }
     }
 }
 
