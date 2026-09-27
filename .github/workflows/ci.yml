@@ -110,6 +110,8 @@ jobs:
           set -euo pipefail
           # Local ad-hoc Simulator signing embeds the entitlements required by
           # real Keychain tests. It needs no Apple account or signing certificate.
+          # Macro plugins (swift-syntax) are the only macOS-SDK targets and never
+          # ship. Optimized universal builds of them dominated CI time.
           xcodebuild test \
             -project HealthComp.xcodeproj \
             -scheme HealthComp \
@@ -126,6 +128,9 @@ jobs:
             CODE_SIGNING_ALLOWED=YES \
             CODE_SIGN_IDENTITY=- \
             COMPILER_INDEX_STORE_ENABLE=NO \
+            'SWIFT_OPTIMIZATION_LEVEL[sdk=macosx*]=-Onone' \
+            'SWIFT_COMPILATION_MODE[sdk=macosx*]=singlefile' \
+            'ARCHS[sdk=macosx*]=arm64' \
             SUPABASE_URL="$SUPABASE_URL" \
             SUPABASE_PUBLISHABLE_KEY="$SUPABASE_PUBLISHABLE_KEY"
 
@@ -152,6 +157,9 @@ jobs:
             CODE_SIGN_IDENTITY=- \
             ENABLE_TESTABILITY=YES \
             COMPILER_INDEX_STORE_ENABLE=NO \
+            'SWIFT_OPTIMIZATION_LEVEL[sdk=macosx*]=-Onone' \
+            'SWIFT_COMPILATION_MODE[sdk=macosx*]=singlefile' \
+            'ARCHS[sdk=macosx*]=arm64' \
             SUPABASE_URL="$SUPABASE_URL" \
             SUPABASE_PUBLISHABLE_KEY="$SUPABASE_PUBLISHABLE_KEY"
 
@@ -170,6 +178,9 @@ jobs:
               -skipPackagePluginValidation \
               CODE_SIGNING_ALLOWED=NO \
               COMPILER_INDEX_STORE_ENABLE=NO \
+              'SWIFT_OPTIMIZATION_LEVEL[sdk=macosx*]=-Onone' \
+              'SWIFT_COMPILATION_MODE[sdk=macosx*]=singlefile' \
+              'ARCHS[sdk=macosx*]=arm64' \
               SUPABASE_URL="$SUPABASE_URL" \
               SUPABASE_PUBLISHABLE_KEY="$SUPABASE_PUBLISHABLE_KEY"
             bash scripts/verify-app-privacy-manifest.sh --app-bundle \
