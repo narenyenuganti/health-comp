@@ -95,7 +95,7 @@ struct LocalCompetitionDayPresentation: Equatable, Sendable {
     let ordinal: Int
     let ownerAcceptedPoints: Double?
     let ownerLatestAvailability: LocalCompetitionOwnerAvailability
-    /// `nil` means this checkpoint is in the future. No plan final is exposed.
+    /// Revealed opponent points; `nil` can mean future or unavailable remote data.
     let opponentRevealedPoints: Double?
     /// The snapshot that produced the accepted score, never reconstructed from
     /// points. It may differ from the most recent Health source evidence when

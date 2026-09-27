@@ -613,7 +613,21 @@ final class CompetitionPresentationTests: XCTestCase {
         )
         XCTAssertTrue(future.contains("upcoming"))
         XCTAssertTrue(future.contains("--"))
+        XCTAssertTrue(future.contains("Alex, future, --"))
         XCTAssertFalse(future.contains("Alex final"))
+    }
+
+    func testClosedDayWithoutOpponentScoreIsUnavailableRatherThanFuture() {
+        let label = competitionDayAccessibilityLabel(
+            presentation(.observed, points: 321),
+            currentDayOrdinal: nil,
+            ownerName: "Owner",
+            opponentName: "Opponent"
+        )
+
+        XCTAssertTrue(label.contains("complete"))
+        XCTAssertTrue(label.contains("Opponent, score not available, --"))
+        XCTAssertFalse(label.contains("future"))
     }
 
     func testTallyScoreHeaderUsesFinalDayInsteadOfToday() {
