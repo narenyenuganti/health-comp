@@ -629,8 +629,10 @@ func competitionDayAccessibilityLabel(
     let opponent: String
     if let points = day.opponentRevealedPoints {
         opponent = "\(opponentName), \(competitionPointsAccessibilityText(points))"
-    } else {
+    } else if day.ownerLatestAvailability == .notYetOccurred {
         opponent = "\(opponentName), future, --"
+    } else {
+        opponent = "\(opponentName), score not available, --"
     }
     return "Day \(day.ordinal), \(dayContext). \(owner). \(opponent)."
 }
