@@ -476,29 +476,24 @@ limit 20;
 Cron success alone is insufficient. Also confirm due competitions progress and
 pending/leased notification work does not remain past its retry window.
 
-## Invitation-domain deferral
+## Invitation domain
 
-No HTTPS invitation domain has been selected. Therefore:
+Invitations use `https://healthcomp.app/invite/<token>` (Production and
+Development) and `https://staging.healthcomp.app/invite/<token>` (Staging).
+Both hosts serve the static site in `web/` from one Cloudflare Pages project:
 
-- HEALTHCOMP_INVITE_HOST remains empty;
-- HEALTHCOMP_ALLOW_CUSTOM_INVITE_SCHEME is YES only in Staging and defaults to
-  NO; an unconfigured build without that explicit opt-in fails before creating
-  a server invitation;
-- the Associated Domains entitlement is absent; the paid-team App ID capability
-  was observed enabled, but no domain is configured and that toggle is not
-  credited as evidence;
-- HEALTHCOMP_AASA_APP_IDS is present in staging but is not routed or credited as
-  AASA readiness;
-- no DNS, TLS, route, cache, AASA, or physical universal-link evidence exists;
-- healthcomp:// is generated only by the explicitly opted-in Staging build and
-  remains a controlled fallback/testing route, not the final shareable
-  production link.
+- `/.well-known/apple-app-site-association` lists both App IDs for `/invite/*`;
+  each app's `applinks:$(HEALTHCOMP_INVITE_HOST)` entitlement binds it to only
+  its own host;
+- `/invite/*` serves `invite.html`, whose Open Graph tags give Messages its rich
+  preview and whose button falls back to `healthcomp://invite/<token>`;
+- the page never claims the token; claiming stays in the app.
 
-The apple-app-site-association Function may be deployed but must not be routed
-or credited as universal-link readiness. Once a domain is approved, configure
-HEALTHCOMP_AASA_APP_IDS, add the exact applinks entitlement, serve
-/.well-known/apple-app-site-association without redirect, verify headers and
-cache behavior, and test cold/warm opening on a signed physical device.
+Pages deploys `web/` on every push to `main`; DNS is on Cloudflare (registrar
+stays GoDaddy). Verify
+`https://app-site-association.cdn-apple.com/a/v1/<host>` returns the file, then
+test cold/warm opening on a signed physical device. The Supabase
+apple-app-site-association Function and HEALTHCOMP_AASA_APP_IDS are not used.
 
 ## Rollback-only adversarial staging verifier
 
