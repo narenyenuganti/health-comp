@@ -75,20 +75,8 @@ struct MainTabView: View {
                                 LocalCompetitionIdentity
                                     .bootstrapCompetitionID
                             ),
-                        notificationsMuted: store.competition
-                            .mutedOpponentIdentities.contains(
-                                notificationOpponentIdentity ?? ""
-                            ),
-                        notificationMuteIsInFlight: store.competition
-                            .muteOpponentIdentitiesInFlight.contains(
-                                notificationOpponentIdentity ?? ""
-                            ),
-                        notificationPreferenceSaveFailed: store.competition
-                            .notificationPreferenceSaveFailed,
                         notificationAuthorization: store.competition
                             .notificationAuthorizationState,
-                        notificationOpponentDisplayName:
-                            notificationOpponent?.opponentDisplayName,
                         notificationAuthorizationRequestIsInFlight:
                             store.competition
                                 .notificationAuthorizationRequestIsInFlight,
@@ -96,15 +84,6 @@ struct MainTabView: View {
                             store.send(
                                 .competition(.enableNotificationsTapped)
                             )
-                        },
-                        toggleNotifications: {
-                            if let notificationOpponentIdentity {
-                                store.send(
-                                    .competition(
-                                        .muteTapped(notificationOpponentIdentity)
-                                    )
-                                )
-                            }
                         }
                     )
                     .refreshable {
@@ -165,16 +144,6 @@ struct MainTabView: View {
         )
     }
 
-    private var notificationOpponent: LocalCompetitionPresentation? {
-        store.competition.publication?.dashboard.competitions.first {
-            !$0.opponentIdentity.hasSuffix(":pending")
-        }
-    }
-
-    private var notificationOpponentIdentity: String? {
-        notificationOpponent?.opponentIdentity
-    }
-
     private var claimSheetPresented: Binding<Bool> {
         Binding(
             get: { store.inviteClaimStatus != .idle },
@@ -215,7 +184,8 @@ struct MainTabView: View {
             case .scheduled, .active, .endsToday, .tallying:
                 CompetitionDetailView(
                     competition: competition,
-                    source: publication.source
+                    source: publication.source,
+                    muteButton: muteButton(for: competition)
                 )
 
             case .completed, .archived:
@@ -233,7 +203,8 @@ struct MainTabView: View {
                             : nil,
                     isCommandInFlight: store.competition
                         .isCommandInFlight(id),
-                    send: sendCompetitionAction
+                    send: sendCompetitionAction,
+                    muteButton: muteButton(for: competition)
                 )
 
             case .declined, .expired:
@@ -254,6 +225,26 @@ struct MainTabView: View {
 
     private func sendCompetitionAction(_ action: CompetitionFeature.Action) {
         store.send(.competition(action))
+    }
+
+    private func muteButton(
+        for competition: LocalCompetitionPresentation
+    ) -> CompetitionMuteButton? {
+        guard let identity = competitionMuteIdentity(
+            competition,
+            authorization: store.competition.notificationAuthorizationState
+        ) else {
+            return nil
+        }
+        return CompetitionMuteButton(
+            opponentName: competition.opponentDisplayName,
+            isMuted: store.competition.mutedOpponentIdentities
+                .contains(identity),
+            isInFlight: store.competition.muteOpponentIdentitiesInFlight
+                .contains(identity),
+            saveFailed: store.competition.notificationPreferenceSaveFailed,
+            toggle: { store.send(.competition(.muteTapped(identity))) }
+        )
     }
 
     private static func sceneState(

@@ -9,15 +9,10 @@ struct CompetitionSharingView: View {
     let selectCompetition: (CompetitionID) -> Void
     let reinvite: () -> Void
     let isReinviteInFlight: Bool
-    let notificationsMuted: Bool
-    let notificationMuteIsInFlight: Bool
-    let notificationPreferenceSaveFailed: Bool
     let notificationAuthorization:
         CompetitionNotificationAuthorizationState?
-    let notificationOpponentDisplayName: String?
     let notificationAuthorizationRequestIsInFlight: Bool
     let requestNotificationAuthorization: () -> Void
-    let toggleNotifications: () -> Void
 
     var body: some View {
         // A plain VStack keeps every card in the hierarchy, so scrolling to a
@@ -135,81 +130,33 @@ struct CompetitionSharingView: View {
 
     @ViewBuilder
     private var notificationControls: some View {
-        let control = notificationControl
-        if control != nil || notificationPreferenceSaveFailed {
-            VStack(alignment: .leading, spacing: 8) {
-                control
-
-                if notificationPreferenceSaveFailed {
-                    Label(
-                        "Notification preference could not be saved.",
-                        systemImage: "exclamationmark.triangle.fill"
-                    )
-                    .font(.caption)
-                    .foregroundStyle(Theme.secondary)
-                    .accessibilityIdentifier(
-                        "competition.notifications.preference-error"
-                    )
-                }
-            }
-        }
-    }
-
-    private var notificationControl: AnyView? {
         switch notificationAuthorization {
         case .notDetermined:
-            AnyView(
-                Button(action: requestNotificationAuthorization) {
-                    if notificationAuthorizationRequestIsInFlight {
-                        ProgressView()
-                    } else {
-                        Label(
-                            "Enable Competition Notifications",
-                            systemImage: "bell.badge.fill"
-                        )
-                    }
+            Button(action: requestNotificationAuthorization) {
+                if notificationAuthorizationRequestIsInFlight {
+                    ProgressView()
+                } else {
+                    Label(
+                        "Enable Competition Notifications",
+                        systemImage: "bell.badge.fill"
+                    )
                 }
-                .buttonStyle(SecondaryButtonStyle())
-                .disabled(notificationAuthorizationRequestIsInFlight)
-                .accessibilityIdentifier("competition.notifications.enable")
-            )
+            }
+            .buttonStyle(SecondaryButtonStyle())
+            .disabled(notificationAuthorizationRequestIsInFlight)
+            .accessibilityIdentifier("competition.notifications.enable")
 
         case .denied:
-            AnyView(
-                Label(
-                    "Competition notifications are disabled in Settings.",
-                    systemImage: "bell.slash.fill"
-                )
-                .font(.caption)
-                .foregroundStyle(Theme.secondary)
+            Label(
+                "Competition notifications are disabled in Settings.",
+                systemImage: "bell.slash.fill"
             )
+            .font(.caption)
+            .foregroundStyle(Theme.secondary)
 
-        case .authorized, .provisional, .ephemeral:
-            notificationOpponentDisplayName.map { name in
-                AnyView(
-                    Button(action: toggleNotifications) {
-                        Label(
-                            notificationsMuted
-                                ? "Unmute \(name) Notifications"
-                                : "Mute \(name) Notifications",
-                            systemImage: notificationsMuted
-                                ? "bell.slash.fill"
-                                : "bell.fill"
-                        )
-                    }
-                    .buttonStyle(SecondaryButtonStyle())
-                    .disabled(notificationMuteIsInFlight)
-                    .accessibilityIdentifier("competition.notifications.mute")
-                    .accessibilityValue(
-                        notificationMuteIsInFlight
-                            ? "Saving"
-                            : (notificationsMuted ? "Muted" : "Not muted")
-                    )
-                )
-            }
-
-        case nil:
-            nil
+        // Muting one person lives on the screens of their matches.
+        case .authorized, .provisional, .ephemeral, nil:
+            EmptyView()
         }
     }
 

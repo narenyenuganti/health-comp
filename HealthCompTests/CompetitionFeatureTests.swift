@@ -697,6 +697,57 @@ final class CompetitionFeatureTests: XCTestCase {
         )
     }
 
+    func testMuteTargetsEachMatchOpponentOnlyWhenNotificationsAreAllowed() {
+        func match(_ opponentIdentity: String) -> LocalCompetitionPresentation {
+            LocalCompetitionPresentation(
+                id: CompetitionID(UUID()),
+                ownerDisplayName: "Naren",
+                opponentDisplayName: "Hermes",
+                opponentIdentity: opponentIdentity,
+                lifecycle: .scheduled,
+                acceptedConfiguration: nil,
+                userPoints: 0,
+                opponentPoints: 0,
+                days: [],
+                currentDayOrdinal: nil,
+                lastRefresh: nil,
+                tally: nil,
+                terminalResult: nil
+            )
+        }
+        let hermes = RemoteCompetitionOpponentIdentity.identity(for: UUID())
+        let priya = RemoteCompetitionOpponentIdentity.identity(for: UUID())
+        let waitingForCompetitor = match("remote-profile:v1:pending")
+
+        XCTAssertEqual(
+            competitionMuteIdentity(match(hermes), authorization: .authorized),
+            hermes
+        )
+        XCTAssertEqual(
+            competitionMuteIdentity(match(priya), authorization: .provisional),
+            priya
+        )
+        XCTAssertNil(
+            competitionMuteIdentity(
+                waitingForCompetitor,
+                authorization: .authorized
+            )
+        )
+        let notificationsOff: [CompetitionNotificationAuthorizationState?] = [
+            .notDetermined,
+            .denied,
+            nil,
+        ]
+        for authorization in notificationsOff {
+            XCTAssertNil(
+                competitionMuteIdentity(
+                    match(hermes),
+                    authorization: authorization
+                )
+            )
+        }
+    }
+
     private func publication(revision: UInt64) -> LocalCompetitionPublication {
         LocalCompetitionPublication(
             publicationRevision: revision,
