@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HealthComp</title>
+  <link rel="canonical" href="https://healthcomp.app/">
+  <meta property="og:site_name" content="HealthComp">
+  <meta property="og:title" content="HealthComp">
+  <meta property="og:image" content="https://healthcomp.app/og.png">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+  <meta name="twitter:card" content="summary_large_image">
+  <link rel="icon" href="/apple-touch-icon.png">
+  <link rel="apple-touch-icon" href="/apple-touch-icon.png">
+  <style>
+    /* Tokens from HealthComp/App/Theme.swift. Ring colors appear only in the mark. */
+    :root { color-scheme: light dark; --ground: #FAFAF7; --ink: #111111; --secondary: #5E5E62; }
+    @media (prefers-color-scheme: dark) { :root { --ground: #0F0F10; --ink: #F5F5F0; --secondary: #A3A3A8; } }
+    body { margin: 0; min-height: 100vh; min-height: 100svh; display: grid; place-items: center; background: var(--ground);
+           color: var(--ink); font: 17px/1.45 -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif; text-align: center; }
+    main { padding: 24px; max-width: 480px; }
+    svg { display: block; width: 120px; margin: 0 auto; cursor: pointer; -webkit-tap-highlight-color: transparent; }
+    /* The ring bars grow out of the slash, where all three end: once on load, again on each tap. */
+    rect { transform-box: fill-box; transform-origin: right; }
+    .grow rect { animation: grow 450ms cubic-bezier(.25, 1.2, .5, 1) backwards; }
+    .grow rect:nth-child(2) { animation-delay: 150ms; }
+    .grow rect:nth-child(3) { animation-delay: 300ms; }
+    @keyframes grow { from { transform: scaleX(0); } }
+    @media (prefers-reduced-motion: reduce) { .grow rect { animation: none; } }
+    h1 { font-size: 44px; font-weight: 800; font-stretch: condensed; line-height: 1.1; margin: 16px 0 8px; }
+    p { margin: 0; color: var(--secondary); }
+    h1, p { text-wrap: balance; }
+  </style>
+</head>
+<body>
+  <main>
+    <!-- BrandMark from Theme.swift: Move, Exercise and Stand facing the opponent. The ring bars
+         are rects sheared to the mark's slant (0.2 across per unit down), so they can grow from
+         the slash, where all three end, without losing it. -->
+    <svg class="grow" viewBox="0 0 100 80" aria-hidden="true">
+      <g transform="matrix(1 0 -0.2 1 0 0)">
+        <rect fill="#E4003A" x="19" y="8" width="40" height="18"/>
+        <rect fill="#009A4E" x="29" y="31" width="30" height="18"/>
+        <rect fill="#0072BC" x="23" y="54" width="36" height="18"/>
+      </g>
+      <polygon fill="currentColor" points="63.4,8 91.4,8 78.6,72 50.6,72"/>
+    </svg>
+    <h1>HealthComp</h1>
+    <p>Coming soon to iPhone</p>
+  </main>
+  <script>
+    // Tapping the mark replays the grow: drop the class, flush styles, add it back.
+    const mark = document.querySelector("svg");
+    mark.addEventListener("click", () => {
+      mark.classList.remove("grow");
+      mark.getBoundingClientRect();
+      mark.classList.add("grow");
+    });
+  </script>
+</body>
+</html>
