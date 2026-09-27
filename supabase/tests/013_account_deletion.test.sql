@@ -4,7 +4,7 @@ set local role postgres;
 create extension if not exists pgtap with schema extensions;
 set local search_path = extensions, public, pg_catalog;
 
-select plan(87);
+select plan(88);
 
 select has_table(
   'private', 'account_deletions',
@@ -639,6 +639,11 @@ select is(
   'revoked',
   'verified reauthentication revokes the deleting profile installation'
 );
+select ok((
+  select installation_row.apns_token is null
+  from public.device_installations installation_row
+  where installation_row.id = 'd5000000-0000-4000-8000-000000000001'
+), 'verified deletion clears the retired installation delivery token');
 select is(
   (
     select work_row.state

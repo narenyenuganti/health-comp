@@ -4,7 +4,7 @@ set local role postgres;
 create extension if not exists pgtap with schema extensions;
 set local search_path = extensions, public, pg_catalog;
 
-select plan(52);
+select plan(53);
 
 select has_table(
   'private', 'competition_notification_work',
@@ -701,6 +701,12 @@ select is((
   where profile_id = 'b2000000-0000-4000-8000-000000000002'
     and installation_id = 'b5000000-0000-4000-8000-000000000002'
 ), 'revoked', 'a matching invalid-token outcome revokes that installation');
+select ok((
+  select apns_token is null
+  from public.device_installations
+  where profile_id = 'b2000000-0000-4000-8000-000000000002'
+    and installation_id = 'b5000000-0000-4000-8000-000000000002'
+), 'invalid-token retirement clears delivery credentials without deleting the installation');
 
 update public.device_installations
 set apns_token = repeat('ee', 32), state = 'active',

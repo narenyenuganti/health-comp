@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = extensions, public, pg_catalog;
 
-select plan(108);
+select plan(111);
 
 select has_function(
   'public',
@@ -843,6 +843,42 @@ select is((
   select (select payload from installation_api_results where name = 'remove-retry')
     = (select payload from installation_api_results where name = 'removed')
 ), true, 'removal retry returns the same revoked projection');
+
+set local role authenticated;
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"81000000-0000-0000-0000-000000000003","role":"authenticated"}',
+  true
+);
+select lives_ok(
+  $$select public.register_current_device_installation(
+    '85000000-0000-4000-8000-000000000002', repeat('b2', 32), 'production'
+  )$$,
+  'another profile can register the same device token after confirmed retirement'
+);
+reset role;
+
+set local role authenticated;
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"81000000-0000-0000-0000-000000000004","role":"authenticated"}',
+  true
+);
+select throws_ok(
+  $$select public.register_current_device_installation(
+    '85000000-0000-4000-8000-000000000001', repeat('b2', 32), 'production'
+  )$$,
+  'P0001', 'installation_unavailable',
+  'the retired owner cannot reclaim a token now active for another profile'
+);
+select is(
+  public.remove_current_device_installation(
+    '85000000-0000-4000-8000-000000000001'
+  )->>'state',
+  'revoked',
+  'token reuse preserves the old installation and its idempotent retirement'
+);
+reset role;
 
 set local role authenticated;
 select set_config(
