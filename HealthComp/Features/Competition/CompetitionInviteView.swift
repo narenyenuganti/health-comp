@@ -10,17 +10,18 @@ struct CompetitionInviteView: View {
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 24) {
-                identityEmblem
+            VStack(alignment: .leading, spacing: 24) {
+                faceOff
                 invitationCopy
                 rulesCard
                 actionControls
             }
             .frame(maxWidth: 560)
             .padding(.horizontal, 20)
-            .padding(.vertical, 28)
+            .padding(.vertical, 24)
+            .frame(maxWidth: .infinity)
         }
-        .background(Color(.systemGroupedBackground))
+        .background(Theme.ground)
         .navigationTitle(navigationTitle)
         .navigationBarTitleDisplayMode(.inline)
         .alert(
@@ -36,72 +37,79 @@ struct CompetitionInviteView: View {
         }
     }
 
-    private var identityEmblem: some View {
-        ZStack {
-            Circle()
-                .fill(
-                    LinearGradient(
-                        colors: [.indigo, .cyan],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-                .frame(width: 112, height: 112)
-            Image(systemName: "figure.run")
-                .font(.system(size: 46, weight: .semibold))
-                .foregroundStyle(.white)
+    // The mark, labeled: your ring bars against their single block.
+    private var faceOff: some View {
+        VStack(spacing: 8) {
+            BrandMark().frame(width: 176)
+            ZStack {
+                Text("YOU")
+                    .foregroundStyle(Theme.you)
+                    .position(x: 176 * 0.33, y: 9)
+                Text(competition.opponentDisplayName.uppercased())
+                    .foregroundStyle(Theme.ink)
+                    .lineLimit(1)
+                    .frame(maxWidth: 88)
+                    .position(x: 176 * 0.71, y: 9)
+            }
+            .font(.themeLabel)
+            .tracking(1.4)
+            .frame(width: 176, height: 18)
         }
+        .frame(maxWidth: .infinity)
         .accessibilityHidden(true)
     }
 
     private var invitationCopy: some View {
-        VStack(spacing: 10) {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(direction == .incoming ? "CHALLENGE RECEIVED" : "CHALLENGE SENT")
+                .font(.themeLabel)
+                .tracking(1.4)
+                .foregroundStyle(Theme.secondary)
             Text(directionTitle)
-                .font(.title2.weight(.bold))
-                .multilineTextAlignment(.center)
+                .font(.largeTitle.weight(.heavy).width(.condensed))
+                .foregroundStyle(Theme.ink)
+                .accessibilityAddTraits(.isHeader)
             Text(directionBody)
                 .font(.body)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
+                .foregroundStyle(Theme.secondary)
             if let disclosure = competitionFixtureDisclosure(
                 source: source,
                 opponentDisplayName: competition.opponentDisplayName
             ) {
                 Text(disclosure)
                     .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.indigo)
-                    .multilineTextAlignment(.center)
+                    .foregroundStyle(Theme.ink)
             }
             if source == .simulatedFixture, direction == .outgoing {
                 Text(
                     "Starting simulates \(competition.opponentDisplayName) accepting this local invitation."
                 )
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .multilineTextAlignment(.center)
+                .font(.caption)
+                .foregroundStyle(Theme.secondary)
             }
         }
+        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     private var rulesCard: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Label("Seven calendar days", systemImage: "calendar")
-            Label("Up to 600 points each day", systemImage: "gauge.with.dots.needle.67percent")
-            Label(
-                source == .simulatedFixture
+        VStack(spacing: 0) {
+            CompetitionRuleRow(icon: .symbol("calendar"), title: "Seven calendar days")
+            CompetitionRuleDivider()
+            CompetitionRuleRow(
+                icon: .rings,
+                title: "Up to 600 points each day",
+                detail: "1 point for every 1% of each ring"
+            )
+            CompetitionRuleDivider()
+            CompetitionRuleRow(
+                icon: .symbol("lock.iphone"),
+                title: source == .simulatedFixture
                     ? "Your Activity data stays local"
-                    : "Only daily points are shared",
-                systemImage: "lock.iphone"
+                    : "Only daily points are shared"
             )
         }
-        .font(.subheadline.weight(.medium))
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(18)
-        .background(
-            .background,
-            in: RoundedRectangle(cornerRadius: 20, style: .continuous)
-        )
-        .shadow(color: .black.opacity(0.05), radius: 10, y: 4)
+        .padding(.horizontal, 16)
+        .themePanel(cornerRadius: 18)
     }
 
     @ViewBuilder
@@ -115,7 +123,7 @@ struct CompetitionInviteView: View {
                     systemImage: "hourglass"
                 )
                 .font(.subheadline.weight(.medium))
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.secondary)
                 .frame(maxWidth: .infinity, minHeight: 44)
             } else {
                 switch direction {
@@ -127,9 +135,7 @@ struct CompetitionInviteView: View {
                             "Start with \(competition.opponentDisplayName)"
                         )
                     }
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
-                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .buttonStyle(PrimaryButtonStyle())
                     .disabled(isCommandInFlight)
                     .accessibilityValue(
                         isCommandInFlight ? "Action in progress" : ""
@@ -137,10 +143,7 @@ struct CompetitionInviteView: View {
                     .accessibilityHint("Accepts the local simulated competition")
 
                 case .incoming:
-                    ViewThatFits(in: .horizontal) {
-                        HStack(spacing: 12) { incomingButtons }
-                        VStack(spacing: 12) { incomingButtons }
-                    }
+                    VStack(spacing: 6) { incomingButtons }
                 }
             }
         }
@@ -153,21 +156,23 @@ struct CompetitionInviteView: View {
         } label: {
             commandLabel("Accept")
         }
-        .buttonStyle(.borderedProminent)
-        .controlSize(.large)
-        .frame(maxWidth: .infinity, minHeight: 44)
+        .buttonStyle(PrimaryButtonStyle())
         .disabled(isCommandInFlight)
         .accessibilityLabel(
             "Accept invitation from \(competition.opponentDisplayName)"
         )
         .accessibilityHint("Starts the competition tomorrow.")
 
-        Button("Decline", role: .destructive) {
+        Button(role: .destructive) {
             showsDeclineConfirmation = true
+        } label: {
+            Text("Decline")
+                .font(.headline.width(.condensed))
+                .foregroundStyle(Theme.secondary)
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .contentShape(Rectangle())
         }
-        .buttonStyle(.bordered)
-        .controlSize(.large)
-        .frame(maxWidth: .infinity, minHeight: 44)
+        .buttonStyle(.plain)
         .disabled(isCommandInFlight)
         .accessibilityLabel(
             "Decline invitation from \(competition.opponentDisplayName)"
@@ -216,6 +221,63 @@ struct CompetitionInviteView: View {
         direction == .incoming
             ? "\(competition.opponentDisplayName) invited you to compare Activity points for seven days."
             : "Start when you are ready. Day 1 begins on the next competition calendar day."
+    }
+}
+
+/// One line of the challenge rules: calendar, scoring or privacy. Shared by
+/// the invitation screen and the claim sheet.
+struct CompetitionRuleRow: View {
+    enum Icon {
+        case symbol(String)
+        case rings
+    }
+
+    let icon: Icon
+    let title: String
+    var detail: String?
+
+    var body: some View {
+        HStack(spacing: 14) {
+            iconView
+                .frame(width: 24)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Theme.ink)
+                if let detail {
+                    Text(detail)
+                        .font(.footnote)
+                        .foregroundStyle(Theme.secondary)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.vertical, 14)
+        .frame(minHeight: 44)
+    }
+
+    @ViewBuilder
+    private var iconView: some View {
+        switch icon {
+        case let .symbol(name):
+            Image(systemName: name)
+                .font(.body.weight(.semibold))
+                .foregroundStyle(Theme.ink)
+        case .rings:
+            VStack(alignment: .leading, spacing: 2) {
+                SlantedBar().fill(Theme.move).frame(width: 18, height: 4)
+                SlantedBar().fill(Theme.exercise).frame(width: 13, height: 4)
+                    .padding(.leading, 3)
+                SlantedBar().fill(Theme.stand).frame(width: 16, height: 4)
+            }
+        }
+    }
+}
+
+struct CompetitionRuleDivider: View {
+    var body: some View {
+        Rectangle().fill(Theme.hairline).frame(height: 1)
     }
 }
 

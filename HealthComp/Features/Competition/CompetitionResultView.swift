@@ -11,18 +11,23 @@ struct CompetitionResultView: View {
     let send: (CompetitionFeature.Action) -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @ScaledMetric(relativeTo: .largeTitle) private var headlineSize: CGFloat = 64
     @State private var isRevealed = false
     @State private var isDeleteConfirmationPresented = false
 
     var body: some View {
         ScrollView {
-            VStack(spacing: 22) {
+            VStack(alignment: .leading, spacing: 28) {
                 resultHero
                     .opacity(isRevealed ? 1 : 0)
                     .offset(y: isRevealed || reduceMotion ? 0 : 10)
 
-                finalScore
-                    .opacity(isRevealed ? 1 : 0)
+                VStack(spacing: 12) {
+                    finalScore
+                    marginChips
+                }
+                .opacity(isRevealed ? 1 : 0)
 
                 if isBestAvailableResult {
                     Label(
@@ -30,8 +35,16 @@ struct CompetitionResultView: View {
                         systemImage: "info.circle"
                     )
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                }
+
+                if !competition.days.isEmpty {
+                    weekSection
+                }
+
+                if let ringTotals {
+                    ringTotalsSection(ringTotals)
                 }
 
                 awardPresentation
@@ -42,8 +55,9 @@ struct CompetitionResultView: View {
             .frame(maxWidth: 560)
             .padding(.horizontal, 16)
             .padding(.vertical, 18)
+            .frame(maxWidth: .infinity)
         }
-        .background(Color(.systemGroupedBackground))
+        .background(Theme.ground)
         .navigationTitle("Result")
         .navigationBarTitleDisplayMode(.inline)
         .onAppear {
@@ -58,36 +72,48 @@ struct CompetitionResultView: View {
     }
 
     private var resultHero: some View {
-        VStack(spacing: 14) {
-            HealthCompAwardEmblem(outcome: outcome)
-                .frame(width: 150, height: 150)
-                .accessibilityHidden(true)
-            Text(resultTitle)
-                .font(.largeTitle.weight(.bold))
+        VStack(spacing: 10) {
+            Text(resultKicker)
+                .font(.themeLabel)
+                .tracking(1.2)
+                .foregroundStyle(Theme.secondary)
                 .multilineTextAlignment(.center)
+            Text(resultTitle)
+                .font(.score(size: headlineSize))
+                .foregroundStyle(outcome == .win ? Theme.you : Theme.ink)
+                .multilineTextAlignment(.center)
+                .accessibilityAddTraits(.isHeader)
             Text(resultSubtitle)
                 .font(.body)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.secondary)
                 .multilineTextAlignment(.center)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 12)
+        .padding(.vertical, 8)
+    }
+
+    private var resultKicker: String {
+        var parts = ["FINAL"]
+        if let first = competition.days.first?.day,
+           let last = competition.days.last?.day {
+            parts.append("\(first.month)/\(first.day)–\(last.month)/\(last.day)")
+        }
+        parts.append("VS \(competition.opponentDisplayName.uppercased())")
+        return parts.joined(separator: " · ")
     }
 
     private var finalScore: some View {
         VStack(spacing: 16) {
             Text("Final score")
-                .font(.headline)
+                .font(.themeLabel)
+                .tracking(1.2)
+                .foregroundStyle(Theme.secondary)
 
             CompetitionFinalScoreLayout { finalScoreOwners }
         }
         .frame(maxWidth: .infinity)
         .padding(20)
-        .background(
-            .background,
-            in: RoundedRectangle(cornerRadius: 24, style: .continuous)
-        )
-        .shadow(color: .black.opacity(0.06), radius: 12, y: 5)
+        .themePanel(cornerRadius: 24)
         .accessibilityElement(children: .ignore)
         .accessibilityIdentifier("competition.result")
         .accessibilityLabel(
@@ -100,45 +126,170 @@ struct CompetitionResultView: View {
         FinalScoreOwner(
             name: competition.ownerDisplayName,
             points: competition.userPoints,
-            tint: .mint
+            tint: Theme.you
         )
         Text("–")
             .font(.title2.weight(.medium))
-            .foregroundStyle(.tertiary)
+            .foregroundStyle(Theme.faint)
             .accessibilityHidden(true)
         FinalScoreOwner(
             name: competition.opponentDisplayName,
             points: competition.opponentPoints,
-            tint: .indigo
+            tint: Theme.ink
         )
+    }
+
+    // The margin is yours, so it is amber: filled for a win, outlined otherwise.
+    @ViewBuilder
+    private var marginChips: some View {
+        if marginText != nil || daysWonText != nil {
+            HStack(spacing: 10) {
+                if let marginText {
+                    Text(marginText)
+                        .font(.headline.weight(.heavy).width(.condensed).monospacedDigit())
+                        .foregroundStyle(outcome == .win ? Theme.onYouFill : Theme.you)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 6)
+                        .background { chipBackground(filled: outcome == .win) }
+                }
+                if let daysWonText {
+                    Text(daysWonText)
+                        .font(.subheadline.weight(.bold).width(.condensed))
+                        .foregroundStyle(Theme.ink)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 6)
+                        .background { chipBackground(filled: false) }
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .accessibilityElement(children: .combine)
+        }
+    }
+
+    @ViewBuilder
+    private func chipBackground(filled: Bool) -> some View {
+        if filled {
+            SlantedBar().fill(Theme.youFill)
+        } else {
+            SlantedBar().stroke(Theme.outline, lineWidth: 1.5)
+        }
+    }
+
+    private var marginText: String? {
+        let margin = competition.userPoints - competition.opponentPoints
+        guard margin != 0 else { return nil }
+        return (margin > 0 ? "+" : "−") + competitionPointsText(abs(margin))
+    }
+
+    private var daysWonText: String? {
+        let decided = competition.days.compactMap { day -> Bool? in
+            guard let owner = day.ownerAcceptedPoints,
+                  let opponent = day.opponentRevealedPoints
+            else { return nil }
+            return owner > opponent
+        }
+        guard !decided.isEmpty else { return nil }
+        return "\(decided.filter { $0 }.count) of \(competition.days.count) days"
+    }
+
+    private var weekSection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            SectionLabel("THE WEEK")
+            CompetitionWeekChart(
+                days: competition.days,
+                currentDayOrdinal: nil,
+                ownerName: competition.ownerDisplayName,
+                opponentName: competition.opponentDisplayName
+            )
+            if competition.days.contains(where: { ringSegments($0).count == 3 }) {
+                CompetitionRingLegend(opponentName: competition.opponentDisplayName)
+            }
+        }
+    }
+
+    /// Your week by ring. Shown only when every scored day has a ring split,
+    /// so the three parts always add up to your final score.
+    private var ringTotals: [(title: String, color: Color, points: Double)]? {
+        let scored = competition.days.map(ringSegments).filter { !$0.isEmpty }
+        guard !scored.isEmpty, scored.allSatisfy({ $0.count == 3 }) else {
+            return nil
+        }
+        let totals = (0..<3).map { index in
+            scored.reduce(0.0) { $0 + $1[index].points }
+        }
+        return [
+            ("MOVE", Theme.move, totals[0]),
+            ("EXERCISE", Theme.exercise, totals[1]),
+            ("STAND", Theme.stand, totals[2]),
+        ]
+    }
+
+    private func ringTotalsSection(
+        _ totals: [(title: String, color: Color, points: Double)]
+    ) -> some View {
+        let sum = totals.reduce(0.0) { $0 + $1.points }
+        // AnyLayout, not ViewThatFits, which the Dynamic Type audit flags.
+        let labelsLayout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
+            : AnyLayout(HStackLayout(alignment: .top, spacing: 12))
+        return VStack(alignment: .leading, spacing: 12) {
+            SectionLabel("HOW YOU SCORED")
+            GeometryReader { proxy in
+                HStack(spacing: 2) {
+                    ForEach(totals.indices, id: \.self) { index in
+                        SlantedBar()
+                            .fill(totals[index].color)
+                            .frame(
+                                width: ringShareWidth(
+                                    totals[index].points,
+                                    of: sum,
+                                    in: proxy.size.width - 4
+                                )
+                            )
+                    }
+                }
+            }
+            .frame(height: 24)
+            .accessibilityHidden(true)
+            labelsLayout { ringTotalLabels(totals) }
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private func ringShareWidth(
+        _ points: Double,
+        of sum: Double,
+        in width: CGFloat
+    ) -> CGFloat {
+        guard sum > 0 else { return 0 }
+        return max(2, width * points / sum)
+    }
+
+    @ViewBuilder
+    private func ringTotalLabels(
+        _ totals: [(title: String, color: Color, points: Double)]
+    ) -> some View {
+        ForEach(totals.indices, id: \.self) { index in
+            VStack(alignment: .leading, spacing: 2) {
+                Text(totals[index].title)
+                    .font(.themeLabel)
+                    .tracking(1.1)
+                    .foregroundStyle(Theme.secondary)
+                Text(competitionPointsText(totals[index].points.rounded()))
+                    .font(.title2.weight(.heavy).width(.condensed).monospacedDigit())
+                    .foregroundStyle(Theme.ink)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
     }
 
     private var awardPresentation: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Awards")
-                .font(.headline)
-                .padding(.horizontal, 4)
+            SectionLabel("Awards")
 
             ForEach(visibleAwards) { award in
                 HStack(spacing: 14) {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 14, style: .continuous)
-                            .fill(
-                                award.kind == .victory
-                                    ? Color.orange.opacity(0.18)
-                                    : Color.green.opacity(0.16)
-                            )
-                        Image(
-                            systemName: award.kind == .victory
-                                ? "trophy.fill"
-                                : "checkmark.seal.fill"
-                        )
-                        .font(.title2)
-                        .foregroundStyle(
-                            award.kind == .victory ? .orange : .green
-                        )
-                    }
-                    .frame(width: 52, height: 52)
+                    awardBadge(award.kind)
 
                     VStack(alignment: .leading, spacing: 3) {
                         Text(
@@ -147,9 +298,10 @@ struct CompetitionResultView: View {
                                 : "Competition Complete"
                         )
                         .font(.headline)
+                        .foregroundStyle(Theme.ink)
                         Text("Earned in this seven-day competition")
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Theme.secondary)
                         Text(
                             competitionAwardEarnedText(
                                 award.awardedAt,
@@ -157,7 +309,7 @@ struct CompetitionResultView: View {
                             )
                         )
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.secondary)
                         if award.kind == .victory {
                             Text(
                                 competitionVictoryCountText(
@@ -170,31 +322,46 @@ struct CompetitionResultView: View {
                                 )
                             )
                             .font(.caption)
-                            .foregroundStyle(.secondary)
+                            .foregroundStyle(Theme.secondary)
                         }
                     }
                     Spacer(minLength: 0)
                 }
                 .padding(14)
                 .frame(minHeight: 76)
-                .background(
-                    .background,
-                    in: RoundedRectangle(cornerRadius: 20, style: .continuous)
-                )
+                .themePanel(cornerRadius: 18)
                 .accessibilityElement(children: .combine)
             }
         }
     }
 
+    // A victory is yours, so its badge is amber; completion stays neutral.
+    private func awardBadge(_ kind: LocalCompetitionAward.Kind) -> some View {
+        ZStack {
+            if kind == .victory {
+                Circle().fill(Theme.youFill)
+                Image(systemName: "trophy.fill")
+                    .foregroundStyle(Theme.onYouFill)
+            } else {
+                Circle().stroke(Theme.outline, lineWidth: 2)
+                Image(systemName: "checkmark")
+                    .foregroundStyle(Theme.ink)
+            }
+        }
+        .font(.title3.weight(.bold))
+        .frame(width: 48, height: 48)
+        .accessibilityHidden(true)
+    }
+
     private var actionControls: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 12) { resultButtons }
-            VStack(spacing: 12) { resultButtons }
+        VStack(spacing: 10) {
+            rematchControl
+            dataControl
         }
     }
 
     @ViewBuilder
-    private var resultButtons: some View {
+    private var rematchControl: some View {
         if source == .remoteParticipants {
             remoteRematchControl
         } else {
@@ -203,12 +370,13 @@ struct CompetitionResultView: View {
             } label: {
                 commandLabel("Rematch")
             }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-            .frame(maxWidth: .infinity, minHeight: 44)
+            .buttonStyle(PrimaryButtonStyle())
             .disabled(isCommandInFlight)
         }
+    }
 
+    @ViewBuilder
+    private var dataControl: some View {
         switch competitionResultDataControl(
             source: source,
             isArchived: isArchived
@@ -217,18 +385,14 @@ struct CompetitionResultView: View {
             Button("Archive") {
                 send(.archiveTapped(competition.id))
             }
-            .buttonStyle(.bordered)
-            .controlSize(.large)
-            .frame(maxWidth: .infinity, minHeight: 44)
+            .buttonStyle(SecondaryButtonStyle())
             .disabled(isCommandInFlight)
 
         case .deleteLocalData:
             Button("Delete Local Data", role: .destructive) {
                 isDeleteConfirmationPresented = true
             }
-            .buttonStyle(.bordered)
-            .controlSize(.large)
-            .frame(maxWidth: .infinity, minHeight: 44)
+            .buttonStyle(SecondaryButtonStyle())
             .disabled(isCommandInFlight)
             .confirmationDialog(
                 "Delete this competition from this iPhone?",
@@ -251,7 +415,7 @@ struct CompetitionResultView: View {
                 systemImage: "archivebox.fill"
             )
             .font(.footnote)
-            .foregroundStyle(.secondary)
+            .foregroundStyle(Theme.secondary)
             .frame(maxWidth: .infinity, minHeight: 44)
             .accessibilityIdentifier("competition.history.preserved")
         }
@@ -264,9 +428,7 @@ struct CompetitionResultView: View {
             Button("Create Rematch Invitation") {
                 send(.rematchTapped(competition.id))
             }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-            .frame(maxWidth: .infinity, minHeight: 44)
+            .buttonStyle(PrimaryButtonStyle())
             .accessibilityIdentifier("competition.rematch.create")
 
         case .creating:
@@ -274,7 +436,8 @@ struct CompetitionResultView: View {
                 ProgressView()
                 Text("Creating rematch invitation…")
             }
-            .frame(maxWidth: .infinity, minHeight: 44)
+            .foregroundStyle(Theme.secondary)
+            .frame(maxWidth: .infinity, minHeight: 54)
             .accessibilityElement(children: .combine)
 
         case .ready:
@@ -287,11 +450,8 @@ struct CompetitionResultView: View {
                         "Share Rematch Invitation",
                         systemImage: "square.and.arrow.up"
                     )
-                    .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .frame(minHeight: 44)
+                .buttonStyle(PrimaryButtonStyle())
                 .accessibilityHint(
                     "Opens the system share sheet. The private link is not read aloud."
                 )
@@ -302,9 +462,7 @@ struct CompetitionResultView: View {
             Button("Try Rematch Again") {
                 send(.rematchTapped(competition.id))
             }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-            .frame(maxWidth: .infinity, minHeight: 44)
+            .buttonStyle(PrimaryButtonStyle())
             .accessibilityIdentifier("competition.rematch.retry")
 
         case .configurationUnavailable:
@@ -313,7 +471,7 @@ struct CompetitionResultView: View {
                 systemImage: "exclamationmark.triangle.fill"
             )
             .font(.caption)
-            .foregroundStyle(.orange)
+            .foregroundStyle(Theme.secondary)
         }
     }
 
@@ -477,60 +635,20 @@ private struct FinalScoreOwner: View {
     let points: Double
     let tint: Color
 
+    @ScaledMetric(relativeTo: .largeTitle) private var scoreSize: CGFloat = 52
+
     var body: some View {
-        VStack(spacing: 5) {
+        VStack(spacing: 4) {
             Text(name)
                 .font(.subheadline.weight(.semibold))
             Text(competitionPointsText(points))
-                .font(.system(.largeTitle, design: .rounded, weight: .bold))
+                .font(.score(size: scoreSize))
                 .monospacedDigit()
             Text("points")
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.secondary)
         }
         .foregroundStyle(tint)
         .frame(maxWidth: .infinity)
-    }
-}
-
-private struct HealthCompAwardEmblem: View {
-    let outcome: CompetitionOutcome
-
-    var body: some View {
-        ZStack {
-            RoundedRectangle(cornerRadius: 42, style: .continuous)
-                .fill(
-                    LinearGradient(
-                        colors: emblemColors,
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
-                .shadow(color: emblemColors[0].opacity(0.28), radius: 20, y: 10)
-
-            RoundedRectangle(cornerRadius: 34, style: .continuous)
-                .stroke(.white.opacity(0.45), lineWidth: 2)
-                .padding(10)
-
-            Image(systemName: emblemSymbol)
-                .font(.system(size: 58, weight: .bold))
-                .foregroundStyle(.white)
-        }
-    }
-
-    private var emblemColors: [Color] {
-        switch outcome {
-        case .win: [.orange, .pink]
-        case .loss: [.indigo, .blue]
-        case .tie: [.teal, .indigo]
-        }
-    }
-
-    private var emblemSymbol: String {
-        switch outcome {
-        case .win: "trophy.fill"
-        case .loss: "figure.run"
-        case .tie: "equal.circle.fill"
-        }
     }
 }

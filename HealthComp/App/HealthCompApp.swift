@@ -80,6 +80,7 @@ struct HealthCompApp: App {
         authenticationClientFactory: AuthenticationClientFactory = .live,
         competitionClientFactory: CompetitionClientFactory = .live
     ) {
+        Theme.applyNavigationBarAppearance()
         let multiUserDecision = MultiUserCompetitionTestLabLaunchParser
             .decision(arguments: arguments)
         let decision = CompetitionTestLabLaunchParser.decision(
@@ -121,6 +122,7 @@ struct HealthCompApp: App {
         authenticationClientFactory: AuthenticationClientFactory = .live,
         competitionClientFactory: CompetitionClientFactory = .live
     ) {
+        Theme.applyNavigationBarAppearance()
         self.store = HealthCompLiveComposition.store(
             supabaseClientProvider: supabaseClientProvider,
             authenticationClientFactory: authenticationClientFactory,
@@ -179,16 +181,17 @@ private extension ScenePhase {
 struct AppRootView: View {
     let store: StoreOf<AppFeature>
 
+    @AppStorage(AppAppearance.storageKey)
+    private var appearance = AppAppearance.system
+
     var body: some View {
         Group {
             switch store.phase {
             case .launching, .bootstrappingProfile:
-                ProgressView("Connecting…")
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                AppProgressView(title: "Connecting…")
 
             case .tearingDown:
-                ProgressView("Signing out…")
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                AppProgressView(title: "Signing out…")
 
             case .signedOut, .settingUpProfile, .launchFailure:
                 AccountView(
@@ -210,6 +213,8 @@ struct AppRootView: View {
                 }
             }
         }
+        .tint(Theme.ink)
+        .preferredColorScheme(appearance.colorScheme)
         .task {
             await store.send(.task).finish()
         }
@@ -220,22 +225,40 @@ struct AppRootView: View {
     }
 }
 
+private struct AppProgressView: View {
+    let title: String
+
+    var body: some View {
+        VStack(spacing: 20) {
+            BrandMark().frame(width: 88)
+            ProgressView(title)
+                .foregroundStyle(Theme.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Theme.ground)
+    }
+}
+
+// Account lives behind the Home avatar, so there is no two-item tab bar.
 private struct AuthenticatedRootView: View {
     let mainStore: StoreOf<MainTabFeature>
     let accountStore: StoreOf<AccountFeature>
 
-    var body: some View {
-        TabView {
-            MainTabView(store: mainStore)
-                .tabItem {
-                    Label("Competition", systemImage: "figure.run")
-                }
+    @State private var isAccountPresented = false
 
+    var body: some View {
+        MainTabView(
+            store: mainStore,
+            openAccount: { isAccountPresented = true }
+        )
+        .sheet(isPresented: $isAccountPresented) {
             NavigationStack {
                 AccountSettingsView(store: accountStore)
-            }
-            .tabItem {
-                Label("Account", systemImage: "person.crop.circle")
+                    .toolbar {
+                        ToolbarItem(placement: .confirmationAction) {
+                            Button("Done") { isAccountPresented = false }
+                        }
+                    }
             }
         }
     }

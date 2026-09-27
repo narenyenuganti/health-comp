@@ -8,80 +8,180 @@ struct AccountView: View {
     let store: StoreOf<AccountFeature>
 
     var body: some View {
-        VStack(spacing: 24) {
-            Spacer()
-            Image(systemName: "figure.run.circle.fill")
-                .font(.system(size: 64, weight: .semibold))
-                .foregroundStyle(.tint)
-                .accessibilityHidden(true)
+        GeometryReader { proxy in
+            ScrollView {
+                VStack(spacing: 24) {
+                    header
+                    if store.mode == .settingUpProfile {
+                        displayNameField
+                    }
+                    if store.mode == .signedOut {
+                        colorCodeCard
+                    }
+                    if let message = store.message {
+                        Text(message.text)
+                            .font(.callout)
+                            .foregroundStyle(Theme.ink)
+                            .multilineTextAlignment(.center)
+                            .accessibilityIdentifier("account.message")
+                    }
+                    actions
+                }
+                .padding(24)
+                .frame(maxWidth: 480)
+                .frame(maxWidth: .infinity, minHeight: proxy.size.height)
+            }
+            .scrollBounceBehavior(.basedOnSize)
+        }
+        .background(Theme.ground)
+        .task { store.send(.appeared) }
+        .animation(.easeInOut(duration: 0.2), value: store.message)
+    }
+
+    private var header: some View {
+        VStack(spacing: 16) {
+            BrandMark()
+                .frame(width: 120)
             VStack(spacing: 8) {
                 Text(title)
-                    .font(.largeTitle.bold())
+                    .font(.largeTitle.weight(.heavy).width(.condensed))
+                    .foregroundStyle(Theme.ink)
                     .multilineTextAlignment(.center)
+                    .accessibilityAddTraits(.isHeader)
                 Text(subtitle)
                     .font(.body)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.secondary)
                     .multilineTextAlignment(.center)
             }
+        }
+    }
 
-            if store.mode == .settingUpProfile {
-                TextField(
-                    "Display name",
-                    text: Binding(
-                        get: { store.displayName },
-                        set: { store.send(.displayNameChanged($0)) }
-                    )
-                )
-                .textContentType(.nickname)
-                .textInputAutocapitalization(.words)
-                .autocorrectionDisabled()
-                .submitLabel(.continue)
-                .padding(14)
-                .background(.secondary.opacity(0.12), in: RoundedRectangle(cornerRadius: 14))
-                .onSubmit {
-                    store.send(.submitDisplayNameButtonTapped)
+    private var displayNameField: some View {
+        HStack(spacing: 12) {
+            Group {
+                if let initial = displayNameInitial {
+                    Text(initial)
+                        .font(.headline.width(.condensed))
+                        .foregroundStyle(Theme.you)
+                } else {
+                    Image(systemName: "person.fill")
+                        .foregroundStyle(Theme.secondary)
                 }
-                .accessibilityIdentifier("account.display-name")
             }
+            .frame(width: 34, height: 34)
+            .background(Theme.control, in: Circle())
+            .accessibilityHidden(true)
 
-            if let message = store.message {
-                Text(message.text)
-                    .font(.callout)
-                    .foregroundStyle(.red)
-                    .multilineTextAlignment(.center)
-                    .accessibilityIdentifier("account.message")
+            TextField(
+                "Display name",
+                text: Binding(
+                    get: { store.displayName },
+                    set: { store.send(.displayNameChanged($0)) }
+                )
+            )
+            .textContentType(.nickname)
+            .textInputAutocapitalization(.words)
+            .autocorrectionDisabled()
+            .submitLabel(.continue)
+            .foregroundStyle(Theme.ink)
+            .onSubmit {
+                store.send(.submitDisplayNameButtonTapped)
             }
+            .accessibilityIdentifier("account.display-name")
+        }
+        .padding(.horizontal, 14)
+        .frame(minHeight: 56)
+        .themePanel(cornerRadius: 14)
+    }
 
+    private var displayNameInitial: String? {
+        store.displayName.trimmingCharacters(in: .whitespaces).first
+            .map { String($0).uppercased() }
+    }
+
+    // Teaches the one color rule before the first competition.
+    private var colorCodeCard: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            SectionLabel("HOW TO READ IT")
+            codeRow(
+                "Your rings",
+                "Move, Exercise and Stand. The detail never leaves your iPhone."
+            ) {
+                VStack(alignment: .leading, spacing: 2) {
+                    SlantedBar().fill(Theme.move).frame(width: 24, height: 4)
+                    SlantedBar().fill(Theme.exercise).frame(width: 18, height: 4)
+                        .padding(.leading, 4)
+                    SlantedBar().fill(Theme.stand).frame(width: 22, height: 4)
+                }
+            }
+            codeRow("Your score", "Amber is always you.") {
+                SlantedBar().fill(Theme.youFill).frame(width: 22, height: 10)
+            }
+            codeRow(
+                "Their points",
+                "Your opponent sees only your daily total, and you see only theirs."
+            ) {
+                SlantedBar().fill(Theme.ink).frame(width: 12, height: 18)
+                    .padding(.leading, 5)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(18)
+        .themePanel(cornerRadius: 18)
+    }
+
+    private func codeRow<Swatch: View>(
+        _ title: String,
+        _ detail: String,
+        @ViewBuilder swatch: () -> Swatch
+    ) -> some View {
+        HStack(alignment: .top, spacing: 14) {
+            swatch()
+                .frame(width: 28, alignment: .leading)
+                .padding(.top, 4)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.headline)
+                    .foregroundStyle(Theme.ink)
+                Text(detail)
+                    .font(.subheadline)
+                    .foregroundStyle(Theme.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private var actions: some View {
+        VStack(spacing: 12) {
             primaryButton
-                .frame(maxWidth: .infinity)
-                .frame(height: 50)
                 .disabled(store.isRequestInFlight)
                 .overlay {
                     if store.isRequestInFlight {
-                        ProgressView().tint(
-                            AccountProgressAppearance.tint(
-                                for: store.mode,
-                                colorScheme: colorScheme
-                            )
-                        )
+                        ProgressView().tint(progressTint)
                     }
                 }
             if store.mode == .signedOut, store.isBrowserSignInAvailable {
-                Button {
+                Button("Sign in with Apple in Browser") {
                     store.send(.browserSignInButtonTapped)
-                } label: {
-                    Text("Sign in with Apple in Browser")
-                        .frame(maxWidth: .infinity, minHeight: 44)
                 }
-                .buttonStyle(.bordered)
+                .buttonStyle(SecondaryButtonStyle())
                 .disabled(store.isRequestInFlight)
                 .accessibilityIdentifier("account.sign-in-with-apple.browser")
             }
-            Spacer()
         }
-        .padding(24)
-        .task { store.send(.appeared) }
-        .animation(.easeInOut(duration: 0.2), value: store.message)
+    }
+
+    // The Apple button and Sign Out keep the tested contrast rule; the
+    // neutral primary buttons carry onInk content in both modes.
+    private var progressTint: Color {
+        switch store.mode {
+        case .signedOut, .authenticated:
+            AccountProgressAppearance.tint(for: store.mode, colorScheme: colorScheme)
+        case .settingUpProfile, .launchFailure, .profileConflict:
+            Theme.onInk
+        }
     }
 
     @ViewBuilder
@@ -94,38 +194,36 @@ struct AccountView: View {
                 store.send(.signInButtonTapped)
             }
             .id(colorScheme)
+            .frame(maxWidth: .infinity)
+            .frame(height: 54)
             .accessibilityIdentifier("account.sign-in-with-apple")
 
         case .settingUpProfile:
             Button("Continue") {
                 store.send(.submitDisplayNameButtonTapped)
             }
-            .buttonStyle(.borderedProminent)
-            .frame(maxWidth: .infinity, minHeight: 50)
+            .buttonStyle(PrimaryButtonStyle())
             .accessibilityIdentifier("account.submit-display-name")
 
         case .launchFailure:
             Button("Try Again") {
                 store.send(.retryButtonTapped)
             }
-            .buttonStyle(.borderedProminent)
-            .frame(maxWidth: .infinity, minHeight: 50)
+            .buttonStyle(PrimaryButtonStyle())
             .accessibilityIdentifier("account.retry")
 
         case .profileConflict:
             Button("Use Another Account") {
                 store.send(.signOutButtonTapped)
             }
-            .buttonStyle(.borderedProminent)
-            .frame(maxWidth: .infinity, minHeight: 50)
+            .buttonStyle(PrimaryButtonStyle())
             .accessibilityIdentifier("account.recover-profile")
 
         case .authenticated:
             Button("Sign Out", role: .destructive) {
                 store.send(.signOutButtonTapped)
             }
-            .buttonStyle(.bordered)
-            .frame(maxWidth: .infinity, minHeight: 50)
+            .buttonStyle(SecondaryButtonStyle())
             .accessibilityIdentifier("account.sign-out")
         }
     }
@@ -196,7 +294,7 @@ private struct SignInWithAppleButton: UIViewRepresentable {
             authorizationButtonType: .signIn,
             authorizationButtonStyle: style
         )
-        button.cornerRadius = 10
+        button.cornerRadius = 14
         button.addTarget(
             context.coordinator,
             action: #selector(Coordinator.invoke),
