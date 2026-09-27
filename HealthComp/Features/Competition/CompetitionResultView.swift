@@ -9,6 +9,7 @@ struct CompetitionResultView: View {
     let createdInviteLink: CompetitionInviteShareLink?
     let isCommandInFlight: Bool
     let send: (CompetitionFeature.Action) -> Void
+    var muteButton: CompetitionMuteButton?
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -357,6 +358,10 @@ struct CompetitionResultView: View {
         VStack(spacing: 10) {
             rematchControl
             dataControl
+
+            if let muteButton {
+                muteButton
+            }
         }
     }
 

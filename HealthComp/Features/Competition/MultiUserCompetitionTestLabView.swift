@@ -163,14 +163,9 @@ private struct MultiUserCompetitionSharingTestLabView: View {
                     selectCompetition: { path.append($0) },
                     reinvite: {},
                     isReinviteInFlight: false,
-                    notificationsMuted: false,
-                    notificationMuteIsInFlight: false,
-                    notificationPreferenceSaveFailed: false,
                     notificationAuthorization: .authorized,
-                    notificationOpponentDisplayName: "Priya",
                     notificationAuthorizationRequestIsInFlight: false,
-                    requestNotificationAuthorization: {},
-                    toggleNotifications: {}
+                    requestNotificationAuthorization: {}
                 )
                 .navigationDestination(for: CompetitionID.self) { id in
                     destination(id)

@@ -4,6 +4,7 @@ import SwiftUI
 struct CompetitionDetailView: View {
     let competition: LocalCompetitionPresentation
     let source: CompetitionPublicationSource
+    var muteButton: CompetitionMuteButton?
 
     var body: some View {
         ScrollView {
@@ -27,6 +28,10 @@ struct CompetitionDetailView: View {
                 weekSection
                 ringsSection
                 syncFooter
+
+                if let muteButton {
+                    muteButton
+                }
             }
             .padding(.horizontal, 16)
             .padding(.top, 12)
@@ -262,6 +267,60 @@ struct CompetitionDetailView: View {
         if case .tallying = competition.lifecycle { return true }
         return false
     }
+}
+
+/// Mutes one person, so every match with them goes quiet, not just this one.
+struct CompetitionMuteButton: View {
+    let opponentName: String
+    let isMuted: Bool
+    let isInFlight: Bool
+    let saveFailed: Bool
+    let toggle: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Button(action: toggle) {
+                Label(
+                    isMuted
+                        ? "Unmute \(opponentName) Notifications"
+                        : "Mute \(opponentName) Notifications",
+                    systemImage: isMuted ? "bell.slash.fill" : "bell.fill"
+                )
+            }
+            .buttonStyle(SecondaryButtonStyle())
+            .disabled(isInFlight)
+            .accessibilityIdentifier("competition.notifications.mute")
+            .accessibilityValue(
+                isInFlight ? "Saving" : (isMuted ? "Muted" : "Not muted")
+            )
+
+            if saveFailed {
+                Label(
+                    "Notification preference could not be saved.",
+                    systemImage: "exclamationmark.triangle.fill"
+                )
+                .font(.caption)
+                .foregroundStyle(Theme.secondary)
+                .accessibilityIdentifier(
+                    "competition.notifications.preference-error"
+                )
+            }
+        }
+    }
+}
+
+/// The person a match's mute button silences. Nil hides the button while
+/// notifications are off or an invitation is still waiting for someone.
+func competitionMuteIdentity(
+    _ competition: LocalCompetitionPresentation,
+    authorization: CompetitionNotificationAuthorizationState?
+) -> String? {
+    guard authorization?.permitsNotifications == true,
+          !competition.opponentIdentity.hasSuffix(":pending")
+    else {
+        return nil
+    }
+    return competition.opponentIdentity
 }
 
 private struct CompetitionScoreboardPanel: View {
