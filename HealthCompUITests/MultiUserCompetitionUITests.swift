@@ -287,7 +287,10 @@ final class MultiUserCompetitionUITests: XCTestCase {
             app.staticTexts["account.message"].label,
             "Choose a name from 1 to 64 characters without line breaks."
         )
-        XCTAssertTrue(app.buttons["account.sign-out"].exists)
+        // Sign out sits below Appearance, under the keyboard; Return
+        // dismisses it so the list can scroll.
+        field.typeText("\n")
+        scrollToElement(app.buttons["account.sign-out"])
     }
 
     func testAccountDeletionConfirmationCanBeCancelledSafely() {
