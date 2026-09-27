@@ -487,10 +487,15 @@ Both hosts serve the static site in `web/` from one Cloudflare Pages project:
   its own host;
 - `/invite/*` serves `invite.html`, whose Open Graph tags give Messages its rich
   preview and whose button falls back to `healthcomp://invite/<token>`;
-- the page never claims the token; claiming stays in the app.
+- the page never claims the token; claiming stays in the app;
+- `/` is a splash page and `404.html` answers every other path. Keep both:
+  without a top-level `404.html`, Pages serves `index.html` with 200 for any
+  unknown path.
 
 Pages deploys `web/` on every push to `main`; DNS is on Cloudflare (registrar
-stays GoDaddy). Verify
+stays GoDaddy). `scripts/verify-website.sh <base-url>` checks both pages, the
+invite headers and the association file on a Pages preview or either host.
+Verify
 `https://app-site-association.cdn-apple.com/a/v1/<host>` returns the file, then
 test cold/warm opening on a signed physical device. The Supabase
 apple-app-site-association Function and HEALTHCOMP_AASA_APP_IDS are not used.
