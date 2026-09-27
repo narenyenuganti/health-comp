@@ -1,0 +1,15 @@
+{
+  "applinks": {
+    "details": [
+      {
+        "appIDs": [
+          "23LUYD78QK.com.narenyenuganti.HealthComp",
+          "23LUYD78QK.com.narenyenuganti.HealthComp.staging"
+        ],
+        "components": [
+          { "/": "/invite/*", "comment": "Private HealthComp invitation links." }
+        ]
+      }
+    ]
+  }
+}
