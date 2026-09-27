@@ -96,6 +96,8 @@ jobs:
           bash scripts/test-deletion-client-migration.sh
           supabase db reset --local --version 20260906001300
           bash scripts/test-deleted-profile-history-migration.sh
+          supabase db reset --local --version 20260913001400
+          bash scripts/test-retired-installation-token-migration.sh
           supabase db reset
           supabase test db
 
@@ -227,7 +229,8 @@ jobs:
           sh scripts/test-app-attest-edge-runtime.sh
           bash scripts/verify-invitation-functions.sh
           supabase db lint --local --level warning --fail-on warning
-          supabase db diff --local >"$schema_diff"
+          # The empty-file guard requires raw SQL, including in agent environments.
+          supabase db diff --local --agent no >"$schema_diff"
 
           if [[ -s "$schema_diff" ]]; then
             echo "Local database differs from the checked-in migrations." >&2
