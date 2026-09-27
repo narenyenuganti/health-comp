@@ -1,0 +1,7 @@
+// CI-only overrides, passed with `xcodebuild -xcconfig`. Macro plugins
+// (swift-syntax) are the only macOS-SDK targets and never ship, so build them
+// unoptimized for the arm64 runner. Conditions live here because xcodebuild
+// splits a command-line `NAME[sdk=...]=value` at its first `=`.
+SWIFT_OPTIMIZATION_LEVEL[sdk=macosx*] = -Onone
+SWIFT_COMPILATION_MODE[sdk=macosx*] = singlefile
+ARCHS[sdk=macosx*] = arm64
