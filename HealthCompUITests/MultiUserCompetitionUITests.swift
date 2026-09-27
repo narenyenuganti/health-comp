@@ -585,7 +585,13 @@ final class MultiUserCompetitionUITests: XCTestCase {
             let end = scrollView.coordinate(
                 withNormalizedOffset: CGVector(dx: 0.5, dy: endY)
             )
-            start.press(forDuration: 0.05, thenDragTo: end)
+            // Stop before releasing so scroll momentum cannot overshoot the card.
+            start.press(
+                forDuration: 0.05,
+                thenDragTo: end,
+                withVelocity: .slow,
+                thenHoldForDuration: 0.2
+            )
         }
         geometry.append("final viewport=\(visibleRemoteScrollFrame(scrollView)); day=\(day.frame)")
         attachGeometry()
