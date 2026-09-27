@@ -20,9 +20,26 @@ struct CompetitionSharingView: View {
     let toggleNotifications: () -> Void
 
     var body: some View {
+        // A plain VStack keeps every card in the hierarchy, so scrolling to a
+        // card works in both directions.
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 20) {
-                sharingHero
+            VStack(alignment: .leading, spacing: 24) {
+                intro
+
+                if !publication.dashboard.issues.isEmpty {
+                    issueBanner
+                }
+
+                if let hero = heroCompetition {
+                    competitionButton(hero) {
+                        CompetitionHeroCard(
+                            competition: hero,
+                            source: publication.source
+                        )
+                    }
+                }
+
+                notificationControls
 
                 if publication.source == .remoteParticipants {
                     CreateCompetitionView(
@@ -31,10 +48,6 @@ struct CompetitionSharingView: View {
                         timeZoneIdentifier: publication.timeZoneIdentifier,
                         create: createInvite
                     )
-                }
-
-                if !publication.dashboard.issues.isEmpty {
-                    issueBanner
                 }
 
                 competitionSection
@@ -46,37 +59,31 @@ struct CompetitionSharingView: View {
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
         }
-        .background(Color(.systemGroupedBackground))
+        .background(Theme.ground)
         .navigationTitle("Sharing")
-        .navigationBarTitleDisplayMode(.large)
-    }
-
-    private var sharingHero: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Label("Local Activity", systemImage: "figure.run.circle.fill")
-                .font(.title2.weight(.bold))
-                .foregroundStyle(.tint)
-            Text(heroDescription)
-                .font(.body)
-                .foregroundStyle(.secondary)
-            notificationControls
-
-            if notificationPreferenceSaveFailed {
-                Label(
-                    "Notification preference could not be saved.",
-                    systemImage: "exclamationmark.triangle.fill"
-                )
-                .font(.caption)
-                .foregroundStyle(.orange)
-                .accessibilityIdentifier(
-                    "competition.notifications.preference-error"
-                )
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            // The bar shows only the mark and the avatar; the title stays for
+            // VoiceOver and the navigation bar's identity.
+            ToolbarItem(placement: .principal) {
+                Color.clear
+                    .frame(width: 1, height: 1)
+                    .accessibilityHidden(true)
             }
         }
+    }
+
+    // The top line stays the page's invariant anchor.
+    private var intro: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Image(systemName: "lock.fill")
+                .font(.caption)
+                .accessibilityHidden(true)
+            Text(heroDescription)
+        }
+        .font(.footnote)
+        .foregroundStyle(Theme.secondary)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(18)
-        .background(.background, in: RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .shadow(color: .black.opacity(0.06), radius: 12, y: 5)
     }
 
     private var heroDescription: String {
@@ -88,125 +95,183 @@ struct CompetitionSharingView: View {
         }
     }
 
+    /// The first competition in play leads the page; a scheduled one leads
+    /// only when nothing is in play yet.
+    private var heroCompetition: LocalCompetitionPresentation? {
+        let competitions = publication.dashboard.competitions
+        return competitions.first { sharingIsInPlay($0.lifecycle) }
+            ?? competitions.first {
+                if case .scheduled = $0.lifecycle { return true }
+                return false
+            }
+    }
+
+    private var otherCompetitions: [LocalCompetitionPresentation] {
+        let heroID = heroCompetition?.id
+        return publication.dashboard.competitions.filter { $0.id != heroID }
+    }
+
+    private func competitionButton<Content: View>(
+        _ competition: LocalCompetitionPresentation,
+        @ViewBuilder label: () -> Content
+    ) -> some View {
+        Button {
+            selectCompetition(competition.id)
+        } label: {
+            label()
+                .contentShape(Rectangle())
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(
+                    sharingAccessibilitySummary(
+                        competition,
+                        source: publication.source
+                    )
+                )
+                .accessibilityHint("Opens this competition")
+        }
+        .buttonStyle(CompetitionPressButtonStyle())
+        .accessibilityIdentifier(competitionSharingIdentifier(competition))
+    }
+
     @ViewBuilder
     private var notificationControls: some View {
-        switch notificationAuthorization {
-        case .notDetermined:
-            Button(action: requestNotificationAuthorization) {
-                if notificationAuthorizationRequestIsInFlight {
-                    ProgressView()
-                } else {
+        let control = notificationControl
+        if control != nil || notificationPreferenceSaveFailed {
+            VStack(alignment: .leading, spacing: 8) {
+                control
+
+                if notificationPreferenceSaveFailed {
                     Label(
-                        "Enable Competition Notifications",
-                        systemImage: "bell.badge.fill"
+                        "Notification preference could not be saved.",
+                        systemImage: "exclamationmark.triangle.fill"
+                    )
+                    .font(.caption)
+                    .foregroundStyle(Theme.secondary)
+                    .accessibilityIdentifier(
+                        "competition.notifications.preference-error"
                     )
                 }
             }
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-            .frame(minHeight: 44)
-            .disabled(notificationAuthorizationRequestIsInFlight)
-            .accessibilityIdentifier("competition.notifications.enable")
+        }
+    }
+
+    private var notificationControl: AnyView? {
+        switch notificationAuthorization {
+        case .notDetermined:
+            AnyView(
+                Button(action: requestNotificationAuthorization) {
+                    if notificationAuthorizationRequestIsInFlight {
+                        ProgressView()
+                    } else {
+                        Label(
+                            "Enable Competition Notifications",
+                            systemImage: "bell.badge.fill"
+                        )
+                    }
+                }
+                .buttonStyle(SecondaryButtonStyle())
+                .disabled(notificationAuthorizationRequestIsInFlight)
+                .accessibilityIdentifier("competition.notifications.enable")
+            )
 
         case .denied:
-            Label(
-                "Competition notifications are disabled in Settings.",
-                systemImage: "bell.slash.fill"
+            AnyView(
+                Label(
+                    "Competition notifications are disabled in Settings.",
+                    systemImage: "bell.slash.fill"
+                )
+                .font(.caption)
+                .foregroundStyle(Theme.secondary)
             )
-            .font(.caption)
-            .foregroundStyle(.secondary)
 
         case .authorized, .provisional, .ephemeral:
-            if let notificationOpponentDisplayName {
-                Button(action: toggleNotifications) {
-                    Label(
-                        notificationsMuted
-                            ? "Unmute \(notificationOpponentDisplayName) Notifications"
-                            : "Mute \(notificationOpponentDisplayName) Notifications",
-                        systemImage: notificationsMuted
-                            ? "bell.slash.fill"
-                            : "bell.fill"
+            notificationOpponentDisplayName.map { name in
+                AnyView(
+                    Button(action: toggleNotifications) {
+                        Label(
+                            notificationsMuted
+                                ? "Unmute \(name) Notifications"
+                                : "Mute \(name) Notifications",
+                            systemImage: notificationsMuted
+                                ? "bell.slash.fill"
+                                : "bell.fill"
+                        )
+                    }
+                    .buttonStyle(SecondaryButtonStyle())
+                    .disabled(notificationMuteIsInFlight)
+                    .accessibilityIdentifier("competition.notifications.mute")
+                    .accessibilityValue(
+                        notificationMuteIsInFlight
+                            ? "Saving"
+                            : (notificationsMuted ? "Muted" : "Not muted")
                     )
-                }
-                .buttonStyle(.bordered)
-                .controlSize(.large)
-                .frame(minHeight: 44)
-                .disabled(notificationMuteIsInFlight)
-                .accessibilityIdentifier("competition.notifications.mute")
-                .accessibilityValue(
-                    notificationMuteIsInFlight
-                        ? "Saving"
-                        : (notificationsMuted ? "Muted" : "Not muted")
                 )
             }
 
         case nil:
-            EmptyView()
+            nil
         }
     }
 
     @ViewBuilder
     private var competitionSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("People")
-                .font(.headline)
-                .padding(.horizontal, 4)
+        if publication.dashboard.competitions.isEmpty {
+            emptyState
+        } else if !otherCompetitions.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                SectionLabel("MATCHES")
+                    .padding(.horizontal, 4)
 
-            if publication.dashboard.competitions.isEmpty {
-                VStack(spacing: 16) {
-                    ContentUnavailableView(
-                        "No Competition",
-                        systemImage: "person.2.slash",
-                        description: Text(emptyStateDescription)
-                    )
-
-                    if publication.source == .simulatedFixture,
-                       publication.dashboard.hiddenTerminalCompetitionCount > 0 {
-                        Button {
-                            reinvite()
-                        } label: {
-                            if isReinviteInFlight {
-                                ProgressView()
-                                    .frame(maxWidth: .infinity)
-                            } else {
-                                Text(
-                                    "Invite \(LocalCompetitionIdentity.opponentDisplayName) Again"
-                                )
-                                    .frame(maxWidth: .infinity)
-                            }
-                        }
-                        .buttonStyle(.borderedProminent)
-                        .controlSize(.large)
-                        .frame(minHeight: 44)
-                        .disabled(isReinviteInFlight)
-                        .accessibilityValue(
-                            isReinviteInFlight ? "Action in progress" : ""
-                        )
-                    }
-                }
-                .frame(maxWidth: .infinity)
-                .padding(20)
-                .background(
-                    .background,
-                    in: RoundedRectangle(cornerRadius: 22, style: .continuous)
-                )
-            } else {
-                ForEach(publication.dashboard.competitions) { competition in
-                    Button {
-                        selectCompetition(competition.id)
-                    } label: {
+                ForEach(otherCompetitions) { competition in
+                    competitionButton(competition) {
                         CompetitionSharingCard(
                             competition: competition,
                             source: publication.source
                         )
                     }
-                    .buttonStyle(CompetitionPressButtonStyle())
-                    .accessibilityIdentifier(
-                        competitionSharingIdentifier(competition)
-                    )
                 }
             }
         }
+    }
+
+    private var emptyState: some View {
+        VStack(spacing: 16) {
+            OpenSlotMark()
+                .frame(width: 96)
+
+            VStack(spacing: 6) {
+                Text("No competition yet")
+                    .font(.title3.weight(.heavy).width(.condensed))
+                    .foregroundStyle(Theme.ink)
+                Text(emptyStateDescription)
+                    .font(.subheadline)
+                    .foregroundStyle(Theme.secondary)
+            }
+            .multilineTextAlignment(.center)
+
+            if publication.source == .simulatedFixture,
+               publication.dashboard.hiddenTerminalCompetitionCount > 0 {
+                Button {
+                    reinvite()
+                } label: {
+                    if isReinviteInFlight {
+                        ProgressView()
+                    } else {
+                        Text(
+                            "Invite \(LocalCompetitionIdentity.opponentDisplayName) Again"
+                        )
+                    }
+                }
+                .buttonStyle(PrimaryButtonStyle())
+                .disabled(isReinviteInFlight)
+                .accessibilityValue(
+                    isReinviteInFlight ? "Action in progress" : ""
+                )
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(20)
+        .themePanel()
     }
 
     private var emptyStateDescription: String {
@@ -222,8 +287,7 @@ struct CompetitionSharingView: View {
 
     private var awardsSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("Awards")
-                .font(.headline)
+            SectionLabel("Awards")
                 .padding(.horizontal, 4)
 
             CompetitionRivalrySummaryCard(
@@ -247,15 +311,14 @@ struct CompetitionSharingView: View {
                             ?? publication.timeZoneIdentifier
                     )
                     if index < publication.dashboard.awards.count - 1 {
-                        Divider().padding(.leading, 58)
+                        Rectangle()
+                            .fill(Theme.hairline)
+                            .frame(height: 1)
+                            .padding(.leading, 68)
                     }
                 }
             }
-            .background(
-                .background,
-                in: RoundedRectangle(cornerRadius: 22, style: .continuous)
-            )
-            .shadow(color: .black.opacity(0.05), radius: 10, y: 4)
+            .themePanel()
         }
     }
 
@@ -265,41 +328,240 @@ struct CompetitionSharingView: View {
             systemImage: "exclamationmark.triangle.fill"
         )
         .font(.subheadline.weight(.medium))
-        .foregroundStyle(.primary)
+        .foregroundStyle(Theme.ink)
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
-        .background(
-            Color.orange.opacity(0.16),
-            in: RoundedRectangle(cornerRadius: 16, style: .continuous)
-        )
+        .themePanel(cornerRadius: 16)
         .accessibilityLabel(
             "Competition status. \(competitionIssueSummary(publication.dashboard.issues))"
         )
     }
 }
 
+/// The competition in play, drawn flat on the page like the mark: your
+/// score in amber, the opponent's in ink, and the week below.
+private struct CompetitionHeroCard: View {
+    let competition: LocalCompetitionPresentation
+    let source: CompetitionPublicationSource
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            statusRow
+
+            if competitionShouldShowScores(competition.lifecycle) {
+                HeroScoreboard(competition: competition)
+                statement
+                    .font(.body)
+                    .foregroundStyle(Theme.secondary)
+            } else {
+                scheduledHeadline
+            }
+
+            CompetitionWeekChart(
+                days: competition.days,
+                currentDayOrdinal: competition.currentDayOrdinal,
+                ownerName: competition.ownerDisplayName,
+                opponentName: competition.opponentDisplayName
+            )
+
+            CompetitionRingLegend(
+                opponentName: competition.opponentDisplayName
+            )
+
+            if let disclosure = competitionFixtureDisclosure(
+                source: source,
+                opponentDisplayName: competition.opponentDisplayName
+            ) {
+                Text(disclosure)
+                    .font(.caption)
+                    .foregroundStyle(Theme.secondary)
+            }
+
+            HStack(spacing: 6) {
+                Text("MATCH DETAILS")
+                    .font(.themeLabel)
+                    .tracking(1.4)
+                Image(systemName: "arrow.right")
+                    .font(.footnote.weight(.bold))
+            }
+            .foregroundStyle(Theme.ink)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var statusRow: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 10) {
+                statusLeading
+                Spacer(minLength: 8)
+                statusTrailing
+            }
+            VStack(alignment: .leading, spacing: 4) {
+                statusLeading
+                statusTrailing
+            }
+        }
+        .font(.themeLabel)
+        .tracking(1.2)
+    }
+
+    private var statusLeading: some View {
+        HStack(spacing: 8) {
+            if isLive {
+                Circle()
+                    .fill(Theme.ink)
+                    .frame(width: 8, height: 8)
+                Text("LIVE")
+                    .foregroundStyle(Theme.ink)
+            }
+            Text(statusText)
+                .foregroundStyle(Theme.secondary)
+        }
+    }
+
+    @ViewBuilder
+    private var statusTrailing: some View {
+        if let endText {
+            Text(endText)
+                .foregroundStyle(Theme.secondary)
+        }
+    }
+
+    private var isLive: Bool {
+        switch competition.lifecycle {
+        case .active, .endsToday: true
+        default: false
+        }
+    }
+
+    private var statusText: String {
+        if case let .active(dayOrdinal) = competition.lifecycle {
+            return "DAY \(dayOrdinal) OF 7"
+        }
+        return competitionSharingStatus(competition.lifecycle)
+            .uppercased(with: .current)
+    }
+
+    private var endText: String? {
+        switch competition.lifecycle {
+        case .active, .scheduled:
+            competition.days.last.map { "ENDS \(weekdayText($0.day))" }
+        default:
+            nil
+        }
+    }
+
+    private var statement: Text {
+        let margin = competition.userPoints - competition.opponentPoints
+        if margin > 0 {
+            return Text("You lead by ")
+                + Text(competitionPointsText(margin))
+                    .foregroundStyle(Theme.you)
+                    .bold()
+                + Text(".")
+        }
+        if margin < 0 {
+            return Text(
+                "\(competition.opponentDisplayName) leads by \(competitionPointsText(-margin))."
+            )
+        }
+        return Text("All square.")
+    }
+
+    private var scheduledHeadline: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            (Text(competition.ownerDisplayName.uppercased(with: .current))
+                .foregroundStyle(Theme.you)
+                + Text("  VS  ").foregroundStyle(Theme.tertiary)
+                + Text(competition.opponentDisplayName.uppercased(with: .current))
+                .foregroundStyle(Theme.ink))
+                .font(.title2.weight(.heavy).width(.condensed))
+            Text("Scores begin Day 1.")
+                .font(.body)
+                .foregroundStyle(Theme.secondary)
+        }
+    }
+}
+
+private struct HeroScoreboard: View {
+    let competition: LocalCompetitionPresentation
+
+    @ScaledMetric(relativeTo: .largeTitle) private var scoreSize: CGFloat = 64
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    var body: some View {
+        layout {
+            side(
+                name: competition.ownerDisplayName,
+                points: competition.userPoints,
+                color: Theme.you,
+                trailing: false
+            )
+            if !isStacked {
+                Rectangle()
+                    .fill(Theme.outline)
+                    .frame(width: 2, height: scoreSize)
+                    .rotationEffect(.degrees(12))
+                    .accessibilityHidden(true)
+            }
+            side(
+                name: competition.opponentDisplayName,
+                points: competition.opponentPoints,
+                color: Theme.ink,
+                trailing: !isStacked
+            )
+        }
+    }
+
+    private var isStacked: Bool {
+        dynamicTypeSize.isAccessibilitySize
+    }
+
+    private var layout: AnyLayout {
+        isStacked
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 12))
+            : AnyLayout(HStackLayout(alignment: .bottom, spacing: 8))
+    }
+
+    private func side(
+        name: String,
+        points: Double,
+        color: Color,
+        trailing: Bool
+    ) -> some View {
+        VStack(alignment: trailing ? .trailing : .leading, spacing: 2) {
+            Text(name.uppercased(with: .current))
+                .font(.themeLabel)
+                .tracking(1.4)
+            Text(competitionPointsText(points))
+                .font(.score(size: scoreSize).monospacedDigit())
+        }
+        .foregroundStyle(color)
+        .frame(maxWidth: .infinity, alignment: trailing ? .trailing : .leading)
+    }
+}
+
 private struct CompetitionSharingCard: View {
     let competition: LocalCompetitionPresentation
     let source: CompetitionPublicationSource
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    @ScaledMetric(relativeTo: .headline) private var badgeSize: CGFloat = 40
 
     var body: some View {
         ViewThatFits(in: .horizontal) {
             HStack(spacing: 14) {
-                avatar
+                badge
                 identity
                 Spacer(minLength: 8)
                 if competitionShouldShowScores(competition.lifecycle) {
                     trailingScore
                 }
-                Image(systemName: "chevron.right")
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(.tertiary)
+                chevron
             }
 
             VStack(alignment: .leading, spacing: 14) {
                 HStack(alignment: .top, spacing: 14) {
-                    avatar
+                    badge
                     identity
                     Spacer(minLength: 0)
                 }
@@ -308,104 +570,116 @@ private struct CompetitionSharingCard: View {
                         trailingScore
                     }
                     Spacer()
-                    Image(systemName: "chevron.right")
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(.tertiary)
+                    chevron
                 }
             }
         }
         .padding(16)
         .frame(maxWidth: .infinity, minHeight: 76, alignment: .leading)
-        .background(
-            .background,
-            in: RoundedRectangle(cornerRadius: 22, style: .continuous)
-        )
-        .shadow(color: .black.opacity(0.06), radius: 12, y: 5)
-        .contentShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
-        .accessibilityElement(children: .combine)
-        .accessibilityLabel(accessibilitySummary)
-        .accessibilityHint("Opens this competition")
+        .themePanel()
     }
 
-    private var avatar: some View {
-        ZStack {
-            Circle()
-                .fill(
-                    LinearGradient(
-                        colors: [.indigo, .cyan],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    )
-                )
+    @ViewBuilder
+    private var badge: some View {
+        if let outcome = sharingOutcome(competition.lifecycle) {
+            CompetitionOutcomeChip(outcome: outcome)
+        } else {
             Text(competition.opponentDisplayName.prefix(1).uppercased())
-                .font(.headline.weight(.bold))
-                .foregroundStyle(.white)
+                .font(.headline.weight(.heavy).width(.condensed))
+                .foregroundStyle(Theme.ink)
+                .frame(width: badgeSize, height: badgeSize)
+                .background(Theme.control, in: Circle())
+                .accessibilityHidden(true)
         }
-        .frame(width: 48, height: 48)
-        .accessibilityHidden(true)
     }
 
     private var identity: some View {
         VStack(alignment: .leading, spacing: 4) {
             Text(competition.opponentDisplayName)
                 .font(.headline)
-                .foregroundStyle(.primary)
+                .foregroundStyle(Theme.ink)
             Text(competitionSharingStatus(competition.lifecycle))
                 .font(.subheadline.weight(.medium))
-                .foregroundStyle(statusTint)
+                .foregroundStyle(statusColor)
             if let disclosure = competitionFixtureDisclosure(
                 source: source,
                 opponentDisplayName: competition.opponentDisplayName
             ) {
                 Text(disclosure)
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.secondary)
             }
         }
         .multilineTextAlignment(.leading)
     }
 
+    // Your wins read in your color; everything else stays neutral.
+    private var statusColor: Color {
+        sharingOutcome(competition.lifecycle) == .win
+            ? Theme.you
+            : Theme.secondary
+    }
+
     private var trailingScore: some View {
-        VStack(alignment: .trailing, spacing: 2) {
-            Text(competitionPointsText(competition.userPoints))
-                .font(.headline.monospacedDigit())
-                .foregroundStyle(.primary)
-            Text("to \(competitionPointsText(competition.opponentPoints)) pts")
-                .font(.caption.monospacedDigit())
-                .foregroundStyle(.secondary)
+        (Text(competitionPointsText(competition.userPoints))
+            .foregroundStyle(Theme.you)
+            + Text(" / ").foregroundStyle(Theme.faint)
+            + Text(competitionPointsText(competition.opponentPoints))
+            .foregroundStyle(Theme.ink))
+            .font(.title3.weight(.heavy).width(.condensed).monospacedDigit())
+    }
+
+    private var chevron: some View {
+        Image(systemName: "chevron.right")
+            .font(.caption.weight(.bold))
+            .foregroundStyle(Theme.tertiary)
+    }
+}
+
+/// W, L or T, colored by who won: amber is you, ink is them.
+private struct CompetitionOutcomeChip: View {
+    let outcome: CompetitionOutcome
+
+    @ScaledMetric(relativeTo: .headline) private var size: CGFloat = 32
+
+    var body: some View {
+        Text(letter)
+            .font(.headline.weight(.heavy).width(.condensed))
+            .foregroundStyle(foreground)
+            .padding(4)
+            .frame(minWidth: size, minHeight: size)
+            .background(fill, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .overlay {
+                if outcome == .tie {
+                    RoundedRectangle(cornerRadius: 8, style: .continuous)
+                        .strokeBorder(Theme.outline, lineWidth: 1.5)
+                }
+            }
+            .accessibilityHidden(true)
+    }
+
+    private var letter: String {
+        switch outcome {
+        case .win: "W"
+        case .loss: "L"
+        case .tie: "T"
         }
     }
 
-    private var statusTint: Color {
-        switch competition.lifecycle {
-        case .completed, .archived: .green
-        case .tallying: .orange
-        case .pending: .indigo
-        case .declined, .expired: .secondary
-        case .scheduled, .active, .endsToday: .accentColor
+    private var fill: Color {
+        switch outcome {
+        case .win: Theme.youFill
+        case .loss: Theme.ink
+        case .tie: .clear
         }
     }
 
-    private var accessibilitySummary: String {
-        var parts = [
-            competition.opponentDisplayName,
-            competitionSharingStatus(competition.lifecycle),
-        ]
-        if let disclosure = competitionFixtureDisclosure(
-            source: source,
-            opponentDisplayName: competition.opponentDisplayName
-        ) {
-            parts.append(disclosure)
+    private var foreground: Color {
+        switch outcome {
+        case .win: Theme.onYouFill
+        case .loss: Theme.onInk
+        case .tie: Theme.ink
         }
-        if competitionShouldShowScores(competition.lifecycle) {
-            parts.append(
-                "\(competition.ownerDisplayName) \(competitionPointsText(competition.userPoints)) total points"
-            )
-            parts.append(
-                "\(competition.opponentDisplayName) \(competitionPointsText(competition.opponentPoints)) total points"
-            )
-        }
-        return parts.joined(separator: ". ")
     }
 }
 
@@ -414,12 +688,19 @@ private struct CompetitionAwardDashboardRow: View {
     let victoryCount: Int
     let timeZoneIdentifier: String
 
+    @ScaledMetric(relativeTo: .title3) private var discSize: CGFloat = 40
+
     var body: some View {
         HStack(spacing: 14) {
             Image(systemName: award.kind == .victory ? "trophy.fill" : "checkmark.seal.fill")
-                .font(.title2)
-                .foregroundStyle(award.kind == .victory ? .orange : .green)
-                .frame(width: 44, height: 44)
+                .font(.title3)
+                .foregroundStyle(award.kind == .victory ? Theme.onYouFill : Theme.ink)
+                .frame(width: discSize, height: discSize)
+                .background(
+                    award.kind == .victory ? Theme.youFill : Theme.control,
+                    in: Circle()
+                )
+                .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 2) {
                 Text(
@@ -428,6 +709,7 @@ private struct CompetitionAwardDashboardRow: View {
                         : "Competition Complete"
                 )
                     .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Theme.ink)
                 Text(
                     competitionAwardEarnedText(
                         award.awardedAt,
@@ -435,7 +717,7 @@ private struct CompetitionAwardDashboardRow: View {
                     )
                 )
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.secondary)
                 if award.kind == .victory {
                     Text(
                         competitionVictoryCountText(
@@ -444,7 +726,7 @@ private struct CompetitionAwardDashboardRow: View {
                         )
                     )
                     .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.secondary)
                 }
             }
             Spacer(minLength: 0)
@@ -462,12 +744,21 @@ private struct CompetitionRivalrySummaryCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Competition history")
-                .font(.subheadline.weight(.semibold))
+            ViewThatFits(in: .horizontal) {
+                HStack {
+                    title
+                    Spacer(minLength: 8)
+                    completed
+                }
+                VStack(alignment: .leading, spacing: 4) {
+                    title
+                    completed
+                }
+            }
 
             ViewThatFits(in: .horizontal) {
-                HStack(spacing: 14) { statistics }
-                VStack(alignment: .leading, spacing: 8) { statistics }
+                HStack(spacing: 8) { tiles }
+                VStack(spacing: 8) { tiles }
             }
 
             if let latestOwnerVictoryAt = summary.latestOwnerVictoryAt {
@@ -475,40 +766,136 @@ private struct CompetitionRivalrySummaryCard: View {
                     "Latest victory \(competitionAwardDateText(latestOwnerVictoryAt, timeZoneIdentifier: timeZoneIdentifier))"
                 )
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.secondary)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
-        .background(
-            Color.indigo.opacity(0.10),
-            in: RoundedRectangle(cornerRadius: 20, style: .continuous)
-        )
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("competition.rivalry")
     }
 
-    @ViewBuilder
-    private var statistics: some View {
-        rivalryStatistic("Completed", value: summary.completions)
-        rivalryStatistic("Your wins", value: summary.ownerWins)
-        rivalryStatistic("Other wins", value: summary.opponentWins)
-        rivalryStatistic("Ties", value: summary.ties)
+    private var title: some View {
+        Text("COMPETITION HISTORY")
+            .font(.themeLabel)
+            .tracking(1.2)
+            .foregroundStyle(Theme.ink)
     }
 
-    private func rivalryStatistic(
-        _ title: String,
-        value: Int
-    ) -> some View {
+    private var completed: some View {
+        Text("\(summary.completions) COMPLETED")
+            .font(.themeLabel)
+            .tracking(1.2)
+            .foregroundStyle(Theme.secondary)
+    }
+
+    @ViewBuilder
+    private var tiles: some View {
+        tile(summary.ownerWins, "YOU WON", Theme.you)
+        tile(summary.opponentWins, "THEY WON", Theme.ink)
+        tile(summary.ties, "TIED", Theme.secondary)
+    }
+
+    private func tile(_ value: Int, _ title: String, _ color: Color) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(String(value))
-                .font(.headline.monospacedDigit())
+                .font(.title.weight(.heavy).width(.condensed).monospacedDigit())
+                .foregroundStyle(color)
             Text(title)
-                .font(.caption)
-                .foregroundStyle(.secondary)
+                .font(.themeLabel)
+                .tracking(1.2)
+                .foregroundStyle(Theme.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(12)
+        .themePanel(cornerRadius: 14)
     }
+}
+
+/// The mark with the opponent's block as a dashed outline: nobody to play yet.
+private struct OpenSlotMark: View {
+    var body: some View {
+        ZStack {
+            SlotPolygon([(17.4, 8), (57.4, 8), (53.8, 26), (13.8, 26)])
+                .fill(Theme.move)
+            SlotPolygon([(22.8, 31), (52.8, 31), (49.2, 49), (19.2, 49)])
+                .fill(Theme.exercise)
+            SlotPolygon([(12.2, 54), (48.2, 54), (44.6, 72), (8.6, 72)])
+                .fill(Theme.stand)
+            SlotPolygon([(63.4, 8), (91.4, 8), (78.6, 72), (50.6, 72)])
+                .stroke(
+                    Theme.tertiary,
+                    style: StrokeStyle(lineWidth: 2, dash: [5, 4])
+                )
+        }
+        .aspectRatio(1.25, contentMode: .fit)
+        .accessibilityHidden(true)
+    }
+}
+
+// Same 100×80 geometry as BrandMark's private polygons.
+private struct SlotPolygon: Shape {
+    let points: [CGPoint]
+
+    init(_ points: [(CGFloat, CGFloat)]) {
+        self.points = points.map { CGPoint(x: $0.0, y: $0.1) }
+    }
+
+    func path(in rect: CGRect) -> Path {
+        Path { path in
+            path.addLines(points.map {
+                CGPoint(
+                    x: rect.minX + $0.x / 100 * rect.width,
+                    y: rect.minY + $0.y / 80 * rect.height
+                )
+            })
+            path.closeSubpath()
+        }
+    }
+}
+
+private func sharingIsInPlay(
+    _ lifecycle: LocalCompetitionLifecyclePresentation
+) -> Bool {
+    switch lifecycle {
+    case .active, .endsToday, .tallying: true
+    default: false
+    }
+}
+
+private func sharingOutcome(
+    _ lifecycle: LocalCompetitionLifecyclePresentation
+) -> CompetitionOutcome? {
+    switch lifecycle {
+    case let .completed(outcome, _, _), let .archived(outcome, _, _, _):
+        outcome
+    default:
+        nil
+    }
+}
+
+private func sharingAccessibilitySummary(
+    _ competition: LocalCompetitionPresentation,
+    source: CompetitionPublicationSource
+) -> String {
+    var parts = [
+        competition.opponentDisplayName,
+        competitionSharingStatus(competition.lifecycle),
+    ]
+    if let disclosure = competitionFixtureDisclosure(
+        source: source,
+        opponentDisplayName: competition.opponentDisplayName
+    ) {
+        parts.append(disclosure)
+    }
+    if competitionShouldShowScores(competition.lifecycle) {
+        parts.append(
+            "\(competition.ownerDisplayName) \(competitionPointsText(competition.userPoints)) total points"
+        )
+        parts.append(
+            "\(competition.opponentDisplayName) \(competitionPointsText(competition.opponentPoints)) total points"
+        )
+    }
+    return parts.joined(separator: ". ")
 }
 
 struct CompetitionPressButtonStyle: ButtonStyle {

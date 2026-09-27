@@ -14,12 +14,13 @@ struct ClaimCompetitionView: View {
                 statusEmblem
                 VStack(spacing: 10) {
                     Text(title)
-                        .font(.title2.weight(.bold))
+                        .font(.title.weight(.heavy).width(.condensed))
+                        .foregroundStyle(Theme.ink)
                         .multilineTextAlignment(.center)
                         .accessibilityAddTraits(.isHeader)
                     Text(message)
                         .font(.body)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(Theme.secondary)
                         .multilineTextAlignment(.center)
                 }
                 .frame(maxWidth: 440)
@@ -33,7 +34,8 @@ struct ClaimCompetitionView: View {
             }
             .padding(.horizontal, 24)
             .padding(.vertical, 20)
-            .background(Color(.systemGroupedBackground))
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .background(Theme.ground)
             .navigationTitle("Competition Invitation")
             .navigationBarTitleDisplayMode(.inline)
         }
@@ -46,11 +48,9 @@ struct ClaimCompetitionView: View {
     private var statusEmblem: some View {
         ZStack {
             Circle()
-                .fill(emblemColor.opacity(0.16))
+                .fill(Theme.panel)
                 .frame(width: 104, height: 104)
             statusIcon
-                .font(.system(size: 42, weight: .semibold))
-                .foregroundStyle(emblemColor)
         }
         .accessibilityHidden(true)
     }
@@ -61,53 +61,57 @@ struct ClaimCompetitionView: View {
         case .claiming, .waitingForCompetition:
             ProgressView()
                 .controlSize(.large)
+                .tint(Theme.ink)
         case .confirmationTimedOut:
-            Image(systemName: "clock.badge.exclamationmark")
+            symbol("clock.badge.exclamationmark")
         case .unavailable:
-            Image(systemName: "link.badge.plus")
+            symbol("link.badge.plus")
         case .retryable:
-            Image(systemName: "wifi.exclamationmark")
+            symbol("wifi.exclamationmark")
         case .idle, .ready:
-            Image(systemName: "person.2.badge.plus")
+            BrandMark().frame(width: 58)
         }
     }
 
+    private func symbol(_ name: String) -> some View {
+        Image(systemName: name)
+            .font(.system(size: 40, weight: .semibold))
+            .foregroundStyle(Theme.ink)
+    }
+
     private var privacyCard: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            Label("Seven calendar days", systemImage: "calendar")
-            Label("Up to 600 points each day", systemImage: "gauge.with.dots.needle.67percent")
-            Label(
-                "Raw Health data stays on this iPhone",
-                systemImage: "lock.iphone"
+        VStack(spacing: 0) {
+            CompetitionRuleRow(icon: .symbol("calendar"), title: "Seven calendar days")
+            CompetitionRuleDivider()
+            CompetitionRuleRow(
+                icon: .rings,
+                title: "Up to 600 points each day",
+                detail: "1 point for every 1% of each ring"
+            )
+            CompetitionRuleDivider()
+            CompetitionRuleRow(
+                icon: .symbol("lock.iphone"),
+                title: "Raw Health data stays on this iPhone"
             )
         }
-        .font(.subheadline.weight(.medium))
-        .frame(maxWidth: 440, alignment: .leading)
-        .padding(18)
-        .background(
-            .background,
-            in: RoundedRectangle(cornerRadius: 20, style: .continuous)
-        )
-        .shadow(color: .black.opacity(0.05), radius: 10, y: 4)
+        .padding(.horizontal, 16)
+        .frame(maxWidth: 440)
+        .themePanel(cornerRadius: 18)
     }
 
     @ViewBuilder
     private var actionControls: some View {
         switch status {
         case .ready:
-            VStack(spacing: 12) {
+            VStack(spacing: 8) {
                 Button("Accept Invitation", action: accept)
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
-                    .frame(maxWidth: 440, minHeight: 44)
+                    .buttonStyle(PrimaryButtonStyle())
+                    .frame(maxWidth: 440)
                     .accessibilityHint(
                         "Claims the private invitation and schedules the competition."
                     )
                     .accessibilityIdentifier("competition.claim.accept")
-                Button("Decline Invitation", role: .destructive, action: decline)
-                    .buttonStyle(.bordered)
-                    .controlSize(.large)
-                    .frame(maxWidth: 440, minHeight: 44)
+                quietButton("Decline Invitation", role: .destructive, action: decline)
                     .accessibilityHint(
                         "Closes this invitation on this device without joining."
                     )
@@ -115,51 +119,60 @@ struct ClaimCompetitionView: View {
             }
 
         case .retryable:
-            VStack(spacing: 12) {
+            VStack(spacing: 8) {
                 Button("Try Again", action: retry)
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
-                    .frame(maxWidth: 440, minHeight: 44)
+                    .buttonStyle(PrimaryButtonStyle())
+                    .frame(maxWidth: 440)
                     .accessibilityIdentifier("competition.claim.retry")
-                Button("Decline Invitation", role: .destructive, action: decline)
-                    .buttonStyle(.bordered)
-                    .controlSize(.large)
-                    .frame(maxWidth: 440, minHeight: 44)
+                quietButton("Decline Invitation", role: .destructive, action: decline)
                     .accessibilityIdentifier("competition.claim.decline")
             }
 
         case .confirmationTimedOut:
             VStack(spacing: 12) {
                 Button("Try Refreshing", action: retry)
-                    .buttonStyle(.borderedProminent)
-                    .controlSize(.large)
-                    .frame(maxWidth: 440, minHeight: 44)
+                    .buttonStyle(PrimaryButtonStyle())
+                    .frame(maxWidth: 440)
                     .accessibilityIdentifier(
                         "competition.claim.refresh-confirmation"
                     )
                 Button("Done", action: dismiss)
-                    .buttonStyle(.bordered)
-                    .controlSize(.large)
-                    .frame(maxWidth: 440, minHeight: 44)
+                    .buttonStyle(SecondaryButtonStyle())
+                    .frame(maxWidth: 440)
                     .accessibilityIdentifier("competition.claim.dismiss")
             }
 
         case .unavailable:
             Button("Done", action: dismiss)
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .frame(maxWidth: 440, minHeight: 44)
+                .buttonStyle(PrimaryButtonStyle())
+                .frame(maxWidth: 440)
                 .accessibilityIdentifier("competition.claim.dismiss")
 
         case .claiming, .waitingForCompetition:
             Text("Keep HealthComp open for a moment.")
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.secondary)
                 .multilineTextAlignment(.center)
 
         case .idle:
             EmptyView()
         }
+    }
+
+    // Declining is quiet and neutral; color is reserved for you and your rings.
+    private func quietButton(
+        _ title: String,
+        role: ButtonRole?,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(role: role, action: action) {
+            Text(title)
+                .font(.headline.width(.condensed))
+                .foregroundStyle(Theme.secondary)
+                .frame(maxWidth: 440, minHeight: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     private var title: String {
@@ -193,19 +206,6 @@ struct ClaimCompetitionView: View {
             "This link may be expired, already used, or no longer valid. Ask the sender for a new invitation."
         case .retryable:
             "The invitation is still private on this device. Check your connection and try again."
-        }
-    }
-
-    private var emblemColor: Color {
-        switch status {
-        case .unavailable:
-            .orange
-        case .retryable:
-            .red
-        case .idle, .ready, .claiming, .waitingForCompetition:
-            .indigo
-        case .confirmationTimedOut:
-            .orange
         }
     }
 }

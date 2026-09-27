@@ -22,11 +22,12 @@ struct ActivityRingsView: View {
                         animated: animatesChanges && !reduceMotion
                     )
                     .frame(width: 96, height: 96)
-                    .padding(8)
+                    .padding(10)
+                    // Apple's ring view is designed for a black background.
                     .background(
                         Color.black,
                         in: RoundedRectangle(
-                            cornerRadius: 24,
+                            cornerRadius: 20,
                             style: .continuous
                         )
                     )
@@ -69,24 +70,27 @@ struct ActivityRingsView: View {
     }
 
     private func ringText(_ content: ActivityRingContent) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
             ActivityValueRow(
                 title: content.moveTitle,
                 value: content.moveValueText,
-                percent: content.movePercentText,
-                tint: .pink
+                percent: activityPercentFigure(content.moveValue, goal: content.moveGoal),
+                tint: Theme.move
             )
             ActivityValueRow(
                 title: "Exercise",
                 value: content.exerciseValueText,
-                percent: content.exercisePercentText,
-                tint: .green
+                percent: activityPercentFigure(
+                    content.exerciseValue,
+                    goal: content.exerciseGoal
+                ),
+                tint: Theme.exercise
             )
             ActivityValueRow(
                 title: content.standTitle,
                 value: content.standValueText,
-                percent: content.standPercentText,
-                tint: .cyan
+                percent: activityPercentFigure(content.standValue, goal: content.standGoal),
+                tint: Theme.stand
             )
             pauseText
         }
@@ -97,6 +101,7 @@ struct ActivityRingsView: View {
         VStack(alignment: .leading, spacing: 8) {
             Label("Activity details", systemImage: "figure.walk.motion")
                 .font(.headline)
+                .foregroundStyle(Theme.ink)
             fallbackRow(title: moveTitle, reading: snapshot.move, unit: moveUnit)
             fallbackRow(
                 title: "Exercise",
@@ -111,7 +116,7 @@ struct ActivityRingsView: View {
             pauseText
             Text("System Activity rings are unavailable for this summary.")
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.secondary)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
     }
@@ -124,17 +129,21 @@ struct ActivityRingsView: View {
         HStack(alignment: .firstTextBaseline) {
             Text(title)
                 .font(.subheadline.weight(.semibold))
+                .foregroundStyle(Theme.ink)
             Spacer()
             Text(activityReadingText(reading, unit: unit))
                 .font(.subheadline.monospacedDigit())
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.secondary)
         }
     }
 
+    // Paused reads stronger, never in an alert color.
     private var pauseText: some View {
         Text(activityPauseText(snapshot.pauseState))
-            .font(.caption.weight(.medium))
-            .foregroundStyle(snapshot.pauseState == .paused ? .orange : .secondary)
+            .font(.caption.weight(snapshot.pauseState == .paused ? .bold : .medium))
+            .foregroundStyle(
+                snapshot.pauseState == .paused ? Theme.ink : Theme.secondary
+            )
     }
 
     private var moveTitle: String {
@@ -162,22 +171,29 @@ private struct ActivityValueRow: View {
 
     var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Circle()
+            SlantedBar()
                 .fill(tint)
-                .frame(width: 8, height: 8)
+                .frame(width: 10, height: 10)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 1) {
                 Text(title)
-                    .font(.caption.weight(.semibold))
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Theme.ink)
                 Text(value)
-                    .font(.subheadline.monospacedDigit())
-                    .foregroundStyle(.secondary)
+                    .font(.footnote.monospacedDigit())
+                    .foregroundStyle(Theme.secondary)
             }
             Spacer(minLength: 8)
             Text(percent)
-                .font(.caption.weight(.semibold).monospacedDigit())
+                .font(.headline.weight(.heavy).width(.condensed).monospacedDigit())
+                .foregroundStyle(Theme.ink)
         }
     }
+}
+
+// Visible ring progress, e.g. "84%". Spoken text keeps "84 percent".
+private func activityPercentFigure(_ value: Double, goal: Double) -> String {
+    "\((value / goal * 100).formatted(.number.precision(.fractionLength(0))))%"
 }
 
 private struct SystemActivityRingView: UIViewRepresentable {

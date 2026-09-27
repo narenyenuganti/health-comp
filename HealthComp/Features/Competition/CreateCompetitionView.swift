@@ -8,17 +8,33 @@ struct CreateCompetitionView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            Label("Invite someone", systemImage: "person.badge.plus")
-                .font(.headline)
-                .foregroundStyle(.primary)
-            Text(
-                "Create a private, single-use link for a seven-day Activity competition."
-            )
-            .font(.subheadline)
-            .foregroundStyle(.secondary)
+            HStack(alignment: .top, spacing: 14) {
+                // The opponent's slot, still empty.
+                SlantedBar()
+                    .stroke(
+                        Theme.tertiary,
+                        style: StrokeStyle(lineWidth: 1.5, dash: [4, 3])
+                    )
+                    .frame(width: 16, height: 30)
+                    .padding(.horizontal, 6)
+                    .padding(.top, 2)
+                    .accessibilityHidden(true)
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title)
+                        .font(.title3.weight(.heavy).width(.condensed))
+                        .foregroundStyle(Theme.ink)
+                    Text(
+                        "Create a private, single-use link for a seven-day Activity competition."
+                    )
+                    .font(.subheadline)
+                    .foregroundStyle(Theme.secondary)
+                }
+            }
+
             Text("Your competition calendar uses \(timeZoneIdentifier).")
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.secondary)
                 .accessibilityLabel(
                     "Competition time zone, \(timeZoneIdentifier)"
                 )
@@ -27,13 +43,15 @@ struct CreateCompetitionView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(18)
-        .background(
-            .background,
-            in: RoundedRectangle(cornerRadius: 22, style: .continuous)
-        )
-        .shadow(color: .black.opacity(0.06), radius: 12, y: 5)
+        .themePanel()
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("competition.create.card")
+    }
+
+    private var title: String {
+        status == .ready && shareLink != nil
+            ? "Challenge ready"
+            : "Challenge someone"
     }
 
     @ViewBuilder
@@ -48,26 +66,36 @@ struct CreateCompetitionView: View {
                 Text("Creating invitation…")
                     .font(.subheadline.weight(.medium))
             }
+            .foregroundStyle(Theme.secondary)
             .frame(maxWidth: .infinity, minHeight: 44)
             .accessibilityElement(children: .combine)
             .accessibilityLabel("Creating private invitation")
 
         case .ready:
             if let shareLink {
-                ShareLink(
-                    item: shareLink.url.absoluteString,
-                    subject: Text("Join my HealthComp competition")
-                ) {
-                    Label("Share Private Invitation", systemImage: "square.and.arrow.up")
-                        .frame(maxWidth: .infinity)
+                VStack(alignment: .leading, spacing: 10) {
+                    ShareLink(
+                        item: shareLink.url.absoluteString,
+                        subject: Text("Join my HealthComp competition")
+                    ) {
+                        Label(
+                            "Share Private Invitation",
+                            systemImage: "square.and.arrow.up"
+                        )
+                    }
+                    .buttonStyle(PrimaryButtonStyle())
+                    .accessibilityHint(
+                        "Opens the system share sheet. The private link is not read aloud."
+                    )
+                    .accessibilityIdentifier("competition.create.share")
+
+                    Label(
+                        "Waiting for someone to accept. The link works once.",
+                        systemImage: "hourglass"
+                    )
+                    .font(.caption)
+                    .foregroundStyle(Theme.secondary)
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .frame(minHeight: 44)
-                .accessibilityHint(
-                    "Opens the system share sheet. The private link is not read aloud."
-                )
-                .accessibilityIdentifier("competition.create.share")
             } else {
                 createButton(title: "Try Again")
             }
@@ -79,7 +107,7 @@ struct CreateCompetitionView: View {
                     systemImage: "wifi.exclamationmark"
                 )
                 .font(.caption)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(Theme.secondary)
                 createButton(title: "Try Again")
             }
 
@@ -89,16 +117,14 @@ struct CreateCompetitionView: View {
                 systemImage: "exclamationmark.triangle.fill"
             )
             .font(.caption)
-            .foregroundStyle(.orange)
+            .foregroundStyle(Theme.secondary)
             .accessibilityIdentifier("competition.create.configuration-error")
         }
     }
 
     private func createButton(title: String) -> some View {
         Button(title, action: create)
-            .buttonStyle(.borderedProminent)
-            .controlSize(.large)
-            .frame(maxWidth: .infinity, minHeight: 44)
+            .buttonStyle(PrimaryButtonStyle())
             .accessibilityIdentifier("competition.create.button")
     }
 }

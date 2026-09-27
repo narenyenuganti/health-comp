@@ -687,6 +687,62 @@ final class CompetitionPresentationTests: XCTestCase {
         )
     }
 
+    func testWeekChartSplitsAcceptedPointsByRingShareAndKeepsTheTotal() throws {
+        let day = try CompetitionDay(
+            era: 1,
+            year: 2026,
+            month: 9,
+            day: 23,
+            timeZoneIdentifier: "UTC"
+        )
+        let snapshot = ActivitySnapshot(
+            moveMode: .activeEnergyKilocalories,
+            standMode: .standHours,
+            move: try ActivityRingReading(value: 420, goal: 500),
+            exercise: try ActivityRingReading(value: 22, goal: 30),
+            standOrRoll: try ActivityRingReading(value: 9, goal: 12),
+            pauseState: .running
+        )
+        let split = ringSegments(
+            LocalCompetitionDayPresentation(
+                day: day,
+                ordinal: 1,
+                ownerAcceptedPoints: 232,
+                ownerLatestAvailability: .observed,
+                opponentRevealedPoints: 210,
+                ownerAcceptedSnapshot: snapshot,
+                ownerLatestSnapshot: snapshot
+            )
+        ).map { $0.points }
+
+        XCTAssertEqual(split.count, 3)
+        XCTAssertEqual(split.reduce(0, +), 232, accuracy: 0.0001)
+        XCTAssertEqual(
+            split[0],
+            232 * 0.84 / (0.84 + 22.0 / 30 + 0.75),
+            accuracy: 0.0001
+        )
+
+        let unsplit = ringSegments(
+            LocalCompetitionDayPresentation(
+                day: day,
+                ordinal: 1,
+                ownerAcceptedPoints: 232,
+                ownerLatestAvailability: .observed,
+                opponentRevealedPoints: nil
+            )
+        ).map { $0.points }
+        XCTAssertEqual(unsplit, [232])
+
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.locale = .current
+        XCTAssertEqual(
+            weekdayText(day),
+            calendar.shortWeekdaySymbols[3].uppercased(with: .current),
+            "September 23, 2026 is a Wednesday."
+        )
+    }
+
     private func makeSnapshot(
         moveMode: ActivityMoveMode,
         standMode: ActivityStandMode,

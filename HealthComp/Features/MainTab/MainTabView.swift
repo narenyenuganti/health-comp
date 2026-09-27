@@ -5,6 +5,8 @@ import SwiftUI
 
 struct MainTabView: View {
     let store: StoreOf<MainTabFeature>
+    /// Shows the avatar that opens Account. Test Lab hosts omit it.
+    var openAccount: (() -> Void)?
 
     @Environment(\.scenePhase) private var scenePhase
 
@@ -73,11 +75,15 @@ struct MainTabView: View {
                     }
                 } else {
                     ProgressView("Loading local competition…")
+                        .foregroundStyle(Theme.secondary)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(Theme.ground)
                 }
             }
+            .toolbar { homeToolbar }
             .navigationDestination(for: CompetitionID.self) { id in
                 destination(for: id)
+                    .toolbarRole(.editor)
             }
         }
         .task {
@@ -102,6 +108,39 @@ struct MainTabView: View {
                 dismiss: { store.send(.dismissClaimStatus) }
             )
         }
+    }
+
+    @ToolbarContentBuilder
+    private var homeToolbar: some ToolbarContent {
+        ToolbarItem(placement: .topBarLeading) {
+            BrandMark().frame(height: 26)
+        }
+        if let openAccount {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button(action: openAccount) {
+                    Group {
+                        if let accountInitial {
+                            Text(accountInitial)
+                                .font(.headline.width(.condensed))
+                                .foregroundStyle(Theme.you)
+                        } else {
+                            Image(systemName: "person.fill")
+                                .foregroundStyle(Theme.ink)
+                        }
+                    }
+                    .frame(width: 34, height: 34)
+                    .background(Theme.control, in: Circle())
+                }
+                .accessibilityLabel("Account")
+                .accessibilityIdentifier("app.account")
+            }
+        }
+    }
+
+    // Every competition shares the owner's display name.
+    private var accountInitial: String? {
+        store.competition.publication?.dashboard.competitions.first?
+            .ownerDisplayName.first.map { String($0).uppercased() }
     }
 
     private var navigationPath: Binding<[CompetitionID]> {
