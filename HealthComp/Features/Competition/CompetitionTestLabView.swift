@@ -733,6 +733,8 @@ final class CompetitionTestLabSession: ObservableObject, Identifiable {
         } withDependencies: {
             $0.competitionClient = labClient
             $0.competitionRoutingClient = labRoutingClient
+            // Fixtures never touch real Health or notification permissions.
+            $0.permissionOnboardingClient = .inert
         }
         self.checkpointIndex = persistedState?.checkpointIndex ?? 0
         self.logicalDate = persistedState?.logicalDate
