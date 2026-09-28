@@ -1,11 +1,15 @@
 -- Use a fresh noninteractive psql -X -qAt --file session with separately
--- verified transport. This is not an export/restore or shared-snapshot runner.
+-- verified transport. This is not an export/restore coordinator.
+-- Optional recovery_snapshot imports a snapshot held open by the caller.
 \set ON_ERROR_STOP on
 \set ON_ERROR_ROLLBACK off
 \set VERBOSITY sqlstate
 \set SHOW_CONTEXT never
 
 begin transaction isolation level repeatable read read only;
+\if :{?recovery_snapshot}
+set transaction snapshot :'recovery_snapshot';
+\endif
 set local row_security = off;
 set local time zone 'UTC';
 set local statement_timeout = '30s';
