@@ -1,5 +1,5 @@
 begin;
-select plan(30);
+select plan(40);
 
 insert into auth.users (id, instance_id, aud, role, email, encrypted_password, created_at, updated_at)
 values
@@ -52,6 +52,61 @@ select ok(exists(select 1 from pg_constraint where conname='daily_score_revision
 select ok(not has_function_privilege('anon','public.submit_score_revision(uuid,uuid,integer,bigint,timestamptz,text,text,integer,integer,integer,text,text)','EXECUTE'),'anonymous lacks score RPC execute');
 select ok(not has_function_privilege('authenticated','public.submit_score_revision(uuid,uuid,integer,bigint,timestamptz,text,text,integer,integer,integer,text,text,text)','EXECUTE'),'authenticated clients cannot bypass App Attest through the digest score RPC');
 select ok(has_function_privilege('authenticated','public.submit_attested_score_revision(uuid,uuid,uuid,integer,bigint,timestamptz,text,text,integer,integer,integer,text,text,text,text)','EXECUTE'),'authenticated clients can reach only the grant-backed score RPC');
+
+select set_config('request.jwt.claims', '{"sub":"61000000-0000-0000-0000-000000000001","role":"authenticated"}', true);
+select lives_ok(
+  $$select public.submit_score_revision('63000000-0000-0000-0000-000000000001','64000000-0000-4000-8000-000000000015',1,4,statement_timestamp(),'activeEnergyKilocalories','standHours',10000,5000,12500,'available','healthcomp.activity-score.v1')$$,
+  'past scoring day accepts its truthful later evaluation time before finality');
+select is(
+  (select count(*)::integer from public.daily_score_revisions where semantic_event_id='64000000-0000-4000-8000-000000000015'),
+  1, 'catch-up evaluation appends one accepted revision');
+
+select throws_ok(
+  $$select public.submit_score_revision('63000000-0000-0000-0000-000000000001','64000000-0000-4000-8000-000000000016',1,5,statement_timestamp()+interval '2 days','activeEnergyKilocalories','standHours',0,0,0,'available','healthcomp.activity-score.v1')$$,
+  '22023', 'day_mismatch', 'catch-up rejects an evaluation beyond the server calendar day');
+
+-- A real Day-8 grace window, independent of the SQL session's calendar.
+set local time zone 'Pacific/Kiritimati';
+insert into public.competitions (id, creator_profile_id, time_zone_identifier, start_day, scoring_policy_identity, lifecycle, invitation_expires_at, best_available_deadline)
+values
+ ('63000000-0000-0000-0000-000000000002', '62000000-0000-0000-0000-000000000001', 'America/Los_Angeles', (now() at time zone 'America/Los_Angeles')::date-7, 'healthcomp.activity-score.v1', 'tallying', now()-interval '8 days', ((now() at time zone 'America/Los_Angeles')::date+1)::timestamp at time zone 'America/Los_Angeles'),
+ ('63000000-0000-0000-0000-000000000003', '62000000-0000-0000-0000-000000000001', 'America/Los_Angeles', (now() at time zone 'America/Los_Angeles')::date+1, 'healthcomp.activity-score.v1', 'scheduled', now(), now()+interval '9 days');
+insert into public.competition_participants (competition_id, profile_id, role, state)
+select c.id, p.id, p.role, 'accepted'
+from (values ('63000000-0000-0000-0000-000000000002'::uuid), ('63000000-0000-0000-0000-000000000003'::uuid)) c(id)
+cross join (values ('62000000-0000-0000-0000-000000000001'::uuid, 'creator'), ('62000000-0000-0000-0000-000000000002'::uuid, 'invitee')) p(id, role);
+
+select throws_ok(
+  $$select public.submit_score_revision('63000000-0000-0000-0000-000000000003','64000000-0000-4000-8000-000000000001',1,1,((now() at time zone 'America/Los_Angeles')::date+1)::timestamp at time zone 'America/Los_Angeles','activeEnergyKilocalories','standHours',0,0,0,'available','healthcomp.activity-score.v1')$$,
+  '22023', 'day_mismatch', 'a matching future evaluation cannot authorize a not-yet-started scoring day');
+select throws_ok(
+  $$select public.submit_score_revision('63000000-0000-0000-0000-000000000002','64000000-0000-4000-8000-000000000001',1,1,(((now() at time zone 'America/Los_Angeles')::date-7)::timestamp at time zone 'America/Los_Angeles')-interval '1 second','activeEnergyKilocalories','standHours',0,0,0,'available','healthcomp.activity-score.v1')$$,
+  '22023', 'day_mismatch', 'evaluation before the frozen local midnight rejects despite a later SQL session date');
+select lives_ok($$
+  do $catch_up$
+  declare day integer; response jsonb;
+  begin
+    for day in 1..7 loop
+      response := public.submit_score_revision(
+        '63000000-0000-0000-0000-000000000002',
+        ('64000000-0000-4000-8000-' || lpad(day::text,12,'0'))::uuid,
+        day, day, transaction_timestamp(), 'activeEnergyKilocalories', 'standHours',
+        10000, 5000, 12500, 'available', 'healthcomp.activity-score.v1');
+      if response->>'disposition' is distinct from 'appended' then
+        raise exception 'catch-up did not append day %', day;
+      end if;
+    end loop;
+  end;
+  $catch_up$;
+$$, 'all seven days accept truthful evaluation during the frozen Day-8 grace window');
+select is(public.attest_final_window('63000000-0000-0000-0000-000000000002','65000000-0000-4000-8000-000000000001',1,'stable',array[1,2,3,4,5,6,7]::bigint[])->>'disposition',
+  'appended', 'caught-up accepted days support a stable final-window attestation');
+select is(public.submit_score_revision('63000000-0000-0000-0000-000000000002','64000000-0000-4000-8000-000000000007',7,7,transaction_timestamp(),'activeEnergyKilocalories','standHours',10000,5000,12500,'available','healthcomp.activity-score.v1')->>'disposition',
+  'duplicate', 'catch-up remains exactly idempotent after the owner freezes its window');
+select is(public.submit_score_revision('63000000-0000-0000-0000-000000000002','64000000-0000-4000-8000-000000000008',1,8,transaction_timestamp(),'activeEnergyKilocalories','standHours',10001,5000,12500,'available','healthcomp.activity-score.v1')->>'code',
+  'window_stable', 'catch-up cannot rewrite an owner window after stable attestation');
+select is((select next_server_seq-1 from public.competitions where id='63000000-0000-0000-0000-000000000002'),
+  10::bigint, 'two participants, seven catch-up scores and one attestation consume ten sequences; rejections and duplicates consume none');
 
 select * from finish();
 rollback;
