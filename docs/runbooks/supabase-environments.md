@@ -204,8 +204,7 @@ Required application-specific names:
 - APP_ATTEST_ALLOWED_VALIDATION_CATEGORIES
 - APP_ATTEST_ALLOWED_BUNDLE_VERSIONS
 
-HEALTHCOMP_AASA_APP_IDS is required only after an HTTPS invitation domain is
-approved. Supabase supplies SUPABASE_URL, SUPABASE_ANON_KEY, and
+Supabase supplies SUPABASE_URL, SUPABASE_ANON_KEY, and
 SUPABASE_SERVICE_ROLE_KEY to deployed Functions; do not replace those
 platform-managed values.
 
