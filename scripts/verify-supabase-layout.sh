@@ -6,12 +6,7 @@ repository_root="$(git rev-parse --show-toplevel)"
 cd "$repository_root"
 
 if git ls-files --error-unmatch 'Supabase/migrations/*.sql' >/dev/null 2>&1; then
-  echo "Historical migrations are still executable under Supabase/. Move them to SupabaseLegacy/." >&2
-  exit 1
-fi
-
-if [[ ! -d SupabaseLegacy ]]; then
-  echo "SupabaseLegacy/ is missing." >&2
+  echo "Historical migrations must remain in Git history, not executable under Supabase/." >&2
   exit 1
 fi
 

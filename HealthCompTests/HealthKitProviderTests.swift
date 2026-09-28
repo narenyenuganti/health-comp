@@ -5,10 +5,9 @@ import Dispatch
 @testable import HealthComp
 
 final class HealthKitProviderTests: XCTestCase {
-    func testLegacyAuthorizationIncludesMetricAndCompetitionReadTypes() async throws {
+    func testCompetitionAuthorizationRequestsOnlyCompetitionReadTypes() async throws {
         let capturedTypes = LockedObjectTypeSet()
         let provider = HealthKitProvider(
-            userId: UUID(),
             competitionDependencies: HealthKitCompetitionDependencies(
                 isHealthDataAvailable: { true },
                 requestAuthorization: { capturedTypes.set($0) },
@@ -20,18 +19,18 @@ final class HealthKitProviderTests: XCTestCase {
             )
         )
 
-        try await provider.requestAuthorization()
+        try await provider.requestReadAuthorization()
 
-        let requested = capturedTypes.value
-        XCTAssertTrue(requested.contains(HKQuantityType(.stepCount)))
-        XCTAssertTrue(
-            requested.contains(HKQuantityType(.distanceWalkingRunning))
-        )
-        XCTAssertTrue(requested.contains(HKCategoryType(.sleepAnalysis)))
-        XCTAssertTrue(requested.contains(HKObjectType.activitySummaryType()))
-        XCTAssertTrue(requested.contains(HKCharacteristicType(.wheelchairUse)))
-        XCTAssertTrue(requested.contains(HKQuantityType(.appleMoveTime)))
-        XCTAssertTrue(requested.contains(HKWorkoutType.workoutType()))
+        XCTAssertEqual(capturedTypes.value, Set<HKObjectType>([
+            HKObjectType.activitySummaryType(),
+            HKCharacteristicType(.wheelchairUse),
+            HKQuantityType(.activeEnergyBurned),
+            HKQuantityType(.appleExerciseTime),
+            HKQuantityType(.appleStandTime),
+            HKQuantityType(.appleMoveTime),
+            HKCategoryType(.appleStandHour),
+            HKWorkoutType.workoutType(),
+        ]))
     }
 
     func testBackgroundDeliveryRetriesOnlyFailedTypesAfterAuthorization() async throws {
@@ -54,7 +53,6 @@ final class HealthKitProviderTests: XCTestCase {
             }
         )
         let provider = HealthKitProvider(
-            userId: UUID(),
             competitionDependencies: dependencies
         )
         _ = try await activateOwner(provider)
@@ -78,7 +76,6 @@ final class HealthKitProviderTests: XCTestCase {
             targetIdentifier: targetType.identifier
         )
         let provider = HealthKitProvider(
-            userId: UUID(),
             competitionDependencies: HealthKitCompetitionDependencies(
                 isHealthDataAvailable: { true },
                 requestAuthorization: { _ in
@@ -139,7 +136,6 @@ final class HealthKitProviderTests: XCTestCase {
             stopObserverUpdates: {}
         )
         let provider = HealthKitProvider(
-            userId: UUID(),
             competitionDependencies: dependencies
         )
         _ = try await activateOwner(provider)
@@ -169,7 +165,6 @@ final class HealthKitProviderTests: XCTestCase {
         let starts = LockedWindowCounts()
         let streams = LockedWindowStreams()
         let provider = HealthKitProvider(
-            userId: UUID(),
             competitionDependencies: HealthKitCompetitionDependencies(
                 isHealthDataAvailable: { true },
                 requestAuthorization: { _ in },
@@ -226,7 +221,6 @@ final class HealthKitProviderTests: XCTestCase {
         let starts = LockedWindowCounts()
         let streams = LockedWindowStreams()
         let provider = HealthKitProvider(
-            userId: UUID(),
             competitionDependencies: HealthKitCompetitionDependencies(
                 isHealthDataAvailable: { true },
                 requestAuthorization: { _ in },
@@ -279,7 +273,6 @@ final class HealthKitProviderTests: XCTestCase {
         let observerUpdates = TestAsyncStream<HealthKitObserverWakeup>()
         let completion = LockedFlag()
         let provider = HealthKitProvider(
-            userId: UUID(),
             competitionDependencies: HealthKitCompetitionDependencies(
                 isHealthDataAvailable: { true },
                 requestAuthorization: { _ in },
@@ -335,7 +328,6 @@ final class HealthKitProviderTests: XCTestCase {
             startDay: start
         )
         let provider = HealthKitProvider(
-            userId: UUID(),
             competitionDependencies: HealthKitCompetitionDependencies(
                 isHealthDataAvailable: { true },
                 requestAuthorization: { _ in },
@@ -356,121 +348,6 @@ final class HealthKitProviderTests: XCTestCase {
     }
 
 
-    func testAvailableMetricTypes() {
-        let provider = HealthKitProvider(userId: UUID())
-        let types = provider.availableMetricTypes()
-        XCTAssertTrue(types.contains(.activeCalories))
-        XCTAssertTrue(types.contains(.exerciseMinutes))
-        XCTAssertTrue(types.contains(.standHours))
-        XCTAssertTrue(types.contains(.steps))
-        XCTAssertTrue(types.contains(.sleepScore))
-        XCTAssertTrue(types.contains(.distance))
-    }
-
-    func testMetricTypeToHKQuantityTypeMapping() {
-        XCTAssertNotNil(HealthKitProvider.hkQuantityType(for: .activeCalories))
-        XCTAssertNotNil(HealthKitProvider.hkQuantityType(for: .exerciseMinutes))
-        XCTAssertNotNil(HealthKitProvider.hkQuantityType(for: .standHours))
-        XCTAssertNotNil(HealthKitProvider.hkQuantityType(for: .steps))
-        XCTAssertNotNil(HealthKitProvider.hkQuantityType(for: .distance))
-        XCTAssertNil(HealthKitProvider.hkQuantityType(for: .sleepScore))
-    }
-
-    func testDateRangeToday() {
-        let range = DateRange.today()
-        let calendar = Calendar.current
-        XCTAssertEqual(
-            calendar.startOfDay(for: range.start),
-            calendar.startOfDay(for: Date())
-        )
-        XCTAssertTrue(range.end > range.start)
-    }
-
-    func testDateRangeLastNDays() {
-        let range = DateRange.lastNDays(7)
-        let calendar = Calendar.current
-        let daysBetween = calendar.dateComponents([.day], from: range.start, to: range.end).day!
-        XCTAssertEqual(daysBetween, 8)
-    }
-
-    func testActivitySummaryConvertsToActivityRingSummary() throws {
-        let userId = UUID(uuidString: "660e8400-e29b-41d4-a716-446655440000")!
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
-        let activitySummary = HKActivitySummary()
-        activitySummary.setValue(DateComponents(calendar: calendar, year: 2026, month: 5, day: 11), forKey: "dateComponents")
-        activitySummary.activeEnergyBurned = HKQuantity(unit: .kilocalorie(), doubleValue: 750)
-        activitySummary.activeEnergyBurnedGoal = HKQuantity(unit: .kilocalorie(), doubleValue: 500)
-        activitySummary.appleExerciseTime = HKQuantity(unit: .minute(), doubleValue: 45)
-        activitySummary.exerciseTimeGoal = HKQuantity(unit: .minute(), doubleValue: 30)
-        activitySummary.appleStandHours = HKQuantity(unit: .count(), doubleValue: 18)
-        activitySummary.standHoursGoal = HKQuantity(unit: .count(), doubleValue: 12)
-
-        let summary = try HealthKitProvider.activityRingSummary(
-            from: activitySummary,
-            userId: userId,
-            calendar: calendar,
-            syncedAt: Date(timeIntervalSince1970: 0)
-        )
-
-        XCTAssertEqual(summary.userId, userId)
-        XCTAssertEqual(summary.date, "2026-05-11")
-        XCTAssertEqual(summary.moveValue, 750)
-        XCTAssertEqual(summary.moveGoal, 500)
-        XCTAssertEqual(summary.exerciseValue, 45)
-        XCTAssertEqual(summary.exerciseGoal, 30)
-        XCTAssertEqual(summary.standValue, 18)
-        XCTAssertEqual(summary.standGoal, 12)
-        XCTAssertEqual(summary.source, .healthkit)
-        XCTAssertEqual(summary.syncedAt, Date(timeIntervalSince1970: 0))
-    }
-
-    func testActivitySummaryUsesMoveTimeWhenMoveModeRequiresIt() throws {
-        let userId = UUID()
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
-        let activitySummary = HKActivitySummary()
-        activitySummary.activityMoveMode = .appleMoveTime
-        activitySummary.setValue(DateComponents(calendar: calendar, year: 2026, month: 5, day: 12), forKey: "dateComponents")
-        activitySummary.activeEnergyBurned = HKQuantity(unit: .kilocalorie(), doubleValue: 750)
-        activitySummary.activeEnergyBurnedGoal = HKQuantity(unit: .kilocalorie(), doubleValue: 500)
-        activitySummary.appleMoveTime = HKQuantity(unit: .minute(), doubleValue: 80)
-        activitySummary.appleMoveTimeGoal = HKQuantity(unit: .minute(), doubleValue: 40)
-        activitySummary.appleExerciseTime = HKQuantity(unit: .minute(), doubleValue: 30)
-        activitySummary.exerciseTimeGoal = HKQuantity(unit: .minute(), doubleValue: 30)
-        activitySummary.appleStandHours = HKQuantity(unit: .count(), doubleValue: 12)
-        activitySummary.standHoursGoal = HKQuantity(unit: .count(), doubleValue: 12)
-
-        let summary = try HealthKitProvider.activityRingSummary(
-            from: activitySummary,
-            userId: userId,
-            calendar: calendar,
-            syncedAt: Date(timeIntervalSince1970: 0)
-        )
-
-        XCTAssertEqual(summary.moveValue, 80)
-        XCTAssertEqual(summary.moveGoal, 40)
-        XCTAssertEqual(summary.movePercent, 200)
-    }
-
-    func testActivitySummaryDateBoundsTreatDateRangeEndAsExclusive() {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(secondsFromGMT: 0)!
-        let range = DateRange(
-            start: calendar.date(from: DateComponents(year: 2026, month: 5, day: 1))!,
-            end: calendar.date(from: DateComponents(year: 2026, month: 5, day: 8))!
-        )
-
-        let components = HealthKitProvider.activitySummaryDateComponents(for: range, calendar: calendar)
-
-        XCTAssertEqual(components.start.year, 2026)
-        XCTAssertEqual(components.start.month, 5)
-        XCTAssertEqual(components.start.day, 1)
-        XCTAssertEqual(components.end.year, 2026)
-        XCTAssertEqual(components.end.month, 5)
-        XCTAssertEqual(components.end.day, 7)
-    }
-
     func testCompetitionReadUsesStoredZoneAndReturnsExactlySevenOrderedDays() async throws {
         let calendar = try CompetitionCalendar(
             timeZoneIdentifier: "Pacific/Kiritimati"
@@ -490,7 +367,6 @@ final class HealthKitProviderTests: XCTestCase {
             try makeActivitySummary(day: $0, moveValue: Double($0.day))
         }
         let provider = HealthKitProvider(
-            userId: UUID(),
             competitionDependencies: .test(summaries: summaries)
         )
 
@@ -525,7 +401,6 @@ final class HealthKitProviderTests: XCTestCase {
             moveValue: 100
         )
         let duplicateProvider = HealthKitProvider(
-            userId: UUID(),
             competitionDependencies: .test(
                 summaries: [duplicate, duplicate]
             )
@@ -543,7 +418,6 @@ final class HealthKitProviderTests: XCTestCase {
 
         let outsideDay = try calendar.day(after: window.days[6])
         let outsideProvider = HealthKitProvider(
-            userId: UUID(),
             competitionDependencies: .test(
                 summaries: [
                     try makeActivitySummary(day: outsideDay, moveValue: 100),
@@ -648,7 +522,6 @@ final class HealthKitProviderTests: XCTestCase {
             moveValue: 400
         )
         let provider = HealthKitProvider(
-            userId: UUID(),
             competitionDependencies: HealthKitCompetitionDependencies(
                 isHealthDataAvailable: { true },
                 requestAuthorization: { _ in },
@@ -707,7 +580,6 @@ final class HealthKitProviderTests: XCTestCase {
             stopObserverUpdates: { observerUpdates.finish() }
         )
         let provider = HealthKitProvider(
-            userId: UUID(),
             competitionDependencies: dependencies
         )
         _ = try await activateOwner(provider)
@@ -779,7 +651,6 @@ final class HealthKitProviderTests: XCTestCase {
             stopObserverUpdates: { observerUpdates.finish() }
         )
         let provider = HealthKitProvider(
-            userId: UUID(),
             competitionDependencies: dependencies
         )
         _ = try await activateOwner(provider)
@@ -827,7 +698,6 @@ final class HealthKitProviderTests: XCTestCase {
             stopObserverUpdates: { observerUpdates.finish() }
         )
         let provider = HealthKitProvider(
-            userId: UUID(),
             competitionDependencies: dependencies
         )
         _ = try await activateOwner(provider)
@@ -873,7 +743,6 @@ final class HealthKitProviderTests: XCTestCase {
         )
         let completion = LockedFlag()
         let provider = HealthKitProvider(
-            userId: UUID(),
             competitionDependencies: HealthKitCompetitionDependencies(
                 isHealthDataAvailable: { true },
                 requestAuthorization: { _ in },
@@ -941,7 +810,6 @@ final class HealthKitProviderTests: XCTestCase {
         let observerUpdates = TestAsyncStream<HealthKitObserverWakeup>()
         let completionCount = LockedCounter()
         let provider = HealthKitProvider(
-            userId: UUID(),
             competitionDependencies: HealthKitCompetitionDependencies(
                 isHealthDataAvailable: { true },
                 requestAuthorization: { _ in },
@@ -1015,7 +883,6 @@ final class HealthKitProviderTests: XCTestCase {
         async throws
     {
         let provider = HealthKitProvider(
-            userId: UUID(),
             competitionDependencies: HealthKitCompetitionDependencies(
                 isHealthDataAvailable: { true },
                 requestAuthorization: { _ in },
@@ -1054,7 +921,6 @@ final class HealthKitProviderTests: XCTestCase {
         async throws
     {
         let provider = HealthKitProvider(
-            userId: UUID(),
             competitionDependencies: HealthKitCompetitionDependencies(
                 isHealthDataAvailable: { true },
                 requestAuthorization: { _ in },
@@ -1085,7 +951,6 @@ final class HealthKitProviderTests: XCTestCase {
         let observerUpdates = TestAsyncStream<HealthKitObserverWakeup>()
         let completion = LockedFlag()
         let provider = HealthKitProvider(
-            userId: UUID(),
             competitionDependencies: HealthKitCompetitionDependencies(
                 isHealthDataAvailable: { true },
                 requestAuthorization: { _ in },
@@ -1122,7 +987,6 @@ final class HealthKitProviderTests: XCTestCase {
     {
         let observerUpdates = TestAsyncStream<HealthKitObserverWakeup>()
         let provider = HealthKitProvider(
-            userId: UUID(),
             competitionDependencies: HealthKitCompetitionDependencies(
                 isHealthDataAvailable: { true },
                 requestAuthorization: { _ in },
@@ -1166,7 +1030,6 @@ final class HealthKitProviderTests: XCTestCase {
         )
         let summaryUpdates = TestAsyncStream<[HKActivitySummary]>()
         let provider = HealthKitProvider(
-            userId: UUID(),
             competitionDependencies: HealthKitCompetitionDependencies(
                 isHealthDataAvailable: { true },
                 requestAuthorization: { _ in },
@@ -1241,7 +1104,6 @@ final class HealthKitProviderTests: XCTestCase {
             streams: [originUpdates.stream, replacementUpdates.stream]
         )
         let provider = HealthKitProvider(
-            userId: UUID(),
             competitionDependencies: HealthKitCompetitionDependencies(
                 isHealthDataAvailable: { true },
                 requestAuthorization: { _ in },
@@ -1357,7 +1219,6 @@ final class HealthKitProviderTests: XCTestCase {
         let observerUpdates = TestAsyncStream<HealthKitObserverWakeup>()
         let completionCount = LockedCounter()
         let provider = HealthKitProvider(
-            userId: UUID(),
             competitionDependencies: HealthKitCompetitionDependencies(
                 isHealthDataAvailable: { true },
                 requestAuthorization: { _ in },
@@ -1548,17 +1409,11 @@ final class HealthKitProviderTests: XCTestCase {
         let firstCompletion = LockedFlag()
         let secondCompletion = LockedFlag()
         let firstProvider = HealthKitProvider(
-            userId: UUID(
-                uuidString: "71000000-0000-4000-8000-000000000001"
-            )!,
             competitionDependencies: signalIdentityDependencies(
                 observerUpdates: firstUpdates
             )
         )
         let secondProvider = HealthKitProvider(
-            userId: UUID(
-                uuidString: "72000000-0000-4000-8000-000000000002"
-            )!,
             competitionDependencies: signalIdentityDependencies(
                 observerUpdates: secondUpdates
             )
