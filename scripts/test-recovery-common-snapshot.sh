@@ -2,9 +2,13 @@
 # Synthetic PostgreSQL-17 component test, not an operator/hosted backup command.
 set -euo pipefail
 umask 077
+script_dir=$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 
 fail() { printf 'recovery_snapshot_assertion: %s\n' "$1" >&2; exit 1; }
 [[ $# -eq 0 ]] || fail unexpected_arguments
+for wrapper in recovery-history-integrity recovery-state-acceptance; do
+  [[ -s "$script_dir/$wrapper.sql" ]] || fail receipt_wrapper_required
+done
 [[ ${PGHOST:-} == /* && -d ${PGHOST:-} && ${PGHOST:-} != *,* ]] \
   || fail explicit_single_socket_directory_required
 [[ ${PGHOST:-} != *$'\n'* && ${PGHOST:-} != *$'\r'* ]] || fail invalid_socket_directory
@@ -12,6 +16,8 @@ fail() { printf 'recovery_snapshot_assertion: %s\n' "$1" >&2; exit 1; }
 for tool in psql pg_dump pg_restore; do
   [[ $("$tool" --version) == "$tool (PostgreSQL) 17."* ]] || fail postgres17_clients_required
 done
+absent_password="$script_dir/.no-recovery-test-password"
+[[ ! -e "$absent_password" && ! -L "$absent_password" ]] || fail unexpected_password_file
 
 # No inherited credentials, service file, connection options, or psql startup file.
 native() {
@@ -19,7 +25,7 @@ native() {
   shift
   env -i PATH="$PATH" LC_ALL=C PGHOST="$PGHOST" PGUSER="$PGUSER" \
     PGPORT=5432 PGDATABASE="$database" PGCONNECT_TIMEOUT=5 \
-    PGPASSFILE=/dev/null PGSERVICEFILE=/dev/null \
+    PGPASSFILE="$absent_password" PGSERVICEFILE=/dev/null \
     PGOPTIONS='-c statement_timeout=10000 -c lock_timeout=5000 -c idle_in_transaction_session_timeout=60000' \
     "$@"
 }
@@ -28,6 +34,11 @@ sql() {
   shift
   native "$database" psql -XqAt --no-password --set=ON_ERROR_STOP=on \
     --set=VERBOSITY=sqlstate --set=SHOW_CONTEXT=never "$@"
+}
+# Wrappers must establish their own fail-closed, privacy-safe error settings.
+wrapper_sql() {
+  sql "$source_db" --set=ON_ERROR_STOP=off --set=ON_ERROR_ROLLBACK=on \
+    --set=VERBOSITY=verbose --set=SHOW_CONTEXT=always "$@"
 }
 source_db=healthcomp_recovery_fixture
 restore_db=healthcomp_snapshot_restored
@@ -88,7 +99,9 @@ cleanup() {
     result=1
   fi
   rm -f -- "$scratch/input" "$scratch/snapshot" "$scratch/archive" \
-    "$scratch/output" "$scratch/errors" "$scratch/exporter-errors" || result=1
+    "$scratch/output" "$scratch/errors" "$scratch/exporter-errors" \
+    "$scratch/recovery-history-integrity.sql" "$scratch/recovery-history-integrity-query.sql" \
+    "$scratch/recovery-state-acceptance.sql" "$scratch/recovery-state-acceptance-query.sql" || result=1
   rmdir -- "$scratch" || result=1
   if [[ $result -eq 0 ]]; then
     printf '%s\n' 'Shared-snapshot restore matches the literal receipt; unbound dump mismatch detected; owned fixtures removed.'
@@ -157,6 +170,40 @@ set transaction snapshot '$snapshot'; $receipt_sql rollback;" 2>"$scratch/errors
   || fail receipt_import_failed
 [[ $receipt == "$before" ]] || fail receipt_literal_mismatch
 
+# The actual wrappers, with only their relative query include substituted, must
+# share the exporter's snapshot. This is wrapper behavior, not query correctness.
+for wrapper in recovery-history-integrity recovery-state-acceptance; do
+  cp "$script_dir/$wrapper.sql" "$scratch/$wrapper.sql"
+  cmp -s "$script_dir/$wrapper.sql" "$scratch/$wrapper.sql" || fail wrapper_copy_mismatch
+  printf '%s\n' "$receipt_sql" >"$scratch/$wrapper-query.sql"
+  bound=$(wrapper_sql --set="recovery_snapshot=$snapshot" \
+    --file="$scratch/$wrapper.sql" 2>"$scratch/errors") || fail bound_wrapper_failed
+  [[ ! -s "$scratch/errors" ]] || fail "${wrapper}_bound_stderr"
+  [[ $bound == "$before" ]] || fail "${wrapper}_bound_receipt_mismatch"
+  unbound=$(wrapper_sql --file="$scratch/$wrapper.sql" 2>"$scratch/errors") \
+    || fail unbound_wrapper_failed
+  [[ ! -s "$scratch/errors" ]] || fail "${wrapper}_unbound_stderr"
+  [[ $unbound == "$after" ]] || fail "${wrapper}_unbound_receipt_mismatch"
+  printf 'Passed snapshot binding: %s\n' "$wrapper"
+done
+
+reject_snapshot() {
+  local rejected=$1 expected_state=$2 wrapper result
+  for wrapper in recovery-history-integrity recovery-state-acceptance; do
+    result=0
+    wrapper_sql --set="recovery_snapshot=$rejected" --file="$scratch/$wrapper.sql" \
+      >"$scratch/output" 2>"$scratch/errors" || result=$?
+    [[ $result == 3 ]] || fail "${wrapper}_${expected_state}_exit"
+    [[ ! -s "$scratch/output" ]] || fail "${wrapper}_${expected_state}_stdout"
+    awk -v code="$expected_state" '$0 !~ ("^psql:.*:[0-9]+: ERROR:[[:space:]]+" code "$") {bad=1}
+      END {if (bad || NR!=1) exit 1}' "$scratch/errors" \
+      || fail "${wrapper}_${expected_state}_error_privacy"
+  done
+}
+reject_snapshot "invalid'; select 'synthetic_snapshot_canary'; --" 22023
+reject_snapshot '' XX000
+reject_snapshot '   ' 22023
+
 for mode in snapshot current; do
   set --
   if [[ $mode == snapshot ]]; then
@@ -178,3 +225,4 @@ for mode in snapshot current; do
   sql "$restore_db" -c "$drop_sql" >"$scratch/output" 2>"$scratch/errors" || fail restore_reset_failed
 done
 stop_exporter || fail exporter_termination_failed
+reject_snapshot "$snapshot" 42704

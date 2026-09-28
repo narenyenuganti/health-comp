@@ -170,7 +170,7 @@ Record:
 - reviewed source commit;
 - source ref xhfdfdrtxwptrwhvvlhg and live project-name readback;
 - destination ref and a name that clearly includes restore-rehearsal;
-- matching PostgreSQL major version 17;
+- matching PostgreSQL major version 17, including native psql/dump/restore clients;
 - recovery-point/cutoff timestamp and how it is established;
 - operator and approver;
 - named owner and bounded duration of the complete source write freeze,
@@ -612,10 +612,19 @@ timeout, stop-on-error, SQLSTATE-only errors, and rollback. Invoke the wrapper
 as a top-level file using a fresh noninteractive `psql -X` session with quiet,
 tuples-only, unaligned output. Transport, credentials and the common recovery
 point still require the execution prerequisites above; this wrapper is not
-an export runner and cannot bind separate connections to the same snapshot.
+an export runner and does not coordinate exporter or dump connections.
 Its mode assertion cannot prove freshness or detect every existing transaction.
 Do not capture verbose query/error output, use an existing transaction, or
 treat a failed command's partial output as a receipt.
+
+Both receipt entry points accept an optional `recovery_snapshot` psql variable.
+They import that caller-held snapshot immediately after BEGIN, before any query;
+the caller must keep its exporting transaction alive and bind every applicable
+dump separately. Omission preserves the independent-snapshot behavior. Invalid
+or expired snapshots fail without a receipt, with SQLSTATE-only errors. The local
+two-table harness tests these transaction boundaries with substituted queries;
+it does not qualify the full real-schema manifest, non-MVCC state, hosted
+transport or an operational restore. The execution prerequisites still apply.
 
 Its version-1 receipt has exactly twelve aggregate fields: receipt version;
 checked/invalid competition counts; total/orphan change-row counts; total,
