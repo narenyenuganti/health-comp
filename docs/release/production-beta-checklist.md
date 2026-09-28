@@ -1,6 +1,57 @@
 # HealthComp Production Beta Verification Checklist
 
-## Current qualification checkpoint — September 21, 2026 UTC
+## Current qualification checkpoint — September 28, 2026 UTC
+
+**Not production-ready.** This dated checkpoint supersedes earlier statements
+about the selected package and current competition, not their scoped historical
+receipts. No physical service pass transfers merely because a newer build passes CI.
+
+- **Automated matrix:** merged source `507c2c5e5d741ce9df7899d910db4bcce330a385`
+  passed [Backend CI](https://github.com/narenyenuganti/health-comp/actions/runs/36393801215)
+  and [iOS CI](https://github.com/narenyenuganti/health-comp/actions/runs/36393801227).
+  Completed exact-commit status was rechecked September 28; neither run was restarted.
+- **Selected Staging packages:** both devices were state-preservingly updated
+  from that source. Physical executable SHA-256:
+  `a9f93b0c1a50351fc889a56a220d3288a3f20c7302ccf57fb5bcc4351802d9df`.
+  Simulator executable SHA-256:
+  `fe6997127f5fd61a6abcbb090f6fc7bde77fe0a5cb6db18149de20cc1ac622e4`.
+  Both retained packages passed strict signing/configuration checks. The physical
+  install preserved one profile, 18 files and 26 entries by path, resource flags,
+  permissions, file size and file modification date. That is not a file-byte
+  comparison or a fresh on-device executable hash. Simulator preservation included
+  a byte comparison of its 12 pre-install profile files.
+- **Current lifecycle:** one authorized invitation was accepted between the
+  existing distinct phone and Simulator profiles. The server-confirmed schedule
+  is September 28–October 4 in `America/Los_Angeles`; October 5 is the earliest
+  stable-result check, not a promised completion date. Both local inventories
+  contain that competition with two accepted participants and matching cursors
+  4/4. No replacement competition or account switch is needed to start this clock.
+- **Physical day-one check remains open:** one normal launch produced no new
+  usable revision or consumed assertion chain in three bounded readbacks. The
+  privately bound active sandbox installation had one development key with an
+  unchanged assertion counter of zero. The one existing day-one revision was
+  `sourceDataUnavailable`, with no usable revision and an empty local outbox.
+  This does not establish a permission denial, network failure or App Attest
+  rejection. No refresh/retry loop or new invitation followed.
+- **Recovery remains unqualified:** the local synthetic rehearsal restored all
+  21 migrations through `20260928001600` and matched the actual history/state/FK
+  checks. Snapshot-bound restore preserved the pre-write receipts; the unbound
+  concurrent-write control differed as required. No ownership/ACL suppression
+  was used. This does not prove hosted transport, managed-service recovery,
+  deleted-user history, production recovery objectives or an operational backup.
+  Live dashboard readback on September 28 still showed Free with no project
+  backups. See the [recovery runbook](../runbooks/backup-restore.md).
+
+Still required: usable physical scoring and the stable two-account result;
+attributable background delivery and APNs routes; physical deletion/revocation,
+local cleanup and retained anonymized history; same-phone retirement/reinstall
+and replacement enrollment; contained real recovery plus forward repair; final
+release/privacy qualification and production promotion. Universal-link evidence
+remains explicitly deferred under the approved beta scope, not passed. Neither
+the newer package nor the calendar closes these gates. Preserve both profiles
+and the existing competition while collecting the missing evidence.
+
+## Historical qualification checkpoint — September 21, 2026 UTC
 
 **Not production-ready.** This checkpoint supersedes the current-artifact and
 missing-score statements in the historical snapshots below. It does not transfer
