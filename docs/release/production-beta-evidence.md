@@ -4,7 +4,17 @@ This file records anonymized, reproducible rollout receipts. It excludes Apple
 account details, device identifiers, tokens, private screenshots, raw HealthKit
 data, exact Activity values, and reversible local fingerprints.
 
-## Current qualification checkpoint — September 9, 2026
+## Current qualification checkpoint — September 28, 2026 UTC
+
+The [current checklist](production-beta-checklist.md#current-qualification-checkpoint--september-28-2026-utc)
+records exact-source CI, both installed `507c2c5` Staging packages, the accepted
+September 28–October 4 competition, the still-unverified usable day-one score,
+and the local-only recovery milestone. October 5 is the earliest stable-result
+check, not full-goal completion. All dated receipts below remain limited to their
+named artifacts and observations; they do not qualify the newly selected binary.
+Release status remains **not production-ready**.
+
+## Historical qualification checkpoint — September 9, 2026
 
 The [staging browser checkpoint](staging-browser-qualification-2026-09-09.md)
 records the b24ecbd staging backend promotion and the later independently reviewed
