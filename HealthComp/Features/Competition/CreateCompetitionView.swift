@@ -75,9 +75,8 @@ struct CreateCompetitionView: View {
             if let shareLink {
                 VStack(alignment: .leading, spacing: 10) {
                     ShareLink(
-                        item: shareLink.url,
-                        subject: Text("Join my HealthComp competition"),
-                        message: Text("Join my 7-day Activity challenge on HealthComp.")
+                        item: shareLink.url.absoluteString,
+                        subject: Text("Join my HealthComp competition")
                     ) {
                         Label(
                             "Share Private Invitation",

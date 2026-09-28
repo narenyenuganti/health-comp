@@ -448,9 +448,8 @@ struct CompetitionResultView: View {
         case .ready:
             if let createdInviteLink {
                 ShareLink(
-                    item: createdInviteLink.url,
-                    subject: Text("HealthComp rematch"),
-                    message: Text("Rematch? Join my 7-day Activity challenge on HealthComp.")
+                    item: createdInviteLink.url.absoluteString,
+                    subject: Text("HealthComp rematch")
                 ) {
                     Label(
                         "Share Rematch Invitation",
