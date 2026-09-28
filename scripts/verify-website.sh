@@ -35,6 +35,8 @@ expect() {
 }
 
 expect / 200 'Coming soon to iPhone'
+expect /support 200 'HealthComp beta support' 'mailto:yrnaren1@gmail.com' \
+  'Naren Yenuganti' 'Do not send' 'Health screenshots'
 # Without a top-level 404.html, Pages answers every unknown path with
 # index.html and 200.
 expect /no-such-page 404 'Page not found'
@@ -46,6 +48,6 @@ expect /og.png 200 'content-type: image/png'
 expect /apple-touch-icon.png 200 'content-type: image/png'
 
 if ((failures)); then
-  printf '%d of 6 checks failed\n' "$failures" >&2
+  printf '%d of 7 checks failed\n' "$failures" >&2
   exit 1
 fi
