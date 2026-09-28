@@ -376,10 +376,7 @@ struct CompetitionEnvironmentClient: Sendable {
     static func production(
         healthStore: HKHealthStore = HKHealthStore()
     ) -> Self {
-        let source = HealthKitProvider(
-            userId: UUID(uuidString: "00000000-0000-0000-0000-000000000000")!,
-            healthStore: healthStore
-        )
+        let source = HealthKitProvider(healthStore: healthStore)
         let epochID = Self.productionEpochID(
             wallDate: Date(),
             systemUptime: ProcessInfo.processInfo.systemUptime

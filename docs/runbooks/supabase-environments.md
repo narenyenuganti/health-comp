@@ -145,8 +145,8 @@ a third hosted development project.
 
 ## Non-negotiable boundaries
 
-- Only lowercase supabase/ is deployable. SupabaseLegacy/ is reference
-  material and must never be linked, pushed, repaired, or deployed.
+- Only lowercase supabase/ is deployable. The retired SupabaseLegacy/ backend
+  survives only in Git history; never restore it for linking, deployment or repair.
 - Never use db push with include-all, migration repair, or Functions deploy
   with prune for this rollout.
 - Never infer a deployment target from an existing .temp/project-ref. Link one
@@ -204,8 +204,7 @@ Required application-specific names:
 - APP_ATTEST_ALLOWED_VALIDATION_CATEGORIES
 - APP_ATTEST_ALLOWED_BUNDLE_VERSIONS
 
-HEALTHCOMP_AASA_APP_IDS is required only after an HTTPS invitation domain is
-approved. Supabase supplies SUPABASE_URL, SUPABASE_ANON_KEY, and
+Supabase supplies SUPABASE_URL, SUPABASE_ANON_KEY, and
 SUPABASE_SERVICE_ROLE_KEY to deployed Functions; do not replace those
 platform-managed values.
 
@@ -497,8 +496,8 @@ stays GoDaddy). `scripts/verify-website.sh <base-url>` checks both pages, the
 invite headers and the association file on a Pages preview or either host.
 Verify
 `https://app-site-association.cdn-apple.com/a/v1/<host>` returns the file, then
-test cold/warm opening on a signed physical device. The Supabase
-apple-app-site-association Function and HEALTHCOMP_AASA_APP_IDS are not used.
+test cold/warm opening on a signed physical device. The static site supplies this
+file; no Supabase association Function or HEALTHCOMP_AASA_APP_IDS setting is needed.
 
 ## Rollback-only adversarial staging verifier
 

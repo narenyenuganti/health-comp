@@ -7,7 +7,6 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
-		026BC27D8A89262270E78565 /* HealthMetricTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 09FF3C40395A80635C205A3A /* HealthMetricTests.swift */; };
 		0387B14516F10AD6F7D9631A /* CompetitionRealtimeClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEEFCAE971C5B24E3802EA8A /* CompetitionRealtimeClientTests.swift */; };
 		044015DA32180EF60CF5DC2A /* CompetitionTraceIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB243F0BB966F7049D05D56C /* CompetitionTraceIntegrationTests.swift */; };
 		07B51177CD4962804CDB26F1 /* AuthenticationClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B9BDFDDD2E2FDAB7931BA09 /* AuthenticationClient.swift */; };
@@ -24,7 +23,6 @@
 		153576F1521F99A0DB91C2A8 /* remote-best-available-incomplete.json in Resources */ = {isa = PBXBuildFile; fileRef = 707D0C11F6133D4611BF36D7 /* remote-best-available-incomplete.json */; };
 		165F2A28D30436DC42532FEE /* AppAttestConfigurationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EDFD1E45E20A6E1653DC561 /* AppAttestConfigurationTests.swift */; };
 		1DBF19756261053C5D83FBCC /* SupabaseAuthKeychainStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 935DA75BD17C21F1EAC981CD /* SupabaseAuthKeychainStorage.swift */; };
-		1E677D5B9D0BBC6F7A873642 /* HealthDataProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC8F09779188D9A1FE1C4BF7 /* HealthDataProvider.swift */; };
 		1F1E059933150A061C760DD6 /* HealthCompApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D01015283BC66E2ECA9609D /* HealthCompApp.swift */; };
 		22078218974E42A03AB0BB92 /* LocalCompetitionClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 620B41081DED3A911320E1F0 /* LocalCompetitionClient.swift */; };
 		225DA345431BFB3F6665C1F1 /* RemoteCompetitionClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9A7D5544146DA84C8A71125 /* RemoteCompetitionClient.swift */; };
@@ -64,7 +62,6 @@
 		63626B6583F3AA09DED4C760 /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = 765098240911111A6F629AE3 /* Supabase */; };
 		664893A2DD239F6897D6B582 /* CompetitionDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45B4CB5326E660812EDE995E /* CompetitionDetailView.swift */; };
 		6679DA44778F5B36AB876329 /* PermissionOnboardingClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = F300FAED4747AA225EB143F2 /* PermissionOnboardingClient.swift */; };
-		68146909378E552F35D6697F /* HealthMetric.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5EA3F1951C080758224B44E2 /* HealthMetric.swift */; };
 		6889DEEA038530AC44D1DD99 /* FixtureActivitySourceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CC1985FE34C77217A5DAAD0 /* FixtureActivitySourceTests.swift */; };
 		68E7EF63C482B3C302F04EBD /* MainTabFeature.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1D8B3EF060D8C52F2299C95 /* MainTabFeature.swift */; };
 		6951A0E1D90273340663259F /* SupabaseCompetitionRemoteAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = C80D29D0BD360D57164DC524 /* SupabaseCompetitionRemoteAPI.swift */; };
@@ -163,7 +160,6 @@
 		05C1BF82CA22E9CBDCA974CF /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		08AF91992EAFD7DD2DD29C21 /* CompetitionRealtimeClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionRealtimeClient.swift; sourceTree = "<group>"; };
 		091448CE772C0EE35F3C5B74 /* AccountDeletionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountDeletionTests.swift; sourceTree = "<group>"; };
-		09FF3C40395A80635C205A3A /* HealthMetricTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthMetricTests.swift; sourceTree = "<group>"; };
 		0A326EB5826710C985D17686 /* CompetitionTestLabTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionTestLabTests.swift; sourceTree = "<group>"; };
 		0B62BF4147CD724EB04CECC6 /* late-watch-sync.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "late-watch-sync.json"; sourceTree = "<group>"; };
 		119AA0F1200F5722F1BC1092 /* RemoteCompetitionFeatureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteCompetitionFeatureTests.swift; sourceTree = "<group>"; };
@@ -198,7 +194,6 @@
 		515A5EEE3F6C865C5972A3B4 /* SharedClientLifetime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedClientLifetime.swift; sourceTree = "<group>"; };
 		533B5BE105C1A335AE961478 /* CompetitionNotificationCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionNotificationCoordinator.swift; sourceTree = "<group>"; };
 		56A0E571C32EF5F1137939B1 /* win.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = win.json; sourceTree = "<group>"; };
-		5EA3F1951C080758224B44E2 /* HealthMetric.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthMetric.swift; sourceTree = "<group>"; };
 		612908337833B2EAE7FD7D41 /* HealthCompUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = HealthCompUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		613A2B77D4E8A26D6A05F569 /* HealthKitDeliveryDiagnostic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthKitDeliveryDiagnostic.swift; sourceTree = "<group>"; };
 		616B7E5CE526F649E00317C3 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
@@ -259,7 +254,6 @@
 		CF7DE04D723EFB17C6B0F55E /* HealthKitProviderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthKitProviderTests.swift; sourceTree = "<group>"; };
 		D32005C34AC39471F5E780FB /* SupabaseCompetitionRemoteAPITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupabaseCompetitionRemoteAPITests.swift; sourceTree = "<group>"; };
 		DC1082ED31F47789C75550D1 /* SharedClientLifetimeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedClientLifetimeTests.swift; sourceTree = "<group>"; };
-		DC8F09779188D9A1FE1C4BF7 /* HealthDataProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthDataProvider.swift; sourceTree = "<group>"; };
 		DF2EB15D15A1AFC4A22883D0 /* remote-stable-win.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "remote-stable-win.json"; sourceTree = "<group>"; };
 		E253E83C464C41456132789C /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		E319BF38E9A52EF2BC2D9349 /* Production.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Production.xcconfig; sourceTree = "<group>"; };
@@ -383,7 +377,6 @@
 				B74EA43D24EEE51BE2DDEDAB /* CompetitionSyncModels.swift */,
 				C4D8E971E96397AB14D983D3 /* DeviceCheckAppAttestClient.swift */,
 				C0DD763262122302C88AA2F5 /* FixtureActivitySource.swift */,
-				DC8F09779188D9A1FE1C4BF7 /* HealthDataProvider.swift */,
 				613A2B77D4E8A26D6A05F569 /* HealthKitDeliveryDiagnostic.swift */,
 				45FD58C85D5EE740BBE2307B /* HealthKitObserverDeliveryClassifier.swift */,
 				A780BC141606A4C228FCF9F7 /* HealthKitObserverDeliveryReceipt.swift */,
@@ -411,7 +404,6 @@
 			children = (
 				25BCE1EEC45C4C6E1176F008 /* App */,
 				0D475C1FCAB464F26AE279B5 /* Features */,
-				F72CC3DA997C1AFF9DDA2F03 /* Models */,
 				D3AFFFCE59B8D2086F7B9A8C /* Resources */,
 				29B00DE592B70298ECE97410 /* Services */,
 			);
@@ -446,7 +438,6 @@
 				9D283D626571C7A95260FCA0 /* HealthKitObserverDeliveryClassifierTests.swift */,
 				C0B77B567A9CA235E3225C78 /* HealthKitObserverDeliveryReceiptTests.swift */,
 				CF7DE04D723EFB17C6B0F55E /* HealthKitProviderTests.swift */,
-				09FF3C40395A80635C205A3A /* HealthMetricTests.swift */,
 				FD0C12E55F3C163C315598D5 /* JSONCompetitionEventStoreTests.swift */,
 				4D9D6378727AB26B2A45AE28 /* JSONCompetitionOutboxStoreTests.swift */,
 				E38A46C1086F6393DC0FA12A /* LocalCompetitionClientTests.swift */,
@@ -557,14 +548,6 @@
 				05C1BF82CA22E9CBDCA974CF /* PrivacyInfo.xcprivacy */,
 			);
 			path = Resources;
-			sourceTree = "<group>";
-		};
-		F72CC3DA997C1AFF9DDA2F03 /* Models */ = {
-			isa = PBXGroup;
-			children = (
-				5EA3F1951C080758224B44E2 /* HealthMetric.swift */,
-			);
-			path = Models;
 			sourceTree = "<group>";
 		};
 /* End PBXGroup section */
@@ -780,12 +763,10 @@
 				A933CF46EE745663C924FB92 /* FixtureActivitySource.swift in Sources */,
 				1F1E059933150A061C760DD6 /* HealthCompApp.swift in Sources */,
 				510A05F868BEFC10DAAF9862 /* HealthCompAppDelegate.swift in Sources */,
-				1E677D5B9D0BBC6F7A873642 /* HealthDataProvider.swift in Sources */,
 				F8A2F0C658F37F8EB109E773 /* HealthKitDeliveryDiagnostic.swift in Sources */,
 				3FC0C839F3D290C09C54C9D4 /* HealthKitObserverDeliveryClassifier.swift in Sources */,
 				70101A539FF9514383C092A6 /* HealthKitObserverDeliveryReceipt.swift in Sources */,
 				4876547B798FDFBA4EEFDE75 /* HealthKitProvider.swift in Sources */,
-				68146909378E552F35D6697F /* HealthMetric.swift in Sources */,
 				2C8D65A4CCDE772479738364 /* JSONCompetitionEventStore.swift in Sources */,
 				DA998C07235B49E9345F6FE8 /* JSONCompetitionOutboxStore.swift in Sources */,
 				22078218974E42A03AB0BB92 /* LocalCompetitionClient.swift in Sources */,
@@ -839,7 +820,6 @@
 				88BA5109421B2F24239335F0 /* HealthKitObserverDeliveryClassifierTests.swift in Sources */,
 				892C936C24DCA7A54E32C412 /* HealthKitObserverDeliveryReceiptTests.swift in Sources */,
 				B29FF2F0455C354D914ED698 /* HealthKitProviderTests.swift in Sources */,
-				026BC27D8A89262270E78565 /* HealthMetricTests.swift in Sources */,
 				326B43DCD5E31D60D7D8ECC5 /* JSONCompetitionEventStoreTests.swift in Sources */,
 				F080E9F86D147A223B2AD0C3 /* JSONCompetitionOutboxStoreTests.swift in Sources */,
 				5DDCDC3DA51E4EA5BD74374C /* LocalCompetitionClientTests.swift in Sources */,
