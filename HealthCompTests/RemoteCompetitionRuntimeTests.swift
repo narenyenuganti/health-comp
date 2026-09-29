@@ -1325,6 +1325,135 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
         )
     }
 
+    func testSameDayHealthRecoveryReplacesPersistedUnavailableScoreOnce()
+        async throws
+    {
+        let root = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        for child in ["events", "outbox", "cursors"] {
+            try FileManager.default.createDirectory(
+                at: root.appendingPathComponent(child),
+                withIntermediateDirectories: false
+            )
+        }
+        let noProtection = JSONCompetitionEventStoreFileProtection { _, _ in }
+        let outboxStore = JSONCompetitionOutboxStore(
+            rootDirectory: root.appendingPathComponent("outbox"),
+            fileProtection: noProtection
+        )
+        let ownerID = profileID
+        let server = try TwoClientCompetitionServer(
+            competitionID: competitionID,
+            creatorID: UUID(uuidString: "72000000-0000-4000-8000-000000000001")!,
+            inviteeID: ownerID,
+            createdAt: Date(timeIntervalSince1970: 1_786_540_000)
+        )
+        let calendar = try CompetitionCalendar(
+            timeZoneIdentifier: "America/Los_Angeles"
+        )
+        let startDay = try CompetitionDay(
+            era: 1, year: 2026, month: 8, day: 13,
+            timeZoneIdentifier: calendar.timeZoneIdentifier
+        )
+        let days = try calendar.sevenDayWindow(startingOn: startDay)
+        let dayOneNoon = try calendar.startOfDay(startDay)
+            .addingTimeInterval(12 * 60 * 60)
+        let availableAt = dayOneNoon.addingTimeInterval(60)
+        let snapshot = ActivitySnapshot(
+            moveMode: .activeEnergyKilocalories,
+            standMode: .standHours,
+            move: try ActivityRingReading(value: 420, goal: 600),
+            exercise: try ActivityRingReading(value: 24, goal: 30),
+            standOrRoll: try ActivityRingReading(value: 10, goal: 12),
+            pauseState: .running
+        )
+        let source = FixtureActivitySource(
+            fixture: try ActivityFixture(
+                initialInstant: EnvironmentInstant(
+                    wallDate: dayOneNoon,
+                    monotonic: MonotonicInstant(
+                        epochID: "same-day-availability", nanoseconds: 1
+                    )
+                ),
+                timeZoneIdentifier: calendar.timeZoneIdentifier,
+                initialDays: days.map { .missing(day: $0) },
+                changes: [
+                    try FixtureActivityChange(
+                        at: availableAt,
+                        updates: [.snapshot(day: days[0], snapshot: snapshot)],
+                        triggers: []
+                    ),
+                ]
+            )
+        )
+        let api = remoteAPI(
+            listCompetitions: { try await server.listCompetitions(for: ownerID) },
+            fetchChanges: { cursor, pageSize in
+                try await server.fetchChanges(
+                    for: ownerID, cursor: cursor, pageSize: pageSize
+                )
+            },
+            appendScoreRevision: { request in
+                try await server.appendScoreRevision(for: ownerID, request: request)
+            }
+        )
+        func makeRuntime(at date: Date) -> RemoteCompetitionRuntime {
+            RemoteCompetitionRuntime(
+                profileID: ownerID,
+                store: makeStore(root: root.appendingPathComponent("events")),
+                remoteAPI: api,
+                environment: .accelerated(source: source),
+                outboxStore: JSONCompetitionOutboxStore(
+                    rootDirectory: root.appendingPathComponent("outbox"),
+                    fileProtection: noProtection
+                ),
+                cacheStore: JSONRemoteCompetitionCacheStore(
+                    rootDirectory: root.appendingPathComponent("cursors"),
+                    fileProtection: noProtection
+                ),
+                now: { date }
+            )
+        }
+        let initialRuntime = makeRuntime(at: dayOneNoon)
+        let initial = await initialRuntime.synchronizeAll()
+        XCTAssertNil(initial.discoveryFailure)
+        XCTAssertEqual(initial.failures, [])
+        XCTAssertEqual(initial.activityFailures, [])
+        let unavailable = try XCTUnwrap(
+            try initial.successfulCompetitions.first?.journal.projection
+                .remoteScoreLedgers[ownerID]?.visibleEntry(forActiveDayOrdinal: 1)
+        )
+        XCTAssertEqual(unavailable.availabilityReason, "sourceDataUnavailable")
+        XCTAssertNil(unavailable.acceptedCentiPoints)
+        XCTAssertEqual(unavailable.clientRevision, 1)
+        let initialOutbox = try await outboxStore.entries()
+        XCTAssertEqual(initialOutbox, [])
+        await initialRuntime.stop()
+
+        try await source.advance(to: availableAt)
+        let recoveredRuntime = makeRuntime(at: availableAt)
+        let recovered = await recoveredRuntime.synchronizeAll()
+        let duplicate = await recoveredRuntime.synchronizeAll()
+        for outcome in [recovered, duplicate] {
+            XCTAssertNil(outcome.discoveryFailure)
+            XCTAssertEqual(outcome.failures, [])
+            XCTAssertEqual(outcome.activityFailures, [])
+            let available = try XCTUnwrap(
+                try outcome.successfulCompetitions.first?.journal.projection
+                    .remoteScoreLedgers[ownerID]?.visibleEntry(forActiveDayOrdinal: 1)
+            )
+            XCTAssertNil(available.availabilityReason)
+            XCTAssertEqual(available.acceptedCentiPoints, 23_333)
+            XCTAssertEqual(available.clientRevision, 2)
+            XCTAssertEqual(available.serverSequence, 5)
+        }
+        let appendedScores = await server.appendedScoreCount()
+        let remainingOutbox = try await outboxStore.entries()
+        XCTAssertEqual(appendedScores, 2)
+        XCTAssertEqual(remainingOutbox, [])
+        await recoveredRuntime.stop()
+    }
+
     func testRelaunchWakesPersistedScoreOutbox() async throws {
         let root = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
