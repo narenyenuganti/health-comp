@@ -36,17 +36,21 @@ Scheduled backups page still showed Free Plan with no project backups. No
 upgrade, backup, export, target creation or restore was initiated. That readback
 does not establish production's current health, plan or backup policy.
 
-A separate local synthetic PostgreSQL 17.6 rehearsal restored all 21 application
-migrations through `20260928001600`, including the managed database schemas,
-without suppressing ownership or privileges. Actual history/state receipts
-shared an exported snapshot with the dump and matched the bound restore after
-a concurrent synthetic commit; an unbound restore differed as required. Both
-restores passed the application FK audit. Required managed roles had to be
-provisioned separately, and each import required a fresh empty destination.
-This is component evidence only: the one-off local coordinator is not an
-independently qualified operator command. Hosted TLS, complete cluster-global
-and non-MVCC state, Auth/Vault behavior, genuine deleted-user history, forward
-repair and production recovery objectives remain unqualified.
+On September 29, 2026 (UTC), the reusable
+[local-only synthetic recovery test](../../scripts/test-recovery-migrated-snapshot.sh)
+restored PostgreSQL 17.6 with all 21 application migrations through
+`20260928001600` and managed database schemas, retaining owners and privileges.
+The native dump and actual history/state receipts shared one exported snapshot:
+after a concurrent synthetic commit, the bound restore matched the original
+receipts and the unbound restore matched the changed state and differed as
+required. Both restores passed the application FK audit. Each import used a
+fresh, networkless empty destination with the pinned image's PostgreSQL
+configuration and Cron off; required managed roles were provisioned separately.
+The run passed, and independent cleanup readback found zero containers, volumes
+and test networks. This is reusable local component evidence, not a qualified
+hosted or operator recovery procedure. Hosted TLS, complete cluster-global and
+non-MVCC state, Auth/Vault service behavior, genuine deleted-user history,
+forward repair, RPO/RTO and production qualification remain unqualified.
 
 Do not assume a paid-plan clone solves pre-import containment. The current
 [Supabase clone documentation](https://supabase.com/docs/guides/platform/clone-project)
