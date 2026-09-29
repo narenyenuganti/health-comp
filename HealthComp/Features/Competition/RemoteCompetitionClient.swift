@@ -636,6 +636,9 @@ private actor RemoteCompetitionClientCoordinator {
         }
         await installationCoordinator?.reconcile()
         let outcome = await runtime.synchronizeAll()
+        for failure in outcome.failures {
+            failure.failure.recordRefreshDiagnostic()
+        }
         if let issue = outcome.discoveryFailure?.competitionClientIssue {
             issues.append(issue)
         }

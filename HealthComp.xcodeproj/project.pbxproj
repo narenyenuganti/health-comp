@@ -20,6 +20,7 @@
 		10877D47E948C78A37F0C748 /* ClaimCompetitionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 225974742689A63371700688 /* ClaimCompetitionView.swift */; };
 		12640A6EFC6346166F8015CF /* CompetitionRoutingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8D842D51C03C651E67B1405 /* CompetitionRoutingTests.swift */; };
 		12DBB0EB4D5140F60483A82E /* AuthenticatedProfileStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = CD89B1AAB2A4AC2FD5A8C159 /* AuthenticatedProfileStorage.swift */; };
+		143CC8DBED3C6C8014D2CA49 /* RemoteCompetitionRuntimeFailure.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA25D1EA0C137C12BC7FE9A1 /* RemoteCompetitionRuntimeFailure.swift */; };
 		153576F1521F99A0DB91C2A8 /* remote-best-available-incomplete.json in Resources */ = {isa = PBXBuildFile; fileRef = 707D0C11F6133D4611BF36D7 /* remote-best-available-incomplete.json */; };
 		165F2A28D30436DC42532FEE /* AppAttestConfigurationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EDFD1E45E20A6E1653DC561 /* AppAttestConfigurationTests.swift */; };
 		1DBF19756261053C5D83FBCC /* SupabaseAuthKeychainStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 935DA75BD17C21F1EAC981CD /* SupabaseAuthKeychainStorage.swift */; };
@@ -253,6 +254,7 @@
 		CD89B1AAB2A4AC2FD5A8C159 /* AuthenticatedProfileStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthenticatedProfileStorage.swift; sourceTree = "<group>"; };
 		CF7DE04D723EFB17C6B0F55E /* HealthKitProviderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthKitProviderTests.swift; sourceTree = "<group>"; };
 		D32005C34AC39471F5E780FB /* SupabaseCompetitionRemoteAPITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupabaseCompetitionRemoteAPITests.swift; sourceTree = "<group>"; };
+		DA25D1EA0C137C12BC7FE9A1 /* RemoteCompetitionRuntimeFailure.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteCompetitionRuntimeFailure.swift; sourceTree = "<group>"; };
 		DC1082ED31F47789C75550D1 /* SharedClientLifetimeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedClientLifetimeTests.swift; sourceTree = "<group>"; };
 		DF2EB15D15A1AFC4A22883D0 /* remote-stable-win.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "remote-stable-win.json"; sourceTree = "<group>"; };
 		E253E83C464C41456132789C /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
@@ -386,6 +388,7 @@
 				16F2F6B05D0D979314129070 /* LocalCompetitionRuntime.swift */,
 				F300FAED4747AA225EB143F2 /* PermissionOnboardingClient.swift */,
 				C552868F11DF18D3E8FB90CE /* RemoteCompetitionRuntime.swift */,
+				DA25D1EA0C137C12BC7FE9A1 /* RemoteCompetitionRuntimeFailure.swift */,
 				515A5EEE3F6C865C5972A3B4 /* SharedClientLifetime.swift */,
 				E3A18A121BDE529295DC3BAD /* StagingAppleWebAuthenticationConfiguration.swift */,
 				79D3B2F2BE57087995DA8315 /* SupabaseAppleWebDeletionTransport.swift */,
@@ -778,6 +781,7 @@
 				ACF7EB6354E49BC655F483DD /* PermissionOnboardingView.swift in Sources */,
 				225DA345431BFB3F6665C1F1 /* RemoteCompetitionClient.swift in Sources */,
 				633C2CCC1EFC5F2546E47402 /* RemoteCompetitionRuntime.swift in Sources */,
+				143CC8DBED3C6C8014D2CA49 /* RemoteCompetitionRuntimeFailure.swift in Sources */,
 				AC27EE6DEBA9224CB7ACEAC3 /* SharedClientLifetime.swift in Sources */,
 				3DDD361C9B108A53763C47B8 /* StagingAppleWebAuthenticationConfiguration.swift in Sources */,
 				70E979BCF298681D60F5F4E4 /* SupabaseAppleWebDeletionTransport.swift in Sources */,
