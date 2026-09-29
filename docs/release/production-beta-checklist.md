@@ -1,6 +1,60 @@
 # HealthComp Production Beta Verification Checklist
 
-## Current qualification checkpoint — September 28, 2026 UTC
+## Current qualification checkpoint — September 29, 2026 UTC
+
+**Not production-ready.** Both current participants now have a usable accepted
+score. This checkpoint supersedes the earlier missing-score/current-package
+statements, not the separate background, replay, deletion or recovery gates.
+
+- **Automated source matrix:** merged source
+  `151feb379b182e98b8ef0c88288c2a19793eec4b` passed
+  [Backend CI](https://github.com/narenyenuganti/health-comp/actions/runs/36537692968)
+  and [iOS CI](https://github.com/narenyenuganti/health-comp/actions/runs/36537693008).
+  Both completed statuses and the unchanged remote main were rechecked.
+- **Physical package:** retained signed Staging source `c93da2c` has the same
+  repository tree as `151feb3`. Executable SHA-256:
+  `cf3b8c2b040d88c153c14fb149574b2e43b56ef92be3b1f42dfb1d97cfc42147`.
+  Its hash, strict signature and provisioning passed; installed bundle/version
+  metadata matched. This is not a fresh hash of the executable on the phone.
+- **Two-account scoring:** the 19:33 UTC read-only server inventory found two
+  accepted participants, each with one latest available daily revision. Creator
+  revisions increased from zero to two; invitee revisions remained five. Both
+  have revisions on the two elapsed days, but coverage includes unavailable
+  revisions and does not mean both days have usable scores. No result exists yet.
+- **Current physical binding:** at 19:45 UTC, one phone profile, its active sandbox
+  installation and its local development App Attest key matched the creator's
+  stored usable revision and consumed assertion chain. The same local bindings
+  matched on reread. The existing live creator competition UI was observed without
+  a warning; no additional launch or refresh was performed. The account switch
+  and earlier refresh were owner-reported. This proves a sampled current binding,
+  not refresh causality, counter advancement, cryptographic replay resistance or
+  continuous file/process identity. The query's proof counts are scoped to this
+  installation/key; a zero for the other participant is not a historical failure.
+- **Privacy and scope:** hosted reads were read-only, repeatable-read and rolled
+  back. Only the two named local installation/key state documents were temporarily
+  copied and removed. No raw HealthKit data, authentication/push tokens or proof
+  signatures were copied or retained. Retained evidence contains only aggregates
+  and public artifact metadata. These checks did not change accounts, create an
+  invitation, access production, rebuild or reinstall the app.
+
+The existing competition remains September 28–October 4 in
+`America/Los_Angeles`; October 5 is the earliest stable-result check, not a
+completion promise. Preserve both profiles and the competition. Still required:
+the stable two-account result; attributable background delivery and APNs routes;
+remaining App Attest continuity/replay and replacement-installation evidence;
+physical deletion/revocation, local cleanup and retained anonymized history;
+contained real recovery plus forward repair; final release/privacy qualification
+and production promotion. Universal links remain an approved beta deferral, not
+a pass. These scoring observations do not waive the remaining gates.
+
+Privacy-safe operator receipts are retained outside the public repository:
+
+- `staging-score-proof-after-creator-refresh-2026-09-29.json`, SHA-256
+  `472f518578e65e89dde979b91badba048e481aeacca2387551322568c77a6187`.
+- `physical-creator-stored-proof-binding-c93da2c-2026-09-29.json`, SHA-256
+  `d45b7d1a86ec1c78ca49307c2d103075db74f35840a7688085c4cc34d1a5ec9e`.
+
+## Historical qualification checkpoint — September 28, 2026 UTC
 
 **Not production-ready.** This dated checkpoint supersedes earlier statements
 about the selected package and current competition, not their scoped historical
