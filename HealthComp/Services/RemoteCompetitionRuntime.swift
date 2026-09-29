@@ -3,18 +3,6 @@ import CryptoKit
 import Darwin
 import Foundation
 
-enum RemoteCompetitionRuntimeFailure: Error, Equatable, Sendable {
-    case cancelled
-    case unauthenticated
-    case forbidden
-    case discoveryUnavailable
-    case profileMismatch
-    case competitionNotMaterialized
-    case serverContractMismatch
-    case storageUnavailable
-    case cursorRetryLimitExceeded
-}
-
 enum RemoteCompetitionCacheFailure: Error, Equatable, Sendable {
     case invalidRootDirectory
     case unsafeFilesystemEntry
