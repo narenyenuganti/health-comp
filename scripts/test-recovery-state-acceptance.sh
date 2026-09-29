@@ -3,7 +3,7 @@
 set -euo pipefail
 umask 077
 
-script_dir=$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
+script_dir=$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 operator="$script_dir/recovery-state-acceptance.sql"
 query="$script_dir/recovery-state-acceptance-query.sql"
 fixture="$script_dir/tests/recovery-state-fixtures.sql"
@@ -105,6 +105,11 @@ if [[ ${1:-} == --static && $# == 1 ]]; then
 fi
 if [[ ${1:-} == --check-empty-receipt && $# == 1 ]]; then
   receipt_matches "$empty_expected" || fail migrated_empty_receipt
+  exit 0
+fi
+if [[ ${1:-} == --check-migrated-fixture-receipt && $# == 2 ]]; then
+  case "$2" in 1) profiles=2;; 2) profiles=4;; *) fail invalid_fixture_batch;; esac
+  receipt_matches "$empty_expected,profiles_checked=$profiles" || fail migrated_fixture_receipt
   exit 0
 fi
 [[ $# == 0 ]] || fail unexpected_arguments
