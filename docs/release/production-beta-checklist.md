@@ -4,13 +4,14 @@
 
 **Not production-ready.** Both current participants now have a usable accepted
 score, and a fresh physical readback established warm background-observer
-receipts. This checkpoint supersedes the earlier missing-score and missing
-warm-observer evidence, not the separate APNs, replay, deletion or recovery gates.
+receipts. The approved manual notification sequence is also complete within
+the limits below. This checkpoint does not close backend-triggered delivery,
+replay, deletion, recovery or production gates.
 
 - **Automated source matrix:** merged source
-  `f785866aec7126f7dbb0a2f2d30ba65fad836369` passed
-  [Backend CI](https://github.com/narenyenuganti/health-comp/actions/runs/36627214426)
-  and [iOS CI](https://github.com/narenyenuganti/health-comp/actions/runs/36627214514).
+  `7a3f244460f964d5a072fad8888c68f801c80026` passed
+  [Backend CI](https://github.com/narenyenuganti/health-comp/actions/runs/36678396365)
+  and [iOS CI](https://github.com/narenyenuganti/health-comp/actions/runs/36678396361).
   Both completed statuses and the unchanged remote main were rechecked.
 - **Physical package:** retained signed Staging source `c93da2c` has the same
   repository tree as `151feb3`. Executable SHA-256:
@@ -50,16 +51,66 @@ warm-observer evidence, not the separate APNs, replay, deletion or recovery gate
   signatures were copied or retained. Retained evidence contains only aggregates
   and public artifact metadata. These checks did not change accounts, create an
   invitation, access production, rebuild or reinstall the app.
+- **Manual notification sequence:** three approved Development/Sandbox Apple
+  Console sends reached the exact Staging installation, with Apple reporting
+  device delivery for each. Foreground UI and a foreground-to-Home transition
+  were observed for the first two sends. The third followed native developer
+  SIGTERM and a sampled zero-process readback, not verified user force-quit or
+  continuous process absence. The owner reported both background and terminated-
+  app notification taps opened the competition; subsequent observed/supplied UI
+  showed its matching schedule. The taps and exact private route ID were not
+  independently observed. Foreground app receipt was not proven. These are
+  scoped manual transport/UI findings, not a full APNs pass. Do not repeat the
+  three-send sequence.
+- **Backend notification correlation:** a September 30 read-only transaction
+  found one active sandbox installation and one accepted participant for the
+  earlier physical binding, but zero work rows for that exact installation and
+  current competition. The broader historical sent count does not prove delivery to
+  this installation. No cause is established. Apple Delivery Log requires the
+  response `apns-unique-id`; the reviewed worker sends a client `apns-id` and
+  does not retain that response header. HTTP 200 / work state `sent` proves
+  acceptance, not device delivery. This source check is not a deployed-code
+  byte comparison or a fresh phone binding.
+- **Scheduler prerequisite:** a separate September 30 read-only snapshot found
+  one active finalizer and one active notification-repair job matching the
+  reviewed commands and five-minute / one-minute schedules. Retained history
+  showed three finalizer successes in 15 minutes and five repair successes in
+  five minutes, with zero recorded failures for either in 24 hours. No pending
+  notification was overdue by more than ten minutes and no lease was expired.
+  Cron success is not worker HTTP success, device delivery or future finalization.
+  These queries were repeatable-read, timeout-bounded and rolled back; no job,
+  send, account switch or hosted setting change was initiated by them.
 
 The existing competition remains September 28–October 4 in
-`America/Los_Angeles`; October 5 is the earliest stable-result check, not a
-completion promise. Preserve both profiles and the competition. Still required:
-the stable two-account result; APNs delivery and routes;
+`America/Los_Angeles`. A September 30 aggregate readback matched exactly one
+competition and two accepted participants and verified the October 5 00:00
+Pacific stable-attestation boundary and October 6 00:00 Pacific best-available
+deadline. Creator/invitee coverage was three/two days with accepted revisions,
+including unavailable evidence; neither had seven days or a stable attestation,
+and no result existed.
+
+October 5 requires active reconciliation before the fallback deadline, not just
+waiting: both accounts must have all seven accepted daily revisions and submit
+matching final-window commitments for a stable result. Truthfully unavailable
+revisions are distinct from missing submissions or observed zero activity.
+Final-window confirmation itself is authenticated, without a new App Attest
+proof; missing daily submissions still use the device-backed score path.
+The Simulator may confirm a complete server window but must not be assumed to
+fill missing revisions. The one-phone/two-account topology may need sequential
+catch-up with owner-assisted sign-in. No second phone, synthetic Health data or
+new competition is required. Do not alter the deadline or relabel a
+`best_available` result as `stable`.
+
+Use the natural result-triggered notification alongside result verification to
+collect the remaining backend-delivery evidence. Its existence in source is not
+future delivery proof. Preserve both profiles and the competition; this record
+authorizes no account switch or deletion. Still required:
+the stable two-account result; real backend-triggered APNs delivery and routes;
 remaining App Attest continuity/replay and replacement-installation evidence;
 physical deletion/revocation, local cleanup and retained anonymized history;
 contained real recovery plus forward repair; final release/privacy qualification
 and production promotion. Universal links remain an approved beta deferral, not
-a pass. These scoring and observer observations do not waive the remaining gates.
+a pass. These observations do not waive the remaining gates.
 
 Privacy-safe operator receipts are retained outside the public repository:
 
@@ -69,6 +120,14 @@ Privacy-safe operator receipts are retained outside the public repository:
   `d45b7d1a86ec1c78ca49307c2d103075db74f35840a7688085c4cc34d1a5ec9e`.
 - `physical-background-readback-c93da2c-2026-09-30.json`, SHA-256
   `6c6f91fb089458fe3e6944fb16061891aaf6f26b9f389ea133cd0602b3f93f5f`.
+- `physical-apns-console-c93da2c-2026-09-30.json`, SHA-256
+  `3d80a42f2b1cbe7c2a002391d202ddd0310bd109a0efd9d74ef440f1f6c39190`.
+- `staging-physical-notification-correlation-2026-09-30.json`, SHA-256
+  `423a91a10fd958dc9ad1e8fc89821645cf88e49896c0a93a8b76e914d023c977`.
+- `staging-scheduled-job-readback-2026-09-30.json`, SHA-256
+  `b492232cf7d0ca1a8c7beef89cbcc998058d5936d9cf0c73dea84db48587a308`.
+- `staging-finalization-timing-readback-2026-09-30.json`, SHA-256
+  `93ae5f6dc329145c03efe954788e817993a8b3db46e14c52c6955ed78490185f`.
 
 ## Historical qualification checkpoint — September 28, 2026 UTC
 
