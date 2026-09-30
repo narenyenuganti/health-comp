@@ -1,28 +1,29 @@
 # HealthComp Production Beta Verification Checklist
 
-## Current qualification checkpoint — September 29, 2026 UTC
+## Current qualification checkpoint — September 30, 2026 UTC
 
 **Not production-ready.** Both current participants now have a usable accepted
-score. This checkpoint supersedes the earlier missing-score/current-package
-statements, not the separate background, replay, deletion or recovery gates.
+score, and a fresh physical readback established warm background-observer
+receipts. This checkpoint supersedes the earlier missing-score and missing
+warm-observer evidence, not the separate APNs, replay, deletion or recovery gates.
 
 - **Automated source matrix:** merged source
-  `151feb379b182e98b8ef0c88288c2a19793eec4b` passed
-  [Backend CI](https://github.com/narenyenuganti/health-comp/actions/runs/36537692968)
-  and [iOS CI](https://github.com/narenyenuganti/health-comp/actions/runs/36537693008).
+  `f785866aec7126f7dbb0a2f2d30ba65fad836369` passed
+  [Backend CI](https://github.com/narenyenuganti/health-comp/actions/runs/36627214426)
+  and [iOS CI](https://github.com/narenyenuganti/health-comp/actions/runs/36627214514).
   Both completed statuses and the unchanged remote main were rechecked.
 - **Physical package:** retained signed Staging source `c93da2c` has the same
   repository tree as `151feb3`. Executable SHA-256:
   `cf3b8c2b040d88c153c14fb149574b2e43b56ef92be3b1f42dfb1d97cfc42147`.
   Its hash, strict signature and provisioning passed; installed bundle/version
   metadata matched. This is not a fresh hash of the executable on the phone.
-- **Two-account scoring:** the 19:33 UTC read-only server inventory found two
-  accepted participants, each with one latest available daily revision. Creator
+- **Two-account scoring:** the September 29, 19:33 UTC read-only server inventory
+  found two accepted participants, each with one latest available daily revision. Creator
   revisions increased from zero to two; invitee revisions remained five. Both
   have revisions on the two elapsed days, but coverage includes unavailable
   revisions and does not mean both days have usable scores. No result exists yet.
-- **Current physical binding:** at 19:45 UTC, one phone profile, its active sandbox
-  installation and its local development App Attest key matched the creator's
+- **Current physical binding:** on September 29 at 19:45 UTC, one phone profile,
+  its active sandbox installation and its local development App Attest key matched the creator's
   stored usable revision and consumed assertion chain. The same local bindings
   matched on reread. The existing live creator competition UI was observed without
   a warning; no additional launch or refresh was performed. The account switch
@@ -30,7 +31,20 @@ statements, not the separate background, replay, deletion or recovery gates.
   not refresh causality, counter advancement, cryptographic replay resistance or
   continuous file/process identity. The query's proof counts are scoped to this
   installation/key; a zero for the other participant is not a historical failure.
-- **Privacy and scope:** hosted reads were read-only, repeatable-read and rolled
+- **Warm background observer:** after an independently observed foreground-to-Home
+  transition, a fresh RAM-only baseline was armed September 30 at
+  `04:57:11.992404Z`. Exactly one readback completed at `05:16:55.926614Z`,
+  comparing through `05:16:46.229501Z`: 12 new unique, issue-free,
+  positive-revision background-classified receipts, all inside the window.
+  The sampled executable path, PID and profile matched before and after. At the
+  128-receipt cap, 116 baseline rows remained and 12 front rows were evicted under
+  the reviewed overlap rule. This establishes the scoped warm-observer readback,
+  not continuous process lifetime, source-inode identity, cold-launch provenance,
+  server acceptance of a background score, APNs delivery or whole-goal completion.
+  Only aggregates and public artifact metadata were retained from this readback.
+  The reader exited successfully and its one-shot automation is paused; do not
+  reuse the terminal session or reconstruct its private baseline.
+- **September 29 scoring/binding privacy and scope:** hosted reads were read-only, repeatable-read and rolled
   back. Only the two named local installation/key state documents were temporarily
   copied and removed. No raw HealthKit data, authentication/push tokens or proof
   signatures were copied or retained. Retained evidence contains only aggregates
@@ -40,12 +54,12 @@ statements, not the separate background, replay, deletion or recovery gates.
 The existing competition remains September 28–October 4 in
 `America/Los_Angeles`; October 5 is the earliest stable-result check, not a
 completion promise. Preserve both profiles and the competition. Still required:
-the stable two-account result; attributable background delivery and APNs routes;
+the stable two-account result; APNs delivery and routes;
 remaining App Attest continuity/replay and replacement-installation evidence;
 physical deletion/revocation, local cleanup and retained anonymized history;
 contained real recovery plus forward repair; final release/privacy qualification
 and production promotion. Universal links remain an approved beta deferral, not
-a pass. These scoring observations do not waive the remaining gates.
+a pass. These scoring and observer observations do not waive the remaining gates.
 
 Privacy-safe operator receipts are retained outside the public repository:
 
@@ -53,6 +67,8 @@ Privacy-safe operator receipts are retained outside the public repository:
   `472f518578e65e89dde979b91badba048e481aeacca2387551322568c77a6187`.
 - `physical-creator-stored-proof-binding-c93da2c-2026-09-29.json`, SHA-256
   `d45b7d1a86ec1c78ca49307c2d103075db74f35840a7688085c4cc34d1a5ec9e`.
+- `physical-background-readback-c93da2c-2026-09-30.json`, SHA-256
+  `6c6f91fb089458fe3e6944fb16061891aaf6f26b9f389ea133cd0602b3f93f5f`.
 
 ## Historical qualification checkpoint — September 28, 2026 UTC
 
@@ -961,8 +977,8 @@ remain last-observed setup facts.
 | --- | --- | --- |
 | Signed staging launch | PASS | Selected artifact `c5932ed` is signed and strictly validated with executable SHA-256 `1658b606f986ce39fc878673fc3b5b7e7fe495e72f386109be1181f4397a6e71`. The September 2 selected installation receipt above proves state-preserving over-install and authenticated retained-session launch without a sign-in/setup, connection-error, or Health-prompt surface. It does not assert current phone state |
 | Sign in with Apple | PARTIAL | Then-selected artifact `aa16411` completed one fresh native authorization and warning-free authenticated readback. Selected artifact `c5932ed` later preserved and restored the authenticated session through its September 2 over-install/launch. Fresh native authorization on the selected artifact remains pending |
-| HealthKit | PARTIAL | Grant, revoke, and re-enable startup paths completed historically; then-selected artifact `aa16411` displayed an active-competition derived score and submitted one HealthKit-derived revision. Selected artifact `c5932ed` produced six new clean background-classified observer receipts with positive publication revisions on September 2. Fresh selected-artifact authorization, foreground accepted submission, and attributable background-wake evidence remain incomplete |
-| Background observer | PARTIAL | Historical `c3a8fb2`'s six pre-fix labels prove callback durability only and remain excluded from attribution. Selected artifact `c5932ed` contains the corrected classifier and produced six new unique, issue-free, positive-revision `observerWakeupBackground` receipts with unchanged preexisting receipts on September 2. The final process differed from the armed process, so the full gate remains false; receipt SHA-256 is `79bf470b8af7320b1b31b1ee7c2d073cdb0fa972dd9021dc48b1f1d077762bb7`. Revalidate the installed artifact and establish a fresh active-to-background process and post-transition baseline, then coordinate a real Watch save with immediate readback. Accept only new qualifying receipts with the same process and retain only aggregate facts. Reinstall only if current artifact validation requires it; the old armed baseline cannot establish current state |
+| HealthKit | PARTIAL | Grant, revoke, and re-enable startup paths completed historically; then-selected artifact `aa16411` displayed an active-competition derived score and submitted one HealthKit-derived revision. The current checkpoint records September 29 accepted-score/binding evidence and September 30 warm background-observer receipts for `c93da2c`. These do not requalify every permission transition, establish foreground-refresh causality, or prove server acceptance from a background callback |
+| Background observer | PASS (warm observer readback only) | September 30 `c93da2c` readback found 12 new unique, issue-free, positive-revision background receipts after an observed active-to-Home transition and fresh baseline, with matching sampled executable path/PID/profile. Receipt SHA-256: `6c6f91fb089458fe3e6944fb16061891aaf6f26b9f389ea133cd0602b3f93f5f`. The current checkpoint records the window, bounded eviction and proof limits. Continuous process lifetime, source-inode identity, cold-launch provenance and server score acceptance were not proved. Historical pre-fix `c3a8fb2` labels and the September 2 `c5932ed` readback with a changed process remain excluded; no old baseline was reused |
 | APNs | PARTIAL | iOS authorization and one active sandbox installation were verified at `2026-08-16T07:04:49.701324Z`; foreground, background, and cold-route delivery remain pending |
 | App Attest | PARTIAL | Then-selected artifact `aa16411` accepted one HealthKit-derived revision through one consumed challenge and grant, and exact server-side replay of each capability failed closed. Receipt SHA-256: `efb3ebf8dc877efc62fc9f682484e12116dd92a133c6a9d659a1dba5a6646f44`. Selected artifact `c5932ed` has installation and retained-session evidence but no attributable accepted foreground assertion receipt. Selected-artifact acceptance and replacement-installation enrollment remain pending |
 | Account deletion | PENDING | Reauthorization, server-confirmed completion, local wipe, no resurrection, and preserved Former competitor history |
