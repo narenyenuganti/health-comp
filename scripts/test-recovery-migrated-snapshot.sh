@@ -10,7 +10,7 @@ manifest_hash='554117d710521c71eb4a52473a2e2d62d996118814b585aa5b5d7c09222e1b95'
 checks=/opt/healthcomp-recovery-checks
 fail() { printf 'migrated_snapshot_test: %s\n' "$1" >&2; exit 1; }
 [[ $# == 0 ]] || fail unexpected_arguments
-for tool in docker supabase jq awk shasum python3 pg_isready; do command -v "$tool" >/dev/null || fail missing_tool; done
+for tool in docker supabase jq awk shasum python3 pg_isready openssl; do command -v "$tool" >/dev/null || fail missing_tool; done
 [[ $(docker context show) == orbstack ]] || fail orbstack_required
 # Pin both Docker and the CLI's client to the same local OrbStack endpoint.
 endpoint=$(docker context inspect orbstack --format '{{.Endpoints.docker.Host}}') || fail orbstack_endpoint
@@ -105,6 +105,7 @@ cleanup() {
     docker network inspect "$network_name" >/dev/null 2>&1 && status=1
   fi
   if (( status == 0 )) && [[ -f $scratch/owner-marker && $scratch =~ ^/tmp/healthcomp-migrated-local\.[A-Za-z0-9]{6}$ ]]; then
+    rm -f -- "$scratch/healthcomp-recovery.key" "$scratch/healthcomp-untrusted.key" || status=1
     if (( result == 0 )); then
       rm -rf -- "$scratch" || status=1
     else
@@ -201,6 +202,48 @@ host_status=0
 host_ready || host_status=$?
 [[ $host_status == 2 ]] || fail source_host_postgres_still_reachable
 [[ $(sql "$source_id" -c 'select 1;') == 1 ]] || fail source_socket_after_disconnect
+
+tls_host=healthcomp-recovery.invalid
+tls_ca=/tmp/healthcomp-recovery.crt
+# Generate throwaway certificates with the host tool; the pinned image has no openssl binary.
+for identity in healthcomp-recovery healthcomp-untrusted; do
+  openssl req -new -x509 -newkey rsa:2048 \
+    -nodes -sha256 -days 1 -subj "/CN=$identity.invalid" \
+    -addext "subjectAltName=DNS:$identity.invalid" \
+    -keyout "$scratch/$identity.key" -out "$scratch/$identity.crt" \
+    >"$scratch/tls-fixture-output" 2>&1 || fail tls_fixture
+  docker cp "$scratch/$identity.crt" "$source_name:/tmp/$identity.crt" || fail tls_cert_copy
+  if [[ $identity == healthcomp-recovery ]]; then
+    docker cp "$scratch/$identity.key" "$source_name:/tmp/$identity.key" || fail tls_key_copy
+    docker exec "$source_name" chown postgres:postgres "/tmp/$identity.key" "/tmp/$identity.crt" || fail tls_key_owner
+  fi
+  rm -- "$scratch/$identity.key" || fail tls_host_key_cleanup
+done
+sql_user "$source_name" supabase_admin \
+  -c "alter system set ssl_cert_file = '$tls_ca'" \
+  -c "alter system set ssl_key_file = '/tmp/healthcomp-recovery.key'" \
+  -c 'alter system set ssl = on' >/dev/null || fail source_tls_config
+[[ $(sql_user "$source_name" supabase_admin -c 'select pg_reload_conf();') == t ]] || fail source_tls_reload
+[[ $(sql "$source_name" -c 'show ssl;') == on ]] || fail source_tls_disabled
+dump_source() {
+  local hostname=$1 root_cert=$2
+  shift 2
+  # hostaddr pins TCP to this container's loopback; host still verifies the certificate name.
+  docker exec "$source_name" env PGHOST="$hostname" PGHOSTADDR=127.0.0.1 PGPORT=5432 \
+    PGSSLMODE=verify-full PGSSLROOTCERT="$root_cert" PGGSSENCMODE=disable PGCONNECT_TIMEOUT=5 \
+    pg_dump --no-password \
+    --username=supabase_admin --dbname=postgres --format=custom --lock-wait-timeout=5s \
+    "$@" >"$scratch/archive" 2>"$scratch/dump-error"
+}
+dump_source "$tls_host" "$tls_ca" || fail valid_tls_dump
+[[ -s "$scratch/archive" && ! -s "$scratch/dump-error" ]] || fail valid_tls_dump_output
+if dump_source wrong-recovery.invalid "$tls_ca"; then fail invalid_tls_hostname_accepted; fi
+[[ ! -s "$scratch/archive" ]] || fail invalid_tls_hostname_archive
+awk '/does not match host name/ {found=1} END {exit !found}' "$scratch/dump-error" || fail invalid_tls_hostname_error
+if dump_source "$tls_host" /tmp/healthcomp-untrusted.crt; then fail untrusted_tls_certificate_accepted; fi
+[[ ! -s "$scratch/archive" ]] || fail untrusted_tls_certificate_archive
+awk '/certificate verify failed/ {found=1} END {exit !found}' "$scratch/dump-error" || fail untrusted_tls_certificate_error
+printf '%s\n' 'native_dump_tls_hostname_and_trust_rejection_passed'
 
 target_attempted=1
 docker run --detach --rm --name "$target_name" --label "$owner_label" \
@@ -303,9 +346,7 @@ for mode in bound unbound; do
     IFS= read -r -t 10 alive <&4 && [[ $alive == 1 ]] || fail exporter_not_alive
     dump_args=("--snapshot=$snapshot")
   fi
-  docker exec "$source_name" pg_dump --no-password --host=/var/run/postgresql \
-    --username=supabase_admin --dbname=postgres --format=custom --lock-wait-timeout=5s \
-    "${dump_args[@]}" >"$scratch/archive" 2>"$scratch/dump-error" || fail "${mode}_dump"
+  dump_source "$tls_host" "$tls_ca" "${dump_args[@]}" || fail "${mode}_dump"
   [[ ! -s "$scratch/dump-error" ]] || fail "${mode}_dump_warning"
   if [[ $mode == bound ]]; then
     stop_exporter || fail exporter_termination

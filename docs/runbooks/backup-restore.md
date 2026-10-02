@@ -52,6 +52,16 @@ hosted or operator recovery procedure. Hosted TLS, complete cluster-global and
 non-MVCC state, Auth/Vault service behavior, genuine deleted-user history,
 forward repair, RPO/RTO and production qualification remain unqualified.
 
+On October 2, 2026 (UTC), the same local test exported over TLS inside the
+disconnected source container. Native `pg_dump` rejected a mismatched hostname
+and an untrusted certificate without producing an archive. With the matching
+test certificate, both the shared-snapshot restore and concurrent-write control
+passed the existing history, state and foreign-key checks. The test uses
+throwaway self-signed certificates and container-loopback TCP; other local
+clients still use Unix sockets. This does not qualify hosted certificates,
+credential handling or the full recovery procedure. See PostgreSQL's
+[client certificate-verification modes](https://www.postgresql.org/docs/17/libpq-ssl.html).
+
 Do not assume a paid-plan clone solves pre-import containment. The current
 [Supabase clone documentation](https://supabase.com/docs/guides/platform/clone-project)
 says copied external-operation extensions and jobs start when restore completes
