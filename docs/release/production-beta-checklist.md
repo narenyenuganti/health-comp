@@ -1,17 +1,18 @@
 # HealthComp Production Beta Verification Checklist
 
-## Current qualification checkpoint — September 30, 2026 UTC
+## Current qualification checkpoint — October 2, 2026 UTC
 
 **Not production-ready.** Both current participants now have a usable accepted
 score, and a fresh physical readback established warm background-observer
 receipts. The approved manual notification sequence is also complete within
-the limits below. This checkpoint does not close backend-triggered delivery,
+the limits below, and a paired same-key observation now confirms App Attest
+counter advancement. This checkpoint does not close backend-triggered delivery,
 replay, deletion, recovery or production gates.
 
 - **Automated source matrix:** merged source
-  `7a3f244460f964d5a072fad8888c68f801c80026` passed
-  [Backend CI](https://github.com/narenyenuganti/health-comp/actions/runs/36678396365)
-  and [iOS CI](https://github.com/narenyenuganti/health-comp/actions/runs/36678396361).
+  `a3c9efead9117b0fbbf5e01a2ea8f4923a525560` passed
+  [Backend CI](https://github.com/narenyenuganti/health-comp/actions/runs/36773936237)
+  and [iOS CI](https://github.com/narenyenuganti/health-comp/actions/runs/36773936310).
   Both completed statuses and the unchanged remote main were rechecked.
 - **Physical package:** retained signed Staging source `c93da2c` has the same
   repository tree as `151feb3`. Executable SHA-256:
@@ -32,6 +33,18 @@ replay, deletion, recovery or production gates.
   not refresh causality, counter advancement, cryptographic replay resistance or
   continuous file/process identity. The query's proof counts are scoped to this
   installation/key; a zero for the other participant is not a historical failure.
+- **Same-key counter advancement:** on October 2, from `03:15:16.183424Z`
+  through `03:19:56.231887Z`, two read-only snapshots matched the same RAM-held
+  private profile, active sandbox installation and development key. The counter
+  advanced from 32 to 34; scoped revision rows increased from 33 to 35, available
+  rows from 31 to 33, and consumed assertion chains from 3 to 4. The saved strict
+  aggregate receipt was independently validated, and the reader exited with no
+  retained private copies. One refresh gesture was observed during the window,
+  without a visible error; callback completion and refresh causality were not
+  established. These are same-window findings, not a one-to-one link from each
+  counter increment to a newly accepted score, cryptographic replay resistance,
+  continuous process/file identity, or replacement-installation qualification.
+  Do not repeat this completed counter check or reconstruct its discarded binding.
 - **Warm background observer:** after an independently observed foreground-to-Home
   transition, a fresh RAM-only baseline was armed September 30 at
   `04:57:11.992404Z`. Exactly one readback completed at `05:16:55.926614Z`,
@@ -106,7 +119,7 @@ collect the remaining backend-delivery evidence. Its existence in source is not
 future delivery proof. Preserve both profiles and the competition; this record
 authorizes no account switch or deletion. Still required:
 the stable two-account result; real backend-triggered APNs delivery and routes;
-remaining App Attest continuity/replay and replacement-installation evidence;
+remaining score-specific App Attest linkage/replay and replacement-installation evidence;
 physical deletion/revocation, local cleanup and retained anonymized history;
 contained real recovery plus forward repair; final release/privacy qualification
 and production promotion. Universal links remain an approved beta deferral, not
@@ -114,6 +127,8 @@ a pass. These observations do not waive the remaining gates.
 
 Privacy-safe operator receipts are retained outside the public repository:
 
+- `physical-paired-hosted-counter-20261002T031958Z.json`, SHA-256
+  `e0547f043c919e6a5856c6621bc3452f28f685340a56ff8c393b8cf776407990`.
 - `staging-score-proof-after-creator-refresh-2026-09-29.json`, SHA-256
   `472f518578e65e89dde979b91badba048e481aeacca2387551322568c77a6187`.
 - `physical-creator-stored-proof-binding-c93da2c-2026-09-29.json`, SHA-256
