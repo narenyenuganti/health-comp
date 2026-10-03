@@ -45,6 +45,158 @@ const item = {
 };
 const workerAuthorization = `Bearer ${"w".repeat(43)}`;
 
+Deno.test("sandbox APNs acceptance privately correlates the returned delivery-log identifier", async () => {
+  const calls: { name: string; args: Record<string, unknown> }[] = [];
+  const client: NotificationRpcClient = {
+    rpc: (name, args) => {
+      calls.push({ name, args });
+      return Promise.resolve({
+        data: name === "lease_competition_notification_work"
+          ? { items: [item] }
+          : true,
+        error: null,
+      });
+    },
+  };
+  const response = await sendCompetitionNotificationHandler(
+    request(),
+    dependencies(client, () =>
+      Promise.resolve(
+        new Response(null, {
+          status: 200,
+          headers: { "apns-unique-id": "development-log_ABC123" },
+        }),
+      )),
+  );
+  assertEquals(calls[1], {
+    name: "resolve_competition_notification_work_with_delivery_log",
+    args: {
+      work_id: item.workId,
+      lease_token: item.leaseToken,
+      apns_unique_id: "development-log_ABC123",
+    },
+  });
+  assertEquals(response.status, 200);
+  assertEquals(await response.json(), {
+    leasedCount: "1",
+    sentCount: "1",
+    retriedCount: "0",
+    invalidTokenCount: "0",
+    discardedCount: "0",
+    unresolvedCount: "0",
+  });
+});
+
+Deno.test("unusable or non-development delivery headers preserve legacy resolution", async () => {
+  for (
+    const scenario of [
+      { environment: "sandbox", status: 200, header: null, outcome: "sent" },
+      { environment: "sandbox", status: 200, header: "", outcome: "sent" },
+      {
+        environment: "sandbox",
+        status: 200,
+        header: "contains space",
+        outcome: "sent",
+      },
+      { environment: "sandbox", status: 200, header: "é", outcome: "sent" },
+      {
+        environment: "sandbox",
+        status: 200,
+        header: "x".repeat(257),
+        outcome: "sent",
+      },
+      {
+        environment: "production",
+        status: 200,
+        header: "development-log_ABC123",
+        outcome: "sent",
+      },
+      {
+        environment: "sandbox",
+        status: 429,
+        header: "development-log_ABC123",
+        outcome: "retry",
+      },
+    ]
+  ) {
+    const calls: { name: string; args: Record<string, unknown> }[] = [];
+    const client: NotificationRpcClient = {
+      rpc: (name, args) => {
+        calls.push({ name, args });
+        return Promise.resolve({
+          data: name === "lease_competition_notification_work"
+            ? { items: [{ ...item, environment: scenario.environment }] }
+            : true,
+          error: null,
+        });
+      },
+    };
+    const response = await sendCompetitionNotificationHandler(
+      request(),
+      dependencies(client, () =>
+        Promise.resolve(
+          new Response(null, {
+            status: scenario.status,
+            headers: scenario.header === null
+              ? undefined
+              : { "apns-unique-id": scenario.header },
+          }),
+        )),
+    );
+    assertEquals(calls[1], {
+      name: "resolve_competition_notification_work",
+      args: {
+        work_id: item.workId,
+        lease_token: item.leaseToken,
+        outcome: scenario.outcome,
+        retry_after_seconds: scenario.outcome === "retry" ? 60 : null,
+      },
+    });
+    assertEquals(response.status, 200);
+  }
+});
+
+Deno.test("unresolved development correlation never reports acceptance or retries resolution", async () => {
+  for (const resolutionResult of [false, null]) {
+    const calls: string[] = [];
+    const client: NotificationRpcClient = {
+      rpc: (name) => {
+        calls.push(name);
+        return Promise.resolve({
+          data: name === "lease_competition_notification_work"
+            ? { items: [item] }
+            : resolutionResult,
+          error: name !== "lease_competition_notification_work" &&
+              resolutionResult === null
+            ? { message: "unavailable" }
+            : null,
+        });
+      },
+    };
+    const response = await sendCompetitionNotificationHandler(
+      request(),
+      dependencies(client, () =>
+        Promise.resolve(
+          new Response(null, {
+            status: 200,
+            headers: { "apns-unique-id": "development-log_ABC123" },
+          }),
+        )),
+    );
+    assertEquals(calls, [
+      "lease_competition_notification_work",
+      "resolve_competition_notification_work_with_delivery_log",
+    ]);
+    assertEquals(response.status, 502);
+    assertEquals(await response.json(), {
+      error: {
+        code: "notification_worker_unavailable",
+        message: "Notification worker unavailable",
+      },
+    });
+  }
+});
+
 function request(
   body = "{}",
   authorization = workerAuthorization,

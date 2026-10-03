@@ -42,6 +42,7 @@ type ResolutionOutcome = "sent" | "retry" | "invalid_token" | "discard";
 interface Resolution {
   outcome: ResolutionOutcome;
   retryAfterSeconds: number | null;
+  apnsUniqueId?: string;
 }
 
 const uuidPattern =
@@ -323,9 +324,22 @@ async function apnsReason(response: Response): Promise<string | null> {
   }
 }
 
-async function resolution(response: Response): Promise<Resolution> {
+async function resolution(
+  response: Response,
+  environment: NotificationWorkItem["environment"],
+): Promise<Resolution> {
   if (response.status === 200) {
-    return { outcome: "sent", retryAfterSeconds: null };
+    const apnsUniqueId = response.headers.get("apns-unique-id");
+    // Apple documents this opaque response identifier only for development
+    // delivery logs. Acceptance is not proof that a device received the push.
+    return {
+      outcome: "sent",
+      retryAfterSeconds: null,
+      ...(environment === "sandbox" && apnsUniqueId &&
+          /^[\x21-\x7E]{1,256}$/.test(apnsUniqueId)
+        ? { apnsUniqueId }
+        : {}),
+    };
   }
   if (response.status === 410) {
     return { outcome: "invalid_token", retryAfterSeconds: null };
@@ -436,19 +450,28 @@ export async function sendCompetitionNotificationHandler(
               await deps.send(
                 apnsRequest(item, deps.configuration!, providerToken),
               ),
+              item.environment,
             );
           } catch {
             decision = { outcome: "retry", retryAfterSeconds: 60 };
           }
           try {
             const resolved = await client.rpc(
-              "resolve_competition_notification_work",
-              {
-                work_id: item.workId,
-                lease_token: item.leaseToken,
-                outcome: decision.outcome,
-                retry_after_seconds: decision.retryAfterSeconds,
-              },
+              decision.apnsUniqueId
+                ? "resolve_competition_notification_work_with_delivery_log"
+                : "resolve_competition_notification_work",
+              decision.apnsUniqueId
+                ? {
+                  work_id: item.workId,
+                  lease_token: item.leaseToken,
+                  apns_unique_id: decision.apnsUniqueId,
+                }
+                : {
+                  work_id: item.workId,
+                  lease_token: item.leaseToken,
+                  outcome: decision.outcome,
+                  retry_after_seconds: decision.retryAfterSeconds,
+                },
             );
             return resolved.error || resolved.data !== true ? null : decision;
           } catch {
