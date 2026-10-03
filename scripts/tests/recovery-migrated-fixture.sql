@@ -19,7 +19,7 @@ begin
   if current_database() <> 'postgres' or inet_server_addr() is not null
     or current_setting('healthcomp.recovery_fixture', true) is distinct from 'synthetic-20260928'
     or batch not in (1,2)
-    or (select max(version) from supabase_migrations.schema_migrations) <> '20260928001600'
+    or (select max(version) from supabase_migrations.schema_migrations) <> '20261002001700'
     or (select count(*) from public.competitions) <> batch - 1
     or (select count(*) from auth.users) <> 2 * (batch - 1)
   then raise exception using errcode='P0001',message='isolated_fixture_required'; end if;

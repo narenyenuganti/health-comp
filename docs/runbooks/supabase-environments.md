@@ -423,6 +423,43 @@ that HealthKit values are truthful.
 - The worker payload stays generic and route-only. Never add display names,
   points, Health data, or invitation tokens.
 
+### Development delivery log correlation
+
+Apple's [APNs response documentation](https://developer.apple.com/documentation/usernotifications/handling-notification-responses-from-apns)
+distinguishes the request's `apns-id` from the response's `apns-unique-id`.
+The [Push Notification Console](https://developer.apple.com/documentation/usernotifications/testing-notifications-using-the-push-notification-console)
+uses the latter to retrieve development delivery logs, available for up to
+seven days. HTTP 200 and a durable `sent` state mean APNs accepted a request;
+neither proves delivery to a device or that tapping it opened the right route.
+
+Migration `20261002001700` adds one nullable
+`apns_development_delivery_log_id` field to private notification work and the
+service-only `resolve_competition_notification_work_with_delivery_log` RPC.
+Promote the migration before the updated worker. The original four-argument
+resolution RPC remains unchanged for older workers and for responses without
+a usable development header. This source change is not hosted promotion or
+physical delivery evidence.
+
+The worker forwards the response identifier only after a sandbox HTTP 200.
+It treats the identifier as opaque, accepting 1–256 printable ASCII bytes
+without spaces; this is HealthComp's storage bound, not an Apple format claim.
+Missing or unusable headers, production responses and unsuccessful sends
+continue through the original resolution RPC without adding correlation.
+The new RPC resolves acceptance atomically and retains the identifier only
+for the exact unexpired lease and matching active sandbox token. Stale lease
+tokens cannot overwrite a completed correlation. Token rotation, retirement,
+an expired lease or a changed environment suppress retention without changing
+the original acceptance resolution semantics.
+
+Do not put delivery-log identifiers, device tokens, routing IDs or payloads
+in Function responses, logs, CI output or public evidence. The private field
+has no client read API or direct service-role table grant. It follows existing
+operational-work retention, with no new automatic cleanup schedule;
+installation deletion cascades the associated work. An authorized operator
+may use the identifier privately in Apple's console, but retain only aggregate
+delivery findings in qualification evidence. Physical delivery and route
+checks remain separate required gates.
+
 ## Finalizer and notification repair schedules
 
 These schedules are hosted environment state, not proof supplied by source.

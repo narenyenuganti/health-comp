@@ -159,7 +159,7 @@ select is((
   where column_row.table_schema = 'private'
     and column_row.table_name = 'competition_notification_work'
 ), array[
-  'attempt_count', 'available_at', 'competition_id', 'completed_at',
+  'apns_development_delivery_log_id', 'attempt_count', 'available_at', 'competition_id', 'completed_at',
   'created_at', 'id', 'installation_id', 'kind', 'lease_expires_at',
   'lease_token', 'leased_apns_token_sha256', 'recipient_profile_id',
   'semantic_id', 'server_seq', 'source_profile_id', 'state', 'updated_at'
