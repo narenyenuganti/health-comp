@@ -50,7 +50,9 @@ begin
   if not found then return false; end if;
 
   -- Do not attach a development identifier to a rotated, retired, production,
-  -- or expired binding. Lock a matching installation until resolution commits.
+  -- or expired binding. Skip a busy installation rather than reversing the
+  -- installation-to-work lock order used by cascading deletion. Correlation is
+  -- optional; acceptance still resolves through the original RPC.
   if work_record.lease_expires_at > pg_catalog.statement_timestamp() then
     select true into retain_identifier
     from public.device_installations installation_row
@@ -60,7 +62,7 @@ begin
       and installation_row.environment = 'sandbox'
       and extensions.digest(installation_row.apns_token, 'sha256')
         = work_record.leased_apns_token_sha256
-    for share;
+    for share skip locked;
   end if;
 
   if not public.resolve_competition_notification_work(

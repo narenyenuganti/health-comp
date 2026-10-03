@@ -448,7 +448,7 @@ continue through the original resolution RPC without adding correlation.
 The new RPC resolves acceptance atomically and retains the identifier only
 for the exact unexpired lease and matching active sandbox token. Stale lease
 tokens cannot overwrite a completed correlation. Token rotation, retirement,
-an expired lease or a changed environment suppress retention without changing
+an expired lease, a busy installation or a changed environment suppress retention without changing
 the original acceptance resolution semantics.
 
 Do not put delivery-log identifiers, device tokens, routing IDs or payloads
