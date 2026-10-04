@@ -1,5 +1,19 @@
 # HealthComp Production Beta Verification Checklist
 
+## Private beta scope exception October 4 2026
+
+The owner removed physical account-deletion verification from the required
+beta tests: server completion, local cleanup and post-deletion anonymized-history
+readback are **SKIPPED / UNVERIFIED**, not PASS. Do not delete an account for
+this test. The deletion feature, automated coverage and privacy/history
+safeguards remain unchanged. This exception supersedes the deletion-test
+requirement in the dated checkpoints below, not their historical observations.
+
+The [recovery runbook](../runbooks/backup-restore.md#private-beta-deletion-test-exception)
+records the matching boundary. Actual recovery, protection against resurrecting
+deleted identities, and all other unwaived qualification gates remain open.
+This is a scope decision, not a runtime receipt or production-readiness claim.
+
 ## Current qualification checkpoint — October 2, 2026 UTC
 
 **Not production-ready.** Both current participants now have a usable accepted

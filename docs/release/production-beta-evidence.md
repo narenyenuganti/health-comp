@@ -4,6 +4,16 @@ This file records anonymized, reproducible rollout receipts. It excludes Apple
 account details, device identifiers, tokens, private screenshots, raw HealthKit
 data, exact Activity values, and reversible local fingerprints.
 
+## Private beta scope exception October 4 2026
+
+Physical account-deletion verification is owner-skipped before beta, not passed:
+server completion, local cleanup and post-deletion anonymized-history readback
+remain unverified. No account was deleted to establish this exception. The
+[checklist](production-beta-checklist.md#private-beta-scope-exception-october-4-2026)
+and [recovery runbook](../runbooks/backup-restore.md#private-beta-deletion-test-exception)
+preserve the deletion feature, existing automated coverage and privacy/history
+safeguards. Other gates and **not production-ready** status remain unchanged.
+
 ## Current qualification checkpoint — September 28, 2026 UTC
 
 The [current checklist](production-beta-checklist.md#current-qualification-checkpoint--september-28-2026-utc)
