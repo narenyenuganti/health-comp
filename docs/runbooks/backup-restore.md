@@ -695,9 +695,12 @@ and two aggregate hash comparisons. It emits no individual identifiers,
 scores, timestamps, row contents or per-result hashes. Require zero invalid
 sequences, orphan changes, invalid format-2 results, legacy-unverified results
 and unsupported results before crediting this component. Compare all fields
-between the source and restore; require the separately established nonempty
-and genuine-deletion history as well. Zero counts are not evidence of that
-history. The receipt deliberately has no overall pass/readiness field.
+between the source and restore. Record separately whether the source contains
+genuine retained anonymized history. If absent, its preservation scenario is
+UNEXERCISED / UNVERIFIED, not PASS; do not create a physical deletion test under
+the private-beta exception. Zero counts are not evidence of genuine history.
+Terminal anonymization and post-recovery-point deletion protections still apply.
+The receipt deliberately has no overall pass/readiness field.
 
 The sequence predicate includes every competition, empty logs, null rows and
 duplicate/gapped sequences, but cannot prove that earlier contents were never
