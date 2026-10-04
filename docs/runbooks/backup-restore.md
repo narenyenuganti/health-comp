@@ -21,13 +21,32 @@ all of these prerequisites have their own verified evidence:
 - destination quarantine verified before any import and maintained while
   imported schedules, network work, Auth data, and grants are present;
 - a target-validated managed-schema/artifact manifest and an empty destination;
-- independently completed deletion evidence, non-vacuous retained-history
-  checks, and validated aggregate-only integrity queries for every required
-  result format and competition;
+- validated aggregate-only integrity queries for every required result format
+  and competition, preservation of the source's existing shared history and
+  anonymized state, and independent protection against resurrecting identities
+  deleted after the recovery point;
 - a reviewed forward-repair rehearsal and defined recovery measurements.
 
 Missing evidence is a stop, not permission to weaken a check. Static snippet
 tests and a successful dump cannot close these prerequisites or Task 18.
+
+### Private beta deletion test exception
+
+On October 4, 2026, the owner removed physical account-deletion verification
+from the required private-beta tests: server completion, local cleanup and
+post-deletion anonymized-history readback are **SKIPPED / UNVERIFIED**, not PASS.
+Do not delete an account to satisfy this runbook or reinstate that test as an
+indirect recovery prerequisite. The deletion feature and its automated coverage
+remain unchanged.
+
+This exception does not qualify recovery or waive privacy/history protection.
+Compare the source and restored target's actual retained state. If no genuinely
+anonymized history exists in the source, record that preservation scenario as
+unexercised; do not fabricate a deletion or claim a non-vacuous preservation
+pass. Existing anonymized profiles must remain terminal and Auth-unlinked.
+The recovery-point/deletion-reconciliation stop below remains mandatory, as do
+containment, TLS verification and forward repair. No export, restore, new target
+or production action is authorized by this exception.
 
 ## Current evidence status
 
@@ -631,9 +650,12 @@ an operator's inference from matching table totals. In particular:
   `competition_result_immutable_hash_check` exempts version-1 frozen windows;
   its presence is not full coverage. Stop for any format without a validated
   verification rule; never expose individual hashes or weaken the contract;
-- require independently completed deletion evidence and at least one genuine
-  anonymized participant with preserved shared history. Zero-anonymized or
-  fabricated deletion fixtures cannot close the hosted preservation gate;
+- compare the source's existing anonymized participants and shared history
+  with the restored target. Record whether genuine retained history was present
+  and therefore exercised; zero-anonymized or synthetic-only state cannot be
+  reported as a non-vacuous hosted preservation pass. The private-beta exception
+  above removes the requirement to create a physical deletion test, not the
+  obligation to preserve existing terminal anonymization;
 - verify terminal unnamed/Auth-unlinked profiles, preserved immutable shared
   history, appropriate installation/session retirement, and unresolved-Vault
   quarantine using the account-deletion contract. Aggregate counts alone do
