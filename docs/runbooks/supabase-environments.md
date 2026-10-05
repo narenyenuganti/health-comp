@@ -383,16 +383,26 @@ portal/dashboard readback; source configuration alone is not proof.
    invitation domain is selected. A portal capability toggle by itself is not
    signed-app or domain-association evidence.
 5. Regenerate and install the provisioning profile after capability changes.
-6. In the matching Supabase project, enable Apple Auth and register only the
-   matching bundle ID as the native Client ID.
-7. Configure the Apple provider key ID, paid-team ID, and generated client
-   secret. Record the client-secret expiry date and rotate before expiry.
-   Never store the generated JWT or .p8 in Git.
+6. For native `signInWithIdToken`, enable Apple Auth in the matching Supabase
+   project and register the matching bundle ID as its Client ID. Native-only
+   login does not require an OAuth Services ID or OAuth client secret.
+7. Only for an explicitly enabled browser `signInWithOAuth` flow, put that
+   environment's Services ID first in Client IDs, followed by its native bundle
+   ID, and configure the generated OAuth client secret. Record its expiry and
+   rotate before expiry (at most six months). The current app browser path is
+   staging-only; this checklist does not enable it in production. Never store
+   the generated JWT or .p8 in Git.
 8. Keep Apple's server-to-server notification endpoint blank unless a reviewed
    handler is implemented.
 9. Configure the deletion Function with the same environment's
-   APPLE_SIGN_IN identity and private key.
+   APPLE_SIGN_IN identity and private key. This server credential remains
+   required for native authorization-code exchange and revocation, separately
+   from the optional Auth OAuth client secret.
 10. Verify a real native ID token in that environment on a physical device.
+
+These native/OAuth requirements follow the current
+[Supabase Apple sign-in guide](https://supabase.com/docs/guides/auth/social-login/auth-apple).
+Provider setup is not physical sign-in, deletion, or production qualification.
 
 ## App Attest policy
 
