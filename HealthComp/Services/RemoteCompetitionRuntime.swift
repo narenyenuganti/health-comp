@@ -712,6 +712,10 @@ actor RemoteCompetitionRuntime {
                     )
                 )
             } catch {
+                let failure = Self.failure(from: error)
+                if failure == .serverContractMismatch {
+                    failure.recordRefreshDiagnostic(contractStage: .cachedJournal)
+                }
                 outcomes.append(
                     .failure(
                         RemoteCompetitionRuntimeIDFailure(
@@ -774,98 +778,117 @@ actor RemoteCompetitionRuntime {
         cachedEntry: RemoteCompetitionCacheEntry?
     ) async throws -> RemoteCompetitionSynchronizationOutcome {
         let competitionID = CompetitionID(descriptor.competitionID)
-        let existing = try await store.load(competitionID)
-        let canResume = cachedEntry.map {
-            $0.descriptor.competitionID == descriptor.competitionID
-                && $0.lastSeenServerSequence <= descriptor.serverCursor
-        } ?? false
-        let requiresFullHistory = existing == nil
-            || !canResume
-            || descriptor.lifecycle != .pending
-                && existing?.projection.competition.remoteConfiguration == nil
-        let history = try await fetchHistory(
-            for: descriptor,
-            after: requiresFullHistory
-                ? 0
-                : cachedEntry?.lastSeenServerSequence ?? 0
-        )
-        switch descriptor.lifecycle {
-        case .pending:
-            if !requiresFullHistory, let existing {
-                guard history.isEmpty else {
-                    throw RemoteCompetitionRuntimeFailure
-                        .serverContractMismatch
-                }
-                try validateCached(
-                    descriptor: descriptor,
-                    journal: existing
-                )
-                return RemoteCompetitionSynchronizationOutcome(
-                    materialization: RemoteCompetitionMaterialization(
+        var contractStage: RemoteCompetitionRuntimeFailure.ContractStage = .cachedJournal
+        do {
+            let existing = try await store.load(competitionID)
+            let canResume = cachedEntry.map {
+                $0.descriptor.competitionID == descriptor.competitionID
+                    && $0.lastSeenServerSequence <= descriptor.serverCursor
+            } ?? false
+            let requiresFullHistory = existing == nil
+                || !canResume
+                || descriptor.lifecycle != .pending
+                    && existing?.projection.competition.remoteConfiguration == nil
+            contractStage = .history
+            let history = try await fetchHistory(
+                for: descriptor,
+                after: requiresFullHistory
+                    ? 0
+                    : cachedEntry?.lastSeenServerSequence ?? 0
+            )
+            contractStage = .materialization
+            switch descriptor.lifecycle {
+            case .pending:
+                if !requiresFullHistory, let existing {
+                    contractStage = .cachedJournal
+                    guard history.isEmpty else {
+                        throw RemoteCompetitionRuntimeFailure
+                            .serverContractMismatch
+                    }
+                    try validateCached(
                         descriptor: descriptor,
                         journal: existing
+                    )
+                    return RemoteCompetitionSynchronizationOutcome(
+                        materialization: RemoteCompetitionMaterialization(
+                            descriptor: descriptor,
+                            journal: existing
+                        ),
+                        activityFailure: nil
+                    )
+                }
+                return RemoteCompetitionSynchronizationOutcome(
+                    materialization: try await materializePending(
+                        descriptor: descriptor,
+                        history: history
                     ),
                     activityFailure: nil
                 )
-            }
-            return RemoteCompetitionSynchronizationOutcome(
-                materialization: try await materializePending(
-                    descriptor: descriptor,
-                    history: history
-                ),
-                activityFailure: nil
-            )
-        case .scheduled, .active, .endsToday, .tallying, .completed,
-             .archived:
-            let materialized: RemoteCompetitionMaterialization
-            if !requiresFullHistory, let existing {
-                try validateCached(
-                    descriptor: descriptor,
-                    journal: existing
-                )
-                materialized = RemoteCompetitionMaterialization(
-                    descriptor: descriptor,
-                    journal: existing
-                )
-            } else {
-                materialized = try await materializeScheduled(
-                    descriptor: descriptor,
-                    history: history
-                )
-            }
-            let advanced = try await advanceClock(materialized)
-            let reconciled = try await applyDownloadedChanges(
-                requiresFullHistory
-                    ? Array(history.dropFirst(3))
-                    : history,
-                to: advanced
-            )
-            let lifecycleReconciled = try await
-                applyServerLifecycleChanges(
+            case .scheduled, .active, .endsToday, .tallying, .completed,
+                 .archived:
+                let materialized: RemoteCompetitionMaterialization
+                if !requiresFullHistory, let existing {
+                    contractStage = .cachedJournal
+                    try validateCached(
+                        descriptor: descriptor,
+                        journal: existing
+                    )
+                    materialized = RemoteCompetitionMaterialization(
+                        descriptor: descriptor,
+                        journal: existing
+                    )
+                } else {
+                    materialized = try await materializeScheduled(
+                        descriptor: descriptor,
+                        history: history
+                    )
+                }
+                contractStage = .clock
+                let advanced = try await advanceClock(materialized)
+                contractStage = .downloadedChanges
+                let reconciled = try await applyDownloadedChanges(
                     requiresFullHistory
                         ? Array(history.dropFirst(3))
                         : history,
-                    to: reconciled
+                    to: advanced
                 )
-            try validateServerTerminalLifecycle(
-                descriptor: descriptor,
-                journal: lifecycleReconciled.journal
-            )
-            try await removeMaterializedAttestationAcknowledgments(
-                from: lifecycleReconciled
-            )
-            let refreshed = try await refreshOwnerScores(
-                in: lifecycleReconciled
-            )
-            return RemoteCompetitionSynchronizationOutcome(
-                materialization: try await enqueueFinalWindowAttestation(
-                    for: refreshed.materialization
-                ),
-                activityFailure: refreshed.activityFailure
-            )
-        case .declined, .expired, .cancelled:
-            throw RemoteCompetitionRuntimeFailure
-                .competitionNotMaterialized
+                contractStage = .serverLifecycle
+                let lifecycleReconciled = try await
+                    applyServerLifecycleChanges(
+                        requiresFullHistory
+                            ? Array(history.dropFirst(3))
+                            : history,
+                        to: reconciled
+                    )
+                try validateServerTerminalLifecycle(
+                    descriptor: descriptor,
+                    journal: lifecycleReconciled.journal
+                )
+                contractStage = .finalAttestation
+                try await removeMaterializedAttestationAcknowledgments(
+                    from: lifecycleReconciled
+                )
+                contractStage = .ownerScores
+                let refreshed = try await refreshOwnerScores(
+                    in: lifecycleReconciled
+                )
+                contractStage = .finalAttestation
+                return RemoteCompetitionSynchronizationOutcome(
+                    materialization: try await enqueueFinalWindowAttestation(
+                        for: refreshed.materialization
+                    ),
+                    activityFailure: refreshed.activityFailure
+                )
+            case .declined, .expired, .cancelled:
+                throw RemoteCompetitionRuntimeFailure
+                    .competitionNotMaterialized
+            }
+        } catch {
+            let failure = Self.failure(from: error)
+            if failure == .serverContractMismatch {
+                failure.recordRefreshDiagnostic(contractStage: contractStage)
+            }
+            throw error
         }
     }
 
