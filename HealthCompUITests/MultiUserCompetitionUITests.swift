@@ -50,7 +50,13 @@ final class MultiUserCompetitionUITests: XCTestCase {
             NSPredicate(format: "label == %@", "Copy")
         ).firstMatch
         guard copy.waitForExistence(timeout: 5) else {
-            XCTFail("The system share sheet must offer Copy.")
+            XCTFail(
+                """
+                The system share sheet must offer Copy.
+                Synthetic Test Lab accessibility hierarchy at failure:
+                \(app.debugDescription)
+                """
+            )
             return
         }
         copy.tap()
