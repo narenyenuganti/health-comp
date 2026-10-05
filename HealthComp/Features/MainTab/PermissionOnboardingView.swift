@@ -95,8 +95,8 @@ struct PermissionOnboardingView: View {
                 Rectangle().fill(Theme.hairline).frame(height: 1)
                 privacyRow(
                     "lock",
-                    "Only daily points are shared",
-                    "Your opponent never sees your rings"
+                    "Derived competition data is shared",
+                    "Daily points, rounded Activity percentages and modes"
                 )
             }
             .padding(.horizontal, 16)

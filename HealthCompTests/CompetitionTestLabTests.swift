@@ -52,24 +52,26 @@ final class CompetitionTestLabTests: XCTestCase {
         let authenticationMakeCount = CompetitionTestLabLockedCounter()
         let competitionMakeCount = CompetitionTestLabLockedCounter()
 
-        _ = HealthCompApp(
-            arguments: [
-                "HealthComp",
-                "--multi-user-competition-test-lab",
-                "--multi-user-competition-scenario", "sharing",
-            ],
-            supabaseClientProvider: SupabaseClientProvider {
-                fatalError("Multi-user Test Lab must not create Supabase")
-            },
-            authenticationClientFactory: AuthenticationClientFactory { _ in
-                authenticationMakeCount.increment()
-                return .testValue
-            },
-            competitionClientFactory: CompetitionClientFactory { _ in
-                competitionMakeCount.increment()
-                return .testValue
-            }
-        )
+        for scenario in MultiUserCompetitionTestLabScenario.allCases {
+            _ = HealthCompApp(
+                arguments: [
+                    "HealthComp",
+                    "--multi-user-competition-test-lab",
+                    "--multi-user-competition-scenario", scenario.rawValue,
+                ],
+                supabaseClientProvider: SupabaseClientProvider {
+                    fatalError("Multi-user Test Lab must not create Supabase")
+                },
+                authenticationClientFactory: AuthenticationClientFactory { _ in
+                    authenticationMakeCount.increment()
+                    return .testValue
+                },
+                competitionClientFactory: CompetitionClientFactory { _ in
+                    competitionMakeCount.increment()
+                    return .testValue
+                }
+            )
+        }
 
         XCTAssertEqual(authenticationMakeCount.value, 0)
         XCTAssertEqual(competitionMakeCount.value, 0)

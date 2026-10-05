@@ -160,7 +160,7 @@ struct AccountSettingsView: View {
                 systemImage: "lock.iphone"
             )
             Label(
-                "Competitors receive only daily competition points",
+                "Competitors receive daily points, rounded Activity percentages and modes",
                 systemImage: "person.2.shield"
             )
         } header: {

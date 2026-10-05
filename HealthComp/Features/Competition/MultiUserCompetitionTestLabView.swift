@@ -19,6 +19,7 @@ enum MultiUserCompetitionTestLabScenario:
     case unavailableClaim = "unavailable-claim"
     case offlineClaim = "offline-claim"
     case account
+    case healthOnboarding = "health-onboarding"
 }
 
 struct MultiUserCompetitionTestLabConfiguration: Equatable, Sendable {
@@ -122,6 +123,13 @@ struct MultiUserCompetitionTestLabRootView: View {
             )
         case .account:
             MultiUserCompetitionAccountTestLabView()
+        case .healthOnboarding:
+            PermissionOnboardingView(
+                step: .health,
+                isRequesting: false,
+                continueTapped: {},
+                notNowTapped: {}
+            )
         }
     }
 }
@@ -287,7 +295,7 @@ private struct MultiUserCompetitionClaimTestLabView: View {
         case .unavailableClaim: .unavailable
         case .offlineClaim: .retryable
         case .sharing, .sharingCustomScheme, .coldClaim, .warmClaim,
-             .signedOutClaim, .account:
+             .signedOutClaim, .account, .healthOnboarding:
             .ready
         }
         _status = State(initialValue: initialStatus)
@@ -407,6 +415,9 @@ private enum MultiUserCompetitionTestLabFixtures {
     static let archivedID = CompetitionID(
         UUID(uuidString: "A1000000-0000-4000-8000-000000000004")!
     )
+    static let pendingID = CompetitionID(
+        UUID(uuidString: "A1000000-0000-4000-8000-000000000005")!
+    )
 
     static func publication(
         archivedIDs: Set<CompetitionID>
@@ -485,7 +496,21 @@ private enum MultiUserCompetitionTestLabFixtures {
             currentDayOrdinal: nil,
             terminal: archivedTerminal
         )
-        let competitions = [scheduled, active, completed, archived]
+        let pending = presentation(
+            id: pendingID,
+            opponentName: "Sam",
+            lifecycle: .pending(
+                direction: .outgoing,
+                createdAt: Date(timeIntervalSince1970: 1_786_867_200),
+                expiresAt: nil
+            ),
+            userPoints: 0,
+            opponentPoints: 0,
+            days: [],
+            currentDayOrdinal: nil,
+            terminal: nil
+        )
+        let competitions = [scheduled, active, completed, archived, pending]
         let awards = [
             LocalCompetitionAward(
                 id: "remote-ui-lab:completed:completion",

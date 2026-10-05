@@ -108,7 +108,7 @@ jobs:
           printf 'HEALTHCOMP_CI_SIMULATOR_ID=%s\n' "$simulator_id" >> "$GITHUB_ENV"
           xcrun simctl bootstatus "$simulator_id" -b
 
-      - name: Test iOS application logic and invitation copy
+      - name: Test iOS application logic, invitation copy, and privacy disclosures
         run: |
           set -euo pipefail
           # Local ad-hoc Simulator signing embeds the entitlements required by
@@ -122,6 +122,9 @@ jobs:
             -only-testing:HealthCompTests \
             -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testCopyCustomSchemeInvitationIncludesTheCompleteLink \
             -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testCopyCustomSchemeRematchIncludesTheCompleteLink \
+            -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testAccountEditingAndPrivacyBoundariesRemainAccessible \
+            -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testHealthOnboardingDisclosesSharedDerivedActivity \
+            -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testRemoteInvitationDisclosesSharedDerivedActivity \
             -parallel-testing-enabled NO \
             -maximum-concurrent-test-simulator-destinations 1 \
             -maximum-parallel-testing-workers 1 \

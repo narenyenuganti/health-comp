@@ -105,7 +105,10 @@ struct CompetitionInviteView: View {
                 icon: .symbol("lock.iphone"),
                 title: source == .simulatedFixture
                     ? "Your Activity data stays local"
-                    : "Only daily points are shared"
+                    : "Derived competition data is shared",
+                detail: source == .simulatedFixture
+                    ? nil
+                    : "Daily points, rounded Activity percentages and modes"
             )
         }
         .padding(.horizontal, 16)
