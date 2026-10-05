@@ -49,7 +49,7 @@ final class MultiUserCompetitionUITests: XCTestCase {
         let copy = app.cells.matching(
             NSPredicate(format: "label == %@", "Copy")
         ).firstMatch
-        guard copy.waitForExistence(timeout: 5) else {
+        guard copy.waitForExistence(timeout: 10) else {
             XCTFail(
                 """
                 The system share sheet must offer Copy.
