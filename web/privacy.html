@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>HealthComp privacy</title>
+  <meta name="description" content="How HealthComp uses and shares information for private Activity competitions.">
+  <link rel="icon" href="/apple-touch-icon.png">
+  <style>
+    :root { color-scheme: light dark; --ground: #FAFAF7; --ink: #111111; --secondary: #5E5E62; }
+    @media (prefers-color-scheme: dark) { :root { --ground: #0F0F10; --ink: #F5F5F0; --secondary: #A3A3A8; } }
+    body { margin: 0; background: var(--ground); color: var(--ink);
+           font: 17px/1.6 -apple-system, BlinkMacSystemFont, "Helvetica Neue", sans-serif; }
+    main { max-width: 640px; margin: 0 auto; padding: 24px; }
+    h1 { font-size: 36px; line-height: 1.15; margin: 24px 0 12px; }
+    h2 { font-size: 22px; line-height: 1.3; margin: 32px 0 8px; }
+    p, li { margin: 0 0 16px; }
+    a { color: inherit; text-underline-offset: 3px; overflow-wrap: anywhere; }
+    nav a { display: inline-block; padding: 12px 0; }
+    a:focus-visible { outline: 3px solid currentColor; outline-offset: 4px; }
+  </style>
+</head>
+<body>
+  <!-- Local preparation only. Publication is held; set the effective date only after qualification. -->
+  <main>
+    <nav aria-label="Home"><a href="/">HealthComp home</a></nav>
+    <article aria-labelledby="privacy-title">
+      <h1 id="privacy-title">HealthComp privacy</h1>
+      <p>HealthComp supports private, seven-day Activity competitions between two people.
+        The initial private beta is invitation-only for a small group of adults in the
+        United States.</p>
+
+      <p><strong>Operator:</strong> Naren Yenuganti.<br>
+        <strong>Effective date:</strong> [set only when approved and published].<br>
+        <strong>Questions or privacy requests:</strong> <a href="mailto:yrnaren1@gmail.com">yrnaren1@gmail.com</a>.</p>
+
+      <h2>Information used by the app</h2>
+      <ul>
+        <li><strong>Your account:</strong> an account identifier and the display name you choose connect
+          you to your competitions. Sign in with Apple and Supabase Auth handle sign-in.
+          Auth account and provider identity records can also contain an email address
+          supplied by Apple, including a private-relay address, and sign-in metadata.
+          Your Apple email-sharing choice affects the information Apple provides.</li>
+        <li><strong>Activity on your iPhone:</strong> HealthComp reads Activity summaries to calculate
+          competition scores. It requests related Activity/workout read permissions to
+          notice changes and wheelchair-use information to select Stand/Roll behavior.
+          It does not request permission to write Health data. Raw HealthKit data stays
+          on your iPhone; the score submission does not upload raw workout samples,
+          routes, or raw goal values.</li>
+        <li><strong>Derived competition data:</strong> our server stores rounded Activity percentages,
+          Move/Stand/Roll modes, availability, daily points, competition dates/time zone,
+          revision information, results, and awards, linked to participant accounts.
+          Keeping raw Health data on-device does not mean no fitness information is
+          collected by the service.</li>
+        <li><strong>Installation and security information:</strong> installation identifiers, notification
+          tokens, and app-integrity verification records support notification delivery,
+          secure score submission, and installation retirement.</li>
+        <li><strong>Operational and support information:</strong> the service keeps workflow status and
+          error/event records to operate competitions and account cleanup. If you email
+          support, your email address and the message you choose to send are also
+          received. Our providers process operational information such as authentication
+          events, IP addresses, browser/device information, and website connection
+          diagnostics. This is separate from competition records and raw HealthKit data.</li>
+      </ul>
+
+      <p>We use this information to authenticate accounts, calculate and synchronize
+        competitions, deliver notifications, protect score submissions, complete account
+        cleanup, and investigate support requests and service failures.</p>
+
+      <h2>Sharing and service providers</h2>
+      <p>Your competitor can see your display name and shared competition information,
+        including daily points, availability, dates, results, rounded
+        Move/Exercise/Stand-or-Roll percentages, and Activity modes. These are derived
+        fitness values, not raw HealthKit samples or workout records. A private invitation
+        link grants its recipient a chance to join; share it only with your intended
+        competitor, not in a public issue or support message.</p>
+
+      <p>Supabase provides the configured authentication and competition backend. Apple
+        provides sign-in, notification delivery, and app-integrity services. Notification
+        alerts contain generic text, but routing includes a competition identifier and
+        uses an installation's push token. This is not identifier-free traffic.
+        Cloudflare hosts the public website and invitation pages. The site's responses
+        enable browser network-error reporting to Cloudflare; the live support response
+        also includes Cloudflare's email-decoding script. Connection-error reports can
+        include the requested URL and referrer, so avoid placing private information in
+        website URLs or sharing private invitation links publicly. Google Gmail receives
+        mail sent to our support address, including the sender's address and message.
+        We handle support mail in Gmail without automatic forwarding or connected
+        helpdesk, AI, or other support-mail services.</p>
+
+      <p>Supabase's <a href="https://supabase.com/legal/customer-resources/data-processing-addendum">customer-data processing terms</a>
+        address its handling of participant data on our behalf. Its separate
+        <a href="https://supabase.com/privacy">privacy notice</a> describes the provider's own
+        processing, not a replacement policy for HealthComp's participant records.
+        Other provider notices describe their own practices:
+        <a href="https://www.apple.com/legal/privacy/">Apple</a>,
+        <a href="https://www.cloudflare.com/privacypolicy/">Cloudflare</a>, and
+        <a href="https://policies.google.com/privacy">Google</a>.
+        Provider processing is not a promise that every copy stays on your iPhone or
+        in one country. The competition database is configured in the U.S. West region;
+        this does not establish the location of all provider processing.</p>
+
+      <p>HealthComp's beta does not display advertising, sell participant data, or track
+        participants across other companies' apps or websites. These commitments do not
+        mean that hosting and service providers collect no operational diagnostics.</p>
+
+      <h2>Controls, deletion, and retained history</h2>
+      <p>You can change HealthComp's Health access and notification permissions through
+        Apple's system controls. Withdrawing access stops the corresponding future access;
+        it does not itself delete previously synchronized competition records.</p>
+
+      <p>In HealthComp, tap your profile avatar on the Home screen to open account
+        settings. <strong>Sign Out</strong> and <strong>Delete Account</strong> are different: signing out retires
+        this installation and removes this profile's local competition cache after
+        confirmed retirement; it does not delete the account or shared history.</p>
+
+      <p><strong>Delete Account</strong> starts an authenticated cleanup workflow. When it completes,
+        Apple authorization is revoked, the service authentication identity is removed,
+        active competitions are cancelled, and this profile's local data is cleared.
+        Completed shared results remain for the other participant as <strong>Former
+        competitor</strong>. The service removes the account linkage and replaces display names
+        in the protected competition history. Revoked installations lose their push
+        tokens; related integrity keys/challenges are purged by the cleanup hooks.</p>
+
+      <p>Shared derived results, stable history identifiers, and some operational records
+        remain. The other participant may already know whom they competed with; the label
+        Former competitor does not guarantee that a person is unidentifiable. Deleting
+        the app, signing out, or starting a deletion request is not confirmation that
+        server cleanup completed. Contact support if deletion cannot finish.</p>
+
+      <p>Operational records that remain after the cleanup steps above, and support
+        emails, have no fixed automatic deletion schedule. Account deletion and the
+        preservation of shared competition history work as described above. Service
+        providers' logs and backups are separate from these retained records and follow
+        their own practices. Invitation expiry and installation retirement do not
+        automatically erase every related record. Retained shared competition history
+        also has no fixed automatic deletion schedule. We do not promise that a deletion
+        request immediately erases all provider-held copies or backups.</p>
+
+      <h2>Questions and requests</h2>
+      <p>Email <a href="mailto:yrnaren1@gmail.com">yrnaren1@gmail.com</a> to ask about information associated with your account,
+        request a correction, or get help with deletion. We may need to verify that the
+        request concerns your account before acting. Do not send Apple passwords,
+        verification codes, private invitation links, Health screenshots, or unredacted
+        logs. HealthComp does not currently provide an in-app account-data export feature.</p>
+
+      <h2>Policy changes</h2>
+      <p>The latest policy carries its effective date. Check this page for updates to the
+        beta's collection, sharing, or retention disclosures.</p>
+    </article>
+  </main>
+</body>
+</html>
