@@ -261,13 +261,51 @@ final class MultiUserCompetitionUITests: XCTestCase {
         XCTAssertFalse(app.debugDescription.contains("/invite/"))
     }
 
+    func testRemoteInvitationDisclosesSharedDerivedActivity() {
+        launch(.sharing)
+        defer { app.terminate() }
+        XCTAssertTrue(app.navigationBars["Sharing"].waitForExistence(timeout: 8))
+        let pending = sharingCard(state: "pending", name: "Sam")
+        scrollToElement(pending)
+        pending.tap()
+        XCTAssertTrue(app.navigationBars["Compete with Sam"].waitForExistence(timeout: 3))
+        let disclosure = app.staticTexts["Derived competition data is shared"]
+        XCTAssertTrue(disclosure.waitForExistence(timeout: 3))
+        scrollToElement(disclosure)
+        XCTAssertTrue(app.staticTexts["Daily points, rounded Activity percentages and modes"].exists)
+        XCTAssertFalse(app.staticTexts["Only daily points are shared"].exists)
+        XCTAssertTrue(app.staticTexts["Waiting for Sam to accept"].exists)
+    }
+
+    func testHealthOnboardingDisclosesSharedDerivedActivity() {
+        launch(.healthOnboarding)
+        defer { app.terminate() }
+        XCTAssertTrue(app.staticTexts["Score with your rings"].waitForExistence(timeout: 8))
+        let disclosure = app.descendants(matching: .any).matching(
+            NSPredicate(
+                format: "label CONTAINS %@ AND label CONTAINS %@",
+                "Derived competition data is shared",
+                "Daily points, rounded Activity percentages and modes"
+            )
+        ).firstMatch
+        XCTAssertTrue(disclosure.waitForExistence(timeout: 3))
+        scrollToElement(disclosure)
+        XCTAssertFalse(app.staticTexts.matching(
+            NSPredicate(format: "label CONTAINS %@", "Only daily points are shared")
+        ).firstMatch.exists)
+        XCTAssertFalse(app.staticTexts.matching(
+            NSPredicate(format: "label CONTAINS %@", "Your opponent never sees your rings")
+        ).firstMatch.exists)
+    }
+
     func testAccountEditingAndPrivacyBoundariesRemainAccessible() {
         launch(.account)
         XCTAssertTrue(app.navigationBars["Account"].waitForExistence(timeout: 8))
+        scrollToElement(app.staticTexts["Raw Health data stays on this iPhone"])
         XCTAssertTrue(app.staticTexts["Raw Health data stays on this iPhone"].exists)
         XCTAssertTrue(
             app.staticTexts[
-                "Competitors receive only daily competition points"
+                "Competitors receive daily points, rounded Activity percentages and modes"
             ].exists
         )
         app.buttons["account.settings.edit-display-name"].tap()
@@ -644,6 +682,7 @@ final class MultiUserCompetitionUITests: XCTestCase {
         case unavailableClaim = "unavailable-claim"
         case offlineClaim = "offline-claim"
         case account
+        case healthOnboarding = "health-onboarding"
     }
 
     private func launch(
