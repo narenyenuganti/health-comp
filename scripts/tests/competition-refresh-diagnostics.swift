@@ -23,6 +23,14 @@ enum CompetitionRefreshDiagnosticTests {
         for failure in failures {
             failure.recordRefreshDiagnostic()
         }
+        let stages: [RemoteCompetitionRuntimeFailure.ContractStage] = [
+            .cachedJournal, .history, .materialization, .clock,
+            .downloadedChanges, .serverLifecycle, .ownerScores, .finalAttestation,
+        ]
+        for stage in stages {
+            RemoteCompetitionRuntimeFailure.serverContractMismatch
+                .recordRefreshDiagnostic(contractStage: stage)
+        }
         Logger(
             subsystem: "com.narenyenuganti.HealthComp.staging",
             category: "CompetitionRefreshTest"
@@ -34,6 +42,10 @@ enum CompetitionRefreshDiagnosticTests {
             "refresh_discovery_unavailable", "refresh_profile_mismatch",
             "refresh_competition_not_materialized", "refresh_server_contract_mismatch",
             "refresh_storage_unavailable", "refresh_cursor_retry_limit_exceeded",
+            "refresh_contract_stage_cached_journal", "refresh_contract_stage_history",
+            "refresh_contract_stage_materialization", "refresh_contract_stage_clock",
+            "refresh_contract_stage_downloaded_changes", "refresh_contract_stage_server_lifecycle",
+            "refresh_contract_stage_owner_scores", "refresh_contract_stage_final_attestation",
         ]
 #else
         let expected: [String] = []
