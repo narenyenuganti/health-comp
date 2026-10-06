@@ -2157,7 +2157,10 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
         let attestationChange = try CompetitionChange(
             serverSequence: 11,
             kind: .participantAttested,
-            entityID: profileID,
+            // The feed entity is the attestation row, not its participant.
+            entityID: UUID(
+                uuidString: "72000000-0000-4000-8000-000000000002"
+            )!,
             occurredAt: attestedAt,
             payload: .participantAttestation(
                 try CompetitionParticipantAttestationChange(

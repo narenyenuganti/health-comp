@@ -1539,7 +1539,7 @@ actor RemoteCompetitionRuntime {
                 )
             case let .participantAttestation(attestation):
                 guard change.kind == .participantAttested,
-                      change.entityID == attestation.participantProfileID,
+                      change.serverSequence == attestation.serverSequence,
                       attestation.participantProfileID
                         == configuration.owner.profileID
                         || attestation.participantProfileID
