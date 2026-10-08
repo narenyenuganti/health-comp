@@ -334,10 +334,20 @@ final class MultiUserCompetitionUITests: XCTestCase {
         XCTAssertFalse(app.descendants(matching: .any).matching(
             NSPredicate(format: "label CONTAINS %@", "Your opponent sees only your daily total")
         ).firstMatch.exists)
+        let privacyPolicy = app.descendants(matching: .any)["account.privacy-policy"]
+        guard privacyPolicy.waitForExistence(timeout: 3) else {
+            return XCTFail("Privacy Policy must be available before signing in.")
+        }
+        scrollToElement(privacyPolicy)
+        XCTAssertGreaterThanOrEqual(privacyPolicy.frame.height, 44)
+        privacyPolicy.tap()
+        let openedURL = app.staticTexts["https://healthcomp.app/privacy"]
+        XCTAssertTrue(openedURL.waitForExistence(timeout: 3))
     }
 
     func testAccountEditingAndPrivacyBoundariesRemainAccessible() {
         launch(.account)
+        defer { app.terminate() }
         XCTAssertTrue(app.navigationBars["Account"].waitForExistence(timeout: 8))
         scrollToElement(app.staticTexts["Raw Health data stays on this iPhone"])
         XCTAssertTrue(app.staticTexts["Raw Health data stays on this iPhone"].exists)
@@ -346,6 +356,14 @@ final class MultiUserCompetitionUITests: XCTestCase {
                 "Competitors receive daily points, rounded Activity percentages and modes"
             ].exists
         )
+        let privacyPolicy = app.descendants(matching: .any)["account.privacy-policy"]
+        guard privacyPolicy.waitForExistence(timeout: 3) else {
+            return XCTFail("Privacy Policy must remain available in Account settings.")
+        }
+        scrollToElement(privacyPolicy)
+        XCTAssertGreaterThanOrEqual(privacyPolicy.frame.height, 44)
+        privacyPolicy.tap()
+        XCTAssertTrue(app.staticTexts["https://healthcomp.app/privacy"].waitForExistence(timeout: 3))
         app.buttons["account.settings.edit-display-name"].tap()
         let field = app.textFields["account.settings.display-name"]
         XCTAssertTrue(field.waitForExistence(timeout: 3))

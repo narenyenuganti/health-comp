@@ -384,6 +384,7 @@ private struct MultiUserCompetitionClaimTestLabView: View {
 }
 
 private struct MultiUserCompetitionAccountTestLabView: View {
+    @State private var openedURL: URL?
     let store: StoreOf<AccountFeature>
 
     init(mode: AccountFeature.State.Mode = .authenticated) {
@@ -405,6 +406,15 @@ private struct MultiUserCompetitionAccountTestLabView: View {
                 AccountView(store: store)
             } else {
                 AccountSettingsView(store: store)
+            }
+        }
+        .environment(\.openURL, OpenURLAction { url in
+            openedURL = url
+            return .handled
+        })
+        .safeAreaInset(edge: .bottom) {
+            if let openedURL {
+                Text(openedURL.absoluteString)
             }
         }
         .accessibilityIdentifier("multiuser.account.root")

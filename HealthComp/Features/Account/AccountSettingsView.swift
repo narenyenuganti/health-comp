@@ -163,6 +163,12 @@ struct AccountSettingsView: View {
                 "Competitors receive daily points, rounded Activity percentages and modes",
                 systemImage: "person.2.shield"
             )
+            Link(destination: URL(string: "https://healthcomp.app/privacy")!) {
+                Text("Privacy Policy")
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
+            }
+            .accessibilityIdentifier("account.privacy-policy")
         } header: {
             SectionLabel("PRIVACY")
         }
