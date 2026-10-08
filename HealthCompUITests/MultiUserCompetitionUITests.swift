@@ -304,6 +304,38 @@ final class MultiUserCompetitionUITests: XCTestCase {
         ).firstMatch.exists)
     }
 
+    func testWelcomeDisclosesSharedDerivedActivity() {
+        launch(.welcome)
+        defer { app.terminate() }
+        XCTAssertTrue(app.staticTexts["Welcome to HealthComp"].waitForExistence(timeout: 8))
+        let rawBoundary = app.descendants(matching: .any).matching(
+            NSPredicate(
+                format: "label CONTAINS %@ AND label CONTAINS %@",
+                "Your rings",
+                "Raw Health data stays on this iPhone"
+            )
+        ).firstMatch
+        guard rawBoundary.waitForExistence(timeout: 3) else {
+            return XCTFail("Welcome must distinguish raw Health data from shared derived Activity.")
+        }
+        scrollToElement(rawBoundary)
+        let sharingDisclosure = app.descendants(matching: .any).matching(
+            NSPredicate(
+                format: "label CONTAINS %@ AND label CONTAINS %@",
+                "Their points",
+                "Competitors receive daily points, rounded Activity percentages and modes"
+            )
+        ).firstMatch
+        XCTAssertTrue(sharingDisclosure.exists)
+        scrollToElement(sharingDisclosure)
+        XCTAssertFalse(app.descendants(matching: .any).matching(
+            NSPredicate(format: "label CONTAINS %@", "The detail never leaves your iPhone")
+        ).firstMatch.exists)
+        XCTAssertFalse(app.descendants(matching: .any).matching(
+            NSPredicate(format: "label CONTAINS %@", "Your opponent sees only your daily total")
+        ).firstMatch.exists)
+    }
+
     func testAccountEditingAndPrivacyBoundariesRemainAccessible() {
         launch(.account)
         XCTAssertTrue(app.navigationBars["Account"].waitForExistence(timeout: 8))
@@ -688,6 +720,7 @@ final class MultiUserCompetitionUITests: XCTestCase {
         case unavailableClaim = "unavailable-claim"
         case offlineClaim = "offline-claim"
         case account
+        case welcome
         case healthOnboarding = "health-onboarding"
     }
 

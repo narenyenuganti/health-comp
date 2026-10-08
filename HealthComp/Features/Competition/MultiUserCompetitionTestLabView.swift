@@ -19,6 +19,7 @@ enum MultiUserCompetitionTestLabScenario:
     case unavailableClaim = "unavailable-claim"
     case offlineClaim = "offline-claim"
     case account
+    case welcome
     case healthOnboarding = "health-onboarding"
 }
 
@@ -123,6 +124,8 @@ struct MultiUserCompetitionTestLabRootView: View {
             )
         case .account:
             MultiUserCompetitionAccountTestLabView()
+        case .welcome:
+            MultiUserCompetitionAccountTestLabView(mode: .signedOut)
         case .healthOnboarding:
             PermissionOnboardingView(
                 step: .health,
@@ -295,7 +298,7 @@ private struct MultiUserCompetitionClaimTestLabView: View {
         case .unavailableClaim: .unavailable
         case .offlineClaim: .retryable
         case .sharing, .sharingCustomScheme, .coldClaim, .warmClaim,
-             .signedOutClaim, .account, .healthOnboarding:
+             .signedOutClaim, .account, .welcome, .healthOnboarding:
             .ready
         }
         _status = State(initialValue: initialStatus)
@@ -383,20 +386,26 @@ private struct MultiUserCompetitionClaimTestLabView: View {
 private struct MultiUserCompetitionAccountTestLabView: View {
     let store: StoreOf<AccountFeature>
 
-    init() {
+    init(mode: AccountFeature.State.Mode = .authenticated) {
         self.store = Store(
             initialState: AccountFeature.State(
-                mode: .authenticated,
+                mode: mode,
                 displayName: "Beta Alice"
             )
         ) {
             AccountFeature()
+        } withDependencies: {
+            $0.authenticationClient = .testValue
         }
     }
 
     var body: some View {
         NavigationStack {
-            AccountSettingsView(store: store)
+            if store.mode == .signedOut {
+                AccountView(store: store)
+            } else {
+                AccountSettingsView(store: store)
+            }
         }
         .accessibilityIdentifier("multiuser.account.root")
     }

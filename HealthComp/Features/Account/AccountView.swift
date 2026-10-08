@@ -105,7 +105,7 @@ struct AccountView: View {
             SectionLabel("HOW TO READ IT")
             codeRow(
                 "Your rings",
-                "Move, Exercise and Stand. The detail never leaves your iPhone."
+                "Move, Exercise and Stand. Raw Health data stays on this iPhone."
             ) {
                 VStack(alignment: .leading, spacing: 2) {
                     SlantedBar().fill(Theme.move).frame(width: 24, height: 4)
@@ -119,7 +119,7 @@ struct AccountView: View {
             }
             codeRow(
                 "Their points",
-                "Your opponent sees only your daily total, and you see only theirs."
+                "Competitors receive daily points, rounded Activity percentages and modes."
             ) {
                 SlantedBar().fill(Theme.ink).frame(width: 12, height: 18)
                     .padding(.leading, 5)

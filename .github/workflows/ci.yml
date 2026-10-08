@@ -123,6 +123,7 @@ jobs:
             -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testCopyCustomSchemeInvitationIncludesTheCompleteLink \
             -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testCopyCustomSchemeRematchIncludesTheCompleteLink \
             -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testAccountEditingAndPrivacyBoundariesRemainAccessible \
+            -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testWelcomeDisclosesSharedDerivedActivity \
             -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testHealthOnboardingDisclosesSharedDerivedActivity \
             -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testRemoteInvitationDisclosesSharedDerivedActivity \
             -parallel-testing-enabled NO \
