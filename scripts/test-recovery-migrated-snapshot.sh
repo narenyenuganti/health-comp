@@ -9,7 +9,9 @@ image='supabase/postgres@sha256:99b1729aeb0bac314445024fc149fbd39306170b61dd5080
 manifest_hash='b01b6a122e92d803b0f53ac2f0be527a8f5c9b6b3b3dfbb3c63e7c5d3b6fe69b'
 checks=/opt/healthcomp-recovery-checks
 fail() { printf 'migrated_snapshot_test: %s\n' "$1" >&2; exit 1; }
-[[ $# == 0 ]] || fail unexpected_arguments
+mode=snapshot
+if [[ $# == 1 && $1 == --forward-repair ]]; then mode=forward_repair
+elif [[ $# != 0 ]]; then fail unexpected_arguments; fi
 for tool in docker supabase jq awk shasum python3 pg_isready openssl; do command -v "$tool" >/dev/null || fail missing_tool; done
 [[ $(docker context show) == orbstack ]] || fail orbstack_required
 # Pin both Docker and the CLI's client to the same local OrbStack endpoint.
@@ -29,8 +31,10 @@ mapfile -t migrations < <(cd "$repo" && printf '%s\n' supabase/migrations/*.sql)
 [[ ${#migrations[@]} == 22 ]] || fail migration_count
 actual_hash=$(cd "$repo" && shasum -a 256 "${migrations[@]}" | shasum -a 256 | awk '{print $1}')
 [[ $actual_hash == "$manifest_hash" ]] || fail migration_manifest
+source_migrations=("${migrations[@]}")
+if [[ $mode == forward_repair ]]; then source_migrations=("${migrations[@]:0:19}"); fi
 versions=''
-for file in "${migrations[@]}"; do
+for file in "${source_migrations[@]}"; do
   name=${file##*/}
   version=${name%%_*}
   [[ $version =~ ^[0-9]{14}$ ]] || fail migration_name
@@ -140,7 +144,7 @@ network_id=$(<"$scratch/network-id")
 [[ $(docker network inspect "$network_name" --format '{{.Internal}} {{index .Options "com.docker.network.bridge.host_binding_ipv4"}}') == 'false 127.0.0.1' ]] || fail network_boundary
 port=$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1",0)); print(s.getsockname()[1]); s.close()')
 mkdir -p "$scratch/project/supabase/migrations"
-for file in "${migrations[@]}"; do cp "$repo/$file" "$scratch/project/supabase/migrations/"; done
+for file in "${source_migrations[@]}"; do cp "$repo/$file" "$scratch/project/supabase/migrations/"; done
 awk -v project="$project" -v port="$port" '
   /^project_id = / {print "project_id = \"" project "\""; next}
   /^\[db\]$/ {section="db"; print; next}
@@ -311,12 +315,108 @@ history_matches() {
 state_matches() {
   bash "$script_dir/test-recovery-state-acceptance.sh" --check-migrated-fixture-receipt "$1" >/dev/null
 }
+restore_archive() {
+  local label=$1
+  [[ $(docker inspect "$target_name" --format '{{index .Config.Labels "healthcomp.local-recovery"}} {{.HostConfig.NetworkMode}}') == "$project none" ]] || fail target_recheck
+  docker exec "$target_name" psql -XqAt --no-password --host=/var/run/postgresql \
+    --username=supabase_admin --dbname=template1 --set=ON_ERROR_STOP=on \
+    -c 'drop database postgres with (force)' -c 'create database postgres template template0' \
+    >"$scratch/restore-output" 2>"$scratch/restore-error" || fail "${label}_empty_target"
+  docker exec -i "$target_name" pg_restore --no-password --host=/var/run/postgresql \
+    --username=supabase_admin --dbname=postgres --exit-on-error --single-transaction \
+    --clean --if-exists <"$scratch/archive" >"$scratch/restore-output" 2>"$scratch/restore-error" || fail "${label}_restore"
+  [[ ! -s "$scratch/restore-error" ]] || fail "${label}_restore_warning"
+}
 sql "$source_name" -v batch=1 <"$script_dir/tests/recovery-migrated-fixture.sql" >/dev/null || fail batch1_fixture
 history_before=$(sql "$source_name" -f "$checks/recovery-history-integrity.sql") || fail batch1_history
 state_before=$(sql "$source_name" -f "$checks/recovery-state-acceptance.sql") || fail batch1_state
 history_matches 1 <<<"$history_before" || fail batch1_history_literal
 state_matches 1 <<<"$state_before" || fail batch1_state_literal
 [[ $(sql "$source_name" -c 'select count(*) from auth.users;') == 2 ]] || fail batch1_auth
+
+if [[ $mode == forward_repair ]]; then
+  sql "$source_name" <"$script_dir/tests/recovery-forward-repair-fixture.sql" >/dev/null || fail repair_fixture
+  # Synthetic full-row digest excludes only the approved token repair field.
+  protected_sql="select encode(extensions.digest(jsonb_build_object(
+    'installations',(select jsonb_agg(to_jsonb(i)-'apns_token' order by id) from public.device_installations i),
+    'active_tokens',(select jsonb_agg(to_jsonb(i) order by id) from public.device_installations i where state='active'),
+    'profiles',(select jsonb_agg(to_jsonb(p) order by id) from public.profiles p),
+    'competitions',(select jsonb_agg(to_jsonb(c) order by id) from public.competitions c),
+    'auth_users',(select jsonb_agg(to_jsonb(u) order by id) from auth.users u),
+    'table_security',(select jsonb_agg(jsonb_build_array(n.nspname,c.relname,
+      pg_get_userbyid(c.relowner),
+      (select jsonb_agg(jsonb_build_array(pg_get_userbyid(a.grantor),
+        case when a.grantee=0 then 'PUBLIC' else pg_get_userbyid(a.grantee) end,
+        a.privilege_type,a.is_grantable) order by pg_get_userbyid(a.grantor),
+        case when a.grantee=0 then 'PUBLIC' else pg_get_userbyid(a.grantee) end,a.privilege_type)
+        from aclexplode(coalesce(c.relacl,acldefault('r',c.relowner))) a),
+      c.relrowsecurity,c.relforcerowsecurity)
+      order by n.nspname,c.relname) from pg_class c join pg_namespace n on n.oid=c.relnamespace
+      where n.nspname in ('public','private') and c.relkind='r')
+  )::text,'sha256'),'hex');"
+  protected_before=$(sql "$source_name" -c "$protected_sql") || fail repair_protected_before
+  [[ $protected_before =~ ^[0-9a-f]{64}$ ]] || fail repair_digest_shape
+  dump_source "$tls_host" "$tls_ca" || fail repair_dump
+  [[ ! -s "$scratch/dump-error" ]] || fail repair_dump_warning
+  restore_archive repair
+  # pg_restore into an existing database does not import ALTER DATABASE settings.
+  sql_user "$target_name" supabase_admin -c "alter database postgres set healthcomp.recovery_fixture = 'synthetic-20260928'" >/dev/null || fail repair_target_marker
+  [[ $(sql "$target_name" -c "$protected_sql") == "$protected_before" ]] || fail repair_restored_rows
+  [[ $(sql "$target_name" -f "$checks/recovery-history-integrity.sql") == "$history_before" ]] || fail repair_restored_history
+  [[ $(sql "$target_name" -f "$checks/recovery-state-acceptance.sql") == "$state_before" ]] || fail repair_restored_state
+  [[ $(sql "$target_name" -c "select count(*) from public.device_installations where state='revoked' and apns_token is not null;") == 1 ]] || fail repair_legacy_control
+  if sql "$target_name" <"$script_dir/tests/recovery-forward-repair-assertions.sql" >/dev/null; then
+    fail omitted_repair_accepted
+  fi
+  awk '$0 !~ /^ERROR:[[:space:]]+P0001$/ {bad=1} END {if(bad || NR!=1) exit 1}' \
+    "$scratch/sql-error.$BASHPID" || fail repair_negative_sqlstate
+  printf '%s\n' restored_legacy_retired_token_negative_control_passed
+  repair=${migrations[19]}
+  [[ $repair == supabase/migrations/20260927001500_clear_retired_installation_tokens.sql ]] || fail selected_repair_manifest
+  docker cp "$repo/$repair" "$target_name:$checks/forward-repair.sql" || fail repair_copy
+  docker cp "$script_dir/tests/recovery-forward-repair-assertions.sql" "$target_name:$checks/forward-repair-assertions.sql" || fail repair_assertions_copy
+  # Match CLI migration authority; fixture assertions deliberately run as postgres.
+  sql_user "$target_name" supabase_admin --single-transaction -f "$checks/forward-repair.sql" \
+    -c 'set local role postgres;' \
+    -f "$checks/forward-repair-assertions.sql" \
+    -c 'reset role;' \
+    -c "insert into supabase_migrations.schema_migrations(version,name) values('20260927001500','clear_retired_installation_tokens');" \
+    >/dev/null || fail repair_transaction
+  repaired_versions="$versions"$'\n20260927001500'
+  [[ $(sql "$target_name" -c 'select version from supabase_migrations.schema_migrations order by version;') == "$repaired_versions" ]] || fail repair_version_append
+  [[ $(sql "$target_name" -c "$protected_sql") == "$protected_before" ]] || fail repair_non_token_rows_changed
+  [[ $(sql "$target_name" -f "$checks/recovery-history-integrity.sql") == "$history_before" ]] || fail repair_history_changed
+  [[ $(sql "$target_name" -f "$checks/recovery-state-acceptance.sql") == "$state_before" ]] || fail repair_security_state_changed
+  # A migration version is applied once, not rewritten or silently reapplied.
+  if sql_user "$target_name" supabase_admin --single-transaction -f "$checks/forward-repair.sql" >/dev/null; then
+    fail duplicate_repair_accepted
+  fi
+  awk '$0 !~ /^psql:.*:[0-9]+: ERROR:[[:space:]]+42723$/ {bad=1} END {if(bad || NR!=1) exit 1}' \
+    "$scratch/sql-error.$BASHPID" || fail duplicate_repair_sqlstate
+  [[ $(sql "$target_name" -c "$protected_sql") == "$protected_before" ]] || fail duplicate_repair_changed_rows
+  [[ $(sql "$target_name" -c 'select version from supabase_migrations.schema_migrations order by version;') == "$repaired_versions" ]] || fail duplicate_repair_changed_versions
+  for file in "${migrations[@]:20}"; do
+    name=${file##*/}; version=${name%%_*}; name=${name#*_}; name=${name%.sql}
+    docker cp "$repo/$file" "$target_name:$checks/remaining-migration.sql" || fail repair_remaining_copy
+    sql_user "$target_name" supabase_admin --single-transaction -f "$checks/remaining-migration.sql" \
+      -c "insert into supabase_migrations.schema_migrations(version,name) values('$version','$name');" \
+      >/dev/null || fail repair_remaining_migration
+    repaired_versions+=$'\n'"$version"
+  done
+  [[ $(sql "$target_name" -c 'select version from supabase_migrations.schema_migrations order by version;') == "$repaired_versions" ]] || fail repair_current_versions
+  [[ $(sql "$target_name" -c "$protected_sql") == "$protected_before" ]] || fail repair_current_rows_changed
+  [[ $(sql "$target_name" -f "$checks/recovery-history-integrity.sql") == "$history_before" ]] || fail repair_current_history
+  state_repaired=$(sql "$target_name" -f "$checks/recovery-state-acceptance.sql") || fail repair_current_state
+  state_matches 1 <<<"$state_repaired" || fail repair_current_security
+  sql "$target_name" --single-transaction -f "$checks/forward-repair-assertions.sql" >/dev/null || fail repair_current_retirement
+  foreign_keys=$(sql "$target_name" -f "$checks/recovery-foreign-key-integrity.sql") || fail repair_current_foreign_keys
+  [[ -z $foreign_keys ]] || fail repair_current_foreign_key_output
+  [[ $(sql "$target_name" -c "select current_setting('cron.launch_active_jobs');") == off ]] || fail repair_cron
+  [[ $(docker inspect "$target_name" --format '{{.HostConfig.NetworkMode}} {{json .HostConfig.PortBindings}}') == 'none {}' ]] || fail repair_final_quarantine
+  [[ $(sql "$source_name" -c "select count(*) from public.device_installations where state='revoked' and apns_token is not null;") == 1 ]] || fail repair_source_changed
+  printf '%s\n' local_restored_forward_repair_and_current_integrity_passed_not_hosted_qualification
+  exit 0
+fi
 
 mkfifo "$scratch/input" "$scratch/snapshot"
 exec 3<>"$scratch/input"
@@ -360,15 +460,7 @@ for mode in bound unbound; do
     awk '$0 !~ /^psql:.*:[0-9]+: ERROR:[[:space:]]+42704$/ {bad=1}
       END {if (bad || NR != 1) exit 1}' "$scratch/rejected-error" || fail expired_snapshot_error
   fi
-  [[ $(docker inspect "$target_name" --format '{{index .Config.Labels "healthcomp.local-recovery"}} {{.HostConfig.NetworkMode}}') == "$project none" ]] || fail target_recheck
-  docker exec "$target_name" psql -XqAt --no-password --host=/var/run/postgresql \
-    --username=supabase_admin --dbname=template1 --set=ON_ERROR_STOP=on \
-    -c 'drop database postgres with (force)' -c 'create database postgres template template0' \
-    >"$scratch/restore-output" 2>"$scratch/restore-error" || fail "${mode}_empty_target"
-  docker exec -i "$target_name" pg_restore --no-password --host=/var/run/postgresql \
-    --username=supabase_admin --dbname=postgres --exit-on-error --single-transaction \
-    --clean --if-exists <"$scratch/archive" >"$scratch/restore-output" 2>"$scratch/restore-error" || fail "${mode}_restore"
-  [[ ! -s "$scratch/restore-error" ]] || fail "${mode}_restore_warning"
+  restore_archive "$mode"
   [[ $(sql "$target_name" -c 'select version from supabase_migrations.schema_migrations order by version;') == "$versions" ]] || fail "${mode}_migrations"
   history_restored=$(sql "$target_name" -f "$checks/recovery-history-integrity.sql") || fail "${mode}_history"
   state_restored=$(sql "$target_name" -f "$checks/recovery-state-acceptance.sql") || fail "${mode}_state"
