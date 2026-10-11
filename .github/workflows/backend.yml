@@ -43,6 +43,7 @@ jobs:
           bash -n scripts/emit-recovery-history-test-sql.sh
           bash -n scripts/test-recovery-history-wrapper.sh
           bash -n scripts/test-recovery-common-snapshot.sh
+          bash -n scripts/test-recovery-migrated-snapshot.sh
           bash -n scripts/test-recovery-foreign-key-integrity.sh
           bash -n scripts/test-recovery-foreign-key-static.sh
           bash scripts/test-recovery-foreign-key-static.sh
