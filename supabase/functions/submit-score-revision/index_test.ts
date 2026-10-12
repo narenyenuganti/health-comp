@@ -830,6 +830,12 @@ Deno.test("invalid attestation stages, assertions, and equal counters are stable
   const codes = [
     "invalid_attestation_object",
     "invalid_attestation_authenticator_data",
+    "invalid_attestation_authenticator_cbor",
+    "invalid_attestation_authenticator_counter",
+    "invalid_attestation_authenticator_flags",
+    "invalid_attestation_authenticator_length",
+    "invalid_attestation_authenticator_shape",
+    "invalid_attestation_credential_id_length",
     "invalid_attestation_cose_key",
     "invalid_attestation_nonce",
     "invalid_assertion",

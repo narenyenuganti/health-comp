@@ -18,6 +18,12 @@ export type AppAttestVerificationErrorCode =
   | "invalid_assertion_object"
   | "invalid_assertion_signature"
   | "invalid_attestation_authenticator_data"
+  | "invalid_attestation_authenticator_cbor"
+  | "invalid_attestation_authenticator_counter"
+  | "invalid_attestation_authenticator_flags"
+  | "invalid_attestation_authenticator_length"
+  | "invalid_attestation_authenticator_shape"
+  | "invalid_attestation_credential_id_length"
   | "invalid_attestation_cose_key"
   | "invalid_attestation_nonce"
   | "invalid_attestation_object"
@@ -581,23 +587,29 @@ function decodeAttestation(value: Uint8Array) {
     fail("invalid_attestation_object");
   }
   const authData = object.authData as Buffer;
-  if (
-    authData.length < 88 || authData.length > 4_096 || authData[32] !== 0x40 ||
-    authData.readUInt32BE(33) !== 0 || authData.readUInt16BE(53) !== 32
-  ) {
-    fail("invalid_attestation_authenticator_data");
+  if (authData.length < 88 || authData.length > 4_096) {
+    fail("invalid_attestation_authenticator_length");
+  }
+  if (authData[32] !== 0x40) {
+    fail("invalid_attestation_authenticator_flags");
+  }
+  if (authData.readUInt32BE(33) !== 0) {
+    fail("invalid_attestation_authenticator_counter");
+  }
+  if (authData.readUInt16BE(53) !== 32) {
+    fail("invalid_attestation_credential_id_length");
   }
   let trailing: unknown[];
   try {
     trailing = cbor.decodeAllSync(authData.subarray(87));
   } catch (error) {
-    fail("invalid_attestation_authenticator_data", error);
+    fail("invalid_attestation_authenticator_cbor", error);
   }
   if (
     (trailing.length !== 1 && trailing.length !== 2) ||
     !(trailing[0] instanceof Map)
   ) {
-    fail("invalid_attestation_authenticator_data");
+    fail("invalid_attestation_authenticator_shape");
   }
   const cose = trailing[0] as Map<unknown, unknown>;
   if (

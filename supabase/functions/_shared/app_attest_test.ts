@@ -323,11 +323,120 @@ Deno.test("attestation rejection diagnostics distinguish strict verifier stages"
     ],
     [
       "invalid_attestation_object",
-      "invalid_attestation_authenticator_data",
+      "invalid_attestation_authenticator_flags",
       "invalid_attestation_cose_key",
       "invalid_attestation_nonce",
     ],
   );
+});
+
+Deno.test("attestation authenticator diagnostics identify rejected flags without exposing their value", async () => {
+  const decoded = cbor.decodeFirstSync(
+    Buffer.from(official.attestation, "base64"),
+  ) as {
+    fmt: string;
+    attStmt: { x5c: Buffer[]; receipt: Buffer };
+    authData: Buffer;
+  };
+  const authData = Buffer.from(decoded.authData);
+  authData[32] = 0x41;
+  const attestation = await cbor.encodeAsync({ ...decoded, authData });
+  assertEquals(
+    captureCode(() =>
+      verifyAppAttestAttestation({
+        attestation,
+        clientDataHash: Buffer.from(official.clientDataHash, "base64"),
+        keyID: official.keyId,
+        policy: officialPolicy(),
+      })
+    ),
+    "invalid_attestation_authenticator_flags",
+  );
+});
+
+Deno.test("attestation authenticator diagnostics identify invalid length before reading header fields", async () => {
+  const decoded = cbor.decodeFirstSync(
+    Buffer.from(official.attestation, "base64"),
+  );
+  for (const length of [0, 87, 4_097]) {
+    const attestation = await cbor.encodeAsync({
+      ...decoded,
+      authData: Buffer.alloc(length),
+    });
+    assertEquals(
+      captureCode(() =>
+        verifyAppAttestAttestation({
+          attestation,
+          clientDataHash: Buffer.from(official.clientDataHash, "base64"),
+          keyID: official.keyId,
+          policy: officialPolicy(),
+        })
+      ),
+      "invalid_attestation_authenticator_length",
+    );
+  }
+});
+
+Deno.test("attestation authenticator diagnostics distinguish counter and credential length rejection", async () => {
+  const decoded = cbor.decodeFirstSync(
+    Buffer.from(official.attestation, "base64"),
+  );
+  const nonzeroCounter = Buffer.from(decoded.authData);
+  nonzeroCounter.writeUInt32BE(1, 33);
+  const wrongCredentialLength = Buffer.from(decoded.authData);
+  wrongCredentialLength.writeUInt16BE(31, 53);
+  for (
+    const [authData, expected] of [
+      [nonzeroCounter, "invalid_attestation_authenticator_counter"],
+      [wrongCredentialLength, "invalid_attestation_credential_id_length"],
+    ] as const
+  ) {
+    const attestation = await cbor.encodeAsync({ ...decoded, authData });
+    assertEquals(
+      captureCode(() =>
+        verifyAppAttestAttestation({
+          attestation,
+          clientDataHash: Buffer.from(official.clientDataHash, "base64"),
+          keyID: official.keyId,
+          policy: officialPolicy(),
+        })
+      ),
+      expected,
+    );
+  }
+});
+
+Deno.test("attestation authenticator diagnostics distinguish malformed CBOR from rejected trailing shape", async () => {
+  const decoded = cbor.decodeFirstSync(
+    Buffer.from(official.attestation, "base64"),
+  );
+  const malformedCBOR = Buffer.concat([
+    decoded.authData.subarray(0, 87),
+    Buffer.from([0xff]),
+  ]);
+  const nonMapCBOR = Buffer.concat([
+    decoded.authData.subarray(0, 87),
+    await cbor.encodeAsync(1),
+  ]);
+  for (
+    const [authData, expected] of [
+      [malformedCBOR, "invalid_attestation_authenticator_cbor"],
+      [nonMapCBOR, "invalid_attestation_authenticator_shape"],
+    ] as const
+  ) {
+    const attestation = await cbor.encodeAsync({ ...decoded, authData });
+    assertEquals(
+      captureCode(() =>
+        verifyAppAttestAttestation({
+          attestation,
+          clientDataHash: Buffer.from(official.clientDataHash, "base64"),
+          keyID: official.keyId,
+          policy: officialPolicy(),
+        })
+      ),
+      expected,
+    );
+  }
 });
 
 Deno.test("legacy attestation shape reaches nonce verification and rejects extra CBOR", async () => {
@@ -371,7 +480,7 @@ Deno.test("legacy attestation shape reaches nonce verification and rejects extra
     authData: extraAuthData,
   });
   expectCode(
-    "invalid_attestation_authenticator_data",
+    "invalid_attestation_authenticator_shape",
     () =>
       verifyAppAttestAttestation({
         attestation: extraAttestation,
