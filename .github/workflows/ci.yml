@@ -82,6 +82,7 @@ jobs:
           set -euo pipefail
           bash scripts/test-healthkit-delivery-diagnostics.sh
           bash scripts/test-competition-refresh-diagnostics.sh
+          bash scripts/test-staging-scoring-response-capture.sh
 
       - name: Test CompetitionCore in Debug and Release
         run: |
