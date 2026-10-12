@@ -174,14 +174,14 @@ enum SupabaseTransport {
         }
     }
 
-    static func makeSession() -> URLSession {
+    static func makeSession(delegate: (any URLSessionTaskDelegate)? = nil) -> URLSession {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
         configuration.urlCache = nil
         configuration.httpCookieStorage = nil
         configuration.httpShouldSetCookies = false
         configuration.urlCredentialStorage = nil
-        return URLSession(configuration: configuration)
+        return URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
     }
 }
 
@@ -323,6 +323,9 @@ private final class AuthRemovalPendingStore: @unchecked Sendable {
 /// never reacquire another owner's callbacks after an await.
 final class SupabaseAuthenticationLifetime: Sendable {
     let eventTasks = AuthenticationLifetimeTasks()
+#if HEALTHCOMP_STAGING
+    fileprivate let stagingScoringResponseCapture: StagingScoringResponseCapture?
+#endif
     let client: SupabaseClient
     let confirmGlobalSignOut: @Sendable (String) async throws -> Void
     let confirmLocalSignOut: @Sendable (String) async throws -> Void
@@ -340,8 +343,12 @@ final class SupabaseAuthenticationLifetime: Sendable {
         verifyAuthSessionRemoved: @escaping @Sendable () throws -> Void,
         retireAuthStorage: @escaping @Sendable () throws -> Void = {
             throw AuthenticationClientFailure.operationFailed
-        }
+        },
+        urlSession: URLSession? = nil
     ) {
+#if HEALTHCOMP_STAGING
+        self.stagingScoringResponseCapture = urlSession?.delegate as? StagingScoringResponseCapture
+#endif
         self.client = client
         self.confirmGlobalSignOut = confirmGlobalSignOut
         self.confirmLocalSignOut = confirmLocalSignOut
@@ -394,6 +401,9 @@ struct SupabaseClientProvider: Sendable {
             // Registry admission is already closed while remote confirmation
             // is pending. Failure retains the same owner for an explicit retry.
             try await beforeStorage()
+#if HEALTHCOMP_STAGING
+            retiring.stagingScoringResponseCapture?.cancel()
+#endif
             try retiring.retireAuthStorage()
             await retiring.eventTasks.cancelAndDrain()
         }
@@ -420,13 +430,40 @@ struct SupabaseClientProvider: Sendable {
         try authenticationLifetime().prepareAuthSessionRemovalVerification()
     }
 
+#if HEALTHCOMP_STAGING
+    func armStagingScoringResponseCapture(timeout: Duration = .seconds(60)) throws -> Bool {
+        let owner = try authenticationLifetime()
+        return try sharedClient.withActiveOwner(owner) {
+            guard let capture = owner.stagingScoringResponseCapture,
+                  capture.arm(timeout: timeout) else { return false }
+            do {
+                _ = try owner.eventTasks.start {
+                    defer { capture.cancel() }
+                    try? await Task.sleep(for: timeout)
+                }
+            } catch {
+                capture.cancel()
+                throw error
+            }
+            return true
+        }
+    }
+
+    func takeStagingScoringResponseCapture() throws -> String? {
+        let owner = try authenticationLifetime()
+        return try sharedClient.withActiveOwner(owner) {
+            owner.stagingScoringResponseCapture?.take()
+        }
+    }
+#endif
+
     static func live(
         infoDictionary: @escaping @Sendable () -> [String: Any] = {
             Bundle.main.infoDictionary ?? [:]
         },
         urlSession injectedURLSession: URLSession? = nil,
         authStorage injectedAuthStorage: FailClosedAuthLocalStorage? = nil,
-        makeURLSession: @escaping @Sendable () -> URLSession = { SupabaseTransport.makeSession() }
+        makeURLSession: (@Sendable () -> URLSession)? = nil
     ) -> Self {
         let removalPendingKey =
             "HealthCompSupabaseAuthSessionRemovalPending"
@@ -438,7 +475,15 @@ struct SupabaseClientProvider: Sendable {
             let configuration = try SupabaseConfiguration.parse(infoDictionary())
             // Default transports belong to this owner, not the provider cache.
             // An explicit session override remains a caller-owned testing seam.
-            let urlSession = injectedURLSession ?? makeURLSession()
+#if HEALTHCOMP_STAGING
+            let urlSession = injectedURLSession ?? makeURLSession?() ?? SupabaseTransport.makeSession(
+                delegate: StagingScoringResponseCapture(
+                    scoringURL: configuration.url.appendingPathComponent("functions/v1/submit-score-revision")
+                )
+            )
+#else
+            let urlSession = injectedURLSession ?? makeURLSession?() ?? SupabaseTransport.makeSession()
+#endif
             let authStorage = injectedAuthStorage ?? FailClosedAuthLocalStorage(
                 underlying: SupabaseAuthKeychainStorage(),
                 sessionKey: {
@@ -493,7 +538,8 @@ struct SupabaseClientProvider: Sendable {
                     try lifetimeStorage.removeSessionAndRetire {
                         try authStorage.removeCurrentSession()
                     }
-                }
+                },
+                urlSession: urlSession
             )
         })
     }

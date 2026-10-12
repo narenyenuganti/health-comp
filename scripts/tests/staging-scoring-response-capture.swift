@@ -1,0 +1,144 @@
+import Foundation
+
+#if HEALTHCOMP_CAPTURE_ABSENCE_TEST
+typealias CaptureMustBeAbsent = StagingScoringResponseCapture
+#endif
+
+#if HEALTHCOMP_STAGING
+private final class CaptureProtocol: URLProtocol, @unchecked Sendable {
+    static let body = Data(#"{"code":"app_attest_proof_rejected"}"#.utf8)
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+    override func startLoading() {
+        guard let url = request.url, url.host?.hasSuffix(".invalid") == true else {
+            client?.urlProtocol(self, didFailWithError: URLError(.unsupportedURL))
+            return
+        }
+        if request.value(forHTTPHeaderField: "X-Test-Error") == "1" {
+            client?.urlProtocol(self, didFailWithError: URLError(.networkConnectionLost))
+            return
+        }
+        let headers = request.value(forHTTPHeaderField: "X-Test-No-ID") == "1" ? [:] : [
+            "sb-request-id": request.value(forHTTPHeaderField: "X-Test-ID") ?? "00000000-0000-4000-8000-000000000001"
+        ]
+        let response = HTTPURLResponse(url: url,
+            statusCode: Int(request.value(forHTTPHeaderField: "X-Test-Status") ?? "401")!,
+            httpVersion: "HTTP/1.1", headerFields: headers)!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Self.body)
+        client?.urlProtocolDidFinishLoading(self)
+    }
+    override func stopLoading() {}
+}
+
+private final class CaptureClock: @unchecked Sendable {
+    private let lock = NSLock()
+    private var instant = ContinuousClock.now
+    var now: ContinuousClock.Instant { lock.withLock { instant } }
+    func expire() { lock.withLock { instant += .seconds(61) } }
+}
+#endif
+
+@main
+private enum StagingScoringResponseCaptureChecks {
+    static func check(_ label: String, _ result: Bool) {
+        guard result else {
+            FileHandle.standardError.write(Data("FAIL \(label)\n".utf8))
+            exit(1)
+        }
+        print("PASS \(label)")
+    }
+
+    static func main() async {
+#if HEALTHCOMP_STAGING
+        let url = URL(string: "https://staging.invalid/functions/v1/submit-score-revision")!
+        let observer = StagingScoringResponseCapture(scoringURL: url)
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [CaptureProtocol.self]
+        let session = URLSession(configuration: configuration, delegate: observer, delegateQueue: nil)
+        defer { session.invalidateAndCancel() }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        do {
+            let (body, response) = try await session.data(for: request)
+            check("unarmed_transport_and_body_unchanged", body == CaptureProtocol.body && (response as? HTTPURLResponse)?.statusCode == 401)
+            check("default_off", observer.take() == nil)
+            check("explicit_arm_once", observer.arm() && !observer.arm())
+            _ = try await session.data(for: request)
+            check("armed_exact_response_available", observer.take() == "00000000-0000-4000-8000-000000000001")
+            check("taking_is_destructive", observer.take() == nil)
+            _ = try await session.data(for: request)
+            check("late_response_cannot_refill_taken_capture", observer.take() == nil && !observer.arm())
+            for (label, rawURL, method, headers) in [
+                ("wrong_origin", "https://other.invalid/functions/v1/submit-score-revision", "POST", [:]),
+                ("wrong_path", "https://staging.invalid/auth/v1/logout", "POST", [:]),
+                ("insecure_request", "http://staging.invalid/functions/v1/submit-score-revision", "POST", [:]),
+                ("unexpected_port", "https://staging.invalid:8443/functions/v1/submit-score-revision", "POST", [:]),
+                ("query_rejected", "https://staging.invalid/functions/v1/submit-score-revision?a=1", "POST", [:]),
+                ("wrong_method", url.absoluteString, "GET", [:]),
+                ("success_not_captured", url.absoluteString, "POST", ["X-Test-Status": "200"]),
+                ("other_failure_not_captured", url.absoluteString, "POST", ["X-Test-Status": "403"]),
+                ("missing_header", url.absoluteString, "POST", ["X-Test-No-ID": "1"]),
+                ("malformed_header", url.absoluteString, "POST", ["X-Test-ID": "not-a-uuid"]),
+                ("oversized_header", url.absoluteString, "POST", ["X-Test-ID": String(repeating: "a", count: 4096)]),
+                ("uppercase_header", url.absoluteString, "POST", ["X-Test-ID": "AAAAAAAA-AAAA-4AAA-8AAA-AAAAAAAAAAAA"])
+            ] {
+                let scoped = StagingScoringResponseCapture(scoringURL: url)
+                check("scope_fixture_armed", scoped.arm())
+                let scopedSession = URLSession(configuration: configuration, delegate: scoped, delegateQueue: nil)
+                defer { scopedSession.invalidateAndCancel() }
+                var scopedRequest = URLRequest(url: URL(string: rawURL)!)
+                scopedRequest.httpMethod = method
+                for (key, value) in headers { scopedRequest.setValue(value, forHTTPHeaderField: key) }
+                _ = try await scopedSession.data(for: scopedRequest)
+                check(label, scoped.take() == nil)
+            }
+            let clock = CaptureClock()
+            let expired = StagingScoringResponseCapture(scoringURL: url, now: { clock.now })
+            check("expiry_fixture_armed", expired.arm())
+            let expiredSession = URLSession(configuration: configuration, delegate: expired, delegateQueue: nil)
+            defer { expiredSession.invalidateAndCancel() }
+            _ = try await expiredSession.data(for: request)
+            check("expiry_fixture_received_response", expired.hasCapturedResponse)
+            clock.expire()
+            check("expired_access_clears_capture", expired.take() == nil && !expired.hasCapturedResponse)
+            let cancelled = StagingScoringResponseCapture(scoringURL: url)
+            check("cancellation_fixture_armed", cancelled.arm())
+            let cancelledSession = URLSession(configuration: configuration, delegate: cancelled, delegateQueue: nil)
+            defer { cancelledSession.invalidateAndCancel() }
+            _ = try await cancelledSession.data(for: request)
+            cancelled.cancel()
+            _ = try await cancelledSession.data(for: request)
+            check("cancel_clears_and_disables_capture", cancelled.take() == nil && !cancelled.hasCapturedResponse && !cancelled.arm())
+            let ambiguous = StagingScoringResponseCapture(scoringURL: url)
+            check("ambiguity_fixture_armed", ambiguous.arm())
+            let ambiguousSession = URLSession(configuration: configuration, delegate: ambiguous, delegateQueue: nil)
+            defer { ambiguousSession.invalidateAndCancel() }
+            _ = try await ambiguousSession.data(for: request)
+            _ = try await ambiguousSession.data(for: request)
+            check("multiple_matching_tasks_discard_capture", ambiguous.take() == nil)
+            let errored = StagingScoringResponseCapture(scoringURL: url)
+            check("error_fixture_armed", errored.arm())
+            let erroredSession = URLSession(configuration: configuration, delegate: errored, delegateQueue: nil)
+            defer { erroredSession.invalidateAndCancel() }
+            var failedRequest = request
+            failedRequest.setValue("1", forHTTPHeaderField: "X-Test-Error")
+            do {
+                _ = try await erroredSession.data(for: failedRequest)
+                check("native_network_error_preserved", false)
+            } catch let error as URLError {
+                check("native_network_error_preserved", error.code == .networkConnectionLost)
+            }
+            check("native_error_not_captured", errored.take() == nil)
+            for timeout in [Duration.zero, .seconds(-1), .seconds(61)] {
+                let invalid = StagingScoringResponseCapture(scoringURL: url)
+                check("invalid_window_refused", !invalid.arm(timeout: timeout))
+            }
+        } catch {
+            check("synthetic_transport_completed", false)
+        }
+#else
+        check("non_staging_capture_compiled_out", true)
+#endif
+    }
+}

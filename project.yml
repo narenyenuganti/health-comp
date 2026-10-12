@@ -90,6 +90,7 @@ targets:
     sources:
       - path: HealthCompTests/SupabaseAppleWebDeletionTransportTests.swift
       - path: HealthCompTests/SupabaseConfigurationTests.swift
+      - path: HealthCompTests/StagingScoringResponseCaptureTests.swift
     dependencies:
       - target: HealthComp
       - package: CompetitionCore

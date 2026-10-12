@@ -21,6 +21,28 @@ grant operators a mutation back door.
 
 ## Before querying
 
+### Staging response correlation
+
+Staging builds have a default-off, in-memory observer on the same shared
+HTTP transport. The internal `SupabaseClientProvider` hooks
+`armStagingScoringResponseCapture` and `takeStagingScoringResponseCapture`
+require the active authentication lifetime. No screen, launch argument or
+stored setting activates them. Live activation requires its own approved,
+bounded diagnostic workflow; do not print, log or save the returned value.
+
+Each lifetime permits one arm with a maximum 60-second window. Only a newly
+created POST to its exact HTTPS scoring endpoint can supply a canonical
+`sb-request-id` from HTTP 401. A second matching task before retrieval discards
+the observation. Taking, expiry, session invalidation or confirmed retirement
+closes the slot; replacement owners do not inherit it. Failed retirement does
+not admit another capture or client. The owner timer clears idle RAM while
+execution is scheduled; suspension can delay that cleanup, but expired values
+cannot be retrieved. This is not secure memory erasure.
+
+These hooks do not alter requests, errors, authentication, App Attest keys or
+retries. A captured response does not prove a unique UI action, refresh
+causality, hosted-log equality, score acceptance or replay resistance.
+
 Record in the restricted support case:
 
 1. environment and public app build number;
