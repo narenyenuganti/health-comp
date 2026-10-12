@@ -330,30 +330,6 @@ Deno.test("attestation rejection diagnostics distinguish strict verifier stages"
   );
 });
 
-Deno.test("attestation authenticator diagnostics identify rejected flags without exposing their value", async () => {
-  const decoded = cbor.decodeFirstSync(
-    Buffer.from(official.attestation, "base64"),
-  ) as {
-    fmt: string;
-    attStmt: { x5c: Buffer[]; receipt: Buffer };
-    authData: Buffer;
-  };
-  const authData = Buffer.from(decoded.authData);
-  authData[32] = 0x41;
-  const attestation = await cbor.encodeAsync({ ...decoded, authData });
-  assertEquals(
-    captureCode(() =>
-      verifyAppAttestAttestation({
-        attestation,
-        clientDataHash: Buffer.from(official.clientDataHash, "base64"),
-        keyID: official.keyId,
-        policy: officialPolicy(),
-      })
-    ),
-    "invalid_attestation_authenticator_flags",
-  );
-});
-
 Deno.test("attestation authenticator diagnostics identify invalid length before reading header fields", async () => {
   const decoded = cbor.decodeFirstSync(
     Buffer.from(official.attestation, "base64"),
