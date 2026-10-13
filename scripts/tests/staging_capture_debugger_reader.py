@@ -42,6 +42,7 @@ def check(debugger, command, result, internal_dict):
 @interface HealthCompStagingScoringOperator
 + (bool)arm;
 + (NSString *)take;
++ (bool)cancel;
 @end
 """)
 
@@ -77,6 +78,8 @@ def check(debugger, command, result, internal_dict):
         assert evaluate('(id)[(id)objc_getClass("HealthCompStagingScoringOperator") take]').GetValueAsUnsigned() == 0
         assert evaluate('(int)[(id)objc_getClass("HealthCompStagingScoringOperator") arm]').GetValueAsSigned() == 0
         stage = "persistent_variables"
+        assert evaluate('(int)[(id)objc_getClass("HealthCompStagingScoringOperator") cancel]').GetValueAsSigned() == 1
+        assert evaluate('(id)[(id)objc_getClass("HealthCompStagingScoringOperator") take]').GetValueAsUnsigned() == 0
         # Apple LLDB lacks SBTarget.FindExpressionVariableForLanguage. These
         # fixed lookups use its supported evaluator and suppress their results too.
         frame = process.GetSelectedThread().GetFrameAtIndex(0)
@@ -96,6 +99,7 @@ def check(debugger, command, result, internal_dict):
             raise AssertionError()
         print(json.dumps({"status": "synthetic_debugger_access_passed",
             "default_off": True, "one_arm": True, "destructive_take": True,
+            "explicit_cancel_confirmed": True,
             "printed_response_ids": 0, "checked_persistent_result_slots": 16,
             "synthetic_inferior_exited_after_detach": True,
             "real_app_owner_wiring_proven": False, "physical_attach_proven": False,

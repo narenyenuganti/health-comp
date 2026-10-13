@@ -89,6 +89,23 @@ private enum StagingScoringResponseCaptureChecks {
         expiringControls.cancel(for: replacement)
         expiringControls.bind(replacement)
         check("same_retired_owner_cannot_rearm", !expiringControls.requestArm())
+        let cancelledControls = StagingScoringOperatorControls()
+        cancelledControls.bind(controlOwner)
+        check("cancel_requested_fixture_armed", cancelledControls.requestArm())
+        check("explicit_cancel_confirms_empty_read_clearance", cancelledControls.takeResponse() == nil
+            && cancelledControls.cancelCapture()
+            && cancelledControls.consumeArmRequest(for: controlOwner) == nil
+            && !cancelledControls.requestArm())
+        cancelledControls.recordResponse("00000000-0000-4000-8000-000000000001", for: controlOwner)
+        check("cancelled_operator_cannot_refill", cancelledControls.takeResponse() == nil)
+        cancelledControls.bind(replacement)
+        check("replacement_after_operator_cancel_starts_empty", cancelledControls.takeResponse() == nil
+            && cancelledControls.requestArm())
+        _ = cancelledControls.consumeArmRequest(for: replacement)
+        cancelledControls.recordResponse("00000000-0000-4000-8000-000000000001", for: replacement)
+        check("explicit_cancel_discards_captured_response", cancelledControls.cancelCapture()
+            && cancelledControls.takeResponse() == nil && !cancelledControls.requestArm())
+        check("already_closed_cancel_confirms_clearance", cancelledControls.cancelCapture())
         checkBusyControls()
         let url = URL(string: "https://staging.invalid/functions/v1/submit-score-revision")!
         let observer = StagingScoringResponseCapture(scoringURL: url)
@@ -185,17 +202,23 @@ private enum StagingScoringResponseCaptureChecks {
     private static func checkBusyControls() {
         let clock = BlockingCaptureClock()
         let controls = StagingScoringOperatorControls(now: { clock.now })
-        controls.bind(StagingScoringCaptureOwner())
+        let controlsOwner = StagingScoringCaptureOwner()
+        controls.bind(controlsOwner)
         let finished = DispatchSemaphore(value: 0)
         DispatchQueue.global().async {
             _ = controls.requestArm()
             finished.signal()
         }
         check("held_lock_fixture_ready", clock.entered.wait(timeout: .now() + 2) == .success)
+        let started = ContinuousClock.now
         let refused = !controls.requestArm() && controls.takeResponse() == nil
+            && !controls.cancelCapture()
+        let returnedPromptly = started.duration(to: .now) < .seconds(1)
         clock.release.signal()
-        check("held_operator_lock_refuses_without_waiting", refused)
+        check("held_operator_lock_refuses_without_waiting", refused && returnedPromptly)
         check("held_lock_fixture_released", finished.wait(timeout: .now() + 2) == .success)
+        check("released_operator_lock_allows_confirmed_cancel", controls.cancelCapture()
+            && controls.consumeArmRequest(for: controlsOwner) == nil)
     }
 #endif
 }

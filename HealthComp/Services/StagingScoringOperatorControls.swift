@@ -34,9 +34,19 @@ final class StagingScoringOperatorControls: NSObject, @unchecked Sendable {
         return true
     }
 
-    // These two entry points never wait on a stopped thread's lock or enter the provider.
+    // Debugger entry points never wait on a stopped thread's lock or enter the provider.
     @objc static func arm() -> Bool { shared.requestArm() }
     @objc static func take() -> NSString? { shared.takeResponse() }
+
+    @objc static func cancel() -> Bool { shared.cancelCapture() }
+
+    // Confirms operator-slot clearance without entering or retiring the shared client.
+    func cancelCapture() -> Bool {
+        guard lock.try() else { return false }
+        defer { lock.unlock() }
+        close()
+        return true
+    }
 
     func takeResponse() -> NSString? {
         guard lock.try() else { return nil }
