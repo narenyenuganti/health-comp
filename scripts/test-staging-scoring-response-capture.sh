@@ -20,6 +20,7 @@ for mode in debug release staging; do
   esac
   xcrun swiftc "${flags[@]}" \
     "$repository_root/HealthComp/Services/StagingScoringResponseCapture.swift" \
+    "$repository_root/HealthComp/Services/StagingScoringOperatorControls.swift" \
     "$repository_root/scripts/tests/staging-scoring-response-capture.swift" \
     -o "$capture_scratch/$mode"
   perl -e 'alarm 20; exec @ARGV' "$capture_scratch/$mode" > "$capture_scratch/output"
@@ -32,9 +33,11 @@ done
 
 if xcrun swiftc -swift-version 6 -D HEALTHCOMP_CAPTURE_ABSENCE_TEST -typecheck \
   "$repository_root/HealthComp/Services/StagingScoringResponseCapture.swift" \
+  "$repository_root/HealthComp/Services/StagingScoringOperatorControls.swift" \
   "$repository_root/scripts/tests/staging-scoring-response-capture.swift" > "$capture_scratch/absence" 2>&1; then
   printf 'FAIL capture_available_outside_staging\n' >&2
   exit 1
 fi
 rg -Fq "cannot find type 'StagingScoringResponseCapture' in scope" "$capture_scratch/absence"
+rg -Fq "cannot find type 'StagingScoringOperatorControls' in scope" "$capture_scratch/absence"
 printf 'PASS non_staging_type_absence_guard\n'

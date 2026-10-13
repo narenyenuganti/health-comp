@@ -110,8 +110,14 @@ struct HealthCompApp: App {
     private let store: StoreOf<AppFeature>
 
     init() {
+#if HEALTHCOMP_STAGING
+        let provider = SupabaseClientProvider.live()
+            .withStagingScoringOperator(.shared)
+#else
+        let provider = SupabaseClientProvider.live()
+#endif
         self.init(
-            supabaseClientProvider: .live(),
+            supabaseClientProvider: provider,
             authenticationClientFactory: .live,
             competitionClientFactory: .live
         )

@@ -10,6 +10,21 @@ final class StagingScoringResponseCapture: NSObject, URLSessionTaskDelegate, @un
     private var state: State = .idle
     private var deadline: ContinuousClock.Instant?
     private var matchingTask: Int?
+    private var willObserveTask: (@Sendable () -> Void)?
+    private var didObserveResponse: (@Sendable () -> Void)?
+    private var didClose: (@Sendable () -> Void)?
+
+    func connectOperator(
+        willObserveTask: @escaping @Sendable () -> Void,
+        didObserveResponse: @escaping @Sendable () -> Void,
+        didClose: @escaping @Sendable () -> Void
+    ) {
+        lock.withLock {
+            self.willObserveTask = willObserveTask
+            self.didObserveResponse = didObserveResponse
+            self.didClose = didClose
+        }
+    }
 
     init(
         scoringURL: URL,
@@ -36,15 +51,18 @@ final class StagingScoringResponseCapture: NSObject, URLSessionTaskDelegate, @un
     func urlSession(_ session: URLSession, didCreateTask task: URLSessionTask) {
         guard task.originalRequest?.httpMethod == "POST",
               task.originalRequest?.url == scoringURL else { return }
-        lock.withLock {
-            guard isOpen else { return }
+        lock.withLock { willObserveTask }?()
+        let ambiguous = lock.withLock {
+            guard isOpen else { return false }
             guard matchingTask == nil else {
                 // Multiple matching tasks before retrieval are ambiguous, not failed requests.
                 close()
-                return
+                return true
             }
             matchingTask = task.taskIdentifier
+            return false
         }
+        if ambiguous { lock.withLock { didClose }?() }
     }
 
     func urlSession(
@@ -60,11 +78,13 @@ final class StagingScoringResponseCapture: NSObject, URLSessionTaskDelegate, @un
               let value = response.value(forHTTPHeaderField: "sb-request-id"),
               value.utf8.count == 36, let uuid = UUID(uuidString: value),
               uuid.uuidString.lowercased() == value else { return }
-        lock.withLock {
+        let captured = lock.withLock {
             guard isOpen, case .armed = state,
-                  matchingTask == task.taskIdentifier else { return }
+                  matchingTask == task.taskIdentifier else { return false }
             state = .captured(value)
+            return true
         }
+        if captured { lock.withLock { didObserveResponse }?() }
     }
 
     func take() -> String? {
@@ -76,7 +96,10 @@ final class StagingScoringResponseCapture: NSObject, URLSessionTaskDelegate, @un
         }
     }
 
-    func cancel() { lock.withLock { close() } }
+    func cancel() {
+        let callback = lock.withLock { close(); return didClose }
+        callback?()
+    }
 
     func urlSession(_ session: URLSession, didBecomeInvalidWithError error: Error?) {
         cancel()

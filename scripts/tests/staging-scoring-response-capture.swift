@@ -2,6 +2,7 @@ import Foundation
 
 #if HEALTHCOMP_CAPTURE_ABSENCE_TEST
 typealias CaptureMustBeAbsent = StagingScoringResponseCapture
+typealias OperatorMustBeAbsent = StagingScoringOperatorControls
 #endif
 
 #if HEALTHCOMP_STAGING
@@ -37,6 +38,16 @@ private final class CaptureClock: @unchecked Sendable {
     var now: ContinuousClock.Instant { lock.withLock { instant } }
     func expire() { lock.withLock { instant += .seconds(61) } }
 }
+
+private final class BlockingCaptureClock: @unchecked Sendable {
+    let entered = DispatchSemaphore(value: 0)
+    let release = DispatchSemaphore(value: 0)
+    var now: ContinuousClock.Instant {
+        entered.signal()
+        _ = release.wait(timeout: .now() + 5)
+        return .now
+    }
+}
 #endif
 
 @main
@@ -51,6 +62,34 @@ private enum StagingScoringResponseCaptureChecks {
 
     static func main() async {
 #if HEALTHCOMP_STAGING
+        let controls = StagingScoringOperatorControls()
+        check("unbound_operator_refuses_arm", !controls.requestArm())
+        let controlOwner = StagingScoringCaptureOwner()
+        controls.bind(controlOwner)
+        check("bound_operator_arms_once", controls.requestArm() && !controls.requestArm())
+        check("requested_operator_has_no_response", controls.takeResponse() == nil)
+        check("operator_request_consumed_once", controls.consumeArmRequest(for: controlOwner) != nil
+            && controls.consumeArmRequest(for: controlOwner) == nil)
+        controls.recordResponse("00000000-0000-4000-8000-000000000001", for: controlOwner)
+        check("operator_retrieval_destructive", controls.takeResponse() == "00000000-0000-4000-8000-000000000001"
+            && controls.takeResponse() == nil && !controls.requestArm())
+        let operatorClock = CaptureClock()
+        let expiringControls = StagingScoringOperatorControls(now: { operatorClock.now })
+        expiringControls.bind(controlOwner)
+        check("expiring_operator_armed", expiringControls.requestArm())
+        _ = expiringControls.consumeArmRequest(for: controlOwner)
+        expiringControls.recordResponse("00000000-0000-4000-8000-000000000001", for: controlOwner)
+        operatorClock.expire()
+        check("expired_operator_response_discarded", expiringControls.takeResponse() == nil
+            && !expiringControls.requestArm())
+        let replacement = StagingScoringCaptureOwner()
+        expiringControls.bind(replacement)
+        expiringControls.cancel(for: controlOwner)
+        check("old_owner_cannot_cancel_replacement", expiringControls.requestArm())
+        expiringControls.cancel(for: replacement)
+        expiringControls.bind(replacement)
+        check("same_retired_owner_cannot_rearm", !expiringControls.requestArm())
+        checkBusyControls()
         let url = URL(string: "https://staging.invalid/functions/v1/submit-score-revision")!
         let observer = StagingScoringResponseCapture(scoringURL: url)
         let configuration = URLSessionConfiguration.ephemeral
@@ -141,4 +180,22 @@ private enum StagingScoringResponseCaptureChecks {
         check("non_staging_capture_compiled_out", true)
 #endif
     }
+
+#if HEALTHCOMP_STAGING
+    private static func checkBusyControls() {
+        let clock = BlockingCaptureClock()
+        let controls = StagingScoringOperatorControls(now: { clock.now })
+        controls.bind(StagingScoringCaptureOwner())
+        let finished = DispatchSemaphore(value: 0)
+        DispatchQueue.global().async {
+            _ = controls.requestArm()
+            finished.signal()
+        }
+        check("held_lock_fixture_ready", clock.entered.wait(timeout: .now() + 2) == .success)
+        let refused = !controls.requestArm() && controls.takeResponse() == nil
+        clock.release.signal()
+        check("held_operator_lock_refuses_without_waiting", refused)
+        check("held_lock_fixture_released", finished.wait(timeout: .now() + 2) == .success)
+    }
+#endif
 }
