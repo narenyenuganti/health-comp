@@ -53,6 +53,27 @@ final class StagingScoringResponseCaptureTests: XCTestCase {
         try await provider.retireAuthenticationLifetime(fresh)
     }
 
+    func testCancelledRetirementAttemptClearsOperatorBeforeRegistryAdmission() async throws {
+        let fixture = ScoringCaptureFixture()
+        defer { fixture.close() }
+        let controls = StagingScoringOperatorControls()
+        let provider = fixture.provider().withStagingScoringOperator(controls)
+        let owner = try provider.authenticationLifetime()
+        XCTAssertTrue(controls.requestArm())
+        try await fixture.reject(owner.client)
+        try await Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            do {
+                try await provider.retireAuthenticationLifetime(owner)
+                XCTFail("cancelled_retirement_must_not_settle_authentication")
+            } catch is CancellationError {}
+        }.value
+        XCTAssertNil(controls.takeResponse())
+        XCTAssertFalse(controls.requestArm())
+        XCTAssertTrue(try provider.client() === owner.client)
+        try await provider.retireAuthenticationLifetime(owner)
+    }
+
     func testOperatorDiscardsASecondMatchingRequestBeforeDebuggerRetrieval() async throws {
         let fixture = ScoringCaptureFixture()
         defer { fixture.close() }

@@ -408,13 +408,14 @@ struct SupabaseClientProvider: Sendable {
         _ owner: SupabaseAuthenticationLifetime,
         beforeStorage: @escaping @Sendable () async throws -> Void = {}
     ) async throws {
+#if HEALTHCOMP_STAGING
+        // Revoke debugger reads before registry admission closes or cancellation throws.
+        owner.stagingScoringResponseCapture?.cancel()
+        stagingOperatorControls?.cancel(for: owner.stagingScoringCaptureOwner)
+#endif
         try await sharedClient.retire(owner) { retiring in
             // Registry admission is already closed while remote confirmation
             // is pending. Failure retains the same owner for an explicit retry.
-#if HEALTHCOMP_STAGING
-            retiring.stagingScoringResponseCapture?.cancel()
-            stagingOperatorControls?.cancel(for: retiring.stagingScoringCaptureOwner)
-#endif
             try await beforeStorage()
             try retiring.retireAuthStorage()
             await retiring.eventTasks.cancelAndDrain()
