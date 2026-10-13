@@ -14,9 +14,21 @@ and [recovery runbook](../runbooks/backup-restore.md#private-beta-deletion-test-
 preserve the deletion feature, existing automated coverage and privacy/history
 safeguards. Other gates and **not production-ready** status remain unchanged.
 
-## Current qualification checkpoint — September 28, 2026 UTC
+## Current qualification checkpoint — October 13, 2026 UTC
 
-The [current checklist](production-beta-checklist.md#current-qualification-checkpoint--september-28-2026-utc)
+The [current checklist](production-beta-checklist.md#current-qualification-checkpoint--october-13-2026-utc)
+records successful exact-source CI for `da412f9`, its locally qualified but
+not-installed diagnostic Staging package, the preserved October 11–17 competition,
+and the last dated day-one rejection evidence. The October 18–19 confirmation
+window requires actual seven-day coverage and matching final commitments; it
+does not promise completion. Physical scoring, request correlation and the
+independent release/recovery/production gates remain unqualified. Historical
+receipts below retain their original artifact, time and scope. Release status
+remains **not production-ready**.
+
+## Historical qualification checkpoint — September 28, 2026 UTC
+
+The [historical checklist](production-beta-checklist.md#historical-qualification-checkpoint--september-28-2026-utc)
 records exact-source CI, both installed `507c2c5` Staging packages, the accepted
 September 28–October 4 competition, the still-unverified usable day-one score,
 and the local-only recovery milestone. October 5 is the earliest stable-result

@@ -14,7 +14,65 @@ records the matching boundary. Actual recovery, protection against resurrecting
 deleted identities, and all other unwaived qualification gates remain open.
 This is a scope decision, not a runtime receipt or production-readiness claim.
 
-## Current qualification checkpoint — October 2, 2026 UTC
+## Current qualification checkpoint — October 13, 2026 UTC
+
+**Not production-ready.** This checkpoint updates the source, prepared artifact
+and preserved competition pointers only. Older observations below remain scoped
+to their named artifact and time; they do not qualify this competition or build.
+
+- **Automated source matrix:** merged source
+  `da412f9b5c1c8bdbdd7d9c1039aec02fd960c68c` passed
+  [Backend CI](https://github.com/narenyenuganti/health-comp/actions/runs/38368597316)
+  and [iOS CI](https://github.com/narenyenuganti/health-comp/actions/runs/38368597399).
+  Completed exact-source statuses were rechecked October 13; no run was restarted.
+- **Prepared Staging artifact, not installed:** that source includes the reviewed
+  one-shot diagnostic cancel method from PR #143. Its new signed Staging package
+  passed local signature, configuration, privacy and matching app/dSYM checks.
+  Executable SHA-256:
+  `60884f451ed999944f1694a36ff9c21877d359b6daa7756eb46f40d84de4e095`.
+  The local reader passed synthetic empty/captured debugger checks and both
+  independent reviews. Confirmed clearance covers only its operator-owned RAM
+  slot, not whole-memory erasure or transport cancellation. No phone installation,
+  launch, refresh, debugger attachment or hosted correlation occurred in this
+  qualification. Live scoring and the cause of the rejection remain unqualified.
+- **Preserved competition:** the October 10 read-only hosted receipt found one
+  frozen competition, two accepted participants and one consumed invitation.
+  Its schedule is October 11–17 in `America/Los_Angeles`. The stable confirmation
+  window opens October 18 at 00:00 Pacific and ends at the October 19 00:00
+  Pacific fallback deadline. Those dates are not a successful result receipt.
+- **Last dated day-one evidence:** October 12 readbacks found zero daily revision
+  rows for either participant in this cycle, including after the owner-reported
+  warning-free refresh. The local invitee outbox contained one terminal
+  `appAttestRejectedTerminal` entry. The broad rejection log was not correlated
+  to an exact phone request; it does not establish the cause. These are historical
+  counts, not a fresh October 13 hosted inventory. September scoring passes must
+  not be applied to the October cycle.
+
+Next: qualify the approved bounded physical diagnostic and one read-only request
+correlation before changing verifier behavior. Preserve both profiles and this
+competition; do not create a replacement invitation or reset an account/key.
+Then obtain both accounts' seven accepted daily revisions and matching final
+commitments, and compare the stable result on both clients within the window.
+Missing submissions are not truthfully unavailable revisions; neither may be
+invented, and `best_available` must not be relabeled `stable`.
+
+Other open gates remain backend-triggered APNs delivery/routes; score-specific
+App Attest acceptance, replay and replacement-installation evidence; contained
+real recovery with forward repair; accessible privacy-policy and final signed
+release/distribution qualification; and production promotion. The owner-skipped
+physical deletion test and deferred universal links are not PASS. This update
+authorizes no device, hosted, paid-service, publication or production action.
+
+Privacy-safe operator receipts are retained outside the public repository:
+
+- `stable-cycle-hosted-acceptance-2026-10-10.json`, SHA-256
+  `0f44b913c12993ab67850ab3942aa9cd6689521d5786a96373eba15be66762a1`.
+- `staging-day1-coverage-2026-10-11.json`, SHA-256
+  `8aec792c7ed743945605de5cc1c72796aa8a859b9ee20ca303741269f66faf9d`.
+- `staging-live-reader-clearance-2026-10-13.json`, SHA-256
+  `12f9370f0a938840f3bad752e1e13c3ef0e5fccb9c0507621ff8875bc53ca34b`.
+
+## Historical qualification checkpoint — October 2, 2026 UTC
 
 **Not production-ready.** Both current participants now have a usable accepted
 score, and a fresh physical readback established warm background-observer
