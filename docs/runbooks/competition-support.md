@@ -26,18 +26,36 @@ grant operators a mutation back door.
 Staging builds have a default-off, in-memory observer on the same shared
 HTTP transport. The internal `SupabaseClientProvider` hooks
 `armStagingScoringResponseCapture` and `takeStagingScoringResponseCapture`
-require the active authentication lifetime. No screen, launch argument or
-stored setting activates them. Live activation requires its own approved,
+require the active authentication lifetime. The default Staging app registers
+the Objective-C class `HealthCompStagingScoringOperator` with that same provider.
+Its `arm` method queues one intent; normal exact-scoring-task creation executes
+the existing provider arm hook, not the debugger-stopped thread. Its `take`
+method destructively retrieves one pre-bridged in-memory value. Both use
+non-blocking lock admission and refuse a busy slot. No screen, launch argument,
+clipboard, local server or stored setting activates them.
+
+This is source wiring, not permission to attach to an installed application.
+Live activation requires its own approved,
 bounded diagnostic workflow; do not print, log or save the returned value.
 
 Each lifetime permits one arm with a maximum 60-second window. Only a newly
 created POST to its exact HTTPS scoring endpoint can supply a canonical
 `sb-request-id` from HTTP 401. A second matching task before retrieval discards
-the observation. Taking, expiry, session invalidation or confirmed retirement
+the observation, including a second task before operator retrieval. Taking,
+expiry, session invalidation or the start of retirement
 closes the slot; replacement owners do not inherit it. Failed retirement does
-not admit another capture or client. The owner timer clears idle RAM while
+not admit another capture or client, even when remote confirmation fails.
+Old-owner callbacks cannot clear a replacement owner's slot. The owner timer clears idle RAM while
 execution is scheduled; suspension can delay that cleanup, but expired values
 cannot be retrieved. This is not secure memory erasure.
+
+The local synthetic native debugger check passes debug and optimized controls
+without printing the synthetic response ID and checks only the first16
+persistent result slots. It does not qualify physical attachment, all debugger
+memory, continuous ownership, or response-header/hosted-analytics equality.
+Do not use interactive `po`/expression printing for this value. A separately
+approved reader must suppress persistent expression results, retain the value
+only privately in RAM, and refuse mismatched/expired owner bindings.
 
 These hooks do not alter requests, errors, authentication, App Attest keys or
 retries. A captured response does not prove a unique UI action, refresh

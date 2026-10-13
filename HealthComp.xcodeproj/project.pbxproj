@@ -10,6 +10,7 @@
 		0387B14516F10AD6F7D9631A /* CompetitionRealtimeClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEEFCAE971C5B24E3802EA8A /* CompetitionRealtimeClientTests.swift */; };
 		044015DA32180EF60CF5DC2A /* CompetitionTraceIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB243F0BB966F7049D05D56C /* CompetitionTraceIntegrationTests.swift */; };
 		07B51177CD4962804CDB26F1 /* AuthenticationClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B9BDFDDD2E2FDAB7931BA09 /* AuthenticationClient.swift */; };
+		087A4FE8435E81D45123CAC5 /* StagingScoringOperatorControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D014DB9BF9CBBBC04BCD0B7 /* StagingScoringOperatorControls.swift */; };
 		093DC7E7B8D1993E54AF5D8F /* CompetitionClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6627DB76B896A69CA64FB159 /* CompetitionClient.swift */; };
 		0BD7D8160ECD9E9F9DF4C5EC /* CompetitionNotificationClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = BCFF8829F7432D248978C4F1 /* CompetitionNotificationClient.swift */; };
 		0BF4596D63CCDE7A8B41F7D7 /* CompetitionFeature.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8E8BC3205F9F874134CE71BC /* CompetitionFeature.swift */; };
@@ -176,6 +177,7 @@
 		226BA4E27B1F6F1804DEE79E /* StagingScoringResponseCapture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StagingScoringResponseCapture.swift; sourceTree = "<group>"; };
 		2B6CEEA41B5ADC4158D1E6E5 /* SupabaseCompetitionRealtimeClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupabaseCompetitionRealtimeClient.swift; sourceTree = "<group>"; };
 		2CC1985FE34C77217A5DAAD0 /* FixtureActivitySourceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FixtureActivitySourceTests.swift; sourceTree = "<group>"; };
+		2D014DB9BF9CBBBC04BCD0B7 /* StagingScoringOperatorControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StagingScoringOperatorControls.swift; sourceTree = "<group>"; };
 		2F6768BD6108222519CD7CA7 /* SupabaseAppleWebDeletionTransportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupabaseAppleWebDeletionTransportTests.swift; sourceTree = "<group>"; };
 		35062161F195329954CCC954 /* CompetitionNotificationClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionNotificationClientTests.swift; sourceTree = "<group>"; };
 		367629019F65C3FCD66B409F /* CompetitionRouting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionRouting.swift; sourceTree = "<group>"; };
@@ -396,6 +398,7 @@
 				DA25D1EA0C137C12BC7FE9A1 /* RemoteCompetitionRuntimeFailure.swift */,
 				515A5EEE3F6C865C5972A3B4 /* SharedClientLifetime.swift */,
 				E3A18A121BDE529295DC3BAD /* StagingAppleWebAuthenticationConfiguration.swift */,
+				2D014DB9BF9CBBBC04BCD0B7 /* StagingScoringOperatorControls.swift */,
 				226BA4E27B1F6F1804DEE79E /* StagingScoringResponseCapture.swift */,
 				79D3B2F2BE57087995DA8315 /* SupabaseAppleWebDeletionTransport.swift */,
 				8F0B7A0111ADA222B439C9D9 /* SupabaseAuthenticationClient.swift */,
@@ -792,6 +795,7 @@
 				143CC8DBED3C6C8014D2CA49 /* RemoteCompetitionRuntimeFailure.swift in Sources */,
 				AC27EE6DEBA9224CB7ACEAC3 /* SharedClientLifetime.swift in Sources */,
 				3DDD361C9B108A53763C47B8 /* StagingAppleWebAuthenticationConfiguration.swift in Sources */,
+				087A4FE8435E81D45123CAC5 /* StagingScoringOperatorControls.swift in Sources */,
 				CE24C086F70A82ACA510190C /* StagingScoringResponseCapture.swift in Sources */,
 				70E979BCF298681D60F5F4E4 /* SupabaseAppleWebDeletionTransport.swift in Sources */,
 				1DBF19756261053C5D83FBCC /* SupabaseAuthKeychainStorage.swift in Sources */,

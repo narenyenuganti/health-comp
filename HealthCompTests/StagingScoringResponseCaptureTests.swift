@@ -5,6 +5,101 @@ import XCTest
 @testable import HealthComp
 
 final class StagingScoringResponseCaptureTests: XCTestCase {
+    func testOperatorIntentUsesTheExistingSharedClientAndDestructiveReadback() async throws {
+        let fixture = ScoringCaptureFixture()
+        defer { fixture.close() }
+        let controls = StagingScoringOperatorControls()
+        let provider = fixture.provider().withStagingScoringOperator(controls)
+        XCTAssertFalse(controls.requestArm())
+        let client = try provider.client()
+        try await fixture.reject(client)
+        XCTAssertNil(controls.takeResponse())
+        XCTAssertTrue(controls.requestArm())
+        XCTAssertFalse(controls.requestArm())
+        try await fixture.reject(client)
+        XCTAssertTrue(controls.takeResponse() == ScoringCaptureProtocol.responseID as NSString)
+        XCTAssertNil(controls.takeResponse())
+        XCTAssertTrue(try provider.client() === client)
+        XCTAssertEqual(fixture.observers.count, 1)
+        try await provider.retireAuthenticationLifetime(provider.authenticationLifetime())
+    }
+
+    func testOperatorRetirementStartsBeforeRemoteConfirmationAndOldCallbacksCannotTouchReplacement() async throws {
+        let fixture = ScoringCaptureFixture()
+        defer { fixture.close() }
+        let controls = StagingScoringOperatorControls()
+        let provider = fixture.provider().withStagingScoringOperator(controls)
+        let old = try provider.authenticationLifetime()
+        XCTAssertTrue(controls.requestArm())
+        try await fixture.reject(old.client)
+        do {
+            try await provider.retireAuthenticationLifetime(old, beforeStorage: {
+                XCTAssertNil(controls.takeResponse())
+                XCTAssertFalse(controls.requestArm())
+                throw AuthenticationClientFailure.operationFailed
+            })
+            XCTFail("synthetic_confirmation_failure_must_block_retirement")
+        } catch AuthenticationClientFailure.operationFailed {}
+        XCTAssertThrowsError(try provider.beginFreshAuthenticationLifetime())
+        XCTAssertNil(controls.takeResponse())
+        try await provider.retireAuthenticationLifetime(old)
+        let fresh = try provider.beginFreshAuthenticationLifetime()
+        XCTAssertFalse(fresh.client === old.client)
+        XCTAssertTrue(controls.requestArm())
+        fixture.observers[0].cancel()
+        try await fixture.reject(old.client)
+        try await fixture.reject(fresh.client)
+        XCTAssertTrue(controls.takeResponse() == ScoringCaptureProtocol.responseID as NSString)
+        try await provider.retireAuthenticationLifetime(fresh)
+    }
+
+    func testOperatorDiscardsASecondMatchingRequestBeforeDebuggerRetrieval() async throws {
+        let fixture = ScoringCaptureFixture()
+        defer { fixture.close() }
+        let controls = StagingScoringOperatorControls()
+        let provider = fixture.provider().withStagingScoringOperator(controls)
+        let client = try provider.client()
+        XCTAssertTrue(controls.requestArm())
+        try await fixture.reject(client)
+        try await fixture.reject(client)
+        XCTAssertNil(controls.takeResponse())
+        XCTAssertFalse(controls.requestArm())
+        try await provider.retireAuthenticationLifetime(provider.authenticationLifetime())
+    }
+
+    func testOperatorExpiryDeniesResponseAndDoesNotReplaceClient() async throws {
+        let fixture = ScoringCaptureFixture()
+        defer { fixture.close() }
+        let clock = ScoringOperatorClock()
+        let controls = StagingScoringOperatorControls(now: { clock.now })
+        let provider = fixture.provider().withStagingScoringOperator(controls)
+        let client = try provider.client()
+        XCTAssertTrue(controls.requestArm())
+        try await fixture.reject(client)
+        clock.expire()
+        XCTAssertNil(controls.takeResponse())
+        XCTAssertFalse(controls.requestArm())
+        XCTAssertTrue(try provider.client() === client)
+        try await provider.retireAuthenticationLifetime(provider.authenticationLifetime())
+    }
+
+    func testExplicitTransportOverrideDoesNotAcquireAnOperatorDelegate() async throws {
+        let fixture = ScoringCaptureFixture()
+        let session = URLSession(configuration: .ephemeral)
+        defer { session.invalidateAndCancel() }
+        let controls = StagingScoringOperatorControls()
+        let provider = SupabaseClientProvider.live(infoDictionary: {
+            ["SUPABASE_URL": "https://staging.invalid", "SUPABASE_PUBLISHABLE_KEY": "synthetic-public-key"]
+        }, urlSession: session, authStorage: FailClosedAuthLocalStorage(
+            underlying: fixture.storage, sessionKey: { "sb-staging-auth-token" }
+        )).withStagingScoringOperator(controls)
+        let client = try provider.client()
+        XCTAssertNil(session.delegate)
+        XCTAssertFalse(controls.requestArm())
+        XCTAssertTrue(try provider.client() === client)
+        try await provider.retireAuthenticationLifetime(provider.authenticationLifetime())
+    }
+
     func testActualSharedClientCapturesOnceWithoutChangingSDKRejection() async throws {
         let fixture = ScoringCaptureFixture()
         defer { fixture.close() }
@@ -141,6 +236,13 @@ final class StagingScoringResponseCaptureTests: XCTestCase {
         XCTAssertFalse(fixture.observers[0].hasCapturedResponse)
         try await provider.retireAuthenticationLifetime(owner)
     }
+}
+
+private final class ScoringOperatorClock: @unchecked Sendable {
+    private let lock = NSLock()
+    private var instant = ContinuousClock.now
+    var now: ContinuousClock.Instant { lock.withLock { instant } }
+    func expire() { lock.withLock { instant += .seconds(61) } }
 }
 
 private final class ScoringCaptureFixture: @unchecked Sendable {

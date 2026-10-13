@@ -325,6 +325,7 @@ final class SupabaseAuthenticationLifetime: Sendable {
     let eventTasks = AuthenticationLifetimeTasks()
 #if HEALTHCOMP_STAGING
     fileprivate let stagingScoringResponseCapture: StagingScoringResponseCapture?
+    fileprivate let stagingScoringCaptureOwner = StagingScoringCaptureOwner()
 #endif
     let client: SupabaseClient
     let confirmGlobalSignOut: @Sendable (String) async throws -> Void
@@ -360,6 +361,9 @@ final class SupabaseAuthenticationLifetime: Sendable {
 
 struct SupabaseClientProvider: Sendable {
     private let sharedClient: SharedClientLifetime<SupabaseAuthenticationLifetime>
+#if HEALTHCOMP_STAGING
+    private let stagingOperatorControls: StagingScoringOperatorControls?
+#endif
 
     init(
         makeClient: @escaping @Sendable () throws -> SupabaseClient,
@@ -383,6 +387,9 @@ struct SupabaseClientProvider: Sendable {
 
     private init(makeLifetime: @escaping @Sendable () throws -> SupabaseAuthenticationLifetime) {
         self.sharedClient = SharedClientLifetime(makeClient: makeLifetime)
+#if HEALTHCOMP_STAGING
+        self.stagingOperatorControls = nil
+#endif
     }
 
     func client() throws -> SupabaseClient {
@@ -390,7 +397,11 @@ struct SupabaseClientProvider: Sendable {
     }
 
     func authenticationLifetime() throws -> SupabaseAuthenticationLifetime {
-        try sharedClient.client()
+        let owner = try sharedClient.client()
+#if HEALTHCOMP_STAGING
+        try connectStagingOperator(to: owner)
+#endif
+        return owner
     }
 
     func retireAuthenticationLifetime(
@@ -400,17 +411,22 @@ struct SupabaseClientProvider: Sendable {
         try await sharedClient.retire(owner) { retiring in
             // Registry admission is already closed while remote confirmation
             // is pending. Failure retains the same owner for an explicit retry.
-            try await beforeStorage()
 #if HEALTHCOMP_STAGING
             retiring.stagingScoringResponseCapture?.cancel()
+            stagingOperatorControls?.cancel(for: retiring.stagingScoringCaptureOwner)
 #endif
+            try await beforeStorage()
             try retiring.retireAuthStorage()
             await retiring.eventTasks.cancelAndDrain()
         }
     }
 
     func beginFreshAuthenticationLifetime() throws -> SupabaseAuthenticationLifetime {
-        try sharedClient.beginFreshLifetime()
+        let owner = try sharedClient.beginFreshLifetime()
+#if HEALTHCOMP_STAGING
+        try connectStagingOperator(to: owner)
+#endif
+        return owner
     }
 
     func eventOrigin(for owner: SupabaseAuthenticationLifetime) -> AuthenticationEventOrigin {
@@ -431,22 +447,72 @@ struct SupabaseClientProvider: Sendable {
     }
 
 #if HEALTHCOMP_STAGING
+    private init(
+        sharedClient: SharedClientLifetime<SupabaseAuthenticationLifetime>,
+        stagingOperatorControls: StagingScoringOperatorControls
+    ) {
+        self.sharedClient = sharedClient
+        self.stagingOperatorControls = stagingOperatorControls
+    }
+
+    func withStagingScoringOperator(_ controls: StagingScoringOperatorControls) -> Self {
+        Self(sharedClient: sharedClient, stagingOperatorControls: controls)
+    }
+
+    private func connectStagingOperator(to owner: SupabaseAuthenticationLifetime) throws {
+        guard let controls = stagingOperatorControls,
+              let capture = owner.stagingScoringResponseCapture else { return }
+        try sharedClient.withActiveOwner(owner) {
+            let token = owner.stagingScoringCaptureOwner
+            controls.bind(token)
+            capture.connectOperator(
+                willObserveTask: { [weak sharedClient, weak owner, weak controls] in
+                    guard let sharedClient, let owner, let controls else { return }
+                    try? sharedClient.withActiveOwner(owner) {
+                        guard let timeout = controls.consumeArmRequest(for: token) else { return }
+                        do {
+                            guard try Self.armStagingCapture(owner, timeout: timeout) else {
+                                controls.cancel(for: token)
+                                return
+                            }
+                        } catch { controls.cancel(for: token) }
+                    }
+                },
+                didObserveResponse: { [weak sharedClient, weak owner, weak controls] in
+                    guard let sharedClient, let owner, let controls else { return }
+                    try? sharedClient.withActiveOwner(owner) {
+                        guard controls.isArmed(for: token),
+                              let value = owner.stagingScoringResponseCapture?.take() else { return }
+                        controls.recordResponse(value, for: token)
+                    }
+                },
+                didClose: { [weak controls] in controls?.cancel(for: token) }
+            )
+        }
+    }
+
     func armStagingScoringResponseCapture(timeout: Duration = .seconds(60)) throws -> Bool {
         let owner = try authenticationLifetime()
         return try sharedClient.withActiveOwner(owner) {
-            guard let capture = owner.stagingScoringResponseCapture,
-                  capture.arm(timeout: timeout) else { return false }
-            do {
-                _ = try owner.eventTasks.start {
-                    defer { capture.cancel() }
-                    try? await Task.sleep(for: timeout)
-                }
-            } catch {
-                capture.cancel()
-                throw error
-            }
-            return true
+            try Self.armStagingCapture(owner, timeout: timeout)
         }
+    }
+
+    private static func armStagingCapture(
+        _ owner: SupabaseAuthenticationLifetime, timeout: Duration
+    ) throws -> Bool {
+        guard let capture = owner.stagingScoringResponseCapture,
+              capture.arm(timeout: timeout) else { return false }
+        do {
+            _ = try owner.eventTasks.start {
+                defer { capture.cancel() }
+                try? await Task.sleep(for: timeout)
+            }
+        } catch {
+            capture.cancel()
+            throw error
+        }
+        return true
     }
 
     func takeStagingScoringResponseCapture() throws -> String? {
