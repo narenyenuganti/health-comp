@@ -5,3 +5,10 @@
 SWIFT_OPTIMIZATION_LEVEL[sdk=macosx*] = -Onone
 SWIFT_COMPILATION_MODE[sdk=macosx*] = singlefile
 ARCHS[sdk=macosx*] = arm64
+
+// Simulator tests run on the arm64 runner, so skip the x86_64 Simulator slice
+// that release-style configurations build. Scoping testability to Simulator
+// builds keeps the macro plugins identical to the device builds, which then
+// reuse them instead of recompiling swift-syntax.
+ARCHS[sdk=iphonesimulator*] = arm64
+ENABLE_TESTABILITY[sdk=iphonesimulator*] = YES

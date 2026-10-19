@@ -144,7 +144,8 @@ jobs:
         run: |
           set -euo pipefail
           # Dedicated tests avoid importing DEBUG-only Test Lab fixtures.
-          # Testability permits @testable imports without enabling DEBUG.
+          # CI.xcconfig's Simulator testability permits @testable imports
+          # without enabling DEBUG.
           xcodebuild test \
             -project HealthComp.xcodeproj \
             -scheme 'HealthComp Staging' \
@@ -155,14 +156,12 @@ jobs:
             -parallel-testing-enabled NO \
             -maximum-concurrent-test-simulator-destinations 1 \
             -maximum-parallel-testing-workers 1 \
-            -jobs 2 \
             -onlyUsePackageVersionsFromResolvedFile \
             -skipMacroValidation \
             -skipPackagePluginValidation \
             -xcconfig Configuration/CI.xcconfig \
             CODE_SIGNING_ALLOWED=YES \
             CODE_SIGN_IDENTITY=- \
-            ENABLE_TESTABILITY=YES \
             COMPILER_INDEX_STORE_ENABLE=NO \
             SUPABASE_URL="$SUPABASE_URL" \
             SUPABASE_PUBLISHABLE_KEY="$SUPABASE_PUBLISHABLE_KEY"
@@ -195,9 +194,3 @@ jobs:
           git diff --check
           git diff --exit-code
           [[ -z "$(git status --porcelain --untracked-files=all)" ]]
-
-      - name: Remove dedicated CI Simulator
-        if: ${{ always() && env.HEALTHCOMP_CI_SIMULATOR_ID != '' }}
-        run: |
-          xcrun simctl shutdown "$HEALTHCOMP_CI_SIMULATOR_ID" || true
-          xcrun simctl delete "$HEALTHCOMP_CI_SIMULATOR_ID"
