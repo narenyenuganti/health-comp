@@ -45,7 +45,7 @@ struct CreateCompetitionView: View {
             }
         }
         .background(Theme.ground)
-        .presentationDetents([.medium, .large])
+        .presentationDetents([.large])
         .presentationDragIndicator(.visible)
         .presentationBackground(Theme.ground)
         .accessibilityElement(children: .contain)
