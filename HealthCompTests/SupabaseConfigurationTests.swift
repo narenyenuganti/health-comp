@@ -1068,6 +1068,7 @@ final class SupabaseConfigurationTests: XCTestCase {
                         "--local-competition-test-lab",
                         "--local-competition-fixture", fixture.rawValue,
                         "--local-competition-direction", direction,
+                        "-AppleInterfaceStyle", "Dark",
                     ]
                     if journalMode == "persistent" {
                         arguments += [
@@ -1075,18 +1076,19 @@ final class SupabaseConfigurationTests: XCTestCase {
                             "supabase-poison-\(labLaunchCount)",
                         ]
                     }
-                    _ = HealthCompApp(
+                    let lab = HealthCompApp(
                         arguments: arguments,
                         supabaseClientProvider: poisonedProvider,
                         authenticationClientFactory:
                             authenticationClientFactory,
                         competitionClientFactory: competitionClientFactory
                     )
+                    XCTAssertEqual(lab.testLabColorScheme, .dark)
                     labLaunchCount += 1
                 }
             }
         }
-        _ = HealthCompApp(
+        let invalidLab = HealthCompApp(
             arguments: [
                 "HealthComp",
                 "--local-competition-test-lab",
@@ -1097,18 +1099,20 @@ final class SupabaseConfigurationTests: XCTestCase {
             authenticationClientFactory: authenticationClientFactory,
             competitionClientFactory: competitionClientFactory
         )
+        XCTAssertNil(invalidLab.testLabColorScheme)
 
         XCTAssertEqual(labLaunchCount, 28)
         XCTAssertEqual(adapterCreationCount.value, 0)
         XCTAssertEqual(competitionAdapterCreationCount.value, 0)
         XCTAssertEqual(clientCreationCount.value, 0)
 
-        _ = HealthCompApp(
-            arguments: ["HealthComp"],
+        let ordinaryLaunch = HealthCompApp(
+            arguments: ["HealthComp", "-AppleInterfaceStyle", "Dark"],
             supabaseClientProvider: poisonedProvider,
             authenticationClientFactory: authenticationClientFactory,
             competitionClientFactory: competitionClientFactory
         )
+        XCTAssertNil(ordinaryLaunch.testLabColorScheme)
 
         XCTAssertEqual(adapterCreationCount.value, 1)
         XCTAssertEqual(competitionAdapterCreationCount.value, 1)

@@ -112,7 +112,7 @@ final class LocalCompetitionLifecycleUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Competition Complete"].exists)
         XCTAssertTrue(app.staticTexts["Victory Over Alex"].exists)
         XCTAssertTrue(app.buttons["Rematch"].exists)
-        XCTAssertTrue(app.buttons["competition.more"].exists)
+        XCTAssertTrue(moreMenu.exists)
         XCTAssertTrue(app.otherElements["competition.result"].label.contains("Naren"))
         XCTAssertTrue(app.otherElements["competition.result"].label.contains("Alex"))
         capture("light-small-result")
@@ -177,7 +177,7 @@ final class LocalCompetitionLifecycleUITests: XCTestCase {
         scrollToElement(archived)
         archived.tap()
         XCTAssertTrue(app.navigationBars["Result"].waitForExistence(timeout: 5))
-        app.buttons["competition.more"].tap()
+        moreMenu.tap()
         XCTAssertFalse(app.buttons["Archive"].exists)
         let delete = app.buttons["Delete Local Data"]
         XCTAssertTrue(delete.waitForExistence(timeout: 3))
@@ -569,8 +569,15 @@ final class LocalCompetitionLifecycleUITests: XCTestCase {
         week.tap()
     }
 
+    // iOS 18 exposes Menu's identified wrapper, not its nested button, as hittable.
+    private var moreMenu: XCUIElement {
+        app.descendants(matching: .any)
+            .matching(identifier: "competition.more")
+            .firstMatch
+    }
+
     private func tapMoreMenuItem(_ title: String) {
-        let more = app.buttons["competition.more"]
+        let more = moreMenu
         XCTAssertTrue(more.waitForExistence(timeout: 3))
         more.tap()
         let item = app.buttons[title]

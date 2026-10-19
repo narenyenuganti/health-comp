@@ -188,7 +188,7 @@ final class MultiUserCompetitionUITests: XCTestCase {
             app.descendants(matching: .any)["competition.history.preserved"]
                 .waitForExistence(timeout: 3)
         )
-        XCTAssertFalse(app.buttons["competition.more"].exists)
+        XCTAssertFalse(moreMenu.exists)
         XCTAssertFalse(app.buttons["Delete Local Data"].exists)
     }
 
@@ -453,6 +453,21 @@ final class MultiUserCompetitionUITests: XCTestCase {
         XCTAssertFalse(app.progressIndicators["Deleting account"].exists)
     }
 
+    func testRemoteAppearanceSwitchRendersLightAndDark() {
+        for appearance in ["Light", "Dark"] {
+            launch(
+                .sharing,
+                appearanceArguments: [
+                    "-AppleInterfaceStyle", appearance,
+                    "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryXS",
+                ]
+            )
+            assertRemoteRenderedConfiguration(
+                "Appearance: \(appearance); Dynamic Type: xSmall"
+            )
+        }
+    }
+
     func testRemoteCompetitionAppearanceAndTypeSizeMatrix() throws {
         let cases: [(
             appearance: String,
@@ -585,7 +600,7 @@ final class MultiUserCompetitionUITests: XCTestCase {
             let rematch = app.buttons["competition.rematch.create"]
             scrollToElement(rematch)
             XCTAssertTrue(rematch.isHittable)
-            XCTAssertTrue(app.buttons["competition.more"].isHittable)
+            XCTAssertTrue(moreMenu.isHittable)
             assertRemoteRenderedConfiguration(expectedConfiguration)
             try app.performAccessibilityAudit(for: auditTypes)
             try assertNoPrivateFixtureContentIsSpoken()
@@ -955,8 +970,13 @@ final class MultiUserCompetitionUITests: XCTestCase {
         week.tap()
     }
 
+    // iOS 18 exposes Menu's identified wrapper, not its nested button, as hittable.
+    private var moreMenu: XCUIElement {
+        element("competition.more")
+    }
+
     private func tapMoreMenuItem(_ title: String) {
-        let more = app.buttons["competition.more"]
+        let more = moreMenu
         XCTAssertTrue(more.waitForExistence(timeout: 3))
         more.tap()
         let item = app.buttons[title]
