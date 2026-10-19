@@ -288,6 +288,12 @@ private struct AccountDeletionPage: View {
                 .accessibilityValue(
                     store.isDeletingAccount ? "Deleting account" : ""
                 )
+                if let message = store.message {
+                    Text(message.text)
+                        .font(.callout)
+                        .foregroundStyle(Theme.ink)
+                        .accessibilityIdentifier("account.message")
+                }
             } footer: {
                 Text(
                     "Deletion is permanent. Active competitions are cancelled, this profile’s local data is removed, and completed shared history remains for the other participant as Former competitor."

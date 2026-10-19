@@ -192,6 +192,28 @@ final class MultiUserCompetitionUITests: XCTestCase {
         XCTAssertFalse(app.buttons["Delete Local Data"].exists)
     }
 
+    func testRemoteDayDrawerShowsBothAcceptedScoresWithoutRawHealthSnapshots() {
+        launch(.sharing)
+        let active = sharingCard(state: "active", name: "Jordan")
+        scrollToElement(active)
+        active.tap()
+        XCTAssertTrue(
+            app.navigationBars["Competition with Jordan"]
+                .waitForExistence(timeout: 3)
+        )
+        showWeek()
+        let day = app.buttons["competition.day.1"]
+        scrollToElement(day)
+        day.tap()
+        XCTAssertTrue(app.buttons["Close"].waitForExistence(timeout: 3))
+
+        let summary = app.otherElements["competition.day.1"]
+        XCTAssertTrue(summary.waitForExistence(timeout: 3))
+        XCTAssertTrue(summary.label.contains("Beta Alice, 500 points"))
+        XCTAssertTrue(summary.label.contains("Jordan, 480 points"))
+        XCTAssertFalse(app.otherElements["competition.ownerRings"].exists)
+    }
+
     func testColdWarmAndSignedOutClaimConfirmationFlows() {
         for scenario in [Scenario.coldClaim, .warmClaim] {
             launch(scenario)
@@ -406,6 +428,28 @@ final class MultiUserCompetitionUITests: XCTestCase {
         XCTAssertTrue(alert.waitForNonExistence(timeout: 3))
         XCTAssertTrue(app.navigationBars["Delete Account"].exists)
         XCTAssertTrue(deleteAccount.exists)
+        XCTAssertFalse(app.progressIndicators["Deleting account"].exists)
+    }
+
+    func testAccountDeletionFailureRemainsVisibleOnDeletionPage() {
+        launch(.account)
+        XCTAssertTrue(app.navigationBars["Account"].waitForExistence(timeout: 8))
+        let deletePage = element("account.delete.open")
+        scrollToElement(deletePage)
+        deletePage.tap()
+        XCTAssertTrue(
+            app.navigationBars["Delete Account"].waitForExistence(timeout: 3)
+        )
+        app.buttons["account.delete"].tap()
+        let alert = app.alerts["Delete Account?"]
+        XCTAssertTrue(alert.waitForExistence(timeout: 3))
+        alert.buttons["account.delete.confirm"].firstMatch.tap()
+
+        let message = app.staticTexts["account.message"]
+        XCTAssertTrue(message.waitForExistence(timeout: 3))
+        XCTAssertEqual(message.label, "HealthComp could not connect. Please try again.")
+        XCTAssertTrue(app.navigationBars["Delete Account"].exists)
+        XCTAssertTrue(app.buttons["account.delete"].isEnabled)
         XCTAssertFalse(app.progressIndicators["Deleting account"].exists)
     }
 

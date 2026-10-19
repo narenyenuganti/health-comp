@@ -301,6 +301,12 @@ struct CompetitionDetailView: View {
                 title: "Day \(day.ordinal)",
                 subtitle: competitionDayDateText(day.day)
             ) {
+                CompetitionWeekChart(
+                    days: [day],
+                    currentDayOrdinal: competition.currentDayOrdinal,
+                    ownerName: competition.ownerDisplayName,
+                    opponentName: competition.opponentDisplayName
+                )
                 dayBreakdown(day)
                 ringsPanel(day)
                 evidenceCaption(day)

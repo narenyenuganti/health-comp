@@ -412,6 +412,12 @@ private struct MultiUserCompetitionAccountTestLabView: View {
             )
         ) {
             AccountFeature()
+            Reduce<AccountFeature.State, AccountFeature.Action> { _, action in
+                if case .delegate(.deleteAccountRequested) = action {
+                    return .send(.operationFailed(.operationFailed))
+                }
+                return .none
+            }
         } withDependencies: {
             $0.authenticationClient = .testValue
         }
