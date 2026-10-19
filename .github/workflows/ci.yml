@@ -27,12 +27,13 @@ env:
   SUPABASE_URL: https://ci-fixture.supabase.co
   SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci-fixture
 
-# Three parallel jobs. The Debug and Staging device builds follow their
-# Simulator builds to reuse that job's swift-syntax macro plugins; the core
-# job verifies the shared Xcode version for all three.
+# Three parallel jobs. The Staging device build follows its Simulator build
+# to reuse that job's swift-syntax macro plugins. The Debug device build runs
+# in the core job because the Debug UI tests already make that job longest.
+# The core job verifies the shared Xcode version for all three.
 jobs:
   core:
-    name: Core checks and Release device build
+    name: Core checks and Release and Debug device builds
     runs-on: macos-15
     timeout-minutes: 120
 
@@ -133,6 +134,25 @@ jobs:
           bash scripts/verify-app-privacy-manifest.sh --app-bundle \
             "$RUNNER_TEMP/HealthComp-DerivedData/Build/Products/Release-iphoneos/HealthComp.app"
 
+      - name: Build unsigned Debug device configuration
+        run: |
+          set -euo pipefail
+          xcodebuild build \
+            -project HealthComp.xcodeproj \
+            -scheme HealthComp \
+            -configuration Debug \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$RUNNER_TEMP/HealthComp-DerivedData" \
+            -onlyUsePackageVersionsFromResolvedFile \
+            -skipMacroValidation \
+            -skipPackagePluginValidation \
+            -xcconfig Configuration/CI.xcconfig \
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            SUPABASE_URL="$SUPABASE_URL" \
+            SUPABASE_PUBLISHABLE_KEY="$SUPABASE_PUBLISHABLE_KEY"
+          bash scripts/verify-app-privacy-manifest.sh --app-bundle \
+            "$RUNNER_TEMP/HealthComp-DerivedData/Build/Products/Debug-iphoneos/HealthComp.app"
+
       - name: Verify source tree remains clean
         run: |
           set -euo pipefail
@@ -141,7 +161,7 @@ jobs:
           [[ -z "$(git status --porcelain --untracked-files=all)" ]]
 
   ios:
-    name: Debug tests and device build
+    name: Debug tests
     runs-on: macos-15
     timeout-minutes: 120
 
@@ -155,6 +175,16 @@ jobs:
           path: ${{ runner.temp }}/HealthComp-DerivedData/SourcePackages
           key: spm-xcode16.4-${{ hashFiles('HealthComp.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
           restore-keys: spm-xcode16.4-
+
+      - name: Resolve Swift packages
+        run: |
+          set -euo pipefail
+          # Resolve before booting: during the Simulator's first boot this took
+          # minutes instead of seconds.
+          xcodebuild -resolvePackageDependencies \
+            -project HealthComp.xcodeproj \
+            -derivedDataPath "$RUNNER_TEMP/HealthComp-DerivedData" \
+            -onlyUsePackageVersionsFromResolvedFile
 
       - name: Prepare pinned iOS Simulator
         timeout-minutes: 10
@@ -192,7 +222,10 @@ jobs:
 
       - name: Wait for pinned iOS Simulator
         timeout-minutes: 10
-        run: xcrun simctl bootstatus "$HEALTHCOMP_CI_SIMULATOR_ID" -b
+        run: |
+          set -euo pipefail
+          xcrun simctl bootstatus "$HEALTHCOMP_CI_SIMULATOR_ID" -b
+          tail -n 3 "$RUNNER_TEMP/simulator-boot.log"
 
       - name: Test iOS application logic, invitation copy, and privacy disclosures
         run: |
@@ -221,25 +254,6 @@ jobs:
             -skipMacroValidation \
             -skipPackagePluginValidation
 
-      - name: Build unsigned Debug device configuration
-        run: |
-          set -euo pipefail
-          xcodebuild build \
-            -project HealthComp.xcodeproj \
-            -scheme HealthComp \
-            -configuration Debug \
-            -destination 'generic/platform=iOS' \
-            -derivedDataPath "$RUNNER_TEMP/HealthComp-DerivedData" \
-            -onlyUsePackageVersionsFromResolvedFile \
-            -skipMacroValidation \
-            -skipPackagePluginValidation \
-            -xcconfig Configuration/CI.xcconfig \
-            COMPILER_INDEX_STORE_ENABLE=NO \
-            SUPABASE_URL="$SUPABASE_URL" \
-            SUPABASE_PUBLISHABLE_KEY="$SUPABASE_PUBLISHABLE_KEY"
-          bash scripts/verify-app-privacy-manifest.sh --app-bundle \
-            "$RUNNER_TEMP/HealthComp-DerivedData/Build/Products/Debug-iphoneos/HealthComp.app"
-
       - name: Verify source tree remains clean
         run: |
           set -euo pipefail
@@ -262,6 +276,16 @@ jobs:
           path: ${{ runner.temp }}/HealthComp-DerivedData/SourcePackages
           key: spm-xcode16.4-${{ hashFiles('HealthComp.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
           restore-keys: spm-xcode16.4-
+
+      - name: Resolve Swift packages
+        run: |
+          set -euo pipefail
+          # Resolve before booting: during the Simulator's first boot this took
+          # minutes instead of seconds.
+          xcodebuild -resolvePackageDependencies \
+            -project HealthComp.xcodeproj \
+            -derivedDataPath "$RUNNER_TEMP/HealthComp-DerivedData" \
+            -onlyUsePackageVersionsFromResolvedFile
 
       - name: Prepare pinned iOS Simulator
         timeout-minutes: 10
@@ -302,7 +326,10 @@ jobs:
 
       - name: Wait for pinned iOS Simulator
         timeout-minutes: 10
-        run: xcrun simctl bootstatus "$HEALTHCOMP_CI_SIMULATOR_ID" -b
+        run: |
+          set -euo pipefail
+          xcrun simctl bootstatus "$HEALTHCOMP_CI_SIMULATOR_ID" -b
+          tail -n 3 "$RUNNER_TEMP/simulator-boot.log"
 
       - name: Test release-style Staging browser configuration
         run: |
