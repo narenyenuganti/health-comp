@@ -10,40 +10,136 @@ struct CompetitionWeekChart: View {
     let ownerName: String
     let opponentName: String
     var showsDates = false
+    /// Makes each day that has started open its breakdown.
+    var selectDay: ((LocalCompetitionDayPresentation) -> Void)?
 
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         VStack(spacing: dynamicTypeSize.isAccessibilitySize ? 12 : 6) {
             ForEach(days, id: \.ordinal) { day in
-                Group {
-                    if dynamicTypeSize.isAccessibilitySize {
-                        StackedDayRow(
-                            day: day,
-                            isToday: day.ordinal == currentDayOrdinal,
-                            ownerName: ownerName,
-                            opponentName: opponentName
-                        )
-                    } else {
-                        HeadToHeadDayRow(
-                            day: day,
-                            isToday: day.ordinal == currentDayOrdinal,
-                            showsDates: showsDates
-                        )
+                if let selectDay, day.ownerLatestAvailability != .notYetOccurred {
+                    Button {
+                        selectDay(day)
+                    } label: {
+                        row(day)
+                            .contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("competition.day.\(day.ordinal)")
+                    .accessibilityLabel(dayAccessibilityLabel(day))
+                    .accessibilityHint("Opens this day’s breakdown")
+                } else {
+                    row(day)
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityIdentifier("competition.day.\(day.ordinal)")
+                        .accessibilityLabel(dayAccessibilityLabel(day))
                 }
-                .accessibilityElement(children: .ignore)
-                .accessibilityIdentifier("competition.day.\(day.ordinal)")
-                .accessibilityLabel(
-                    competitionDayAccessibilityLabel(
-                        day,
-                        currentDayOrdinal: currentDayOrdinal,
-                        ownerName: ownerName,
-                        opponentName: opponentName
-                    )
-                )
             }
         }
+    }
+
+    @ViewBuilder
+    private func row(_ day: LocalCompetitionDayPresentation) -> some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            StackedDayRow(
+                day: day,
+                isToday: day.ordinal == currentDayOrdinal,
+                ownerName: ownerName,
+                opponentName: opponentName
+            )
+        } else {
+            HeadToHeadDayRow(
+                day: day,
+                isToday: day.ordinal == currentDayOrdinal,
+                showsDates: showsDates
+            )
+        }
+    }
+
+    private func dayAccessibilityLabel(
+        _ day: LocalCompetitionDayPresentation
+    ) -> String {
+        competitionDayAccessibilityLabel(
+            day,
+            currentDayOrdinal: currentDayOrdinal,
+            ownerName: ownerName,
+            opponentName: opponentName
+        )
+    }
+}
+
+/// The week at a glance: one bar per day in the color of whoever won it,
+/// amber for you and ink for them. Today stays dashed until it is scored.
+struct CompetitionWeekStrip: View {
+    let days: [LocalCompetitionDayPresentation]
+    let currentDayOrdinal: Int?
+
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 6) {
+            ForEach(days, id: \.ordinal) { day in
+                VStack(spacing: 6) {
+                    bar(day)
+                        .frame(height: 10)
+                    // Seven columns can't hold larger weekday text; the bars
+                    // still read in order.
+                    if dynamicTypeSize < .xxLarge {
+                        Text(
+                            day.ordinal == currentDayOrdinal
+                                ? "TODAY"
+                                : weekdayText(day.day)
+                        )
+                        .font(.caption2.weight(.bold).width(.condensed))
+                        .tracking(1)
+                        .foregroundStyle(
+                            day.ordinal == currentDayOrdinal
+                                ? Theme.ink
+                                : Theme.secondary
+                        )
+                        .lineLimit(1)
+                    }
+                }
+                .frame(maxWidth: .infinity)
+            }
+        }
+        .accessibilityHidden(true)
+    }
+
+    @ViewBuilder
+    private func bar(_ day: LocalCompetitionDayPresentation) -> some View {
+        if day.ordinal == currentDayOrdinal {
+            SlantedBar()
+                .stroke(
+                    leaderColor(day),
+                    style: StrokeStyle(lineWidth: 1.5, dash: [3, 2])
+                )
+        } else {
+            SlantedBar().fill(winnerColor(day))
+        }
+    }
+
+    private func winnerColor(_ day: LocalCompetitionDayPresentation) -> Color {
+        guard let owner = day.ownerAcceptedPoints,
+              let opponent = day.opponentRevealedPoints
+        else {
+            return day.ownerLatestAvailability == .notYetOccurred
+                ? Theme.track
+                : Theme.faint
+        }
+        if owner > opponent { return Theme.youFill }
+        if opponent > owner { return Theme.ink }
+        return Theme.outline
+    }
+
+    private func leaderColor(_ day: LocalCompetitionDayPresentation) -> Color {
+        guard let owner = day.ownerAcceptedPoints,
+              let opponent = day.opponentRevealedPoints
+        else {
+            return Theme.outline
+        }
+        return owner >= opponent ? Theme.you : Theme.ink
     }
 }
 

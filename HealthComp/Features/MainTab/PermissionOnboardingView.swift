@@ -168,7 +168,7 @@ struct PermissionOnboardingView: View {
                 "Competition complete",
                 "You won. You 2,431, Alex 2,198."
             )
-            Text("Mute any opponent from Home.")
+            Text("Mute anyone from your match with them.")
                 .font(.subheadline)
                 .foregroundStyle(Theme.secondary)
                 .frame(maxWidth: .infinity)

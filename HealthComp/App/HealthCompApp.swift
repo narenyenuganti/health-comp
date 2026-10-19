@@ -258,13 +258,40 @@ private struct AuthenticatedRootView: View {
             openAccount: { isAccountPresented = true }
         )
         .sheet(isPresented: $isAccountPresented) {
-            NavigationStack {
-                AccountSettingsView(store: accountStore)
-                    .toolbar {
-                        ToolbarItem(placement: .confirmationAction) {
-                            Button("Done") { isAccountPresented = false }
-                        }
+            AccountSheet(
+                mainStore: mainStore,
+                accountStore: accountStore,
+                done: { isAccountPresented = false }
+            )
+        }
+    }
+}
+
+/// Reads the competition's notification state in its own body, so the
+/// open sheet follows it.
+private struct AccountSheet: View {
+    let mainStore: StoreOf<MainTabFeature>
+    let accountStore: StoreOf<AccountFeature>
+    let done: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            AccountSettingsView(
+                store: accountStore,
+                notifications: AccountNotificationSettings(
+                    authorization: mainStore.competition
+                        .notificationAuthorizationState,
+                    isRequestInFlight: mainStore.competition
+                        .notificationAuthorizationRequestIsInFlight,
+                    request: {
+                        mainStore.send(.competition(.enableNotificationsTapped))
                     }
+                )
+            )
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done", action: done)
+                }
             }
         }
     }
