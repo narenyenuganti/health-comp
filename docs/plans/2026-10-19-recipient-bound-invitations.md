@@ -1,7 +1,9 @@
 # Recipient-bound invitations
 
-Status: source and focused local qualification passed; exact-head CI pending;
-not deployed.
+Status, October 19: source integrated with passing exact-head CI; migration 018
+and only the create invitation Function promoted to Staging. The matching
+Simulator client is installed; physical-client and live recipient-flow
+qualification remain incomplete. No production promotion.
 
 ## User contract
 
@@ -58,9 +60,10 @@ rehearsal had masked this by leaving fixture setup's immediate-constraint mode
 enabled. Restore deferred mode before the migration and flush it afterward;
 the unchanged migration then reproduces the hosted error. Move only the legacy
 expiration update after table DDL so the same fixture passes without weakening
-constraints or changing accepted history. Update the recovery harness's exact
-migration-manifest pin and rerun its existing synthetic modes. Migration018
-remains unapplied on Staging; no earlier migration or hosted history is repaired.
+constraints or changing accepted history. The recovery harness's exact
+migration-manifest pin was updated and both existing synthetic modes passed.
+The corrected migration was subsequently applied to Staging as recorded below;
+no earlier migration or hosted history was repaired.
 
 - 635 app unit tests and six rendered UI flows passed. The appearance matrix
   covered light/dark mode at xSmall and accessibility5 with the existing
@@ -84,11 +87,48 @@ remains unapplied on Staging; no earlier migration or hosted history is repaired
   at `41a4fbe` and the subsequent test-only fixture fix at `8aaeb7e`.
 
 These are local synthetic results, not hosted, physical-device, Release archive
-or production-readiness evidence. The PR's exact-head automated matrix must pass
-before source integration. A later rollout must coordinate migration, Functions
-and app compatibility; it is not authorized by this source-only qualification.
+or production-readiness evidence. The correction's PR #151 passed all three
+expected checks at `446714d85e0505bd344630016ea6ff978dd4363b` before integration.
+Merged main `6635c22e56908e6538c3f4261ab5d68cd8a38380` has exactly the same tree.
+Source qualification did not itself authorize the subsequent hosted rollout.
 
-The populated backup/export/restore harness still pins the prior migration
-manifest. Current-schema recovery must be qualified separately before hosted
-rollout; do not rewrite older evidence or treat an empty-schema check as proof
-of a populated restore. All existing beta-readiness holds remain in effect.
+The populated backup/export/restore harness now pins the corrected 23-migration
+manifest. Both native synthetic snapshot and forward-repair modes passed after
+the ordering correction. This is not a genuine hosted backup/restore pass; all
+existing beta-readiness holds remain in effect.
+
+## Dated Staging rollout evidence
+
+October 19, 20:20 UTC, following the owner's explicit approval:
+
+- Exactly migration 018 was applied, producing the expected 23-version chain.
+  Four old unnamed pending invitations expired. Same-process before/after
+  aggregate and ordered-row comparisons preserved all four accepted competitions
+  and their related history. No migration repair or reset was used.
+- Only `create-competition-invite` advanced from ACTIVE version 5 to version 6;
+  gateway JWT verification remained enabled and other Function metadata was
+  unchanged. Activated entry, shared invitation source and returned import map
+  matched source. No deployed lockfile was returned, so dependency-lock/graph
+  equality is not proved.
+- Recipient-column, unique-pair, 24-hour-expiry and service-role-only creation
+  catalog checks passed. These are not live create/accept tests.
+
+By 20:38 UTC the matching Simulator package had been installed once and launched
+once without manual refresh, account switch or invitation action. The installed
+executable/signature matched its prepared artifact; application/configuration
+sources are unchanged between packaged `da3ce2a` and integrated `6635c22`.
+The installation's combined path/mode/byte preservation assertion failed and its
+RAM-only baseline is gone. Its cause and original byte equality remain unproved;
+current-state replay must not be presented as that lost comparison.
+
+Stopped current-main Core replay passed all five journals and 147 events with
+owner binding and valid/corrupt/wrong-owner controls. The original October 11
+competition caught up to a completed `best_available` result with zero accepted
+day slots and 14 deadline-missing slots, not a stable result. Normal startup network
+effects were not classified. The app was terminated and dedicated Simulator shut
+down; no recipient drawer, lookup, creation or acceptance was qualified.
+
+The physical candidate remains uninstalled and the physical live reader remains
+disabled and pinned to the old installation. Physical qualification, live
+recipient flow, genuine hosted recovery and the broader release gates remain
+open. Do not reapply 018 or treat this Staging checkpoint as production readiness.

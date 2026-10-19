@@ -17,8 +17,9 @@ safeguards. Other gates and **not production-ready** status remain unchanged.
 ## Current qualification checkpoint — October 19, 2026 UTC
 
 The [current checklist](production-beta-checklist.md#current-qualification-checkpoint--october-19-2026-utc)
-records exact-main `9f9fb5e` Backend/iOS CI, the source-only recipient invitation
-contract and current-schema local synthetic recovery qualification. It also
+records exact-main `9f9fb5e` Backend/iOS CI, the integrated recipient invitation
+contract, the exact-tree PR #151 CI pass and current-schema local synthetic
+recovery qualification. It also
 records the earlier empty system-share-sheet CI failure without claiming a
 confirmed cause or application fix. Local populated restores and passing source
 CI are not hosted recovery or physical qualification.
@@ -30,10 +31,30 @@ Its receipt is scoped by a unique schedule, not a fresh private client/key
 binding. Waiting cannot close this cycle's stable-result gate. Preserve the
 fallback history; diagnose the real submission failure before another lifecycle.
 
-Staging still lacks migration `20261019001800`; its coordinated migration/create
-Function/client rollout has not occurred. No new invitation, physical action,
-hosted recovery, policy publication, release distribution or production promotion
-is established by this documentation. The owner-skipped deletion test, deferred
+At 20:20 UTC, explicitly approved Staging migration 018 produced the expected
+23-version chain and expired four old unnamed pending invitations. Same-process
+aggregate and ordered-row comparisons preserved all four accepted competitions
+and related history. Only `create-competition-invite` advanced ACTIVE version 5
+to version 6, with gateway JWT verification preserved and other Function metadata
+unchanged. Downloaded entry/shared/import-map bytes matched source; no deployed
+lockfile was returned, so dependency-lock/graph equality remains unproved.
+
+By 20:38 UTC, one matching Simulator install and one normal launch completed.
+Its executable/signature matched the prepared artifact, but the combined
+path/mode/byte preservation assertion failed and its RAM baseline is gone.
+Original byte equality and failure cause remain unproved. Independent stopped
+Core replay passed five journals/147 events and owner binding; the October 11
+cached result is completed `best_available` with zero accepted day slots and
+14 deadline-missing slots, not stable. Ordinary startup network effects were not
+classified. The app was terminated and dedicated Simulator shut down. Current
+history validity does not prove the lost installation comparison.
+
+The matching physical candidate remains uninstalled, the physical live reader
+remains disabled/old-install pinned, and the live recipient flow remains
+unqualified. No new invitation, physical action, hosted recovery, policy
+publication, release distribution or production promotion is established by
+these readbacks. The [invitation plan](../plans/2026-10-19-recipient-bound-invitations.md#dated-staging-rollout-evidence)
+records the dated rollout boundary. The owner-skipped deletion test, deferred
 universal links and paid-setup/Apple-contact holds remain unchanged. Release status
 remains **not production-ready**. Older receipts retain their named time and scope.
 
