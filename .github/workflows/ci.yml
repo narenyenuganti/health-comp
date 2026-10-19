@@ -188,41 +188,12 @@ jobs:
             com.apple.CoreSimulator.SimDeviceType.iPhone-16-Pro \
             com.apple.CoreSimulator.SimRuntime.iOS-18-5)"
           printf 'HEALTHCOMP_CI_SIMULATOR_ID=%s\n' "$simulator_id" >> "$GITHUB_ENV"
-          # First boot spends about a minute migrating data; let it overlap
-          # the build, which targets a generic Simulator because looking up
-          # this device while it boots stalled xcodebuild for minutes. The
-          # wait step below confirms the boot finished.
-          nohup xcrun simctl bootstatus "$simulator_id" -b \
-            </dev/null >"$RUNNER_TEMP/simulator-boot.log" 2>&1 &
-
-      - name: Build iOS application logic tests
-        run: |
-          set -euo pipefail
-          xcodebuild build-for-testing \
-            -project HealthComp.xcodeproj \
-            -scheme HealthComp \
-            -configuration Debug \
-            -destination 'generic/platform=iOS Simulator' \
-            -derivedDataPath "$RUNNER_TEMP/HealthComp-DerivedData" \
-            -onlyUsePackageVersionsFromResolvedFile \
-            -skipMacroValidation \
-            -skipPackagePluginValidation \
-            -xcconfig Configuration/CI.xcconfig \
-            COMPILER_INDEX_STORE_ENABLE=NO \
-            SUPABASE_URL="$SUPABASE_URL" \
-            SUPABASE_PUBLISHABLE_KEY="$SUPABASE_PUBLISHABLE_KEY"
-
-      - name: Wait for pinned iOS Simulator
-        timeout-minutes: 10
-        run: |
-          set -euo pipefail
-          xcrun simctl bootstatus "$HEALTHCOMP_CI_SIMULATOR_ID" -b
-          tail -n 3 "$RUNNER_TEMP/simulator-boot.log"
+          xcrun simctl bootstatus "$simulator_id" -b
 
       - name: Test iOS application logic, invitation copy, and privacy disclosures
         run: |
           set -euo pipefail
-          xcodebuild test-without-building \
+          xcodebuild test \
             -project HealthComp.xcodeproj \
             -scheme HealthComp \
             -configuration Debug \
@@ -244,7 +215,11 @@ jobs:
             -maximum-parallel-testing-workers 1 \
             -onlyUsePackageVersionsFromResolvedFile \
             -skipMacroValidation \
-            -skipPackagePluginValidation
+            -skipPackagePluginValidation \
+            -xcconfig Configuration/CI.xcconfig \
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            SUPABASE_URL="$SUPABASE_URL" \
+            SUPABASE_PUBLISHABLE_KEY="$SUPABASE_PUBLISHABLE_KEY"
 
       - name: Verify source tree remains clean
         run: |
@@ -281,44 +256,15 @@ jobs:
             com.apple.CoreSimulator.SimDeviceType.iPhone-16-Pro \
             com.apple.CoreSimulator.SimRuntime.iOS-18-5)"
           printf 'HEALTHCOMP_CI_SIMULATOR_ID=%s\n' "$simulator_id" >> "$GITHUB_ENV"
-          # First boot spends about a minute migrating data; let it overlap
-          # the build, which targets a generic Simulator because looking up
-          # this device while it boots stalled xcodebuild for minutes. The
-          # wait step below confirms the boot finished.
-          nohup xcrun simctl bootstatus "$simulator_id" -b \
-            </dev/null >"$RUNNER_TEMP/simulator-boot.log" 2>&1 &
+          xcrun simctl bootstatus "$simulator_id" -b
 
-      - name: Build release-style Staging browser tests
+      - name: Test release-style Staging browser configuration
         run: |
           set -euo pipefail
           # Dedicated tests avoid importing DEBUG-only Test Lab fixtures.
           # CI.xcconfig's Simulator testability permits @testable imports
           # without enabling DEBUG.
-          xcodebuild build-for-testing \
-            -project HealthComp.xcodeproj \
-            -scheme 'HealthComp Staging' \
-            -configuration Staging \
-            -destination 'generic/platform=iOS Simulator' \
-            -derivedDataPath "$RUNNER_TEMP/HealthComp-DerivedData" \
-            -onlyUsePackageVersionsFromResolvedFile \
-            -skipMacroValidation \
-            -skipPackagePluginValidation \
-            -xcconfig Configuration/CI.xcconfig \
-            COMPILER_INDEX_STORE_ENABLE=NO \
-            SUPABASE_URL="$SUPABASE_URL" \
-            SUPABASE_PUBLISHABLE_KEY="$SUPABASE_PUBLISHABLE_KEY"
-
-      - name: Wait for pinned iOS Simulator
-        timeout-minutes: 10
-        run: |
-          set -euo pipefail
-          xcrun simctl bootstatus "$HEALTHCOMP_CI_SIMULATOR_ID" -b
-          tail -n 3 "$RUNNER_TEMP/simulator-boot.log"
-
-      - name: Test release-style Staging browser configuration
-        run: |
-          set -euo pipefail
-          xcodebuild test-without-building \
+          xcodebuild test \
             -project HealthComp.xcodeproj \
             -scheme 'HealthComp Staging' \
             -configuration Staging \
@@ -330,7 +276,11 @@ jobs:
             -maximum-parallel-testing-workers 1 \
             -onlyUsePackageVersionsFromResolvedFile \
             -skipMacroValidation \
-            -skipPackagePluginValidation
+            -skipPackagePluginValidation \
+            -xcconfig Configuration/CI.xcconfig \
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            SUPABASE_URL="$SUPABASE_URL" \
+            SUPABASE_PUBLISHABLE_KEY="$SUPABASE_PUBLISHABLE_KEY"
 
       - name: Build unsigned Staging device configuration
         run: |
