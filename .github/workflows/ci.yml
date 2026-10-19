@@ -127,7 +127,6 @@ jobs:
             -skipMacroValidation \
             -skipPackagePluginValidation \
             -xcconfig Configuration/CI.xcconfig \
-            CODE_SIGNING_ALLOWED=NO \
             COMPILER_INDEX_STORE_ENABLE=NO \
             SUPABASE_URL="$SUPABASE_URL" \
             SUPABASE_PUBLISHABLE_KEY="$SUPABASE_PUBLISHABLE_KEY"
@@ -177,8 +176,6 @@ jobs:
       - name: Build iOS application logic tests
         run: |
           set -euo pipefail
-          # Local ad-hoc Simulator signing embeds the entitlements required by
-          # real Keychain tests. It needs no Apple account or signing certificate.
           xcodebuild build-for-testing \
             -project HealthComp.xcodeproj \
             -scheme HealthComp \
@@ -189,8 +186,6 @@ jobs:
             -skipMacroValidation \
             -skipPackagePluginValidation \
             -xcconfig Configuration/CI.xcconfig \
-            CODE_SIGNING_ALLOWED=YES \
-            CODE_SIGN_IDENTITY=- \
             COMPILER_INDEX_STORE_ENABLE=NO \
             SUPABASE_URL="$SUPABASE_URL" \
             SUPABASE_PUBLISHABLE_KEY="$SUPABASE_PUBLISHABLE_KEY"
@@ -239,7 +234,6 @@ jobs:
             -skipMacroValidation \
             -skipPackagePluginValidation \
             -xcconfig Configuration/CI.xcconfig \
-            CODE_SIGNING_ALLOWED=NO \
             COMPILER_INDEX_STORE_ENABLE=NO \
             SUPABASE_URL="$SUPABASE_URL" \
             SUPABASE_PUBLISHABLE_KEY="$SUPABASE_PUBLISHABLE_KEY"
@@ -302,8 +296,6 @@ jobs:
             -skipMacroValidation \
             -skipPackagePluginValidation \
             -xcconfig Configuration/CI.xcconfig \
-            CODE_SIGNING_ALLOWED=YES \
-            CODE_SIGN_IDENTITY=- \
             COMPILER_INDEX_STORE_ENABLE=NO \
             SUPABASE_URL="$SUPABASE_URL" \
             SUPABASE_PUBLISHABLE_KEY="$SUPABASE_PUBLISHABLE_KEY"
@@ -342,7 +334,6 @@ jobs:
             -skipMacroValidation \
             -skipPackagePluginValidation \
             -xcconfig Configuration/CI.xcconfig \
-            CODE_SIGNING_ALLOWED=NO \
             COMPILER_INDEX_STORE_ENABLE=NO \
             SUPABASE_URL="$SUPABASE_URL" \
             SUPABASE_PUBLISHABLE_KEY="$SUPABASE_PUBLISHABLE_KEY"

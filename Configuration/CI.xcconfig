@@ -12,3 +12,9 @@ ARCHS[sdk=macosx*] = arm64
 // reuse them instead of recompiling swift-syntax.
 ARCHS[sdk=iphonesimulator*] = arm64
 ENABLE_TESTABILITY[sdk=iphonesimulator*] = YES
+
+// Simulator builds sign ad hoc, which embeds the entitlements Keychain tests
+// need without an Apple account. Device builds cannot sign without one. The
+// macOS plugins keep the same signing in both, so device builds skip relinking.
+CODE_SIGN_IDENTITY = -
+CODE_SIGNING_ALLOWED[sdk=iphoneos*] = NO
