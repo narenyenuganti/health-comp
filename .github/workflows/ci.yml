@@ -183,6 +183,7 @@ jobs:
           # minutes instead of seconds.
           xcodebuild -resolvePackageDependencies \
             -project HealthComp.xcodeproj \
+            -scheme HealthComp \
             -derivedDataPath "$RUNNER_TEMP/HealthComp-DerivedData" \
             -onlyUsePackageVersionsFromResolvedFile
 
@@ -284,6 +285,7 @@ jobs:
           # minutes instead of seconds.
           xcodebuild -resolvePackageDependencies \
             -project HealthComp.xcodeproj \
+            -scheme HealthComp \
             -derivedDataPath "$RUNNER_TEMP/HealthComp-DerivedData" \
             -onlyUsePackageVersionsFromResolvedFile
 
