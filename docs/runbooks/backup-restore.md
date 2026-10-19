@@ -94,6 +94,14 @@ synthetic forward-repair component only, not the hosted repair rehearsal,
 genuine anonymized-history preservation, deletion reconciliation, RPO/RTO or
 Task 18. No hosted database or application migration was changed.
 
+On October 19, 2026, both local modes passed against all 23 migrations through
+`20261019001800`. The current-schema synthetic fixture included non-null named
+recipients, and both snapshot restores preserved their exact invitee relationship.
+The legacy forward-repair case preserved completed rows with the new recipient
+field null. All existing TLS, snapshot/repair negative controls and actual
+history/state/FK checks remained enabled. This is local synthetic evidence only;
+none of the hosted execution prerequisites or qualification holds above changed.
+
 Do not assume a paid-plan clone solves pre-import containment. The current
 [Supabase clone documentation](https://supabase.com/docs/guides/platform/clone-project)
 says copied external-operation extensions and jobs start when restore completes

@@ -5,8 +5,8 @@ umask 077
 export LC_ALL=C
 script_dir=$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 repo=$(CDPATH='' cd -- "$script_dir/.." && pwd)
-image='supabase/postgres@sha256:99b1729aeb0bac314445024fc149fbd39306170b61dd50800ccf180327ab3459'
-manifest_hash='b01b6a122e92d803b0f53ac2f0be527a8f5c9b6b3b3dfbb3c63e7c5d3b6fe69b'
+image='public.ecr.aws/supabase/postgres@sha256:99b1729aeb0bac314445024fc149fbd39306170b61dd50800ccf180327ab3459'
+manifest_hash='1b558cd41e2cc72ca8f740739a57a4f399391936755d8d2fd9d890a5695577ae'
 checks=/opt/healthcomp-recovery-checks
 fail() { printf 'migrated_snapshot_test: %s\n' "$1" >&2; exit 1; }
 mode=snapshot
@@ -28,7 +28,7 @@ else fail docker_engine_28_required; fi
 pinned_id=$(docker image inspect "$image" --format '{{.Id}}' 2>/dev/null) || fail pinned_image_not_local
 [[ $pinned_id == sha256:* ]] || fail pinned_image_id
 mapfile -t migrations < <(cd "$repo" && printf '%s\n' supabase/migrations/*.sql)
-[[ ${#migrations[@]} == 22 ]] || fail migration_count
+[[ ${#migrations[@]} == 23 ]] || fail migration_count
 actual_hash=$(cd "$repo" && shasum -a 256 "${migrations[@]}" | shasum -a 256 | awk '{print $1}')
 [[ $actual_hash == "$manifest_hash" ]] || fail migration_manifest
 source_migrations=("${migrations[@]}")
@@ -293,7 +293,8 @@ for container in "$source_name" "$target_name"; do
 done
 sql_user "$source_name" supabase_admin -c "alter database postgres set healthcomp.recovery_fixture = 'synthetic-20260928'" >/dev/null || fail fixture_marker
 state_empty=$(sql "$source_name" -f "$checks/recovery-state-acceptance.sql") || fail empty_state_read
-bash "$script_dir/test-recovery-state-acceptance.sh" --check-empty-receipt <<<"$state_empty" || fail empty_state
+# Bash 5.3.15 on this Mac stalls writing large here-strings before the reader runs.
+printf '%s\n' "$state_empty" | bash "$script_dir/test-recovery-state-acceptance.sh" --check-empty-receipt || fail empty_state
 
 history_matches() {
   jq -e -s --argjson batch "$1" '
@@ -315,6 +316,10 @@ history_matches() {
 state_matches() {
   bash "$script_dir/test-recovery-state-acceptance.sh" --check-migrated-fixture-receipt "$1" >/dev/null
 }
+recipients_sql="select count(*) || '|' || count(*) filter (
+  where c.invited_profile_id is distinct from p.profile_id)
+  from public.competitions c left join public.competition_participants p
+  on p.competition_id=c.id and p.role='invitee';"
 restore_archive() {
   local label=$1
   [[ $(docker inspect "$target_name" --format '{{index .Config.Labels "healthcomp.local-recovery"}} {{.HostConfig.NetworkMode}}') == "$project none" ]] || fail target_recheck
@@ -331,8 +336,11 @@ sql "$source_name" -v batch=1 <"$script_dir/tests/recovery-migrated-fixture.sql"
 history_before=$(sql "$source_name" -f "$checks/recovery-history-integrity.sql") || fail batch1_history
 state_before=$(sql "$source_name" -f "$checks/recovery-state-acceptance.sql") || fail batch1_state
 history_matches 1 <<<"$history_before" || fail batch1_history_literal
-state_matches 1 <<<"$state_before" || fail batch1_state_literal
+printf '%s\n' "$state_before" | state_matches 1 || fail batch1_state_literal
 [[ $(sql "$source_name" -c 'select count(*) from auth.users;') == 2 ]] || fail batch1_auth
+if [[ $mode == snapshot ]]; then
+  [[ $(sql "$source_name" -c "$recipients_sql") == '1|0' ]] || fail batch1_recipient
+fi
 
 if [[ $mode == forward_repair ]]; then
   sql "$source_name" <"$script_dir/tests/recovery-forward-repair-fixture.sql" >/dev/null || fail repair_fixture
@@ -341,7 +349,7 @@ if [[ $mode == forward_repair ]]; then
     'installations',(select jsonb_agg(to_jsonb(i)-'apns_token' order by id) from public.device_installations i),
     'active_tokens',(select jsonb_agg(to_jsonb(i) order by id) from public.device_installations i where state='active'),
     'profiles',(select jsonb_agg(to_jsonb(p) order by id) from public.profiles p),
-    'competitions',(select jsonb_agg(to_jsonb(c) order by id) from public.competitions c),
+    'competitions',(select jsonb_agg(jsonb_build_object('invited_profile_id',null) || to_jsonb(c) order by id) from public.competitions c),
     'auth_users',(select jsonb_agg(to_jsonb(u) order by id) from auth.users u),
     'table_security',(select jsonb_agg(jsonb_build_array(n.nspname,c.relname,
       pg_get_userbyid(c.relowner),
@@ -404,10 +412,11 @@ if [[ $mode == forward_repair ]]; then
     repaired_versions+=$'\n'"$version"
   done
   [[ $(sql "$target_name" -c 'select version from supabase_migrations.schema_migrations order by version;') == "$repaired_versions" ]] || fail repair_current_versions
+  # New nullable column must be null on legacy completed rows; actual values win.
   [[ $(sql "$target_name" -c "$protected_sql") == "$protected_before" ]] || fail repair_current_rows_changed
   [[ $(sql "$target_name" -f "$checks/recovery-history-integrity.sql") == "$history_before" ]] || fail repair_current_history
   state_repaired=$(sql "$target_name" -f "$checks/recovery-state-acceptance.sql") || fail repair_current_state
-  state_matches 1 <<<"$state_repaired" || fail repair_current_security
+  printf '%s\n' "$state_repaired" | state_matches 1 || fail repair_current_security
   sql "$target_name" --single-transaction -f "$checks/forward-repair-assertions.sql" >/dev/null || fail repair_current_retirement
   foreign_keys=$(sql "$target_name" -f "$checks/recovery-foreign-key-integrity.sql") || fail repair_current_foreign_keys
   [[ -z $foreign_keys ]] || fail repair_current_foreign_key_output
@@ -430,8 +439,9 @@ sql "$source_name" -v batch=2 <"$script_dir/tests/recovery-migrated-fixture.sql"
 history_after=$(sql "$source_name" -f "$checks/recovery-history-integrity.sql") || fail batch2_history
 state_after=$(sql "$source_name" -f "$checks/recovery-state-acceptance.sql") || fail batch2_state
 history_matches 2 <<<"$history_after" || fail batch2_history_literal
-state_matches 2 <<<"$state_after" || fail batch2_state_literal
+printf '%s\n' "$state_after" | state_matches 2 || fail batch2_state_literal
 [[ $(sql "$source_name" -c 'select count(*) from auth.users;') == 4 ]] || fail batch2_auth
+[[ $(sql "$source_name" -c "$recipients_sql") == '2|0' ]] || fail batch2_recipient
 [[ $history_after != "$history_before" && $state_after != "$state_before" ]] || fail control_did_not_change
 for key in aggregate_stored_result_hash aggregate_complete_result_fingerprint; do
   [[ $(jq -r --arg key "$key" '.[$key]' <<<"$history_before") != $(jq -r --arg key "$key" '.[$key]' <<<"$history_after") ]] || fail control_hash_unchanged
@@ -471,9 +481,10 @@ for mode in bound unbound; do
     [[ $history_restored != "$history_before" && $state_restored != "$state_before" ]] || fail unbound_not_detected
   fi
   history_matches "$expected_batch" <<<"$history_restored" || fail "${mode}_history_literal"
-  state_matches "$expected_batch" <<<"$state_restored" || fail "${mode}_state_literal"
+  printf '%s\n' "$state_restored" | state_matches "$expected_batch" || fail "${mode}_state_literal"
   [[ $history_restored == "$expected_history" && $state_restored == "$expected_state" ]] || fail "${mode}_receipt_mismatch"
   [[ $(sql "$target_name" -c 'select count(*) from auth.users;') == "$expected_auth" ]] || fail "${mode}_auth"
+  [[ $(sql "$target_name" -c "$recipients_sql") == "$expected_batch|0" ]] || fail "${mode}_recipient"
   foreign_keys=$(sql "$target_name" -f "$checks/recovery-foreign-key-integrity.sql") || fail "${mode}_foreign_keys"
   [[ -z $foreign_keys ]] || fail "${mode}_foreign_key_output"
   [[ $(sql "$target_name" -c "select current_setting('cron.launch_active_jobs');") == off ]] || fail "${mode}_cron"
