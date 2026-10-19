@@ -50,6 +50,18 @@ live competition is part of source implementation and local qualification.
 
 ## Local qualification
 
+### Populated Staging migration correction
+
+The first Staging apply rolled back with PostgreSQL `55006`: expiring legacy
+pending rows queued deferred constraint triggers before later table DDL. The
+rehearsal had masked this by leaving fixture setup's immediate-constraint mode
+enabled. Restore deferred mode before the migration and flush it afterward;
+the unchanged migration then reproduces the hosted error. Move only the legacy
+expiration update after table DDL so the same fixture passes without weakening
+constraints or changing accepted history. Update the recovery harness's exact
+migration-manifest pin and rerun its existing synthetic modes. Migration018
+remains unapplied on Staging; no earlier migration or hosted history is repaired.
+
 - 635 app unit tests and six rendered UI flows passed. The appearance matrix
   covered light/dark mode at xSmall and accessibility5 with the existing
   clipping, hit-region and description audits unchanged. Invitation confirmation

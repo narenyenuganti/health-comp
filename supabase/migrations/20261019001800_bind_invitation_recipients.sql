@@ -1,11 +1,6 @@
 alter table public.competitions
   add column invited_profile_id uuid references public.profiles(id);
 
--- A bearer-only pending link cannot be safely assigned to a named recipient.
-update public.competitions
-set lifecycle = 'expired', updated_at = pg_catalog.statement_timestamp()
-where lifecycle = 'pending';
-
 alter table public.competitions
   add constraint invitation_recipient_not_creator check (
     invited_profile_id is null or invited_profile_id <> creator_profile_id
@@ -275,3 +270,8 @@ begin
   return target_invite.competition_id;
 end;
 $$;
+
+-- Expire bearer-only links after table DDL so deferred trigger events cannot block it.
+update public.competitions
+set lifecycle = 'expired', updated_at = pg_catalog.statement_timestamp()
+where lifecycle = 'pending';
