@@ -1,6 +1,7 @@
 # Recipient-bound invitations
 
-Status: implemented locally; release qualification in progress; not deployed.
+Status: source and focused local qualification passed; exact-head CI pending;
+not deployed.
 
 ## User contract
 
@@ -46,3 +47,36 @@ preservation, and long-name/large-text rendering. Use synthetic local accounts o
 
 No phone, hosted migration/deployment, account switching, production action or new
 live competition is part of source implementation and local qualification.
+
+## Local qualification
+
+- 635 app unit tests and six rendered UI flows passed. The appearance matrix
+  covered light/dark mode at xSmall and accessibility5 with the existing
+  clipping, hit-region and description audits unchanged. Invitation confirmation
+  was also visually inspected. Long recipient names grow vertically rather than
+  being limited to one line.
+- 22 pgTAP files / 849 assertions passed, including the recipient, isolation,
+  24-hour boundary and duplicate-pair contracts. A real forward-migration
+  rehearsal preserved populated accepted legacy history and rolled back.
+- The real-JWT HTTP invitation gate passed all 15 tests, including concurrent
+  request recovery, wrong-account acceptance rejection, expiry and replacement.
+- The complete Deno function suite passed 143 tests. Its one gated JWT case was
+  skipped there but executed successfully by the separate real-JWT gate above.
+  The 100-way create/retry/claim matrix now runs twice without a reset between
+  passes. Fresh synthetic token digests prevent cross-pass fixture collisions;
+  same-request retries deliberately retain the same digest.
+- The offline App Attest regression and both public attestation/assertion
+  fixtures passed in the pinned Edge Runtime. Schema lint passed and the local
+  schema diff was empty.
+- Independent Standards and Spec reviews cleared the application/server source
+  at `41a4fbe` and the subsequent test-only fixture fix at `8aaeb7e`.
+
+These are local synthetic results, not hosted, physical-device, Release archive
+or production-readiness evidence. The PR's exact-head automated matrix must pass
+before source integration. A later rollout must coordinate migration, Functions
+and app compatibility; it is not authorized by this source-only qualification.
+
+The populated backup/export/restore harness still pins the prior migration
+manifest. Current-schema recovery must be qualified separately before hosted
+rollout; do not rewrite older evidence or treat an empty-schema check as proof
+of a populated restore. All existing beta-readiness holds remain in effect.
