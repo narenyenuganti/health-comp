@@ -153,6 +153,8 @@ struct MultiUserCompetitionTestLabConfigurationErrorView: View {
 private struct MultiUserCompetitionSharingTestLabView: View {
     let usesCustomScheme: Bool
     @State private var path: [CompetitionID] = []
+    @State private var showsHistory = false
+    @State private var isChallengePresented = false
     @State private var inviteStatus: CompetitionFeature.InviteCreationStatus =
         .idle
     @State private var inviteLink: CompetitionInviteShareLink?
@@ -165,21 +167,37 @@ private struct MultiUserCompetitionSharingTestLabView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            NavigationStack(path: $path) {
+            NavigationStack(
+                path: CompetitionHomeRoute.stack(
+                    path: $path,
+                    showsHistory: $showsHistory
+                )
+            ) {
                 CompetitionSharingView(
                     publication: publication,
                     inviteCreationStatus: inviteStatus,
                     createdInviteLink: inviteLink,
                     createInvite: createInvite,
+                    isChallengePresented: $isChallengePresented,
                     selectCompetition: { path.append($0) },
+                    openHistory: { showsHistory = true },
                     reinvite: {},
-                    isReinviteInFlight: false,
-                    notificationAuthorization: .authorized,
-                    notificationAuthorizationRequestIsInFlight: false,
-                    requestNotificationAuthorization: {}
+                    isReinviteInFlight: false
                 )
-                .navigationDestination(for: CompetitionID.self) { id in
-                    destination(id)
+                .toolbar {
+                    ToolbarItem(placement: .topBarTrailing) {
+                        CompetitionChallengeButton {
+                            isChallengePresented = true
+                        }
+                    }
+                }
+                .navigationDestination(for: CompetitionHomeRoute.self) { route in
+                    switch route {
+                    case .history:
+                        CompetitionHistoryView(publication: publication)
+                    case let .competition(id):
+                        destination(id)
+                    }
                 }
             }
             if usesCustomScheme {
@@ -394,6 +412,12 @@ private struct MultiUserCompetitionAccountTestLabView: View {
             )
         ) {
             AccountFeature()
+            Reduce<AccountFeature.State, AccountFeature.Action> { _, action in
+                if case .delegate(.deleteAccountRequested) = action {
+                    return .send(.operationFailed(.operationFailed))
+                }
+                return .none
+            }
         } withDependencies: {
             $0.authenticationClient = .testValue
         }

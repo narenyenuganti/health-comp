@@ -1,51 +1,86 @@
 import SwiftUI
 
+/// The drawer behind Home's + button: the rules, the calendar's time zone
+/// and one private, single-use link.
 struct CreateCompetitionView: View {
     let status: CompetitionFeature.InviteCreationStatus
     let shareLink: CompetitionInviteShareLink?
     let timeZoneIdentifier: String
     let create: () -> Void
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .top, spacing: 14) {
-                // The opponent's slot, still empty.
-                SlantedBar()
-                    .stroke(
-                        Theme.tertiary,
-                        style: StrokeStyle(lineWidth: 1.5, dash: [4, 3])
-                    )
-                    .frame(width: 16, height: 30)
-                    .padding(.horizontal, 6)
-                    .padding(.top, 2)
-                    .accessibilityHidden(true)
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(title)
-                        .font(.title3.weight(.heavy).width(.condensed))
-                        .foregroundStyle(Theme.ink)
-                    Text(
-                        "Create a private, single-use link for a seven-day Activity competition."
-                    )
-                    .font(.subheadline)
+    var body: some View {
+        // Accessibility sizes scroll the control with the text; pinned, they
+        // would squeeze both.
+        let pinsControl = !dynamicTypeSize.isAccessibilitySize
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                header
+                CompetitionRulesCard(source: .remoteParticipants)
+                Text("Your competition calendar uses \(timeZoneIdentifier).")
+                    .font(.caption)
                     .foregroundStyle(Theme.secondary)
+                    .accessibilityLabel(
+                        "Competition time zone, \(timeZoneIdentifier)"
+                    )
+                if !pinsControl {
+                    control
                 }
             }
-
-            Text("Your competition calendar uses \(timeZoneIdentifier).")
-                .font(.caption)
-                .foregroundStyle(Theme.secondary)
-                .accessibilityLabel(
-                    "Competition time zone, \(timeZoneIdentifier)"
-                )
-
-            control
+            .padding(.horizontal, 20)
+            .padding(.top, 24)
+            .padding(.bottom, 16)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(18)
-        .themePanel()
+        .scrollBounceBehavior(.basedOnSize)
+        .safeAreaInset(edge: .bottom) {
+            if pinsControl {
+                control
+                    .padding(.horizontal, 20)
+                    .padding(.top, 12)
+                    .padding(.bottom, 8)
+                    .background(Theme.ground)
+            }
+        }
+        .background(Theme.ground)
+        .presentationDetents([.large])
+        .presentationDragIndicator(.visible)
+        .presentationBackground(Theme.ground)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("competition.create.card")
+    }
+
+    private var header: some View {
+        HStack(alignment: .top, spacing: 14) {
+            // The opponent's slot, still empty.
+            SlantedBar()
+                .stroke(
+                    Theme.tertiary,
+                    style: StrokeStyle(lineWidth: 1.5, dash: [4, 3])
+                )
+                .frame(width: 16, height: 30)
+                .padding(.horizontal, 6)
+                .padding(.top, 2)
+                .accessibilityHidden(true)
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title)
+                    .font(.title3.weight(.heavy).width(.condensed))
+                    .foregroundStyle(Theme.ink)
+                    .accessibilityAddTraits(.isHeader)
+                Text(
+                    "Create a private, single-use link for a seven-day Activity competition."
+                )
+                .font(.subheadline)
+                .foregroundStyle(Theme.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            CompetitionDrawerCloseButton { dismiss() }
+                .accessibilityIdentifier("competition.create.done")
+        }
     }
 
     private var title: String {

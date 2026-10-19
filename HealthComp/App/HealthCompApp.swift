@@ -64,6 +64,7 @@ struct HealthCompApp: App {
     private let multiUserLaunchDecision:
         MultiUserCompetitionTestLabLaunchDecision
     private let liveStore: StoreOf<AppFeature>?
+    let testLabColorScheme: ColorScheme?
 
     init() {
         self.init(
@@ -104,6 +105,17 @@ struct HealthCompApp: App {
                 // live dependency graph, HealthKit source, or production journal.
                 self.liveStore = nil
             }
+        }
+        // Pin fixture rendering instead of relying on an OS appearance override.
+        // Ordinary DEBUG launches keep the person's in-app appearance choice.
+        if self.liveStore == nil,
+           let style = zip(arguments, arguments.dropFirst())
+               .first(where: { $0.0 == "-AppleInterfaceStyle" })?.1
+        {
+            self.testLabColorScheme = AppAppearance(rawValue: style.lowercased())?
+                .colorScheme
+        } else {
+            self.testLabColorScheme = nil
         }
     }
 #else
@@ -158,6 +170,7 @@ struct HealthCompApp: App {
         switch multiUserLaunchDecision {
         case let .configured(configuration):
             MultiUserCompetitionTestLabRootView(configuration: configuration)
+                .preferredColorScheme(testLabColorScheme)
         case let .invalid(message):
             MultiUserCompetitionTestLabConfigurationErrorView(message: message)
         case .disabled:
@@ -168,6 +181,7 @@ struct HealthCompApp: App {
                 }
             case let .configured(configuration):
                 CompetitionTestLabRootView(configuration: configuration)
+                    .preferredColorScheme(testLabColorScheme)
             case let .invalid(message):
                 CompetitionTestLabConfigurationErrorView(message: message)
             }
@@ -258,13 +272,40 @@ private struct AuthenticatedRootView: View {
             openAccount: { isAccountPresented = true }
         )
         .sheet(isPresented: $isAccountPresented) {
-            NavigationStack {
-                AccountSettingsView(store: accountStore)
-                    .toolbar {
-                        ToolbarItem(placement: .confirmationAction) {
-                            Button("Done") { isAccountPresented = false }
-                        }
+            AccountSheet(
+                mainStore: mainStore,
+                accountStore: accountStore,
+                done: { isAccountPresented = false }
+            )
+        }
+    }
+}
+
+/// Reads the competition's notification state in its own body, so the
+/// open sheet follows it.
+private struct AccountSheet: View {
+    let mainStore: StoreOf<MainTabFeature>
+    let accountStore: StoreOf<AccountFeature>
+    let done: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            AccountSettingsView(
+                store: accountStore,
+                notifications: AccountNotificationSettings(
+                    authorization: mainStore.competition
+                        .notificationAuthorizationState,
+                    isRequestInFlight: mainStore.competition
+                        .notificationAuthorizationRequestIsInFlight,
+                    request: {
+                        mainStore.send(.competition(.enableNotificationsTapped))
                     }
+                )
+            )
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done", action: done)
+                }
             }
         }
     }

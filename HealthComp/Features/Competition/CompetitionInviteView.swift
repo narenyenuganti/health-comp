@@ -13,7 +13,7 @@ struct CompetitionInviteView: View {
             VStack(alignment: .leading, spacing: 24) {
                 faceOff
                 invitationCopy
-                rulesCard
+                CompetitionRulesCard(source: source)
                 actionControls
             }
             .frame(maxWidth: 560)
@@ -89,30 +89,6 @@ struct CompetitionInviteView: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private var rulesCard: some View {
-        VStack(spacing: 0) {
-            CompetitionRuleRow(icon: .symbol("calendar"), title: "Seven calendar days")
-            CompetitionRuleDivider()
-            CompetitionRuleRow(
-                icon: .rings,
-                title: "Up to 600 points each day",
-                detail: "1 point for every 1% of each ring"
-            )
-            CompetitionRuleDivider()
-            CompetitionRuleRow(
-                icon: .symbol("lock.iphone"),
-                title: source == .simulatedFixture
-                    ? "Your Activity data stays local"
-                    : "Derived competition data is shared",
-                detail: source == .simulatedFixture
-                    ? nil
-                    : "Daily points, rounded Activity percentages and modes"
-            )
-        }
-        .padding(.horizontal, 16)
-        .themePanel(cornerRadius: 18)
     }
 
     @ViewBuilder
@@ -281,6 +257,36 @@ struct CompetitionRuleRow: View {
 struct CompetitionRuleDivider: View {
     var body: some View {
         Rectangle().fill(Theme.hairline).frame(height: 1)
+    }
+}
+
+/// Calendar, scoring and what is shared: shown before a challenge starts and
+/// from a match's ••• menu.
+struct CompetitionRulesCard: View {
+    let source: CompetitionPublicationSource
+
+    var body: some View {
+        VStack(spacing: 0) {
+            CompetitionRuleRow(icon: .symbol("calendar"), title: "Seven calendar days")
+            CompetitionRuleDivider()
+            CompetitionRuleRow(
+                icon: .rings,
+                title: "Up to 600 points each day",
+                detail: "1 point for every 1% of each ring"
+            )
+            CompetitionRuleDivider()
+            CompetitionRuleRow(
+                icon: .symbol("lock.iphone"),
+                title: source == .simulatedFixture
+                    ? "Your Activity data stays local"
+                    : "Derived competition data is shared",
+                detail: source == .simulatedFixture
+                    ? nil
+                    : "Daily points, rounded Activity percentages and modes"
+            )
+        }
+        .padding(.horizontal, 16)
+        .themePanel(cornerRadius: 18)
     }
 }
 

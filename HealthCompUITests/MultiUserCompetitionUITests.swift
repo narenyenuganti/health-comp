@@ -16,11 +16,14 @@ final class MultiUserCompetitionUITests: XCTestCase {
     func testCopyCustomSchemeInvitationIncludesTheCompleteLink() throws {
         launch(.sharingCustomScheme)
         defer { app.terminate() }
+        openChallengeDrawer()
         let create = app.buttons["competition.create.button"]
-        scrollToElement(create)
+        XCTAssertTrue(create.waitForExistence(timeout: 3))
         create.tap()
+        // The drawer covers the lab's Paste control.
         assertSharedInvitationCopiesCompleteLink(
-            app.buttons["competition.create.share"]
+            app.buttons["competition.create.share"],
+            beforePaste: closeChallengeDrawer
         )
     }
 
@@ -42,7 +45,10 @@ final class MultiUserCompetitionUITests: XCTestCase {
         )
     }
 
-    private func assertSharedInvitationCopiesCompleteLink(_ share: XCUIElement) {
+    private func assertSharedInvitationCopiesCompleteLink(
+        _ share: XCUIElement,
+        beforePaste: () -> Void = {}
+    ) {
         XCTAssertTrue(share.waitForExistence(timeout: 3))
         share.tap()
 
@@ -61,6 +67,7 @@ final class MultiUserCompetitionUITests: XCTestCase {
         }
         copy.tap()
         XCTAssertTrue(copy.waitForNonExistence(timeout: 5))
+        beforePaste()
         let paste = app.buttons.matching(
             NSPredicate(format: "label == %@", "Paste")
         ).firstMatch
@@ -89,20 +96,16 @@ final class MultiUserCompetitionUITests: XCTestCase {
 
         XCTAssertTrue(app.navigationBars["Sharing"].waitForExistence(timeout: 8))
         XCTAssertTrue(app.staticTexts["REMOTE UI TEST LAB"].exists)
-        XCTAssertTrue(
-            app.staticTexts[
-                "Compete privately with real people while raw Health data stays on this iPhone."
-            ].exists
-        )
         XCTAssertFalse(app.staticTexts["FIXTURE DATA"].exists)
         XCTAssertFalse(app.staticTexts.matching(
             NSPredicate(format: "label CONTAINS[c] %@", "simulated")
         ).firstMatch.exists)
+
+        openChallengeDrawer()
         let timeZone = app.staticTexts[
             "Competition time zone, America/Los_Angeles"
         ]
-        scrollToElement(timeZone)
-        XCTAssertTrue(timeZone.exists)
+        XCTAssertTrue(timeZone.waitForExistence(timeout: 3))
 
         let create = app.buttons["competition.create.button"]
         scrollToElement(create)
@@ -113,6 +116,7 @@ final class MultiUserCompetitionUITests: XCTestCase {
         )
         let creationToken = rawFixtureToken(byte: 0x51)
         try assertNoPrivateFixtureContentIsSpoken(rawTokens: [creationToken])
+        closeChallengeDrawer()
 
         let scheduled = sharingCard(state: "scheduled", name: "Priya")
         scrollToElement(scheduled)
@@ -179,14 +183,35 @@ final class MultiUserCompetitionUITests: XCTestCase {
             rawTokens: [creationToken, rematchToken]
         )
 
-        let archive = app.buttons["Archive"]
-        scrollToElement(archive)
-        archive.tap()
+        tapMoreMenuItem("Archive")
         XCTAssertTrue(
             app.descendants(matching: .any)["competition.history.preserved"]
                 .waitForExistence(timeout: 3)
         )
+        XCTAssertFalse(moreMenu.exists)
         XCTAssertFalse(app.buttons["Delete Local Data"].exists)
+    }
+
+    func testRemoteDayDrawerShowsBothAcceptedScoresWithoutRawHealthSnapshots() {
+        launch(.sharing)
+        let active = sharingCard(state: "active", name: "Jordan")
+        scrollToElement(active)
+        active.tap()
+        XCTAssertTrue(
+            app.navigationBars["Competition with Jordan"]
+                .waitForExistence(timeout: 3)
+        )
+        showWeek()
+        let day = app.buttons["competition.day.1"]
+        scrollToElement(day)
+        day.tap()
+        XCTAssertTrue(app.buttons["Close"].waitForExistence(timeout: 3))
+
+        let summary = app.otherElements["competition.day.1"]
+        XCTAssertTrue(summary.waitForExistence(timeout: 3))
+        XCTAssertTrue(summary.label.contains("Beta Alice, 500 points"))
+        XCTAssertTrue(summary.label.contains("Jordan, 480 points"))
+        XCTAssertFalse(app.otherElements["competition.ownerRings"].exists)
     }
 
     func testColdWarmAndSignedOutClaimConfirmationFlows() {
@@ -339,14 +364,21 @@ final class MultiUserCompetitionUITests: XCTestCase {
     func testAccountEditingAndPrivacyBoundariesRemainAccessible() {
         launch(.account)
         XCTAssertTrue(app.navigationBars["Account"].waitForExistence(timeout: 8))
-        scrollToElement(app.staticTexts["Raw Health data stays on this iPhone"])
+        let privacy = element("account.privacy")
+        scrollToElement(privacy)
+        privacy.tap()
+        XCTAssertTrue(app.navigationBars["Privacy"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.staticTexts["Raw Health data stays on this iPhone"].exists)
         XCTAssertTrue(
             app.staticTexts[
                 "Competitors receive daily points, rounded Activity percentages and modes"
             ].exists
         )
-        app.buttons["account.settings.edit-display-name"].tap()
+        app.navigationBars["Privacy"].buttons.firstMatch.tap()
+        XCTAssertTrue(app.navigationBars["Account"].waitForExistence(timeout: 3))
+        let edit = app.buttons["account.settings.edit-display-name"]
+        scrollToElement(edit)
+        edit.tap()
         let field = app.textFields["account.settings.display-name"]
         XCTAssertTrue(field.waitForExistence(timeout: 3))
         field.tap()
@@ -373,6 +405,12 @@ final class MultiUserCompetitionUITests: XCTestCase {
         launch(.account)
         XCTAssertTrue(app.navigationBars["Account"].waitForExistence(timeout: 8))
 
+        let deletePage = element("account.delete.open")
+        scrollToElement(deletePage)
+        deletePage.tap()
+        XCTAssertTrue(
+            app.navigationBars["Delete Account"].waitForExistence(timeout: 3)
+        )
         let deleteAccount = app.buttons["account.delete"]
         scrollToElement(deleteAccount)
         deleteAccount.tap()
@@ -388,9 +426,46 @@ final class MultiUserCompetitionUITests: XCTestCase {
         alert.buttons["Cancel"].tap()
 
         XCTAssertTrue(alert.waitForNonExistence(timeout: 3))
-        XCTAssertTrue(app.navigationBars["Account"].exists)
+        XCTAssertTrue(app.navigationBars["Delete Account"].exists)
         XCTAssertTrue(deleteAccount.exists)
         XCTAssertFalse(app.progressIndicators["Deleting account"].exists)
+    }
+
+    func testAccountDeletionFailureRemainsVisibleOnDeletionPage() {
+        launch(.account)
+        XCTAssertTrue(app.navigationBars["Account"].waitForExistence(timeout: 8))
+        let deletePage = element("account.delete.open")
+        scrollToElement(deletePage)
+        deletePage.tap()
+        XCTAssertTrue(
+            app.navigationBars["Delete Account"].waitForExistence(timeout: 3)
+        )
+        app.buttons["account.delete"].tap()
+        let alert = app.alerts["Delete Account?"]
+        XCTAssertTrue(alert.waitForExistence(timeout: 3))
+        alert.buttons["account.delete.confirm"].firstMatch.tap()
+
+        let message = app.staticTexts["account.message"]
+        XCTAssertTrue(message.waitForExistence(timeout: 3))
+        XCTAssertEqual(message.label, "HealthComp could not connect. Please try again.")
+        XCTAssertTrue(app.navigationBars["Delete Account"].exists)
+        XCTAssertTrue(app.buttons["account.delete"].isEnabled)
+        XCTAssertFalse(app.progressIndicators["Deleting account"].exists)
+    }
+
+    func testRemoteAppearanceSwitchRendersLightAndDark() {
+        for appearance in ["Light", "Dark"] {
+            launch(
+                .sharing,
+                appearanceArguments: [
+                    "-AppleInterfaceStyle", appearance,
+                    "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryXS",
+                ]
+            )
+            assertRemoteRenderedConfiguration(
+                "Appearance: \(appearance); Dynamic Type: xSmall"
+            )
+        }
     }
 
     func testRemoteCompetitionAppearanceAndTypeSizeMatrix() throws {
@@ -430,12 +505,19 @@ final class MultiUserCompetitionUITests: XCTestCase {
             XCTAssertTrue(
                 app.navigationBars["Sharing"].waitForExistence(timeout: 8)
             )
-            let create = app.buttons["competition.create.button"]
-            scrollToElement(create)
-            XCTAssertTrue(create.isHittable)
+            let open = app.buttons["competition.create.open"]
+            XCTAssertTrue(open.waitForExistence(timeout: 3))
+            XCTAssertTrue(open.isHittable)
             assertRemoteRenderedConfiguration(expectedConfiguration)
             try app.performAccessibilityAudit(for: auditTypes)
             try assertNoPrivateFixtureContentIsSpoken()
+
+            openChallengeDrawer()
+            let create = app.buttons["competition.create.button"]
+            scrollToElement(create)
+            XCTAssertTrue(create.isHittable)
+            try app.performAccessibilityAudit(for: auditTypes)
+            closeChallengeDrawer()
 
             let active = sharingCard(state: "active", name: "Jordan")
             scrollToElement(active)
@@ -470,6 +552,7 @@ final class MultiUserCompetitionUITests: XCTestCase {
             assertRemoteRenderedConfiguration(expectedConfiguration)
             try app.performAccessibilityAudit(for: auditTypes)
 
+            showWeek()
             let dayContexts: [(ordinal: Int, context: String)] = [
                 (1, ", complete."),
                 (3, "Today, scores so far"),
@@ -517,9 +600,7 @@ final class MultiUserCompetitionUITests: XCTestCase {
             let rematch = app.buttons["competition.rematch.create"]
             scrollToElement(rematch)
             XCTAssertTrue(rematch.isHittable)
-            let archive = app.buttons["Archive"]
-            scrollToElement(archive)
-            XCTAssertTrue(archive.isHittable)
+            XCTAssertTrue(moreMenu.isHittable)
             assertRemoteRenderedConfiguration(expectedConfiguration)
             try app.performAccessibilityAudit(for: auditTypes)
             try assertNoPrivateFixtureContentIsSpoken()
@@ -605,6 +686,7 @@ final class MultiUserCompetitionUITests: XCTestCase {
             app.navigationBars["Competition with Jordan"]
                 .waitForExistence(timeout: 3)
         )
+        showWeek()
 
         let upcomingDay = app.descendants(matching: .any)["competition.day.7"]
         scrollToElement(upcomingDay)
@@ -740,6 +822,13 @@ final class MultiUserCompetitionUITests: XCTestCase {
         app.launch()
     }
 
+    // List rows that push a page may surface as cells, not buttons.
+    private func element(_ identifier: String) -> XCUIElement {
+        app.descendants(matching: .any)
+            .matching(identifier: identifier)
+            .firstMatch
+    }
+
     private func sharingCard(state: String, name: String) -> XCUIElement {
         app.buttons.matching(
             NSPredicate(
@@ -835,20 +924,17 @@ final class MultiUserCompetitionUITests: XCTestCase {
     private func navigateBackToSharing() {
         app.navigationBars.buttons.firstMatch.tap()
         XCTAssertTrue(app.navigationBars["Sharing"].waitForExistence(timeout: 3))
-        resetSharingScrollToIntro()
+        resetSharingScrollToTop()
     }
 
-    private func resetSharingScrollToIntro() {
-        // People can be absent from the lazy hierarchy while Awards is visible.
-        // Restore an invariant earlier anchor before searching downward again;
-        // the Create button is replaced after an invitation has been created.
-        let intro = app.staticTexts[
-            "Compete privately with real people while raw Health data stays on this iPhone."
-        ]
+    private func resetSharingScrollToTop() {
+        // Restore the page's first card, the competition in play, before
+        // searching downward again.
+        let hero = sharingCard(state: "active", name: "Jordan")
         let scrollView = app.scrollViews.firstMatch
         XCTAssertTrue(scrollView.exists)
         for _ in 0..<24 {
-            if intro.exists, intro.isHittable { return }
+            if hero.exists, hero.isHittable { return }
             let start = scrollView.coordinate(
                 withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3)
             )
@@ -857,8 +943,45 @@ final class MultiUserCompetitionUITests: XCTestCase {
             )
             start.press(forDuration: 0.05, thenDragTo: end)
         }
-        XCTAssertTrue(intro.exists, "Sharing intro must exist after scrolling toward the top.")
-        XCTAssertTrue(intro.isHittable, "Sharing intro must be reachable before searching People.")
+        XCTAssertTrue(hero.exists, "The competition in play must exist after scrolling toward the top.")
+        XCTAssertTrue(hero.isHittable, "The competition in play must be reachable before searching matches.")
+    }
+
+    private func openChallengeDrawer() {
+        let open = app.buttons["competition.create.open"]
+        XCTAssertTrue(open.waitForExistence(timeout: 8))
+        open.tap()
+        XCTAssertTrue(
+            app.buttons["competition.create.done"].waitForExistence(timeout: 3)
+        )
+    }
+
+    private func closeChallengeDrawer() {
+        let close = app.buttons["competition.create.done"]
+        XCTAssertTrue(close.waitForExistence(timeout: 3))
+        close.tap()
+        XCTAssertTrue(close.waitForNonExistence(timeout: 3))
+    }
+
+    // A match opens on Today; the day rows live on Week.
+    private func showWeek() {
+        let week = app.buttons["Week"]
+        XCTAssertTrue(week.waitForExistence(timeout: 3))
+        week.tap()
+    }
+
+    // iOS 18 exposes Menu's identified wrapper, not its nested button, as hittable.
+    private var moreMenu: XCUIElement {
+        element("competition.more")
+    }
+
+    private func tapMoreMenuItem(_ title: String) {
+        let more = moreMenu
+        XCTAssertTrue(more.waitForExistence(timeout: 3))
+        more.tap()
+        let item = app.buttons[title]
+        XCTAssertTrue(item.waitForExistence(timeout: 3))
+        item.tap()
     }
 
     private func scrollToElement(_ element: XCUIElement) {

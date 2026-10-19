@@ -6,9 +6,26 @@ struct CompetitionDetailView: View {
     let source: CompetitionPublicationSource
     var muteButton: CompetitionMuteButton?
 
+    @State private var page: Page = .today
+    @State private var drawer: Drawer? = nil
+
+    /// Today's numbers or the whole week; the scoreboard stays above both.
+    private enum Page: Hashable {
+        case today
+        case week
+    }
+
+    private enum Drawer: Identifiable, Hashable {
+        case day(Int)
+        case activitySync
+        case rules
+
+        var id: Self { self }
+    }
+
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
+            VStack(alignment: .leading, spacing: 20) {
                 VStack(alignment: .leading, spacing: 12) {
                     CompetitionScoreboardPanel(
                         competition: competition,
@@ -22,16 +39,26 @@ struct CompetitionDetailView: View {
 
                 if case .scheduled = competition.lifecycle {
                     scheduledCard
+                    weekSection
+                } else {
+                    Picker("Competition view", selection: $page) {
+                        Text("Today").tag(Page.today)
+                        Text("Week").tag(Page.week)
+                    }
+                    .pickerStyle(.segmented)
+
+                    switch page {
+                    case .today:
+                        if let day = todayDay {
+                            dayBreakdown(day)
+                        }
+                        ringsSection
+                    case .week:
+                        weekSection
+                    }
                 }
 
-                todayBreakdown
-                weekSection
-                ringsSection
-                syncFooter
-
-                if let muteButton {
-                    muteButton
-                }
+                muteButton?.saveFailure
             }
             .padding(.horizontal, 16)
             .padding(.top, 12)
@@ -40,6 +67,43 @@ struct CompetitionDetailView: View {
         .background(Theme.ground)
         .navigationTitle("Competition with \(competition.opponentDisplayName)")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    if let muteButton {
+                        muteButton
+                    }
+                    Button {
+                        drawer = .activitySync
+                    } label: {
+                        Label(
+                            "Activity Sync",
+                            systemImage: "arrow.triangle.2.circlepath"
+                        )
+                    }
+                    Button {
+                        drawer = .rules
+                    } label: {
+                        Label("Rules", systemImage: "list.bullet")
+                    }
+                } label: {
+                    CompetitionMoreLabel()
+                }
+                .accessibilityIdentifier("competition.more")
+            }
+        }
+        .sheet(item: $drawer) { item in
+            switch item {
+            case let .day(ordinal):
+                dayDrawer(ordinal)
+            case .activitySync:
+                activitySyncDrawer
+            case .rules:
+                CompetitionDrawer(title: "Rules") {
+                    CompetitionRulesCard(source: source)
+                }
+            }
+        }
     }
 
     @ViewBuilder
@@ -131,12 +195,13 @@ struct CompetitionDetailView: View {
         .themePanel(cornerRadius: 16)
     }
 
-    // "How today adds up" needs the accepted snapshot to split the day's
-    // points by ring; without it the week chart already shows the total.
+    // "How the day adds up" needs the accepted snapshot to split its points
+    // by ring; without it the week chart already shows the total.
     @ViewBuilder
-    private var todayBreakdown: some View {
+    private func dayBreakdown(
+        _ day: LocalCompetitionDayPresentation
+    ) -> some View {
         if competitionShouldShowScores(competition.lifecycle),
-           let day = todayDay,
            let total = day.ownerAcceptedPoints,
            let snapshot = day.ownerAcceptedSnapshot {
             let segments = ringSegments(day)
@@ -163,7 +228,8 @@ struct CompetitionDetailView: View {
                 currentDayOrdinal: competition.currentDayOrdinal,
                 ownerName: competition.ownerDisplayName,
                 opponentName: competition.opponentDisplayName,
-                showsDates: true
+                showsDates: true,
+                selectDay: { drawer = .day($0.ordinal) }
             )
             CompetitionRingLegend(opponentName: competition.opponentDisplayName)
         }
@@ -172,70 +238,112 @@ struct CompetitionDetailView: View {
     private var ringsSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             SectionLabel(ringsTitle)
-            VStack(alignment: .leading, spacing: 12) {
-                if let day = activityDay,
-                   case .observed = day.ownerLatestAvailability,
-                   let snapshot = day.ownerLatestSnapshot {
-                    ActivityRingsView(
-                        snapshot: snapshot,
-                        ownerDisplayName: competition.ownerDisplayName,
-                        acceptedPoints: day.ownerAcceptedPoints
-                    )
-                    Text(activityEvidenceCaption(day))
-                        .font(.caption)
-                        .foregroundStyle(Theme.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                } else if let day = activityDay {
-                    Label(
-                        competitionOwnerAvailabilityText(
-                            day.ownerLatestAvailability,
-                            ordinal: day.ordinal
-                        ),
-                        systemImage: availabilitySymbol(day.ownerLatestAvailability)
-                    )
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(availabilityTint(day.ownerLatestAvailability))
-                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-                } else {
-                    Label(
-                        "Activity appears when Day 1 begins.",
-                        systemImage: "clock"
-                    )
-                    .font(.subheadline)
-                    .foregroundStyle(Theme.secondary)
-                    .frame(minHeight: 44)
-                }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(16)
-            .themePanel()
+            ringsPanel(activityDay)
         }
     }
 
-    private var syncFooter: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            ForEach(
-                Array(
-                    competitionRefreshTimelineText(
-                        lastRefresh: competition.lastRefresh,
-                        lastSuccessfulFullWindowRefreshAt: competition.lastSuccessfulFullWindowRefreshAt,
-                        timeZoneIdentifier: competition.timeZoneIdentifier
-                    ).enumerated()
-                ),
-                id: \.offset
-            ) { offset, line in
-                Text(line)
-                    .font(.footnote)
-                    .foregroundStyle(Theme.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityIdentifier(
-                        offset == 0
-                            ? "competition.lastSync"
-                            : "competition.lastSync.\(offset)"
-                    )
+    private func ringsPanel(
+        _ day: LocalCompetitionDayPresentation?
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 12) {
+            if let day,
+               case .observed = day.ownerLatestAvailability,
+               let snapshot = day.ownerLatestSnapshot {
+                ActivityRingsView(
+                    snapshot: snapshot,
+                    ownerDisplayName: competition.ownerDisplayName,
+                    acceptedPoints: day.ownerAcceptedPoints
+                )
+            } else if let day {
+                Label(
+                    competitionOwnerAvailabilityText(
+                        day.ownerLatestAvailability,
+                        ordinal: day.ordinal
+                    ),
+                    systemImage: availabilitySymbol(day.ownerLatestAvailability)
+                )
+                .font(.subheadline.weight(.medium))
+                .foregroundStyle(availabilityTint(day.ownerLatestAvailability))
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            } else {
+                Label(
+                    "Activity appears when Day 1 begins.",
+                    systemImage: "clock"
+                )
+                .font(.subheadline)
+                .foregroundStyle(Theme.secondary)
+                .frame(minHeight: 44)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .themePanel()
+    }
+
+    @ViewBuilder
+    private func evidenceCaption(
+        _ day: LocalCompetitionDayPresentation?
+    ) -> some View {
+        if let day,
+           case .observed = day.ownerLatestAvailability,
+           day.ownerLatestSnapshot != nil {
+            Text(activityEvidenceCaption(day))
+                .font(.caption)
+                .foregroundStyle(Theme.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    @ViewBuilder
+    private func dayDrawer(_ ordinal: Int) -> some View {
+        if let day = competition.days.first(where: { $0.ordinal == ordinal }) {
+            CompetitionDrawer(
+                title: "Day \(day.ordinal)",
+                subtitle: competitionDayDateText(day.day)
+            ) {
+                CompetitionWeekChart(
+                    days: [day],
+                    currentDayOrdinal: competition.currentDayOrdinal,
+                    ownerName: competition.ownerDisplayName,
+                    opponentName: competition.opponentDisplayName
+                )
+                dayBreakdown(day)
+                ringsPanel(day)
+                evidenceCaption(day)
+            }
+        }
+    }
+
+    private var activitySyncDrawer: some View {
+        CompetitionDrawer(title: "Activity Sync") {
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(
+                    Array(
+                        competitionRefreshTimelineText(
+                            lastRefresh: competition.lastRefresh,
+                            lastSuccessfulFullWindowRefreshAt: competition.lastSuccessfulFullWindowRefreshAt,
+                            timeZoneIdentifier: competition.timeZoneIdentifier
+                        ).enumerated()
+                    ),
+                    id: \.offset
+                ) { offset, line in
+                    Text(line)
+                        .font(.subheadline)
+                        .foregroundStyle(Theme.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier(
+                            offset == 0
+                                ? "competition.lastSync"
+                                : "competition.lastSync.\(offset)"
+                        )
+                }
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .themePanel(cornerRadius: 18)
+
+            evidenceCaption(activityDay)
+        }
     }
 
     private var ringsTitle: String {
@@ -270,6 +378,7 @@ struct CompetitionDetailView: View {
 }
 
 /// Mutes one person, so every match with them goes quiet, not just this one.
+/// It sits in a match's ••• menu.
 struct CompetitionMuteButton: View {
     let opponentName: String
     let isMuted: Bool
@@ -278,34 +387,103 @@ struct CompetitionMuteButton: View {
     let toggle: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Button(action: toggle) {
-                Label(
-                    isMuted
-                        ? "Unmute \(opponentName) Notifications"
-                        : "Mute \(opponentName) Notifications",
-                    systemImage: isMuted ? "bell.slash.fill" : "bell.fill"
-                )
-            }
-            .buttonStyle(SecondaryButtonStyle())
-            .disabled(isInFlight)
-            .accessibilityIdentifier("competition.notifications.mute")
-            .accessibilityValue(
-                isInFlight ? "Saving" : (isMuted ? "Muted" : "Not muted")
+        Button(action: toggle) {
+            Label(
+                isMuted
+                    ? "Unmute \(opponentName) Notifications"
+                    : "Mute \(opponentName) Notifications",
+                systemImage: isMuted ? "bell.fill" : "bell.slash.fill"
             )
-
-            if saveFailed {
-                Label(
-                    "Notification preference could not be saved.",
-                    systemImage: "exclamationmark.triangle.fill"
-                )
-                .font(.caption)
-                .foregroundStyle(Theme.secondary)
-                .accessibilityIdentifier(
-                    "competition.notifications.preference-error"
-                )
-            }
         }
+        .disabled(isInFlight)
+        .accessibilityIdentifier("competition.notifications.mute")
+    }
+
+    /// The menu closes before the save finishes, so a failure shows on the page.
+    @ViewBuilder
+    var saveFailure: some View {
+        if saveFailed {
+            Label(
+                "Notification preference could not be saved.",
+                systemImage: "exclamationmark.triangle.fill"
+            )
+            .font(.caption)
+            .foregroundStyle(Theme.secondary)
+            .accessibilityIdentifier(
+                "competition.notifications.preference-error"
+            )
+        }
+    }
+}
+
+/// The ••• that holds a match's less frequent actions.
+struct CompetitionMoreLabel: View {
+    var body: some View {
+        Image(systemName: "ellipsis")
+            .font(.subheadline.weight(.bold))
+            .foregroundStyle(Theme.ink)
+            .frame(width: 34, height: 34)
+            .background(Theme.control, in: Circle())
+            .accessibilityLabel("More")
+    }
+}
+
+/// A bottom drawer on the ground surface: a title, a close button and
+/// content that scrolls once it outgrows the half-height detent.
+struct CompetitionDrawer<Content: View>: View {
+    let title: String
+    var subtitle: String?
+    @ViewBuilder let content: Content
+
+    @Environment(\.dismiss) private var dismiss
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                HStack(alignment: .top, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(title)
+                            .font(.title2.weight(.heavy).width(.condensed))
+                            .foregroundStyle(Theme.ink)
+                            .accessibilityAddTraits(.isHeader)
+                        if let subtitle {
+                            Text(subtitle)
+                                .font(.subheadline)
+                                .foregroundStyle(Theme.secondary)
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    CompetitionDrawerCloseButton { dismiss() }
+                }
+                content
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 24)
+            .padding(.bottom, 20)
+        }
+        .scrollBounceBehavior(.basedOnSize)
+        .background(Theme.ground)
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
+        .presentationBackground(Theme.ground)
+    }
+}
+
+struct CompetitionDrawerCloseButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "xmark")
+                .font(.footnote.weight(.bold))
+                .foregroundStyle(Theme.secondary)
+                .frame(width: 30, height: 30)
+                .background(Theme.control, in: Circle())
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Close")
     }
 }
 

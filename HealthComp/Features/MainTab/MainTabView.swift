@@ -9,6 +9,8 @@ struct MainTabView: View {
     var openAccount: (() -> Void)?
 
     @Environment(\.scenePhase) private var scenePhase
+    @State private var showsHistory = false
+    @State private var isChallengePresented = false
 
     var body: some View {
         Group {
@@ -48,7 +50,12 @@ struct MainTabView: View {
     }
 
     private var home: some View {
-        NavigationStack(path: navigationPath) {
+        NavigationStack(
+            path: CompetitionHomeRoute.stack(
+                path: navigationPath,
+                showsHistory: $showsHistory
+            )
+        ) {
             Group {
                 if let publication = store.competition.publication {
                     CompetitionSharingView(
@@ -64,9 +71,11 @@ struct MainTabView: View {
                         createInvite: {
                             store.send(.competition(.createInviteTapped))
                         },
+                        isChallengePresented: $isChallengePresented,
                         selectCompetition: {
                             store.send(.pathChanged([$0]))
                         },
+                        openHistory: { showsHistory = true },
                         reinvite: {
                             store.send(.competition(.reinviteTapped))
                         },
@@ -74,17 +83,7 @@ struct MainTabView: View {
                             .isCommandInFlight(
                                 LocalCompetitionIdentity
                                     .bootstrapCompetitionID
-                            ),
-                        notificationAuthorization: store.competition
-                            .notificationAuthorizationState,
-                        notificationAuthorizationRequestIsInFlight:
-                            store.competition
-                                .notificationAuthorizationRequestIsInFlight,
-                        requestNotificationAuthorization: {
-                            store.send(
-                                .competition(.enableNotificationsTapped)
                             )
-                        }
                     )
                     .refreshable {
                         await store.send(.competition(.pullToRefresh)).finish()
@@ -97,9 +96,17 @@ struct MainTabView: View {
                 }
             }
             .toolbar { homeToolbar }
-            .navigationDestination(for: CompetitionID.self) { id in
-                destination(for: id)
-                    .toolbarRole(.editor)
+            .navigationDestination(for: CompetitionHomeRoute.self) { route in
+                switch route {
+                case .history:
+                    if let publication = store.competition.publication {
+                        CompetitionHistoryView(publication: publication)
+                            .toolbarRole(.editor)
+                    }
+                case let .competition(id):
+                    destination(for: id)
+                        .toolbarRole(.editor)
+                }
             }
         }
     }
@@ -109,8 +116,12 @@ struct MainTabView: View {
         ToolbarItem(placement: .topBarLeading) {
             BrandMark().frame(height: 26)
         }
-        if let openAccount {
-            ToolbarItem(placement: .topBarTrailing) {
+        ToolbarItemGroup(placement: .topBarTrailing) {
+            // Invitations are private links between real people.
+            if store.competition.publication?.source == .remoteParticipants {
+                CompetitionChallengeButton { isChallengePresented = true }
+            }
+            if let openAccount {
                 Button(action: openAccount) {
                     Group {
                         if let accountInitial {

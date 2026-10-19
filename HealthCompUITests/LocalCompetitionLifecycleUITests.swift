@@ -62,6 +62,7 @@ final class LocalCompetitionLifecycleUITests: XCTestCase {
         XCTAssertTrue(rings.label.contains("Stand or Roll"))
         XCTAssertTrue(rings.label.contains("pause status unknown"))
         XCTAssertFalse(app.otherElements["competition.opponentRings"].exists)
+        showWeek()
         assertSevenPairedDays()
         XCTAssertTrue(
             app.descendants(matching: .any)["competition.day.7"].label
@@ -83,10 +84,12 @@ final class LocalCompetitionLifecycleUITests: XCTestCase {
             app.staticTexts["Tallying Points"].waitForExistence(timeout: 3)
         )
         XCTAssertTrue(app.staticTexts["Day 7 is missing activity data."].exists)
+        tapMoreMenuItem("Activity Sync")
         XCTAssertTrue(
             app.staticTexts.matching(identifier: "competition.lastSync")
-                .firstMatch.exists
+                .firstMatch.waitForExistence(timeout: 3)
         )
+        app.buttons["Close"].tap()
         let tallyFinalDay = app.descendants(matching: .any)["competition.day.7"]
         scrollToElement(tallyFinalDay)
         XCTAssertTrue(tallyFinalDay.label.contains("missing"))
@@ -109,7 +112,7 @@ final class LocalCompetitionLifecycleUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Competition Complete"].exists)
         XCTAssertTrue(app.staticTexts["Victory Over Alex"].exists)
         XCTAssertTrue(app.buttons["Rematch"].exists)
-        XCTAssertTrue(app.buttons["Archive"].exists)
+        XCTAssertTrue(moreMenu.exists)
         XCTAssertTrue(app.otherElements["competition.result"].label.contains("Naren"))
         XCTAssertTrue(app.otherElements["competition.result"].label.contains("Alex"))
         capture("light-small-result")
@@ -121,28 +124,37 @@ final class LocalCompetitionLifecycleUITests: XCTestCase {
         scrollToElement(pendingSharingCard)
         XCTAssertEqual(sharingCards(state: "pending").count, 1)
         XCTAssertEqual(sharingCards(state: "completed").count, 1)
-        scrollToElement(app.staticTexts["Awards"])
-        XCTAssertTrue(app.staticTexts["Awards"].exists)
-        XCTAssertTrue(app.staticTexts["Competition Complete"].exists)
-        XCTAssertTrue(app.staticTexts["Victory Over Alex"].exists)
+
+        openHistory()
         let rivalry = app.descendants(matching: .any)["competition.rivalry"]
         scrollToElement(rivalry)
         XCTAssertTrue(rivalry.exists)
+        app.buttons["Awards"].tap()
+        XCTAssertTrue(
+            app.staticTexts["Competition Complete"].waitForExistence(timeout: 3)
+        )
+        XCTAssertTrue(app.staticTexts["Victory Over Alex"].exists)
         let earned = app.staticTexts.matching(
             NSPredicate(format: "label BEGINSWITH %@", "Earned ")
         ).firstMatch
         scrollToElement(earned)
         XCTAssertTrue(earned.exists)
+        app.navigationBars.buttons.firstMatch.tap()
+        XCTAssertTrue(app.navigationBars["Sharing"].waitForExistence(timeout: 3))
+
         let completed = sharingCards(state: "completed").firstMatch
         scrollToElement(completed)
         completed.tap()
         XCTAssertTrue(app.navigationBars["Result"].waitForExistence(timeout: 3))
-        app.buttons["Archive"].tap()
+        tapMoreMenuItem("Archive")
         XCTAssertTrue(
             app.buttons["Archive"].waitForNonExistence(timeout: 5)
         )
         app.navigationBars.buttons.firstMatch.tap()
         XCTAssertTrue(app.navigationBars["Sharing"].waitForExistence(timeout: 3))
+        // Archived competitions leave Home for History.
+        XCTAssertEqual(sharingCards(state: "archived").count, 0)
+        openHistory()
         XCTAssertEqual(sharingCards(state: "archived").count, 1)
 
         launch(
@@ -158,16 +170,17 @@ final class LocalCompetitionLifecycleUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Sharing"].waitForExistence(timeout: 8))
         scrollToElement(pendingSharingCard)
         XCTAssertEqual(sharingCards(state: "pending").count, 1)
+        openHistory()
         XCTAssertEqual(sharingCards(state: "archived").count, 1)
-        XCTAssertTrue(app.staticTexts["Awards"].exists)
 
         let archived = sharingCards(state: "archived").firstMatch
         scrollToElement(archived)
         archived.tap()
         XCTAssertTrue(app.navigationBars["Result"].waitForExistence(timeout: 5))
+        moreMenu.tap()
         XCTAssertFalse(app.buttons["Archive"].exists)
         let delete = app.buttons["Delete Local Data"]
-        scrollToElement(delete)
+        XCTAssertTrue(delete.waitForExistence(timeout: 3))
         XCTAssertTrue(delete.isHittable)
         capture("light-small-archived")
 
@@ -177,8 +190,11 @@ final class LocalCompetitionLifecycleUITests: XCTestCase {
         ]
         XCTAssertTrue(deleteConfirmation.waitForExistence(timeout: 3))
         deleteConfirmation.buttons["Delete Local Data"].tap()
-        XCTAssertTrue(app.navigationBars["Sharing"].waitForExistence(timeout: 5))
+        // Deleting returns to History, where the competition was opened.
+        XCTAssertTrue(app.navigationBars["History"].waitForExistence(timeout: 5))
         XCTAssertEqual(sharingCards(state: "archived").count, 0)
+        app.navigationBars.buttons.firstMatch.tap()
+        XCTAssertTrue(app.navigationBars["Sharing"].waitForExistence(timeout: 3))
         XCTAssertEqual(sharingCards(state: "pending").count, 1)
         capture("light-small-deleted")
     }
@@ -236,6 +252,7 @@ final class LocalCompetitionLifecycleUITests: XCTestCase {
         )
         XCTAssertFalse(app.otherElements["competition.ownerRings"].exists)
         XCTAssertTrue(app.staticTexts["Day 1"].exists)
+        showWeek()
         let unavailableDay = app.descendants(matching: .any)["competition.day.1"]
         scrollToElement(unavailableDay)
         let unavailableLabel = unavailableDay.label
@@ -371,6 +388,7 @@ final class LocalCompetitionLifecycleUITests: XCTestCase {
         nextCheckpoint()
         XCTAssertTrue(app.staticTexts["Day 1"].waitForExistence(timeout: 5))
         capture("dark-accessibility-active")
+        showWeek()
         assertSevenPairedDays()
         try app.performAccessibilityAudit(
             for: XCUIAccessibilityAuditType.textClipped
@@ -542,6 +560,36 @@ final class LocalCompetitionLifecycleUITests: XCTestCase {
         )
         wait(for: [enabled], timeout: 8)
         button.tap()
+    }
+
+    // A match opens on Today; the day rows live on Week.
+    private func showWeek() {
+        let week = app.buttons["Week"]
+        XCTAssertTrue(week.waitForExistence(timeout: 3))
+        week.tap()
+    }
+
+    // iOS 18 exposes Menu's identified wrapper, not its nested button, as hittable.
+    private var moreMenu: XCUIElement {
+        app.descendants(matching: .any)
+            .matching(identifier: "competition.more")
+            .firstMatch
+    }
+
+    private func tapMoreMenuItem(_ title: String) {
+        let more = moreMenu
+        XCTAssertTrue(more.waitForExistence(timeout: 3))
+        more.tap()
+        let item = app.buttons[title]
+        XCTAssertTrue(item.waitForExistence(timeout: 3))
+        item.tap()
+    }
+
+    private func openHistory() {
+        let history = app.buttons["competition.history.open"]
+        scrollToElement(history)
+        history.tap()
+        XCTAssertTrue(app.navigationBars["History"].waitForExistence(timeout: 3))
     }
 
     private var pendingSharingCard: XCUIElement {

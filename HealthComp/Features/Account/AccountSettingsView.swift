@@ -1,8 +1,23 @@
 import ComposableArchitecture
 import SwiftUI
 
+/// What Account → Notifications needs from the competition. Hosts without
+/// competition state pass nil, which hides the row.
+struct AccountNotificationSettings {
+    let authorization: CompetitionNotificationAuthorizationState?
+    let isRequestInFlight: Bool
+    let request: () -> Void
+
+    var statusText: String {
+        authorization?.permitsNotifications == true ? "On" : "Off"
+    }
+}
+
+/// A short list; each setting opens its own page so explanations don't
+/// stack up here.
 struct AccountSettingsView: View {
     let store: StoreOf<AccountFeature>
+    var notifications: AccountNotificationSettings?
 
     @AppStorage(AppAppearance.storageKey)
     private var appearance = AppAppearance.system
@@ -10,57 +25,14 @@ struct AccountSettingsView: View {
     var body: some View {
         List {
             profileSection
-            appearanceSection
-            privacySection
+            settingsSection
             signOutSection
             deleteSection
         }
-        .scrollContentBackground(.hidden)
-        .background(Theme.ground)
-        .foregroundStyle(Theme.ink)
-        .tint(Theme.ink)
-        .navigationTitle("Account")
+        .accountPageStyle(title: "Account")
         .task { store.send(.appeared) }
-        .navigationBarTitleDisplayMode(.inline)
         .overlay {
-            if store.isRequestInFlight {
-                ProgressView()
-                    .tint(Theme.ink)
-                    .accessibilityLabel(
-                        store.isDeletingAccount
-                            ? "Deleting account"
-                            : "Saving account changes"
-                    )
-            }
-        }
-        .alert(
-            "Delete Account?",
-            isPresented: Binding(
-                get: { store.isDeleteConfirmationPresented },
-                set: { isPresented in
-                    if !isPresented && store.isDeleteConfirmationPresented {
-                        store.send(.deleteAccountConfirmationCancelled)
-                    }
-                }
-            )
-        ) {
-            Button("Delete Account", role: .destructive) {
-                store.send(.deleteAccountConfirmationAccepted)
-            }
-            .accessibilityIdentifier("account.delete.confirm")
-            if store.isBrowserDeletionAvailable {
-                Button("Delete with Apple in Browser", role: .destructive) {
-                    store.send(.browserDeleteConfirmationAccepted)
-                }
-                .accessibilityIdentifier("account.delete.browser.confirm")
-            }
-            Button("Cancel", role: .cancel) {
-                store.send(.deleteAccountConfirmationCancelled)
-            }
-        } message: {
-            Text(
-                "You will confirm with Sign in with Apple. This permanently deletes your account and cannot be undone."
-            )
+            AccountProgressOverlay(store: store)
         }
     }
 
@@ -141,30 +113,38 @@ struct AccountSettingsView: View {
         .listRowBackground(Theme.panel)
     }
 
-    private var appearanceSection: some View {
+    private var settingsSection: some View {
         Section {
-            AppearancePicker(selection: $appearance)
-        } header: {
-            SectionLabel("APPEARANCE")
-        } footer: {
-            Text("System follows your iPhone’s setting.")
-                .foregroundStyle(Theme.secondary)
-        }
-        .listRowBackground(Theme.panel)
-    }
+            NavigationLink {
+                AccountAppearancePage()
+            } label: {
+                LabeledContent {
+                    Text(appearance.title)
+                } label: {
+                    Label("Appearance", systemImage: "circle.lefthalf.filled")
+                }
+            }
+            .accessibilityIdentifier("account.appearance")
 
-    private var privacySection: some View {
-        Section {
-            Label(
-                "Raw Health data stays on this iPhone",
-                systemImage: "lock.iphone"
-            )
-            Label(
-                "Competitors receive daily points, rounded Activity percentages and modes",
-                systemImage: "person.2.shield"
-            )
-        } header: {
-            SectionLabel("PRIVACY")
+            if let notifications {
+                NavigationLink {
+                    AccountNotificationsPage(settings: notifications)
+                } label: {
+                    LabeledContent {
+                        Text(notifications.statusText)
+                    } label: {
+                        Label("Notifications", systemImage: "bell")
+                    }
+                }
+                .accessibilityIdentifier("account.notifications")
+            }
+
+            NavigationLink {
+                AccountPrivacyPage()
+            } label: {
+                Label("Privacy", systemImage: "lock")
+            }
+            .accessibilityIdentifier("account.privacy")
         }
         .listRowBackground(Theme.panel)
     }
@@ -194,24 +174,195 @@ struct AccountSettingsView: View {
 
     private var deleteSection: some View {
         Section {
-            Button(role: .destructive) {
-                store.send(.deleteAccountButtonTapped)
+            NavigationLink {
+                AccountDeletionPage(store: store)
             } label: {
                 Text("Delete Account").foregroundStyle(Theme.ink)
             }
-            .frame(maxWidth: .infinity, minHeight: 44)
-            .disabled(store.isRequestInFlight)
-            .accessibilityIdentifier("account.delete")
-            .accessibilityValue(
-                store.isDeletingAccount ? "Deleting account" : ""
-            )
-        } footer: {
-            Text(
-                "Deletion is permanent. Active competitions are cancelled, this profile’s local data is removed, and completed shared history remains for the other participant as Former competitor."
-            )
-            .foregroundStyle(Theme.secondary)
+            .accessibilityIdentifier("account.delete.open")
         }
         .listRowBackground(Theme.panel)
+    }
+}
+
+private struct AccountAppearancePage: View {
+    @AppStorage(AppAppearance.storageKey)
+    private var appearance = AppAppearance.system
+
+    var body: some View {
+        List {
+            Section {
+                AppearancePicker(selection: $appearance)
+            } footer: {
+                Text("System follows your iPhone’s setting.")
+                    .foregroundStyle(Theme.secondary)
+            }
+            .listRowBackground(Theme.panel)
+        }
+        .accountPageStyle(title: "Appearance")
+    }
+}
+
+private struct AccountNotificationsPage: View {
+    let settings: AccountNotificationSettings
+
+    var body: some View {
+        List {
+            Section {
+                LabeledContent(
+                    "Competition notifications",
+                    value: settings.statusText
+                )
+                switch settings.authorization {
+                case .notDetermined:
+                    Button(action: settings.request) {
+                        if settings.isRequestInFlight {
+                            ProgressView()
+                        } else {
+                            Label(
+                                "Enable Competition Notifications",
+                                systemImage: "bell.badge.fill"
+                            )
+                        }
+                    }
+                    .frame(minHeight: 44)
+                    .disabled(settings.isRequestInFlight)
+                    .accessibilityIdentifier("competition.notifications.enable")
+
+                case .denied:
+                    Label(
+                        "Competition notifications are disabled in Settings.",
+                        systemImage: "bell.slash.fill"
+                    )
+                    .foregroundStyle(Theme.secondary)
+
+                case .authorized, .provisional, .ephemeral, nil:
+                    EmptyView()
+                }
+            } footer: {
+                Text(
+                    "HealthComp only sends competition moments, like lead changes and results. To mute someone, open your match with them."
+                )
+                .foregroundStyle(Theme.secondary)
+            }
+            .listRowBackground(Theme.panel)
+        }
+        .accountPageStyle(title: "Notifications")
+    }
+}
+
+private struct AccountPrivacyPage: View {
+    var body: some View {
+        List {
+            Section {
+                Label(
+                    "Raw Health data stays on this iPhone",
+                    systemImage: "lock.iphone"
+                )
+                Label(
+                    "Competitors receive daily points, rounded Activity percentages and modes",
+                    systemImage: "person.2.shield"
+                )
+            }
+            .listRowBackground(Theme.panel)
+        }
+        .accountPageStyle(title: "Privacy")
+    }
+}
+
+// Red means Move, so the destructive action keeps its role but stays neutral.
+private struct AccountDeletionPage: View {
+    let store: StoreOf<AccountFeature>
+
+    var body: some View {
+        List {
+            Section {
+                Button(role: .destructive) {
+                    store.send(.deleteAccountButtonTapped)
+                } label: {
+                    Text("Delete Account").foregroundStyle(Theme.ink)
+                }
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .disabled(store.isRequestInFlight)
+                .accessibilityIdentifier("account.delete")
+                .accessibilityValue(
+                    store.isDeletingAccount ? "Deleting account" : ""
+                )
+                if let message = store.message {
+                    Text(message.text)
+                        .font(.callout)
+                        .foregroundStyle(Theme.ink)
+                        .accessibilityIdentifier("account.message")
+                }
+            } footer: {
+                Text(
+                    "Deletion is permanent. Active competitions are cancelled, this profile’s local data is removed, and completed shared history remains for the other participant as Former competitor."
+                )
+                .foregroundStyle(Theme.secondary)
+            }
+            .listRowBackground(Theme.panel)
+        }
+        .accountPageStyle(title: "Delete Account")
+        .overlay {
+            AccountProgressOverlay(store: store)
+        }
+        .alert(
+            "Delete Account?",
+            isPresented: Binding(
+                get: { store.isDeleteConfirmationPresented },
+                set: { isPresented in
+                    if !isPresented && store.isDeleteConfirmationPresented {
+                        store.send(.deleteAccountConfirmationCancelled)
+                    }
+                }
+            )
+        ) {
+            Button("Delete Account", role: .destructive) {
+                store.send(.deleteAccountConfirmationAccepted)
+            }
+            .accessibilityIdentifier("account.delete.confirm")
+            if store.isBrowserDeletionAvailable {
+                Button("Delete with Apple in Browser", role: .destructive) {
+                    store.send(.browserDeleteConfirmationAccepted)
+                }
+                .accessibilityIdentifier("account.delete.browser.confirm")
+            }
+            Button("Cancel", role: .cancel) {
+                store.send(.deleteAccountConfirmationCancelled)
+            }
+        } message: {
+            Text(
+                "You will confirm with Sign in with Apple. This permanently deletes your account and cannot be undone."
+            )
+        }
+    }
+}
+
+private struct AccountProgressOverlay: View {
+    let store: StoreOf<AccountFeature>
+
+    var body: some View {
+        if store.isRequestInFlight {
+            ProgressView()
+                .tint(Theme.ink)
+                .accessibilityLabel(
+                    store.isDeletingAccount
+                        ? "Deleting account"
+                        : "Saving account changes"
+                )
+        }
+    }
+}
+
+private extension View {
+    /// Account's pages share one surface and an inline title.
+    func accountPageStyle(title: String) -> some View {
+        scrollContentBackground(.hidden)
+            .background(Theme.ground)
+            .foregroundStyle(Theme.ink)
+            .tint(Theme.ink)
+            .navigationTitle(title)
+            .navigationBarTitleDisplayMode(.inline)
     }
 }
 
