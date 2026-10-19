@@ -2,9 +2,17 @@ name: iOS CI
 
 on:
   pull_request:
-  push:
-    branches:
-      - main
+    # iOS CI reads none of these; Backend CI still covers them.
+    paths-ignore:
+      - "docs/**"
+      - "web/**"
+      - "supabase/**"
+      - "**.md"
+  # Squash merges land code the PR run already passed, so main runs nightly
+  # (catching merges after main moved) and on demand for exact-main evidence.
+  schedule:
+    - cron: "17 9 * * *"
+  workflow_dispatch:
 
 permissions:
   contents: read
