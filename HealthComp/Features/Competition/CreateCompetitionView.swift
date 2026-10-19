@@ -43,7 +43,14 @@ struct CreateCompetitionView: View {
         .scrollBounceBehavior(.basedOnSize)
         .scrollDismissesKeyboard(.interactively)
         .safeAreaInset(edge: .bottom) {
-            if pinsControl {
+            if recipientCodeIsFocused {
+                Button("Done") { recipientCodeIsFocused = false }
+                    .buttonStyle(SecondaryButtonStyle())
+                    .accessibilityIdentifier("competition.create.keyboard-done")
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 8)
+                    .background(Theme.ground)
+            } else if pinsControl {
                 control
                     .padding(.horizontal, 20)
                     .padding(.top, 12)

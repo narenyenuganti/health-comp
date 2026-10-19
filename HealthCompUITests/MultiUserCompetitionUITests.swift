@@ -638,6 +638,10 @@ final class MultiUserCompetitionUITests: XCTestCase {
         scrollToElement(input)
         input.tap()
         input.typeText("a1000000-0000-4000-8000-000000000005")
+        let done = app.buttons["competition.create.keyboard-done"]
+        XCTAssertTrue(done.waitForExistence(timeout: 3))
+        done.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 3))
         let find = app.buttons["competition.create.find-recipient"]
         scrollToElement(find)
         find.tap()
@@ -1029,23 +1033,20 @@ final class MultiUserCompetitionUITests: XCTestCase {
             let scrollView = app.scrollViews.firstMatch
             let surface: XCUIElement = collectionView.exists
                 ? collectionView : (scrollView.exists ? scrollView : app)
-            var visibleFrame = surface.frame.intersection(app.frame)
-            let keyboard = app.keyboards.firstMatch
-            if keyboard.exists {
-                visibleFrame.size.height = max(0, min(visibleFrame.maxY, keyboard.frame.minY) - visibleFrame.minY)
-            }
-            guard visibleFrame.height > 60 else { break }
             let movesTowardEarlierContent = element.exists
                 && element.frame != .zero
-                && element.frame.midY < visibleFrame.midY
-            // At accessibility sizes, the full scroll view extends behind the keyboard.
-            // Drag only the visible content, like a user, rather than the keyboard's keys.
-            let origin = app.coordinate(withNormalizedOffset: .zero)
-            let start = origin.withOffset(
-                CGVector(dx: visibleFrame.midX, dy: visibleFrame.minY + visibleFrame.height * (movesTowardEarlierContent ? 0.3 : 0.7))
+                && element.frame.midY < surface.frame.midY
+            let start = surface.coordinate(
+                withNormalizedOffset: CGVector(
+                    dx: 0.5,
+                    dy: movesTowardEarlierContent ? 0.3 : 0.7
+                )
             )
-            let end = origin.withOffset(
-                CGVector(dx: visibleFrame.midX, dy: visibleFrame.minY + visibleFrame.height * (movesTowardEarlierContent ? 0.55 : 0.3))
+            let end = surface.coordinate(
+                withNormalizedOffset: CGVector(
+                    dx: 0.5,
+                    dy: movesTowardEarlierContent ? 0.55 : 0.45
+                )
             )
             start.press(forDuration: 0.05, thenDragTo: end)
         }

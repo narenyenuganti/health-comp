@@ -521,7 +521,19 @@ struct CompetitionFeature {
                expiresAt.map({ $0 > publication.evaluatedAt }) ?? true {
                 return
             }
-        } else if !publication.dashboard.issues.isEmpty {
+        } else if publication.dashboard.issues.contains(where: { issue in
+            switch issue {
+            case .storageUnavailable, .remoteUnavailable, .remoteFailure,
+                 .bootstrapIdentityRetired, .publicationRevisionExhausted, .unimplemented:
+                true
+            case let .competitionFailures(ids):
+                ids.contains(id)
+            case let .commandRejected(rejectedID):
+                rejectedID == id
+            case .authorizationUnavailable, .activityFailures:
+                false
+            }
+        }) {
             // A partial/failed discovery is not evidence that the server retired this invitation.
             return
         }

@@ -147,6 +147,27 @@ final class RemoteCompetitionFeatureTests: XCTestCase {
             await store.finish()
         }
     }
+
+    @MainActor
+    func testUnrelatedDashboardIssuesDoNotKeepRetiredInvitationReady() async throws {
+        let id = CompetitionID(UUID())
+        let otherID = CompetitionID(UUID())
+        let key = UUID()
+        let token = try XCTUnwrap(CompetitionInviteClaimToken(rawValue: String(repeating: "D", count: 43)))
+        let link = try XCTUnwrap(CompetitionInviteShareLink(host: "invites.healthcomp.example", token: token))
+        for issue in [CompetitionClientIssue.authorizationUnavailable, .activityFailures([id]), .competitionFailures([otherID]), .commandRejected(otherID)] {
+            let publication = CompetitionPublication.remote(revision: 4, issues: [issue])
+            let store = TestStore(initialState: CompetitionFeature.State(
+                publication: publication, inviteCreationStatus: .creating,
+                inviteCreationIdempotencyKey: key, inviteRecipient: Self.recipient
+            )) { CompetitionFeature() }
+            await store.send(.createInviteResponse(idempotencyKey: key, .success(link: link, competitionID: id, expectedRevision: 4))) {
+                $0.inviteCreationStatus = .idle
+                $0.inviteCreationIdempotencyKey = nil
+            }
+            await store.finish()
+        }
+    }
     @MainActor
     func testStopClearsInviteCreationStateAndShareLink() async throws {
         let idempotencyKey = UUID(
