@@ -56,5 +56,11 @@ four unrelated `hde-test-db` containers remained running.
 Bash syntax, ShellCheck, runbook checks and four documentation mutations, strict
 state static controls, eleven FK parser controls and diff check passed. No
 application source or migration changed. Independent Standards and Spec reviews
-of `d69b423...d339558` each returned zero findings. Separate exact-head CI
-integration remains pending.
+of `d69b423...d339558` each returned zero findings. PR #149 subsequently passed
+exact-head CI at `c7f6070fdd8c2fd774bd42937aa8984b73cc6da0` and merged as
+`9f9fb5e6be8637c8e0e64928cbdf034d6efc2e05` on October 19.
+
+The later 018 trigger-order correction in PR #151 changed the exact migration
+manifest again. Both native synthetic modes passed with the updated pin before
+its passing exact-head CI and integration as `6635c22`. These remain synthetic
+component results, not hosted recovery or production-readiness evidence.

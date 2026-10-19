@@ -16,9 +16,10 @@ This is a scope decision, not a runtime receipt or production-readiness claim.
 
 ## Current qualification checkpoint — October 19, 2026 UTC
 
-**Not production-ready.** Source integration and local recovery advanced; the
-preserved October 11–17 competition did not satisfy the stable-result gate.
-No new signed artifact, installation or physical-service pass is selected here.
+**Not production-ready.** Source integration, local synthetic recovery and the
+Staging recipient backend/Simulator rollout advanced; the preserved October 11–17
+competition did not satisfy the stable-result gate. The new physical candidate
+remains uninstalled; no new physical-service pass is selected here.
 
 - **Automated source matrix:** exact merged main
   `9f9fb5e6be8637c8e0e64928cbdf034d6efc2e05` passed
@@ -29,13 +30,17 @@ No new signed artifact, installation or physical-service pass is selected here.
   An earlier PR #149 iOS attempt found an empty system share-sheet container;
   unchanged local checks and the exact-head retry passed, but its cause remains
   unconfirmed. No assertion or timeout was relaxed and no app fix is claimed.
-- **Recipient invitations, source only:** PR #148 binds a 24-hour invitation to
+- **Recipient invitation source and correction:** PR #148 binds a 24-hour invitation to
   an existing account selected by exact HealthComp account code, prevents duplicate
   pending sender/recipient pairs and fixes long-name presentation. PR #149 updates
   the existing local synthetic recovery harness to the 23-migration schema. Both
   native recovery modes passed locally with history/state/FK and negative controls
   retained. Backend CI syntax-checks that harness; it does not run those populated
-  restores. Neither source integration nor local recovery is hosted qualification.
+  restores. PR #151 corrected deferred-trigger ordering in migration 018; both
+  native synthetic recovery modes passed again with the corrected manifest.
+  Its exact-head Backend, iOS and Pages checks passed at `446714d`; integrated
+  main `6635c22` has the same tree. Neither source integration nor local recovery
+  is hosted qualification.
 - **Preserved cycle, post-deadline readback:** the October 19 aggregate-only
   read-only receipt scoped by the unique October 11 start day and time zone found
   two accepted participants, zero accepted daily revisions/covered days for each,
@@ -43,20 +48,31 @@ No new signed artifact, installation or physical-service pass is selected here.
   fallback deadline. This is not a fresh private client/profile/key binding or an
   explanation of the submission failure. Waiting cannot make this frozen result
   stable; do not rewrite its deadline/result or invent unavailable submissions.
-- **Staging rollout preflight, not promotion:** fresh metadata showed a healthy
-  Staging project with the expected 22 migration versions through `20261002001700`;
-  the new `20261019001800` migration was absent. The deployed claim entry point
-  and both invitation shared helpers matched main byte-for-byte; only the create
-  entry point differed by the reviewed recipient contract. Deployed import-map/
-  package-resolution equality was not established. Migration, the create Function
-  and matching clients require a coordinated rollout: old unnamed pending links
-  expire and older apps cannot create new unnamed invitations after migration.
-  No hosted change, live invitation or phone action occurred in this preflight.
+- **Staging backend promotion, 20:20 UTC:** following explicit approval, exactly
+  migration 018 was applied, producing the expected 23-version chain. Four old
+  unnamed pending invitations expired; same-process aggregate/ordered-row checks
+  preserved all four accepted competitions and related history. Only
+  `create-competition-invite` advanced ACTIVE version 5 to version 6, with JWT
+  verification still enabled and other Function metadata unchanged. Downloaded
+  entry/shared/import-map bytes matched source; no deployed lockfile was returned,
+  so dependency-lock/graph equality remains unproved. Catalog checks do not prove
+  live recipient creation/acceptance. Older apps cannot create unnamed invitations.
+- **Simulator client, 20:38 UTC:** one matching-package install and one normal
+  launch completed, with no manual refresh, account switch or invitation action.
+  The executable/signature matched the prepared artifact. The install's combined
+  path/mode/byte assertion failed and its RAM baseline is gone; original byte
+  equality and failure cause remain unproved. Independent stopped Core replay
+  passed five journals/147 events and owner binding. The October 11 result is
+  completed `best_available` with zero accepted day slots and 14 deadline-missing
+  slots, not stable. Ordinary startup network effects were not classified. The
+  app was terminated and dedicated Simulator shut down. Physical installation
+  and the live recipient flow remain incomplete; the physical reader stays
+  disabled and old-install pinned.
 
 Next: diagnose and repair the actual score-submission failure before beginning
 another lifecycle. Preserve both profiles and the existing fallback result; a
-new competition is not authorized by this checkpoint. Qualify any coordinated
-Staging invitation rollout separately under the guarded promotion procedure.
+new competition is not authorized by this checkpoint. Finish the matching
+physical-client and live recipient-flow qualification without reapplying 018.
 Score-specific App Attest acceptance/replay and replacement enrollment,
 backend-triggered APNs delivery/routes, genuine contained recovery, accessible
 approved privacy policy, signed release/distribution and production promotion
