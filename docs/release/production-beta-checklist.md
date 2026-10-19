@@ -14,7 +14,63 @@ records the matching boundary. Actual recovery, protection against resurrecting
 deleted identities, and all other unwaived qualification gates remain open.
 This is a scope decision, not a runtime receipt or production-readiness claim.
 
-## Current qualification checkpoint — October 13, 2026 UTC
+## Current qualification checkpoint — October 19, 2026 UTC
+
+**Not production-ready.** Source integration and local recovery advanced; the
+preserved October 11–17 competition did not satisfy the stable-result gate.
+No new signed artifact, installation or physical-service pass is selected here.
+
+- **Automated source matrix:** exact merged main
+  `9f9fb5e6be8637c8e0e64928cbdf034d6efc2e05` passed
+  [Backend CI](https://github.com/narenyenuganti/health-comp/actions/runs/39266549008)
+  and [iOS CI](https://github.com/narenyenuganti/health-comp/actions/runs/39266549018).
+  The complete iOS matrix includes Core Debug/Release, app/UI tests,
+  release-style Staging and unsigned Debug/Staging/Release device builds.
+  An earlier PR #149 iOS attempt found an empty system share-sheet container;
+  unchanged local checks and the exact-head retry passed, but its cause remains
+  unconfirmed. No assertion or timeout was relaxed and no app fix is claimed.
+- **Recipient invitations, source only:** PR #148 binds a 24-hour invitation to
+  an existing account selected by exact HealthComp account code, prevents duplicate
+  pending sender/recipient pairs and fixes long-name presentation. PR #149 updates
+  the existing local synthetic recovery harness to the 23-migration schema. Both
+  native recovery modes passed locally with history/state/FK and negative controls
+  retained. Backend CI syntax-checks that harness; it does not run those populated
+  restores. Neither source integration nor local recovery is hosted qualification.
+- **Preserved cycle, post-deadline readback:** the October 19 aggregate-only
+  read-only receipt scoped by the unique October 11 start day and time zone found
+  two accepted participants, zero accepted daily revisions/covered days for each,
+  zero stable attestations/results and one `best_available` result after the
+  fallback deadline. This is not a fresh private client/profile/key binding or an
+  explanation of the submission failure. Waiting cannot make this frozen result
+  stable; do not rewrite its deadline/result or invent unavailable submissions.
+- **Staging rollout preflight, not promotion:** fresh metadata showed a healthy
+  Staging project with the expected 22 migration versions through `20261002001700`;
+  the new `20261019001800` migration was absent. The deployed claim entry point
+  and both invitation shared helpers matched main byte-for-byte; only the create
+  entry point differed by the reviewed recipient contract. Deployed import-map/
+  package-resolution equality was not established. Migration, the create Function
+  and matching clients require a coordinated rollout: old unnamed pending links
+  expire and older apps cannot create new unnamed invitations after migration.
+  No hosted change, live invitation or phone action occurred in this preflight.
+
+Next: diagnose and repair the actual score-submission failure before beginning
+another lifecycle. Preserve both profiles and the existing fallback result; a
+new competition is not authorized by this checkpoint. Qualify any coordinated
+Staging invitation rollout separately under the guarded promotion procedure.
+Score-specific App Attest acceptance/replay and replacement enrollment,
+backend-triggered APNs delivery/routes, genuine contained recovery, accessible
+approved privacy policy, signed release/distribution and production promotion
+remain open. Paid setup and Apple Support contact remain held. Physical deletion
+is owner-skipped and universal links are deferred, not PASS.
+
+The private operator closeout receipt is
+`staging-october11-closeout-2026-10-19.json`, SHA-256
+`72fd965148db91df3f72fd9572f75f559ebbe1db27560d0ba1687ec59067a70c`.
+It retains aggregate findings, not identities, scores, Health values or proof
+material. It names its own source/time/scope and is not a runtime receipt for
+the newly integrated source. Historical checkpoints below remain dated evidence.
+
+## Historical qualification checkpoint — October 13, 2026 UTC
 
 **Not production-ready.** This checkpoint updates the source, prepared artifact
 and preserved competition pointers only. Older observations below remain scoped

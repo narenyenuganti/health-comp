@@ -14,9 +14,32 @@ and [recovery runbook](../runbooks/backup-restore.md#private-beta-deletion-test-
 preserve the deletion feature, existing automated coverage and privacy/history
 safeguards. Other gates and **not production-ready** status remain unchanged.
 
-## Current qualification checkpoint — October 13, 2026 UTC
+## Current qualification checkpoint — October 19, 2026 UTC
 
-The [current checklist](production-beta-checklist.md#current-qualification-checkpoint--october-13-2026-utc)
+The [current checklist](production-beta-checklist.md#current-qualification-checkpoint--october-19-2026-utc)
+records exact-main `9f9fb5e` Backend/iOS CI, the source-only recipient invitation
+contract and current-schema local synthetic recovery qualification. It also
+records the earlier empty system-share-sheet CI failure without claiming a
+confirmed cause or application fix. Local populated restores and passing source
+CI are not hosted recovery or physical qualification.
+
+The preserved October 11–17 competition reached `best_available`, not stable:
+the post-deadline aggregate-only readback found two accepted participants,
+zero daily revision coverage for either and zero stable attestations/results.
+Its receipt is scoped by a unique schedule, not a fresh private client/key
+binding. Waiting cannot close this cycle's stable-result gate. Preserve the
+fallback history; diagnose the real submission failure before another lifecycle.
+
+Staging still lacks migration `20261019001800`; its coordinated migration/create
+Function/client rollout has not occurred. No new invitation, physical action,
+hosted recovery, policy publication, release distribution or production promotion
+is established by this documentation. The owner-skipped deletion test, deferred
+universal links and paid-setup/Apple-contact holds remain unchanged. Release status
+remains **not production-ready**. Older receipts retain their named time and scope.
+
+## Historical qualification checkpoint — October 13, 2026 UTC
+
+The [historical checklist](production-beta-checklist.md#historical-qualification-checkpoint--october-13-2026-utc)
 records successful exact-source CI for `da412f9`, its locally qualified but
 not-installed diagnostic Staging package, the preserved October 11–17 competition,
 and the last dated day-one rejection evidence. The October 18–19 confirmation
