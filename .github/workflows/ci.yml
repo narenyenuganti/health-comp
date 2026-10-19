@@ -176,17 +176,6 @@ jobs:
           key: spm-xcode16.4-${{ hashFiles('HealthComp.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
           restore-keys: spm-xcode16.4-
 
-      - name: Resolve Swift packages
-        run: |
-          set -euo pipefail
-          # Resolve before booting: during the Simulator's first boot this took
-          # minutes instead of seconds.
-          xcodebuild -resolvePackageDependencies \
-            -project HealthComp.xcodeproj \
-            -scheme HealthComp \
-            -derivedDataPath "$RUNNER_TEMP/HealthComp-DerivedData" \
-            -onlyUsePackageVersionsFromResolvedFile
-
       - name: Prepare pinned iOS Simulator
         timeout-minutes: 10
         run: |
@@ -200,7 +189,9 @@ jobs:
             com.apple.CoreSimulator.SimRuntime.iOS-18-5)"
           printf 'HEALTHCOMP_CI_SIMULATOR_ID=%s\n' "$simulator_id" >> "$GITHUB_ENV"
           # First boot spends about a minute migrating data; let it overlap
-          # the build. The wait step below confirms it finished.
+          # the build, which targets a generic Simulator because looking up
+          # this device while it boots stalled xcodebuild for minutes. The
+          # wait step below confirms the boot finished.
           nohup xcrun simctl bootstatus "$simulator_id" -b \
             </dev/null >"$RUNNER_TEMP/simulator-boot.log" 2>&1 &
 
@@ -211,7 +202,7 @@ jobs:
             -project HealthComp.xcodeproj \
             -scheme HealthComp \
             -configuration Debug \
-            -destination "platform=iOS Simulator,id=$HEALTHCOMP_CI_SIMULATOR_ID" \
+            -destination 'generic/platform=iOS Simulator' \
             -derivedDataPath "$RUNNER_TEMP/HealthComp-DerivedData" \
             -onlyUsePackageVersionsFromResolvedFile \
             -skipMacroValidation \
@@ -278,17 +269,6 @@ jobs:
           key: spm-xcode16.4-${{ hashFiles('HealthComp.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
           restore-keys: spm-xcode16.4-
 
-      - name: Resolve Swift packages
-        run: |
-          set -euo pipefail
-          # Resolve before booting: during the Simulator's first boot this took
-          # minutes instead of seconds.
-          xcodebuild -resolvePackageDependencies \
-            -project HealthComp.xcodeproj \
-            -scheme HealthComp \
-            -derivedDataPath "$RUNNER_TEMP/HealthComp-DerivedData" \
-            -onlyUsePackageVersionsFromResolvedFile
-
       - name: Prepare pinned iOS Simulator
         timeout-minutes: 10
         run: |
@@ -302,7 +282,9 @@ jobs:
             com.apple.CoreSimulator.SimRuntime.iOS-18-5)"
           printf 'HEALTHCOMP_CI_SIMULATOR_ID=%s\n' "$simulator_id" >> "$GITHUB_ENV"
           # First boot spends about a minute migrating data; let it overlap
-          # the build. The wait step below confirms it finished.
+          # the build, which targets a generic Simulator because looking up
+          # this device while it boots stalled xcodebuild for minutes. The
+          # wait step below confirms the boot finished.
           nohup xcrun simctl bootstatus "$simulator_id" -b \
             </dev/null >"$RUNNER_TEMP/simulator-boot.log" 2>&1 &
 
@@ -316,7 +298,7 @@ jobs:
             -project HealthComp.xcodeproj \
             -scheme 'HealthComp Staging' \
             -configuration Staging \
-            -destination "platform=iOS Simulator,id=$HEALTHCOMP_CI_SIMULATOR_ID" \
+            -destination 'generic/platform=iOS Simulator' \
             -derivedDataPath "$RUNNER_TEMP/HealthComp-DerivedData" \
             -onlyUsePackageVersionsFromResolvedFile \
             -skipMacroValidation \
