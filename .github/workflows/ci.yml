@@ -36,6 +36,13 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
 
+      - name: Restore Swift package checkouts
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/HealthComp-DerivedData/SourcePackages
+          key: spm-xcode16.4-${{ hashFiles('HealthComp.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+          restore-keys: spm-xcode16.4-
+
       - name: Verify Xcode and install XcodeGen
         run: |
           set -euo pipefail
@@ -115,14 +122,40 @@ jobs:
             com.apple.CoreSimulator.SimDeviceType.iPhone-16-Pro \
             com.apple.CoreSimulator.SimRuntime.iOS-18-5)"
           printf 'HEALTHCOMP_CI_SIMULATOR_ID=%s\n' "$simulator_id" >> "$GITHUB_ENV"
-          xcrun simctl bootstatus "$simulator_id" -b
+          # First boot spends about a minute migrating data; let it overlap
+          # the build. The wait step below confirms it finished.
+          nohup xcrun simctl bootstatus "$simulator_id" -b \
+            </dev/null >"$RUNNER_TEMP/simulator-boot.log" 2>&1 &
 
-      - name: Test iOS application logic, invitation copy, and privacy disclosures
+      - name: Build iOS application logic tests
         run: |
           set -euo pipefail
           # Local ad-hoc Simulator signing embeds the entitlements required by
           # real Keychain tests. It needs no Apple account or signing certificate.
-          xcodebuild test \
+          xcodebuild build-for-testing \
+            -project HealthComp.xcodeproj \
+            -scheme HealthComp \
+            -configuration Debug \
+            -destination "platform=iOS Simulator,id=$HEALTHCOMP_CI_SIMULATOR_ID" \
+            -derivedDataPath "$RUNNER_TEMP/HealthComp-DerivedData" \
+            -onlyUsePackageVersionsFromResolvedFile \
+            -skipMacroValidation \
+            -skipPackagePluginValidation \
+            -xcconfig Configuration/CI.xcconfig \
+            CODE_SIGNING_ALLOWED=YES \
+            CODE_SIGN_IDENTITY=- \
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            SUPABASE_URL="$SUPABASE_URL" \
+            SUPABASE_PUBLISHABLE_KEY="$SUPABASE_PUBLISHABLE_KEY"
+
+      - name: Wait for pinned iOS Simulator
+        timeout-minutes: 10
+        run: xcrun simctl bootstatus "$HEALTHCOMP_CI_SIMULATOR_ID" -b
+
+      - name: Test iOS application logic, invitation copy, and privacy disclosures
+        run: |
+          set -euo pipefail
+          xcodebuild test-without-building \
             -project HealthComp.xcodeproj \
             -scheme HealthComp \
             -configuration Debug \
@@ -140,13 +173,7 @@ jobs:
             -maximum-parallel-testing-workers 1 \
             -onlyUsePackageVersionsFromResolvedFile \
             -skipMacroValidation \
-            -skipPackagePluginValidation \
-            -xcconfig Configuration/CI.xcconfig \
-            CODE_SIGNING_ALLOWED=YES \
-            CODE_SIGN_IDENTITY=- \
-            COMPILER_INDEX_STORE_ENABLE=NO \
-            SUPABASE_URL="$SUPABASE_URL" \
-            SUPABASE_PUBLISHABLE_KEY="$SUPABASE_PUBLISHABLE_KEY"
+            -skipPackagePluginValidation
 
       - name: Test release-style Staging browser configuration
         run: |
