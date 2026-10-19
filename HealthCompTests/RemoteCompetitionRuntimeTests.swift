@@ -5,6 +5,46 @@ import XCTest
 @testable import HealthComp
 
 final class RemoteCompetitionRuntimeTests: XCTestCase {
+    func testRecipientBoundSQLHistoryMaterializesPendingThenAcceptedForBothAccounts() async throws {
+        // Captured from migration 018's real create/claim/fetch operations in one rolled-back local transaction.
+        struct Snapshot: Decodable {
+            let descriptor: CompetitionDescriptor
+            let page: CompetitionChangePage
+        }
+        let source = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("Fixtures/recipient-invitation-sql.json")
+        let url = Bundle(for: Self.self).url(forResource: "recipient-invitation-sql", withExtension: "json") ?? source
+        let snapshots = try JSONDecoder().decode([String: Snapshot].self, from: Data(contentsOf: url))
+        let pending = try XCTUnwrap(snapshots["pending"])
+        let scheduled = try XCTUnwrap(snapshots["scheduled"])
+        let root = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let creatorID = pending.descriptor.creatorProfileID
+        let inviteeID = try XCTUnwrap(scheduled.descriptor.participants.first { $0.role == .invitee }?.profileID)
+        let createdAt = try XCTUnwrap(pending.page.changes.first?.occurredAt)
+        let store = makeStore(root: root.appendingPathComponent("creator"))
+        let pendingRuntime = RemoteCompetitionRuntime(
+            profileID: creatorID, store: store,
+            remoteAPI: remoteAPI(listCompetitions: { [pending.descriptor] }, fetchChanges: { _, _ in pending.page }),
+            now: { createdAt }
+        )
+        let pendingOutcome = await pendingRuntime.synchronizeAll()
+        XCTAssertEqual(pendingOutcome.failures, [])
+        XCTAssertEqual(pendingOutcome.successfulCompetitions.first?.descriptor.participants.last?.profile.displayName, "Fixture Recipient")
+        for id in [creatorID, inviteeID] {
+            let runtime = RemoteCompetitionRuntime(
+                profileID: id, store: id == creatorID ? store : makeStore(root: root.appendingPathComponent("invitee")),
+                remoteAPI: remoteAPI(listCompetitions: { [scheduled.descriptor] }, fetchChanges: { _, _ in scheduled.page }),
+                now: { createdAt }
+            )
+            let outcome = await runtime.synchronizeAll()
+            XCTAssertEqual(outcome.failures, [])
+            XCTAssertEqual(outcome.successfulCompetitions.first?.journal.projection.competition.remoteConfiguration?.backendDescriptorRevision, 4)
+            await runtime.stop()
+        }
+        await pendingRuntime.stop()
+    }
+
     func testCacheSaveRejectsSymlinkWithoutChangingItsTarget() async throws {
         let root = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }

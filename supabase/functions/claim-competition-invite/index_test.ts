@@ -247,7 +247,7 @@ Deno.test({
       }
 
       const idempotencyKey = crypto.randomUUID();
-      const createRequest = () =>
+      const createRequest = (requestKey = idempotencyKey) =>
         fetch(`${supabaseUrl}/functions/v1/create-competition-invite`, {
           method: "POST",
           headers: {
@@ -256,7 +256,7 @@ Deno.test({
           },
           body: JSON.stringify({
             timeZoneIdentifier: "Pacific/Kiritimati",
-            idempotencyKey,
+            idempotencyKey: requestKey,
             recipientProfileId: users[1].profileId,
           }),
         });
@@ -273,6 +273,28 @@ Deno.test({
       );
       assertEquals(invitations[0], invitations[1]);
       const invitation = invitations[0];
+      const duplicateResponse = await createRequest(crypto.randomUUID());
+      assertEquals(duplicateResponse.status, 409);
+      assertEquals(await duplicateResponse.json(), {
+        error: {
+          code: "pending_invitation_exists",
+          message: "An invitation to this account is already pending",
+        },
+      });
+
+      const creator = createClient(supabaseUrl, anonKey, {
+        auth: { persistSession: false },
+        global: { headers: { Authorization: `Bearer ${users[0].jwt}` } },
+      });
+      const { data: pending, error: pendingError } = await creator
+        .from("competitions").select("created_at,invitation_expires_at")
+        .eq("id", invitation.competitionId).single();
+      if (pendingError || !pending) throw new Error("pending read failed");
+      assertEquals(
+        Date.parse(pending.invitation_expires_at) -
+          Date.parse(pending.created_at),
+        24 * 60 * 60 * 1000,
+      );
 
       const divergentResponse = await fetch(
         `${supabaseUrl}/functions/v1/create-competition-invite`,
@@ -325,6 +347,13 @@ Deno.test({
         200,
         404,
       ]);
+      assertEquals(await claimResponses[1].json(), {
+        error: {
+          code: "invite_unavailable",
+          message: "Invitation unavailable",
+        },
+      });
+      await claimResponses[0].json();
 
       const [competition] = await sql`
         select lifecycle, time_zone_identifier,
@@ -336,6 +365,40 @@ Deno.test({
       assertEquals(competition.time_zone_identifier, "Pacific/Kiritimati");
       assertEquals(competition.next_local_day, true);
       assertEquals(competition.invitees, 1);
+
+      const expiryResponse = await createRequest(crypto.randomUUID());
+      assertEquals(expiryResponse.status, 201);
+      const expiryInvitation = await expiryResponse.json();
+      // Advance only this synthetic fixture's boundary; acceptance still uses the real HTTP operation.
+      await sql`update public.competition_invites set expires_at = now()
+        where competition_id = ${expiryInvitation.competitionId}::uuid`;
+      await sql`update public.competitions set invitation_expires_at = now()
+        where id = ${expiryInvitation.competitionId}::uuid`;
+      const expiredClaim = await fetch(
+        `${supabaseUrl}/functions/v1/claim-competition-invite`,
+        {
+          method: "POST",
+          headers: {
+            authorization: `Bearer ${users[1].jwt}`,
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({ token: expiryInvitation.token }),
+        },
+      );
+      assertEquals(expiredClaim.status, 404);
+      assertEquals(await expiredClaim.json(), {
+        error: {
+          code: "invite_unavailable",
+          message: "Invitation unavailable",
+        },
+      });
+      const replacementResponse = await createRequest(crypto.randomUUID());
+      assertEquals(replacementResponse.status, 201);
+      const replacement = await replacementResponse.json();
+      assertEquals(
+        replacement.competitionId === expiryInvitation.competitionId,
+        false,
+      );
     } finally {
       await sql.end();
       // The test targets only the explicit local disposable database. The

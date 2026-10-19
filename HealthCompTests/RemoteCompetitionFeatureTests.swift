@@ -70,6 +70,34 @@ final class RemoteCompetitionFeatureTests: XCTestCase {
     }
 
     @MainActor
+    func testExpiredInvitationMissingFromNextDashboardClearsShareLink() async throws {
+        let id = CompetitionID(UUID())
+        let key = UUID()
+        let token = try XCTUnwrap(CompetitionInviteClaimToken(rawValue: String(repeating: "B", count: 43)))
+        let link = try XCTUnwrap(CompetitionInviteShareLink(host: "invites.healthcomp.example", token: token))
+        let store = TestStore(initialState: CompetitionFeature.State(
+            inviteCreationStatus: .creating, inviteCreationIdempotencyKey: key,
+            inviteRecipient: Self.recipient
+        )) { CompetitionFeature() }
+        await store.send(.createInviteResponse(idempotencyKey: key, .success(link: link, competitionID: id, expectedRevision: 4))) {
+            $0.inviteCreationStatus = .ready
+            $0.createdInviteLink = link
+            $0.createdInviteCompetitionID = id
+            $0.createdInviteExpectedPublicationRevision = 4
+        }
+        await store.send(.publication(.remote(revision: 3))) { $0.publication = .remote(revision: 3) }
+        await store.send(.publication(.remote(revision: 4))) {
+            $0.publication = .remote(revision: 4)
+            $0.inviteCreationStatus = .idle
+            $0.inviteCreationIdempotencyKey = nil
+            $0.createdInviteLink = nil
+            $0.createdInviteCompetitionID = nil
+            $0.createdInviteExpectedPublicationRevision = 0
+        }
+        await store.finish()
+    }
+
+    @MainActor
     func testDuplicatePendingInvitationIsNotPresentedAsRetryable() async {
         let key = UUID()
         let recorder = InviteCreationRecorder(results: [.failure(.pendingInvitationExists)])
@@ -197,6 +225,7 @@ final class RemoteCompetitionFeatureTests: XCTestCase {
             $0.inviteCreationStatus = .ready
             $0.createdInviteLink = link
             $0.createdInviteCompetitionID = childID
+            $0.createdInviteExpectedPublicationRevision = 8
         }
 
         XCTAssertEqual(recorder.requests.count, 1)
@@ -264,6 +293,7 @@ final class RemoteCompetitionFeatureTests: XCTestCase {
             $0.inviteCreationStatus = .ready
             $0.createdInviteLink = link
             $0.createdInviteCompetitionID = competitionID
+            $0.createdInviteExpectedPublicationRevision = 4
         }
 
         XCTAssertEqual(recorder.requestCount, 1)
@@ -374,6 +404,7 @@ final class RemoteCompetitionFeatureTests: XCTestCase {
             $0.inviteCreationStatus = .ready
             $0.createdInviteLink = link
             $0.createdInviteCompetitionID = competitionID
+            $0.createdInviteExpectedPublicationRevision = 9
         }
 
         XCTAssertEqual(
@@ -450,6 +481,7 @@ final class RemoteCompetitionFeatureTests: XCTestCase {
             $0.inviteCreationStatus = .ready
             $0.createdInviteLink = link
             $0.createdInviteCompetitionID = competitionID
+            $0.createdInviteExpectedPublicationRevision = 2
         }
 
         XCTAssertEqual(

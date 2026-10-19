@@ -46,6 +46,7 @@ struct CompetitionFeature {
         var inviteRecipientCode = ""
         var inviteRecipientStatus: InviteRecipientStatus = .idle
         var createdInviteCompetitionID: CompetitionID?
+        var createdInviteExpectedPublicationRevision: UInt64 = 0
 
         init(
             publication: CompetitionPublication? = nil,
@@ -254,10 +255,11 @@ struct CompetitionFeature {
                     return .none
                 }
                 switch response {
-                case let .success(link, competitionID, _):
+                case let .success(link, competitionID, expectedRevision):
                     state.inviteCreationStatus = .ready
                     state.createdInviteLink = link
                     state.createdInviteCompetitionID = competitionID
+                    state.createdInviteExpectedPublicationRevision = expectedRevision
                     clearConsumedOrExpiredInvite(state: &state)
                 case .failure(.pendingInvitationExists):
                     state.inviteCreationStatus = .pendingInvitationExists
@@ -506,14 +508,16 @@ struct CompetitionFeature {
         state.inviteCreationRematchParentID = nil
         state.createdInviteLink = nil
         state.createdInviteCompetitionID = nil
+        state.createdInviteExpectedPublicationRevision = 0
     }
 
     private func clearConsumedOrExpiredInvite(state: inout State) {
         guard let id = state.createdInviteCompetitionID,
               let publication = state.publication,
-              let invitation = publication.dashboard.competitions.first(where: { $0.id == id })
+              publication.publicationRevision >= state.createdInviteExpectedPublicationRevision
         else { return }
-        if case let .pending(_, _, expiresAt) = invitation.lifecycle,
+        if let invitation = publication.dashboard.competitions.first(where: { $0.id == id }),
+           case let .pending(_, _, expiresAt) = invitation.lifecycle,
            expiresAt.map({ $0 > publication.evaluatedAt }) ?? true {
             return
         }

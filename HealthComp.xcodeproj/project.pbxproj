@@ -54,6 +54,7 @@
 		51664C1A7AF7BCBA221C519A /* CompetitionNotificationPreferencesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 185D226E47FB94EBF23B7B6F /* CompetitionNotificationPreferencesTests.swift */; };
 		51EC8DDC48A29F9C45FDE1A3 /* MultiUserCompetitionUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72D97B24F7398742C8358DD9 /* MultiUserCompetitionUITests.swift */; };
 		52926C8187B0B300B1871D18 /* remote-stable-tie.json in Resources */ = {isa = PBXBuildFile; fileRef = 491111F52C594F7DF05E48C4 /* remote-stable-tie.json */; };
+		55708C5249C6BA5D2BE41A69 /* recipient-invitation-sql.json in Resources */ = {isa = PBXBuildFile; fileRef = F36B585E64E0FDD2DAAE5D2A /* recipient-invitation-sql.json */; };
 		5DDCDC3DA51E4EA5BD74374C /* LocalCompetitionClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E38A46C1086F6393DC0FA12A /* LocalCompetitionClientTests.swift */; };
 		5DE7A5CF81E44A3B575C571A /* CompetitionSyncModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B74EA43D24EEE51BE2DDEDAB /* CompetitionSyncModels.swift */; };
 		5F0736352CDB182DF626EC7C /* remote-stable-win.json in Resources */ = {isa = PBXBuildFile; fileRef = DF2EB15D15A1AFC4A22883D0 /* remote-stable-win.json */; };
@@ -277,6 +278,7 @@
 		EFDE31FDBC7C2D97BF245903 /* CompetitionCore */ = {isa = PBXFileReference; lastKnownFileType = folder; name = CompetitionCore; path = Modules/CompetitionCore; sourceTree = SOURCE_ROOT; };
 		F2AB9F656F17E85A71D01764 /* MultiUserCompetitionTestLabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MultiUserCompetitionTestLabView.swift; sourceTree = "<group>"; };
 		F300FAED4747AA225EB143F2 /* PermissionOnboardingClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionOnboardingClient.swift; sourceTree = "<group>"; };
+		F36B585E64E0FDD2DAAE5D2A /* recipient-invitation-sql.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "recipient-invitation-sql.json"; sourceTree = "<group>"; };
 		F5065DD1FD5208553FB4EF03 /* AppleWebAuthenticationSessionClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleWebAuthenticationSessionClient.swift; sourceTree = "<group>"; };
 		F5293E4F02146184E21401B1 /* CompetitionRemoteAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionRemoteAPI.swift; sourceTree = "<group>"; };
 		F58C1E73A183AACEC251330E /* CompetitionSyncCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionSyncCoordinator.swift; sourceTree = "<group>"; };
@@ -523,6 +525,7 @@
 			children = (
 				0B62BF4147CD724EB04CECC6 /* late-watch-sync.json */,
 				ABC64842924F0B681BDB3AC9 /* loss.json */,
+				F36B585E64E0FDD2DAAE5D2A /* recipient-invitation-sql.json */,
 				707D0C11F6133D4611BF36D7 /* remote-best-available-incomplete.json */,
 				EDE353612B8354B4ACCE996F /* remote-stable-loss.json */,
 				491111F52C594F7DF05E48C4 /* remote-stable-tie.json */,
@@ -695,6 +698,7 @@
 			files = (
 				0D7E2224EB53F47629BDB312 /* late-watch-sync.json in Resources */,
 				82669C7399410C4DD256DEF9 /* loss.json in Resources */,
+				55708C5249C6BA5D2BE41A69 /* recipient-invitation-sql.json in Resources */,
 				153576F1521F99A0DB91C2A8 /* remote-best-available-incomplete.json in Resources */,
 				FD0F691DB7A2AD3B9BB2077F /* remote-stable-loss.json in Resources */,
 				52926C8187B0B300B1871D18 /* remote-stable-tie.json in Resources */,

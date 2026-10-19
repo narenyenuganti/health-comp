@@ -103,6 +103,7 @@ struct CreateCompetitionView: View {
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .font(.body.monospaced())
+                .lineLimit(3, reservesSpace: true)
                 .padding(12)
                 .background(Theme.control, in: RoundedRectangle(cornerRadius: 10))
                 .disabled(status == .creating)
