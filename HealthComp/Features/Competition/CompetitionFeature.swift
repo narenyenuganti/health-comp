@@ -516,9 +516,13 @@ struct CompetitionFeature {
               let publication = state.publication,
               publication.publicationRevision >= state.createdInviteExpectedPublicationRevision
         else { return }
-        if let invitation = publication.dashboard.competitions.first(where: { $0.id == id }),
-           case let .pending(_, _, expiresAt) = invitation.lifecycle,
-           expiresAt.map({ $0 > publication.evaluatedAt }) ?? true {
+        if let invitation = publication.dashboard.competitions.first(where: { $0.id == id }) {
+            if case let .pending(_, _, expiresAt) = invitation.lifecycle,
+               expiresAt.map({ $0 > publication.evaluatedAt }) ?? true {
+                return
+            }
+        } else if !publication.dashboard.issues.isEmpty {
+            // A partial/failed discovery is not evidence that the server retired this invitation.
             return
         }
         clearInviteCreation(state: &state)

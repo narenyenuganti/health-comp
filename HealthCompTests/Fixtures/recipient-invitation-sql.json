@@ -152,5 +152,297 @@
       "best_available_deadline": "2026-10-28T00:00:00+00:00",
       "scoring_policy_identity": "healthcomp.activity-score.v1"
     }
+  },
+  "rename_scheduled": {
+    "page": {
+      "changes": [
+        {
+          "kind": "participant_added",
+          "payload": {
+            "role": "creator",
+            "state": "accepted",
+            "profile_id": "99100000-0000-4000-8000-000000000001"
+          },
+          "entity_id": "99100000-0000-4000-8000-000000000001",
+          "server_seq": "1",
+          "occurred_at": "2026-10-19T08:09:56.722381+00:00"
+        },
+        {
+          "kind": "participant_added",
+          "payload": {
+            "role": "invitee",
+            "state": "pending",
+            "profile_id": "99100000-0000-4000-8000-000000000002"
+          },
+          "entity_id": "99100000-0000-4000-8000-000000000002",
+          "server_seq": "2",
+          "occurred_at": "2026-10-19T08:09:56.722381+00:00"
+        },
+        {
+          "kind": "profile_presentation_changed",
+          "payload": {
+            "profile_id": "99100000-0000-4000-8000-000000000002",
+            "display_name": "Fixture Renamed Recipient"
+          },
+          "entity_id": "99100000-0000-4000-8000-000000000002",
+          "server_seq": "3",
+          "occurred_at": "2026-10-19T08:09:56.844637+00:00"
+        },
+        {
+          "kind": "participant_state_changed",
+          "payload": {
+            "role": "invitee",
+            "state": "accepted",
+            "profile_id": "99100000-0000-4000-8000-000000000002"
+          },
+          "entity_id": "99100000-0000-4000-8000-000000000002",
+          "server_seq": "4",
+          "occurred_at": "2026-10-19T08:09:56.722381+00:00"
+        },
+        {
+          "kind": "competition_lifecycle_changed",
+          "payload": {
+            "lifecycle": "scheduled",
+            "start_day": "2026-10-20",
+            "time_zone_identifier": "UTC",
+            "best_available_deadline": "2026-10-28T00:00:00+00:00",
+            "scoring_policy_identity": "healthcomp.activity-score.v1"
+          },
+          "entity_id": "5fe4ce70-afad-4cae-99c0-25717718e2cc",
+          "server_seq": "5",
+          "occurred_at": "2026-10-19T08:09:56.844637+00:00"
+        }
+      ],
+      "has_more": false,
+      "competition_id": "5fe4ce70-afad-4cae-99c0-25717718e2cc",
+      "next_server_seq": "5",
+      "after_server_seq": "0",
+      "snapshot_server_seq": "5"
+    },
+    "descriptor": {
+      "id": "5fe4ce70-afad-4cae-99c0-25717718e2cc",
+      "lifecycle": "scheduled",
+      "start_day": "2026-10-20",
+      "participants": [
+        {
+          "role": "creator",
+          "state": "accepted",
+          "profile": {
+            "id": "99100000-0000-4000-8000-000000000001",
+            "display_name": "Fixture Sender"
+          },
+          "profile_id": "99100000-0000-4000-8000-000000000001"
+        },
+        {
+          "role": "invitee",
+          "state": "accepted",
+          "profile": {
+            "id": "99100000-0000-4000-8000-000000000002",
+            "display_name": "Fixture Renamed Recipient"
+          },
+          "profile_id": "99100000-0000-4000-8000-000000000002"
+        }
+      ],
+      "next_server_seq": 6,
+      "rematch_parent_id": null,
+      "creator_profile_id": "99100000-0000-4000-8000-000000000001",
+      "time_zone_identifier": "UTC",
+      "invitation_expires_at": "2026-10-20T08:09:56.751534+00:00",
+      "best_available_deadline": "2026-10-28T00:00:00+00:00",
+      "scoring_policy_identity": "healthcomp.activity-score.v1"
+    }
+  },
+  "rename_pending_full": {
+    "page": {
+      "changes": [
+        {
+          "kind": "participant_added",
+          "payload": {
+            "role": "creator",
+            "state": "accepted",
+            "profile_id": "99100000-0000-4000-8000-000000000001"
+          },
+          "entity_id": "99100000-0000-4000-8000-000000000001",
+          "server_seq": "1",
+          "occurred_at": "2026-10-19T08:09:56.722381+00:00"
+        },
+        {
+          "kind": "participant_added",
+          "payload": {
+            "role": "invitee",
+            "state": "pending",
+            "profile_id": "99100000-0000-4000-8000-000000000002"
+          },
+          "entity_id": "99100000-0000-4000-8000-000000000002",
+          "server_seq": "2",
+          "occurred_at": "2026-10-19T08:09:56.722381+00:00"
+        },
+        {
+          "kind": "profile_presentation_changed",
+          "payload": {
+            "profile_id": "99100000-0000-4000-8000-000000000002",
+            "display_name": "Fixture Renamed Recipient"
+          },
+          "entity_id": "99100000-0000-4000-8000-000000000002",
+          "server_seq": "3",
+          "occurred_at": "2026-10-19T08:09:56.844637+00:00"
+        }
+      ],
+      "has_more": false,
+      "competition_id": "5fe4ce70-afad-4cae-99c0-25717718e2cc",
+      "next_server_seq": "3",
+      "after_server_seq": "0",
+      "snapshot_server_seq": "3"
+    },
+    "descriptor": {
+      "id": "5fe4ce70-afad-4cae-99c0-25717718e2cc",
+      "lifecycle": "pending",
+      "start_day": null,
+      "participants": [
+        {
+          "role": "creator",
+          "state": "accepted",
+          "profile": {
+            "id": "99100000-0000-4000-8000-000000000001",
+            "display_name": "Fixture Sender"
+          },
+          "profile_id": "99100000-0000-4000-8000-000000000001"
+        },
+        {
+          "role": "invitee",
+          "state": "pending",
+          "profile": {
+            "id": "99100000-0000-4000-8000-000000000002",
+            "display_name": "Fixture Renamed Recipient"
+          },
+          "profile_id": "99100000-0000-4000-8000-000000000002"
+        }
+      ],
+      "next_server_seq": 4,
+      "rematch_parent_id": null,
+      "creator_profile_id": "99100000-0000-4000-8000-000000000001",
+      "time_zone_identifier": "UTC",
+      "invitation_expires_at": "2026-10-20T08:09:56.751534+00:00",
+      "best_available_deadline": null,
+      "scoring_policy_identity": "healthcomp.activity-score.v1"
+    }
+  },
+  "rename_pending_initial": {
+    "page": {
+      "changes": [
+        {
+          "kind": "participant_added",
+          "payload": {
+            "role": "creator",
+            "state": "accepted",
+            "profile_id": "99100000-0000-4000-8000-000000000001"
+          },
+          "entity_id": "99100000-0000-4000-8000-000000000001",
+          "server_seq": "1",
+          "occurred_at": "2026-10-19T08:09:56.722381+00:00"
+        },
+        {
+          "kind": "participant_added",
+          "payload": {
+            "role": "invitee",
+            "state": "pending",
+            "profile_id": "99100000-0000-4000-8000-000000000002"
+          },
+          "entity_id": "99100000-0000-4000-8000-000000000002",
+          "server_seq": "2",
+          "occurred_at": "2026-10-19T08:09:56.722381+00:00"
+        }
+      ],
+      "has_more": false,
+      "competition_id": "5fe4ce70-afad-4cae-99c0-25717718e2cc",
+      "next_server_seq": "2",
+      "after_server_seq": "0",
+      "snapshot_server_seq": "2"
+    },
+    "descriptor": {
+      "id": "5fe4ce70-afad-4cae-99c0-25717718e2cc",
+      "lifecycle": "pending",
+      "start_day": null,
+      "participants": [
+        {
+          "role": "creator",
+          "state": "accepted",
+          "profile": {
+            "id": "99100000-0000-4000-8000-000000000001",
+            "display_name": "Fixture Sender"
+          },
+          "profile_id": "99100000-0000-4000-8000-000000000001"
+        },
+        {
+          "role": "invitee",
+          "state": "pending",
+          "profile": {
+            "id": "99100000-0000-4000-8000-000000000002",
+            "display_name": "Fixture Recipient"
+          },
+          "profile_id": "99100000-0000-4000-8000-000000000002"
+        }
+      ],
+      "next_server_seq": 3,
+      "rematch_parent_id": null,
+      "creator_profile_id": "99100000-0000-4000-8000-000000000001",
+      "time_zone_identifier": "UTC",
+      "invitation_expires_at": "2026-10-20T08:09:56.751534+00:00",
+      "best_available_deadline": null,
+      "scoring_policy_identity": "healthcomp.activity-score.v1"
+    }
+  },
+  "rename_pending_incremental": {
+    "page": {
+      "changes": [
+        {
+          "kind": "profile_presentation_changed",
+          "payload": {
+            "profile_id": "99100000-0000-4000-8000-000000000002",
+            "display_name": "Fixture Renamed Recipient"
+          },
+          "entity_id": "99100000-0000-4000-8000-000000000002",
+          "server_seq": "3",
+          "occurred_at": "2026-10-19T08:09:56.844637+00:00"
+        }
+      ],
+      "has_more": false,
+      "competition_id": "5fe4ce70-afad-4cae-99c0-25717718e2cc",
+      "next_server_seq": "3",
+      "after_server_seq": "2",
+      "snapshot_server_seq": "3"
+    },
+    "descriptor": {
+      "id": "5fe4ce70-afad-4cae-99c0-25717718e2cc",
+      "lifecycle": "pending",
+      "start_day": null,
+      "participants": [
+        {
+          "role": "creator",
+          "state": "accepted",
+          "profile": {
+            "id": "99100000-0000-4000-8000-000000000001",
+            "display_name": "Fixture Sender"
+          },
+          "profile_id": "99100000-0000-4000-8000-000000000001"
+        },
+        {
+          "role": "invitee",
+          "state": "pending",
+          "profile": {
+            "id": "99100000-0000-4000-8000-000000000002",
+            "display_name": "Fixture Renamed Recipient"
+          },
+          "profile_id": "99100000-0000-4000-8000-000000000002"
+        }
+      ],
+      "next_server_seq": 4,
+      "rematch_parent_id": null,
+      "creator_profile_id": "99100000-0000-4000-8000-000000000001",
+      "time_zone_identifier": "UTC",
+      "invitation_expires_at": "2026-10-20T08:09:56.751534+00:00",
+      "best_available_deadline": null,
+      "scoring_policy_identity": "healthcomp.activity-score.v1"
+    }
   }
 }

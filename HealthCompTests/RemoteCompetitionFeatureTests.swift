@@ -117,6 +117,36 @@ final class RemoteCompetitionFeatureTests: XCTestCase {
         XCTAssertEqual(recorder.requestCount, 1)
         await store.finish()
     }
+
+    @MainActor
+    func testFailedDiscoveryAfterSuccessfulCreationPreservesShareLinkAndRetryKey() async throws {
+        let id = CompetitionID(UUID())
+        let key = UUID()
+        let token = try XCTUnwrap(CompetitionInviteClaimToken(rawValue: String(repeating: "C", count: 43)))
+        let link = try XCTUnwrap(CompetitionInviteShareLink(host: "invites.healthcomp.example", token: token))
+        for issue in [CompetitionClientIssue.remoteUnavailable, .storageUnavailable, .competitionFailures([id])] {
+            let failed = CompetitionPublication.remote(revision: 4, issues: [issue])
+            let store = TestStore(initialState: CompetitionFeature.State(
+                publication: failed, inviteCreationStatus: .creating,
+                inviteCreationIdempotencyKey: key, inviteRecipient: Self.recipient
+            )) { CompetitionFeature() }
+            await store.send(.createInviteResponse(idempotencyKey: key, .success(link: link, competitionID: id, expectedRevision: 4))) {
+                $0.inviteCreationStatus = .ready
+                $0.createdInviteLink = link
+                $0.createdInviteCompetitionID = id
+                $0.createdInviteExpectedPublicationRevision = 4
+            }
+            await store.send(.publication(.remote(revision: 5))) {
+                $0.publication = .remote(revision: 5)
+                $0.inviteCreationStatus = .idle
+                $0.inviteCreationIdempotencyKey = nil
+                $0.createdInviteLink = nil
+                $0.createdInviteCompetitionID = nil
+                $0.createdInviteExpectedPublicationRevision = 0
+            }
+            await store.finish()
+        }
+    }
     @MainActor
     func testStopClearsInviteCreationStateAndShareLink() async throws {
         let idempotencyKey = UUID(
@@ -503,13 +533,13 @@ final class RemoteCompetitionFeatureTests: XCTestCase {
 }
 
 private extension CompetitionPublication {
-    static func remote(revision: UInt64, competitions: [CompetitionPresentation] = []) -> Self {
+    static func remote(revision: UInt64, competitions: [CompetitionPresentation] = [], issues: [CompetitionClientIssue] = []) -> Self {
         Self(
             publicationRevision: revision,
             dashboard: CompetitionDashboard(
                 competitions: competitions,
                 awards: [],
-                issues: [],
+                issues: issues,
                 hiddenTerminalCompetitionCount: 0
             ),
             source: .remoteParticipants
