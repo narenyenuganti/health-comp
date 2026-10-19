@@ -97,3 +97,4 @@
 3. Run credential-pattern scan and `git diff --check`.
 4. Stage exactly Task 10 files and run independent CodeRabbit review; fix findings test-first and rerun affected gates.
 5. Commit `feat(auth): add Sign in with Apple sessions`, push a purpose-named branch, merge through a guarded PR without squashing the logical commit, and verify local/origin main alignment.
+
