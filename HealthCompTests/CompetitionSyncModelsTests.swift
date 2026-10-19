@@ -201,6 +201,7 @@ final class CompetitionSyncModelsTests: XCTestCase {
 
     func testInviteAndClaimContractsAreExactAndCapabilityMinimal() throws {
         let createRequest = try CompetitionInviteCreationRequest(
+            recipientProfileID: participantBID,
             timeZoneIdentifier: "America/Los_Angeles",
             rematchParentID: nil,
             idempotencyKey: idempotencyID
@@ -216,6 +217,7 @@ final class CompetitionSyncModelsTests: XCTestCase {
                 "timeZoneIdentifier": "America/Los_Angeles",
                 "rematchParentId": NSNull(),
                 "idempotencyKey": idempotencyID.uuidString.lowercased(),
+                "recipientProfileId": participantBID.uuidString.lowercased(),
             ] as NSDictionary
         )
 

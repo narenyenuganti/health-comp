@@ -8,6 +8,10 @@ struct CompetitionSharingView: View {
     let publication: LocalCompetitionPublication
     let inviteCreationStatus: CompetitionFeature.InviteCreationStatus
     let createdInviteLink: CompetitionInviteShareLink?
+    @Binding var recipientCode: String
+    let recipient: AuthenticatedProfile?
+    let recipientStatus: CompetitionFeature.InviteRecipientStatus
+    let findRecipient: () -> Void
     let createInvite: () -> Void
     /// Set by the host's + button and by the empty state.
     @Binding var isChallengePresented: Bool
@@ -61,6 +65,10 @@ struct CompetitionSharingView: View {
                 status: inviteCreationStatus,
                 shareLink: createdInviteLink,
                 timeZoneIdentifier: publication.timeZoneIdentifier,
+                recipientCode: $recipientCode,
+                recipient: recipient,
+                recipientStatus: recipientStatus,
+                findRecipient: findRecipient,
                 create: createInvite
             )
         }

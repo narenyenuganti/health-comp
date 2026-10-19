@@ -124,6 +124,9 @@ extension CompetitionClient {
             },
             claimInvite: { request in
                 try await coordinator.claimInvite(request)
+            },
+            resolveInviteRecipient: { profileID in
+                try await coordinator.resolveInviteRecipient(profileID)
             }
         )
     }
@@ -772,6 +775,16 @@ private actor RemoteCompetitionClientCoordinator {
             evaluatedAt: latestPublication.evaluatedAt,
             timeZoneIdentifier: latestPublication.timeZoneIdentifier
         )
+    }
+
+    func resolveInviteRecipient(_ profileID: UUID) async throws -> AuthenticatedProfile {
+        try await withCancellableOperationGate {
+            guard terminalTeardown == nil else {
+                throw EnvironmentSignalOwnershipError.activeOwnerNotRetired
+            }
+            guard runtime != nil else { throw CompetitionRemoteFailure.unauthenticated }
+            return try await remoteAPI.resolveInviteRecipient(profileID)
+        }
     }
 
     func createInvite(

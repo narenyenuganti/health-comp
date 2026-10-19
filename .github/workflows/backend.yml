@@ -51,6 +51,7 @@ jobs:
           bash scripts/test-recovery-state-acceptance.sh --static
           bash -n scripts/test-deletion-client-migration.sh
           bash -n scripts/test-deleted-profile-history-migration.sh
+          bash -n scripts/test-invitation-recipient-migration.sh
           sh scripts/test-verify-invitation-functions.sh
           sh scripts/test-staging-adversarial-sql.sh
           sh scripts/test-verify-app-attest-dependency-graph.sh
@@ -99,6 +100,8 @@ jobs:
           bash scripts/test-deleted-profile-history-migration.sh
           supabase db reset --local --version 20260913001400
           bash scripts/test-retired-installation-token-migration.sh
+          supabase db reset --local --version 20261002001700
+          bash scripts/test-invitation-recipient-migration.sh
           supabase db reset
           supabase test db
 

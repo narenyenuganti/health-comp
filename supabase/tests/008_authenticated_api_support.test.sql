@@ -105,6 +105,7 @@ create temporary table profile_api_results (
   payload jsonb not null
 );
 grant select, insert, update on profile_api_results to authenticated;
+grant select on profile_api_results to service_role;
 
 set local role anon;
 select set_config('request.jwt.claims', '{"role":"anon"}', true);
@@ -395,7 +396,7 @@ select col_default_is(
 select has_function(
   'public',
   'create_competition_invite',
-  array['bytea', 'text', 'uuid', 'uuid', 'uuid', 'smallint'],
+  array['bytea', 'text', 'uuid', 'uuid', 'uuid', 'smallint', 'uuid'],
   'idempotent service create RPC exists'
 );
 select ok(coalesce((
@@ -415,7 +416,7 @@ select ok(coalesce((
   join pg_namespace schema_row on schema_row.oid = procedure_row.pronamespace
   where schema_row.nspname = 'public'
     and procedure_row.proname = 'create_competition_invite'
-    and procedure_row.proargtypes = '17 25 2950 2950 2950 21'::oidvector
+    and procedure_row.proargtypes = '17 25 2950 2950 2950 21 2950'::oidvector
 ), false), 'only service_role may execute idempotent invite creation');
 
 insert into auth.users (
@@ -448,7 +449,7 @@ select lives_ok(
     select 'first', public.create_competition_invite(
       decode(repeat('41', 32), 'hex'), 'America/Los_Angeles', null,
       '81000000-0000-0000-0000-000000000001',
-      '84000000-0000-4000-8000-000000000001', 1::smallint
+      '84000000-0000-4000-8000-000000000001', 1::smallint, '82000000-0000-0000-0000-000000000003'
     )$$,
   'first idempotent invite creation succeeds'
 );
@@ -457,7 +458,7 @@ select lives_ok(
     select 'retry', public.create_competition_invite(
       decode(repeat('41', 32), 'hex'), 'America/Los_Angeles', null,
       '81000000-0000-0000-0000-000000000001',
-      '84000000-0000-4000-8000-000000000001', 1::smallint
+      '84000000-0000-4000-8000-000000000001', 1::smallint, '82000000-0000-0000-0000-000000000003'
     )$$,
   'exact invite creation retry succeeds'
 );
@@ -497,7 +498,7 @@ select throws_ok(
   $$select public.create_competition_invite(
     decode(repeat('42', 32), 'hex'), 'America/Los_Angeles', null,
     '81000000-0000-0000-0000-000000000001',
-    '84000000-0000-4000-8000-000000000001', 1::smallint
+    '84000000-0000-4000-8000-000000000001', 1::smallint, '82000000-0000-0000-0000-000000000003'
   )$$,
   'P0001', 'idempotency_conflict',
   'same creator and key reject a divergent token digest'
@@ -506,7 +507,7 @@ select throws_ok(
   $$select public.create_competition_invite(
     decode(repeat('41', 32), 'hex'), 'UTC', null,
     '81000000-0000-0000-0000-000000000001',
-    '84000000-0000-4000-8000-000000000001', 1::smallint
+    '84000000-0000-4000-8000-000000000001', 1::smallint, '82000000-0000-0000-0000-000000000003'
   )$$,
   'P0001', 'idempotency_conflict',
   'same creator and key reject divergent request semantics'
@@ -515,7 +516,7 @@ select throws_ok(
   $$select public.create_competition_invite(
     decode(repeat('43', 32), 'hex'), 'UTC', null,
     '81000000-0000-0000-0000-000000000001',
-    '84000000-0000-4000-8000-000000000002', 0::smallint
+    '84000000-0000-4000-8000-000000000002', 0::smallint, '82000000-0000-0000-0000-000000000002'
   )$$,
   '22023', 'invalid_token_derivation_version',
   'new idempotent creation accepts only derivation version one'
@@ -525,7 +526,8 @@ select lives_ok(
     select 'other-creator', public.create_competition_invite(
       decode(repeat('44', 32), 'hex'), 'UTC', null,
       '81000000-0000-0000-0000-000000000003',
-      '84000000-0000-4000-8000-000000000001', 1::smallint
+      '84000000-0000-4000-8000-000000000001', 1::smallint,
+      (select (payload->>'id')::uuid from profile_api_results where name = 'bootstrap')
     )$$,
   'another creator may independently use the same UUID key'
 );
@@ -971,7 +973,7 @@ select throws_ok(
 select throws_ok(
   $$select public.fetch_competition_changes(
     (select competition_id from idempotent_claim_results where name = 'first'),
-    5, 100
+    6, 100
   )$$,
   '22023', 'cursor_ahead', 'cursor ahead of the frozen snapshot is rejected'
 );
@@ -1010,7 +1012,7 @@ select is((
 ]::text[], 'change page has an exact closed top-level key set');
 select ok((
   select payload->>'after_server_seq' = '0'
-    and payload->>'snapshot_server_seq' = '4'
+    and payload->>'snapshot_server_seq' = '5'
     and payload->>'next_server_seq' = '2'
     and payload->'has_more' = 'true'::jsonb
     and jsonb_array_length(payload->'changes') = 2
@@ -1018,7 +1020,7 @@ select ok((
     and jsonb_typeof(payload->'snapshot_server_seq') = 'string'
     and jsonb_typeof(payload->'next_server_seq') = 'string'
   from change_feed_results where name = 'first-page'
-), 'first page freezes snapshot four and decimal-string encodes cursors');
+), 'first page freezes snapshot five and decimal-string encodes cursors');
 select is((
   select array_agg(key order by key)
   from change_feed_results result_row,
@@ -1059,12 +1061,12 @@ select lives_ok(
 reset role;
 select ok((
   select payload->>'after_server_seq' = '2'
-    and payload->>'snapshot_server_seq' = '4'
-    and payload->>'next_server_seq' = '4'
+    and payload->>'snapshot_server_seq' = '5'
+    and payload->>'next_server_seq' = '5'
     and payload->'has_more' = 'false'::jsonb
     and (select array_agg(change_row->>'kind' order by change_row->>'server_seq')
          from jsonb_array_elements(payload->'changes') change_row)
-      = array['competition_lifecycle_changed', 'profile_presentation_changed']::text[]
+      = array['participant_state_changed', 'competition_lifecycle_changed', 'profile_presentation_changed']::text[]
   from change_feed_results where name = 'second-page'
 ), 'second page returns contiguous lifecycle then profile changes');
 select is((
@@ -1100,7 +1102,7 @@ select lives_ok(
   $$insert into change_feed_results (name, payload)
     select 'retried-profile-event', public.fetch_competition_changes(
       (select competition_id from idempotent_claim_results where name = 'first'),
-      3, 1
+      4, 1
     )$$,
   'counterpart can retry the exact earlier profile event after a later update'
 );
@@ -1115,7 +1117,7 @@ select is((
   from change_feed_results original_result,
        lateral jsonb_array_elements(original_result.payload->'changes') original_change
   where original_result.name = 'second-page'
-    and original_change->>'server_seq' = '4'
+    and original_change->>'server_seq' = '5'
 ), 'an exact retry returns sequence-bound profile presentation payload bytes');
 
 set local role authenticated;

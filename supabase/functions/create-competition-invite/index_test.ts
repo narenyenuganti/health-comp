@@ -18,6 +18,39 @@ function request(body: unknown, authorization = "Bearer test-jwt"): Request {
   });
 }
 
+Deno.test("create requires a chosen existing recipient before issuing a private link", async () => {
+  const response = await createCompetitionInviteHandler(
+    request({
+      timeZoneIdentifier: "UTC",
+      idempotencyKey: "84000000-0000-4000-8000-000000000001",
+    }),
+    {
+      createUserClient: () => ({
+        auth: {
+          getUser: () =>
+            Promise.resolve({
+              data: { user: { id: "41000000-0000-4000-8000-000000000001" } },
+              error: null,
+            }),
+        },
+        rpc: () => Promise.resolve({ data: null, error: null }),
+      }),
+      createServiceClient: () => ({
+        auth: { getUser: () => Promise.reject(new Error("not used")) },
+        rpc: () =>
+          Promise.resolve({
+            data: "20000000-0000-4000-8000-000000000001",
+            error: null,
+          }),
+      }),
+      deriveToken: () => Promise.resolve(new Uint8Array(32)),
+    },
+  );
+
+  assertEquals(response.status, 400);
+  assertEquals((await response.json()).error.code, "invalid_request");
+});
+
 Deno.test("create deterministically derives one token and sends only its digest and recovery metadata to the RPC", async () => {
   const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
   let userRpcCalled = false;
@@ -57,6 +90,7 @@ Deno.test("create deterministically derives one token and sends only its digest 
     request({
       timeZoneIdentifier: "America/Los_Angeles",
       idempotencyKey,
+      recipientProfileId: "42000000-0000-4000-8000-000000000002",
     }),
     {
       createUserClient: () => userClient,
@@ -86,6 +120,10 @@ Deno.test("create deterministically derives one token and sends only its digest 
   assertEquals(calls[0].args.creation_idempotency_key, idempotencyKey);
   assertEquals(calls[0].args.token_derivation_version, 1);
   assertEquals(
+    calls[0].args.recipient_profile_id,
+    "42000000-0000-4000-8000-000000000002",
+  );
+  assertEquals(
     calls[0].args.token_digest,
     "\\x" + Array.from(
       new Uint8Array(await crypto.subtle.digest("SHA-256", derivedBytes)),
@@ -106,6 +144,7 @@ Deno.test("create verifies the bearer user before calling the RPC", async () => 
     request({
       timeZoneIdentifier: "UTC",
       idempotencyKey: "84000000-0000-4000-8000-000000000001",
+      recipientProfileId: "42000000-0000-4000-8000-000000000002",
     }, "Bearer invalid"),
     {
       createUserClient: () => ({
@@ -153,14 +192,25 @@ Deno.test("create rejects malformed JSON and invalid request fields without deri
     request({
       timeZoneIdentifier: "UTC",
       idempotencyKey: "84000000-0000-4000-8000-000000000001",
+      recipientProfileId: "not-a-uuid",
+    }),
+    request({
+      timeZoneIdentifier: "UTC",
+      idempotencyKey: "84000000-0000-4000-8000-000000000001",
+      recipientProfileId: "42000000-0000-4000-8000-000000000002",
       extra: true,
     }),
     request({
       timeZoneIdentifier: "UTC",
       idempotencyKey: "84000000-0000-4000-8000-000000000001",
+      recipientProfileId: "42000000-0000-4000-8000-000000000002",
       rematchParentId: "not-a-uuid",
     }),
-    request({ timeZoneIdentifier: "UTC", idempotencyKey: "not-a-uuid" }),
+    request({
+      timeZoneIdentifier: "UTC",
+      idempotencyKey: "not-a-uuid",
+      recipientProfileId: "42000000-0000-4000-8000-000000000002",
+    }),
     new Request("http://localhost/create-competition-invite", {
       method: "POST",
       headers: {
@@ -216,6 +266,7 @@ Deno.test("create returns typed database errors without exposing database detail
     request({
       timeZoneIdentifier: "Not/A_Time_Zone",
       idempotencyKey: "84000000-0000-4000-8000-000000000001",
+      recipientProfileId: "42000000-0000-4000-8000-000000000002",
     }),
     {
       createUserClient: () => ({
@@ -260,6 +311,7 @@ Deno.test("create maps divergent idempotency reuse without database details", as
     request({
       timeZoneIdentifier: "UTC",
       idempotencyKey: "84000000-0000-4000-8000-000000000001",
+      recipientProfileId: "42000000-0000-4000-8000-000000000002",
     }),
     {
       createUserClient: () => ({
@@ -295,4 +347,52 @@ Deno.test("create maps divergent idempotency reuse without database details", as
       message: "Invitation request conflicts with an earlier request",
     },
   });
+});
+
+Deno.test("create reports an existing pending invitation and an unavailable recipient safely", async () => {
+  for (
+    const [code, status, message] of [
+      [
+        "pending_invitation_exists",
+        409,
+        "An invitation to this account is already pending",
+      ],
+      ["recipient_unavailable", 404, "Recipient unavailable"],
+    ] as const
+  ) {
+    const response = await createCompetitionInviteHandler(
+      request({
+        timeZoneIdentifier: "UTC",
+        idempotencyKey: "84000000-0000-4000-8000-000000000001",
+        recipientProfileId: "42000000-0000-4000-8000-000000000002",
+      }),
+      {
+        createUserClient: () => ({
+          auth: {
+            getUser: () =>
+              Promise.resolve({
+                data: { user: { id: "41000000-0000-4000-8000-000000000001" } },
+                error: null,
+              }),
+          },
+          rpc: () => Promise.reject(new Error("not used")),
+        }),
+        createServiceClient: () => ({
+          auth: { getUser: () => Promise.reject(new Error("not used")) },
+          rpc: () =>
+            Promise.resolve({
+              data: null,
+              error: {
+                message: code,
+                code: "P0001",
+                details: "private database detail",
+              },
+            }),
+        }),
+        deriveToken: () => Promise.resolve(new Uint8Array(32)),
+      },
+    );
+    assertEquals(response.status, status);
+    assertEquals(await response.json(), { error: { code, message } });
+  }
 });

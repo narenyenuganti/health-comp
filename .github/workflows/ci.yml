@@ -122,6 +122,7 @@ jobs:
             -derivedDataPath "$RUNNER_TEMP/HealthComp-DerivedData" \
             -only-testing:HealthCompTests \
             -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testCopyCustomSchemeInvitationIncludesTheCompleteLink \
+            -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testCreatingInvitationRequiresConfirmingAnExistingAccount \
             -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testCopyCustomSchemeRematchIncludesTheCompleteLink \
             -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testAccountEditingAndPrivacyBoundariesRemainAccessible \
             -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testAccountDeletionFailureRemainsVisibleOnDeletionPage \

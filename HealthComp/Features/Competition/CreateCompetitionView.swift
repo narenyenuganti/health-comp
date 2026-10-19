@@ -6,10 +6,15 @@ struct CreateCompetitionView: View {
     let status: CompetitionFeature.InviteCreationStatus
     let shareLink: CompetitionInviteShareLink?
     let timeZoneIdentifier: String
+    @Binding var recipientCode: String
+    let recipient: AuthenticatedProfile?
+    let recipientStatus: CompetitionFeature.InviteRecipientStatus
+    let findRecipient: () -> Void
     let create: () -> Void
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @FocusState private var recipientCodeIsFocused: Bool
 
     var body: some View {
         // Accessibility sizes scroll the control with the text; pinned, they
@@ -18,6 +23,7 @@ struct CreateCompetitionView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 header
+                recipientSelection
                 CompetitionRulesCard(source: .remoteParticipants)
                 Text("Your competition calendar uses \(timeZoneIdentifier).")
                     .font(.caption)
@@ -35,8 +41,16 @@ struct CreateCompetitionView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .scrollBounceBehavior(.basedOnSize)
+        .scrollDismissesKeyboard(.interactively)
         .safeAreaInset(edge: .bottom) {
-            if pinsControl {
+            if recipientCodeIsFocused {
+                Button("Done") { recipientCodeIsFocused = false }
+                    .buttonStyle(SecondaryButtonStyle())
+                    .accessibilityIdentifier("competition.create.keyboard-done")
+                    .padding(.horizontal, 20)
+                    .padding(.vertical, 8)
+                    .background(Theme.ground)
+            } else if pinsControl {
                 control
                     .padding(.horizontal, 20)
                     .padding(.top, 12)
@@ -71,7 +85,7 @@ struct CreateCompetitionView: View {
                     .foregroundStyle(Theme.ink)
                     .accessibilityAddTraits(.isHeader)
                 Text(
-                    "Create a private, single-use link for a seven-day Activity competition."
+                    "Choose an existing HealthComp account. Only that account can accept your private link, which expires after 24 hours."
                 )
                 .font(.subheadline)
                 .foregroundStyle(Theme.secondary)
@@ -81,6 +95,51 @@ struct CreateCompetitionView: View {
             CompetitionDrawerCloseButton { dismiss() }
                 .accessibilityIdentifier("competition.create.done")
         }
+    }
+
+    private var recipientSelection: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("RECIPIENT")
+                .font(.themeLabel)
+                .foregroundStyle(Theme.secondary)
+            Text("Ask them to share their HealthComp account code from Account.")
+                .font(.subheadline)
+                .foregroundStyle(Theme.secondary)
+            TextField("HealthComp account code", text: $recipientCode, axis: .vertical)
+                .focused($recipientCodeIsFocused)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .font(.body.monospaced())
+                .lineLimit(3, reservesSpace: true)
+                .padding(12)
+                .background(Theme.control, in: RoundedRectangle(cornerRadius: 10))
+                .disabled(status == .creating)
+                .accessibilityIdentifier("competition.create.recipient-code")
+            Button("Find Account") {
+                recipientCodeIsFocused = false
+                findRecipient()
+            }
+                .buttonStyle(SecondaryButtonStyle())
+                .disabled(status == .creating || recipientStatus == .lookingUp)
+                .accessibilityIdentifier("competition.create.find-recipient")
+            if recipientStatus == .lookingUp {
+                ProgressView("Finding account…")
+            } else if recipientStatus == .unavailable {
+                Text("This account couldn’t be found. Check the code and connection, then try again.")
+                    .font(.callout)
+                    .foregroundStyle(Theme.secondary)
+            }
+            if let recipient {
+                Text("Invite \(recipient.displayName)")
+                    .font(.headline)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("competition.create.recipient-name")
+                Text("Confirm this is the person you intended before creating the invitation.")
+                    .font(.caption)
+                    .foregroundStyle(Theme.secondary)
+            }
+        }
+        .foregroundStyle(Theme.ink)
     }
 
     private var title: String {
@@ -125,7 +184,7 @@ struct CreateCompetitionView: View {
                     .accessibilityIdentifier("competition.create.share")
 
                     Label(
-                        "Waiting for someone to accept. The link works once.",
+                        "Waiting for \(recipient?.displayName ?? "the chosen account") to accept. Only that account can use this link, within 24 hours of creation.",
                         systemImage: "hourglass"
                     )
                     .font(.caption)
@@ -154,12 +213,19 @@ struct CreateCompetitionView: View {
             .font(.caption)
             .foregroundStyle(Theme.secondary)
             .accessibilityIdentifier("competition.create.configuration-error")
+
+        case .pendingInvitationExists:
+            Text("An invitation to this account is already pending. Check your outgoing invitations; it expires 24 hours after creation.")
+                .font(.callout)
+                .foregroundStyle(Theme.secondary)
+                .accessibilityIdentifier("competition.create.already-pending")
         }
     }
 
     private func createButton(title: String) -> some View {
         Button(title, action: create)
             .buttonStyle(PrimaryButtonStyle())
+            .disabled(recipient == nil || recipientStatus == .lookingUp)
             .accessibilityIdentifier("competition.create.button")
     }
 }

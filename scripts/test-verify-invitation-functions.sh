@@ -21,7 +21,7 @@ grep -Fq -- '--max-time 5' "$VERIFIER"
 grep -Fq -- '--request POST' "$VERIFIER"
 grep -Fq 'authorization: Bearer $ANON_KEY' "$VERIFIER"
 grep -Fq -- \
-  '--data '\''{"timeZoneIdentifier":"UTC","idempotencyKey":"84000000-0000-4000-8000-000000000001"}'\''' \
+  '--data '\''{"timeZoneIdentifier":"UTC","idempotencyKey":"84000000-0000-4000-8000-000000000001","recipientProfileId":"42000000-0000-4000-8000-000000000002"}'\''' \
   "$VERIFIER"
 grep -Fq 'if [ "$readiness_status" = "401" ] &&' "$VERIFIER"
 grep -Fq '"code":"unauthorized"' "$VERIFIER"

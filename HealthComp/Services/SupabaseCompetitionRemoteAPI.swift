@@ -290,6 +290,20 @@ enum SupabaseCompetitionRemoteAPI {
             },
             requestAccountDeletion: {
                 throw CompetitionRemoteFailure.accountDeletionUnavailable
+            },
+            resolveInviteRecipient: { profileID in
+                try validateUUID(profileID)
+                let response = try await send(
+                    .rpc(name: "resolve_invitation_recipient", parameters: try encode(
+                        ["profile_id": profileID.uuidString.lowercased()]
+                    )),
+                    transport: transport
+                )
+                let profile = try decode(AuthenticatedProfile.self, response.data, contract: .profile)
+                guard profile.id == profileID else {
+                    throw CompetitionRemoteFailure.serverContractMismatch
+                }
+                return profile
             }
         )
     }
@@ -431,6 +445,12 @@ enum SupabaseCompetitionRemoteAPI {
            let statusCode,
            (400...499).contains(statusCode) {
             return .inviteUnavailable
+        }
+        if identifiers.contains("recipient_unavailable") {
+            return .recipientUnavailable
+        }
+        if identifiers.contains("pending_invitation_exists") {
+            return .pendingInvitationExists
         }
         if !identifiers.isDisjoint(with: [
             "invite_unavailable",

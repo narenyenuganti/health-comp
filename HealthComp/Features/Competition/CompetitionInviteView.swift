@@ -39,24 +39,7 @@ struct CompetitionInviteView: View {
 
     // The mark, labeled: your ring bars against their single block.
     private var faceOff: some View {
-        VStack(spacing: 8) {
-            BrandMark().frame(width: 176)
-            ZStack {
-                Text("YOU")
-                    .foregroundStyle(Theme.you)
-                    .position(x: 176 * 0.33, y: 9)
-                Text(competition.opponentDisplayName.uppercased())
-                    .foregroundStyle(Theme.ink)
-                    .lineLimit(1)
-                    .frame(maxWidth: 88)
-                    .position(x: 176 * 0.71, y: 9)
-            }
-            .font(.themeLabel)
-            .tracking(1.4)
-            .frame(width: 176, height: 18)
-        }
-        .frame(maxWidth: .infinity)
-        .accessibilityHidden(true)
+        CompetitionInvitationFaceOff(opponentDisplayName: competition.opponentDisplayName)
     }
 
     private var invitationCopy: some View {
@@ -197,9 +180,37 @@ struct CompetitionInviteView: View {
     }
 
     private var directionBody: String {
-        direction == .incoming
-            ? "\(competition.opponentDisplayName) invited you to compare Activity points for seven days."
+        if direction == .incoming {
+            return "\(competition.opponentDisplayName) invited you to compare Activity points for seven days."
+        }
+        return source == .remoteParticipants
+            ? "Only this HealthComp account can accept. The invitation expires 24 hours after creation. Day 1 begins on the next competition calendar day after acceptance."
             : "Start when you are ready. Day 1 begins on the next competition calendar day."
+    }
+}
+
+struct CompetitionInvitationFaceOff: View {
+    let opponentDisplayName: String
+
+    var body: some View {
+        VStack(spacing: 8) {
+            BrandMark().frame(width: 176)
+            HStack(alignment: .top, spacing: 16) {
+                Text("YOU")
+                    .foregroundStyle(Theme.you)
+                    .frame(maxWidth: .infinity)
+                Text(opponentDisplayName.uppercased())
+                    .foregroundStyle(Theme.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity)
+            }
+            .font(.themeLabel)
+            .tracking(1.4)
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: 360)
+        }
+        .frame(maxWidth: .infinity)
+        .accessibilityHidden(true)
     }
 }
 

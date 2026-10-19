@@ -6,6 +6,21 @@ import XCTest
 
 final class CompetitionPresentationTests: XCTestCase {
     @MainActor
+    func testInvitationNamesGrowVerticallyInsteadOfTruncatingLongRecipients() {
+        for size in [DynamicTypeSize.large, .accessibility3] {
+            func height(_ name: String) -> CGFloat {
+                let host = UIHostingController(rootView:
+                    CompetitionInvitationFaceOff(opponentDisplayName: name)
+                        .environment(\.dynamicTypeSize, size)
+                )
+                host.loadViewIfNeeded()
+                return host.sizeThatFits(in: CGSize(width: 220, height: 2000)).height
+            }
+            XCTAssertGreaterThan(height("Alexandria Catherine Montgomery-Wellington"), height("Sam"),
+                "The complete recipient name needs additional lines at \(size), not an ellipsis.")
+        }
+    }
+    @MainActor
     func testFinalScoreLayoutReturnsFiniteSizesForEveryProposalShape() throws {
         let measurements = measureFinalScoreLayout()
         for proposal in FinalScoreLayoutProposal.allCases {

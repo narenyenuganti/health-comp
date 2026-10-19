@@ -13,10 +13,31 @@ final class MultiUserCompetitionUITests: XCTestCase {
         app = nil
     }
 
+    func testCreatingInvitationRequiresConfirmingAnExistingAccount() {
+        launch(.sharing)
+        defer { app.terminate() }
+        openChallengeDrawer()
+        let create = app.buttons["competition.create.button"]
+        XCTAssertTrue(create.waitForExistence(timeout: 3))
+        XCTAssertFalse(create.isEnabled)
+        chooseRecipient()
+        XCTAssertEqual(app.staticTexts["competition.create.recipient-name"].label, "Invite Sam")
+        scrollToElement(create)
+        XCTAssertTrue(create.isEnabled)
+        create.tap()
+        XCTAssertTrue(app.buttons["competition.create.share"].waitForExistence(timeout: 3))
+        XCTAssertFalse(app.staticTexts["Waiting for someone to accept. The link works once."].exists)
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "recipient-bound-invitation-confirmation"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+    }
+
     func testCopyCustomSchemeInvitationIncludesTheCompleteLink() throws {
         launch(.sharingCustomScheme)
         defer { app.terminate() }
         openChallengeDrawer()
+        chooseRecipient()
         let create = app.buttons["competition.create.button"]
         XCTAssertTrue(create.waitForExistence(timeout: 3))
         create.tap()
@@ -107,6 +128,7 @@ final class MultiUserCompetitionUITests: XCTestCase {
         ]
         XCTAssertTrue(timeZone.waitForExistence(timeout: 3))
 
+        chooseRecipient()
         let create = app.buttons["competition.create.button"]
         scrollToElement(create)
         create.tap()
@@ -513,6 +535,7 @@ final class MultiUserCompetitionUITests: XCTestCase {
             try assertNoPrivateFixtureContentIsSpoken()
 
             openChallengeDrawer()
+            chooseRecipient()
             let create = app.buttons["competition.create.button"]
             scrollToElement(create)
             XCTAssertTrue(create.isHittable)
@@ -606,6 +629,23 @@ final class MultiUserCompetitionUITests: XCTestCase {
             try assertNoPrivateFixtureContentIsSpoken()
             navigateBackToSharing()
         }
+    }
+
+    private func chooseRecipient() {
+        let field = app.textFields["competition.create.recipient-code"]
+        let multilineField = app.textViews["competition.create.recipient-code"]
+        let input = field.exists ? field : multilineField
+        scrollToElement(input)
+        input.tap()
+        input.typeText("a1000000-0000-4000-8000-000000000005")
+        let done = app.buttons["competition.create.keyboard-done"]
+        XCTAssertTrue(done.waitForExistence(timeout: 3))
+        done.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 3))
+        let find = app.buttons["competition.create.find-recipient"]
+        scrollToElement(find)
+        find.tap()
+        XCTAssertTrue(app.staticTexts["competition.create.recipient-name"].waitForExistence(timeout: 3))
     }
 
     func testRemoteCompetitionDynamicTypeRemainsReadable() throws {
@@ -987,8 +1027,12 @@ final class MultiUserCompetitionUITests: XCTestCase {
     private func scrollToElement(_ element: XCUIElement) {
         for _ in 0..<24 {
             if element.exists, element.isHittable { return }
+            // List is a CollectionView on iOS 18; keyboard dismissal can
+            // remove a transient ScrollView between coordinate lookups.
+            let collectionView = app.collectionViews.firstMatch
             let scrollView = app.scrollViews.firstMatch
-            let surface: XCUIElement = scrollView.exists ? scrollView : app
+            let surface: XCUIElement = collectionView.exists
+                ? collectionView : (scrollView.exists ? scrollView : app)
             let movesTowardEarlierContent = element.exists
                 && element.frame != .zero
                 && element.frame.midY < surface.frame.midY

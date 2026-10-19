@@ -61,6 +61,7 @@ function parseBody(value: unknown): {
   timeZoneIdentifier: string;
   rematchParentId: string | null;
   idempotencyKey: string;
+  recipientProfileId: string;
 } | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const body = value as Record<string, unknown>;
@@ -68,6 +69,7 @@ function parseBody(value: unknown): {
     "timeZoneIdentifier",
     "rematchParentId",
     "idempotencyKey",
+    "recipientProfileId",
   ]);
   if (Object.keys(body).some((key) => !allowedKeys.has(key))) return null;
   if (
@@ -80,12 +82,15 @@ function parseBody(value: unknown): {
   ) {
     return null;
   }
-  if (!isUuid(body.idempotencyKey)) return null;
+  if (!isUuid(body.idempotencyKey) || !isUuid(body.recipientProfileId)) {
+    return null;
+  }
   return {
     timeZoneIdentifier: body.timeZoneIdentifier,
     rematchParentId: (body.rematchParentId as string | null | undefined) ??
       null,
     idempotencyKey: body.idempotencyKey,
+    recipientProfileId: body.recipientProfileId,
   };
 }
 
@@ -137,9 +142,24 @@ export async function createCompetitionInviteHandler(
     creator_auth_user_id: authenticated.userId,
     creation_idempotency_key: body.idempotencyKey,
     token_derivation_version: 1,
+    recipient_profile_id: body.recipientProfileId,
   });
 
   if (error) {
+    if (error.message === "pending_invitation_exists") {
+      return errorResponse(
+        409,
+        "pending_invitation_exists",
+        "An invitation to this account is already pending",
+      );
+    }
+    if (error.message === "recipient_unavailable") {
+      return errorResponse(
+        404,
+        "recipient_unavailable",
+        "Recipient unavailable",
+      );
+    }
     if (error.message === "invalid_time_zone") {
       return errorResponse(400, "invalid_time_zone", "Invalid time zone");
     }

@@ -557,6 +557,11 @@ struct CompetitionResultView: View {
             )
             .font(.caption)
             .foregroundStyle(Theme.secondary)
+
+        case .pendingInvitationExists:
+            Text("An invitation to this account is already pending. It expires 24 hours after creation.")
+                .font(.callout)
+                .foregroundStyle(Theme.secondary)
         }
     }
 
