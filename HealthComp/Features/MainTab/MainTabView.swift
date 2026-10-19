@@ -68,6 +68,13 @@ struct MainTabView: View {
                             .inviteCreationRematchParentID == nil
                                 ? store.competition.createdInviteLink
                                 : nil,
+                        recipientCode: Binding(
+                            get: { store.competition.inviteRecipientCode },
+                            set: { store.send(.competition(.inviteRecipientCodeChanged($0))) }
+                        ),
+                        recipient: store.competition.inviteRecipient,
+                        recipientStatus: store.competition.inviteRecipientStatus,
+                        findRecipient: { store.send(.competition(.findInviteRecipientTapped)) },
                         createInvite: {
                             store.send(.competition(.createInviteTapped))
                         },

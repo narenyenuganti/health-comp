@@ -228,7 +228,8 @@ struct AppRootView: View {
                         accountStore: store.scope(
                             state: \.account,
                             action: \.account
-                        )
+                        ),
+                        accountCode: store.profile?.id
                     )
                 }
             }
@@ -263,6 +264,7 @@ private struct AppProgressView: View {
 private struct AuthenticatedRootView: View {
     let mainStore: StoreOf<MainTabFeature>
     let accountStore: StoreOf<AccountFeature>
+    let accountCode: UUID?
 
     @State private var isAccountPresented = false
 
@@ -275,6 +277,7 @@ private struct AuthenticatedRootView: View {
             AccountSheet(
                 mainStore: mainStore,
                 accountStore: accountStore,
+                accountCode: accountCode,
                 done: { isAccountPresented = false }
             )
         }
@@ -286,6 +289,7 @@ private struct AuthenticatedRootView: View {
 private struct AccountSheet: View {
     let mainStore: StoreOf<MainTabFeature>
     let accountStore: StoreOf<AccountFeature>
+    let accountCode: UUID?
     let done: () -> Void
 
     var body: some View {
@@ -300,7 +304,8 @@ private struct AccountSheet: View {
                     request: {
                         mainStore.send(.competition(.enableNotificationsTapped))
                     }
-                )
+                ),
+                accountCode: accountCode
             )
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {

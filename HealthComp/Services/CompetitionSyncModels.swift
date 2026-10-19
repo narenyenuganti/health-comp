@@ -977,28 +977,33 @@ struct CompetitionDescriptor: Codable, Equatable, Sendable {
 }
 
 struct CompetitionInviteCreationRequest: Codable, Equatable, Sendable {
+    let recipientProfileID: UUID
     let timeZoneIdentifier: String
     let rematchParentID: UUID?
     let idempotencyKey: UUID
 
     init(
+        recipientProfileID: UUID,
         timeZoneIdentifier: String,
         rematchParentID: UUID?,
         idempotencyKey: UUID
     ) throws {
-        guard !timeZoneIdentifier.isEmpty,
+        guard CompetitionWireValue.validUUID(recipientProfileID),
+              !timeZoneIdentifier.isEmpty,
               timeZoneIdentifier.count <= 255,
               rematchParentID.map(CompetitionWireValue.validUUID) ?? true,
               CompetitionWireValue.validUUID(idempotencyKey)
         else {
             throw CompetitionWireContractError.serverContractMismatch
         }
+        self.recipientProfileID = recipientProfileID
         self.timeZoneIdentifier = timeZoneIdentifier
         self.rematchParentID = rematchParentID
         self.idempotencyKey = idempotencyKey
     }
 
     private enum CodingKeys: String, CodingKey {
+        case recipientProfileID = "recipientProfileId"
         case timeZoneIdentifier
         case rematchParentID = "rematchParentId"
         case idempotencyKey
@@ -1007,6 +1012,7 @@ struct CompetitionInviteCreationRequest: Codable, Equatable, Sendable {
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         try self.init(
+            recipientProfileID: try container.wireUUID(forKey: .recipientProfileID),
             timeZoneIdentifier: try container.decode(
                 String.self,
                 forKey: .timeZoneIdentifier
@@ -1020,6 +1026,7 @@ struct CompetitionInviteCreationRequest: Codable, Equatable, Sendable {
 
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encodeWireUUID(recipientProfileID, forKey: .recipientProfileID)
         try container.encode(
             timeZoneIdentifier,
             forKey: .timeZoneIdentifier
@@ -3259,12 +3266,13 @@ private enum CompetitionWireValidator {
     private static func validateInviteCreationRequest(_ value: Any) throws {
         let object = try exactObject(
             value,
-            keys: ["idempotencyKey", "rematchParentId", "timeZoneIdentifier"]
+            keys: ["idempotencyKey", "rematchParentId", "timeZoneIdentifier", "recipientProfileId"]
         )
         guard let timeZone = object["timeZoneIdentifier"] as? String,
               !timeZone.isEmpty,
               timeZone.count <= 255,
               uuidOrNull(object["rematchParentId"]),
+              uuid(object["recipientProfileId"]),
               uuid(object["idempotencyKey"])
         else {
             throw CompetitionWireContractError.serverContractMismatch

@@ -265,40 +265,46 @@ insert into public.competitions (
   id, creator_profile_id, time_zone_identifier, start_day,
   scoring_policy_identity, lifecycle, invitation_expires_at,
   best_available_deadline, invite_creation_idempotency_key,
-  invite_token_derivation_version
+  invite_token_derivation_version, invited_profile_id
 ) values
   (
     'f1920000-0000-4000-8000-000000000001',
     'f1910000-0000-4000-8000-000000000001',
     'America/Los_Angeles', null,
-    'healthcomp.activity-score.v1', 'pending', now() + interval '2 days',
-    null, 'f1980000-0000-4000-8000-000000000001', 1
+    'healthcomp.activity-score.v1', 'pending', now() + interval '24 hours',
+    null, 'f1980000-0000-4000-8000-000000000001', 1,
+    'f1910000-0000-4000-8000-000000000002'
   ),
   (
     'f1920000-0000-4000-8000-000000000002',
     'f1910000-0000-4000-8000-000000000001',
     'UTC', current_date - 2,
     'healthcomp.activity-score.v1', 'active', now() - interval '3 days',
-    now() + interval '6 days', null, 0
+    now() + interval '6 days', null, 0, null
   ),
   (
     'f1920000-0000-4000-8000-000000000003',
     'f1910000-0000-4000-8000-000000000001',
     'UTC', current_date - 8,
     'healthcomp.activity-score.v1', 'completed', now() - interval '9 days',
-    now() - interval '1 day', null, 0
+    now() - interval '1 day', null, 0, null
   ),
   (
     'f1920000-0000-4000-8000-000000000004',
     'f1910000-0000-4000-8000-000000000003',
     'UTC', null,
-    'healthcomp.activity-score.v1', 'pending', now() + interval '2 days',
-    null, null, 0
+    'healthcomp.activity-score.v1', 'pending', now() + interval '24 hours',
+    null, null, 0, null
   );
 
 insert into public.competition_participants (
   competition_id, profile_id, role, state
 ) values
+  (
+    'f1920000-0000-4000-8000-000000000001',
+    'f1910000-0000-4000-8000-000000000002',
+    'invitee', 'pending'
+  ),
   (
     'f1920000-0000-4000-8000-000000000001',
     'f1910000-0000-4000-8000-000000000001',
@@ -336,7 +342,7 @@ insert into public.competition_invites (
   'f1930000-0000-4000-8000-000000000001',
   'f1920000-0000-4000-8000-000000000001',
   pg_catalog.decode(pg_catalog.repeat('91', 32), 'hex'),
-  now() + interval '2 days'
+  now() + interval '24 hours'
 );
 
 create function pg_temp.healthcomp_zero_window(

@@ -215,7 +215,7 @@ Deno.test({
     });
     const suffix = crypto.randomUUID();
     const password = `HealthComp-${crypto.randomUUID()}`;
-    const users: Array<{ id: string; jwt: string }> = [];
+    const users: Array<{ id: string; jwt: string; profileId: string }> = [];
 
     try {
       for (const name of ["creator", "claimant-a", "claimant-b"]) {
@@ -228,8 +228,9 @@ Deno.test({
         if (error || !data.user) {
           throw error ?? new Error("user creation failed");
         }
-        await sql`insert into public.profiles (auth_user_id, display_name, state)
-                values (${data.user.id}::uuid, ${name}, 'active')`;
+        const [profile] =
+          await sql`insert into public.profiles (auth_user_id, display_name, state)
+                values (${data.user.id}::uuid, ${name}, 'active') returning id`;
         const userClient = createClient(supabaseUrl, anonKey, {
           auth: { persistSession: false },
         });
@@ -238,7 +239,11 @@ Deno.test({
         if (sessionError || !sessionData.session) {
           throw sessionError ?? new Error("sign in failed");
         }
-        users.push({ id: data.user.id, jwt: sessionData.session.access_token });
+        users.push({
+          id: data.user.id,
+          jwt: sessionData.session.access_token,
+          profileId: profile.id,
+        });
       }
 
       const idempotencyKey = crypto.randomUUID();
@@ -252,6 +257,7 @@ Deno.test({
           body: JSON.stringify({
             timeZoneIdentifier: "Pacific/Kiritimati",
             idempotencyKey,
+            recipientProfileId: users[1].profileId,
           }),
         });
       const createResponses = await Promise.all([
@@ -279,6 +285,7 @@ Deno.test({
           body: JSON.stringify({
             timeZoneIdentifier: "UTC",
             idempotencyKey,
+            recipientProfileId: users[1].profileId,
           }),
         },
       );
@@ -314,7 +321,7 @@ Deno.test({
           })
         ),
       );
-      assertEquals(claimResponses.map((response) => response.status).sort(), [
+      assertEquals(claimResponses.map((response) => response.status), [
         200,
         404,
       ]);

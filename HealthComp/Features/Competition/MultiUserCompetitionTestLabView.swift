@@ -158,6 +158,9 @@ private struct MultiUserCompetitionSharingTestLabView: View {
     @State private var inviteStatus: CompetitionFeature.InviteCreationStatus =
         .idle
     @State private var inviteLink: CompetitionInviteShareLink?
+    @State private var recipientCode = ""
+    @State private var recipient: AuthenticatedProfile?
+    @State private var recipientStatus: CompetitionFeature.InviteRecipientStatus = .idle
     @State private var archivedIDs: Set<CompetitionID> = []
     @State private var rematchParentID: CompetitionID?
     @State private var rematchStatus: CompetitionFeature.InviteCreationStatus =
@@ -177,6 +180,27 @@ private struct MultiUserCompetitionSharingTestLabView: View {
                     publication: publication,
                     inviteCreationStatus: inviteStatus,
                     createdInviteLink: inviteLink,
+                    recipientCode: Binding(
+                        get: { recipientCode },
+                        set: {
+                            guard recipientCode != $0 else { return }
+                            recipientCode = $0
+                            recipient = nil
+                            recipientStatus = .idle
+                            inviteStatus = .idle
+                            inviteLink = nil
+                        }
+                    ),
+                    recipient: recipient,
+                    recipientStatus: recipientStatus,
+                    findRecipient: {
+                        if UUID(uuidString: recipientCode) == MultiUserCompetitionTestLabFixtures.pendingID.rawValue {
+                            recipient = AuthenticatedProfile(id: MultiUserCompetitionTestLabFixtures.pendingID.rawValue, displayName: "Sam")
+                            recipientStatus = .idle
+                        } else {
+                            recipientStatus = .unavailable
+                        }
+                    },
                     createInvite: createInvite,
                     isChallengePresented: $isChallengePresented,
                     selectCompetition: { path.append($0) },
@@ -273,6 +297,7 @@ private struct MultiUserCompetitionSharingTestLabView: View {
     }
 
     private func createInvite() {
+        guard recipient != nil else { return }
         inviteStatus = .ready
         inviteLink = MultiUserCompetitionTestLabFixtures.shareLink(
             byte: 0x51,
@@ -428,7 +453,7 @@ private struct MultiUserCompetitionAccountTestLabView: View {
             if store.mode == .signedOut {
                 AccountView(store: store)
             } else {
-                AccountSettingsView(store: store)
+                AccountSettingsView(store: store, accountCode: MultiUserCompetitionTestLabFixtures.pendingID.rawValue)
             }
         }
         .accessibilityIdentifier("multiuser.account.root")

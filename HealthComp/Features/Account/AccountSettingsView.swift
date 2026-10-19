@@ -18,6 +18,7 @@ struct AccountNotificationSettings {
 struct AccountSettingsView: View {
     let store: StoreOf<AccountFeature>
     var notifications: AccountNotificationSettings?
+    var accountCode: UUID?
 
     @AppStorage(AppAppearance.storageKey)
     private var appearance = AppAppearance.system
@@ -106,6 +107,24 @@ struct AccountSettingsView: View {
                     .font(.callout)
                     .foregroundStyle(Theme.ink)
                     .accessibilityIdentifier("account.message")
+            }
+            if let accountCode {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("HealthComp account code")
+                        .font(.headline)
+                    Text(accountCode.uuidString.lowercased())
+                        .font(.callout.monospaced())
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text("Share this code with someone you want to compete with. It lets them confirm your display name and invite only this account; it does not grant access to your competition history.")
+                        .font(.caption)
+                        .foregroundStyle(Theme.secondary)
+                    ShareLink(item: accountCode.uuidString.lowercased()) {
+                        Label("Share Account Code", systemImage: "square.and.arrow.up")
+                    }
+                    .frame(minHeight: 44)
+                    .accessibilityIdentifier("account.settings.share-account-code")
+                }
             }
         } header: {
             SectionLabel("PROFILE")

@@ -565,7 +565,7 @@ actor CompetitionSyncCoordinator {
         case .appAttestRejected, .appAttestContextUnavailable,
              .appAttestProofConflict:
             .appAttestRejectedTerminal
-        case .operationFailed:
+        case .operationFailed, .recipientUnavailable, .pendingInvitationExists:
             .operationFailed
         case .cancelled, .retryableTransport:
             .operationFailed
