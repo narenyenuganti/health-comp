@@ -61,7 +61,10 @@ create temporary table original_participants as select * from public.competition
 create temporary table original_scores as select * from public.daily_score_revisions;
 create temporary table original_results as select * from public.competition_results;
 create temporary table original_history as select * from public.competition_change_log;
+-- Match a real migration's default constraint mode, not fixture setup's override.
+set constraints all deferred;
 select :'recipient_migration' \gexec
+set constraints all immediate;
 do $$ begin
   if (select count(*) from public.daily_score_revisions) <> 1
     or (select count(*) from public.competition_results) <> 1
