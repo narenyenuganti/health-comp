@@ -120,7 +120,7 @@ create temporary table healthcomp_adversarial_assertions (
 ) on commit drop;
 
 grant select, insert on table pg_temp.healthcomp_adversarial_assertions
-  to anon, authenticated;
+  to anon, authenticated, service_role;
 
 create temporary table healthcomp_adversarial_values (
   bound_evaluated_at timestamptz not null,
@@ -503,6 +503,117 @@ where id = 'f1910000-0000-4000-8000-000000000004';
 
 delete from auth.users
 where id = 'f1900000-0000-4000-8000-000000000004';
+
+set local role service_role;
+set local request.jwt.claims = '{"role":"service_role"}';
+
+do $recipient_creation$
+declare
+  retried_competition uuid;
+  returned_state text;
+  returned_message text;
+begin
+  retried_competition := public.create_competition_invite(
+    pg_catalog.decode(pg_catalog.repeat('91', 32), 'hex'),
+    'America/Los_Angeles', null,
+    'f1900000-0000-4000-8000-000000000001',
+    'f1980000-0000-4000-8000-000000000001', 1::smallint,
+    'f1910000-0000-4000-8000-000000000002'
+  );
+  perform pg_temp.healthcomp_assert('recipient_creation_retry_is_idempotent',
+    retried_competition = 'f1920000-0000-4000-8000-000000000001'::uuid);
+
+  begin
+    perform public.create_competition_invite(
+      pg_catalog.decode(pg_catalog.repeat('95', 32), 'hex'),
+      'America/Los_Angeles', null,
+      'f1900000-0000-4000-8000-000000000001',
+      'f1980000-0000-4000-8000-000000000002', 1::smallint,
+      'f1910000-0000-4000-8000-000000000002'
+    );
+  exception
+    when others then
+      get stacked diagnostics
+        returned_state = returned_sqlstate,
+        returned_message = message_text;
+  end;
+  perform pg_temp.healthcomp_assert('duplicate_pending_recipient_is_denied',
+    returned_state = 'P0001' and returned_message = 'pending_invitation_exists');
+end;
+$recipient_creation$;
+
+reset role;
+
+select pg_temp.healthcomp_assert('recipient_invitation_expires_in_24_hours',
+  private.invitation_expiry_interval_v1() = interval '24 hours'
+  and (
+    select invitation_expires_at - created_at = interval '24 hours'
+    from public.competitions
+    where id = 'f1920000-0000-4000-8000-000000000001'
+  )
+  and (
+    select expires_at - created_at = interval '24 hours'
+    from public.competition_invites
+    where id = 'f1930000-0000-4000-8000-000000000001'
+  )
+);
+
+set local role authenticated;
+set local request.jwt.claims =
+  '{"sub":"f1900000-0000-4000-8000-000000000003","role":"authenticated"}';
+
+do $wrong_recipient$
+declare
+  returned_state text;
+  returned_message text;
+begin
+  begin
+    perform public.claim_competition_invite(
+      pg_catalog.decode(pg_catalog.repeat('91', 32), 'hex')
+    );
+  exception
+    when others then
+      get stacked diagnostics
+        returned_state = returned_sqlstate,
+        returned_message = message_text;
+  end;
+  perform pg_temp.healthcomp_assert('unconsumed_wrong_recipient_is_denied',
+    returned_state = 'P0001' and returned_message = 'invite_unavailable');
+end;
+$wrong_recipient$;
+
+reset role;
+
+do $expired_recipient$
+declare
+  returned_state text;
+  returned_message text;
+begin
+  -- One statement timestamp makes this an exact equality boundary, not a delay.
+  update public.competition_invites
+  set expires_at = pg_catalog.statement_timestamp()
+  where id = 'f1930000-0000-4000-8000-000000000001';
+  execute 'set local role authenticated';
+  perform pg_catalog.set_config('request.jwt.claims',
+    '{"sub":"f1900000-0000-4000-8000-000000000002","role":"authenticated"}', true);
+  begin
+    perform public.claim_competition_invite(
+      pg_catalog.decode(pg_catalog.repeat('91', 32), 'hex')
+    );
+  exception
+    when others then
+      get stacked diagnostics
+        returned_state = returned_sqlstate,
+        returned_message = message_text;
+  end;
+  execute 'reset role';
+  perform pg_temp.healthcomp_assert('recipient_claim_at_expiry_is_denied',
+    returned_state = 'P0001' and returned_message = 'invite_unavailable');
+  update public.competition_invites
+  set expires_at = created_at + interval '24 hours'
+  where id = 'f1930000-0000-4000-8000-000000000001';
+end;
+$expired_recipient$;
 
 set local role anon;
 set local request.jwt.claims = '{"role":"anon"}';
@@ -1246,7 +1357,7 @@ begin
   if (
     select pg_catalog.count(*)
     from pg_temp.healthcomp_adversarial_assertions
-  ) <> 15 then
+  ) <> 20 then
     raise exception 'healthcomp_staging_adversarial assertion matrix incomplete'
       using errcode = 'P0001';
   end if;
@@ -1369,9 +1480,9 @@ end;
 $zero_residue$;
 
 select pg_catalog.jsonb_build_object(
-  'verification', 'healthcomp_staging_adversarial_v1',
+  'verification', 'healthcomp_staging_adversarial_v2',
   'status', 'pass',
-  'assertionsPassed', 15,
+  'assertionsPassed', 20,
   'syntheticRowsRemaining', 0,
   'privateValuesReturned', false,
   'transactionOutcome', 'rolled_back'
