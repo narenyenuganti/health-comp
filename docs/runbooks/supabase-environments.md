@@ -557,9 +557,10 @@ valid-grant payload and score-content binding, cross-table score/attestation/
 award/installation isolation, score duplicate/regression contracts, result
 rewrites, stale deleted-profile access, and unregistered installations. The
 recipient checks also exercise same-request creation idempotence, duplicate
-pending-recipient denial, the 24-hour expiry contract, wrong-recipient denial
+pending-recipient denial, fresh RPC creation's 24-hour expiry, wrong-recipient denial
 before consumption, and recipient denial at the synthetic expiry boundary.
-Only the existing fixed synthetic invitation's expiry is moved and restored;
+Fresh synthetic creation is discarded in a subtransaction before the fixed-fixture
+checks. Only the existing fixed synthetic invitation's expiry is moved and restored;
 no real invitation or server clock is changed. These database checks do not
 qualify the Edge Function route or concurrent-client behavior. The
 script opens one transaction,

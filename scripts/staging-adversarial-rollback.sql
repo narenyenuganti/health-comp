@@ -544,19 +544,37 @@ $recipient_creation$;
 
 reset role;
 
-select pg_temp.healthcomp_assert('recipient_invitation_expires_in_24_hours',
-  private.invitation_expiry_interval_v1() = interval '24 hours'
-  and (
-    select invitation_expires_at - created_at = interval '24 hours'
-    from public.competitions
-    where id = 'f1920000-0000-4000-8000-000000000001'
-  )
-  and (
-    select expires_at - created_at = interval '24 hours'
-    from public.competition_invites
-    where id = 'f1930000-0000-4000-8000-000000000001'
-  )
-);
+do $recipient_expiry$
+declare
+  created_competition uuid;
+  expires_in_24_hours boolean;
+begin
+  begin
+    execute 'set local role service_role';
+    created_competition := public.create_competition_invite(
+      pg_catalog.decode(pg_catalog.repeat('95', 32), 'hex'),
+      'America/Los_Angeles', null,
+      'f1900000-0000-4000-8000-000000000001',
+      'f1980000-0000-4000-8000-000000000002', 1::smallint,
+      'f1910000-0000-4000-8000-000000000003'
+    );
+    execute 'reset role';
+    select c.invitation_expires_at - c.created_at = interval '24 hours'
+      and i.expires_at - i.created_at = interval '24 hours'
+      and c.invitation_expires_at = i.expires_at
+    into expires_in_24_hours
+    from public.competitions c
+    join public.competition_invites i on i.competition_id = c.id
+    where c.id = created_competition;
+    -- Discard the fresh RPC rows before the fixed-fixture isolation checks.
+    raise sqlstate 'ZX001';
+  exception
+    when sqlstate 'ZX001' then null;
+  end;
+  perform pg_temp.healthcomp_assert('recipient_invitation_expires_in_24_hours',
+    expires_in_24_hours and private.invitation_expiry_interval_v1() = interval '24 hours');
+end;
+$recipient_expiry$;
 
 set local role authenticated;
 set local request.jwt.claims =
