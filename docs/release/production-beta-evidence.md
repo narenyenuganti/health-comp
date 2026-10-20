@@ -14,9 +14,36 @@ and [recovery runbook](../runbooks/backup-restore.md#private-beta-deletion-test-
 preserve the deletion feature, existing automated coverage and privacy/history
 safeguards. Other gates and **not production-ready** status remain unchanged.
 
-## Current qualification checkpoint — October 19, 2026 UTC
+## Current qualification checkpoint — October 20, 2026 UTC
 
-The [current checklist](production-beta-checklist.md#current-qualification-checkpoint--october-19-2026-utc)
+The [current checklist](production-beta-checklist.md#current-qualification-checkpoint--october-20-2026-utc)
+selects merged `7839acb`, its completed exact-source Backend/iOS CI, current
+Staging package observations, four-asset scoring-source equality and the new
+narrow Apple delivery finding. It preserves all unclosed release gates and
+**not production-ready** status. Source, installation, hosted and physical
+findings remain separate; none supplies the missing stable-result or replay pass.
+
+Private operator receipts are retained outside this public repository:
+
+| Receipt | SHA-256 |
+| --- | --- |
+| `staging-physical-update-7839acb-20261020T034553Z.json` | `6d5f397849d067349a85da06cc7c0518a4b586e11dd6ed19cc595a5af4a01069` |
+| `staging-diagnostic-screen-simulator-update-2026-10-19.json` | `414f2bc2cb18d61249fd2d7cacebc28e66ed0a0fea60bba4d806fa67493059ed` |
+| `staging-scoring-source-drift-readback-2026-10-19.json` | `664f10ddb534c6da48a7968e9ea005a7e25b4f842836c408984550d8d9158277` |
+| `staging-existing-cycle-eligibility-2026-10-20.json` | `cb8f61d251bc66e808f72ed835f25215a04b817d5b3b7267e37cf1e65077dcfe` |
+| `staging-existing-apns-apple-readback-2026-10-20.json` | `ffd2a9fb4967737b2a641d9bbe596a979b853dacaa6ede05c4fa5136d1a14035` |
+
+Apple's four lookup results were one delivered and three expired after offline
+storage, with exact reference and Development-environment matches. This does not
+bind delivery to the current phone or prove tap routing. No replacement sends
+or repeat lookups were used to improve the count. No reference or token value
+is published. The private receipt documents limited initial identifier exposure
+in tool output and a transient token read in RAM; no claim of zero prior exposure,
+provider-history deletion or secure memory erasure is made.
+
+## Historical qualification checkpoint — October 19, 2026 UTC
+
+The [historical checklist](production-beta-checklist.md#historical-qualification-checkpoint--october-19-2026-utc)
 records exact-main `9f9fb5e` Backend/iOS CI, the integrated recipient invitation
 contract, the exact-tree PR #151 CI pass and current-schema local synthetic
 recovery qualification. It also

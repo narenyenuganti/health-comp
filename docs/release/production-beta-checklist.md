@@ -14,7 +14,60 @@ records the matching boundary. Actual recovery, protection against resurrecting
 deleted identities, and all other unwaived qualification gates remain open.
 This is a scope decision, not a runtime receipt or production-readiness claim.
 
-## Current qualification checkpoint — October 19, 2026 UTC
+## Current qualification checkpoint — October 20, 2026 UTC
+
+**Not production-ready.** These findings supersede the selected source and
+installation pointers below, not the limits of earlier observations.
+
+- **Automated source matrix:** exact merged main
+  `7839acb2d8eb875499f79961350f04da80a262ab` passed
+  [Backend CI](https://github.com/narenyenuganti/health-comp/actions/runs/39350919475)
+  and [iOS CI](https://github.com/narenyenuganti/health-comp/actions/runs/39350919239).
+  Completed job steps cover backend boundaries/migrations/functions, deterministic
+  project generation, Core Debug/Release, app/UI and release-style Staging tests,
+  privacy/diagnostic checks, and unsigned device configurations. No signed archive,
+  live scoring or production qualification is inferred from those checks.
+- **Current Staging packages:** the physical update succeeded without uninstalling;
+  one profile root and 27 profile-relative metadata entries were preserved.
+  File contents, the on-device executable hash and account authentication were not
+  reverified by that install. The Simulator's installed executable matched its
+  qualified `7839acb` package. Neither installation proves score acceptance. The
+  debugger reader remains disabled; the failed timed human Terminal/reference
+  workflow is retired, not a required beta workflow.
+- **Deployed scoring source:** four returned assets from ACTIVE Staging
+  `submit-score-revision` version 15 matched `7839acb` byte-for-byte, with selected
+  metadata unchanged around the download. No deployed lockfile was returned;
+  dependency-graph equality and successful score submission remain unproved.
+- **Existing backend notification delivery:** four existing result-notification
+  references were checked once each in Apple's Development delivery logs for the
+  Staging bundle. Every returned reference/environment matched. One event table
+  reported target-device delivery; three reported offline storage then expiry.
+  No new notification was sent. This is a narrow backend-recorded notification
+  delivery finding, not exact-current phone/installation binding or a full APNs
+  pass: foreground/background/terminated tap routing remains unqualified. The UI
+  lookup set was not an identifier-level join to the earlier aggregate inventory
+  or a pinned database snapshot.
+- **Scoring reproduction prerequisite:** a read-only, repeatable-read aggregate
+  inventory anchored by the unique October 11 schedule found two accepted
+  participants, four shared competitions and four frozen results, with no reusable
+  current or future scheduled cycle. Completed matches do not exercise new-score
+  submission. Preserve those results; do not reopen history, force terminal
+  retries, change keys or invent unavailable scores to manufacture a pass.
+
+Next: establish a valid scoring reproduction and diagnose the actual submission
+failure before another seven-day qualification attempt. A diagnostic match is
+not evidence replacing any earlier result. Live recipient creation/acceptance,
+score-linked App Attest acceptance/replay and replacement enrollment, stable
+results on both clients, complete APNs qualification, genuine contained recovery,
+qualified privacy publication, signed release/distribution and production
+promotion remain open. Paid setup and Apple Support contact remain held.
+Physical deletion is owner-skipped and universal links are deferred, not PASS.
+
+The [evidence ledger](production-beta-evidence.md#current-qualification-checkpoint--october-20-2026-utc)
+records the private receipt hashes. No private identifiers, delivery references,
+tokens, Health values or private screenshots are published here.
+
+## Historical qualification checkpoint — October 19, 2026 UTC
 
 **Not production-ready.** Source integration, local synthetic recovery and the
 Staging recipient backend/Simulator rollout advanced; the preserved October 11–17
