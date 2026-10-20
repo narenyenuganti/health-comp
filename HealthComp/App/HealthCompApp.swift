@@ -160,7 +160,7 @@ struct HealthCompApp: App {
         .onChange(of: scenePhase, initial: true) { _, phase in
 #if HEALTHCOMP_STAGING
             if phase != .active {
-                StagingScoringOperatorControls.shared.cancelForInactivity()
+                StagingScoringOperatorControls.shared.cancelStartedCapture()
             }
 #endif
             observerDeliveryLifecycle.observe(

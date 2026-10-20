@@ -81,10 +81,10 @@ private enum StagingScoringResponseCaptureChecks {
         check("display_closes_after_destructive_retrieval", controls.displayState() == .closed)
         let inactiveControls = StagingScoringOperatorControls()
         inactiveControls.bind(controlOwner)
-        inactiveControls.cancelForInactivity()
+        inactiveControls.cancelStartedCapture()
         check("inactivity_preserves_never_armed_slot", inactiveControls.displayState() == .off
             && inactiveControls.requestArm())
-        inactiveControls.cancelForInactivity()
+        inactiveControls.cancelStartedCapture()
         check("inactivity_closes_started_capture", inactiveControls.displayState() == .closed
             && inactiveControls.consumeArmRequest(for: controlOwner) == nil)
         let operatorClock = CaptureClock()
@@ -229,9 +229,20 @@ private enum StagingScoringResponseCaptureChecks {
         let refused = !controls.requestArm() && controls.takeResponse() == nil
             && !controls.cancelCapture()
         let returnedPromptly = started.duration(to: .now) < .seconds(1)
+        let cancellationStarted = DispatchSemaphore(value: 0)
+        let cancellationFinished = DispatchSemaphore(value: 0)
+        DispatchQueue.global().async {
+            cancellationStarted.signal()
+            controls.cancelStartedCapture()
+            cancellationFinished.signal()
+        }
+        check("normal_cancel_started", cancellationStarted.wait(timeout: .now() + 2) == .success)
+        check("normal_cancel_waits_for_held_lock", cancellationFinished.wait(timeout: .now() + 0.02) == .timedOut)
         clock.release.signal()
         check("held_operator_lock_refuses_without_waiting", refused && returnedPromptly)
         check("held_lock_fixture_released", finished.wait(timeout: .now() + 2) == .success)
+        check("normal_cancel_confirms_closed_after_contention", cancellationFinished.wait(timeout: .now() + 2) == .success
+            && controls.displayState() == .closed)
         check("released_operator_lock_allows_confirmed_cancel", controls.cancelCapture()
             && controls.consumeArmRequest(for: controlsOwner) == nil)
     }
