@@ -164,6 +164,15 @@ struct AccountSettingsView: View {
                 Label("Privacy", systemImage: "lock")
             }
             .accessibilityIdentifier("account.privacy")
+
+#if HEALTHCOMP_STAGING
+            NavigationLink {
+                StagingScoringDiagnosticPage()
+            } label: {
+                Label("Staging Diagnostics", systemImage: "stethoscope")
+            }
+            .accessibilityIdentifier("account.staging-diagnostics")
+#endif
         }
         .listRowBackground(Theme.panel)
     }
@@ -372,6 +381,84 @@ private struct AccountProgressOverlay: View {
         }
     }
 }
+
+#if HEALTHCOMP_STAGING
+private struct StagingScoringDiagnosticPage: View {
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var showsReference = false
+    @State private var armFailed = false
+
+    private let controls = StagingScoringOperatorControls.shared
+
+    var body: some View {
+        TimelineView(.periodic(from: .now, by: 1)) { _ in
+            List {
+                Section {
+                    Text("Arm once, return to Competition and pull to refresh once, then return here within 60 seconds. Do not change accounts.")
+                    Text("This screen does not refresh or send a request. A captured response is not proof that your gesture caused it.")
+                }
+                Section {
+                    if scenePhase == .active {
+                        captureState
+                    } else {
+                        Text("Capture hidden while Staging is inactive.")
+                    }
+                } footer: {
+                    Text("Only an opaque request reference can appear here, not Health values or account details. The app does not log, copy or save it. Screenshots or accessibility tools could still record a visible reference.")
+                }
+            }
+        }
+        .accountPageStyle(title: "Staging Diagnostics")
+        .onDisappear { showsReference = false }
+        .onChange(of: scenePhase) { _, phase in
+            if phase != .active { showsReference = false }
+        }
+    }
+
+    @ViewBuilder
+    private var captureState: some View {
+        switch controls.displayState() {
+        case .unavailable:
+            Text("Diagnostic state is temporarily unavailable.")
+        case .off:
+            Button("Arm One Capture") {
+                armFailed = !controls.requestArm()
+            }
+            .frame(minHeight: 44)
+            .accessibilityIdentifier("staging.diagnostic.arm")
+            if armFailed { Text("Capture could not be armed.") }
+        case .waiting:
+            Text("Waiting for one qualifying failed response. The original 60-second window is running.")
+            clearButton
+        case let .captured(reference):
+            if showsReference {
+                Text(reference)
+                    .font(.body.monospaced())
+                    .fixedSize(horizontal: false, vertical: true)
+                    .textSelection(.disabled)
+                    .privacySensitive()
+                    .accessibilityIdentifier("staging.diagnostic.reference")
+            } else {
+                Button("Show Request Reference") { showsReference = true }
+                    .frame(minHeight: 44)
+                    .accessibilityIdentifier("staging.diagnostic.show")
+            }
+            clearButton
+        case .closed:
+            Text("Capture closed. Another capture requires a new app session.")
+        }
+    }
+
+    private var clearButton: some View {
+        Button("Clear Capture") {
+            controls.cancelStartedCapture()
+            showsReference = false
+        }
+        .frame(minHeight: 44)
+        .accessibilityIdentifier("staging.diagnostic.clear")
+    }
+}
+#endif
 
 private extension View {
     /// Account's pages share one surface and an inline title.

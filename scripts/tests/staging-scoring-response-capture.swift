@@ -63,16 +63,30 @@ private enum StagingScoringResponseCaptureChecks {
     static func main() async {
 #if HEALTHCOMP_STAGING
         let controls = StagingScoringOperatorControls()
+        check("unbound_display_has_no_reference", controls.displayState() == .unavailable)
         check("unbound_operator_refuses_arm", !controls.requestArm())
         let controlOwner = StagingScoringCaptureOwner()
         controls.bind(controlOwner)
+        check("bound_display_starts_off", controls.displayState() == .off)
         check("bound_operator_arms_once", controls.requestArm() && !controls.requestArm())
+        check("armed_display_waits_without_consuming", controls.displayState() == .waiting)
         check("requested_operator_has_no_response", controls.takeResponse() == nil)
         check("operator_request_consumed_once", controls.consumeArmRequest(for: controlOwner) != nil
             && controls.consumeArmRequest(for: controlOwner) == nil)
         controls.recordResponse("00000000-0000-4000-8000-000000000001", for: controlOwner)
+        check("display_does_not_consume_or_replace_reference", controls.displayState() == .captured("00000000-0000-4000-8000-000000000001")
+            && controls.displayState() == .captured("00000000-0000-4000-8000-000000000001"))
         check("operator_retrieval_destructive", controls.takeResponse() == "00000000-0000-4000-8000-000000000001"
             && controls.takeResponse() == nil && !controls.requestArm())
+        check("display_closes_after_destructive_retrieval", controls.displayState() == .closed)
+        let inactiveControls = StagingScoringOperatorControls()
+        inactiveControls.bind(controlOwner)
+        inactiveControls.cancelStartedCapture()
+        check("inactivity_preserves_never_armed_slot", inactiveControls.displayState() == .off
+            && inactiveControls.requestArm())
+        inactiveControls.cancelStartedCapture()
+        check("inactivity_closes_started_capture", inactiveControls.displayState() == .closed
+            && inactiveControls.consumeArmRequest(for: controlOwner) == nil)
         let operatorClock = CaptureClock()
         let expiringControls = StagingScoringOperatorControls(now: { operatorClock.now })
         expiringControls.bind(controlOwner)
@@ -80,6 +94,7 @@ private enum StagingScoringResponseCaptureChecks {
         _ = expiringControls.consumeArmRequest(for: controlOwner)
         expiringControls.recordResponse("00000000-0000-4000-8000-000000000001", for: controlOwner)
         operatorClock.expire()
+        check("display_cannot_extend_original_deadline", expiringControls.displayState() == .closed)
         check("expired_operator_response_discarded", expiringControls.takeResponse() == nil
             && !expiringControls.requestArm())
         let replacement = StagingScoringCaptureOwner()
@@ -214,9 +229,20 @@ private enum StagingScoringResponseCaptureChecks {
         let refused = !controls.requestArm() && controls.takeResponse() == nil
             && !controls.cancelCapture()
         let returnedPromptly = started.duration(to: .now) < .seconds(1)
+        let cancellationStarted = DispatchSemaphore(value: 0)
+        let cancellationFinished = DispatchSemaphore(value: 0)
+        DispatchQueue.global().async {
+            cancellationStarted.signal()
+            controls.cancelStartedCapture()
+            cancellationFinished.signal()
+        }
+        check("normal_cancel_started", cancellationStarted.wait(timeout: .now() + 2) == .success)
+        check("normal_cancel_waits_for_held_lock", cancellationFinished.wait(timeout: .now() + 0.02) == .timedOut)
         clock.release.signal()
         check("held_operator_lock_refuses_without_waiting", refused && returnedPromptly)
         check("held_lock_fixture_released", finished.wait(timeout: .now() + 2) == .success)
+        check("normal_cancel_confirms_closed_after_contention", cancellationFinished.wait(timeout: .now() + 2) == .success
+            && controls.displayState() == .closed)
         check("released_operator_lock_allows_confirmed_cancel", controls.cancelCapture()
             && controls.consumeArmRequest(for: controlsOwner) == nil)
     }
