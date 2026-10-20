@@ -63,16 +63,30 @@ private enum StagingScoringResponseCaptureChecks {
     static func main() async {
 #if HEALTHCOMP_STAGING
         let controls = StagingScoringOperatorControls()
+        check("unbound_display_has_no_reference", controls.displayState() == .unavailable)
         check("unbound_operator_refuses_arm", !controls.requestArm())
         let controlOwner = StagingScoringCaptureOwner()
         controls.bind(controlOwner)
+        check("bound_display_starts_off", controls.displayState() == .off)
         check("bound_operator_arms_once", controls.requestArm() && !controls.requestArm())
+        check("armed_display_waits_without_consuming", controls.displayState() == .waiting)
         check("requested_operator_has_no_response", controls.takeResponse() == nil)
         check("operator_request_consumed_once", controls.consumeArmRequest(for: controlOwner) != nil
             && controls.consumeArmRequest(for: controlOwner) == nil)
         controls.recordResponse("00000000-0000-4000-8000-000000000001", for: controlOwner)
+        check("display_does_not_consume_or_replace_reference", controls.displayState() == .captured("00000000-0000-4000-8000-000000000001")
+            && controls.displayState() == .captured("00000000-0000-4000-8000-000000000001"))
         check("operator_retrieval_destructive", controls.takeResponse() == "00000000-0000-4000-8000-000000000001"
             && controls.takeResponse() == nil && !controls.requestArm())
+        check("display_closes_after_destructive_retrieval", controls.displayState() == .closed)
+        let inactiveControls = StagingScoringOperatorControls()
+        inactiveControls.bind(controlOwner)
+        inactiveControls.cancelForInactivity()
+        check("inactivity_preserves_never_armed_slot", inactiveControls.displayState() == .off
+            && inactiveControls.requestArm())
+        inactiveControls.cancelForInactivity()
+        check("inactivity_closes_started_capture", inactiveControls.displayState() == .closed
+            && inactiveControls.consumeArmRequest(for: controlOwner) == nil)
         let operatorClock = CaptureClock()
         let expiringControls = StagingScoringOperatorControls(now: { operatorClock.now })
         expiringControls.bind(controlOwner)
@@ -80,6 +94,7 @@ private enum StagingScoringResponseCaptureChecks {
         _ = expiringControls.consumeArmRequest(for: controlOwner)
         expiringControls.recordResponse("00000000-0000-4000-8000-000000000001", for: controlOwner)
         operatorClock.expire()
+        check("display_cannot_extend_original_deadline", expiringControls.displayState() == .closed)
         check("expired_operator_response_discarded", expiringControls.takeResponse() == nil
             && !expiringControls.requestArm())
         let replacement = StagingScoringCaptureOwner()

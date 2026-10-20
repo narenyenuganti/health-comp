@@ -5,6 +5,10 @@ final class StagingScoringCaptureOwner: Sendable {}
 
 @objc(HealthCompStagingScoringOperator)
 final class StagingScoringOperatorControls: NSObject, @unchecked Sendable {
+    enum DisplayState: Equatable, Sendable {
+        case unavailable, off, waiting, captured(String), closed
+    }
+
     static let shared = StagingScoringOperatorControls()
     private let lock = NSLock()
     private let now: @Sendable () -> ContinuousClock.Instant
@@ -15,6 +19,26 @@ final class StagingScoringOperatorControls: NSObject, @unchecked Sendable {
 
     init(now: @escaping @Sendable () -> ContinuousClock.Instant = { .now }) {
         self.now = now
+    }
+
+    func displayState() -> DisplayState {
+        guard lock.try() else { return .unavailable }
+        defer { lock.unlock() }
+        guard owner != nil else { return .unavailable }
+        switch state {
+        case .idle: return .off
+        case .closed: return .closed
+        case .requested, .armed: return isOpen ? .waiting : .closed
+        case let .captured(value):
+            return isOpen ? .captured(value as String) : .closed
+        }
+    }
+
+    func cancelForInactivity() {
+        lock.withLock {
+            if case .idle = state { return }
+            close()
+        }
     }
 
     func bind(_ owner: StagingScoringCaptureOwner) {
@@ -60,7 +84,7 @@ final class StagingScoringOperatorControls: NSObject, @unchecked Sendable {
     func consumeArmRequest(for owner: StagingScoringCaptureOwner) -> Duration? {
         lock.withLock {
             guard self.owner === owner, isOpen else { return nil }
-            // Retrieval by the debugger, not transfer into this slot, ends ambiguity.
+            // Only destructive retrieval, not display, ends ambiguity.
             if case .captured = state { close(); return nil }
             guard case .requested = state,
                   let deadline else { return nil }

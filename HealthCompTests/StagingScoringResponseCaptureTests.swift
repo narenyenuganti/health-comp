@@ -5,6 +5,49 @@ import XCTest
 @testable import HealthComp
 
 final class StagingScoringResponseCaptureTests: XCTestCase {
+    func testDisplayUsesExistingCaptureWithoutConsumingItOrExtendingItsDeadline() async throws {
+        let fixture = ScoringCaptureFixture()
+        defer { fixture.close() }
+        let clock = ScoringOperatorClock()
+        let controls = StagingScoringOperatorControls(now: { clock.now })
+        let provider = fixture.provider().withStagingScoringOperator(controls)
+        let owner = try provider.authenticationLifetime()
+        XCTAssertEqual(controls.displayState(), .off)
+        XCTAssertTrue(controls.requestArm())
+        XCTAssertEqual(controls.displayState(), .waiting)
+        try await fixture.reject(owner.client)
+        XCTAssertTrue(controls.displayState() == .captured(ScoringCaptureProtocol.responseID))
+        XCTAssertTrue(controls.displayState() == .captured(ScoringCaptureProtocol.responseID))
+        clock.expire()
+        XCTAssertEqual(controls.displayState(), .closed)
+        XCTAssertNil(controls.takeResponse())
+        XCTAssertFalse(controls.requestArm())
+        XCTAssertTrue(try provider.client() === owner.client)
+        try await provider.retireAuthenticationLifetime(owner)
+    }
+
+    func testInactivityKeepsCaptureOffUntilArmedThenCancelsWithoutReplacingClient() async throws {
+        let fixture = ScoringCaptureFixture()
+        defer { fixture.close() }
+        let controls = StagingScoringOperatorControls()
+        let provider = fixture.provider().withStagingScoringOperator(controls)
+        let owner = try provider.authenticationLifetime()
+        controls.cancelForInactivity()
+        XCTAssertEqual(controls.displayState(), .off)
+        XCTAssertTrue(controls.requestArm())
+        try await fixture.reject(owner.client)
+        controls.cancelForInactivity()
+        XCTAssertEqual(controls.displayState(), .closed)
+        try await fixture.reject(owner.client)
+        XCTAssertNil(controls.takeResponse())
+        XCTAssertTrue(try provider.client() === owner.client)
+        try await provider.retireAuthenticationLifetime(owner)
+        let fresh = try provider.beginFreshAuthenticationLifetime()
+        XCTAssertEqual(controls.displayState(), .off)
+        XCTAssertFalse(fresh.client === owner.client)
+        try await provider.retireAuthenticationLifetime(fresh)
+    }
+
     func testOperatorCancelAfterEmptyReadDisablesLateCaptureWithoutRetiringClient() async throws {
         let fixture = ScoringCaptureFixture()
         defer { fixture.close() }
@@ -75,6 +118,7 @@ final class StagingScoringResponseCaptureTests: XCTestCase {
         try await fixture.reject(old.client)
         do {
             try await provider.retireAuthenticationLifetime(old, beforeStorage: {
+                XCTAssertEqual(controls.displayState(), .closed)
                 XCTAssertNil(controls.takeResponse())
                 XCTAssertFalse(controls.requestArm())
                 throw AuthenticationClientFailure.operationFailed
@@ -124,6 +168,7 @@ final class StagingScoringResponseCaptureTests: XCTestCase {
         XCTAssertTrue(controls.requestArm())
         try await fixture.reject(client)
         try await fixture.reject(client)
+        XCTAssertEqual(controls.displayState(), .closed)
         XCTAssertNil(controls.takeResponse())
         XCTAssertFalse(controls.requestArm())
         try await provider.retireAuthenticationLifetime(provider.authenticationLifetime())
