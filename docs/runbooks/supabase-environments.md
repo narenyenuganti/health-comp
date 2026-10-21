@@ -556,6 +556,13 @@ raw-table access, direct mutation attempts, App Attest fail-closed behavior,
 valid-grant payload and score-content binding, cross-table score/attestation/
 award/installation isolation, score duplicate/regression contracts, result
 rewrites, stale deleted-profile access, and unregistered installations. The
+recipient checks also exercise same-request creation idempotence, duplicate
+pending-recipient denial, fresh RPC creation's 24-hour expiry, wrong-recipient denial
+before consumption, and recipient denial at the synthetic expiry boundary.
+Fresh synthetic creation is discarded in a subtransaction before the fixed-fixture
+checks. Only the existing fixed synthetic invitation's expiry is moved and restored;
+no real invitation or server clock is changed. These database checks do not
+qualify the Edge Function route or concurrent-client behavior. The
 script opens one transaction,
 sets bounded timeouts, fails on the first unmet assertion, executes exactly one
 explicit `ROLLBACK`, independently confirms that no synthetic rows remain, and
@@ -598,12 +605,15 @@ psql -X \
 ~~~
 
 The expected sole nonblank output has version
-`healthcomp_staging_adversarial_v1`, status `pass`, 15 passed assertions, zero
+`healthcomp_staging_adversarial_v2`, status `pass`, 20 passed assertions, zero
 synthetic rows remaining, no private values returned, and transaction outcome
 `rolled_back`. Treat any other output or nonzero exit as a failed gate. If the
 client exits on an assertion error, PostgreSQL rolls the still-open transaction
 back when the connection closes; nevertheless, run a reviewed read-only
 fixed-fixture residue check before retrying.
+
+Earlier v1 receipts retain their original 15-assertion scope; they do not prove
+the five recipient checks added in v2.
 
 Supabase CLI `2.113.0` must not be used here via
 `supabase db query --file`: its local query path submits the multi-statement
