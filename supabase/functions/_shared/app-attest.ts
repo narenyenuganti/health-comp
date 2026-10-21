@@ -590,7 +590,9 @@ function decodeAttestation(value: Uint8Array) {
   if (authData.length < 88 || authData.length > 4_096) {
     fail("invalid_attestation_authenticator_length");
   }
-  if (authData[32] !== 0x40) {
+  // Preserve Apple's AT-only sample while accepting AT+ED extension payloads.
+  const flags = authData[32];
+  if (flags !== 0x40 && flags !== 0xc0) {
     fail("invalid_attestation_authenticator_flags");
   }
   if (authData.readUInt32BE(33) !== 0) {
@@ -607,7 +609,8 @@ function decodeAttestation(value: Uint8Array) {
   }
   if (
     (trailing.length !== 1 && trailing.length !== 2) ||
-    !(trailing[0] instanceof Map)
+    !(trailing[0] instanceof Map) ||
+    (flags === 0xc0 && trailing.length !== 2)
   ) {
     fail("invalid_attestation_authenticator_shape");
   }
