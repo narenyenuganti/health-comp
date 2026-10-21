@@ -14,9 +14,51 @@ and [recovery runbook](../runbooks/backup-restore.md#private-beta-deletion-test-
 preserve the deletion feature, existing automated coverage and privacy/history
 safeguards. Other gates and **not production-ready** status remain unchanged.
 
-## Current qualification checkpoint — October 20, 2026 UTC
+## Current qualification checkpoint — October 21, 2026 UTC
 
-The [current checklist](production-beta-checklist.md#current-qualification-checkpoint--october-20-2026-utc)
+The [current checklist](production-beta-checklist.md#current-qualification-checkpoint--october-21-2026-utc)
+selects `a5809f9` for its completed exact-source Backend/iOS matrix and the hosted
+20/v2 database verifier. Application/configuration and Function source remain
+unchanged from `7839acb`; this source advance proves no new installation. The
+one accepted diagnostic match restores a scoring target but supplies no accepted
+score, assertion replay or stable result. Status remains **not production-ready**.
+
+Private operator receipts are retained outside this public repository:
+
+| Receipt | SHA-256 |
+| --- | --- |
+| `recipient-rollback-verifier-ci-2026-10-20.json` | `cc4a51095f15608f7ed960d864fa7b5b42e28e69df568da49e8198b3c4e4b5fa` |
+| `staging-recipient-hosted-verifier-a5809f9-attempt.json` | `876bec0d23501ab7a012f3254bd3b5ca8f19ca5843f9c9bf7fb2d8086ac1265a` |
+| `staging-recipient-hosted-verifier-2026-10-20.json` | `1c9a05d64cfff9f038fae856a818d948fc7c28c5a81b8b4a443825c322441f9c` |
+| `staging-diagnostic-match-2026-10-20.json` | `bedf706979afc32c09664694e0c4c2ade7e5c72d097d97e2d8725b42bbaea67e` |
+
+The selected verifier SQL has SHA-256
+`bf5fde7f55d929b14713b6fc435069ac58337ee635eaa4488276a9ed66a96bff`.
+Independent local receipt validation at October 21, 03:43:13 UTC found the exact
+six-field `healthcomp_staging_adversarial_v2` pass: 20 assertions, rollback, zero
+synthetic rows and no private values returned. The local receipt modification time
+was 03:42:38 UTC; neither time is an independently queried server execution time.
+The pinned runner required zero `psql` exit status, empty captured stderr and the
+sole nonblank stdout matching the strict allowlist. The password went directly
+to native `psql`'s hidden TTY prompt, not helper input, arguments, environment or a
+saved file. No raw native output was persisted beyond the aggregate receipt.
+
+The hosted pass covers the selected sequential database adversarial boundary,
+including the five recipient checks documented in the
+[runbook](../runbooks/supabase-environments.md#rollback-only-adversarial-staging-verifier).
+It is separate from isolated CI and does not qualify live Edge concurrency,
+physical scoring, cryptographic App Attest replay, stable results, operational
+recovery or production readiness. No phone, deployment or production action was
+part of this verifier run. Do not rerun the completed attempt.
+
+The diagnostic match's two-client schedule is October 21–27, Los Angeles time.
+Its October 20 UTC receipt proves observed create/accept/rendered scheduling only,
+not an exact claim-request count or a score. All other gates, holds and the
+owner-skipped physical deletion exception remain unchanged.
+
+## Historical qualification checkpoint — October 20, 2026 UTC
+
+The [historical checklist](production-beta-checklist.md#historical-qualification-checkpoint--october-20-2026-utc)
 selects merged `7839acb`, its completed exact-source Backend/iOS CI, current
 Staging package observations, four-asset scoring-source equality and the new
 narrow Apple delivery finding. It preserves all unclosed release gates and
