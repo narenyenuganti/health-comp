@@ -330,6 +330,85 @@ Deno.test("attestation rejection diagnostics distinguish strict verifier stages"
   );
 });
 
+Deno.test("attestation with the extension flag reaches signed nonce validation", async () => {
+  const decoded = cbor.decodeFirstSync(
+    Buffer.from(official.attestation, "base64"),
+  );
+  const authData = Buffer.from(decoded.authData);
+  authData[32] = 0xc0;
+  const attestation = await cbor.encodeAsync({ ...decoded, authData });
+
+  // Changing the signed flag must still fail the unchanged certificate nonce.
+  assertEquals(
+    captureCode(() =>
+      verifyAppAttestAttestation({
+        attestation,
+        clientDataHash: Buffer.from(official.clientDataHash, "base64"),
+        keyID: official.keyId,
+        policy: officialPolicy(),
+      })
+    ),
+    "invalid_attestation_nonce",
+  );
+});
+
+Deno.test("attestation rejects every flag byte except AT and AT plus ED", async () => {
+  const decoded = cbor.decodeFirstSync(
+    Buffer.from(official.attestation, "base64"),
+  );
+  for (let flags = 0; flags <= 0xff; flags++) {
+    if (flags === 0x40 || flags === 0xc0) continue;
+    const authData = Buffer.from(decoded.authData);
+    authData[32] = flags;
+    const attestation = await cbor.encodeAsync({ ...decoded, authData });
+    assertEquals(
+      captureCode(() =>
+        verifyAppAttestAttestation({
+          attestation,
+          clientDataHash: Buffer.from(official.clientDataHash, "base64"),
+          keyID: official.keyId,
+          policy: officialPolicy(),
+        })
+      ),
+      "invalid_attestation_authenticator_flags",
+    );
+  }
+});
+
+Deno.test("attestation extension flag requires exactly one valid extension map", async () => {
+  const decoded = cbor.decodeFirstSync(
+    Buffer.from(official.attestation, "base64"),
+  );
+  const trailing = cbor.decodeAllSync(decoded.authData.subarray(87));
+  const header = Buffer.from(decoded.authData.subarray(0, 87));
+  header[32] = 0xc0;
+  for (
+    const [suffix, expected] of [
+      [[], "invalid_attestation_authenticator_shape"],
+      [[1], "invalid_extensions"],
+      [[trailing[1], trailing[1]], "invalid_attestation_authenticator_shape"],
+    ] as const
+  ) {
+    const authData = Buffer.concat([
+      header,
+      await cbor.encodeAsync(trailing[0]),
+      ...await Promise.all(suffix.map((value) => cbor.encodeAsync(value))),
+    ]);
+    const attestation = await cbor.encodeAsync({ ...decoded, authData });
+    assertEquals(
+      captureCode(() =>
+        verifyAppAttestAttestation({
+          attestation,
+          clientDataHash: Buffer.from(official.clientDataHash, "base64"),
+          keyID: official.keyId,
+          policy: officialPolicy(),
+        })
+      ),
+      expected,
+    );
+  }
+});
+
 Deno.test("attestation authenticator diagnostics identify invalid length before reading header fields", async () => {
   const decoded = cbor.decodeFirstSync(
     Buffer.from(official.attestation, "base64"),
