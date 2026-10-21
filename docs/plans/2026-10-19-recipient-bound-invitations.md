@@ -1,6 +1,12 @@
 # Recipient-bound invitations
 
-Status, October 19: source integrated with passing exact-head CI; migration 018
+Status, October 21: selected source `a5809f9` passed exact-main CI and the hosted
+20/v2 sequential database adversarial verifier. One live recipient happy path
+reached the same scheduled match on both clients; full live adversarial/concurrent
+flow and physical scoring remain unqualified. No production promotion. See the
+[current checklist](../release/production-beta-checklist.md#current-qualification-checkpoint--october-21-2026-utc).
+
+Historical status, October 19: source integrated with passing exact-head CI; migration 018
 and only the create invitation Function promoted to Staging. The matching
 Simulator client is installed; physical-client and live recipient-flow
 qualification remain incomplete. No production promotion.
@@ -98,6 +104,21 @@ the ordering correction. This is not a genuine hosted backup/restore pass; all
 existing beta-readiness holds remain in effect.
 
 ## Dated Staging rollout evidence
+
+October 21 UTC checkpoint:
+
+- The selected `a5809f9` verifier passed 20/20 against hosted Staging, rolled back
+  its temporary synthetic writes and independently confirmed zero residue. This
+  covers sequential database contracts, including the five recipient assertions;
+  it does not replace live Edge or concurrent-client verification.
+- On October 20 UTC, one invitation between the existing test accounts was
+  accepted into the same October 21–27 Los Angeles schedule on the Simulator and
+  phone. No refresh or accepted-score claim was part of that observation; exact
+  server claim-request count was not proved. It is a diagnostic scoring target,
+  not stable-result qualification. Preserve completed history and this match.
+- The [release evidence](../release/production-beta-evidence.md#current-qualification-checkpoint--october-21-2026-utc)
+  records source/receipt hashes and the remaining physical, recovery and release
+  limits. Historical October 19 observations below retain their original scope.
 
 October 19, 20:20 UTC, following the owner's explicit approval:
 

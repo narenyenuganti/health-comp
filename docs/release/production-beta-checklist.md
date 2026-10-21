@@ -14,7 +14,62 @@ records the matching boundary. Actual recovery, protection against resurrecting
 deleted identities, and all other unwaived qualification gates remain open.
 This is a scope decision, not a runtime receipt or production-readiness claim.
 
-## Current qualification checkpoint — October 20, 2026 UTC
+## Current qualification checkpoint — October 21, 2026 UTC
+
+**Not production-ready.** This checkpoint advances automated source and hosted
+database evidence, not the physical scoring or release gates. Earlier receipts
+retain their original artifact, time and scope.
+
+- **Automated source matrix:** exact merged main
+  `a5809f94b35181d10058740b2997764b1107d779` passed
+  [Backend CI](https://github.com/narenyenuganti/health-comp/actions/runs/39522270468)
+  and [iOS CI](https://github.com/narenyenuganti/health-comp/actions/runs/39522270716).
+  Backend ran 22 pgTAP files / 849 assertions twice, the isolated 20/v2 rollback
+  verifier, 143 Deno tests, a separate 15-test real-JWT HTTP gate and one offline
+  App Attest regression. The Deno suite's one gated ignore was exercised in the
+  separate HTTP gate. iOS passed 246 Core tests in each of Debug and Release,
+  635 app unit tests, 11 selected UI tests, 72 release-style Staging tests,
+  unsigned Debug/Staging/Release device builds, deterministic generation and
+  privacy/diagnostic checks. Cloudflare Pages also passed. These are CI results,
+  not signed archive/export, hosted recovery or physical-service qualification.
+- **Hosted database adversarial boundary:** after exact-source approval, native
+  `psql` executed `scripts/staging-adversarial-rollback.sql` from `a5809f9` against
+  `healthcomp-staging` over hostname-verified TLS with the pinned current CA.
+  The sole retained aggregate receipt passed all 20/v2 assertions, reported
+  explicit rollback, zero synthetic rows remaining and no private values returned.
+  Its exact six-field schema was independently validated. This adds the five
+  recipient assertions to the historical 15/v1 boundary: same-request creation,
+  duplicate pending-recipient denial, fresh creation's 24-hour expiry,
+  wrong-recipient denial and denial at the synthetic expiry boundary. It does
+  not prove live Edge concurrency, physical scoring or cryptographic assertion
+  replay. Temporary synthetic writes were rolled back; no production action or
+  phone use occurred. Do not repeat the completed attempt.
+- **One live recipient happy path:** on October 20 UTC, one invitation between
+  the two existing test accounts was accepted into the same scheduled match on
+  the Simulator and physical phone. Both rendered October 21–27 in
+  `America/Los_Angeles`; Day 1 opens October 21 at 07:00 UTC. Exact claim-request
+  count was not proved. This restores a future scoring target, not a scoring or
+  stable-result pass, nor full live adversarial/concurrency coverage. Preserve
+  all completed history; do not create another match to replace this one.
+- **Runtime source unchanged:** application/configuration and Function source
+  are unchanged from `7839acb`. The dated package/deployed-asset observations in
+  the October 20 checkpoint remain limited to their original scope; this
+  test/documentation-only source advance does not establish a new installation.
+
+Next: after this diagnostic match's actual Day 1 boundary and fresh phone
+availability, use the existing normal-app path to diagnose the real submission
+failure. Do not revive the disabled debugger or retired timed-reference workflow.
+Score-linked App Attest acceptance/replay and replacement enrollment, matching
+stable results on both clients, full APNs binding/routes, genuine contained
+recovery, qualified privacy publication, signed release/distribution and production
+promotion remain open. Paid setup and Apple Support contact remain held. Physical
+deletion is owner-skipped and universal links are deferred, not PASS.
+
+The [evidence ledger](production-beta-evidence.md#current-qualification-checkpoint--october-21-2026-utc)
+records the private receipt hashes and observation-time limits. No private receipt
+bodies, identifiers, request references, tokens or Health values are published.
+
+## Historical qualification checkpoint — October 20, 2026 UTC
 
 **Not production-ready.** These findings supersede the selected source and
 installation pointers below, not the limits of earlier observations.
@@ -63,7 +118,7 @@ qualified privacy publication, signed release/distribution and production
 promotion remain open. Paid setup and Apple Support contact remain held.
 Physical deletion is owner-skipped and universal links are deferred, not PASS.
 
-The [evidence ledger](production-beta-evidence.md#current-qualification-checkpoint--october-20-2026-utc)
+The [evidence ledger](production-beta-evidence.md#historical-qualification-checkpoint--october-20-2026-utc)
 records the private receipt hashes. No private identifiers, delivery references,
 tokens, Health values or private screenshots are published here.
 
