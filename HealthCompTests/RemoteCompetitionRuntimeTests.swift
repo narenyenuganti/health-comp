@@ -3096,7 +3096,7 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
         try FileManager.default.createDirectory(at: cacheRoot, withIntermediateDirectories: false)
         let cache = JSONRemoteCompetitionCacheStore(
             rootDirectory: cacheRoot,
-            fileProtection: JSONCompetitionEventStoreFileProtection { _, url in
+            fileProtection: JSONCompetitionEventStoreFileProtection { url, _ in
                 if url.pathExtension == "tmp" { throw Expected() }
             }
         )
