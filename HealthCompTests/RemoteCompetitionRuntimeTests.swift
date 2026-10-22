@@ -819,7 +819,13 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
             )
         )
 
+#if HEALTHCOMP_STAGING
+        let outcome = await observeActivity(runtime, expecting: [
+            .skippedLifecycle: 1, .reconciliationFailed: 1,
+        ])
+#else
         let outcome = await runtime.synchronizeAll()
+#endif
 
         XCTAssertNil(outcome.discoveryFailure)
         XCTAssertEqual(
@@ -3082,6 +3088,30 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
     }
 
 #if HEALTHCOMP_STAGING
+    func testActivityObservationCountsCacheSaveFailure() async throws {
+        struct Expected: Error {}
+        let root = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let cacheRoot = root.appendingPathComponent("cache")
+        try FileManager.default.createDirectory(at: cacheRoot, withIntermediateDirectories: false)
+        let cache = JSONRemoteCompetitionCacheStore(
+            rootDirectory: cacheRoot,
+            fileProtection: JSONCompetitionEventStoreFileProtection { _, url in
+                if url.pathExtension == "tmp" { throw Expected() }
+            }
+        )
+        let initialCache = try await cache.load(profileID: profileID)
+        XCTAssertEqual(initialCache, [])
+        let runtime = RemoteCompetitionRuntime(
+            profileID: profileID,
+            store: makeStore(root: root.appendingPathComponent("events")),
+            remoteAPI: remoteAPI(listCompetitions: { [] }),
+            cacheStore: cache
+        )
+        let outcome = await observeActivity(runtime, expecting: [.reconciliationFailed: 1])
+        XCTAssertEqual(outcome.discoveryFailure, .storageUnavailable)
+    }
+
     private func observeActivity(
         _ runtime: RemoteCompetitionRuntime,
         expecting counts: [StagingScoringOperatorControls.ActivityEvent: Int]

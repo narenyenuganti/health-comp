@@ -23,6 +23,8 @@ The existing response-reference capture remains independent and unchanged.
   identifiers, dates, ring values, score values, Health samples, proof material,
   request references, or arbitrary text. An enqueue operation is neither proof
   of a unique new entry nor server acceptance.
+- Count reconciliation failures from the returned discovery/per-competition
+  failures, once each; separately report Activity-source read failures.
 - Keep the observation in RAM only. Clear it on explicit cancellation, expiry,
   app inactivity, authentication-owner retirement, or replacement. Reading it
   never extends the deadline. Expiry is checked on access, not by an independent

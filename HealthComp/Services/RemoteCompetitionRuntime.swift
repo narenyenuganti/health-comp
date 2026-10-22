@@ -574,6 +574,17 @@ actor RemoteCompetitionRuntime {
     }
 
     func synchronizeAll() async -> RemoteCompetitionRuntimeOutcome {
+        let outcome = await synchronizeInventory()
+#if HEALTHCOMP_STAGING
+        StagingScoringOperatorControls.recordActivity(
+            .reconciliationFailed,
+            count: outcome.failures.count + (outcome.discoveryFailure == nil ? 0 : 1)
+        )
+#endif
+        return outcome
+    }
+
+    private func synchronizeInventory() async -> RemoteCompetitionRuntimeOutcome {
         await syncCoordinator?.wake()
         let cachedEntries: [RemoteCompetitionCacheEntry]
         do {
@@ -581,9 +592,6 @@ actor RemoteCompetitionRuntime {
                 profileID: profileID
             ) ?? []
         } catch {
-#if HEALTHCOMP_STAGING
-            StagingScoringOperatorControls.recordActivity(.reconciliationFailed)
-#endif
             return RemoteCompetitionRuntimeOutcome(
                 outcomes: [],
                 discoveryFailure: .storageUnavailable
@@ -593,9 +601,6 @@ actor RemoteCompetitionRuntime {
         do {
             descriptors = try await remoteAPI.listCompetitions()
         } catch {
-#if HEALTHCOMP_STAGING
-            StagingScoringOperatorControls.recordActivity(.reconciliationFailed)
-#endif
             return await offlineOutcome(
                 cachedEntries: cachedEntries,
                 discoveryFailure: Self.failure(from: error)
@@ -899,9 +904,6 @@ actor RemoteCompetitionRuntime {
                     .competitionNotMaterialized
             }
         } catch {
-#if HEALTHCOMP_STAGING
-            StagingScoringOperatorControls.recordActivity(.reconciliationFailed)
-#endif
             let failure = Self.failure(from: error)
             if failure == .serverContractMismatch {
                 failure.recordRefreshDiagnostic(contractStage: contractStage)
