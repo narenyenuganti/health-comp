@@ -4,6 +4,42 @@ import XCTest
 @testable import HealthComp
 
 final class StagingActivityObservationTests: XCTestCase {
+    func testOneTapActivityCheckRequestsOneRefreshAndReportsItsCounts() async {
+        let controls = StagingScoringOperatorControls()
+        controls.bind(StagingScoringCaptureOwner())
+        var refreshes = 0
+        var armedBeforeRefresh = false
+
+        XCTAssertTrue(controls.startActivityCheck {
+            refreshes += 1
+            armedBeforeRefresh = controls.activityDisplayState() == .waiting
+        })
+        XCTAssertEqual(refreshes, 1)
+        XCTAssertTrue(armedBeforeRefresh)
+        XCTAssertFalse(controls.startActivityCheck { refreshes += 1 })
+        XCTAssertEqual(refreshes, 1)
+        await controls.observeActivity {
+            StagingScoringOperatorControls.recordActivity(.readStarted)
+            StagingScoringOperatorControls.recordActivity(.snapshotDays, count: 3)
+        }
+        XCTAssertEqual(controls.activityDisplayState(), .complete(.init(counts: [
+            .readStarted: 1, .snapshotDays: 3,
+        ])))
+        XCTAssertFalse(controls.startActivityCheck { refreshes += 1 })
+        XCTAssertEqual(refreshes, 1)
+    }
+
+    func testUnavailableAndRetiredActivityChecksDoNotRequestRefresh() {
+        let controls = StagingScoringOperatorControls()
+        let owner = StagingScoringCaptureOwner()
+        var refreshes = 0
+        XCTAssertFalse(controls.startActivityCheck { refreshes += 1 })
+        controls.bind(owner)
+        controls.cancelActivityObservation(for: owner)
+        XCTAssertFalse(controls.startActivityCheck { refreshes += 1 })
+        XCTAssertEqual(refreshes, 0)
+    }
+
     func testOnlyAnExplicitlyArmedRefreshProducesFixedAggregateCounts() async throws {
         let controls = StagingScoringOperatorControls()
         controls.bind(StagingScoringCaptureOwner())

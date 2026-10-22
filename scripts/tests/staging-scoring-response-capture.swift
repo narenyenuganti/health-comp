@@ -67,6 +67,31 @@ private enum StagingScoringResponseCaptureChecks {
         check("unbound_operator_refuses_arm", !controls.requestArm())
         let controlOwner = StagingScoringCaptureOwner()
         controls.bind(controlOwner)
+        let activityControls = StagingScoringOperatorControls()
+        var refreshes = 0
+        var armedBeforeRefresh = false
+        check("unavailable_activity_does_not_refresh", !activityControls.startActivityCheck { refreshes += 1 }
+            && refreshes == 0)
+        activityControls.bind(controlOwner)
+        check("one_tap_activity_requests_refresh", activityControls.startActivityCheck {
+            refreshes += 1
+            armedBeforeRefresh = activityControls.activityDisplayState() == .waiting
+        } && refreshes == 1 && armedBeforeRefresh)
+        check("second_tap_while_waiting_does_not_refresh", !activityControls.startActivityCheck { refreshes += 1 }
+            && refreshes == 1)
+        await Task.detached {
+            await activityControls.observeActivity {
+                StagingScoringOperatorControls.recordActivity(.readStarted)
+                StagingScoringOperatorControls.recordActivity(.snapshotDays, count: 3)
+            }
+        }.value
+        check("one_tap_activity_reports_fixed_summary", activityControls.activityDisplayState() ==
+            .complete(.init(counts: [.readStarted: 1, .snapshotDays: 3])))
+        check("second_activity_does_not_refresh", !activityControls.startActivityCheck { refreshes += 1 }
+            && refreshes == 1)
+        activityControls.cancelActivityObservation(for: controlOwner)
+        check("retired_activity_does_not_refresh", !activityControls.startActivityCheck { refreshes += 1 }
+            && refreshes == 1)
         check("bound_display_starts_off", controls.displayState() == .off)
         check("bound_operator_arms_once", controls.requestArm() && !controls.requestArm())
         check("armed_display_waits_without_consuming", controls.displayState() == .waiting)
