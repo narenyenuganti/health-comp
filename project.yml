@@ -91,6 +91,7 @@ targets:
       - path: HealthCompTests/SupabaseAppleWebDeletionTransportTests.swift
       - path: HealthCompTests/SupabaseConfigurationTests.swift
       - path: HealthCompTests/StagingScoringResponseCaptureTests.swift
+      - path: HealthCompTests/StagingActivityObservationTests.swift
     dependencies:
       - target: HealthComp
       - package: CompetitionCore

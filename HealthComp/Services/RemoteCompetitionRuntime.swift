@@ -574,6 +574,17 @@ actor RemoteCompetitionRuntime {
     }
 
     func synchronizeAll() async -> RemoteCompetitionRuntimeOutcome {
+        let outcome = await synchronizeInventory()
+#if HEALTHCOMP_STAGING
+        StagingScoringOperatorControls.recordActivity(
+            .reconciliationFailed,
+            count: outcome.failures.count + (outcome.discoveryFailure == nil ? 0 : 1)
+        )
+#endif
+        return outcome
+    }
+
+    private func synchronizeInventory() async -> RemoteCompetitionRuntimeOutcome {
         await syncCoordinator?.wake()
         let cachedEntries: [RemoteCompetitionCacheEntry]
         do {
@@ -622,10 +633,18 @@ actor RemoteCompetitionRuntime {
             }
             switch descriptor.lifecycle {
             case .declined, .expired, .cancelled:
+#if HEALTHCOMP_STAGING
+                StagingScoringOperatorControls.recordActivity(.skippedLifecycle)
+#endif
                 nextCacheByID.removeValue(
                     forKey: descriptor.competitionID
                 )
                 continue
+            case .pending:
+#if HEALTHCOMP_STAGING
+                StagingScoringOperatorControls.recordActivity(.skippedLifecycle)
+#endif
+                break
             default:
                 break
             }
@@ -924,6 +943,9 @@ actor RemoteCompetitionRuntime {
               let configuration = materialization.journal.projection
                 .competition.remoteConfiguration
         else {
+#if HEALTHCOMP_STAGING
+            StagingScoringOperatorControls.recordActivity(.missingDependency)
+#endif
             return RemoteOwnerScoreRefreshOutcome(
                 materialization: materialization,
                 activityFailure: nil
@@ -934,6 +956,9 @@ actor RemoteCompetitionRuntime {
             break
         case .pendingInvitation, .declined, .expired, .scheduled,
              .completed, .archived:
+#if HEALTHCOMP_STAGING
+            StagingScoringOperatorControls.recordActivity(.skippedLifecycle)
+#endif
             return RemoteOwnerScoreRefreshOutcome(
                 materialization: materialization,
                 activityFailure: nil
@@ -945,14 +970,36 @@ actor RemoteCompetitionRuntime {
             startDay: configuration.acceptedSchedule.startDay
         )
         let read: ActivityWindowRead
+#if HEALTHCOMP_STAGING
+        StagingScoringOperatorControls.recordActivity(.readStarted)
+#endif
         do {
             read = try await environment.read(window)
         } catch let failure as CompetitionActivitySourceError {
+#if HEALTHCOMP_STAGING
+            StagingScoringOperatorControls.recordActivity(.readFailed)
+#endif
             return RemoteOwnerScoreRefreshOutcome(
                 materialization: materialization,
                 activityFailure: failure
             )
+        } catch {
+#if HEALTHCOMP_STAGING
+            StagingScoringOperatorControls.recordActivity(.readFailed)
+#endif
+            throw error
         }
+#if HEALTHCOMP_STAGING
+        StagingScoringOperatorControls.recordActivity(.readCompleted)
+        for day in read.days {
+            switch day {
+            case .snapshot:
+                StagingScoringOperatorControls.recordActivity(.snapshotDays)
+            case .missing:
+                StagingScoringOperatorControls.recordActivity(.missingDays)
+            }
+        }
+#endif
         let evaluatedAt = now()
         let existingOutboxEntries = try await outboxStore.entries()
         let ownerLedger = materialization.journal.projection
@@ -990,7 +1037,12 @@ actor RemoteCompetitionRuntime {
         for (offset, result) in read.days.enumerated() {
             let ordinal = offset + 1
             let dayStart = try window.calendar.startOfDay(result.day)
-            guard dayStart <= evaluatedAt else { continue }
+            guard dayStart <= evaluatedAt else {
+#if HEALTHCOMP_STAGING
+                StagingScoringOperatorControls.recordActivity(.futureDays)
+#endif
+                continue
+            }
 
             let evidence = try Self.remoteEvidence(from: result)
             if let pending = pendingRequests
@@ -1003,6 +1055,16 @@ actor RemoteCompetitionRuntime {
                    evidence: evidence,
                    clientRevision: pending.clientRevision
                ).wireContentSHA256 == pending.wireContentSHA256 {
+#if HEALTHCOMP_STAGING
+                StagingScoringOperatorControls.recordActivity(.unchangedOutbox)
+                if existingOutboxEntries.contains(where: { entry in
+                    guard entry.semanticEventID == pending.semanticEventID else { return false }
+                    if case .permanentFailure = entry.state { return true }
+                    return false
+                }) {
+                    StagingScoringOperatorControls.recordActivity(.unchangedTerminal)
+                }
+#endif
                 continue
             }
             if let accepted = acceptedByOrdinal[ordinal],
@@ -1013,6 +1075,9 @@ actor RemoteCompetitionRuntime {
                    evidence: evidence,
                    clientRevision: accepted.clientRevision
                ).wireContentSHA256 == accepted.wireContentSHA256 {
+#if HEALTHCOMP_STAGING
+                StagingScoringOperatorControls.recordActivity(.unchangedAccepted)
+#endif
                 continue
             }
 
@@ -1046,6 +1111,9 @@ actor RemoteCompetitionRuntime {
                 .scoreRevision(request),
                 enqueuedAt: evaluatedAt
             )
+#if HEALTHCOMP_STAGING
+            StagingScoringOperatorControls.recordActivity(.queuedRevisions)
+#endif
         }
         await syncCoordinator.waitUntilIdle()
         guard let loaded = try await store.load(
