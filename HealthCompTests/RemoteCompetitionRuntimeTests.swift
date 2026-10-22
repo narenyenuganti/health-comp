@@ -1404,7 +1404,20 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
             now: { dayOneNoon }
         )
 
+#if HEALTHCOMP_STAGING
+        let observation = StagingScoringOperatorControls()
+        observation.bind(StagingScoringCaptureOwner())
+        XCTAssertTrue(observation.requestActivityObservation())
+        let outcome = await observation.observeActivity {
+            await runtime.synchronizeAll()
+        }
+        XCTAssertEqual(observation.activityDisplayState(), .complete(.init(counts: [
+            .readStarted: 1, .readCompleted: 1, .snapshotDays: 1,
+            .missingDays: 6, .futureDays: 6, .queuedRevisions: 1,
+        ])))
+#else
         let outcome = await runtime.synchronizeAll()
+#endif
 
         XCTAssertEqual(outcome.failures, [])
         let requests = await probe.scoreRequests()

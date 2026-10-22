@@ -36,6 +36,7 @@
 		306D88343452CE12051ED31D /* CompetitionTestLabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BE3EF97EDDB31A7DA80B856 /* CompetitionTestLabView.swift */; };
 		326B43DCD5E31D60D7D8ECC5 /* JSONCompetitionEventStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD0C12E55F3C163C315598D5 /* JSONCompetitionEventStoreTests.swift */; };
 		34375EA0795DBFCC09E7D120 /* ComposableArchitecture in Frameworks */ = {isa = PBXBuildFile; productRef = C19E50C9B46A4490A6CFAAEE /* ComposableArchitecture */; };
+		37F3F6C80F10616EA3888B7C /* StagingActivityObservationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6E59EB0F94271385170C864 /* StagingActivityObservationTests.swift */; };
 		3CC601AC4956AFE4E678AC28 /* AccountFeatureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 511292C66B804FC74970BB4B /* AccountFeatureTests.swift */; };
 		3D7EA73CDC827C2224DFF76F /* CompetitionNotificationPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78CD3641AF9961D0DE49E710 /* CompetitionNotificationPreferences.swift */; };
 		3DDD361C9B108A53763C47B8 /* StagingAppleWebAuthenticationConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3A18A121BDE529295DC3BAD /* StagingAppleWebAuthenticationConfiguration.swift */; };
@@ -61,6 +62,7 @@
 		6130C4E53FA5F34F75A83996 /* LocalCompetitionRuntimeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D93500BA9AA5B7AF63C71F7 /* LocalCompetitionRuntimeTests.swift */; };
 		6149987E19B2247AFDA3396D /* CompetitionSyncModelsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D3A86214F2EA7EB552733D5 /* CompetitionSyncModelsTests.swift */; };
 		617C5F24C583E12019770400 /* CompetitionNotificationClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 35062161F195329954CCC954 /* CompetitionNotificationClientTests.swift */; };
+		61D7414F977DAEBF9425C24C /* StagingActivityObservationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6E59EB0F94271385170C864 /* StagingActivityObservationTests.swift */; };
 		633C2CCC1EFC5F2546E47402 /* RemoteCompetitionRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = C552868F11DF18D3E8FB90CE /* RemoteCompetitionRuntime.swift */; };
 		63626B6583F3AA09DED4C760 /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = 765098240911111A6F629AE3 /* Supabase */; };
 		664893A2DD239F6897D6B582 /* CompetitionDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45B4CB5326E660812EDE995E /* CompetitionDetailView.swift */; };
@@ -243,6 +245,7 @@
 		AF7183065EBF2A1841506F8C /* AppleWebAccountDeletionClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppleWebAccountDeletionClient.swift; sourceTree = "<group>"; };
 		AFA09548C8311BA7BC4F9C17 /* CompetitionNotificationPlanner.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionNotificationPlanner.swift; sourceTree = "<group>"; };
 		B0553EBC556DCCF32E9E73D5 /* CompetitionOutboxStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionOutboxStore.swift; sourceTree = "<group>"; };
+		B6E59EB0F94271385170C864 /* StagingActivityObservationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StagingActivityObservationTests.swift; sourceTree = "<group>"; };
 		B74EA43D24EEE51BE2DDEDAB /* CompetitionSyncModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionSyncModels.swift; sourceTree = "<group>"; };
 		B78FA5A4670AECA86AA95557 /* AccountFeature.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountFeature.swift; sourceTree = "<group>"; };
 		B9A7D5544146DA84C8A71125 /* RemoteCompetitionClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteCompetitionClient.swift; sourceTree = "<group>"; };
@@ -461,6 +464,7 @@
 				119AA0F1200F5722F1BC1092 /* RemoteCompetitionFeatureTests.swift */,
 				8DD31AE43369703843AE31C9 /* RemoteCompetitionRuntimeTests.swift */,
 				DC1082ED31F47789C75550D1 /* SharedClientLifetimeTests.swift */,
+				B6E59EB0F94271385170C864 /* StagingActivityObservationTests.swift */,
 				5807455BF69B3050795BB69B /* StagingScoringResponseCaptureTests.swift */,
 				2F6768BD6108222519CD7CA7 /* SupabaseAppleWebDeletionTransportTests.swift */,
 				A1330EF9B221036E2395D7B1 /* SupabaseAuthStorageLifetimeTests.swift */,
@@ -733,6 +737,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				61D7414F977DAEBF9425C24C /* StagingActivityObservationTests.swift in Sources */,
 				BBD9741CD776F299930705E7 /* StagingScoringResponseCaptureTests.swift in Sources */,
 				E2C81B0534EE9061E77A2BD5 /* SupabaseAppleWebDeletionTransportTests.swift in Sources */,
 				2A9876CAEA46503A11C1A8EA /* SupabaseConfigurationTests.swift in Sources */,
@@ -850,6 +855,7 @@
 				4998D06AD6158262F8B8B73B /* RemoteCompetitionFeatureTests.swift in Sources */,
 				C039B03FB2A0FB239458547D /* RemoteCompetitionRuntimeTests.swift in Sources */,
 				F1927C81415BCF5009F8B628 /* SharedClientLifetimeTests.swift in Sources */,
+				37F3F6C80F10616EA3888B7C /* StagingActivityObservationTests.swift in Sources */,
 				90E8A42DD1BF66CE86BB1F5D /* StagingScoringResponseCaptureTests.swift in Sources */,
 				493930FA0C8274F35D6A37BF /* SupabaseAppleWebDeletionTransportTests.swift in Sources */,
 				CA0B98322C11147817A5D51F /* SupabaseAuthStorageLifetimeTests.swift in Sources */,

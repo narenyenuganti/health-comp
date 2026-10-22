@@ -394,6 +394,18 @@ private struct StagingScoringDiagnosticPage: View {
         TimelineView(.periodic(from: .now, by: 1)) { _ in
             List {
                 Section {
+                    Text("Observe one manual refresh within ten minutes. Only fixed counts are held in memory; no Health values, account IDs or request references are collected.")
+                    if scenePhase == .active {
+                        activityObservationState
+                    } else {
+                        Text("Activity observation hidden while Staging is inactive.")
+                    }
+                } header: {
+                    Text("Activity to submission")
+                } footer: {
+                    Text("Counts cover all competitions checked by that refresh. Queued revisions are not proof of server acceptance. Closing or backgrounding the app clears a started observation.")
+                }
+                Section {
                     Text("Arm once, return to Competition and pull to refresh once, then return here within 60 seconds. Do not change accounts.")
                     Text("This screen does not refresh or send a request. A captured response is not proof that your gesture caused it.")
                 }
@@ -412,6 +424,62 @@ private struct StagingScoringDiagnosticPage: View {
         .onDisappear { showsReference = false }
         .onChange(of: scenePhase) { _, phase in
             if phase != .active { showsReference = false }
+        }
+    }
+
+    @ViewBuilder
+    private var activityObservationState: some View {
+        switch controls.activityDisplayState() {
+        case .unavailable:
+            Text("Activity observation is temporarily unavailable.")
+        case .off:
+            Button("Observe Next Refresh") {
+                _ = controls.requestActivityObservation()
+            }
+            .accessibilityIdentifier("staging.activity.arm")
+            .frame(minHeight: 44)
+        case .waiting:
+            Text("Ready. Return to Competition and pull to refresh once.")
+            clearActivityObservation
+        case .running:
+            Text("Refresh observation is running.")
+            clearActivityObservation
+        case let .complete(summary):
+            Text("Refresh observation finished.")
+                .accessibilityIdentifier("staging.activity.finished")
+            ForEach(StagingScoringOperatorControls.ActivityEvent.allCases, id: \.self) { event in
+                Text("\(activityLabel(event)): \(summary[event])")
+                    .accessibilityIdentifier("staging.activity.\(event.rawValue)")
+            }
+            clearActivityObservation
+        case .closed:
+            Text("Activity observation cleared or expired. A new app session is required.")
+        }
+    }
+
+    private var clearActivityObservation: some View {
+        Button("Clear Activity Observation") {
+            controls.cancelActivityObservation()
+        }
+        .accessibilityIdentifier("staging.activity.clear")
+        .frame(minHeight: 44)
+    }
+
+    private func activityLabel(_ event: StagingScoringOperatorControls.ActivityEvent) -> String {
+        switch event {
+        case .missingDependency: "Missing runtime dependency"
+        case .skippedLifecycle: "Non-scoring competitions skipped"
+        case .readStarted: "Activity reads started"
+        case .readCompleted: "Activity reads completed"
+        case .snapshotDays: "Days with Activity summaries"
+        case .missingDays: "Days without Activity summaries"
+        case .futureDays: "Future days skipped"
+        case .unchangedOutbox: "Unchanged saved revisions"
+        case .unchangedTerminal: "Unchanged terminal revisions"
+        case .unchangedAccepted: "Unchanged accepted revisions"
+        case .queuedRevisions: "New revisions queued"
+        case .readFailed: "Activity read failures"
+        case .reconciliationFailed: "Reconciliation failures"
         }
     }
 

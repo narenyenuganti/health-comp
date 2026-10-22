@@ -617,12 +617,19 @@ private actor RemoteCompetitionClientCoordinator {
     }
 
     func reconcileAll(
-        trigger _: ActivityRefreshTrigger
+        trigger: ActivityRefreshTrigger
     ) async -> CompetitionPublication {
         await withOperationGate {
             guard terminalTeardown == nil else {
                 return terminalBlockedPublication()
             }
+#if HEALTHCOMP_STAGING
+            if trigger == .pullToRefresh {
+                return await StagingScoringOperatorControls.shared.observeActivity {
+                    await self.performReconciliation()
+                }
+            }
+#endif
             return await performReconciliation()
         }
     }
