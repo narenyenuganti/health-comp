@@ -38,6 +38,7 @@ jobs:
         run: |
           set -euo pipefail
           bash scripts/test-verify-no-secrets.sh
+          python3 -B -m unittest scripts.tests.test_verify_support_email
           bash scripts/test-backup-runbook.sh
           bash scripts/test-backup-runbook-checks.sh
           bash -n scripts/emit-recovery-history-test-sql.sh
