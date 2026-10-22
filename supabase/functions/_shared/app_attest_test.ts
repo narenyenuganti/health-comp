@@ -861,8 +861,10 @@ Deno.test("legacy assertion accepts Apple's signed authenticator flag", async ()
   );
 });
 
-Deno.test("assertion rejection diagnostics distinguish object key and signature stages", async () => {
+Deno.test("assertion rejection diagnostics distinguish CBOR, key, and signature stages", async () => {
   const fixture = await syntheticAssertion(false);
+  const multiple = Buffer.concat([fixture.assertion, cbor.encode(0)]);
+  assertEquals(cbor.decodeAllSync(multiple).length, 2);
   const policy: AppAttestVerificationPolicy = {
     appId: fixture.appId,
     environment: "development",
@@ -875,6 +877,15 @@ Deno.test("assertion rejection diagnostics distinguish object key and signature 
       captureCode(() =>
         verifyAppAttestAssertion({
           assertion: new Uint8Array([0xff]),
+          clientData: fixture.clientData,
+          publicKeyPEM: fixture.publicKeyPEM,
+          previousSignCount: 0,
+          policy,
+        })
+      ),
+      captureCode(() =>
+        verifyAppAttestAssertion({
+          assertion: multiple,
           clientData: fixture.clientData,
           publicKeyPEM: fixture.publicKeyPEM,
           previousSignCount: 0,
@@ -901,11 +912,74 @@ Deno.test("assertion rejection diagnostics distinguish object key and signature 
       ),
     ],
     [
-      "invalid_assertion_object",
+      "invalid_assertion_cbor",
+      "invalid_assertion_cbor",
       "invalid_key",
       "invalid_assertion_signature",
     ],
   );
+});
+
+Deno.test("assertion rejects incorrect object keys with a shape code", async () => {
+  const fixture = await syntheticAssertion(false);
+  const decoded = cbor.decodeFirstSync(fixture.assertion) as {
+    signature: Buffer;
+    authenticatorData: Buffer;
+  };
+  for (
+    const assertion of [
+      await cbor.encodeAsync({ authenticatorData: decoded.authenticatorData }),
+      await cbor.encodeAsync({ ...decoded, extra: true }),
+    ]
+  ) {
+    assertEquals(cbor.decodeAllSync(assertion).length, 1);
+    expectCode("invalid_assertion_shape", () =>
+      verifyAppAttestAssertion({
+        assertion,
+        clientData: fixture.clientData,
+        publicKeyPEM: fixture.publicKeyPEM,
+        previousSignCount: 0,
+        policy: {
+          appId: fixture.appId,
+          environment: "development",
+          allowedValidationCategories: [3],
+          allowedBundleVersions: ["1"],
+          now: new Date("2026-08-15T00:00:00Z"),
+        },
+      }));
+  }
+});
+
+Deno.test("assertion rejects non-byte fields with a fields code", async () => {
+  const fixture = await syntheticAssertion(false);
+  const decoded = cbor.decodeFirstSync(fixture.assertion) as {
+    signature: Buffer;
+    authenticatorData: Buffer;
+  };
+  const input = {
+    clientData: fixture.clientData,
+    publicKeyPEM: fixture.publicKeyPEM,
+    previousSignCount: 0,
+    policy: {
+      appId: fixture.appId,
+      environment: "development" as const,
+      allowedValidationCategories: [3],
+      allowedBundleVersions: ["1"],
+      now: new Date("2026-08-15T00:00:00Z"),
+    },
+  };
+  for (
+    const assertion of [
+      await cbor.encodeAsync({ ...decoded, authenticatorData: "not bytes" }),
+      await cbor.encodeAsync({ ...decoded, signature: "not bytes" }),
+    ]
+  ) {
+    assertEquals(cbor.decodeAllSync(assertion).length, 1);
+    expectCode(
+      "invalid_assertion_fields",
+      () => verifyAppAttestAssertion({ ...input, assertion }),
+    );
+  }
 });
 
 Deno.test("assertion rejects flag-shape mismatches and extra extension CBOR", async () => {
@@ -924,17 +998,22 @@ Deno.test("assertion rejects flag-shape mismatches and extra extension CBOR", as
     };
     const mismatched = Buffer.from(decoded.authenticatorData);
     mismatched[32] = extended ? 0x00 : 0x80;
-    expectCode("invalid_assertion_object", () =>
-      verifyAppAttestAssertion({
-        assertion: cbor.encode({
-          ...decoded,
-          authenticatorData: mismatched,
+    const assertion = await cbor.encodeAsync({
+      ...decoded,
+      authenticatorData: mismatched,
+    });
+    assertEquals(cbor.decodeAllSync(assertion).length, 1);
+    expectCode(
+      "invalid_assertion_authenticator_data",
+      () =>
+        verifyAppAttestAssertion({
+          assertion,
+          clientData: fixture.clientData,
+          publicKeyPEM: fixture.publicKeyPEM,
+          previousSignCount: 0,
+          policy: policyFor(fixture.appId),
         }),
-        clientData: fixture.clientData,
-        publicKeyPEM: fixture.publicKeyPEM,
-        previousSignCount: 0,
-        policy: policyFor(fixture.appId),
-      }));
+    );
   }
 
   const extended = await syntheticAssertion(true);
@@ -942,18 +1021,95 @@ Deno.test("assertion rejects flag-shape mismatches and extra extension CBOR", as
     signature: Buffer;
     authenticatorData: Buffer;
   };
-  expectCode("invalid_assertion_object", () =>
+  const assertion = await cbor.encodeAsync({
+    ...decoded,
+    authenticatorData: Buffer.concat([
+      decoded.authenticatorData,
+      await cbor.encodeAsync({ unexpected: true }),
+    ]),
+  });
+  assertEquals(cbor.decodeAllSync(assertion).length, 1);
+  expectCode("invalid_extensions", () =>
     verifyAppAttestAssertion({
-      assertion: cbor.encode({
-        ...decoded,
-        authenticatorData: Buffer.concat([
-          decoded.authenticatorData,
-          cbor.encode({ unexpected: true }),
-        ]),
-      }),
+      assertion,
       clientData: extended.clientData,
       publicKeyPEM: extended.publicKeyPEM,
       previousSignCount: 0,
       policy: policyFor(extended.appId),
     }));
+});
+
+Deno.test("assertion rejects authenticator data outside accepted lengths", async () => {
+  const fixture = await syntheticAssertion(false);
+  const decoded = cbor.decodeFirstSync(fixture.assertion) as {
+    signature: Buffer;
+    authenticatorData: Buffer;
+  };
+  const extended = cbor.decodeFirstSync(
+    (await syntheticAssertion(true)).assertion,
+  ) as { authenticatorData: Buffer };
+  const input = {
+    clientData: fixture.clientData,
+    publicKeyPEM: fixture.publicKeyPEM,
+    previousSignCount: 0,
+    policy: {
+      appId: fixture.appId,
+      environment: "development" as const,
+      allowedValidationCategories: [3],
+      allowedBundleVersions: ["1"],
+      now: new Date("2026-08-15T00:00:00Z"),
+    },
+  };
+  for (
+    const authenticatorData of [
+      decoded.authenticatorData.subarray(0, 36),
+      Buffer.concat([decoded.authenticatorData, Buffer.from([0])]),
+      Buffer.concat([
+        extended.authenticatorData,
+        Buffer.alloc(1_025 - extended.authenticatorData.length),
+      ]),
+    ]
+  ) {
+    const assertion = await cbor.encodeAsync({ ...decoded, authenticatorData });
+    assertEquals(cbor.decodeAllSync(assertion).length, 1);
+    expectCode(
+      "invalid_assertion_authenticator_data",
+      () => verifyAppAttestAssertion({ ...input, assertion }),
+    );
+  }
+});
+
+Deno.test("assertion classifies signature length separately from verification", async () => {
+  const fixture = await syntheticAssertion(false);
+  const decoded = cbor.decodeFirstSync(fixture.assertion) as {
+    signature: Buffer;
+    authenticatorData: Buffer;
+  };
+  const input = {
+    clientData: fixture.clientData,
+    publicKeyPEM: fixture.publicKeyPEM,
+    previousSignCount: 0,
+    policy: {
+      appId: fixture.appId,
+      environment: "development" as const,
+      allowedValidationCategories: [3],
+      allowedBundleVersions: ["1"],
+      now: new Date("2026-08-15T00:00:00Z"),
+    },
+  };
+  for (
+    const [length, code] of [
+      [63, "invalid_assertion_signature_length"],
+      [64, "invalid_assertion_signature"],
+      [80, "invalid_assertion_signature"],
+      [81, "invalid_assertion_signature_length"],
+    ] as const
+  ) {
+    const assertion = await cbor.encodeAsync({
+      ...decoded,
+      signature: Buffer.alloc(length),
+    });
+    assertEquals(cbor.decodeAllSync(assertion).length, 1);
+    expectCode(code, () => verifyAppAttestAssertion({ ...input, assertion }));
+  }
 });
