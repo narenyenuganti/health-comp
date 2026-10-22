@@ -14,7 +14,53 @@ records the matching boundary. Actual recovery, protection against resurrecting
 deleted identities, and all other unwaived qualification gates remain open.
 This is a scope decision, not a runtime receipt or production-readiness claim.
 
-## Current qualification checkpoint — October 21, 2026 UTC
+## Current qualification checkpoint — October 22, 2026 UTC
+
+**Not production-ready.** The App Attest compatibility fix is integrated and
+deployed to Staging; physical acceptance remains unverified.
+
+- **Automated source matrix:** merged main
+  `d897a73f9425ab6c141549695672fbba065d1322` passed
+  [Backend CI](https://github.com/narenyenuganti/health-comp/actions/runs/39691971124)
+  and [iOS CI, attempt 2](https://github.com/narenyenuganti/health-comp/actions/runs/39691971125/attempts/2),
+  plus Cloudflare Pages. Completed logs qualify 22 pgTAP files / 849 assertions
+  twice, 146 Deno passes / zero failures / one gated ignore, the separate raw
+  dependency worker and 15 real-JWT HTTP tests. iOS qualifies 246 Core tests in
+  each of Debug and Release, 635 app tests, 11 selected UI tests, 72 release-style
+  Staging tests and three unsigned Debug/Staging/Release device builds. Original
+  PR and main UI failures remain recorded; unchanged-code retries passed without
+  weakening assertions or timeouts. Their causes are not confirmed.
+- **Narrow verifier change:** [PR #157](https://github.com/narenyenuganti/health-comp/pull/157)
+  accepts exactly the existing AT flag or AT+ED with a strict trailing extension
+  map. Other flag combinations remain rejected; certificate, nonce, identity,
+  key and counter validation are unchanged. The modified public fixture reaches
+  nonce rejection, not full cryptographic acceptance or proof of the phone's
+  actual flag byte.
+- **Scoped Staging deployment:** only `submit-score-revision` advanced from
+  ACTIVE version 15 to 16, preserving its gateway configuration. Four returned
+  source assets matched `d897a73`; target metadata stayed stable around readback
+  and the credential-free boot probe, and all other eleven Function versions and
+  authentication settings were unchanged. The probe returned the expected
+  invalid-schema HTTP 400 before authentication. Downloaded scratch was removed.
+  No deployed lockfile was returned: dependency-graph equality is unproved.
+- **Physical check incomplete:** normal activation showed the existing Day 1
+  competition. Mirroring then rejected the sole refresh tool invocation with
+  `noWindowsAvailable`; refresh execution was not confirmed or repeated. Two
+  independent aggregate queue snapshots remained unchanged: the prior terminal
+  Day 1 rejection was preserved, with no pending or accepted target entry. This
+  does not prove a new request reached version 16 or that the patch failed.
+  No debugger, reinstall, account/key reset or production action occurred.
+
+Next: restore normal phone UI access and verify a genuinely new eligible score
+through the ordinary app path. Never reset the terminal entry or fabricate an
+Activity change. Preserve the October 21–27 match and completed history. The
+score-linked App Attest/replay, replacement enrollment, stable two-client result,
+full APNs, recovery, privacy publication, signed distribution and production gates
+remain open. Paid setup and Apple Support remain held; physical deletion is
+owner-skipped and universal links deferred, not PASS. See the
+[current evidence ledger](production-beta-evidence.md#current-qualification-checkpoint--october-22-2026-utc).
+
+## Historical qualification checkpoint — October 21, 2026 UTC
 
 **Not production-ready.** This checkpoint advances automated source and hosted
 database evidence, not the physical scoring or release gates. Earlier receipts
@@ -65,7 +111,7 @@ recovery, qualified privacy publication, signed release/distribution and product
 promotion remain open. Paid setup and Apple Support contact remain held. Physical
 deletion is owner-skipped and universal links are deferred, not PASS.
 
-The [evidence ledger](production-beta-evidence.md#current-qualification-checkpoint--october-21-2026-utc)
+The [evidence ledger](production-beta-evidence.md#historical-qualification-checkpoint--october-21-2026-utc)
 records the private receipt hashes and observation-time limits. No private receipt
 bodies, identifiers, request references, tokens or Health values are published.
 

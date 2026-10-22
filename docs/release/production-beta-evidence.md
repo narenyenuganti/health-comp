@@ -14,9 +14,65 @@ and [recovery runbook](../runbooks/backup-restore.md#private-beta-deletion-test-
 preserve the deletion feature, existing automated coverage and privacy/history
 safeguards. Other gates and **not production-ready** status remain unchanged.
 
-## Current qualification checkpoint — October 21, 2026 UTC
+## Current qualification checkpoint — October 22, 2026 UTC
 
-The [current checklist](production-beta-checklist.md#current-qualification-checkpoint--october-21-2026-utc)
+The [current checklist](production-beta-checklist.md#current-qualification-checkpoint--october-22-2026-utc)
+selects merged `d897a73` for its completed automated matrix and the scoped
+Staging version 16 deployment. Status remains **not production-ready**. App and
+configuration source remain unchanged from the selected `7839acb` package; the
+shared server verifier changed. Source, deployment and physical findings are
+separate.
+
+Private aggregate receipts are retained outside this public repository:
+
+| Receipt | SHA-256 |
+| --- | --- |
+| `app-attest-extension-rollout-frozen-2026-10-22.json` | `ce9f7ba2d03d403d6086d31e91331e2a754ce92a1da04789401ea992f4119d8e` |
+| `staging-v16-normal-app-observation-2026-10-22.json` | `1368df992290a0cf1c02e2ed883069d40a9cb8cc9c54becf3b67d50cdcaa2316` |
+
+Exact-main Backend run `39691971124` completed at October 21, 23:20:54 UTC.
+iOS run `39691971125`, attempt 2, completed at October 22, 00:43:32 UTC. Bounded
+completed-log readback qualifies the checklist's counts, successful clean-tree
+and dedicated Simulator cleanup, and three unsigned device builds. The original
+PR failure was missing system Copy in the share sheet; the original main failure
+was a rendered-configuration wait timing out before a matching subsequent read.
+Each received one failed-only retry on unchanged code. Passing retries do not
+establish either original cause or an application fix.
+
+One named deployment completed at 00:51:17 UTC. Staging scoring became ACTIVE
+version 16 with `verify_jwt=false`, unchanged from version 15. The four returned
+entrypoint/shared-verifier/shared-HTTP/import-map assets matched selected source.
+Eight target metadata fields held stable around the post-deploy download and
+after boot; other eleven Function versions/authentication settings were unchanged.
+One credential-free `POST {}` returned HTTP 400, `invalid_request` / `Invalid
+score revision`, before authentication. Both owned source scratch directories
+were removed and absence verified; the worktree remained clean and unlinked.
+No migration, credential prompt, app installation or production action occurred.
+No deployed lockfile was returned, so deployed dependency-graph equality is not
+claimed. The [public rollout receipt](https://github.com/narenyenuganti/health-comp/pull/157#issuecomment-6330031783)
+records the same scope.
+
+At 01:03:04 and 01:07:02 UTC, separate structural queue snapshots each found one
+terminal Day 1 App Attest rejection, no pending/recovery/accepted target entries
+and no new target score entry. Only the primary outbox and server cursor inventory
+were copied privately; copies were removed. The first wrapper stopped after its
+snapshot, so private identity equality across snapshots is not proved. Neither
+snapshot is a full payload decode, continuous-process/inode proof or on-device
+executable hash. Normal activation preserved the sampled process; Mirroring then
+reported `noWindowsAvailable` on the sole refresh tool call. Execution was not
+confirmed and the gesture was not repeated. The phone was released at 01:07:22
+UTC with Mirroring minimized. There was no post-phone hosted lookup.
+
+The earlier saved rejection and separate hosted flags event were not attributed
+to the same exact request; the physical flag byte remains unknown. Public-fixture
+RED-to-GREEN establishes parser compatibility only. Neither unchanged queue
+counts nor the boot response prove physical fix acceptance or failure, score
+counter advancement, replay resistance, replacement enrollment or stable results.
+Preserve all remaining gates, historical receipts and explicit owner holds.
+
+## Historical qualification checkpoint — October 21, 2026 UTC
+
+The [historical checklist](production-beta-checklist.md#historical-qualification-checkpoint--october-21-2026-utc)
 selects `a5809f9` for its completed exact-source Backend/iOS matrix and the hosted
 20/v2 database verifier. Application/configuration and Function source remain
 unchanged from `7839acb`; this source advance proves no new installation. The
