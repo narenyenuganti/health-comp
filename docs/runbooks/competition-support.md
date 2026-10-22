@@ -21,45 +21,66 @@ grant operators a mutation back door.
 
 ## Before querying
 
+### Staging Activity observation
+
+Use the normal app's **Account > Staging Diagnostics** page, after verifying
+the installed Staging build and its active account. These controls are absent
+from production. Source integration or a local test does not prove that a
+particular phone has the controls installed.
+
+Control names depend on the selected build. **Observe Next Refresh** arms
+observation only; it does not request a refresh. On builds with **Check Activity
+Now**, one tap first arms observation and then requests the existing normal
+competition refresh, leaving Diagnostics visible. If arming fails, no refresh
+is dispatched. Do not repeat a tap or gesture to obtain a preferred result.
+
+The observation retains only fixed aggregate counts in RAM, covering all
+competitions processed by that refresh. It collects no Health values, account
+identifiers or request references. The ten-minute window is a ceiling, not a
+required wait. Waiting does not prove the refresh action was missed: normal
+reconciliation may still be waiting for its operation gate. A finished summary
+or an enqueue count is not proof of server acceptance, unique revision creation
+or App Attest replay resistance.
+
+**Clear Activity Observation**, expiry, cancellation, backgrounding after
+arming, or owner retirement closes the observation. A closed observation is not
+permission to restart the app, change accounts or reset a queue/key. The Activity
+check does not arm the separate response capture below. Never enable that
+capture merely to read Activity counts.
+
 ### Staging response correlation
 
-Staging builds have a default-off, in-memory observer on the same shared
-HTTP transport. The internal `SupabaseClientProvider` hooks
-`armStagingScoringResponseCapture` and `takeStagingScoringResponseCapture`
-require the active authentication lifetime. The default Staging app registers
-the Objective-C class `HealthCompStagingScoringOperator` with that same provider.
-Its `arm` method queues one intent; normal exact-scoring-task creation executes
-the existing provider arm hook, not the debugger-stopped thread. Its `take`
-method destructively retrieves one pre-bridged in-memory value. Both use
-non-blocking lock admission and refuse a busy slot. No screen, launch argument,
-clipboard, local server or stored setting activates them.
-
-This is source wiring, not permission to attach to an installed application.
-Live activation requires its own approved,
-bounded diagnostic workflow; do not print, log or save the returned value.
+The separate **Arm One Capture** control queues a default-off, one-shot intent
+on the active authentication lifetime's shared HTTP transport. It does not
+itself send a request. The capture deadline starts when the control is armed,
+not when a qualifying request eventually begins. **Show Request Reference**
+reveals an opaque reference only after capture; leave it hidden during ordinary
+Activity checks. **Clear Capture** closes the slot.
 
 Each lifetime permits one arm with a maximum 60-second window. Only a newly
 created POST to its exact HTTPS scoring endpoint can supply a canonical
 `sb-request-id` from HTTP 401. A second matching task before retrieval discards
 the observation, including a second task before operator retrieval. Taking,
-expiry, session invalidation or the start of retirement
+expiry, backgrounding after arming, session invalidation or the start of retirement
 closes the slot; replacement owners do not inherit it. Failed retirement does
 not admit another capture or client, even when remote confirmation fails.
 Old-owner callbacks cannot clear a replacement owner's slot. The owner timer clears idle RAM while
 execution is scheduled; suspension can delay that cleanup, but expired values
 cannot be retrieved. This is not secure memory erasure.
 
-The local synthetic native debugger check passes debug and optimized controls
-without printing the synthetic response ID and checks only the first16
-persistent result slots. It does not qualify physical attachment, all debugger
-memory, continuous ownership, or response-header/hosted-analytics equality.
-Do not use interactive `po`/expression printing for this value. A separately
-approved reader must suppress persistent expression results, retain the value
-only privately in RAM, and refuse mismatched/expired owner bindings.
+The reference is not a password, but is private operational data. The app does
+not log, save or copy it; screenshots and accessibility tools can still record
+a revealed reference. Do not include it in chat, screenshots or general release
+evidence. A separately qualified, bounded correlation workflow must keep it in
+RAM and retain only allowlisted aggregate findings. Do not revive the retired
+debugger reader or timed human Terminal-copy workflow. Their historical local
+tests are not physical qualification or permission for another attempt.
 
-These hooks do not alter requests, errors, authentication, App Attest keys or
-retries. A captured response does not prove a unique UI action, refresh
+These controls do not change validation, authentication, App Attest keys or
+retry policy. A captured response does not prove a unique UI action, refresh
 causality, hosted-log equality, score acceptance or replay resistance.
+
+### Read-only case scope
 
 Record in the restricted support case:
 
