@@ -77,6 +77,7 @@ final class StagingActivityObservationTests: XCTestCase {
         await controls.observeActivity {
             StagingScoringOperatorControls.recordActivity(.readStarted)
             controls.cancelStartedCapture()
+            controls.cancelStartedActivityObservation()
             StagingScoringOperatorControls.recordActivity(.queuedRevisions)
         }
         XCTAssertEqual(controls.activityDisplayState(), .closed)
@@ -91,6 +92,7 @@ final class StagingActivityObservationTests: XCTestCase {
         XCTAssertTrue(controls.requestArm())
         await controls.observeActivity {
             controls.cancel(for: owner)
+            controls.cancelStartedCapture()
             StagingScoringOperatorControls.recordActivity(.readStarted)
         }
         XCTAssertEqual(controls.displayState(), .closed)

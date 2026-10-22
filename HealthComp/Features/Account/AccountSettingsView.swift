@@ -519,7 +519,7 @@ private struct StagingScoringDiagnosticPage: View {
 
     private var clearButton: some View {
         Button("Clear Capture") {
-            _ = controls.cancelCapture()
+            controls.cancelStartedCapture()
             showsReference = false
         }
         .frame(minHeight: 44)

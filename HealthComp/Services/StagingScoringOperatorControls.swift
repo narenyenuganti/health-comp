@@ -66,6 +66,11 @@ final class StagingScoringOperatorControls: NSObject, @unchecked Sendable {
     func cancelStartedCapture() {
         lock.withLock {
             if case .idle = state {} else { close() }
+        }
+    }
+
+    func cancelStartedActivityObservation() {
+        lock.withLock {
             if case .off = activityState {} else { closeActivity() }
         }
     }

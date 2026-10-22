@@ -161,6 +161,7 @@ struct HealthCompApp: App {
 #if HEALTHCOMP_STAGING
             if phase != .active {
                 StagingScoringOperatorControls.shared.cancelStartedCapture()
+                StagingScoringOperatorControls.shared.cancelStartedActivityObservation()
             }
 #endif
             observerDeliveryLifecycle.observe(
