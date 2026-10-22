@@ -19,6 +19,9 @@ struct AccountSettingsView: View {
     let store: StoreOf<AccountFeature>
     var notifications: AccountNotificationSettings?
     var accountCode: UUID?
+#if HEALTHCOMP_STAGING
+    var refreshCompetition: (() -> Void)?
+#endif
 
     @AppStorage(AppAppearance.storageKey)
     private var appearance = AppAppearance.system
@@ -167,7 +170,7 @@ struct AccountSettingsView: View {
 
 #if HEALTHCOMP_STAGING
             NavigationLink {
-                StagingScoringDiagnosticPage()
+                StagingScoringDiagnosticPage(refreshCompetition: refreshCompetition)
             } label: {
                 Label("Staging Diagnostics", systemImage: "stethoscope")
             }
@@ -384,9 +387,11 @@ private struct AccountProgressOverlay: View {
 
 #if HEALTHCOMP_STAGING
 private struct StagingScoringDiagnosticPage: View {
+    let refreshCompetition: (() -> Void)?
     @Environment(\.scenePhase) private var scenePhase
     @State private var showsReference = false
     @State private var armFailed = false
+    @State private var activityArmFailed = false
 
     private let controls = StagingScoringOperatorControls.shared
 
@@ -394,7 +399,7 @@ private struct StagingScoringDiagnosticPage: View {
         TimelineView(.periodic(from: .now, by: 1)) { _ in
             List {
                 Section {
-                    Text("Observe one manual refresh within ten minutes. Only fixed counts are held in memory; no Health values, account IDs or request references are collected.")
+                    Text("Run one normal competition refresh from this page. Only fixed counts are held in memory; no Health values, account IDs or request references are collected.")
                     if scenePhase == .active {
                         activityObservationState
                     } else {
@@ -406,8 +411,8 @@ private struct StagingScoringDiagnosticPage: View {
                     Text("Counts cover all competitions checked by that refresh. Queued revisions are not proof of server acceptance. Closing or backgrounding the app clears a started observation.")
                 }
                 Section {
-                    Text("Arm once, return to Competition and pull to refresh once, then return here within 60 seconds. Do not change accounts.")
-                    Text("This screen does not refresh or send a request. A captured response is not proof that your gesture caused it.")
+                    Text("The separate response capture requires a manual refresh within 60 seconds. Do not change accounts.")
+                    Text("The Activity check does not arm response capture. A captured response is not proof that your gesture caused it.")
                 }
                 Section {
                     if scenePhase == .active {
@@ -433,13 +438,18 @@ private struct StagingScoringDiagnosticPage: View {
         case .unavailable:
             Text("Activity observation is temporarily unavailable.")
         case .off:
-            Button("Observe Next Refresh") {
-                _ = controls.requestActivityObservation()
+            if let refreshCompetition {
+                Button("Check Activity Now") {
+                    activityArmFailed = !controls.startActivityCheck(refreshCompetition)
+                }
+                .accessibilityIdentifier("staging.activity.check")
+                .frame(minHeight: 44)
+                if activityArmFailed { Text("Activity check could not be started.") }
+            } else {
+                Text("Activity check is unavailable in this host.")
             }
-            .accessibilityIdentifier("staging.activity.arm")
-            .frame(minHeight: 44)
         case .waiting:
-            Text("Ready. Return to Competition and pull to refresh once.")
+            Text("Refresh requested. Waiting for Activity observation to start.")
             clearActivityObservation
         case .running:
             Text("Refresh observation is running.")

@@ -167,6 +167,12 @@ final class StagingScoringOperatorControls: NSObject, @unchecked Sendable {
         return true
     }
 
+    func startActivityCheck(_ refresh: () -> Void) -> Bool {
+        guard requestActivityObservation() else { return false }
+        refresh()
+        return true
+    }
+
     func activityDisplayState() -> ActivityDisplayState {
         guard lock.try() else { return .unavailable }
         defer { lock.unlock() }

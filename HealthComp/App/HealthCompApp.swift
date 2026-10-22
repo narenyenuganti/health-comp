@@ -300,24 +300,38 @@ private struct AccountSheet: View {
 
     var body: some View {
         NavigationStack {
-            AccountSettingsView(
-                store: accountStore,
-                notifications: AccountNotificationSettings(
-                    authorization: mainStore.competition
-                        .notificationAuthorizationState,
-                    isRequestInFlight: mainStore.competition
-                        .notificationAuthorizationRequestIsInFlight,
-                    request: {
-                        mainStore.send(.competition(.enableNotificationsTapped))
-                    }
-                ),
-                accountCode: accountCode
-            )
+            accountSettings
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("Done", action: done)
                 }
             }
         }
+    }
+
+    private var accountSettings: AccountSettingsView {
+        let notifications = AccountNotificationSettings(
+            authorization: mainStore.competition
+                .notificationAuthorizationState,
+            isRequestInFlight: mainStore.competition
+                .notificationAuthorizationRequestIsInFlight,
+            request: {
+                mainStore.send(.competition(.enableNotificationsTapped))
+            }
+        )
+#if HEALTHCOMP_STAGING
+        return AccountSettingsView(
+            store: accountStore,
+            notifications: notifications,
+            accountCode: accountCode,
+            refreshCompetition: { mainStore.send(.competition(.pullToRefresh)) }
+        )
+#else
+        return AccountSettingsView(
+            store: accountStore,
+            notifications: notifications,
+            accountCode: accountCode
+        )
+#endif
     }
 }
