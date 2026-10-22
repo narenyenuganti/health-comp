@@ -143,10 +143,13 @@ final class StagingScoringOperatorControls: NSObject, @unchecked Sendable {
 
     func cancel(for owner: StagingScoringCaptureOwner) {
         lock.withLock {
-            if self.owner === owner {
-                close()
-                closeActivity()
-            }
+            if self.owner === owner { close() }
+        }
+    }
+
+    func cancelActivityObservation(for owner: StagingScoringCaptureOwner) {
+        lock.withLock {
+            if self.owner === owner { closeActivity() }
         }
     }
 

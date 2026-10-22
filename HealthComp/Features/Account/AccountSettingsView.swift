@@ -453,7 +453,7 @@ private struct StagingScoringDiagnosticPage: View {
             }
             clearActivityObservation
         case .closed:
-            Text("Activity observation cleared or expired. A new app session is required.")
+            Text("Activity observation cleared or expired. A new app or sign-in session is required.")
         }
     }
 
@@ -477,7 +477,7 @@ private struct StagingScoringDiagnosticPage: View {
         case .unchangedOutbox: "Unchanged saved revisions"
         case .unchangedTerminal: "Unchanged terminal revisions"
         case .unchangedAccepted: "Unchanged accepted revisions"
-        case .queuedRevisions: "New revisions queued"
+        case .queuedRevisions: "Revision enqueue operations completed"
         case .readFailed: "Activity read failures"
         case .reconciliationFailed: "Reconciliation failures"
         }
@@ -519,7 +519,7 @@ private struct StagingScoringDiagnosticPage: View {
 
     private var clearButton: some View {
         Button("Clear Capture") {
-            controls.cancelStartedCapture()
+            _ = controls.cancelCapture()
             showsReference = false
         }
         .frame(minHeight: 44)

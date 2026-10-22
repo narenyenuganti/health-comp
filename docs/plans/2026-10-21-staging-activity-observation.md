@@ -17,10 +17,12 @@ The existing response-reference capture remains independent and unchanged.
 - Explicitly observe the next manual pull-to-refresh, within ten minutes.
 - Collect only fixed, bounded counts: read start/completion/failure, days with
   or without summaries, future days, skipped lifecycles, unchanged saved or
-  accepted revisions, unchanged terminal revisions, and newly queued revisions.
+  accepted revisions, unchanged terminal revisions, completed revision enqueue
+  operations, missing runtime dependencies, and reconciliation failures.
 - Counts cover every competition evaluated by that refresh. They contain no
   identifiers, dates, ring values, score values, Health samples, proof material,
-  request references, or arbitrary text. A queued revision is not an acceptance.
+  request references, or arbitrary text. An enqueue operation is neither proof
+  of a unique new entry nor server acceptance.
 - Keep the observation in RAM only. Clear it on explicit cancellation, expiry,
   app inactivity, authentication-owner retirement, or replacement. Reading it
   never extends the deadline. Expiry is checked on access, not by an independent
@@ -28,7 +30,8 @@ The existing response-reference capture remains independent and unchanged.
   from taking screenshots.
 - Scope counters to the selected refresh's task tree. Ignore unrelated work,
   late work from retired owners, and work after completion. A new observation
-  requires a new app session; do not silently rearm.
+  requires a new app process or authentication-owner session and explicit
+  operator arming; replacing an owner must never carry over the prior counts.
 
 ## Verification
 

@@ -637,6 +637,9 @@ private actor RemoteCompetitionClientCoordinator {
     private func performReconciliation() async -> CompetitionPublication {
         var issues = healthAuthorizationIssue.map { [$0] } ?? []
         guard let runtime, let profile else {
+#if HEALTHCOMP_STAGING
+            StagingScoringOperatorControls.recordActivity(.missingDependency)
+#endif
             let publication = publish(
                 materializations: [],
                 issues: issues + [.storageUnavailable]

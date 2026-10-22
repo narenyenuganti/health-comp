@@ -499,7 +499,11 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
             )
         )
 
+#if HEALTHCOMP_STAGING
+        let outcome = await observeActivity(runtime, expecting: [.skippedLifecycle: 1])
+#else
         let outcome = await runtime.synchronizeAll()
+#endif
 
         XCTAssertNil(outcome.discoveryFailure)
         XCTAssertEqual(outcome.failures, [])
@@ -639,7 +643,11 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
             cacheStore: cache
         )
 
+#if HEALTHCOMP_STAGING
+        let terminal = await observeActivity(terminalRuntime, expecting: [.skippedLifecycle: 1])
+#else
         let terminal = await terminalRuntime.synchronizeAll()
+#endif
 
         XCTAssertNil(terminal.discoveryFailure)
         XCTAssertEqual(terminal.outcomes, [])
@@ -729,7 +737,11 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
                 cacheStore: cache
             )
 
+#if HEALTHCOMP_STAGING
+            let outcome = await observeActivity(runtime, expecting: [.skippedLifecycle: 1])
+#else
             let outcome = await runtime.synchronizeAll()
+#endif
 
             XCTAssertNil(outcome.discoveryFailure, lifecycle.rawValue)
             XCTAssertEqual(outcome.outcomes, [], lifecycle.rawValue)
@@ -1278,7 +1290,11 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
             now: { dayOneNoon }
         )
 
+#if HEALTHCOMP_STAGING
+        let outcome = await observeActivity(runtime, expecting: [.readStarted: 1, .readFailed: 1])
+#else
         let outcome = await runtime.synchronizeAll()
+#endif
 
         XCTAssertEqual(outcome.failures, [])
         XCTAssertEqual(outcome.successfulCompetitions.count, 1)
@@ -3064,6 +3080,20 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
         await aliceRuntime.stop()
         await bobRuntime.stop()
     }
+
+#if HEALTHCOMP_STAGING
+    private func observeActivity(
+        _ runtime: RemoteCompetitionRuntime,
+        expecting counts: [StagingScoringOperatorControls.ActivityEvent: Int]
+    ) async -> RemoteCompetitionRuntimeOutcome {
+        let observation = StagingScoringOperatorControls()
+        observation.bind(StagingScoringCaptureOwner())
+        XCTAssertTrue(observation.requestActivityObservation())
+        let outcome = await observation.observeActivity { await runtime.synchronizeAll() }
+        XCTAssertEqual(observation.activityDisplayState(), .complete(.init(counts: counts)))
+        return outcome
+    }
+#endif
 
     private func remoteAPI(
         listCompetitions: @escaping @Sendable () async throws ->

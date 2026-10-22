@@ -83,6 +83,26 @@ final class StagingActivityObservationTests: XCTestCase {
         XCTAssertEqual(controls.displayState(), .off)
     }
 
+    func testHTTPClosureDoesNotDiscardActivityObservation() async {
+        let controls = StagingScoringOperatorControls()
+        let owner = StagingScoringCaptureOwner()
+        controls.bind(owner)
+        XCTAssertTrue(controls.requestActivityObservation())
+        XCTAssertTrue(controls.requestArm())
+        await controls.observeActivity {
+            controls.cancel(for: owner)
+            StagingScoringOperatorControls.recordActivity(.readStarted)
+        }
+        XCTAssertEqual(controls.displayState(), .closed)
+        XCTAssertEqual(controls.activityDisplayState(), .complete(.init(counts: [
+            .readStarted: 1,
+        ])))
+        XCTAssertTrue(controls.cancelCapture())
+        XCTAssertEqual(controls.activityDisplayState(), .complete(.init(counts: [
+            .readStarted: 1,
+        ])))
+    }
+
     func testFailureIsRethrownWithoutChangingTheOriginalOperation() async {
         enum Expected: Error { case failure }
         let controls = StagingScoringOperatorControls()

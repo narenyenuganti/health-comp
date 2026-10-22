@@ -5,6 +5,22 @@ import XCTest
 @testable import HealthComp
 
 final class StagingScoringResponseCaptureTests: XCTestCase {
+    func testHTTPClosureKeepsActivityObservationButAuthenticationRetirementClearsIt() async throws {
+        let fixture = ScoringCaptureFixture()
+        defer { fixture.close() }
+        let controls = StagingScoringOperatorControls()
+        let provider = fixture.provider().withStagingScoringOperator(controls)
+        let owner = try provider.authenticationLifetime()
+        XCTAssertTrue(controls.requestActivityObservation())
+        XCTAssertTrue(controls.requestArm())
+        try await fixture.reject(owner.client)
+        try await fixture.reject(owner.client)
+        XCTAssertEqual(controls.displayState(), .closed)
+        XCTAssertEqual(controls.activityDisplayState(), .waiting)
+        try await provider.retireAuthenticationLifetime(owner)
+        XCTAssertEqual(controls.activityDisplayState(), .closed)
+    }
+
     func testDisplayUsesExistingCaptureWithoutConsumingItOrExtendingItsDeadline() async throws {
         let fixture = ScoringCaptureFixture()
         defer { fixture.close() }

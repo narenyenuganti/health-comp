@@ -628,10 +628,18 @@ actor RemoteCompetitionRuntime {
             }
             switch descriptor.lifecycle {
             case .declined, .expired, .cancelled:
+#if HEALTHCOMP_STAGING
+                StagingScoringOperatorControls.recordActivity(.skippedLifecycle)
+#endif
                 nextCacheByID.removeValue(
                     forKey: descriptor.competitionID
                 )
                 continue
+            case .pending:
+#if HEALTHCOMP_STAGING
+                StagingScoringOperatorControls.recordActivity(.skippedLifecycle)
+#endif
+                break
             default:
                 break
             }
@@ -973,6 +981,11 @@ actor RemoteCompetitionRuntime {
                 materialization: materialization,
                 activityFailure: failure
             )
+        } catch {
+#if HEALTHCOMP_STAGING
+            StagingScoringOperatorControls.recordActivity(.readFailed)
+#endif
+            throw error
         }
 #if HEALTHCOMP_STAGING
         StagingScoringOperatorControls.recordActivity(.readCompleted)

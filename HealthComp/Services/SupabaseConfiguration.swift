@@ -412,6 +412,7 @@ struct SupabaseClientProvider: Sendable {
         // Revoke debugger reads before registry admission closes or cancellation throws.
         owner.stagingScoringResponseCapture?.cancel()
         stagingOperatorControls?.cancel(for: owner.stagingScoringCaptureOwner)
+        stagingOperatorControls?.cancelActivityObservation(for: owner.stagingScoringCaptureOwner)
 #endif
         try await sharedClient.retire(owner) { retiring in
             // Registry admission is already closed while remote confirmation
