@@ -15,8 +15,13 @@ export type AppAttestEnvironment = "development" | "production";
 export type AppAttestVerificationErrorCode =
   | "invalid_app_identity"
   | "invalid_assertion"
+  | "invalid_assertion_authenticator_data"
+  | "invalid_assertion_cbor"
+  | "invalid_assertion_fields"
   | "invalid_assertion_object"
+  | "invalid_assertion_shape"
   | "invalid_assertion_signature"
+  | "invalid_assertion_signature_length"
   | "invalid_attestation_authenticator_data"
   | "invalid_attestation_authenticator_cbor"
   | "invalid_attestation_authenticator_counter"
@@ -703,16 +708,16 @@ export function verifyAppAttestAttestation(input: {
 }
 
 function decodeAssertion(value: Uint8Array) {
-  const decoded = decodeSingleCBOR(value, "invalid_assertion_object");
+  const decoded = decodeSingleCBOR(value, "invalid_assertion_cbor");
   if (!exactKeys(decoded, ["authenticatorData", "signature"])) {
-    fail("invalid_assertion_object");
+    fail("invalid_assertion_shape");
   }
   const object = decoded as Record<string, unknown>;
   if (
     !Buffer.isBuffer(object.authenticatorData) ||
     !Buffer.isBuffer(object.signature)
   ) {
-    fail("invalid_assertion_object");
+    fail("invalid_assertion_fields");
   }
   const authData = object.authenticatorData as Buffer;
   const signature = object.signature as Buffer;
@@ -720,11 +725,9 @@ function decodeAssertion(value: Uint8Array) {
     (authData[32] === 0x00 || authData[32] === 0x40);
   const extended = authData.length > 37 && authData.length <= 1_024 &&
     authData[32] === 0x80;
-  if (
-    (!legacy && !extended) ||
-    signature.length < 64 || signature.length > 80
-  ) {
-    fail("invalid_assertion_object");
+  if (!legacy && !extended) fail("invalid_assertion_authenticator_data");
+  if (signature.length < 64 || signature.length > 80) {
+    fail("invalid_assertion_signature_length");
   }
   return {
     authData,
