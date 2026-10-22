@@ -17,6 +17,72 @@ safeguards. Other gates and **not production-ready** status remain unchanged.
 ## Current qualification checkpoint — October 22, 2026 UTC
 
 The [current checklist](production-beta-checklist.md#current-qualification-checkpoint--october-22-2026-utc)
+selects merged `3c155c89b97c9af527f9a8670877b2e1c20c7996` for the automated
+matrix, `04d1792` for the Staging version 17 scoring deployment, and `03e1998`
+for the installed one-tap Activity package. These are separate observations.
+Status remains **not production-ready**.
+
+Exact-main Backend run `39779485955` and iOS run `39779485964` both passed.
+Independent numeric-only log readback qualifies the checklist's counts, three
+unsigned device builds, clean-source verification and dedicated CI Simulator
+cleanup. PR #162's exact reviewed head also passed both suites before its
+guarded squash merge; the reviewed and merged trees are identical. That change
+only recognizes the exact support mailbox in a plain or Cloudflare-encoded
+anchor, with malformed/wrong-target negative tests. Seven live Staging website
+checks passed; no website content or app behavior changed.
+
+Private aggregate receipts remain outside this public repository:
+
+| Receipt | SHA-256 |
+| --- | --- |
+| `assertion-diagnostics-staging-deployment-20261022T085126Z.json` | `3dd15e439a405cdbf9b195f61305ac8680b6eb77d5b851fe8fe0827b1d4be3c8` |
+| `staging-physical-update-03e1998-20261022T100323Z.json` | `05dfe0acfec3bff387038fe75c33b5836a554b9019dcbd05925866b4027f01c1` |
+| `staging-one-tap-physical-observation-20261022T1004Z.json` | `230a0da6bd10a7d1479ecc652a87fbbcce2a8ae90967641c207605be5b1a0acf` |
+| `staging-current-cycle-proof-20261022T100847Z.json` | `8b3942bdfedcfef03a16af9f7d1dc0e95f4170fb779c4ffed6eecf7e9880a4e5` |
+
+The version 17 deployment changed only fixed diagnostic labels. Four returned
+assets matched the selected source; the other eleven Functions and gateway
+authentication settings were unchanged. Two credential-free probes returned
+the expected invalid-request result. The first local checker expected the wrong
+flat error shape; source inspection corrected it to the existing nested contract
+before the second probe. These responses do not prove authenticated acceptance.
+No migration, account/key change or production action occurred.
+
+At 10:04 UTC, one normal launch and one **Check Activity Now** invocation
+completed on the updated physical app. One Activity read started/completed;
+the aggregate observation counted one summary day, six missing summary days,
+five future-day skips, nine non-scoring lifecycle skips, two unchanged-accepted
+skips and zero enqueues. No read or reconciliation failure was reported.
+The counters cover all competitions in that refresh, not one bound match.
+Missing summaries are not proof of zero Activity. An accepted skip means equality
+with an already visible local server-derived row, not new server acceptance.
+There was no debugger, manual refresh gesture or separate response capture.
+The diagnostic was cleared, the Account drawer closed and Mirroring minimized.
+The over-install preserved one profile root and 26 file-name metadata entries,
+not independently verified file contents or an on-device executable hash.
+
+At 10:08:47 UTC, a separate bounded Staging Management query selected only 16
+allowlisted aggregate fields in a read-only, repeatable-read transaction with
+rollback. It found two participants and two elapsed days in the unique current
+cycle: no creator revisions; four invitee revisions spanning two days; one
+latest available invitee day classified as enrollment-backed by the query; zero
+latest assertion-backed days; zero results. It returned no identifiers, scores, Health
+values or proof bytes. The query does not establish exact current-phone binding,
+proof-byte validation, counter advancement, replay resistance, refresh causality
+or stable two-client results. Assertion/enrollment counts may overlap and must
+not be added. A retired installation/key can explain an absent current chain.
+
+The next physical check needs genuinely changed Activity, not another unchanged
+refresh. Preserve the existing October 21–27 cycle; October 28 only opens its
+final-result check. Current-installation APNs routing, hosted recovery, privacy
+publication, signed distribution and production promotion remain unqualified.
+The owner-skipped deletion test, universal-link deferral, paid-setup hold and
+Apple-contact hold remain unchanged. No completed historical notification
+lookup needs repeating.
+
+## Earlier qualification checkpoint — October 22, 2026 UTC
+
+The [earlier checklist](production-beta-checklist.md#earlier-qualification-checkpoint--october-22-2026-utc)
 selects merged `d897a73` for its completed automated matrix and the scoped
 Staging version 16 deployment. Status remains **not production-ready**. App and
 configuration source remain unchanged from the selected `7839acb` package; the
