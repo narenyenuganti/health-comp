@@ -14,7 +14,55 @@ records the matching boundary. Actual recovery, protection against resurrecting
 deleted identities, and all other unwaived qualification gates remain open.
 This is a scope decision, not a runtime receipt or production-readiness claim.
 
-## Current qualification checkpoint — October 22, 2026 UTC
+## Current qualification checkpoint — October 23, 2026 UTC
+
+**Not production-ready.** A new-day score with a stored App Attest assertion
+chain is now observed in Staging. Exact phone/key binding, counter advancement
+and replay resistance are not established by that observation.
+
+- **Source qualification:** [PR #164](https://github.com/narenyenuganti/health-comp/pull/164)
+  merged as `e92970ab98036d48f75365884da8c6cc92bd81ae`. The reviewed and merged
+  trees are identical. The reviewed-head Backend and iOS matrices passed.
+  Merged-main [Backend CI](https://github.com/narenyenuganti/health-comp/actions/runs/39913831861)
+  also passed; merged-main
+  [iOS CI](https://github.com/narenyenuganti/health-comp/actions/runs/39913831824)
+  is still running and is not yet qualified here.
+- **Verifier fix and deployment:** a pinned, public, signed extended-assertion
+  fixture failed before the change and passes with exact `0xC0` accepted alongside
+  existing `0x80`. Other validation and legacy forms remain unchanged. Only
+  `submit-score-revision` advanced to ACTIVE version 18. All four returned source
+  assets match the merged source; the other eleven Functions and their gateway
+  settings are unchanged. No application update, account/key reset or production
+  change was made. The public fixture does not reveal the phone's actual flag.
+- **Normal physical-app observation:** after confirmed phone availability, the
+  existing Staging app showed Day 3 Activity and today's points. One attempted
+  pull-to-refresh showed no observed indicator; the score had changed during
+  foreground use before that gesture. Do not attribute acceptance to the gesture.
+  The expired Activity observation was not rearmed. No debugger, reinstall,
+  sign-in or account change occurred. Mirroring was minimized and the phone
+  released before the separate hosted query.
+- **Separate hosted comparison:** read-only, repeatable-read aggregate queries
+  at 07:12 and 07:22 UTC selected the unique October 21–27 cycle. The invitee
+  gained three revisions, one covered day, one latest available day and one
+  latest assertion-backed day. It now has 15 revisions covering three days,
+  two latest available days, one assertion-backed day and one enrollment-backed
+  day. Those proof classifications can overlap; do not add them. Creator
+  revisions remain zero and no result exists. The stored-chain query does not
+  independently reverify proof bytes, bind the phone/key, or prove counter
+  advancement or replay resistance.
+
+Next: finish exact merged-main CI, then qualify the creator's missing accepted
+score and the remaining App Attest counter/replay and replacement-enrollment
+checks. Preserve the current match and history; do not repeat an unchanged
+refresh, reset keys or revive the debugger/timed-copy workflow. October 28
+Pacific opens the stable two-client final-result check, not an automatic pass.
+Current-installation APNs routing, hosted recovery, qualified privacy publication,
+signed distribution and production promotion remain open. Paid setup and Apple
+Support remain held; physical deletion is owner-skipped and universal links
+deferred, not PASS. See the
+[current evidence ledger](production-beta-evidence.md#current-qualification-checkpoint--october-23-2026-utc).
+
+## Previous qualification checkpoint — October 22, 2026 UTC
 
 **Not production-ready.** The current source matrix and one normal Activity
 read are verified; a fresh score-linked App Attest assertion/replay pass is not.
@@ -67,7 +115,7 @@ two-client results, current-installation APNs routing, hosted recovery, qualifie
 privacy publication, signed distribution and production promotion remain open.
 Paid setup and Apple Support remain held; physical deletion is owner-skipped
 and universal links deferred, not PASS. See the
-[current evidence ledger](production-beta-evidence.md#current-qualification-checkpoint--october-22-2026-utc).
+[previous evidence ledger](production-beta-evidence.md#previous-qualification-checkpoint--october-22-2026-utc).
 
 ## Earlier qualification checkpoint — October 22, 2026 UTC
 
