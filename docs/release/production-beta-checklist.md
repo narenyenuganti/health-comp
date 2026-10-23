@@ -24,9 +24,15 @@ and replay resistance are not established by that observation.
   merged as `e92970ab98036d48f75365884da8c6cc92bd81ae`. The reviewed and merged
   trees are identical. The reviewed-head Backend and iOS matrices passed.
   Merged-main [Backend CI](https://github.com/narenyenuganti/health-comp/actions/runs/39913831861)
-  also passed; merged-main
+  and
   [iOS CI](https://github.com/narenyenuganti/health-comp/actions/runs/39913831824)
-  is still running and is not yet qualified here.
+  also passed. Completed logs qualify 22 pgTAP files / 849 assertions twice,
+  151 Deno passes / zero failures / one gated ignore, one separate raw-worker
+  regression, 15 real-JWT HTTP tests, 20 rollback assertions with zero synthetic
+  rows and ten support tests. iOS qualifies 246 Core tests in each of Debug and
+  Release, 635 app tests, 11 selected UI tests, 83 release-style Staging tests
+  and three unsigned device builds. Clean-source verification and dedicated CI
+  Simulator cleanup passed. These do not qualify a signed release export.
 - **Verifier fix and deployment:** a pinned, public, signed extended-assertion
   fixture failed before the change and passes with exact `0xC0` accepted alongside
   existing `0x80`. Other validation and legacy forms remain unchanged. Only
@@ -51,9 +57,9 @@ and replay resistance are not established by that observation.
   independently reverify proof bytes, bind the phone/key, or prove counter
   advancement or replay resistance.
 
-Next: finish exact merged-main CI, then qualify the creator's missing accepted
-score and the remaining App Attest counter/replay and replacement-enrollment
-checks. Preserve the current match and history; do not repeat an unchanged
+Next: qualify the creator's missing accepted score and the remaining App Attest
+counter/replay and replacement-enrollment checks. Preserve the current match and
+history; do not repeat an unchanged
 refresh, reset keys or revive the debugger/timed-copy workflow. October 28
 Pacific opens the stable two-client final-result check, not an automatic pass.
 Current-installation APNs routing, hosted recovery, qualified privacy publication,

@@ -24,9 +24,12 @@ records a subsequent new-day score with a stored assertion chain. Status remains
 
 The exact reviewed and merged trees match. Reviewed-head Backend run
 `39908144598` and iOS run `39908144551` passed. Merged-main Backend run
-`39913831861` passed; iOS run `39913831824` is still running. No pending matrix
-result is counted as passed. The public fixture, provenance and license are
-checked in; its acceptance is not evidence of the phone's actual assertion flag.
+`39913831861` and iOS run `39913831824` also passed. Completed-log readback
+qualifies the checklist's test counts, three unsigned device builds,
+clean-source verification and dedicated CI Simulator cleanup. This is not a
+signed archive/export or production qualification. The public fixture,
+provenance and license are checked in; its acceptance is not evidence of the
+phone's actual assertion flag.
 
 Private aggregate receipts remain outside this public repository:
 
