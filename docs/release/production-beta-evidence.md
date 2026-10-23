@@ -14,9 +14,63 @@ and [recovery runbook](../runbooks/backup-restore.md#private-beta-deletion-test-
 preserve the deletion feature, existing automated coverage and privacy/history
 safeguards. Other gates and **not production-ready** status remain unchanged.
 
-## Current qualification checkpoint — October 22, 2026 UTC
+## Current qualification checkpoint — October 23, 2026 UTC
 
-The [current checklist](production-beta-checklist.md#current-qualification-checkpoint--october-22-2026-utc)
+The [current checklist](production-beta-checklist.md#current-qualification-checkpoint--october-23-2026-utc)
+selects merged `e92970ab98036d48f75365884da8c6cc92bd81ae` and Staging scoring
+Function version 18. This fixes one demonstrated public-fixture rejection and
+records a subsequent new-day score with a stored assertion chain. Status remains
+**not production-ready**; exact physical binding and replay remain unverified.
+
+The exact reviewed and merged trees match. Reviewed-head Backend run
+`39908144598` and iOS run `39908144551` passed. Merged-main Backend run
+`39913831861` and iOS run `39913831824` also passed. Completed-log readback
+qualifies the checklist's test counts, three unsigned device builds,
+clean-source verification and dedicated CI Simulator cleanup. This is not a
+signed archive/export or production qualification. The public fixture,
+provenance and license are checked in; its acceptance is not evidence of the
+phone's actual assertion flag.
+
+Private aggregate receipts remain outside this public repository:
+
+| Receipt | SHA-256 |
+| --- | --- |
+| `extended-assertion-staging-deployment-20261023T071027Z.json` | `5ebf5bd06fd10d5944346ffc6027cd7515f887583502f08c6977d4d34fcc02a0` |
+| `staging-v18-current-cycle-baseline-20261023T071217Z.json` | `14b7fd54597c129b4395443c081f846ce41ca72e1dad90519d479a3789bd2ab9` |
+| `physical-staging-v18-new-day-20261023T072214Z.json` | `c88cb8025b359d3c809a258fdc6c0d71bf32ba60a8bbd950ae84d0245c078324` |
+
+At 07:10 UTC, only `submit-score-revision` advanced to ACTIVE version 18.
+All four downloaded source assets matched merged source. The other eleven
+Functions, gateway settings and secret metadata remained unchanged; secret
+values were not read. One credential-free boot probe returned the expected
+invalid-request response. Scratch and temporary project selection were removed.
+This is deployment/boot evidence, not authenticated scoring evidence.
+
+The separate 07:12 UTC baseline found two participants and three elapsed days:
+zero creator revisions; 12 invitee revisions spanning two days; one latest
+available enrollment-backed day; zero latest assertion-backed days; no result.
+The ordinary physical Staging visit then visibly showed Day 3 Activity and
+points. The only attempted refresh gesture had no observed spinner and followed
+the visible score change, so refresh invocation and causality are unproved.
+No numeric Activity/score values were copied to these receipts. The closed
+one-shot observation was left closed. No debugger, restart, reinstall, sign-in,
+account/key change or new invitation occurred. Mirroring was minimized and the
+phone released before the hosted readback.
+
+At 07:22 UTC, the same aggregate-only read-only/repeatable-read query found
+15 invitee revisions spanning three days, two latest available days, one latest
+assertion-backed day and one latest enrollment-backed day. These proof
+classifications may overlap. Creator revisions remained zero; no result existed.
+The increase supports new-day server scoring with a stored assertion chain,
+not exact phone/key binding, independent proof-byte validation, a counter pair,
+replay resistance or gesture causality. Both queries passed strict field/type
+validation; no identifiers, Health values, scores or proof bytes were returned.
+The remaining account, replay, replacement, final-result and release gates in
+the checklist remain open. Existing owner holds and scope exceptions are unchanged.
+
+## Previous qualification checkpoint — October 22, 2026 UTC
+
+The [previous checklist](production-beta-checklist.md#previous-qualification-checkpoint--october-22-2026-utc)
 selects merged `3c155c89b97c9af527f9a8670877b2e1c20c7996` for the automated
 matrix, `04d1792` for the Staging version 17 scoring deployment, and `03e1998`
 for the installed one-tap Activity package. These are separate observations.
