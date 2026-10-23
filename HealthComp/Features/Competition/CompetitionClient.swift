@@ -82,6 +82,7 @@ struct CompetitionClient: Sendable {
     var claimInvite: @Sendable (
         CompetitionInviteClaimRequest
     ) async throws -> CompetitionInviteClaimOutcome
+    var resolveInviteRecipient: @Sendable (UUID) async throws -> AuthenticatedProfile
 
     init(
         start: @escaping @Sendable () -> AsyncStream<CompetitionPublication>,
@@ -134,6 +135,9 @@ struct CompetitionClient: Sendable {
             CompetitionInviteClaimRequest
         ) async throws -> CompetitionInviteClaimOutcome = { _ in
             throw CompetitionRemoteFailure.operationFailed
+        },
+        resolveInviteRecipient: @escaping @Sendable (UUID) async throws -> AuthenticatedProfile = { _ in
+            throw CompetitionRemoteFailure.operationFailed
         }
     ) {
         self.start = start
@@ -158,6 +162,7 @@ struct CompetitionClient: Sendable {
         self.mountAuthenticatedProfile = mountAuthenticatedProfile
         self.createInvite = createInvite
         self.claimInvite = claimInvite
+        self.resolveInviteRecipient = resolveInviteRecipient
     }
 
     func prepareForProfileTeardown(

@@ -16,6 +16,7 @@ struct CompetitionResultView: View {
     @ScaledMetric(relativeTo: .largeTitle) private var headlineSize: CGFloat = 64
     @State private var isRevealed = false
     @State private var isDeleteConfirmationPresented = false
+    @State private var showsWeek = false
 
     var body: some View {
         ScrollView {
@@ -41,17 +42,26 @@ struct CompetitionResultView: View {
                 }
 
                 if !competition.days.isEmpty {
-                    weekSection
+                    weekCard
                 }
 
-                if let ringTotals {
-                    ringTotalsSection(ringTotals)
+                if !visibleAwards.isEmpty {
+                    awardPresentation
+                        .opacity(isRevealed ? 1 : 0)
                 }
 
-                awardPresentation
-                    .opacity(isRevealed ? 1 : 0)
+                if dataControl == .preservedHistory {
+                    Label(
+                        "Archived competition history is preserved.",
+                        systemImage: "archivebox.fill"
+                    )
+                    .font(.footnote)
+                    .foregroundStyle(Theme.secondary)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .accessibilityIdentifier("competition.history.preserved")
+                }
 
-                actionControls
+                muteButton?.saveFailure
             }
             .frame(maxWidth: 560)
             .padding(.horizontal, 16)
@@ -59,8 +69,47 @@ struct CompetitionResultView: View {
             .frame(maxWidth: .infinity)
         }
         .background(Theme.ground)
+        // The next step stays in reach; the rest waits in the ••• menu.
+        .safeAreaInset(edge: .bottom) {
+            rematchControl
+                .frame(maxWidth: 560)
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+                .padding(.bottom, 8)
+                .frame(maxWidth: .infinity)
+                .background(Theme.ground)
+        }
         .navigationTitle("Result")
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            if hasMenuActions {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        menuActions
+                    } label: {
+                        CompetitionMoreLabel()
+                    }
+                    .accessibilityIdentifier("competition.more")
+                }
+            }
+        }
+        .confirmationDialog(
+            "Delete this competition from this iPhone?",
+            isPresented: $isDeleteConfirmationPresented,
+            titleVisibility: .visible
+        ) {
+            Button("Delete Local Data", role: .destructive) {
+                send(.deleteTapped(competition.id))
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text(
+                "This permanently removes the local competition journal and its notifications."
+            )
+        }
+        .sheet(isPresented: $showsWeek) {
+            weekDrawer
+        }
         .onAppear {
             if reduceMotion {
                 isRevealed = true
@@ -95,12 +144,20 @@ struct CompetitionResultView: View {
 
     private var resultKicker: String {
         var parts = ["FINAL"]
-        if let first = competition.days.first?.day,
-           let last = competition.days.last?.day {
-            parts.append("\(first.month)/\(first.day)–\(last.month)/\(last.day)")
+        if let weekRangeText {
+            parts.append(weekRangeText)
         }
         parts.append("VS \(competition.opponentDisplayName.uppercased())")
         return parts.joined(separator: " · ")
+    }
+
+    private var weekRangeText: String? {
+        guard let first = competition.days.first?.day,
+              let last = competition.days.last?.day
+        else {
+            return nil
+        }
+        return "\(first.month)/\(first.day)–\(last.month)/\(last.day)"
     }
 
     private var finalScore: some View {
@@ -193,9 +250,45 @@ struct CompetitionResultView: View {
         return "\(decided.filter { $0 }.count) of \(competition.days.count) days"
     }
 
-    private var weekSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            SectionLabel("THE WEEK")
+    // A glance at who won each day; the scores open in a drawer.
+    private var weekCard: some View {
+        Button {
+            showsWeek = true
+        } label: {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack(spacing: 8) {
+                    Text("THE WEEK")
+                        .font(.themeLabel)
+                        .tracking(1.2)
+                        .foregroundStyle(Theme.ink)
+                    Spacer(minLength: 8)
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(Theme.tertiary)
+                }
+                CompetitionWeekStrip(
+                    days: competition.days,
+                    currentDayOrdinal: nil
+                )
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .themePanel()
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(CompetitionPressButtonStyle())
+        .accessibilityLabel(weekCardAccessibilityLabel)
+        .accessibilityHint("Opens the scores for each day")
+        .accessibilityIdentifier("competition.result.week")
+    }
+
+    private var weekCardAccessibilityLabel: String {
+        guard let daysWonText else { return "The week" }
+        return "The week. You won \(daysWonText)"
+    }
+
+    private var weekDrawer: some View {
+        CompetitionDrawer(title: "The Week", subtitle: weekRangeText) {
             CompetitionWeekChart(
                 days: competition.days,
                 currentDayOrdinal: nil,
@@ -204,6 +297,9 @@ struct CompetitionResultView: View {
             )
             if competition.days.contains(where: { ringSegments($0).count == 3 }) {
                 CompetitionRingLegend(opponentName: competition.opponentDisplayName)
+            }
+            if let ringTotals {
+                ringTotalsSection(ringTotals)
             }
         }
     }
@@ -284,56 +380,61 @@ struct CompetitionResultView: View {
         }
     }
 
+    // One line under each award; History keeps the full record.
     private var awardPresentation: some View {
         VStack(alignment: .leading, spacing: 10) {
             SectionLabel("Awards")
 
-            ForEach(visibleAwards) { award in
-                HStack(spacing: 14) {
-                    awardBadge(award.kind)
-
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text(
-                            award.kind == .victory
-                                ? "Victory Over \(award.friendDisplayName)"
-                                : "Competition Complete"
-                        )
-                        .font(.headline)
-                        .foregroundStyle(Theme.ink)
-                        Text("Earned in this seven-day competition")
-                            .font(.caption)
-                            .foregroundStyle(Theme.secondary)
-                        Text(
-                            competitionAwardEarnedText(
-                                award.awardedAt,
-                                timeZoneIdentifier: competition.timeZoneIdentifier
-                            )
-                        )
-                        .font(.caption)
-                        .foregroundStyle(Theme.secondary)
-                        if award.kind == .victory {
-                            Text(
-                                competitionVictoryCountText(
-                                    awards.filter {
-                                        $0.kind == .victory
-                                            && $0.friendDisplayName
-                                                == award.friendDisplayName
-                                    }.count,
-                                    friendDisplayName: award.friendDisplayName
-                                )
-                            )
-                            .font(.caption)
-                            .foregroundStyle(Theme.secondary)
-                        }
+            VStack(spacing: 0) {
+                ForEach(Array(visibleAwards.enumerated()), id: \.element.id) {
+                    index,
+                    award in
+                    if index > 0 {
+                        Rectangle()
+                            .fill(Theme.hairline)
+                            .frame(height: 1)
+                            .padding(.leading, 76)
                     }
-                    Spacer(minLength: 0)
+                    HStack(spacing: 14) {
+                        awardBadge(award.kind)
+
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text(
+                                award.kind == .victory
+                                    ? "Victory Over \(award.friendDisplayName)"
+                                    : "Competition Complete"
+                            )
+                            .font(.headline)
+                            .foregroundStyle(Theme.ink)
+                            Text(awardDetail(award))
+                                .font(.caption)
+                                .foregroundStyle(Theme.secondary)
+                        }
+                        Spacer(minLength: 0)
+                    }
+                    .padding(14)
+                    .frame(minHeight: 76)
+                    .accessibilityElement(children: .combine)
                 }
-                .padding(14)
-                .frame(minHeight: 76)
-                .themePanel(cornerRadius: 18)
-                .accessibilityElement(children: .combine)
             }
+            .themePanel(cornerRadius: 18)
         }
+    }
+
+    private func awardDetail(_ award: LocalCompetitionAward) -> String {
+        guard award.kind == .victory else {
+            return competitionAwardEarnedText(
+                award.awardedAt,
+                timeZoneIdentifier: competition.timeZoneIdentifier
+            )
+        }
+        return competitionVictoryCountText(
+            awards.filter {
+                $0.kind == .victory
+                    && $0.friendDisplayName == award.friendDisplayName
+            }.count,
+            friendDisplayName: award.friendDisplayName
+        )
     }
 
     // A victory is yours, so its badge is amber; completion stays neutral.
@@ -354,17 +455,6 @@ struct CompetitionResultView: View {
         .accessibilityHidden(true)
     }
 
-    private var actionControls: some View {
-        VStack(spacing: 10) {
-            rematchControl
-            dataControl
-
-            if let muteButton {
-                muteButton
-            }
-        }
-    }
-
     @ViewBuilder
     private var rematchControl: some View {
         if source == .remoteParticipants {
@@ -380,49 +470,39 @@ struct CompetitionResultView: View {
         }
     }
 
+    private var dataControl: CompetitionResultDataControl {
+        competitionResultDataControl(source: source, isArchived: isArchived)
+    }
+
+    private var hasMenuActions: Bool {
+        dataControl != .preservedHistory || muteButton != nil
+    }
+
     @ViewBuilder
-    private var dataControl: some View {
-        switch competitionResultDataControl(
-            source: source,
-            isArchived: isArchived
-        ) {
+    private var menuActions: some View {
+        switch dataControl {
         case .archive:
-            Button("Archive") {
+            Button {
                 send(.archiveTapped(competition.id))
+            } label: {
+                Label("Archive", systemImage: "archivebox")
             }
-            .buttonStyle(SecondaryButtonStyle())
             .disabled(isCommandInFlight)
 
         case .deleteLocalData:
-            Button("Delete Local Data", role: .destructive) {
+            Button(role: .destructive) {
                 isDeleteConfirmationPresented = true
+            } label: {
+                Label("Delete Local Data", systemImage: "trash")
             }
-            .buttonStyle(SecondaryButtonStyle())
             .disabled(isCommandInFlight)
-            .confirmationDialog(
-                "Delete this competition from this iPhone?",
-                isPresented: $isDeleteConfirmationPresented,
-                titleVisibility: .visible
-            ) {
-                Button("Delete Local Data", role: .destructive) {
-                    send(.deleteTapped(competition.id))
-                }
-                Button("Cancel", role: .cancel) {}
-            } message: {
-                Text(
-                    "This permanently removes the local competition journal and its notifications."
-                )
-            }
 
         case .preservedHistory:
-            Label(
-                "Archived competition history is preserved.",
-                systemImage: "archivebox.fill"
-            )
-            .font(.footnote)
-            .foregroundStyle(Theme.secondary)
-            .frame(maxWidth: .infinity, minHeight: 44)
-            .accessibilityIdentifier("competition.history.preserved")
+            EmptyView()
+        }
+
+        if let muteButton {
+            muteButton
         }
     }
 
@@ -477,6 +557,11 @@ struct CompetitionResultView: View {
             )
             .font(.caption)
             .foregroundStyle(Theme.secondary)
+
+        case .pendingInvitationExists:
+            Text("An invitation to this account is already pending. It expires 24 hours after creation.")
+                .font(.callout)
+                .foregroundStyle(Theme.secondary)
         }
     }
 

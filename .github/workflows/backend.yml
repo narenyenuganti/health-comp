@@ -38,11 +38,13 @@ jobs:
         run: |
           set -euo pipefail
           bash scripts/test-verify-no-secrets.sh
+          python3 -B -m unittest scripts.tests.test_verify_support_email
           bash scripts/test-backup-runbook.sh
           bash scripts/test-backup-runbook-checks.sh
           bash -n scripts/emit-recovery-history-test-sql.sh
           bash -n scripts/test-recovery-history-wrapper.sh
           bash -n scripts/test-recovery-common-snapshot.sh
+          bash -n scripts/test-recovery-migrated-snapshot.sh
           bash -n scripts/test-recovery-foreign-key-integrity.sh
           bash -n scripts/test-recovery-foreign-key-static.sh
           bash scripts/test-recovery-foreign-key-static.sh
@@ -50,6 +52,7 @@ jobs:
           bash scripts/test-recovery-state-acceptance.sh --static
           bash -n scripts/test-deletion-client-migration.sh
           bash -n scripts/test-deleted-profile-history-migration.sh
+          bash -n scripts/test-invitation-recipient-migration.sh
           sh scripts/test-verify-invitation-functions.sh
           sh scripts/test-staging-adversarial-sql.sh
           sh scripts/test-verify-app-attest-dependency-graph.sh
@@ -98,6 +101,8 @@ jobs:
           bash scripts/test-deleted-profile-history-migration.sh
           supabase db reset --local --version 20260913001400
           bash scripts/test-retired-installation-token-migration.sh
+          supabase db reset --local --version 20261002001700
+          bash scripts/test-invitation-recipient-migration.sh
           supabase db reset
           supabase test db
 

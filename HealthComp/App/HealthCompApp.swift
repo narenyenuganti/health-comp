@@ -64,6 +64,7 @@ struct HealthCompApp: App {
     private let multiUserLaunchDecision:
         MultiUserCompetitionTestLabLaunchDecision
     private let liveStore: StoreOf<AppFeature>?
+    let testLabColorScheme: ColorScheme?
 
     init() {
         self.init(
@@ -105,13 +106,30 @@ struct HealthCompApp: App {
                 self.liveStore = nil
             }
         }
+        // Pin fixture rendering instead of relying on an OS appearance override.
+        // Ordinary DEBUG launches keep the person's in-app appearance choice.
+        if self.liveStore == nil,
+           let style = zip(arguments, arguments.dropFirst())
+               .first(where: { $0.0 == "-AppleInterfaceStyle" })?.1
+        {
+            self.testLabColorScheme = AppAppearance(rawValue: style.lowercased())?
+                .colorScheme
+        } else {
+            self.testLabColorScheme = nil
+        }
     }
 #else
     private let store: StoreOf<AppFeature>
 
     init() {
+#if HEALTHCOMP_STAGING
+        let provider = SupabaseClientProvider.live()
+            .withStagingScoringOperator(.shared)
+#else
+        let provider = SupabaseClientProvider.live()
+#endif
         self.init(
-            supabaseClientProvider: .live(),
+            supabaseClientProvider: provider,
             authenticationClientFactory: .live,
             competitionClientFactory: .live
         )
@@ -140,6 +158,12 @@ struct HealthCompApp: App {
 #endif
         }
         .onChange(of: scenePhase, initial: true) { _, phase in
+#if HEALTHCOMP_STAGING
+            if phase != .active {
+                StagingScoringOperatorControls.shared.cancelStartedCapture()
+                StagingScoringOperatorControls.shared.cancelStartedActivityObservation()
+            }
+#endif
             observerDeliveryLifecycle.observe(
                 phase.healthKitObserverLifecyclePhase
             )
@@ -152,6 +176,7 @@ struct HealthCompApp: App {
         switch multiUserLaunchDecision {
         case let .configured(configuration):
             MultiUserCompetitionTestLabRootView(configuration: configuration)
+                .preferredColorScheme(testLabColorScheme)
         case let .invalid(message):
             MultiUserCompetitionTestLabConfigurationErrorView(message: message)
         case .disabled:
@@ -162,6 +187,7 @@ struct HealthCompApp: App {
                 }
             case let .configured(configuration):
                 CompetitionTestLabRootView(configuration: configuration)
+                    .preferredColorScheme(testLabColorScheme)
             case let .invalid(message):
                 CompetitionTestLabConfigurationErrorView(message: message)
             }
@@ -208,7 +234,8 @@ struct AppRootView: View {
                         accountStore: store.scope(
                             state: \.account,
                             action: \.account
-                        )
+                        ),
+                        accountCode: store.profile?.id
                     )
                 }
             }
@@ -243,6 +270,7 @@ private struct AppProgressView: View {
 private struct AuthenticatedRootView: View {
     let mainStore: StoreOf<MainTabFeature>
     let accountStore: StoreOf<AccountFeature>
+    let accountCode: UUID?
 
     @State private var isAccountPresented = false
 
@@ -252,14 +280,58 @@ private struct AuthenticatedRootView: View {
             openAccount: { isAccountPresented = true }
         )
         .sheet(isPresented: $isAccountPresented) {
-            NavigationStack {
-                AccountSettingsView(store: accountStore)
-                    .toolbar {
-                        ToolbarItem(placement: .confirmationAction) {
-                            Button("Done") { isAccountPresented = false }
-                        }
-                    }
+            AccountSheet(
+                mainStore: mainStore,
+                accountStore: accountStore,
+                accountCode: accountCode,
+                done: { isAccountPresented = false }
+            )
+        }
+    }
+}
+
+/// Reads the competition's notification state in its own body, so the
+/// open sheet follows it.
+private struct AccountSheet: View {
+    let mainStore: StoreOf<MainTabFeature>
+    let accountStore: StoreOf<AccountFeature>
+    let accountCode: UUID?
+    let done: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            accountSettings
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done", action: done)
+                }
             }
         }
+    }
+
+    private var accountSettings: AccountSettingsView {
+        let notifications = AccountNotificationSettings(
+            authorization: mainStore.competition
+                .notificationAuthorizationState,
+            isRequestInFlight: mainStore.competition
+                .notificationAuthorizationRequestIsInFlight,
+            request: {
+                mainStore.send(.competition(.enableNotificationsTapped))
+            }
+        )
+#if HEALTHCOMP_STAGING
+        return AccountSettingsView(
+            store: accountStore,
+            notifications: notifications,
+            accountCode: accountCode,
+            refreshCompetition: { mainStore.send(.competition(.pullToRefresh)) }
+        )
+#else
+        return AccountSettingsView(
+            store: accountStore,
+            notifications: notifications,
+            accountCode: accountCode
+        )
+#endif
     }
 }

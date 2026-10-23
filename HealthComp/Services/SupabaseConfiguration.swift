@@ -174,14 +174,14 @@ enum SupabaseTransport {
         }
     }
 
-    static func makeSession() -> URLSession {
+    static func makeSession(delegate: (any URLSessionTaskDelegate)? = nil) -> URLSession {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
         configuration.urlCache = nil
         configuration.httpCookieStorage = nil
         configuration.httpShouldSetCookies = false
         configuration.urlCredentialStorage = nil
-        return URLSession(configuration: configuration)
+        return URLSession(configuration: configuration, delegate: delegate, delegateQueue: nil)
     }
 }
 
@@ -323,6 +323,10 @@ private final class AuthRemovalPendingStore: @unchecked Sendable {
 /// never reacquire another owner's callbacks after an await.
 final class SupabaseAuthenticationLifetime: Sendable {
     let eventTasks = AuthenticationLifetimeTasks()
+#if HEALTHCOMP_STAGING
+    fileprivate let stagingScoringResponseCapture: StagingScoringResponseCapture?
+    fileprivate let stagingScoringCaptureOwner = StagingScoringCaptureOwner()
+#endif
     let client: SupabaseClient
     let confirmGlobalSignOut: @Sendable (String) async throws -> Void
     let confirmLocalSignOut: @Sendable (String) async throws -> Void
@@ -340,8 +344,12 @@ final class SupabaseAuthenticationLifetime: Sendable {
         verifyAuthSessionRemoved: @escaping @Sendable () throws -> Void,
         retireAuthStorage: @escaping @Sendable () throws -> Void = {
             throw AuthenticationClientFailure.operationFailed
-        }
+        },
+        urlSession: URLSession? = nil
     ) {
+#if HEALTHCOMP_STAGING
+        self.stagingScoringResponseCapture = urlSession?.delegate as? StagingScoringResponseCapture
+#endif
         self.client = client
         self.confirmGlobalSignOut = confirmGlobalSignOut
         self.confirmLocalSignOut = confirmLocalSignOut
@@ -353,6 +361,9 @@ final class SupabaseAuthenticationLifetime: Sendable {
 
 struct SupabaseClientProvider: Sendable {
     private let sharedClient: SharedClientLifetime<SupabaseAuthenticationLifetime>
+#if HEALTHCOMP_STAGING
+    private let stagingOperatorControls: StagingScoringOperatorControls?
+#endif
 
     init(
         makeClient: @escaping @Sendable () throws -> SupabaseClient,
@@ -376,6 +387,9 @@ struct SupabaseClientProvider: Sendable {
 
     private init(makeLifetime: @escaping @Sendable () throws -> SupabaseAuthenticationLifetime) {
         self.sharedClient = SharedClientLifetime(makeClient: makeLifetime)
+#if HEALTHCOMP_STAGING
+        self.stagingOperatorControls = nil
+#endif
     }
 
     func client() throws -> SupabaseClient {
@@ -383,13 +397,23 @@ struct SupabaseClientProvider: Sendable {
     }
 
     func authenticationLifetime() throws -> SupabaseAuthenticationLifetime {
-        try sharedClient.client()
+        let owner = try sharedClient.client()
+#if HEALTHCOMP_STAGING
+        try connectStagingOperator(to: owner)
+#endif
+        return owner
     }
 
     func retireAuthenticationLifetime(
         _ owner: SupabaseAuthenticationLifetime,
         beforeStorage: @escaping @Sendable () async throws -> Void = {}
     ) async throws {
+#if HEALTHCOMP_STAGING
+        // Revoke debugger reads before registry admission closes or cancellation throws.
+        owner.stagingScoringResponseCapture?.cancel()
+        stagingOperatorControls?.cancel(for: owner.stagingScoringCaptureOwner)
+        stagingOperatorControls?.cancelActivityObservation(for: owner.stagingScoringCaptureOwner)
+#endif
         try await sharedClient.retire(owner) { retiring in
             // Registry admission is already closed while remote confirmation
             // is pending. Failure retains the same owner for an explicit retry.
@@ -400,7 +424,11 @@ struct SupabaseClientProvider: Sendable {
     }
 
     func beginFreshAuthenticationLifetime() throws -> SupabaseAuthenticationLifetime {
-        try sharedClient.beginFreshLifetime()
+        let owner = try sharedClient.beginFreshLifetime()
+#if HEALTHCOMP_STAGING
+        try connectStagingOperator(to: owner)
+#endif
+        return owner
     }
 
     func eventOrigin(for owner: SupabaseAuthenticationLifetime) -> AuthenticationEventOrigin {
@@ -420,13 +448,90 @@ struct SupabaseClientProvider: Sendable {
         try authenticationLifetime().prepareAuthSessionRemovalVerification()
     }
 
+#if HEALTHCOMP_STAGING
+    private init(
+        sharedClient: SharedClientLifetime<SupabaseAuthenticationLifetime>,
+        stagingOperatorControls: StagingScoringOperatorControls
+    ) {
+        self.sharedClient = sharedClient
+        self.stagingOperatorControls = stagingOperatorControls
+    }
+
+    func withStagingScoringOperator(_ controls: StagingScoringOperatorControls) -> Self {
+        Self(sharedClient: sharedClient, stagingOperatorControls: controls)
+    }
+
+    private func connectStagingOperator(to owner: SupabaseAuthenticationLifetime) throws {
+        guard let controls = stagingOperatorControls,
+              let capture = owner.stagingScoringResponseCapture else { return }
+        try sharedClient.withActiveOwner(owner) {
+            let token = owner.stagingScoringCaptureOwner
+            controls.bind(token)
+            capture.connectOperator(
+                willObserveTask: { [weak sharedClient, weak owner, weak controls] in
+                    guard let sharedClient, let owner, let controls else { return }
+                    try? sharedClient.withActiveOwner(owner) {
+                        guard let timeout = controls.consumeArmRequest(for: token) else { return }
+                        do {
+                            guard try Self.armStagingCapture(owner, timeout: timeout) else {
+                                controls.cancel(for: token)
+                                return
+                            }
+                        } catch { controls.cancel(for: token) }
+                    }
+                },
+                didObserveResponse: { [weak sharedClient, weak owner, weak controls] in
+                    guard let sharedClient, let owner, let controls else { return }
+                    try? sharedClient.withActiveOwner(owner) {
+                        guard controls.isArmed(for: token),
+                              let value = owner.stagingScoringResponseCapture?.take() else { return }
+                        controls.recordResponse(value, for: token)
+                    }
+                },
+                didClose: { [weak controls] in controls?.cancel(for: token) }
+            )
+        }
+    }
+
+    func armStagingScoringResponseCapture(timeout: Duration = .seconds(60)) throws -> Bool {
+        let owner = try authenticationLifetime()
+        return try sharedClient.withActiveOwner(owner) {
+            try Self.armStagingCapture(owner, timeout: timeout)
+        }
+    }
+
+    private static func armStagingCapture(
+        _ owner: SupabaseAuthenticationLifetime, timeout: Duration
+    ) throws -> Bool {
+        guard let capture = owner.stagingScoringResponseCapture,
+              capture.arm(timeout: timeout) else { return false }
+        do {
+            _ = try owner.eventTasks.start {
+                defer { capture.cancel() }
+                try? await Task.sleep(for: timeout)
+            }
+        } catch {
+            capture.cancel()
+            throw error
+        }
+        return true
+    }
+
+    func takeStagingScoringResponseCapture() throws -> String? {
+        let owner = try authenticationLifetime()
+        return try sharedClient.withActiveOwner(owner) {
+            owner.stagingScoringResponseCapture?.take()
+        }
+    }
+#endif
+
     static func live(
         infoDictionary: @escaping @Sendable () -> [String: Any] = {
             Bundle.main.infoDictionary ?? [:]
         },
         urlSession injectedURLSession: URLSession? = nil,
         authStorage injectedAuthStorage: FailClosedAuthLocalStorage? = nil,
-        makeURLSession: @escaping @Sendable () -> URLSession = { SupabaseTransport.makeSession() }
+        makeURLSession: (@Sendable () -> URLSession)? = nil
     ) -> Self {
         let removalPendingKey =
             "HealthCompSupabaseAuthSessionRemovalPending"
@@ -438,7 +543,15 @@ struct SupabaseClientProvider: Sendable {
             let configuration = try SupabaseConfiguration.parse(infoDictionary())
             // Default transports belong to this owner, not the provider cache.
             // An explicit session override remains a caller-owned testing seam.
-            let urlSession = injectedURLSession ?? makeURLSession()
+#if HEALTHCOMP_STAGING
+            let urlSession = injectedURLSession ?? makeURLSession?() ?? SupabaseTransport.makeSession(
+                delegate: StagingScoringResponseCapture(
+                    scoringURL: configuration.url.appendingPathComponent("functions/v1/submit-score-revision")
+                )
+            )
+#else
+            let urlSession = injectedURLSession ?? makeURLSession?() ?? SupabaseTransport.makeSession()
+#endif
             let authStorage = injectedAuthStorage ?? FailClosedAuthLocalStorage(
                 underlying: SupabaseAuthKeychainStorage(),
                 sessionKey: {
@@ -493,7 +606,8 @@ struct SupabaseClientProvider: Sendable {
                     try lifetimeStorage.removeSessionAndRetire {
                         try authStorage.removeCurrentSession()
                     }
-                }
+                },
+                urlSession: urlSession
             )
         })
     }

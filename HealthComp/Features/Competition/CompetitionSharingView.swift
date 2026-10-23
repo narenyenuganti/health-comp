@@ -1,26 +1,30 @@
 import CompetitionCore
 import SwiftUI
 
+/// Home: what is in play right now. Creating a challenge opens in a drawer,
+/// finished competitions and awards live in History, and notifications and
+/// privacy live in Account.
 struct CompetitionSharingView: View {
     let publication: LocalCompetitionPublication
     let inviteCreationStatus: CompetitionFeature.InviteCreationStatus
     let createdInviteLink: CompetitionInviteShareLink?
+    @Binding var recipientCode: String
+    let recipient: AuthenticatedProfile?
+    let recipientStatus: CompetitionFeature.InviteRecipientStatus
+    let findRecipient: () -> Void
     let createInvite: () -> Void
+    /// Set by the host's + button and by the empty state.
+    @Binding var isChallengePresented: Bool
     let selectCompetition: (CompetitionID) -> Void
+    let openHistory: () -> Void
     let reinvite: () -> Void
     let isReinviteInFlight: Bool
-    let notificationAuthorization:
-        CompetitionNotificationAuthorizationState?
-    let notificationAuthorizationRequestIsInFlight: Bool
-    let requestNotificationAuthorization: () -> Void
 
     var body: some View {
         // A plain VStack keeps every card in the hierarchy, so scrolling to a
         // card works in both directions.
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
-                intro
-
                 if !publication.dashboard.issues.isEmpty {
                     issueBanner
                 }
@@ -32,23 +36,13 @@ struct CompetitionSharingView: View {
                             source: publication.source
                         )
                     }
-                }
-
-                notificationControls
-
-                if publication.source == .remoteParticipants {
-                    CreateCompetitionView(
-                        status: inviteCreationStatus,
-                        shareLink: createdInviteLink,
-                        timeZoneIdentifier: publication.timeZoneIdentifier,
-                        create: createInvite
-                    )
+                    .buttonStyle(CompetitionPressButtonStyle())
                 }
 
                 competitionSection
 
-                if !publication.dashboard.awards.isEmpty {
-                    awardsSection
+                if rivalry.completions > 0 {
+                    historyButton
                 }
             }
             .padding(.horizontal, 16)
@@ -58,44 +52,40 @@ struct CompetitionSharingView: View {
         .navigationTitle("Sharing")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            // The bar shows only the mark and the avatar; the title stays for
-            // VoiceOver and the navigation bar's identity.
+            // The bar shows only the mark and its buttons; the title stays
+            // for VoiceOver and the navigation bar's identity.
             ToolbarItem(placement: .principal) {
                 Color.clear
                     .frame(width: 1, height: 1)
                     .accessibilityHidden(true)
             }
         }
-    }
-
-    // The top line stays the page's invariant anchor.
-    private var intro: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Image(systemName: "lock.fill")
-                .font(.caption)
-                .accessibilityHidden(true)
-            Text(heroDescription)
+        .sheet(isPresented: $isChallengePresented) {
+            CreateCompetitionView(
+                status: inviteCreationStatus,
+                shareLink: createdInviteLink,
+                timeZoneIdentifier: publication.timeZoneIdentifier,
+                recipientCode: $recipientCode,
+                recipient: recipient,
+                recipientStatus: recipientStatus,
+                findRecipient: findRecipient,
+                create: createInvite
+            )
         }
-        .font(.footnote)
-        .foregroundStyle(Theme.secondary)
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    private var heroDescription: String {
-        switch publication.source {
-        case .simulatedFixture:
-            "Share a seven-day competition with Alex while your scores stay on this iPhone."
-        case .remoteParticipants:
-            "Compete privately with real people while raw Health data stays on this iPhone."
+    /// Archived competitions move to History.
+    private var homeCompetitions: [LocalCompetitionPresentation] {
+        publication.dashboard.competitions.filter {
+            !sharingIsArchived($0.lifecycle)
         }
     }
 
     /// The first competition in play leads the page; a scheduled one leads
     /// only when nothing is in play yet.
     private var heroCompetition: LocalCompetitionPresentation? {
-        let competitions = publication.dashboard.competitions
-        return competitions.first { sharingIsInPlay($0.lifecycle) }
-            ?? competitions.first {
+        homeCompetitions.first { sharingIsInPlay($0.lifecycle) }
+            ?? homeCompetitions.first {
                 if case .scheduled = $0.lifecycle { return true }
                 return false
             }
@@ -103,7 +93,11 @@ struct CompetitionSharingView: View {
 
     private var otherCompetitions: [LocalCompetitionPresentation] {
         let heroID = heroCompetition?.id
-        return publication.dashboard.competitions.filter { $0.id != heroID }
+        return homeCompetitions.filter { $0.id != heroID }
+    }
+
+    private var rivalry: CompetitionRivalrySummary {
+        competitionRivalrySummary(publication.dashboard)
     }
 
     private func competitionButton<Content: View>(
@@ -124,61 +118,68 @@ struct CompetitionSharingView: View {
                 )
                 .accessibilityHint("Opens this competition")
         }
-        .buttonStyle(CompetitionPressButtonStyle())
         .accessibilityIdentifier(competitionSharingIdentifier(competition))
     }
 
     @ViewBuilder
-    private var notificationControls: some View {
-        switch notificationAuthorization {
-        case .notDetermined:
-            Button(action: requestNotificationAuthorization) {
-                if notificationAuthorizationRequestIsInFlight {
-                    ProgressView()
-                } else {
-                    Label(
-                        "Enable Competition Notifications",
-                        systemImage: "bell.badge.fill"
-                    )
-                }
-            }
-            .buttonStyle(SecondaryButtonStyle())
-            .disabled(notificationAuthorizationRequestIsInFlight)
-            .accessibilityIdentifier("competition.notifications.enable")
-
-        case .denied:
-            Label(
-                "Competition notifications are disabled in Settings.",
-                systemImage: "bell.slash.fill"
-            )
-            .font(.caption)
-            .foregroundStyle(Theme.secondary)
-
-        // Muting one person lives on the screens of their matches.
-        case .authorized, .provisional, .ephemeral, nil:
-            EmptyView()
-        }
-    }
-
-    @ViewBuilder
     private var competitionSection: some View {
-        if publication.dashboard.competitions.isEmpty {
+        if homeCompetitions.isEmpty {
             emptyState
         } else if !otherCompetitions.isEmpty {
             VStack(alignment: .leading, spacing: 10) {
                 SectionLabel("MATCHES")
                     .padding(.horizontal, 4)
 
-                ForEach(otherCompetitions) { competition in
-                    competitionButton(competition) {
-                        CompetitionSharingCard(
-                            competition: competition,
-                            source: publication.source
-                        )
+                VStack(spacing: 0) {
+                    ForEach(
+                        Array(otherCompetitions.enumerated()),
+                        id: \.element.id
+                    ) { index, competition in
+                        if index > 0 {
+                            CompetitionRowDivider()
+                        }
+                        competitionButton(competition) {
+                            CompetitionSharingRow(
+                                competition: competition,
+                                source: publication.source
+                            )
+                        }
+                        .buttonStyle(CompetitionRowButtonStyle())
                     }
                 }
+                .themePanel()
+                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
             }
         }
+    }
+
+    private var historyButton: some View {
+        Button(action: openHistory) {
+            HStack(spacing: 14) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("History")
+                        .font(.headline)
+                        .foregroundStyle(Theme.ink)
+                    (Text("\(rivalry.completions) completed · You won ")
+                        + Text(String(rivalry.ownerWins))
+                            .foregroundStyle(Theme.you)
+                            .bold())
+                        .font(.subheadline)
+                        .foregroundStyle(Theme.secondary)
+                }
+                Spacer(minLength: 8)
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(Theme.tertiary)
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)
+            .themePanel()
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(CompetitionPressButtonStyle())
+        .accessibilityHint("Opens finished competitions and awards")
+        .accessibilityIdentifier("competition.history.open")
     }
 
     private var emptyState: some View {
@@ -215,6 +216,14 @@ struct CompetitionSharingView: View {
                     isReinviteInFlight ? "Action in progress" : ""
                 )
             }
+
+            if publication.source == .remoteParticipants {
+                Button("Challenge Someone") {
+                    isChallengePresented = true
+                }
+                .buttonStyle(PrimaryButtonStyle())
+                .accessibilityIdentifier("competition.create.empty")
+            }
         }
         .frame(maxWidth: .infinity)
         .padding(20)
@@ -229,43 +238,6 @@ struct CompetitionSharingView: View {
                 : "A local invitation will appear here."
         case .remoteParticipants:
             "Create and share a private invitation to begin."
-        }
-    }
-
-    private var awardsSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            SectionLabel("Awards")
-                .padding(.horizontal, 4)
-
-            CompetitionRivalrySummaryCard(
-                summary: competitionRivalrySummary(publication.dashboard),
-                timeZoneIdentifier: publication.timeZoneIdentifier
-            )
-
-            VStack(spacing: 0) {
-                ForEach(Array(publication.dashboard.awards.enumerated()), id: \.element.id) {
-                    index,
-                    award in
-                    CompetitionAwardDashboardRow(
-                        award: award,
-                        victoryCount: publication.dashboard.awards.filter {
-                            $0.kind == .victory
-                                && $0.friendDisplayName == award.friendDisplayName
-                        }.count,
-                        timeZoneIdentifier: publication.dashboard.competitions
-                            .first(where: { $0.id == award.competitionID })?
-                            .timeZoneIdentifier
-                            ?? publication.timeZoneIdentifier
-                    )
-                    if index < publication.dashboard.awards.count - 1 {
-                        Rectangle()
-                            .fill(Theme.hairline)
-                            .frame(height: 1)
-                            .padding(.leading, 68)
-                    }
-                }
-            }
-            .themePanel()
         }
     }
 
@@ -286,7 +258,7 @@ struct CompetitionSharingView: View {
 }
 
 /// The competition in play, drawn flat on the page like the mark: your
-/// score in amber, the opponent's in ink, and the week below.
+/// score in amber, the opponent's in ink, and the week at a glance below.
 private struct CompetitionHeroCard: View {
     let competition: LocalCompetitionPresentation
     let source: CompetitionPublicationSource
@@ -304,15 +276,9 @@ private struct CompetitionHeroCard: View {
                 scheduledHeadline
             }
 
-            CompetitionWeekChart(
+            CompetitionWeekStrip(
                 days: competition.days,
-                currentDayOrdinal: competition.currentDayOrdinal,
-                ownerName: competition.ownerDisplayName,
-                opponentName: competition.opponentDisplayName
-            )
-
-            CompetitionRingLegend(
-                opponentName: competition.opponentDisplayName
+                currentDayOrdinal: competition.currentDayOrdinal
             )
 
             if let disclosure = competitionFixtureDisclosure(
@@ -488,7 +454,8 @@ private struct HeroScoreboard: View {
     }
 }
 
-private struct CompetitionSharingCard: View {
+/// One competition in a grouped list; the list's panel draws the surface.
+private struct CompetitionSharingRow: View {
     let competition: LocalCompetitionPresentation
     let source: CompetitionPublicationSource
 
@@ -523,7 +490,6 @@ private struct CompetitionSharingCard: View {
         }
         .padding(16)
         .frame(maxWidth: .infinity, minHeight: 76, alignment: .leading)
-        .themePanel()
     }
 
     @ViewBuilder
@@ -545,7 +511,7 @@ private struct CompetitionSharingCard: View {
             Text(competition.opponentDisplayName)
                 .font(.headline)
                 .foregroundStyle(Theme.ink)
-            Text(competitionSharingStatus(competition.lifecycle))
+            Text(statusText)
                 .font(.subheadline.weight(.medium))
                 .foregroundStyle(statusColor)
             if let disclosure = competitionFixtureDisclosure(
@@ -558,6 +524,18 @@ private struct CompetitionSharingCard: View {
             }
         }
         .multilineTextAlignment(.leading)
+    }
+
+    // A finished week carries its dates, so repeat opponents stay apart.
+    private var statusText: String {
+        let status = competitionSharingStatus(competition.lifecycle)
+        guard sharingOutcome(competition.lifecycle) != nil,
+              let first = competition.days.first?.day,
+              let last = competition.days.last?.day
+        else {
+            return status
+        }
+        return "\(status) · \(first.month)/\(first.day)–\(last.month)/\(last.day)"
     }
 
     // Your wins read in your color; everything else stays neutral.
@@ -758,6 +736,181 @@ private struct CompetitionRivalrySummaryCard: View {
     }
 }
 
+/// Finished competitions and every award, kept off Home.
+struct CompetitionHistoryView: View {
+    let publication: LocalCompetitionPublication
+
+    @State private var page: Page = .matches
+
+    private enum Page: Hashable {
+        case matches
+        case awards
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 20) {
+                CompetitionRivalrySummaryCard(
+                    summary: competitionRivalrySummary(publication.dashboard),
+                    timeZoneIdentifier: publication.timeZoneIdentifier
+                )
+
+                Picker("History", selection: $page) {
+                    Text("Matches").tag(Page.matches)
+                    Text("Awards").tag(Page.awards)
+                }
+                .pickerStyle(.segmented)
+
+                switch page {
+                case .matches:
+                    matchList
+                case .awards:
+                    awardList
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+        }
+        .background(Theme.ground)
+        .navigationTitle("History")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private var finished: [LocalCompetitionPresentation] {
+        publication.dashboard.competitions.filter {
+            sharingOutcome($0.lifecycle) != nil
+        }
+    }
+
+    private var matchList: some View {
+        VStack(spacing: 0) {
+            ForEach(Array(finished.enumerated()), id: \.element.id) {
+                index,
+                competition in
+                if index > 0 {
+                    CompetitionRowDivider()
+                }
+                NavigationLink(
+                    value: CompetitionHomeRoute.competition(competition.id)
+                ) {
+                    CompetitionSharingRow(
+                        competition: competition,
+                        source: publication.source
+                    )
+                    .contentShape(Rectangle())
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel(
+                        sharingAccessibilitySummary(
+                            competition,
+                            source: publication.source
+                        )
+                    )
+                    .accessibilityHint("Opens this competition")
+                }
+                .buttonStyle(CompetitionRowButtonStyle())
+                .accessibilityIdentifier(competitionSharingIdentifier(competition))
+            }
+        }
+        .themePanel()
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+    }
+
+    @ViewBuilder
+    private var awardList: some View {
+        let awards = publication.dashboard.awards
+        if awards.isEmpty {
+            Text("Awards appear here when a competition finishes.")
+                .font(.subheadline)
+                .foregroundStyle(Theme.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        } else {
+            VStack(spacing: 0) {
+                ForEach(Array(awards.enumerated()), id: \.element.id) {
+                    index,
+                    award in
+                    CompetitionAwardDashboardRow(
+                        award: award,
+                        victoryCount: awards.filter {
+                            $0.kind == .victory
+                                && $0.friendDisplayName == award.friendDisplayName
+                        }.count,
+                        timeZoneIdentifier: publication.dashboard.competitions
+                            .first(where: { $0.id == award.competitionID })?
+                            .timeZoneIdentifier
+                            ?? publication.timeZoneIdentifier
+                    )
+                    if index < awards.count - 1 {
+                        Rectangle()
+                            .fill(Theme.hairline)
+                            .frame(height: 1)
+                            .padding(.leading, 68)
+                    }
+                }
+            }
+            .themePanel()
+        }
+    }
+}
+
+/// Home's stack. History, while open, sits under any competition opened
+/// from it.
+enum CompetitionHomeRoute: Hashable {
+    case history
+    case competition(CompetitionID)
+
+    /// One stack from a host's competition path and its History flag, so
+    /// the host keeps owning which competitions are open.
+    static func stack(
+        path: Binding<[CompetitionID]>,
+        showsHistory: Binding<Bool>
+    ) -> Binding<[CompetitionHomeRoute]> {
+        Binding(
+            get: {
+                let history: [CompetitionHomeRoute] =
+                    showsHistory.wrappedValue ? [.history] : []
+                return history
+                    + path.wrappedValue.map(CompetitionHomeRoute.competition)
+            },
+            set: { routes in
+                showsHistory.wrappedValue = routes.first == .history
+                path.wrappedValue = routes.compactMap { route in
+                    guard case let .competition(id) = route else {
+                        return nil
+                    }
+                    return id
+                }
+            }
+        )
+    }
+}
+
+/// Home's + button. It opens the new-challenge drawer.
+struct CompetitionChallengeButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "plus")
+                .font(.headline)
+                .foregroundStyle(Theme.ink)
+                .frame(width: 34, height: 34)
+                .background(Theme.control, in: Circle())
+        }
+        .accessibilityLabel("Challenge Someone")
+        .accessibilityIdentifier("competition.create.open")
+    }
+}
+
+/// The hairline between grouped rows, inset past the badge.
+private struct CompetitionRowDivider: View {
+    var body: some View {
+        Rectangle()
+            .fill(Theme.hairline)
+            .frame(height: 1)
+            .padding(.leading, 70)
+    }
+}
+
 /// The mark with the opponent's block as a dashed outline: nobody to play yet.
 private struct OpenSlotMark: View {
     var body: some View {
@@ -809,6 +962,13 @@ private func sharingIsInPlay(
     }
 }
 
+private func sharingIsArchived(
+    _ lifecycle: LocalCompetitionLifecyclePresentation
+) -> Bool {
+    if case .archived = lifecycle { return true }
+    return false
+}
+
 private func sharingOutcome(
     _ lifecycle: LocalCompetitionLifecyclePresentation
 ) -> CompetitionOutcome? {
@@ -855,6 +1015,14 @@ struct CompetitionPressButtonStyle: ButtonStyle {
                 reduceMotion ? nil : .easeOut(duration: 0.14),
                 value: configuration.isPressed
             )
+    }
+}
+
+/// Rows inside one panel highlight in place; scaling would break its edges.
+struct CompetitionRowButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .background(configuration.isPressed ? Theme.control : .clear)
     }
 }
 

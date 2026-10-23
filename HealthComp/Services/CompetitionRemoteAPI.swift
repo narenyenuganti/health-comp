@@ -6,6 +6,8 @@ enum CompetitionRemoteFailure: Error, Equatable, Sendable {
     case forbidden
     case notFound
     case inviteUnavailable
+    case recipientUnavailable
+    case pendingInvitationExists
     case divergentDuplicate
     case staleRevision
     case finalizedCompetition
@@ -78,6 +80,9 @@ struct CompetitionRemoteAPI: Sendable {
         throw CompetitionRemoteFailure.operationFailed
     }
     var requestAccountDeletion: @Sendable () async throws -> Void
+    var resolveInviteRecipient: @Sendable (UUID) async throws -> AuthenticatedProfile = { _ in
+        throw CompetitionRemoteFailure.operationFailed
+    }
 }
 
 enum CompetitionRemoteTransportRequest: Equatable, Sendable {

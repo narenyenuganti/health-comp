@@ -82,6 +82,7 @@ jobs:
           set -euo pipefail
           bash scripts/test-healthkit-delivery-diagnostics.sh
           bash scripts/test-competition-refresh-diagnostics.sh
+          bash scripts/test-staging-scoring-response-capture.sh
 
       - name: Test CompetitionCore in Debug and Release
         run: |
@@ -121,8 +122,13 @@ jobs:
             -derivedDataPath "$RUNNER_TEMP/HealthComp-DerivedData" \
             -only-testing:HealthCompTests \
             -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testCopyCustomSchemeInvitationIncludesTheCompleteLink \
+            -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testCreatingInvitationRequiresConfirmingAnExistingAccount \
             -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testCopyCustomSchemeRematchIncludesTheCompleteLink \
             -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testAccountEditingAndPrivacyBoundariesRemainAccessible \
+            -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testAccountDeletionFailureRemainsVisibleOnDeletionPage \
+            -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testRemoteDayDrawerShowsBothAcceptedScoresWithoutRawHealthSnapshots \
+            -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testRemoteCompetitionAppearanceAndTypeSizeMatrix \
+            -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testCreateRemoteUpdatesHistoryAnonymizationRematchAndArchive \
             -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testWelcomeDisclosesSharedDerivedActivity \
             -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testHealthOnboardingDisclosesSharedDerivedActivity \
             -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testRemoteInvitationDisclosesSharedDerivedActivity \

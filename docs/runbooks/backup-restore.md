@@ -81,6 +81,27 @@ clients still use Unix sockets. This does not qualify hosted certificates,
 credential handling or the full recovery procedure. See PostgreSQL's
 [client certificate-verification modes](https://www.postgresql.org/docs/17/libpq-ssl.html).
 
+On October 10, 2026, the local harness's `--forward-repair` case restored the
+actual 19-migration prefix and synthetic legacy retired-token state. Its
+negative control rejected the unrepaired target. The exact checked-in
+`20260927001500` repair passed transactionally, preserved active tokens and
+protected rows/history/owners/grants/RLS, and passed future-retirement and
+tokenless-reactivation checks. Duplicate repair execution failed without a
+state/history change. Both remaining migrations then applied, bringing the
+target to all 22 migrations through `20261002001700`; actual history/state/FK
+checks passed with Cron off and no target network/ports. This closes the local
+synthetic forward-repair component only, not the hosted repair rehearsal,
+genuine anonymized-history preservation, deletion reconciliation, RPO/RTO or
+Task 18. No hosted database or application migration was changed.
+
+On October 19, 2026, both local modes passed against all 23 migrations through
+`20261019001800`. The current-schema synthetic fixture included non-null named
+recipients, and both snapshot restores preserved their exact invitee relationship.
+The legacy forward-repair case preserved completed rows with the new recipient
+field null. All existing TLS, snapshot/repair negative controls and actual
+history/state/FK checks remained enabled. This is local synthetic evidence only;
+none of the hosted execution prerequisites or qualification holds above changed.
+
 Do not assume a paid-plan clone solves pre-import containment. The current
 [Supabase clone documentation](https://supabase.com/docs/guides/platform/clone-project)
 says copied external-operation extensions and jobs start when restore completes

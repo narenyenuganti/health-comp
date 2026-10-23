@@ -619,24 +619,34 @@ final class RemoteCompetitionClientTests: XCTestCase {
             competitionID: competitionID
         )
         let probe = RemoteCompetitionClientCommandProbe()
+        var api = remoteAPI(
+            listCompetitions: {
+                await probe.recordList()
+                return []
+            },
+            createInvite: { request in
+                await probe.recordCreate(request)
+                return invite
+            },
+            claimInvite: { request in
+                await probe.recordClaim(request)
+                return claim
+            }
+        )
+        let recipient = AuthenticatedProfile(
+            id: UUID(uuidString: "22000000-0000-4000-8000-000000000001")!,
+            displayName: "Chosen recipient"
+        )
+        api.resolveInviteRecipient = { id in
+            await probe.recordRecipientLookup(id)
+            return recipient
+        }
         let client = CompetitionClient.remote(
-            remoteAPI: remoteAPI(
-                listCompetitions: {
-                    await probe.recordList()
-                    return []
-                },
-                createInvite: { request in
-                    await probe.recordCreate(request)
-                    return invite
-                },
-                claimInvite: { request in
-                    await probe.recordClaim(request)
-                    return claim
-                }
-            ),
+            remoteAPI: api,
             environment: try environment()
         )
         let createRequest = try CompetitionInviteCreationRequest(
+            recipientProfileID: recipient.id,
             timeZoneIdentifier: "America/Los_Angeles",
             rematchParentID: nil,
             idempotencyKey: UUID(
@@ -645,10 +655,19 @@ final class RemoteCompetitionClientTests: XCTestCase {
         )
         let claimRequest = try CompetitionInviteClaimRequest(token: token)
 
+        do {
+            _ = try await client.resolveInviteRecipient(recipient.id)
+            XCTFail("Recipient lookup must require an authenticated owner")
+        } catch {
+            XCTAssertEqual(error as? CompetitionRemoteFailure, .unauthenticated)
+        }
         try await client.mountAuthenticatedProfile(profile, paths)
         var iterator = client.start().makeAsyncIterator()
         let initialPublication = await iterator.next()
         XCTAssertEqual(initialPublication?.publicationRevision, 1)
+
+        let resolvedRecipient = try await client.resolveInviteRecipient(recipient.id)
+        XCTAssertEqual(resolvedRecipient, recipient)
 
         let creation = try await client.createInvite(createRequest)
         let nextCreationPublication = await iterator.next()
@@ -673,6 +692,14 @@ final class RemoteCompetitionClientTests: XCTestCase {
         XCTAssertEqual(createRequests, [createRequest])
         XCTAssertEqual(claimRequests, [claimRequest])
         await client.stop()
+        do {
+            _ = try await client.resolveInviteRecipient(recipient.id)
+            XCTFail("Recipient lookup must not outlive the authenticated owner")
+        } catch {
+            XCTAssertEqual(error as? CompetitionRemoteFailure, .unauthenticated)
+        }
+        let recipientLookups = await probe.recipientLookups()
+        XCTAssertEqual(recipientLookups, [recipient.id])
     }
 
     func testArchiveCallsServerThenReturnsCanonicalPublicationRevision()
@@ -2248,6 +2275,7 @@ final class RemoteCompetitionClientTests: XCTestCase {
             }
         )
         let createRequest = try CompetitionInviteCreationRequest(
+            recipientProfileID: UUID(uuidString: "22000000-0000-4000-8000-000000000001")!,
             timeZoneIdentifier: "America/Los_Angeles",
             rematchParentID: nil,
             idempotencyKey: UUID(
@@ -2352,6 +2380,7 @@ final class RemoteCompetitionClientTests: XCTestCase {
             token: token
         )
         let request = try CompetitionInviteCreationRequest(
+            recipientProfileID: UUID(uuidString: "22000000-0000-4000-8000-000000000001")!,
             timeZoneIdentifier: "America/Los_Angeles",
             rematchParentID: nil,
             idempotencyKey: UUID()
@@ -4534,6 +4563,15 @@ private actor RemoteCompetitionClientCommandProbe {
     private var creates: [CompetitionInviteCreationRequest] = []
     private var claims: [CompetitionInviteClaimRequest] = []
     private var archives: [UUID] = []
+    private var recipients: [UUID] = []
+
+    func recordRecipientLookup(_ profileID: UUID) {
+        recipients.append(profileID)
+    }
+
+    func recipientLookups() -> [UUID] {
+        recipients
+    }
 
     func recordList() {
         lists += 1

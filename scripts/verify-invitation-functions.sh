@@ -120,7 +120,7 @@ while [ "$attempt" -lt 30 ]; do
       --request POST \
       --header "authorization: Bearer $ANON_KEY" \
       --header 'content-type: application/json' \
-      --data '{"timeZoneIdentifier":"UTC","idempotencyKey":"84000000-0000-4000-8000-000000000001"}' \
+      --data '{"timeZoneIdentifier":"UTC","idempotencyKey":"84000000-0000-4000-8000-000000000001","recipientProfileId":"42000000-0000-4000-8000-000000000002"}' \
       "${FUNCTIONS_URL}/create-competition-invite" || true
   )
   if [ "$readiness_status" = "401" ] && \

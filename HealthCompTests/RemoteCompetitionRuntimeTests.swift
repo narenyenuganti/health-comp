@@ -5,6 +5,124 @@ import XCTest
 @testable import HealthComp
 
 final class RemoteCompetitionRuntimeTests: XCTestCase {
+    func testSQLRecipientRenameRefreshesPendingCacheAndMaterializesAcceptance() async throws {
+        struct Snapshot: Decodable {
+            let descriptor: CompetitionDescriptor
+            let page: CompetitionChangePage
+        }
+        let source = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("Fixtures/recipient-invitation-sql.json")
+        let url = Bundle(for: Self.self).url(forResource: "recipient-invitation-sql", withExtension: "json") ?? source
+        let snapshots = try JSONDecoder().decode([String: Snapshot].self, from: Data(contentsOf: url))
+        let initial = try XCTUnwrap(snapshots["rename_pending_initial"])
+        let renamed = try XCTUnwrap(snapshots["rename_pending_full"])
+        let incremental = try XCTUnwrap(snapshots["rename_pending_incremental"])
+        let accepted = try XCTUnwrap(snapshots["rename_scheduled"])
+        let root = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let creator = initial.descriptor.creatorProfileID
+        let recipient = try XCTUnwrap(accepted.descriptor.participants.first { $0.role == .invitee }?.profileID)
+        let createdAt = try XCTUnwrap(initial.page.changes.first?.occurredAt)
+        let store = makeStore(root: root.appendingPathComponent("creator"))
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("cache"), withIntermediateDirectories: true)
+        let cache = JSONRemoteCompetitionCacheStore(
+            rootDirectory: root.appendingPathComponent("cache"),
+            fileProtection: JSONCompetitionEventStoreFileProtection { _, _ in }
+        )
+        // All snapshots come from actual local create/update-profile/claim/fetch calls, rolled back together.
+        for snapshot in [initial, incremental] {
+            let runtime = RemoteCompetitionRuntime(
+                profileID: creator, store: store,
+                remoteAPI: remoteAPI(listCompetitions: { [snapshot.descriptor] }, fetchChanges: { cursor, _ in
+                    XCTAssertEqual(cursor.lastSeenServerSequence, snapshot.page.afterServerSequence)
+                    return snapshot.page
+                }), cacheStore: cache, now: { createdAt }
+            )
+            let outcome = await runtime.synchronizeAll()
+            XCTAssertEqual(outcome.failures, [])
+            XCTAssertEqual(outcome.successfulCompetitions.count, 1)
+            await runtime.stop()
+        }
+        let entries = try await cache.load(profileID: creator)
+        XCTAssertEqual(entries.first?.lastSeenServerSequence, 3)
+        XCTAssertEqual(entries.first?.descriptor.participants.last?.profile.displayName, "Fixture Renamed Recipient")
+        // A fresh creator bootstrap and both accepted-account bootstraps tolerate the presentation event.
+        for (index, snapshot, owner) in [(0, renamed, creator), (1, accepted, creator), (2, accepted, recipient)] {
+            let runtime = RemoteCompetitionRuntime(
+                profileID: owner, store: index == 1 ? store : makeStore(root: root.appendingPathComponent("fresh-\(index)")),
+                remoteAPI: remoteAPI(listCompetitions: { [snapshot.descriptor] }, fetchChanges: { _, _ in snapshot.page }),
+                now: { createdAt }
+            )
+            let outcome = await runtime.synchronizeAll()
+            XCTAssertEqual(outcome.failures, [])
+            XCTAssertEqual(outcome.successfulCompetitions.count, 1)
+            if index != 0 {
+                XCTAssertEqual(outcome.successfulCompetitions.first?.journal.projection.competition.remoteConfiguration?.backendDescriptorRevision, 5)
+            }
+            await runtime.stop()
+        }
+        let stranger = UUID(uuidString: "99100000-0000-4000-8000-000000000099")!
+        let unrelatedPresentation = try CompetitionChange(
+            serverSequence: 3, kind: .profilePresentationChanged, entityID: stranger,
+            occurredAt: createdAt,
+            payload: .profilePresentation(.init(profileID: stranger, displayName: "Unrelated account"))
+        )
+        let invalidPage = try CompetitionChangePage(
+            competitionID: renamed.page.competitionID, afterServerSequence: 0,
+            snapshotServerSequence: 3, nextServerSequence: 3, hasMore: false,
+            changes: Array(renamed.page.changes.prefix(2)) + [unrelatedPresentation]
+        )
+        let invalidRuntime = RemoteCompetitionRuntime(
+            profileID: creator, store: makeStore(root: root.appendingPathComponent("invalid")),
+            remoteAPI: remoteAPI(listCompetitions: { [renamed.descriptor] }, fetchChanges: { _, _ in invalidPage }),
+            now: { createdAt }
+        )
+        let invalidOutcome = await invalidRuntime.synchronizeAll()
+        XCTAssertEqual(invalidOutcome.successfulCompetitions.count, 0)
+        XCTAssertEqual(invalidOutcome.failures.first?.failure, .serverContractMismatch)
+        await invalidRuntime.stop()
+    }
+
+    func testRecipientBoundSQLHistoryMaterializesPendingThenAcceptedForBothAccounts() async throws {
+        // Captured from migration 018's real create/claim/fetch operations in one rolled-back local transaction.
+        struct Snapshot: Decodable {
+            let descriptor: CompetitionDescriptor
+            let page: CompetitionChangePage
+        }
+        let source = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
+            .appendingPathComponent("Fixtures/recipient-invitation-sql.json")
+        let url = Bundle(for: Self.self).url(forResource: "recipient-invitation-sql", withExtension: "json") ?? source
+        let snapshots = try JSONDecoder().decode([String: Snapshot].self, from: Data(contentsOf: url))
+        let pending = try XCTUnwrap(snapshots["pending"])
+        let scheduled = try XCTUnwrap(snapshots["scheduled"])
+        let root = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let creatorID = pending.descriptor.creatorProfileID
+        let inviteeID = try XCTUnwrap(scheduled.descriptor.participants.first { $0.role == .invitee }?.profileID)
+        let createdAt = try XCTUnwrap(pending.page.changes.first?.occurredAt)
+        let store = makeStore(root: root.appendingPathComponent("creator"))
+        let pendingRuntime = RemoteCompetitionRuntime(
+            profileID: creatorID, store: store,
+            remoteAPI: remoteAPI(listCompetitions: { [pending.descriptor] }, fetchChanges: { _, _ in pending.page }),
+            now: { createdAt }
+        )
+        let pendingOutcome = await pendingRuntime.synchronizeAll()
+        XCTAssertEqual(pendingOutcome.failures, [])
+        XCTAssertEqual(pendingOutcome.successfulCompetitions.first?.descriptor.participants.last?.profile.displayName, "Fixture Recipient")
+        for id in [creatorID, inviteeID] {
+            let runtime = RemoteCompetitionRuntime(
+                profileID: id, store: id == creatorID ? store : makeStore(root: root.appendingPathComponent("invitee")),
+                remoteAPI: remoteAPI(listCompetitions: { [scheduled.descriptor] }, fetchChanges: { _, _ in scheduled.page }),
+                now: { createdAt }
+            )
+            let outcome = await runtime.synchronizeAll()
+            XCTAssertEqual(outcome.failures, [])
+            XCTAssertEqual(outcome.successfulCompetitions.first?.journal.projection.competition.remoteConfiguration?.backendDescriptorRevision, 4)
+            await runtime.stop()
+        }
+        await pendingRuntime.stop()
+    }
+
     func testCacheSaveRejectsSymlinkWithoutChangingItsTarget() async throws {
         let root = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -381,7 +499,11 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
             )
         )
 
+#if HEALTHCOMP_STAGING
+        let outcome = await observeActivity(runtime, expecting: [.skippedLifecycle: 1])
+#else
         let outcome = await runtime.synchronizeAll()
+#endif
 
         XCTAssertNil(outcome.discoveryFailure)
         XCTAssertEqual(outcome.failures, [])
@@ -521,7 +643,11 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
             cacheStore: cache
         )
 
+#if HEALTHCOMP_STAGING
+        let terminal = await observeActivity(terminalRuntime, expecting: [.skippedLifecycle: 1])
+#else
         let terminal = await terminalRuntime.synchronizeAll()
+#endif
 
         XCTAssertNil(terminal.discoveryFailure)
         XCTAssertEqual(terminal.outcomes, [])
@@ -611,7 +737,11 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
                 cacheStore: cache
             )
 
+#if HEALTHCOMP_STAGING
+            let outcome = await observeActivity(runtime, expecting: [.skippedLifecycle: 1])
+#else
             let outcome = await runtime.synchronizeAll()
+#endif
 
             XCTAssertNil(outcome.discoveryFailure, lifecycle.rawValue)
             XCTAssertEqual(outcome.outcomes, [], lifecycle.rawValue)
@@ -689,7 +819,13 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
             )
         )
 
+#if HEALTHCOMP_STAGING
+        let outcome = await observeActivity(runtime, expecting: [
+            .skippedLifecycle: 1, .reconciliationFailed: 1,
+        ])
+#else
         let outcome = await runtime.synchronizeAll()
+#endif
 
         XCTAssertNil(outcome.discoveryFailure)
         XCTAssertEqual(
@@ -1160,7 +1296,11 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
             now: { dayOneNoon }
         )
 
+#if HEALTHCOMP_STAGING
+        let outcome = await observeActivity(runtime, expecting: [.readStarted: 1, .readFailed: 1])
+#else
         let outcome = await runtime.synchronizeAll()
+#endif
 
         XCTAssertEqual(outcome.failures, [])
         XCTAssertEqual(outcome.successfulCompetitions.count, 1)
@@ -1286,7 +1426,20 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
             now: { dayOneNoon }
         )
 
+#if HEALTHCOMP_STAGING
+        let observation = StagingScoringOperatorControls()
+        observation.bind(StagingScoringCaptureOwner())
+        XCTAssertTrue(observation.requestActivityObservation())
+        let outcome = await observation.observeActivity {
+            await runtime.synchronizeAll()
+        }
+        XCTAssertEqual(observation.activityDisplayState(), .complete(.init(counts: [
+            .readStarted: 1, .readCompleted: 1, .snapshotDays: 1,
+            .missingDays: 6, .futureDays: 6, .queuedRevisions: 1,
+        ])))
+#else
         let outcome = await runtime.synchronizeAll()
+#endif
 
         XCTAssertEqual(outcome.failures, [])
         let requests = await probe.scoreRequests()
@@ -2933,6 +3086,44 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
         await aliceRuntime.stop()
         await bobRuntime.stop()
     }
+
+#if HEALTHCOMP_STAGING
+    func testActivityObservationCountsCacheSaveFailure() async throws {
+        struct Expected: Error {}
+        let root = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let cacheRoot = root.appendingPathComponent("cache")
+        try FileManager.default.createDirectory(at: cacheRoot, withIntermediateDirectories: false)
+        let cache = JSONRemoteCompetitionCacheStore(
+            rootDirectory: cacheRoot,
+            fileProtection: JSONCompetitionEventStoreFileProtection { url, _ in
+                if url.pathExtension == "tmp" { throw Expected() }
+            }
+        )
+        let initialCache = try await cache.load(profileID: profileID)
+        XCTAssertEqual(initialCache, [])
+        let runtime = RemoteCompetitionRuntime(
+            profileID: profileID,
+            store: makeStore(root: root.appendingPathComponent("events")),
+            remoteAPI: remoteAPI(listCompetitions: { [] }),
+            cacheStore: cache
+        )
+        let outcome = await observeActivity(runtime, expecting: [.reconciliationFailed: 1])
+        XCTAssertEqual(outcome.discoveryFailure, .storageUnavailable)
+    }
+
+    private func observeActivity(
+        _ runtime: RemoteCompetitionRuntime,
+        expecting counts: [StagingScoringOperatorControls.ActivityEvent: Int]
+    ) async -> RemoteCompetitionRuntimeOutcome {
+        let observation = StagingScoringOperatorControls()
+        observation.bind(StagingScoringCaptureOwner())
+        XCTAssertTrue(observation.requestActivityObservation())
+        let outcome = await observation.observeActivity { await runtime.synchronizeAll() }
+        XCTAssertEqual(observation.activityDisplayState(), .complete(.init(counts: counts)))
+        return outcome
+    }
+#endif
 
     private func remoteAPI(
         listCompetitions: @escaping @Sendable () async throws ->

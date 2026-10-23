@@ -14,9 +14,256 @@ and [recovery runbook](../runbooks/backup-restore.md#private-beta-deletion-test-
 preserve the deletion feature, existing automated coverage and privacy/history
 safeguards. Other gates and **not production-ready** status remain unchanged.
 
-## Current qualification checkpoint — September 28, 2026 UTC
+## Current qualification checkpoint — October 22, 2026 UTC
 
-The [current checklist](production-beta-checklist.md#current-qualification-checkpoint--september-28-2026-utc)
+The [current checklist](production-beta-checklist.md#current-qualification-checkpoint--october-22-2026-utc)
+selects merged `3c155c89b97c9af527f9a8670877b2e1c20c7996` for the automated
+matrix, `04d1792` for the Staging version 17 scoring deployment, and `03e1998`
+for the installed one-tap Activity package. These are separate observations.
+Status remains **not production-ready**.
+
+Exact-main Backend run `39779485955` and iOS run `39779485964` both passed.
+Independent numeric-only log readback qualifies the checklist's counts, three
+unsigned device builds, clean-source verification and dedicated CI Simulator
+cleanup. PR #162's exact reviewed head also passed both suites before its
+guarded squash merge; the reviewed and merged trees are identical. That change
+only recognizes the exact support mailbox in a plain or Cloudflare-encoded
+anchor, with malformed/wrong-target negative tests. Seven live Staging website
+checks passed; no website content or app behavior changed.
+
+Private aggregate receipts remain outside this public repository:
+
+| Receipt | SHA-256 |
+| --- | --- |
+| `assertion-diagnostics-staging-deployment-20261022T085126Z.json` | `3dd15e439a405cdbf9b195f61305ac8680b6eb77d5b851fe8fe0827b1d4be3c8` |
+| `staging-physical-update-03e1998-20261022T100323Z.json` | `05dfe0acfec3bff387038fe75c33b5836a554b9019dcbd05925866b4027f01c1` |
+| `staging-one-tap-physical-observation-20261022T1004Z.json` | `230a0da6bd10a7d1479ecc652a87fbbcce2a8ae90967641c207605be5b1a0acf` |
+| `staging-current-cycle-proof-20261022T100847Z.json` | `8b3942bdfedcfef03a16af9f7d1dc0e95f4170fb779c4ffed6eecf7e9880a4e5` |
+
+The version 17 deployment changed only fixed diagnostic labels. Four returned
+assets matched the selected source; the other eleven Functions and gateway
+authentication settings were unchanged. Two credential-free probes returned
+the expected invalid-request result. The first local checker expected the wrong
+flat error shape; source inspection corrected it to the existing nested contract
+before the second probe. These responses do not prove authenticated acceptance.
+No migration, account/key change or production action occurred.
+
+At 10:04 UTC, one normal launch and one **Check Activity Now** invocation
+completed on the updated physical app. One Activity read started/completed;
+the aggregate observation counted one summary day, six missing summary days,
+five future-day skips, nine non-scoring lifecycle skips, two unchanged-accepted
+skips and zero enqueues. No read or reconciliation failure was reported.
+The counters cover all competitions in that refresh, not one bound match.
+Missing summaries are not proof of zero Activity. An accepted skip means equality
+with an already visible local server-derived row, not new server acceptance.
+There was no debugger, manual refresh gesture or separate response capture.
+The diagnostic was cleared, the Account drawer closed and Mirroring minimized.
+The over-install preserved one profile root and 26 file-name metadata entries,
+not independently verified file contents or an on-device executable hash.
+
+At 10:08:47 UTC, a separate bounded Staging Management query selected only 16
+allowlisted aggregate fields in a read-only, repeatable-read transaction with
+rollback. It found two participants and two elapsed days in the unique current
+cycle: no creator revisions; four invitee revisions spanning two days; one
+latest available invitee day classified as enrollment-backed by the query; zero
+latest assertion-backed days; zero results. It returned no identifiers, scores, Health
+values or proof bytes. The query does not establish exact current-phone binding,
+proof-byte validation, counter advancement, replay resistance, refresh causality
+or stable two-client results. Assertion/enrollment counts may overlap and must
+not be added. A retired installation/key can explain an absent current chain.
+
+The next physical check needs genuinely changed Activity, not another unchanged
+refresh. Preserve the existing October 21–27 cycle; October 28 only opens its
+final-result check. Current-installation APNs routing, hosted recovery, privacy
+publication, signed distribution and production promotion remain unqualified.
+The owner-skipped deletion test, universal-link deferral, paid-setup hold and
+Apple-contact hold remain unchanged. No completed historical notification
+lookup needs repeating.
+
+## Earlier qualification checkpoint — October 22, 2026 UTC
+
+The [earlier checklist](production-beta-checklist.md#earlier-qualification-checkpoint--october-22-2026-utc)
+selects merged `d897a73` for its completed automated matrix and the scoped
+Staging version 16 deployment. Status remains **not production-ready**. App and
+configuration source remain unchanged from the selected `7839acb` package; the
+shared server verifier changed. Source, deployment and physical findings are
+separate.
+
+Private aggregate receipts are retained outside this public repository:
+
+| Receipt | SHA-256 |
+| --- | --- |
+| `app-attest-extension-rollout-frozen-2026-10-22.json` | `ce9f7ba2d03d403d6086d31e91331e2a754ce92a1da04789401ea992f4119d8e` |
+| `staging-v16-normal-app-observation-2026-10-22.json` | `1368df992290a0cf1c02e2ed883069d40a9cb8cc9c54becf3b67d50cdcaa2316` |
+
+Exact-main Backend run `39691971124` completed at October 21, 23:20:54 UTC.
+iOS run `39691971125`, attempt 2, completed at October 22, 00:43:32 UTC. Bounded
+completed-log readback qualifies the checklist's counts, successful clean-tree
+and dedicated Simulator cleanup, and three unsigned device builds. The original
+PR failure was missing system Copy in the share sheet; the original main failure
+was a rendered-configuration wait timing out before a matching subsequent read.
+Each received one failed-only retry on unchanged code. Passing retries do not
+establish either original cause or an application fix.
+
+One named deployment completed at 00:51:17 UTC. Staging scoring became ACTIVE
+version 16 with `verify_jwt=false`, unchanged from version 15. The four returned
+entrypoint/shared-verifier/shared-HTTP/import-map assets matched selected source.
+Eight target metadata fields held stable around the post-deploy download and
+after boot; other eleven Function versions/authentication settings were unchanged.
+One credential-free `POST {}` returned HTTP 400, `invalid_request` / `Invalid
+score revision`, before authentication. Both owned source scratch directories
+were removed and absence verified; the worktree remained clean and unlinked.
+No migration, credential prompt, app installation or production action occurred.
+No deployed lockfile was returned, so deployed dependency-graph equality is not
+claimed. The [public rollout receipt](https://github.com/narenyenuganti/health-comp/pull/157#issuecomment-6330031783)
+records the same scope.
+
+At 01:03:04 and 01:07:02 UTC, separate structural queue snapshots each found one
+terminal Day 1 App Attest rejection, no pending/recovery/accepted target entries
+and no new target score entry. Only the primary outbox and server cursor inventory
+were copied privately; copies were removed. The first wrapper stopped after its
+snapshot, so private identity equality across snapshots is not proved. Neither
+snapshot is a full payload decode, continuous-process/inode proof or on-device
+executable hash. Normal activation preserved the sampled process; Mirroring then
+reported `noWindowsAvailable` on the sole refresh tool call. Execution was not
+confirmed and the gesture was not repeated. The phone was released at 01:07:22
+UTC with Mirroring minimized. There was no post-phone hosted lookup.
+
+The earlier saved rejection and separate hosted flags event were not attributed
+to the same exact request; the physical flag byte remains unknown. Public-fixture
+RED-to-GREEN establishes parser compatibility only. Neither unchanged queue
+counts nor the boot response prove physical fix acceptance or failure, score
+counter advancement, replay resistance, replacement enrollment or stable results.
+Preserve all remaining gates, historical receipts and explicit owner holds.
+
+## Historical qualification checkpoint — October 21, 2026 UTC
+
+The [historical checklist](production-beta-checklist.md#historical-qualification-checkpoint--october-21-2026-utc)
+selects `a5809f9` for its completed exact-source Backend/iOS matrix and the hosted
+20/v2 database verifier. Application/configuration and Function source remain
+unchanged from `7839acb`; this source advance proves no new installation. The
+one accepted diagnostic match restores a scoring target but supplies no accepted
+score, assertion replay or stable result. Status remains **not production-ready**.
+
+Private operator receipts are retained outside this public repository:
+
+| Receipt | SHA-256 |
+| --- | --- |
+| `recipient-rollback-verifier-ci-2026-10-20.json` | `cc4a51095f15608f7ed960d864fa7b5b42e28e69df568da49e8198b3c4e4b5fa` |
+| `staging-recipient-hosted-verifier-a5809f9-attempt.json` | `876bec0d23501ab7a012f3254bd3b5ca8f19ca5843f9c9bf7fb2d8086ac1265a` |
+| `staging-recipient-hosted-verifier-2026-10-20.json` | `1c9a05d64cfff9f038fae856a818d948fc7c28c5a81b8b4a443825c322441f9c` |
+| `staging-diagnostic-match-2026-10-20.json` | `bedf706979afc32c09664694e0c4c2ade7e5c72d097d97e2d8725b42bbaea67e` |
+
+The selected verifier SQL has SHA-256
+`bf5fde7f55d929b14713b6fc435069ac58337ee635eaa4488276a9ed66a96bff`.
+Independent local receipt validation at October 21, 03:43:13 UTC found the exact
+six-field `healthcomp_staging_adversarial_v2` pass: 20 assertions, rollback, zero
+synthetic rows and no private values returned. The local receipt modification time
+was 03:42:38 UTC; neither time is an independently queried server execution time.
+The pinned runner required zero `psql` exit status, empty captured stderr and the
+sole nonblank stdout matching the strict allowlist. The password went directly
+to native `psql`'s hidden TTY prompt, not helper input, arguments, environment or a
+saved file. No raw native output was persisted beyond the aggregate receipt.
+
+The hosted pass covers the selected sequential database adversarial boundary,
+including the five recipient checks documented in the
+[runbook](../runbooks/supabase-environments.md#rollback-only-adversarial-staging-verifier).
+It is separate from isolated CI and does not qualify live Edge concurrency,
+physical scoring, cryptographic App Attest replay, stable results, operational
+recovery or production readiness. No phone, deployment or production action was
+part of this verifier run. Do not rerun the completed attempt.
+
+The diagnostic match's two-client schedule is October 21–27, Los Angeles time.
+Its October 20 UTC receipt proves observed create/accept/rendered scheduling only,
+not an exact claim-request count or a score. All other gates, holds and the
+owner-skipped physical deletion exception remain unchanged.
+
+## Historical qualification checkpoint — October 20, 2026 UTC
+
+The [historical checklist](production-beta-checklist.md#historical-qualification-checkpoint--october-20-2026-utc)
+selects merged `7839acb`, its completed exact-source Backend/iOS CI, current
+Staging package observations, four-asset scoring-source equality and the new
+narrow Apple delivery finding. It preserves all unclosed release gates and
+**not production-ready** status. Source, installation, hosted and physical
+findings remain separate; none supplies the missing stable-result or replay pass.
+
+Private operator receipts are retained outside this public repository:
+
+| Receipt | SHA-256 |
+| --- | --- |
+| `staging-physical-update-7839acb-20261020T034553Z.json` | `6d5f397849d067349a85da06cc7c0518a4b586e11dd6ed19cc595a5af4a01069` |
+| `staging-diagnostic-screen-simulator-update-2026-10-19.json` | `414f2bc2cb18d61249fd2d7cacebc28e66ed0a0fea60bba4d806fa67493059ed` |
+| `staging-scoring-source-drift-readback-2026-10-19.json` | `664f10ddb534c6da48a7968e9ea005a7e25b4f842836c408984550d8d9158277` |
+| `staging-existing-cycle-eligibility-2026-10-20.json` | `cb8f61d251bc66e808f72ed835f25215a04b817d5b3b7267e37cf1e65077dcfe` |
+| `staging-existing-apns-apple-readback-2026-10-20.json` | `ffd2a9fb4967737b2a641d9bbe596a979b853dacaa6ede05c4fa5136d1a14035` |
+
+Apple's four lookup results were one delivered and three expired after offline
+storage, with exact reference and Development-environment matches. This does not
+bind delivery to the current phone or prove tap routing. No replacement sends
+or repeat lookups were used to improve the count. No reference or token value
+is published. The private receipt documents limited initial identifier exposure
+in tool output and a transient token read in RAM; no claim of zero prior exposure,
+provider-history deletion or secure memory erasure is made.
+
+## Historical qualification checkpoint — October 19, 2026 UTC
+
+The [historical checklist](production-beta-checklist.md#historical-qualification-checkpoint--october-19-2026-utc)
+records exact-main `9f9fb5e` Backend/iOS CI, the integrated recipient invitation
+contract, the exact-tree PR #151 CI pass and current-schema local synthetic
+recovery qualification. It also
+records the earlier empty system-share-sheet CI failure without claiming a
+confirmed cause or application fix. Local populated restores and passing source
+CI are not hosted recovery or physical qualification.
+
+The preserved October 11–17 competition reached `best_available`, not stable:
+the post-deadline aggregate-only readback found two accepted participants,
+zero daily revision coverage for either and zero stable attestations/results.
+Its receipt is scoped by a unique schedule, not a fresh private client/key
+binding. Waiting cannot close this cycle's stable-result gate. Preserve the
+fallback history; diagnose the real submission failure before another lifecycle.
+
+At 20:20 UTC, explicitly approved Staging migration 018 produced the expected
+23-version chain and expired four old unnamed pending invitations. Same-process
+aggregate and ordered-row comparisons preserved all four accepted competitions
+and related history. Only `create-competition-invite` advanced ACTIVE version 5
+to version 6, with gateway JWT verification preserved and other Function metadata
+unchanged. Downloaded entry/shared/import-map bytes matched source; no deployed
+lockfile was returned, so dependency-lock/graph equality remains unproved.
+
+By 20:38 UTC, one matching Simulator install and one normal launch completed.
+Its executable/signature matched the prepared artifact, but the combined
+path/mode/byte preservation assertion failed and its RAM baseline is gone.
+Original byte equality and failure cause remain unproved. Independent stopped
+Core replay passed five journals/147 events and owner binding; the October 11
+cached result is completed `best_available` with zero accepted day slots and
+14 deadline-missing slots, not stable. Ordinary startup network effects were not
+classified. The app was terminated and dedicated Simulator shut down. Current
+history validity does not prove the lost installation comparison.
+
+The matching physical candidate remains uninstalled, the physical live reader
+remains disabled/old-install pinned, and the live recipient flow remains
+unqualified. No new invitation, physical action, hosted recovery, policy
+publication, release distribution or production promotion is established by
+these readbacks. The [invitation plan](../plans/2026-10-19-recipient-bound-invitations.md#dated-staging-rollout-evidence)
+records the dated rollout boundary. The owner-skipped deletion test, deferred
+universal links and paid-setup/Apple-contact holds remain unchanged. Release status
+remains **not production-ready**. Older receipts retain their named time and scope.
+
+## Historical qualification checkpoint — October 13, 2026 UTC
+
+The [historical checklist](production-beta-checklist.md#historical-qualification-checkpoint--october-13-2026-utc)
+records successful exact-source CI for `da412f9`, its locally qualified but
+not-installed diagnostic Staging package, the preserved October 11–17 competition,
+and the last dated day-one rejection evidence. The October 18–19 confirmation
+window requires actual seven-day coverage and matching final commitments; it
+does not promise completion. Physical scoring, request correlation and the
+independent release/recovery/production gates remain unqualified. Historical
+receipts below retain their original artifact, time and scope. Release status
+remains **not production-ready**.
+
+## Historical qualification checkpoint — September 28, 2026 UTC
+
+The [historical checklist](production-beta-checklist.md#historical-qualification-checkpoint--september-28-2026-utc)
 records exact-source CI, both installed `507c2c5` Staging packages, the accepted
 September 28–October 4 competition, the still-unverified usable day-one score,
 and the local-only recovery milestone. October 5 is the earliest stable-result

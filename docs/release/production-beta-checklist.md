@@ -14,7 +14,346 @@ records the matching boundary. Actual recovery, protection against resurrecting
 deleted identities, and all other unwaived qualification gates remain open.
 This is a scope decision, not a runtime receipt or production-readiness claim.
 
-## Current qualification checkpoint — October 2, 2026 UTC
+## Current qualification checkpoint — October 22, 2026 UTC
+
+**Not production-ready.** The current source matrix and one normal Activity
+read are verified; a fresh score-linked App Attest assertion/replay pass is not.
+
+- **Automated source matrix:** merged main
+  `3c155c89b97c9af527f9a8670877b2e1c20c7996` passed
+  [Backend CI](https://github.com/narenyenuganti/health-comp/actions/runs/39779485955)
+  and [iOS CI](https://github.com/narenyenuganti/health-comp/actions/runs/39779485964).
+  Completed logs qualify 22 pgTAP files / 849 assertions twice, 150 Deno passes /
+  zero failures / one gated ignore, one separate regression, 15 real-JWT HTTP
+  tests, 20 rollback assertions with zero synthetic rows, and ten support-link
+  tests. iOS qualifies 246 Core tests in each of Debug and Release, 635 app tests,
+  11 selected UI tests, 83 release-style Staging tests and three unsigned device
+  builds. Clean-source verification and dedicated CI Simulator cleanup passed.
+- **Scoped Staging deployment:** only `submit-score-revision` advanced to ACTIVE
+  version 17 from `04d1792`. Four returned source assets matched that commit;
+  the other eleven Function versions and authentication settings were unchanged.
+  This adds fixed rejection diagnostics, not new acceptance rules. The boot
+  probe reached the expected invalid-request response, not authenticated scoring.
+- **Normal Activity read:** the signed Staging package from `03e1998` was
+  over-installed without uninstalling. One profile root and 26 file-name
+  metadata entries were preserved; file-content equality and on-device executable
+  hashing were not established. One **Check Activity Now** invocation completed
+  the existing refresh/read path without a debugger or manual refresh gesture.
+  Across that refresh, two revisions' wire hashes matched locally visible
+  accepted rows, zero new revisions were queued, and no read/reconciliation failure
+  was reported.
+  These counters do not bind the read to one competition or prove fresh hosted
+  acceptance. The observation was cleared and the phone released.
+- **Separate hosted inventory:** one read-only, repeatable-read query found the
+  unique October 21–27 cycle, two accepted participants and two elapsed days.
+  The creator had no revisions. The invitee had four revisions covering two
+  days, one latest available day classified as enrollment-backed by the query,
+  and zero latest assertion-backed days. No result existed. This does not bind
+  the query to the current phone, reverify proof bytes or establish counter advancement,
+  replay resistance or refresh causality.
+- **Website verifier:** [PR #162](https://github.com/narenyenuganti/health-comp/pull/162)
+  fixes a false rejection of the Cloudflare-protected support-email link. Its
+  exact reviewed and merged trees match; ten offline tests and all seven live
+  Staging website checks passed. No site content or application behavior changed.
+  This is not physical universal-link evidence.
+
+Next: after genuinely new Watch Activity and confirmed phone availability, use
+the existing normal-app check once and inspect its bounded result before any
+further action. Do not reset keys, replay an unchanged refresh, replace the
+October 21–27 match or revive the debugger/timed-copy workflow. The calendar
+boundary on October 28 opens the final-result check; it does not pass it.
+Creator scoring, score-linked assertion/replay, replacement enrollment, stable
+two-client results, current-installation APNs routing, hosted recovery, qualified
+privacy publication, signed distribution and production promotion remain open.
+Paid setup and Apple Support remain held; physical deletion is owner-skipped
+and universal links deferred, not PASS. See the
+[current evidence ledger](production-beta-evidence.md#current-qualification-checkpoint--october-22-2026-utc).
+
+## Earlier qualification checkpoint — October 22, 2026 UTC
+
+**Not production-ready.** The App Attest compatibility fix is integrated and
+deployed to Staging; physical acceptance remains unverified.
+
+- **Automated source matrix:** merged main
+  `d897a73f9425ab6c141549695672fbba065d1322` passed
+  [Backend CI](https://github.com/narenyenuganti/health-comp/actions/runs/39691971124)
+  and [iOS CI, attempt 2](https://github.com/narenyenuganti/health-comp/actions/runs/39691971125/attempts/2),
+  plus Cloudflare Pages. Completed logs qualify 22 pgTAP files / 849 assertions
+  twice, 146 Deno passes / zero failures / one gated ignore, the separate raw
+  dependency worker and 15 real-JWT HTTP tests. iOS qualifies 246 Core tests in
+  each of Debug and Release, 635 app tests, 11 selected UI tests, 72 release-style
+  Staging tests and three unsigned Debug/Staging/Release device builds. Original
+  PR and main UI failures remain recorded; unchanged-code retries passed without
+  weakening assertions or timeouts. Their causes are not confirmed.
+- **Narrow verifier change:** [PR #157](https://github.com/narenyenuganti/health-comp/pull/157)
+  accepts exactly the existing AT flag or AT+ED with a strict trailing extension
+  map. Other flag combinations remain rejected; certificate, nonce, identity,
+  key and counter validation are unchanged. The modified public fixture reaches
+  nonce rejection, not full cryptographic acceptance or proof of the phone's
+  actual flag byte.
+- **Scoped Staging deployment:** only `submit-score-revision` advanced from
+  ACTIVE version 15 to 16, preserving its gateway configuration. Four returned
+  source assets matched `d897a73`; target metadata stayed stable around readback
+  and the credential-free boot probe, and all other eleven Function versions and
+  authentication settings were unchanged. The probe returned the expected
+  invalid-schema HTTP 400 before authentication. Downloaded scratch was removed.
+  No deployed lockfile was returned: dependency-graph equality is unproved.
+- **Physical check incomplete:** normal activation showed the existing Day 1
+  competition. Mirroring then rejected the sole refresh tool invocation with
+  `noWindowsAvailable`; refresh execution was not confirmed or repeated. Two
+  independent aggregate queue snapshots remained unchanged: the prior terminal
+  Day 1 rejection was preserved, with no pending or accepted target entry. This
+  does not prove a new request reached version 16 or that the patch failed.
+  No debugger, reinstall, account/key reset or production action occurred.
+
+Next: restore normal phone UI access and verify a genuinely new eligible score
+through the ordinary app path. Never reset the terminal entry or fabricate an
+Activity change. Preserve the October 21–27 match and completed history. The
+score-linked App Attest/replay, replacement enrollment, stable two-client result,
+full APNs, recovery, privacy publication, signed distribution and production gates
+remain open. Paid setup and Apple Support remain held; physical deletion is
+owner-skipped and universal links deferred, not PASS. See the
+[earlier evidence ledger](production-beta-evidence.md#earlier-qualification-checkpoint--october-22-2026-utc).
+
+## Historical qualification checkpoint — October 21, 2026 UTC
+
+**Not production-ready.** This checkpoint advances automated source and hosted
+database evidence, not the physical scoring or release gates. Earlier receipts
+retain their original artifact, time and scope.
+
+- **Automated source matrix:** exact merged main
+  `a5809f94b35181d10058740b2997764b1107d779` passed
+  [Backend CI](https://github.com/narenyenuganti/health-comp/actions/runs/39522270468)
+  and [iOS CI](https://github.com/narenyenuganti/health-comp/actions/runs/39522270716).
+  Backend ran 22 pgTAP files / 849 assertions twice, the isolated 20/v2 rollback
+  verifier, 143 Deno tests, a separate 15-test real-JWT HTTP gate and one offline
+  App Attest regression. The Deno suite's one gated ignore was exercised in the
+  separate HTTP gate. iOS passed 246 Core tests in each of Debug and Release,
+  635 app unit tests, 11 selected UI tests, 72 release-style Staging tests,
+  unsigned Debug/Staging/Release device builds, deterministic generation and
+  privacy/diagnostic checks. Cloudflare Pages also passed. These are CI results,
+  not signed archive/export, hosted recovery or physical-service qualification.
+- **Hosted database adversarial boundary:** after exact-source approval, native
+  `psql` executed `scripts/staging-adversarial-rollback.sql` from `a5809f9` against
+  `healthcomp-staging` over hostname-verified TLS with the pinned current CA.
+  The sole retained aggregate receipt passed all 20/v2 assertions, reported
+  explicit rollback, zero synthetic rows remaining and no private values returned.
+  Its exact six-field schema was independently validated. This adds the five
+  recipient assertions to the historical 15/v1 boundary: same-request creation,
+  duplicate pending-recipient denial, fresh creation's 24-hour expiry,
+  wrong-recipient denial and denial at the synthetic expiry boundary. It does
+  not prove live Edge concurrency, physical scoring or cryptographic assertion
+  replay. Temporary synthetic writes were rolled back; no production action or
+  phone use occurred. Do not repeat the completed attempt.
+- **One live recipient happy path:** on October 20 UTC, one invitation between
+  the two existing test accounts was accepted into the same scheduled match on
+  the Simulator and physical phone. Both rendered October 21–27 in
+  `America/Los_Angeles`; Day 1 opens October 21 at 07:00 UTC. Exact claim-request
+  count was not proved. This restores a future scoring target, not a scoring or
+  stable-result pass, nor full live adversarial/concurrency coverage. Preserve
+  all completed history; do not create another match to replace this one.
+- **Runtime source unchanged:** application/configuration and Function source
+  are unchanged from `7839acb`. The dated package/deployed-asset observations in
+  the October 20 checkpoint remain limited to their original scope; this
+  test/documentation-only source advance does not establish a new installation.
+
+Next: after this diagnostic match's actual Day 1 boundary and fresh phone
+availability, use the existing normal-app path to diagnose the real submission
+failure. Do not revive the disabled debugger or retired timed-reference workflow.
+Score-linked App Attest acceptance/replay and replacement enrollment, matching
+stable results on both clients, full APNs binding/routes, genuine contained
+recovery, qualified privacy publication, signed release/distribution and production
+promotion remain open. Paid setup and Apple Support contact remain held. Physical
+deletion is owner-skipped and universal links are deferred, not PASS.
+
+The [evidence ledger](production-beta-evidence.md#historical-qualification-checkpoint--october-21-2026-utc)
+records the private receipt hashes and observation-time limits. No private receipt
+bodies, identifiers, request references, tokens or Health values are published.
+
+## Historical qualification checkpoint — October 20, 2026 UTC
+
+**Not production-ready.** These findings supersede the selected source and
+installation pointers below, not the limits of earlier observations.
+
+- **Automated source matrix:** exact merged main
+  `7839acb2d8eb875499f79961350f04da80a262ab` passed
+  [Backend CI](https://github.com/narenyenuganti/health-comp/actions/runs/39350919475)
+  and [iOS CI](https://github.com/narenyenuganti/health-comp/actions/runs/39350919239).
+  Completed job steps cover backend boundaries/migrations/functions, deterministic
+  project generation, Core Debug/Release, app/UI and release-style Staging tests,
+  privacy/diagnostic checks, and unsigned device configurations. No signed archive,
+  live scoring or production qualification is inferred from those checks.
+- **Current Staging packages:** the physical update succeeded without uninstalling;
+  one profile root and 27 profile-relative metadata entries were preserved.
+  File contents, the on-device executable hash and account authentication were not
+  reverified by that install. The Simulator's installed executable matched its
+  qualified `7839acb` package. Neither installation proves score acceptance. The
+  debugger reader remains disabled; the failed timed human Terminal/reference
+  workflow is retired, not a required beta workflow.
+- **Deployed scoring source:** four returned assets from ACTIVE Staging
+  `submit-score-revision` version 15 matched `7839acb` byte-for-byte, with selected
+  metadata unchanged around the download. No deployed lockfile was returned;
+  dependency-graph equality and successful score submission remain unproved.
+- **Existing backend notification delivery:** four existing result-notification
+  references were checked once each in Apple's Development delivery logs for the
+  Staging bundle. Every returned reference/environment matched. One event table
+  reported target-device delivery; three reported offline storage then expiry.
+  No new notification was sent. This is a narrow backend-recorded notification
+  delivery finding, not exact-current phone/installation binding or a full APNs
+  pass: foreground/background/terminated tap routing remains unqualified. The UI
+  lookup set was not an identifier-level join to the earlier aggregate inventory
+  or a pinned database snapshot.
+- **Scoring reproduction prerequisite:** a read-only, repeatable-read aggregate
+  inventory anchored by the unique October 11 schedule found two accepted
+  participants, four shared competitions and four frozen results, with no reusable
+  current or future scheduled cycle. Completed matches do not exercise new-score
+  submission. Preserve those results; do not reopen history, force terminal
+  retries, change keys or invent unavailable scores to manufacture a pass.
+
+Next: establish a valid scoring reproduction and diagnose the actual submission
+failure before another seven-day qualification attempt. A diagnostic match is
+not evidence replacing any earlier result. Live recipient creation/acceptance,
+score-linked App Attest acceptance/replay and replacement enrollment, stable
+results on both clients, complete APNs qualification, genuine contained recovery,
+qualified privacy publication, signed release/distribution and production
+promotion remain open. Paid setup and Apple Support contact remain held.
+Physical deletion is owner-skipped and universal links are deferred, not PASS.
+
+The [evidence ledger](production-beta-evidence.md#historical-qualification-checkpoint--october-20-2026-utc)
+records the private receipt hashes. No private identifiers, delivery references,
+tokens, Health values or private screenshots are published here.
+
+## Historical qualification checkpoint — October 19, 2026 UTC
+
+**Not production-ready.** Source integration, local synthetic recovery and the
+Staging recipient backend/Simulator rollout advanced; the preserved October 11–17
+competition did not satisfy the stable-result gate. The new physical candidate
+remains uninstalled; no new physical-service pass is selected here.
+
+- **Automated source matrix:** exact merged main
+  `9f9fb5e6be8637c8e0e64928cbdf034d6efc2e05` passed
+  [Backend CI](https://github.com/narenyenuganti/health-comp/actions/runs/39266549008)
+  and [iOS CI](https://github.com/narenyenuganti/health-comp/actions/runs/39266549018).
+  The complete iOS matrix includes Core Debug/Release, app/UI tests,
+  release-style Staging and unsigned Debug/Staging/Release device builds.
+  An earlier PR #149 iOS attempt found an empty system share-sheet container;
+  unchanged local checks and the exact-head retry passed, but its cause remains
+  unconfirmed. No assertion or timeout was relaxed and no app fix is claimed.
+- **Recipient invitation source and correction:** PR #148 binds a 24-hour invitation to
+  an existing account selected by exact HealthComp account code, prevents duplicate
+  pending sender/recipient pairs and fixes long-name presentation. PR #149 updates
+  the existing local synthetic recovery harness to the 23-migration schema. Both
+  native recovery modes passed locally with history/state/FK and negative controls
+  retained. Backend CI syntax-checks that harness; it does not run those populated
+  restores. PR #151 corrected deferred-trigger ordering in migration 018; both
+  native synthetic recovery modes passed again with the corrected manifest.
+  Its exact-head Backend, iOS and Pages checks passed at `446714d`; integrated
+  main `6635c22` has the same tree. Neither source integration nor local recovery
+  is hosted qualification.
+- **Preserved cycle, post-deadline readback:** the October 19 aggregate-only
+  read-only receipt scoped by the unique October 11 start day and time zone found
+  two accepted participants, zero accepted daily revisions/covered days for each,
+  zero stable attestations/results and one `best_available` result after the
+  fallback deadline. This is not a fresh private client/profile/key binding or an
+  explanation of the submission failure. Waiting cannot make this frozen result
+  stable; do not rewrite its deadline/result or invent unavailable submissions.
+- **Staging backend promotion, 20:20 UTC:** following explicit approval, exactly
+  migration 018 was applied, producing the expected 23-version chain. Four old
+  unnamed pending invitations expired; same-process aggregate/ordered-row checks
+  preserved all four accepted competitions and related history. Only
+  `create-competition-invite` advanced ACTIVE version 5 to version 6, with JWT
+  verification still enabled and other Function metadata unchanged. Downloaded
+  entry/shared/import-map bytes matched source; no deployed lockfile was returned,
+  so dependency-lock/graph equality remains unproved. Catalog checks do not prove
+  live recipient creation/acceptance. Older apps cannot create unnamed invitations.
+- **Simulator client, 20:38 UTC:** one matching-package install and one normal
+  launch completed, with no manual refresh, account switch or invitation action.
+  The executable/signature matched the prepared artifact. The install's combined
+  path/mode/byte assertion failed and its RAM baseline is gone; original byte
+  equality and failure cause remain unproved. Independent stopped Core replay
+  passed five journals/147 events and owner binding. The October 11 result is
+  completed `best_available` with zero accepted day slots and 14 deadline-missing
+  slots, not stable. Ordinary startup network effects were not classified. The
+  app was terminated and dedicated Simulator shut down. Physical installation
+  and the live recipient flow remain incomplete; the physical reader stays
+  disabled and old-install pinned.
+
+Next: diagnose and repair the actual score-submission failure before beginning
+another lifecycle. Preserve both profiles and the existing fallback result; a
+new competition is not authorized by this checkpoint. Finish the matching
+physical-client and live recipient-flow qualification without reapplying 018.
+Score-specific App Attest acceptance/replay and replacement enrollment,
+backend-triggered APNs delivery/routes, genuine contained recovery, accessible
+approved privacy policy, signed release/distribution and production promotion
+remain open. Paid setup and Apple Support contact remain held. Physical deletion
+is owner-skipped and universal links are deferred, not PASS.
+
+The private operator closeout receipt is
+`staging-october11-closeout-2026-10-19.json`, SHA-256
+`72fd965148db91df3f72fd9572f75f559ebbe1db27560d0ba1687ec59067a70c`.
+It retains aggregate findings, not identities, scores, Health values or proof
+material. It names its own source/time/scope and is not a runtime receipt for
+the newly integrated source. Historical checkpoints below remain dated evidence.
+
+## Historical qualification checkpoint — October 13, 2026 UTC
+
+**Not production-ready.** This checkpoint updates the source, prepared artifact
+and preserved competition pointers only. Older observations below remain scoped
+to their named artifact and time; they do not qualify this competition or build.
+
+- **Automated source matrix:** merged source
+  `da412f9b5c1c8bdbdd7d9c1039aec02fd960c68c` passed
+  [Backend CI](https://github.com/narenyenuganti/health-comp/actions/runs/38368597316)
+  and [iOS CI](https://github.com/narenyenuganti/health-comp/actions/runs/38368597399).
+  Completed exact-source statuses were rechecked October 13; no run was restarted.
+- **Prepared Staging artifact, not installed:** that source includes the reviewed
+  one-shot diagnostic cancel method from PR #143. Its new signed Staging package
+  passed local signature, configuration, privacy and matching app/dSYM checks.
+  Executable SHA-256:
+  `60884f451ed999944f1694a36ff9c21877d359b6daa7756eb46f40d84de4e095`.
+  The local reader passed synthetic empty/captured debugger checks and both
+  independent reviews. Confirmed clearance covers only its operator-owned RAM
+  slot, not whole-memory erasure or transport cancellation. No phone installation,
+  launch, refresh, debugger attachment or hosted correlation occurred in this
+  qualification. Live scoring and the cause of the rejection remain unqualified.
+- **Preserved competition:** the October 10 read-only hosted receipt found one
+  frozen competition, two accepted participants and one consumed invitation.
+  Its schedule is October 11–17 in `America/Los_Angeles`. The stable confirmation
+  window opens October 18 at 00:00 Pacific and ends at the October 19 00:00
+  Pacific fallback deadline. Those dates are not a successful result receipt.
+- **Last dated day-one evidence:** October 12 readbacks found zero daily revision
+  rows for either participant in this cycle, including after the owner-reported
+  warning-free refresh. The local invitee outbox contained one terminal
+  `appAttestRejectedTerminal` entry. The broad rejection log was not correlated
+  to an exact phone request; it does not establish the cause. These are historical
+  counts, not a fresh October 13 hosted inventory. September scoring passes must
+  not be applied to the October cycle.
+
+Next: qualify the approved bounded physical diagnostic and one read-only request
+correlation before changing verifier behavior. Preserve both profiles and this
+competition; do not create a replacement invitation or reset an account/key.
+Then obtain both accounts' seven accepted daily revisions and matching final
+commitments, and compare the stable result on both clients within the window.
+Missing submissions are not truthfully unavailable revisions; neither may be
+invented, and `best_available` must not be relabeled `stable`.
+
+Other open gates remain backend-triggered APNs delivery/routes; score-specific
+App Attest acceptance, replay and replacement-installation evidence; contained
+real recovery with forward repair; accessible privacy-policy and final signed
+release/distribution qualification; and production promotion. The owner-skipped
+physical deletion test and deferred universal links are not PASS. This update
+authorizes no device, hosted, paid-service, publication or production action.
+
+Privacy-safe operator receipts are retained outside the public repository:
+
+- `stable-cycle-hosted-acceptance-2026-10-10.json`, SHA-256
+  `0f44b913c12993ab67850ab3942aa9cd6689521d5786a96373eba15be66762a1`.
+- `staging-day1-coverage-2026-10-11.json`, SHA-256
+  `8aec792c7ed743945605de5cc1c72796aa8a859b9ee20ca303741269f66faf9d`.
+- `staging-live-reader-clearance-2026-10-13.json`, SHA-256
+  `12f9370f0a938840f3bad752e1e13c3ef0e5fccb9c0507621ff8875bc53ca34b`.
+
+## Historical qualification checkpoint — October 2, 2026 UTC
 
 **Not production-ready.** Both current participants now have a usable accepted
 score, and a fresh physical readback established warm background-observer

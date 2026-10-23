@@ -24,6 +24,31 @@ the durable `appAttestRejectionRecovery` state. That state preserves its origin
 across transport backoff and process relaunch, then either converges and
 disappears or fails into a durable support-inspectable terminal state.
 
+## October 11 authenticator-data diagnostic refinement
+
+The preserved October11-17 competition has no Day1 hosted revisions after the
+owner's warning-free refresh. A privately bound local inventory/Outbox read
+finds one invitee Day1 score in `appAttestRejectedTerminal`, with no pending or
+recovery entry. A separate aggregate Staging log window contains one
+`invalid_attestation_authenticator_data` event. The log is not independently
+attributed to that exact phone request, current key or deployed function version;
+neither observation identifies the underlying cause or establishes acceptance.
+
+Reuse the existing `verifyAppAttestAttestation` and fixed-code reporter seams to
+distinguish authenticator length, flags, counter, credential-ID length, trailing
+CBOR decoding and trailing-object shape. Report only closed enum labels, never
+the rejected values or proof metadata. All existing bounds, offsets, exact
+flags, zero counter, credential length, CBOR shape, certificate, nonce, policy
+and key checks remain unchanged. The public HTTP401 response and client terminal
+policy remain unchanged; this does not authorize retries, key reset or reinstall.
+
+Public-fixture RED-to-GREEN tests qualify the diagnostic labels locally, not
+the actual physical rejection or a behavior fix. Handler tests cover all six
+new labels with unchanged non-enumerating rejection and no authorization call.
+Independent review and relevant backend checks precede integration. Deployment
+and any new physical request remain separate approval boundaries; correlate the
+bounded observation before considering any verifier behavior change.
+
 ## Alternatives rejected
 
 A backend-only diagnostic would still leave the current score permanently

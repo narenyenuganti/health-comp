@@ -15,9 +15,20 @@ export type AppAttestEnvironment = "development" | "production";
 export type AppAttestVerificationErrorCode =
   | "invalid_app_identity"
   | "invalid_assertion"
+  | "invalid_assertion_authenticator_data"
+  | "invalid_assertion_cbor"
+  | "invalid_assertion_fields"
   | "invalid_assertion_object"
+  | "invalid_assertion_shape"
   | "invalid_assertion_signature"
+  | "invalid_assertion_signature_length"
   | "invalid_attestation_authenticator_data"
+  | "invalid_attestation_authenticator_cbor"
+  | "invalid_attestation_authenticator_counter"
+  | "invalid_attestation_authenticator_flags"
+  | "invalid_attestation_authenticator_length"
+  | "invalid_attestation_authenticator_shape"
+  | "invalid_attestation_credential_id_length"
   | "invalid_attestation_cose_key"
   | "invalid_attestation_nonce"
   | "invalid_attestation_object"
@@ -581,23 +592,32 @@ function decodeAttestation(value: Uint8Array) {
     fail("invalid_attestation_object");
   }
   const authData = object.authData as Buffer;
-  if (
-    authData.length < 88 || authData.length > 4_096 || authData[32] !== 0x40 ||
-    authData.readUInt32BE(33) !== 0 || authData.readUInt16BE(53) !== 32
-  ) {
-    fail("invalid_attestation_authenticator_data");
+  if (authData.length < 88 || authData.length > 4_096) {
+    fail("invalid_attestation_authenticator_length");
+  }
+  // Preserve Apple's AT-only sample while accepting AT+ED extension payloads.
+  const flags = authData[32];
+  if (flags !== 0x40 && flags !== 0xc0) {
+    fail("invalid_attestation_authenticator_flags");
+  }
+  if (authData.readUInt32BE(33) !== 0) {
+    fail("invalid_attestation_authenticator_counter");
+  }
+  if (authData.readUInt16BE(53) !== 32) {
+    fail("invalid_attestation_credential_id_length");
   }
   let trailing: unknown[];
   try {
     trailing = cbor.decodeAllSync(authData.subarray(87));
   } catch (error) {
-    fail("invalid_attestation_authenticator_data", error);
+    fail("invalid_attestation_authenticator_cbor", error);
   }
   if (
     (trailing.length !== 1 && trailing.length !== 2) ||
-    !(trailing[0] instanceof Map)
+    !(trailing[0] instanceof Map) ||
+    (flags === 0xc0 && trailing.length !== 2)
   ) {
-    fail("invalid_attestation_authenticator_data");
+    fail("invalid_attestation_authenticator_shape");
   }
   const cose = trailing[0] as Map<unknown, unknown>;
   if (
@@ -688,16 +708,16 @@ export function verifyAppAttestAttestation(input: {
 }
 
 function decodeAssertion(value: Uint8Array) {
-  const decoded = decodeSingleCBOR(value, "invalid_assertion_object");
+  const decoded = decodeSingleCBOR(value, "invalid_assertion_cbor");
   if (!exactKeys(decoded, ["authenticatorData", "signature"])) {
-    fail("invalid_assertion_object");
+    fail("invalid_assertion_shape");
   }
   const object = decoded as Record<string, unknown>;
   if (
     !Buffer.isBuffer(object.authenticatorData) ||
     !Buffer.isBuffer(object.signature)
   ) {
-    fail("invalid_assertion_object");
+    fail("invalid_assertion_fields");
   }
   const authData = object.authenticatorData as Buffer;
   const signature = object.signature as Buffer;
@@ -705,11 +725,9 @@ function decodeAssertion(value: Uint8Array) {
     (authData[32] === 0x00 || authData[32] === 0x40);
   const extended = authData.length > 37 && authData.length <= 1_024 &&
     authData[32] === 0x80;
-  if (
-    (!legacy && !extended) ||
-    signature.length < 64 || signature.length > 80
-  ) {
-    fail("invalid_assertion_object");
+  if (!legacy && !extended) fail("invalid_assertion_authenticator_data");
+  if (signature.length < 64 || signature.length > 80) {
+    fail("invalid_assertion_signature_length");
   }
   return {
     authData,

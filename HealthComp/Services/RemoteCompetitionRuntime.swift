@@ -574,6 +574,17 @@ actor RemoteCompetitionRuntime {
     }
 
     func synchronizeAll() async -> RemoteCompetitionRuntimeOutcome {
+        let outcome = await synchronizeInventory()
+#if HEALTHCOMP_STAGING
+        StagingScoringOperatorControls.recordActivity(
+            .reconciliationFailed,
+            count: outcome.failures.count + (outcome.discoveryFailure == nil ? 0 : 1)
+        )
+#endif
+        return outcome
+    }
+
+    private func synchronizeInventory() async -> RemoteCompetitionRuntimeOutcome {
         await syncCoordinator?.wake()
         let cachedEntries: [RemoteCompetitionCacheEntry]
         do {
@@ -622,10 +633,18 @@ actor RemoteCompetitionRuntime {
             }
             switch descriptor.lifecycle {
             case .declined, .expired, .cancelled:
+#if HEALTHCOMP_STAGING
+                StagingScoringOperatorControls.recordActivity(.skippedLifecycle)
+#endif
                 nextCacheByID.removeValue(
                     forKey: descriptor.competitionID
                 )
                 continue
+            case .pending:
+#if HEALTHCOMP_STAGING
+                StagingScoringOperatorControls.recordActivity(.skippedLifecycle)
+#endif
+                break
             default:
                 break
             }
@@ -801,7 +820,7 @@ actor RemoteCompetitionRuntime {
             case .pending:
                 if !requiresFullHistory, let existing {
                     contractStage = .cachedJournal
-                    guard history.isEmpty else {
+                    guard try structuralHistory(history, descriptor: descriptor).isEmpty else {
                         throw RemoteCompetitionRuntimeFailure
                             .serverContractMismatch
                     }
@@ -845,19 +864,20 @@ actor RemoteCompetitionRuntime {
                 }
                 contractStage = .clock
                 let advanced = try await advanceClock(materialized)
+                let configurationSequence = materialized.journal.projection
+                    .competition.remoteConfiguration?.backendDescriptorRevision ?? 0
+                let downloadedChanges = requiresFullHistory
+                    ? history.filter { $0.serverSequence > configurationSequence }
+                    : history
                 contractStage = .downloadedChanges
                 let reconciled = try await applyDownloadedChanges(
-                    requiresFullHistory
-                        ? Array(history.dropFirst(3))
-                        : history,
+                    downloadedChanges,
                     to: advanced
                 )
                 contractStage = .serverLifecycle
                 let lifecycleReconciled = try await
                     applyServerLifecycleChanges(
-                        requiresFullHistory
-                            ? Array(history.dropFirst(3))
-                            : history,
+                        downloadedChanges,
                         to: reconciled
                     )
                 try validateServerTerminalLifecycle(
@@ -923,6 +943,9 @@ actor RemoteCompetitionRuntime {
               let configuration = materialization.journal.projection
                 .competition.remoteConfiguration
         else {
+#if HEALTHCOMP_STAGING
+            StagingScoringOperatorControls.recordActivity(.missingDependency)
+#endif
             return RemoteOwnerScoreRefreshOutcome(
                 materialization: materialization,
                 activityFailure: nil
@@ -933,6 +956,9 @@ actor RemoteCompetitionRuntime {
             break
         case .pendingInvitation, .declined, .expired, .scheduled,
              .completed, .archived:
+#if HEALTHCOMP_STAGING
+            StagingScoringOperatorControls.recordActivity(.skippedLifecycle)
+#endif
             return RemoteOwnerScoreRefreshOutcome(
                 materialization: materialization,
                 activityFailure: nil
@@ -944,14 +970,36 @@ actor RemoteCompetitionRuntime {
             startDay: configuration.acceptedSchedule.startDay
         )
         let read: ActivityWindowRead
+#if HEALTHCOMP_STAGING
+        StagingScoringOperatorControls.recordActivity(.readStarted)
+#endif
         do {
             read = try await environment.read(window)
         } catch let failure as CompetitionActivitySourceError {
+#if HEALTHCOMP_STAGING
+            StagingScoringOperatorControls.recordActivity(.readFailed)
+#endif
             return RemoteOwnerScoreRefreshOutcome(
                 materialization: materialization,
                 activityFailure: failure
             )
+        } catch {
+#if HEALTHCOMP_STAGING
+            StagingScoringOperatorControls.recordActivity(.readFailed)
+#endif
+            throw error
         }
+#if HEALTHCOMP_STAGING
+        StagingScoringOperatorControls.recordActivity(.readCompleted)
+        for day in read.days {
+            switch day {
+            case .snapshot:
+                StagingScoringOperatorControls.recordActivity(.snapshotDays)
+            case .missing:
+                StagingScoringOperatorControls.recordActivity(.missingDays)
+            }
+        }
+#endif
         let evaluatedAt = now()
         let existingOutboxEntries = try await outboxStore.entries()
         let ownerLedger = materialization.journal.projection
@@ -989,7 +1037,12 @@ actor RemoteCompetitionRuntime {
         for (offset, result) in read.days.enumerated() {
             let ordinal = offset + 1
             let dayStart = try window.calendar.startOfDay(result.day)
-            guard dayStart <= evaluatedAt else { continue }
+            guard dayStart <= evaluatedAt else {
+#if HEALTHCOMP_STAGING
+                StagingScoringOperatorControls.recordActivity(.futureDays)
+#endif
+                continue
+            }
 
             let evidence = try Self.remoteEvidence(from: result)
             if let pending = pendingRequests
@@ -1002,6 +1055,16 @@ actor RemoteCompetitionRuntime {
                    evidence: evidence,
                    clientRevision: pending.clientRevision
                ).wireContentSHA256 == pending.wireContentSHA256 {
+#if HEALTHCOMP_STAGING
+                StagingScoringOperatorControls.recordActivity(.unchangedOutbox)
+                if existingOutboxEntries.contains(where: { entry in
+                    guard entry.semanticEventID == pending.semanticEventID else { return false }
+                    if case .permanentFailure = entry.state { return true }
+                    return false
+                }) {
+                    StagingScoringOperatorControls.recordActivity(.unchangedTerminal)
+                }
+#endif
                 continue
             }
             if let accepted = acceptedByOrdinal[ordinal],
@@ -1012,6 +1075,9 @@ actor RemoteCompetitionRuntime {
                    evidence: evidence,
                    clientRevision: accepted.clientRevision
                ).wireContentSHA256 == accepted.wireContentSHA256 {
+#if HEALTHCOMP_STAGING
+                StagingScoringOperatorControls.recordActivity(.unchangedAccepted)
+#endif
                 continue
             }
 
@@ -1045,6 +1111,9 @@ actor RemoteCompetitionRuntime {
                 .scoreRevision(request),
                 enqueuedAt: evaluatedAt
             )
+#if HEALTHCOMP_STAGING
+            StagingScoringOperatorControls.recordActivity(.queuedRevisions)
+#endif
         }
         await syncCoordinator.waitUntilIdle()
         guard let loaded = try await store.load(
@@ -1370,6 +1439,7 @@ actor RemoteCompetitionRuntime {
         descriptor: CompetitionDescriptor,
         history: [CompetitionChange]
     ) async throws -> RemoteCompetitionMaterialization {
+        let structuralChanges = try structuralHistory(history, descriptor: descriptor)
         guard descriptor.participants.count == 2,
               let ownerDescriptor = descriptor.participants.first(where: {
                   $0.profileID == profileID
@@ -1379,7 +1449,7 @@ actor RemoteCompetitionRuntime {
                   $0.profileID != profileID
               }),
               remoteDescriptor.state == .accepted,
-              let creationChange = history.first,
+              let creationChange = structuralChanges.first,
               creationChange.serverSequence == 1,
               creationChange.kind == .participantAdded,
               creationChange.entityID == descriptor.creatorProfileID,
@@ -1387,17 +1457,39 @@ actor RemoteCompetitionRuntime {
               creatorChange.profileID == descriptor.creatorProfileID,
               creatorChange.role == .creator,
               creatorChange.state == .accepted,
-              let inviteeChange = history.dropFirst().first,
-              inviteeChange.serverSequence == 2,
+              let inviteeChange = structuralChanges.dropFirst().first,
               inviteeChange.kind == .participantAdded,
               case let .participant(invitee) = inviteeChange.payload,
+              inviteeChange.entityID == invitee.profileID,
               invitee.role == .invitee,
-              invitee.state == .accepted,
               descriptor.participants.contains(where: {
                   $0.profileID == invitee.profileID && $0.role == .invitee
-              }),
-              let lifecycleChange = history.dropFirst(2).first,
-              lifecycleChange.serverSequence == 3,
+              })
+        else {
+            throw RemoteCompetitionRuntimeFailure.serverContractMismatch
+        }
+
+        // Legacy invitations added an accepted invitee; bound invitations first record pending membership.
+        let lifecycleIndex: Int
+        switch invitee.state {
+        case .accepted:
+            lifecycleIndex = 2
+        case .pending:
+            guard let acceptance = structuralChanges.dropFirst(2).first,
+                  acceptance.kind == .participantStateChanged,
+                  acceptance.entityID == invitee.profileID,
+                  case let .participant(accepted) = acceptance.payload,
+                  accepted.profileID == invitee.profileID,
+                  accepted.role == .invitee,
+                  accepted.state == .accepted
+            else {
+                throw RemoteCompetitionRuntimeFailure.serverContractMismatch
+            }
+            lifecycleIndex = 3
+        default:
+            throw RemoteCompetitionRuntimeFailure.serverContractMismatch
+        }
+        guard let lifecycleChange = structuralChanges.dropFirst(lifecycleIndex).first,
               lifecycleChange.kind == .competitionLifecycleChanged,
               lifecycleChange.entityID == descriptor.competitionID,
               case let .lifecycle(lifecycle) = lifecycleChange.payload,
@@ -1800,22 +1892,39 @@ actor RemoteCompetitionRuntime {
         descriptor: CompetitionDescriptor,
         history: [CompetitionChange]
     ) async throws -> RemoteCompetitionMaterialization {
+        let structuralChanges = try structuralHistory(history, descriptor: descriptor)
         guard descriptor.creatorProfileID == profileID,
-              descriptor.participants.count == 1,
               let creator = descriptor.participants.first,
               creator.profileID == profileID,
               creator.role == .creator,
               creator.state == .accepted,
-              let creationChange = history.first,
+              let creationChange = structuralChanges.first,
               creationChange.serverSequence == 1,
               creationChange.kind == .participantAdded,
               creationChange.entityID == profileID,
               case let .participant(participant) = creationChange.payload,
               participant.profileID == profileID,
               participant.role == .creator,
-              participant.state == .accepted,
-              history.count == 1
+              participant.state == .accepted
         else {
+            throw RemoteCompetitionRuntimeFailure.serverContractMismatch
+        }
+        if descriptor.participants.count == 2 {
+            guard structuralChanges.count == 2,
+                  let recipient = descriptor.participants.last,
+                  recipient.role == .invitee,
+                  recipient.state == .pending,
+                  let recipientChange = structuralChanges.last,
+                  recipientChange.kind == .participantAdded,
+                  recipientChange.entityID == recipient.profileID,
+                  case let .participant(pending) = recipientChange.payload,
+                  pending.profileID == recipient.profileID,
+                  pending.role == .invitee,
+                  pending.state == .pending
+            else {
+                throw RemoteCompetitionRuntimeFailure.serverContractMismatch
+            }
+        } else if structuralChanges.count != 1 {
             throw RemoteCompetitionRuntimeFailure.serverContractMismatch
         }
 
@@ -1855,6 +1964,22 @@ actor RemoteCompetitionRuntime {
             descriptor: descriptor,
             journal: loaded
         )
+    }
+
+    private func structuralHistory(
+        _ history: [CompetitionChange],
+        descriptor: CompetitionDescriptor
+    ) throws -> [CompetitionChange] {
+        // Names may change between membership and acceptance. Keep the original gap-free
+        // server sequence for configuration/cursors; only bootstrap matching ignores names.
+        let participantIDs = Set(descriptor.participants.map(\.profileID))
+        return try history.filter { change in
+            guard case let .profilePresentation(presentation) = change.payload else { return true }
+            guard participantIDs.contains(presentation.profileID) else {
+                throw RemoteCompetitionRuntimeFailure.serverContractMismatch
+            }
+            return false
+        }
     }
 
     private static func failure(

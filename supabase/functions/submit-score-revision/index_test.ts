@@ -830,10 +830,21 @@ Deno.test("invalid attestation stages, assertions, and equal counters are stable
   const codes = [
     "invalid_attestation_object",
     "invalid_attestation_authenticator_data",
+    "invalid_attestation_authenticator_cbor",
+    "invalid_attestation_authenticator_counter",
+    "invalid_attestation_authenticator_flags",
+    "invalid_attestation_authenticator_length",
+    "invalid_attestation_authenticator_shape",
+    "invalid_attestation_credential_id_length",
     "invalid_attestation_cose_key",
     "invalid_attestation_nonce",
     "invalid_assertion",
     "invalid_assertion_object",
+    "invalid_assertion_cbor",
+    "invalid_assertion_shape",
+    "invalid_assertion_fields",
+    "invalid_assertion_authenticator_data",
+    "invalid_assertion_signature_length",
     "invalid_assertion_signature",
     "invalid_counter",
     "invalid_environment",
@@ -843,9 +854,7 @@ Deno.test("invalid attestation stages, assertions, and equal counters are stable
   for (const code of codes) {
     let authorizationCalled = false;
     const reportedCodes: AppAttestVerificationErrorCode[] = [];
-    const assertion = code === "invalid_assertion" ||
-      code === "invalid_assertion_object" ||
-      code === "invalid_assertion_signature" ||
+    const assertion = code.startsWith("invalid_assertion") ||
       code === "invalid_counter";
     const selectedProof = assertion
       ? { ...proof, proofKind: "assertion" }

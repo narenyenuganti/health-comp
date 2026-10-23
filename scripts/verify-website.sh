@@ -27,6 +27,11 @@ expect() {
       passed=0
     fi
   done
+  if [[ "$path" == /support || "$path" == /privacy ]] &&
+     ! python3 "$(dirname "${BASH_SOURCE[0]}")/verify-support-email.py" < "$scratch/body"; then
+    printf 'FAIL %s: missing support email link\n' "$path" >&2
+    passed=0
+  fi
   if ((passed)); then
     printf 'ok   %s\n' "$path"
   else
@@ -35,9 +40,9 @@ expect() {
 }
 
 expect / 200 'Coming soon to iPhone'
-expect /support 200 'HealthComp beta support' 'mailto:yrnaren1@gmail.com' \
+expect /support 200 'HealthComp beta support' \
   'Naren Yenuganti' 'Do not send' 'Health screenshots'
-expect /privacy 200 'HealthComp privacy' 'mailto:yrnaren1@gmail.com' \
+expect /privacy 200 'HealthComp privacy' \
   'rounded Activity percentages' 'no fixed automatic deletion schedule' \
   'does not display advertising' 'Former competitor'
 # Without a top-level 404.html, Pages answers every unknown path with

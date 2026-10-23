@@ -124,6 +124,9 @@ extension CompetitionClient {
             },
             claimInvite: { request in
                 try await coordinator.claimInvite(request)
+            },
+            resolveInviteRecipient: { profileID in
+                try await coordinator.resolveInviteRecipient(profileID)
             }
         )
     }
@@ -614,12 +617,19 @@ private actor RemoteCompetitionClientCoordinator {
     }
 
     func reconcileAll(
-        trigger _: ActivityRefreshTrigger
+        trigger: ActivityRefreshTrigger
     ) async -> CompetitionPublication {
         await withOperationGate {
             guard terminalTeardown == nil else {
                 return terminalBlockedPublication()
             }
+#if HEALTHCOMP_STAGING
+            if trigger == .pullToRefresh {
+                return await StagingScoringOperatorControls.shared.observeActivity {
+                    await self.performReconciliation()
+                }
+            }
+#endif
             return await performReconciliation()
         }
     }
@@ -627,6 +637,9 @@ private actor RemoteCompetitionClientCoordinator {
     private func performReconciliation() async -> CompetitionPublication {
         var issues = healthAuthorizationIssue.map { [$0] } ?? []
         guard let runtime, let profile else {
+#if HEALTHCOMP_STAGING
+            StagingScoringOperatorControls.recordActivity(.missingDependency)
+#endif
             let publication = publish(
                 materializations: [],
                 issues: issues + [.storageUnavailable]
@@ -772,6 +785,16 @@ private actor RemoteCompetitionClientCoordinator {
             evaluatedAt: latestPublication.evaluatedAt,
             timeZoneIdentifier: latestPublication.timeZoneIdentifier
         )
+    }
+
+    func resolveInviteRecipient(_ profileID: UUID) async throws -> AuthenticatedProfile {
+        try await withCancellableOperationGate {
+            guard terminalTeardown == nil else {
+                throw EnvironmentSignalOwnershipError.activeOwnerNotRetired
+            }
+            guard runtime != nil else { throw CompetitionRemoteFailure.unauthenticated }
+            return try await remoteAPI.resolveInviteRecipient(profileID)
+        }
     }
 
     func createInvite(

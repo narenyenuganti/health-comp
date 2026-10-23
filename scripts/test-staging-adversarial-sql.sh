@@ -38,6 +38,11 @@ grep -Fq "'raw_secret_table_denial'" "$SQL"
 grep -Fq "'direct_mutation_denial'" "$SQL"
 grep -Fq "'same_claimant_replay_is_idempotent'" "$SQL"
 grep -Fq "'different_claimant_replay_is_denied'" "$SQL"
+grep -Fq "'recipient_creation_retry_is_idempotent'" "$SQL"
+grep -Fq "'duplicate_pending_recipient_is_denied'" "$SQL"
+grep -Fq "'recipient_invitation_expires_in_24_hours'" "$SQL"
+grep -Fq "'unconsumed_wrong_recipient_is_denied'" "$SQL"
+grep -Fq "'recipient_claim_at_expiry_is_denied'" "$SQL"
 grep -Fq "'modified_score_without_grant_is_denied'" "$SQL"
 grep -Fq "'bound_app_attest_score_tampering_is_denied'" "$SQL"
 grep -Fq "'divergent_duplicate_is_rejected'" "$SQL"
@@ -333,7 +338,7 @@ post_rollback_statement_timeout_line=$(grep -Ein "^[[:space:]]*set statement_tim
 post_rollback_lock_timeout_line=$(grep -Ein "^[[:space:]]*set lock_timeout = '5s';[[:space:]]*$" "$SQL" | cut -d: -f1)
 post_rollback_idle_timeout_line=$(grep -Ein "^[[:space:]]*set idle_in_transaction_session_timeout = '30s';[[:space:]]*$" "$SQL" | cut -d: -f1)
 zero_residue_line=$(grep -nF 'do $zero_residue$' "$SQL" | cut -d: -f1)
-receipt_line=$(grep -nF "healthcomp_staging_adversarial_v1" "$SQL" | tail -n 1 | cut -d: -f1)
+receipt_line=$(grep -nF "healthcomp_staging_adversarial_v2" "$SQL" | tail -n 1 | cut -d: -f1)
 last_nonblank_line=$(awk 'NF { value = $0 } END { print value }' "$SQL")
 
 [ "$begin_line" -lt "$fixture_line" ]
@@ -349,7 +354,7 @@ last_nonblank_line=$(awk 'NF { value = $0 } END { print value }' "$SQL")
 grep -Fq "'syntheticRowsRemaining', 0" "$SQL"
 grep -Fq "'privateValuesReturned', false" "$SQL"
 grep -Fq "'transactionOutcome', 'rolled_back'" "$SQL"
-grep -Fq "'assertionsPassed', 15" "$SQL"
+grep -Fq "'assertionsPassed', 20" "$SQL"
 
 grep -Fq 'sh scripts/test-staging-adversarial-sql.sh' "$WORKFLOW"
 grep -Fq '< scripts/staging-adversarial-rollback.sql' "$WORKFLOW"
@@ -358,5 +363,5 @@ grep -Fq -- '--set=ON_ERROR_STOP=1 \' "$RUNBOOK"
 grep -Fq 'PGSSLMODE=verify-full \' "$RUNBOOK"
 grep -Fq 'PGSSLROOTCERT=' "$RUNBOOK"
 grep -Fq 'SSL-enforcement' "$RUNBOOK"
-grep -Fq '15 passed assertions' "$RUNBOOK"
+grep -Fq '20 passed assertions' "$RUNBOOK"
 grep -Fq 'A local or CI receipt does not count as hosted staging' "$RUNBOOK"

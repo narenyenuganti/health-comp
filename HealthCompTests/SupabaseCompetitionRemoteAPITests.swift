@@ -3,6 +3,20 @@ import XCTest
 @testable import HealthComp
 
 final class SupabaseCompetitionRemoteAPITests: XCTestCase {
+    func testRecipientResolutionUsesOnlyExactAccountCodeAndRejectsAnotherIdentity() async throws {
+        let id = UUID(uuidString: "22000000-0000-4000-8000-000000000001")!
+        let harness = CompetitionTransportHarness(stubs: [
+            .response(200, try jsonData(["id": id.uuidString.lowercased(), "display_name": "Chosen account"])),
+            .response(200, try jsonData(["id": profileID.uuidString.lowercased(), "display_name": "Wrong account"])),
+        ])
+        let api = makeAPI(harness)
+        let recipient = try await api.resolveInviteRecipient(id)
+        XCTAssertEqual(recipient, AuthenticatedProfile(id: id, displayName: "Chosen account"))
+        let requests = await harness.recordedRequests()
+        try assertRPC(requests[0], name: "resolve_invitation_recipient", body: ["profile_id": id.uuidString.lowercased()])
+        let failure = await remoteFailure { _ = try await api.resolveInviteRecipient(id) }
+        XCTAssertEqual(failure, .serverContractMismatch)
+    }
     func testNotificationMutesRouteThroughExactAccountRPCs() async throws {
         let opponentID = UUID(
             uuidString: "12000000-0000-4000-8000-000000000002"
@@ -147,6 +161,7 @@ final class SupabaseCompetitionRemoteAPITests: XCTestCase {
         ])
         let api = makeAPI(harness)
         let inviteRequest = try CompetitionInviteCreationRequest(
+            recipientProfileID: UUID(uuidString: "22000000-0000-4000-8000-000000000001")!,
             timeZoneIdentifier: "America/Los_Angeles",
             rematchParentID: nil,
             idempotencyKey: idempotencyID

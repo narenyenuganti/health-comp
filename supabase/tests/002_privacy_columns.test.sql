@@ -13,7 +13,7 @@ select columns_are(
 
 select columns_are(
   'public', 'competitions',
-  array['id', 'creator_profile_id', 'time_zone_identifier', 'start_day', 'scoring_policy_identity', 'lifecycle', 'invitation_expires_at', 'best_available_deadline', 'rematch_parent_id', 'next_server_seq', 'created_at', 'updated_at', 'invite_creation_idempotency_key', 'invite_token_derivation_version']::name[],
+  array['id', 'creator_profile_id', 'invited_profile_id', 'time_zone_identifier', 'start_day', 'scoring_policy_identity', 'lifecycle', 'invitation_expires_at', 'best_available_deadline', 'rematch_parent_id', 'next_server_seq', 'created_at', 'updated_at', 'invite_creation_idempotency_key', 'invite_token_derivation_version']::name[],
   'competitions exposes only approved columns'
 );
 
