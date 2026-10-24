@@ -16,9 +16,10 @@ This is a scope decision, not a runtime receipt or production-readiness claim.
 
 ## Current qualification checkpoint — October 23, 2026 UTC
 
-**Not production-ready.** A new-day score with a stored App Attest assertion
-chain is now observed in Staging. Exact phone/key binding, counter advancement
-and replay resistance are not established by that observation.
+**Not production-ready.** Staging now has a fresh accepted score bound to the
+current installation/key, counter advancement across a sampled window, and
+rollback-only consumed-capability rejection. These do not prove UI causality,
+captured-byte HTTP/cryptographic replay rejection or replacement enrollment.
 
 - **Source qualification:** [PR #164](https://github.com/narenyenuganti/health-comp/pull/164)
   merged as `e92970ab98036d48f75365884da8c6cc92bd81ae`. The reviewed and merged
@@ -57,10 +58,36 @@ and replay resistance are not established by that observation.
   independently reverify proof bytes, bind the phone/key, or prove counter
   advancement or replay resistance.
 
-Next: qualify the creator's missing accepted score and the remaining App Attest
-counter/replay and replacement-enrollment checks. Preserve the current match and
-history; do not repeat an unchanged
-refresh, reset keys or revive the debugger/timed-copy workflow. October 28
+### Later bound physical observation — October 23, 23:15 UTC
+
+- A separate 07:45 UTC aggregate readback closed the creator's earlier
+  missing-score gap: both participants had available accepted score days in the
+  same October 21–27 cycle. This was not yet an exact phone/key counter pair.
+- Before the later physical visit, native checks bound one running process,
+  profile, active installation and existing key. Foregrounding the existing
+  app and one **Check Activity Now** invocation were followed by the same-bound
+  counter advancing 10 to 11, one new available revision and one new consumed
+  assertion chain. The strict rollback query bound a unique fresh accepted
+  score to that existing key, with six passing aggregate assertions.
+- Consumed-context and consumed-grant operations failed closed while their
+  capabilities were still unexpired; protected state was unchanged and the
+  transaction rolled back. This is stored-argument database-contract evidence,
+  not captured-byte HTTP replay or independent proof-byte verification.
+- The Activity observation completed with zero read/reconciliation failures,
+  three unchanged accepted revisions and zero enqueues. Foreground catch-up
+  may have submitted before the button; do not attribute the new row or counter
+  increment to that gesture. Sampled process/profile equality is not continuous
+  process lifetime, source-inode continuity or an on-device executable hash.
+- The observation was cleared and Mirroring minimized; the reader is terminal
+  and private copies were removed. No debugger, reinstall, account/key change,
+  new competition or production action occurred in this later visit.
+
+Next: qualify replacement enrollment/isolation and remaining physical/release
+gates. Preserve the current match and history; do not repeat unchanged Activity,
+reset keys or revive the debugger/timed-copy workflow. Replacement should occur
+before final confirmation while an eligible score can still enroll the new key;
+completed matches stop publishing scores. Normal sign-out may also invalidate
+the preserved Simulator account's session, requiring reauthentication. October 28
 Pacific opens the stable two-client final-result check, not an automatic pass.
 Current-installation APNs routing, hosted recovery, qualified privacy publication,
 signed distribution and production promotion remain open. Paid setup and Apple
