@@ -2,9 +2,17 @@ name: iOS CI
 
 on:
   pull_request:
-  push:
-    branches:
-      - main
+    # iOS CI reads none of these; Backend CI still covers them.
+    paths-ignore:
+      - "docs/**"
+      - "web/**"
+      - "supabase/**"
+      - "**.md"
+  # Squash merges land code the PR run already passed, so main runs nightly
+  # (catching merges after main moved) and on demand for exact-main evidence.
+  schedule:
+    - cron: "17 9 * * *"
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -13,20 +21,32 @@ concurrency:
   group: ios-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
+  HOMEBREW_NO_AUTO_UPDATE: "1"
+  SUPABASE_URL: https://ci-fixture.supabase.co
+  SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci-fixture
+
+# Three parallel jobs. The Staging device build follows its Simulator build
+# to reuse that job's swift-syntax macro plugins. The Debug device build runs
+# in the core job because the Debug UI tests already make that job longest.
+# The core job verifies the shared Xcode version for all three.
 jobs:
-  ios:
-    name: Core, iOS, and project generation
+  core:
+    name: Core checks and Release and Debug device builds
     runs-on: macos-15
     timeout-minutes: 120
-    env:
-      DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer
-      HOMEBREW_NO_AUTO_UPDATE: "1"
-      SUPABASE_URL: https://ci-fixture.supabase.co
-      SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci-fixture
 
     steps:
       - name: Check out repository
         uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Restore Swift package checkouts
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/HealthComp-DerivedData/SourcePackages
+          key: spm-xcode16.4-${{ hashFiles('HealthComp.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+          restore-keys: spm-xcode16.4-
 
       - name: Verify Xcode and install XcodeGen
         run: |
@@ -95,6 +115,67 @@ jobs:
             --package-path Modules/CompetitionCore \
             --scratch-path "$RUNNER_TEMP/CompetitionCore-Release"
 
+      - name: Build unsigned Release device configuration
+        run: |
+          set -euo pipefail
+          xcodebuild build \
+            -project HealthComp.xcodeproj \
+            -scheme HealthComp \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$RUNNER_TEMP/HealthComp-DerivedData" \
+            -onlyUsePackageVersionsFromResolvedFile \
+            -skipMacroValidation \
+            -skipPackagePluginValidation \
+            -xcconfig Configuration/CI.xcconfig \
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            SUPABASE_URL="$SUPABASE_URL" \
+            SUPABASE_PUBLISHABLE_KEY="$SUPABASE_PUBLISHABLE_KEY"
+          bash scripts/verify-app-privacy-manifest.sh --app-bundle \
+            "$RUNNER_TEMP/HealthComp-DerivedData/Build/Products/Release-iphoneos/HealthComp.app"
+
+      - name: Build unsigned Debug device configuration
+        run: |
+          set -euo pipefail
+          xcodebuild build \
+            -project HealthComp.xcodeproj \
+            -scheme HealthComp \
+            -configuration Debug \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$RUNNER_TEMP/HealthComp-DerivedData" \
+            -onlyUsePackageVersionsFromResolvedFile \
+            -skipMacroValidation \
+            -skipPackagePluginValidation \
+            -xcconfig Configuration/CI.xcconfig \
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            SUPABASE_URL="$SUPABASE_URL" \
+            SUPABASE_PUBLISHABLE_KEY="$SUPABASE_PUBLISHABLE_KEY"
+          bash scripts/verify-app-privacy-manifest.sh --app-bundle \
+            "$RUNNER_TEMP/HealthComp-DerivedData/Build/Products/Debug-iphoneos/HealthComp.app"
+
+      - name: Verify source tree remains clean
+        run: |
+          set -euo pipefail
+          git diff --check
+          git diff --exit-code
+          [[ -z "$(git status --porcelain --untracked-files=all)" ]]
+
+  ios:
+    name: Debug tests
+    runs-on: macos-15
+    timeout-minutes: 120
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Restore Swift package checkouts
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/HealthComp-DerivedData/SourcePackages
+          key: spm-xcode16.4-${{ hashFiles('HealthComp.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+          restore-keys: spm-xcode16.4-
+
       - name: Prepare pinned iOS Simulator
         timeout-minutes: 10
         run: |
@@ -112,8 +193,6 @@ jobs:
       - name: Test iOS application logic, invitation copy, and privacy disclosures
         run: |
           set -euo pipefail
-          # Local ad-hoc Simulator signing embeds the entitlements required by
-          # real Keychain tests. It needs no Apple account or signing certificate.
           xcodebuild test \
             -project HealthComp.xcodeproj \
             -scheme HealthComp \
@@ -139,17 +218,53 @@ jobs:
             -skipMacroValidation \
             -skipPackagePluginValidation \
             -xcconfig Configuration/CI.xcconfig \
-            CODE_SIGNING_ALLOWED=YES \
-            CODE_SIGN_IDENTITY=- \
             COMPILER_INDEX_STORE_ENABLE=NO \
             SUPABASE_URL="$SUPABASE_URL" \
             SUPABASE_PUBLISHABLE_KEY="$SUPABASE_PUBLISHABLE_KEY"
+
+      - name: Verify source tree remains clean
+        run: |
+          set -euo pipefail
+          git diff --check
+          git diff --exit-code
+          [[ -z "$(git status --porcelain --untracked-files=all)" ]]
+
+  staging:
+    name: Staging tests and device build
+    runs-on: macos-15
+    timeout-minutes: 120
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+
+      - name: Restore Swift package checkouts
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/HealthComp-DerivedData/SourcePackages
+          key: spm-xcode16.4-${{ hashFiles('HealthComp.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+          restore-keys: spm-xcode16.4-
+
+      - name: Prepare pinned iOS Simulator
+        timeout-minutes: 10
+        run: |
+          set -euo pipefail
+          xcrun simctl list runtimes
+          xcrun simctl list devices available
+          # Own one exact device instead of relying on the runner's device catalog.
+          simulator_id="$(xcrun simctl create \
+            'HealthComp CI' \
+            com.apple.CoreSimulator.SimDeviceType.iPhone-16-Pro \
+            com.apple.CoreSimulator.SimRuntime.iOS-18-5)"
+          printf 'HEALTHCOMP_CI_SIMULATOR_ID=%s\n' "$simulator_id" >> "$GITHUB_ENV"
+          xcrun simctl bootstatus "$simulator_id" -b
 
       - name: Test release-style Staging browser configuration
         run: |
           set -euo pipefail
           # Dedicated tests avoid importing DEBUG-only Test Lab fixtures.
-          # Testability permits @testable imports without enabling DEBUG.
+          # CI.xcconfig's Simulator testability permits @testable imports
+          # without enabling DEBUG.
           xcodebuild test \
             -project HealthComp.xcodeproj \
             -scheme 'HealthComp Staging' \
@@ -160,39 +275,32 @@ jobs:
             -parallel-testing-enabled NO \
             -maximum-concurrent-test-simulator-destinations 1 \
             -maximum-parallel-testing-workers 1 \
-            -jobs 2 \
             -onlyUsePackageVersionsFromResolvedFile \
             -skipMacroValidation \
             -skipPackagePluginValidation \
             -xcconfig Configuration/CI.xcconfig \
-            CODE_SIGNING_ALLOWED=YES \
-            CODE_SIGN_IDENTITY=- \
-            ENABLE_TESTABILITY=YES \
             COMPILER_INDEX_STORE_ENABLE=NO \
             SUPABASE_URL="$SUPABASE_URL" \
             SUPABASE_PUBLISHABLE_KEY="$SUPABASE_PUBLISHABLE_KEY"
 
-      - name: Build unsigned device configurations
+      - name: Build unsigned Staging device configuration
         run: |
           set -euo pipefail
-          for configuration in Debug Staging Release; do
-            xcodebuild build \
-              -project HealthComp.xcodeproj \
-              -scheme HealthComp \
-              -configuration "$configuration" \
-              -destination 'generic/platform=iOS' \
-              -derivedDataPath "$RUNNER_TEMP/HealthComp-DerivedData" \
-              -onlyUsePackageVersionsFromResolvedFile \
-              -skipMacroValidation \
-              -skipPackagePluginValidation \
-              -xcconfig Configuration/CI.xcconfig \
-              CODE_SIGNING_ALLOWED=NO \
-              COMPILER_INDEX_STORE_ENABLE=NO \
-              SUPABASE_URL="$SUPABASE_URL" \
-              SUPABASE_PUBLISHABLE_KEY="$SUPABASE_PUBLISHABLE_KEY"
-            bash scripts/verify-app-privacy-manifest.sh --app-bundle \
-              "$RUNNER_TEMP/HealthComp-DerivedData/Build/Products/${configuration}-iphoneos/HealthComp.app"
-          done
+          xcodebuild build \
+            -project HealthComp.xcodeproj \
+            -scheme HealthComp \
+            -configuration Staging \
+            -destination 'generic/platform=iOS' \
+            -derivedDataPath "$RUNNER_TEMP/HealthComp-DerivedData" \
+            -onlyUsePackageVersionsFromResolvedFile \
+            -skipMacroValidation \
+            -skipPackagePluginValidation \
+            -xcconfig Configuration/CI.xcconfig \
+            COMPILER_INDEX_STORE_ENABLE=NO \
+            SUPABASE_URL="$SUPABASE_URL" \
+            SUPABASE_PUBLISHABLE_KEY="$SUPABASE_PUBLISHABLE_KEY"
+          bash scripts/verify-app-privacy-manifest.sh --app-bundle \
+            "$RUNNER_TEMP/HealthComp-DerivedData/Build/Products/Staging-iphoneos/HealthComp.app"
 
       - name: Verify source tree remains clean
         run: |
@@ -200,9 +308,3 @@ jobs:
           git diff --check
           git diff --exit-code
           [[ -z "$(git status --porcelain --untracked-files=all)" ]]
-
-      - name: Remove dedicated CI Simulator
-        if: ${{ always() && env.HEALTHCOMP_CI_SIMULATOR_ID != '' }}
-        run: |
-          xcrun simctl shutdown "$HEALTHCOMP_CI_SIMULATOR_ID" || true
-          xcrun simctl delete "$HEALTHCOMP_CI_SIMULATOR_ID"
