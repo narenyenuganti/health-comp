@@ -2,7 +2,12 @@ import { assertEquals, assertThrows } from "@std/assert";
 import * as asn1js from "asn1js";
 import cbor from "cbor";
 import { Buffer } from "node:buffer";
-import { createHash, createSign, generateKeyPairSync } from "node:crypto";
+import {
+  createHash,
+  createPublicKey,
+  createSign,
+  generateKeyPairSync,
+} from "node:crypto";
 import {
   appAttestClientDataV1,
   AppAttestVerificationError,
@@ -13,6 +18,9 @@ import {
   verifyAppAttestAttestation,
 } from "./app-attest.ts";
 import publicAssertion from "../../tests/fixtures/app-attest-assertion-public.json" with {
+  type: "json",
+};
+import publicExtendedAssertion from "../../tests/fixtures/app-attest-assertion-extensions-public.json" with {
   type: "json",
 };
 
@@ -718,6 +726,76 @@ Deno.test("published assertion verifies independently of the synthetic signer", 
       publicKeyPEM: publicKey.export({ type: "spki", format: "pem" })
         .toString(),
     }));
+});
+
+Deno.test("published extended assertion verifies with Apple's signed AT and ED flags", async () => {
+  const publicKey = createPublicKey({
+    key: Buffer.concat([
+      Buffer.from(
+        "3059301306072a8648ce3d020106082a8648ce3d030107034200",
+        "hex",
+      ),
+      Buffer.from(publicExtendedAssertion.public_key_hex, "hex"),
+    ]),
+    format: "der",
+    type: "spki",
+  });
+  const input = {
+    assertion: Buffer.from(publicExtendedAssertion.assertion_b64, "base64"),
+    clientData: Buffer.from(publicExtendedAssertion.client_data),
+    publicKeyPEM: publicKey.export({ type: "spki", format: "pem" }).toString(),
+    previousSignCount: publicExtendedAssertion.previous_counter,
+    policy: {
+      appId: publicExtendedAssertion.app_id,
+      environment: "production" as const,
+      allowedValidationCategories: [2],
+      allowedBundleVersions: ["2"],
+      now: new Date("2026-10-23T00:00:00Z"),
+    },
+  };
+  assertEquals(
+    verifyAppAttestAssertion(input),
+    { signCount: 116, validationCategory: 2, bundleVersion: "2" },
+  );
+  expectCode(
+    "invalid_counter",
+    () => verifyAppAttestAssertion({ ...input, previousSignCount: 116 }),
+  );
+  expectCode("invalid_app_identity", () =>
+    verifyAppAttestAssertion({
+      ...input,
+      policy: { ...input.policy, appId: "1234567890.com.example.other" },
+    }));
+  expectCode("invalid_validation_category", () =>
+    verifyAppAttestAssertion({
+      ...input,
+      policy: { ...input.policy, allowedValidationCategories: [3] },
+    }));
+  expectCode("invalid_bundle_version", () =>
+    verifyAppAttestAssertion({
+      ...input,
+      policy: { ...input.policy, allowedBundleVersions: ["3"] },
+    }));
+  const decoded = cbor.decodeFirstSync(input.assertion) as {
+    signature: Buffer;
+    authenticatorData: Buffer;
+  };
+  const signature = Buffer.from(decoded.signature);
+  signature[signature.length - 1] ^= 1;
+  const tampered = await cbor.encodeAsync({ ...decoded, signature });
+  expectCode(
+    "invalid_assertion_signature",
+    () => verifyAppAttestAssertion({ ...input, assertion: tampered }),
+  );
+  for (const flags of [0x00, 0x40, 0x81, 0xc1, 0xff]) {
+    const authenticatorData = Buffer.from(decoded.authenticatorData);
+    authenticatorData[32] = flags;
+    const assertion = await cbor.encodeAsync({ ...decoded, authenticatorData });
+    expectCode(
+      "invalid_assertion_authenticator_data",
+      () => verifyAppAttestAssertion({ ...input, assertion }),
+    );
+  }
 });
 
 async function syntheticAssertion(

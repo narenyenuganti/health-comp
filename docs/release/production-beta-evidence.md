@@ -4,6 +4,26 @@ This file records anonymized, reproducible rollout receipts. It excludes Apple
 account details, device identifiers, tokens, private screenshots, raw HealthKit
 data, exact Activity values, and reversible local fingerprints.
 
+## Controlled friends beta scope — October 24, 2026
+
+The owner approved the smaller 2–5-person beta and the five qualification
+deferrals in the [current completion checklist](production-beta-checklist.md#controlled-friends-beta-scope--october-24-2026).
+This records a scope decision, not new runtime evidence. Existing receipts and
+their limits remain unchanged; deferred checks are not converted into passes.
+
+Same-phone replacement qualification, full live stable-result qualification,
+the exhaustive APNs state matrix, actual hosted recovery/forward repair and
+additional live adversarial/replay qualification no longer block this beta.
+The physical deletion waiver and universal-link deferral remain unchanged.
+Security behavior, automated coverage and accurate privacy disclosures remain
+required. Release configuration, privacy/distribution, signed delivery with a
+short two-account smoke test, and a truthful handoff are still uncompleted
+release gates. The current competition may continue without holding delivery
+for a seven-day result. No new competition is required by this scope decision.
+
+This amendment changes no app, backend, account, device or provider settings.
+It proves neither TestFlight acceptance nor general production readiness.
+
 ## Private beta scope exception October 4 2026
 
 Physical account-deletion verification is owner-skipped before beta, not passed:
@@ -14,9 +34,111 @@ and [recovery runbook](../runbooks/backup-restore.md#private-beta-deletion-test-
 preserve the deletion feature, existing automated coverage and privacy/history
 safeguards. Other gates and **not production-ready** status remain unchanged.
 
-## Current qualification checkpoint — October 22, 2026 UTC
+## Current qualification checkpoint — October 23, 2026 UTC
 
-The [current checklist](production-beta-checklist.md#current-qualification-checkpoint--october-22-2026-utc)
+The [current checklist](production-beta-checklist.md#current-qualification-checkpoint--october-23-2026-utc)
+selects merged `e92970ab98036d48f75365884da8c6cc92bd81ae` and Staging scoring
+Function version 18. This fixes one demonstrated public-fixture rejection and
+records a subsequent new-day score with a stored assertion chain. The later
+bound observation below adds current-key counter-window and consumed-capability
+database-contract evidence. Status remains **not production-ready**; HTTP replay,
+independent proof-byte verification and replacement enrollment are not qualified.
+
+The exact reviewed and merged trees match. Reviewed-head Backend run
+`39908144598` and iOS run `39908144551` passed. Merged-main Backend run
+`39913831861` and iOS run `39913831824` also passed. Completed-log readback
+qualifies the checklist's test counts, three unsigned device builds,
+clean-source verification and dedicated CI Simulator cleanup. This is not a
+signed archive/export or production qualification. The public fixture,
+provenance and license are checked in; its acceptance is not evidence of the
+phone's actual assertion flag.
+
+Private aggregate receipts remain outside this public repository:
+
+| Receipt | SHA-256 |
+| --- | --- |
+| `extended-assertion-staging-deployment-20261023T071027Z.json` | `5ebf5bd06fd10d5944346ffc6027cd7515f887583502f08c6977d4d34fcc02a0` |
+| `staging-v18-current-cycle-baseline-20261023T071217Z.json` | `14b7fd54597c129b4395443c081f846ce41ca72e1dad90519d479a3789bd2ab9` |
+| `physical-staging-v18-new-day-20261023T072214Z.json` | `c88cb8025b359d3c809a258fdc6c0d71bf32ba60a8bbd950ae84d0245c078324` |
+
+At 07:10 UTC, only `submit-score-revision` advanced to ACTIVE version 18.
+All four downloaded source assets matched merged source. The other eleven
+Functions, gateway settings and secret metadata remained unchanged; secret
+values were not read. One credential-free boot probe returned the expected
+invalid-request response. Scratch and temporary project selection were removed.
+This is deployment/boot evidence, not authenticated scoring evidence.
+
+The separate 07:12 UTC baseline found two participants and three elapsed days:
+zero creator revisions; 12 invitee revisions spanning two days; one latest
+available enrollment-backed day; zero latest assertion-backed days; no result.
+The ordinary physical Staging visit then visibly showed Day 3 Activity and
+points. The only attempted refresh gesture had no observed spinner and followed
+the visible score change, so refresh invocation and causality are unproved.
+No numeric Activity/score values were copied to these receipts. The closed
+one-shot observation was left closed. No debugger, restart, reinstall, sign-in,
+account/key change or new invitation occurred. Mirroring was minimized and the
+phone released before the hosted readback.
+
+At 07:22 UTC, the same aggregate-only read-only/repeatable-read query found
+15 invitee revisions spanning three days, two latest available days, one latest
+assertion-backed day and one latest enrollment-backed day. These proof
+classifications may overlap. Creator revisions remained zero; no result existed.
+The increase supports new-day server scoring with a stored assertion chain,
+not exact phone/key binding, independent proof-byte validation, a counter pair,
+replay resistance or gesture causality. Both queries passed strict field/type
+validation; no identifiers, Health values, scores or proof bytes were returned.
+These 07:22 findings do not inherit the later visit's exact binding or replay
+findings. Existing owner holds and scope exceptions are unchanged.
+
+### Later bound physical observation — October 23, 23:15 UTC
+
+| Private aggregate receipt label | SHA-256 |
+| --- | --- |
+| Creator accepted-score aggregate, 07:45 UTC | `d0970881de69ec948e6a5f21af2cfa0eebd7e12ee6c70b9cae0de0f701196816` |
+| `physical-bound-replay-20261023T231453Z.json` | `494a38086ac08d74d8c973ba784029902fcebb05d1d9a1cd6b55ed1ff7429828` |
+| `physical-staging-bound-activity-20261023T2315Z.json` | `f4f2e5b8a1de5c53290499d9a1681b4f93384db0e89b46e5b57e14452183d202` |
+
+At 07:45 UTC, the same cycle had three creator revisions covering three days,
+two latest available days and two latest assertion-backed days; the invitee had
+17 revisions covering three days and two latest available days. Both participants
+therefore had server-available score days. The one-phone/two-account topology
+does not establish independent physical participants or Health sources.
+
+At 23:13–23:15 UTC, the retained local package from `03e1998` passed the pinned
+hash/signature/provision checks and native metadata matched its Staging version.
+This is not an on-device executable hash. Private local profile/installation/key
+binding stayed equal across the sampled process/profile checks and two read-only,
+repeatable-read counter queries. The counter advanced 10 to 11; available/total
+revision and consumed assertion-chain counts each increased by one.
+
+One strict rollback-only query then selected a unique fresh available score
+after the server baseline, bound its consumed grant/challenge to the exact
+existing key/installation, and required the key to predate the baseline. All six
+aggregate assertions passed: bound assertion, existing key, still-unexpired
+capabilities, consumed-context denial, consumed-grant denial and unchanged
+protected state. The transaction rolled back. No identifiers, scores, Health
+values or proof bytes were returned or retained in these receipts.
+
+The app was foregrounded after the baseline and **Check Activity Now** invoked
+once. Its observation completed one read, reported three unchanged accepted
+revisions, zero enqueues and zero read/reconciliation failures. The fresh score
+may have arrived during foreground catch-up, not from the button. The raw
+receipt's conservative `refresh_causality_proven`,
+`score_linked_counter_advancement_proven` and `replay_resistance_proven` fields
+remain false; the six separate contract assertions do not turn them into proof
+of an exact counter increment's cause or captured-byte HTTP/cryptographic replay.
+Continuous process lifetime, source-inode identity and independent cryptographic
+verification of the phone's proof bytes were not established.
+
+The diagnostic display was cleared, Account closed and Mirroring explicitly
+minimized. The reader completed; private copies were removed. No debugger,
+reinstall, account/key reset, new competition or production action occurred.
+Replacement enrollment, final-result, notification routing, recovery, privacy,
+distribution and production gates remain open as listed in the checklist.
+
+## Previous qualification checkpoint — October 22, 2026 UTC
+
+The [previous checklist](production-beta-checklist.md#previous-qualification-checkpoint--october-22-2026-utc)
 selects merged `3c155c89b97c9af527f9a8670877b2e1c20c7996` for the automated
 matrix, `04d1792` for the Staging version 17 scoring deployment, and `03e1998`
 for the installed one-tap Activity package. These are separate observations.

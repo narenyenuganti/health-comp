@@ -1,5 +1,57 @@
 # HealthComp Production Beta Verification Checklist
 
+## Controlled friends beta scope — October 24, 2026
+
+The owner approved a smaller completion boundary: **a controlled beta for 2–5
+invited friends**, rather than full production qualification for up to25people.
+This section is the current scope of this rollout and supersedes conflicting
+completion requirements in the dated checkpoints below. It is not a test pass,
+a claim of general production readiness, or permission to weaken safeguards.
+
+### Deferred qualification
+
+| Qualification removed from this beta's completion requirements | Accepted limitation |
+| --- | --- |
+| Same-phone removal/reinstall, replacement App Attest enrollment and retired-installation isolation | Recovery after reinstall remains physically unverified and may need manual assistance. |
+| Complete live seven-day cycle, both final confirmations and matching stable results on two clients | Full live finalization remains unverified. Keep the existing competition running; its completion date does not block this beta. |
+| Exhaustive APNs delivery and tap routing across foreground, background and terminated states | Notifications are best-effort in this beta; some delivery or navigation cases remain unverified. |
+| Actual hosted backup/restore and forward-repair rehearsal | Recoverability is unverified and beta data could be lost. Paid recovery setup stays held. |
+| Additional live adversarial/replay qualification beyond the existing automated and rollback checks | Real-device assurance is limited; the underlying validation and isolation protections remain enabled. |
+
+The earlier physical account-deletion test waiver and universal-link deferral
+remain in effect. Preserve their **SKIPPED / UNVERIFIED** and **DEFERRED** labels.
+Do not turn any deferred test into PASS or delete its historical evidence.
+
+### Remaining completion checklist
+
+- [ ] **Release configuration:** qualify the intended beta backend and its
+  authentication, scoring, notification and integrity configuration against the
+  selected release source. Preserve participant isolation, raw HealthKit data
+  on-device, server validation, profile-scoped cleanup and existing tests.
+- [ ] **Privacy and distribution:** reconcile the selected artifact/provider
+  behavior, publish accurate policy and in-app/store links and declarations,
+  and resolve the outstanding Apple distribution question. The smaller cohort
+  is not a substitute for these checks or Apple's acceptance.
+- [ ] **Deliver and smoke-test the actual build:** create the signed archive
+  and export, complete TestFlight upload/processing/review as applicable, and
+  verify install, sign-in, invitation and scoring through a short two-account
+  smoke test. Do not recreate the full seven-day qualification requirement.
+- [ ] **Record the handoff:** identify the delivered source/build/environment,
+  support route and accepted limitations, with each remaining claim backed by
+  an appropriate receipt. Freeze new features during this closeout.
+
+Keep the clean automated backend/Core/iOS/Release/secret/privacy matrix and
+existing passing behavior. Rerun checks only as required by the actual changes;
+documentation changes do not require another physical scoring attempt.
+No new competition, key reset, destructive phone operation or timed-reference
+diagnostic is needed merely to close a deferred gate. Apple Support contact
+and paid setup remain held. This scope change does not authorize a purchase,
+enrollment change, account deletion or production data destruction.
+
+Complete this controlled-beta goal only when all four retained checklist items
+are verified. Broader production-readiness claims require a separate resolution
+of the deferred qualifications.
+
 ## Private beta scope exception October 4 2026
 
 The owner removed physical account-deletion verification from the required
@@ -14,7 +66,88 @@ records the matching boundary. Actual recovery, protection against resurrecting
 deleted identities, and all other unwaived qualification gates remain open.
 This is a scope decision, not a runtime receipt or production-readiness claim.
 
-## Current qualification checkpoint — October 22, 2026 UTC
+## Current qualification checkpoint — October 23, 2026 UTC
+
+**Not production-ready.** Staging now has a fresh accepted score bound to the
+current installation/key, counter advancement across a sampled window, and
+rollback-only consumed-capability rejection. These do not prove UI causality,
+captured-byte HTTP/cryptographic replay rejection or replacement enrollment.
+
+- **Source qualification:** [PR #164](https://github.com/narenyenuganti/health-comp/pull/164)
+  merged as `e92970ab98036d48f75365884da8c6cc92bd81ae`. The reviewed and merged
+  trees are identical. The reviewed-head Backend and iOS matrices passed.
+  Merged-main [Backend CI](https://github.com/narenyenuganti/health-comp/actions/runs/39913831861)
+  and
+  [iOS CI](https://github.com/narenyenuganti/health-comp/actions/runs/39913831824)
+  also passed. Completed logs qualify 22 pgTAP files / 849 assertions twice,
+  151 Deno passes / zero failures / one gated ignore, one separate raw-worker
+  regression, 15 real-JWT HTTP tests, 20 rollback assertions with zero synthetic
+  rows and ten support tests. iOS qualifies 246 Core tests in each of Debug and
+  Release, 635 app tests, 11 selected UI tests, 83 release-style Staging tests
+  and three unsigned device builds. Clean-source verification and dedicated CI
+  Simulator cleanup passed. These do not qualify a signed release export.
+- **Verifier fix and deployment:** a pinned, public, signed extended-assertion
+  fixture failed before the change and passes with exact `0xC0` accepted alongside
+  existing `0x80`. Other validation and legacy forms remain unchanged. Only
+  `submit-score-revision` advanced to ACTIVE version 18. All four returned source
+  assets match the merged source; the other eleven Functions and their gateway
+  settings are unchanged. No application update, account/key reset or production
+  change was made. The public fixture does not reveal the phone's actual flag.
+- **Normal physical-app observation:** after confirmed phone availability, the
+  existing Staging app showed Day 3 Activity and today's points. One attempted
+  pull-to-refresh showed no observed indicator; the score had changed during
+  foreground use before that gesture. Do not attribute acceptance to the gesture.
+  The expired Activity observation was not rearmed. No debugger, reinstall,
+  sign-in or account change occurred. Mirroring was minimized and the phone
+  released before the separate hosted query.
+- **Separate hosted comparison:** read-only, repeatable-read aggregate queries
+  at 07:12 and 07:22 UTC selected the unique October 21–27 cycle. The invitee
+  gained three revisions, one covered day, one latest available day and one
+  latest assertion-backed day. It now has 15 revisions covering three days,
+  two latest available days, one assertion-backed day and one enrollment-backed
+  day. Those proof classifications can overlap; do not add them. Creator
+  revisions remain zero and no result exists. The stored-chain query does not
+  independently reverify proof bytes, bind the phone/key, or prove counter
+  advancement or replay resistance.
+
+### Later bound physical observation — October 23, 23:15 UTC
+
+- A separate 07:45 UTC aggregate readback closed the creator's earlier
+  missing-score gap: both participants had available accepted score days in the
+  same October 21–27 cycle. This was not yet an exact phone/key counter pair.
+- Before the later physical visit, native checks bound one running process,
+  profile, active installation and existing key. Foregrounding the existing
+  app and one **Check Activity Now** invocation were followed by the same-bound
+  counter advancing 10 to 11, one new available revision and one new consumed
+  assertion chain. The strict rollback query bound a unique fresh accepted
+  score to that existing key, with six passing aggregate assertions.
+- Consumed-context and consumed-grant operations failed closed while their
+  capabilities were still unexpired; protected state was unchanged and the
+  transaction rolled back. This is stored-argument database-contract evidence,
+  not captured-byte HTTP replay or independent proof-byte verification.
+- The Activity observation completed with zero read/reconciliation failures,
+  three unchanged accepted revisions and zero enqueues. Foreground catch-up
+  may have submitted before the button; do not attribute the new row or counter
+  increment to that gesture. Sampled process/profile equality is not continuous
+  process lifetime, source-inode continuity or an on-device executable hash.
+- The observation was cleared and Mirroring minimized; the reader is terminal
+  and private copies were removed. No debugger, reinstall, account/key change,
+  new competition or production action occurred in this later visit.
+
+Next: qualify replacement enrollment/isolation and remaining physical/release
+gates. Preserve the current match and history; do not repeat unchanged Activity,
+reset keys or revive the debugger/timed-copy workflow. Replacement should occur
+before final confirmation while an eligible score can still enroll the new key;
+completed matches stop publishing scores. Normal sign-out may also invalidate
+the preserved Simulator account's session, requiring reauthentication. October 28
+Pacific opens the stable two-client final-result check, not an automatic pass.
+Current-installation APNs routing, hosted recovery, qualified privacy publication,
+signed distribution and production promotion remain open. Paid setup and Apple
+Support remain held; physical deletion is owner-skipped and universal links
+deferred, not PASS. See the
+[current evidence ledger](production-beta-evidence.md#current-qualification-checkpoint--october-23-2026-utc).
+
+## Previous qualification checkpoint — October 22, 2026 UTC
 
 **Not production-ready.** The current source matrix and one normal Activity
 read are verified; a fresh score-linked App Attest assertion/replay pass is not.
@@ -67,7 +200,7 @@ two-client results, current-installation APNs routing, hosted recovery, qualifie
 privacy publication, signed distribution and production promotion remain open.
 Paid setup and Apple Support remain held; physical deletion is owner-skipped
 and universal links deferred, not PASS. See the
-[current evidence ledger](production-beta-evidence.md#current-qualification-checkpoint--october-22-2026-utc).
+[previous evidence ledger](production-beta-evidence.md#previous-qualification-checkpoint--october-22-2026-utc).
 
 ## Earlier qualification checkpoint — October 22, 2026 UTC
 
@@ -1488,6 +1621,12 @@ remain last-observed setup facts.
   activation/preparation and the complete promotion gate remain pending.
 
 ## Completion rule
+
+For the current controlled friends beta, use the
+[October24 scope and four-item completion checklist](#controlled-friends-beta-scope--october-24-2026).
+Deferred checks are not blockers for that boundary and must remain labelled
+unverified, not passed. The broader rule below applies to full production
+qualification, not to reinstating the owner-deferred tests in this beta.
 
 Do not describe HealthComp as production-ready until every in-scope automated,
 two-account staging, adversarial, physical-device, deletion, restore, secret,

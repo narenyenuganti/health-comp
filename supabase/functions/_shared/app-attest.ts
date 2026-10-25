@@ -723,8 +723,9 @@ function decodeAssertion(value: Uint8Array) {
   const signature = object.signature as Buffer;
   const legacy = authData.length === 37 &&
     (authData[32] === 0x00 || authData[32] === 0x40);
+  // Published iOS 27 assertions retain AT alongside the extension-data flag.
   const extended = authData.length > 37 && authData.length <= 1_024 &&
-    authData[32] === 0x80;
+    (authData[32] === 0x80 || authData[32] === 0xc0);
   if (!legacy && !extended) fail("invalid_assertion_authenticator_data");
   if (signature.length < 64 || signature.length > 80) {
     fail("invalid_assertion_signature_length");
