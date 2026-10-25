@@ -4,6 +4,18 @@ This runbook separates Supabase platform database recovery from a CLI logical
 export. Neither path is credited until a staging restore has actually been
 rehearsed and its non-identifying integrity receipt has been compared.
 
+## Controlled friends beta deferral — October 24, 2026
+
+The owner deferred actual hosted recovery and forward-repair qualification for
+the [controlled 2–5-person beta](../release/production-beta-checklist.md#controlled-friends-beta-scope--october-24-2026).
+This beta accepts the risk of data loss and unverified recoverability. Paid
+setup remains held; no operational backup or recovery guarantee is claimed.
+
+The execution requirements below remain mandatory if a restore is later
+requested. This deferral authorizes no export, import, purchase or destructive
+operation and does not relax containment or protection of deleted identities.
+Retain the existing synthetic evidence as synthetic, not a hosted restore pass.
+
 ## Execution readiness
 
 **NOT QUALIFIED FOR EXECUTION.** The examples below are a reviewed procedure

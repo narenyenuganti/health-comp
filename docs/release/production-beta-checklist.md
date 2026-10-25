@@ -1,5 +1,57 @@
 # HealthComp Production Beta Verification Checklist
 
+## Controlled friends beta scope — October 24, 2026
+
+The owner approved a smaller completion boundary: **a controlled beta for 2–5
+invited friends**, rather than full production qualification for up to25people.
+This section is the current scope of this rollout and supersedes conflicting
+completion requirements in the dated checkpoints below. It is not a test pass,
+a claim of general production readiness, or permission to weaken safeguards.
+
+### Deferred qualification
+
+| Qualification removed from this beta's completion requirements | Accepted limitation |
+| --- | --- |
+| Same-phone removal/reinstall, replacement App Attest enrollment and retired-installation isolation | Recovery after reinstall remains physically unverified and may need manual assistance. |
+| Complete live seven-day cycle, both final confirmations and matching stable results on two clients | Full live finalization remains unverified. Keep the existing competition running; its completion date does not block this beta. |
+| Exhaustive APNs delivery and tap routing across foreground, background and terminated states | Notifications are best-effort in this beta; some delivery or navigation cases remain unverified. |
+| Actual hosted backup/restore and forward-repair rehearsal | Recoverability is unverified and beta data could be lost. Paid recovery setup stays held. |
+| Additional live adversarial/replay qualification beyond the existing automated and rollback checks | Real-device assurance is limited; the underlying validation and isolation protections remain enabled. |
+
+The earlier physical account-deletion test waiver and universal-link deferral
+remain in effect. Preserve their **SKIPPED / UNVERIFIED** and **DEFERRED** labels.
+Do not turn any deferred test into PASS or delete its historical evidence.
+
+### Remaining completion checklist
+
+- [ ] **Release configuration:** qualify the intended beta backend and its
+  authentication, scoring, notification and integrity configuration against the
+  selected release source. Preserve participant isolation, raw HealthKit data
+  on-device, server validation, profile-scoped cleanup and existing tests.
+- [ ] **Privacy and distribution:** reconcile the selected artifact/provider
+  behavior, publish accurate policy and in-app/store links and declarations,
+  and resolve the outstanding Apple distribution question. The smaller cohort
+  is not a substitute for these checks or Apple's acceptance.
+- [ ] **Deliver and smoke-test the actual build:** create the signed archive
+  and export, complete TestFlight upload/processing/review as applicable, and
+  verify install, sign-in, invitation and scoring through a short two-account
+  smoke test. Do not recreate the full seven-day qualification requirement.
+- [ ] **Record the handoff:** identify the delivered source/build/environment,
+  support route and accepted limitations, with each remaining claim backed by
+  an appropriate receipt. Freeze new features during this closeout.
+
+Keep the clean automated backend/Core/iOS/Release/secret/privacy matrix and
+existing passing behavior. Rerun checks only as required by the actual changes;
+documentation changes do not require another physical scoring attempt.
+No new competition, key reset, destructive phone operation or timed-reference
+diagnostic is needed merely to close a deferred gate. Apple Support contact
+and paid setup remain held. This scope change does not authorize a purchase,
+enrollment change, account deletion or production data destruction.
+
+Complete this controlled-beta goal only when all four retained checklist items
+are verified. Broader production-readiness claims require a separate resolution
+of the deferred qualifications.
+
 ## Private beta scope exception October 4 2026
 
 The owner removed physical account-deletion verification from the required
@@ -1569,6 +1621,12 @@ remain last-observed setup facts.
   activation/preparation and the complete promotion gate remain pending.
 
 ## Completion rule
+
+For the current controlled friends beta, use the
+[October24 scope and four-item completion checklist](#controlled-friends-beta-scope--october-24-2026).
+Deferred checks are not blockers for that boundary and must remain labelled
+unverified, not passed. The broader rule below applies to full production
+qualification, not to reinstating the owner-deferred tests in this beta.
 
 Do not describe HealthComp as production-ready until every in-scope automated,
 two-account staging, adversarial, physical-device, deletion, restore, secret,

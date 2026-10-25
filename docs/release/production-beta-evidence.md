@@ -4,6 +4,26 @@ This file records anonymized, reproducible rollout receipts. It excludes Apple
 account details, device identifiers, tokens, private screenshots, raw HealthKit
 data, exact Activity values, and reversible local fingerprints.
 
+## Controlled friends beta scope — October 24, 2026
+
+The owner approved the smaller 2–5-person beta and the five qualification
+deferrals in the [current completion checklist](production-beta-checklist.md#controlled-friends-beta-scope--october-24-2026).
+This records a scope decision, not new runtime evidence. Existing receipts and
+their limits remain unchanged; deferred checks are not converted into passes.
+
+Same-phone replacement qualification, full live stable-result qualification,
+the exhaustive APNs state matrix, actual hosted recovery/forward repair and
+additional live adversarial/replay qualification no longer block this beta.
+The physical deletion waiver and universal-link deferral remain unchanged.
+Security behavior, automated coverage and accurate privacy disclosures remain
+required. Release configuration, privacy/distribution, signed delivery with a
+short two-account smoke test, and a truthful handoff are still uncompleted
+release gates. The current competition may continue without holding delivery
+for a seven-day result. No new competition is required by this scope decision.
+
+This amendment changes no app, backend, account, device or provider settings.
+It proves neither TestFlight acceptance nor general production readiness.
+
 ## Private beta scope exception October 4 2026
 
 Physical account-deletion verification is owner-skipped before beta, not passed:
