@@ -170,6 +170,14 @@ struct AccountView: View {
                 .disabled(store.isRequestInFlight)
                 .accessibilityIdentifier("account.sign-in-with-apple.browser")
             }
+            Link(destination: URL(string: "https://healthcomp.app/privacy")!) {
+                Text("Privacy Policy")
+                    .font(.callout.weight(.semibold))
+                    .foregroundStyle(Theme.ink)
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
+            }
+            .accessibilityIdentifier("account.privacy-policy")
         }
     }
 

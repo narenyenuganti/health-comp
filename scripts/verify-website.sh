@@ -27,7 +27,7 @@ expect() {
       passed=0
     fi
   done
-  if [[ "$path" == /support ]] &&
+  if [[ "$path" == /support || "$path" == /privacy ]] &&
      ! python3 "$(dirname "${BASH_SOURCE[0]}")/verify-support-email.py" < "$scratch/body"; then
     printf 'FAIL %s: missing support email link\n' "$path" >&2
     passed=0
@@ -42,6 +42,9 @@ expect() {
 expect / 200 'Coming soon to iPhone'
 expect /support 200 'HealthComp beta support' \
   'Naren Yenuganti' 'Do not send' 'Health screenshots'
+expect /privacy 200 'HealthComp privacy' \
+  'rounded Activity percentages' 'no fixed automatic deletion schedule' \
+  'does not display advertising' 'Former competitor'
 # Without a top-level 404.html, Pages answers every unknown path with
 # index.html and 200.
 expect /no-such-page 404 'Page not found'
@@ -53,6 +56,6 @@ expect /og.png 200 'content-type: image/png'
 expect /apple-touch-icon.png 200 'content-type: image/png'
 
 if ((failures)); then
-  printf '%d of 7 checks failed\n' "$failures" >&2
+  printf '%d of 8 checks failed\n' "$failures" >&2
   exit 1
 fi

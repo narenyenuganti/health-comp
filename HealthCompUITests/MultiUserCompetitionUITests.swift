@@ -381,10 +381,20 @@ final class MultiUserCompetitionUITests: XCTestCase {
         XCTAssertFalse(app.descendants(matching: .any).matching(
             NSPredicate(format: "label CONTAINS %@", "Your opponent sees only your daily total")
         ).firstMatch.exists)
+        let privacyPolicy = app.descendants(matching: .any)["account.privacy-policy"]
+        guard privacyPolicy.waitForExistence(timeout: 3) else {
+            return XCTFail("Privacy Policy must be available before signing in.")
+        }
+        scrollToElement(privacyPolicy)
+        XCTAssertGreaterThanOrEqual(privacyPolicy.frame.height, 44)
+        privacyPolicy.tap()
+        let openedURL = app.staticTexts["https://healthcomp.app/privacy"]
+        XCTAssertTrue(openedURL.waitForExistence(timeout: 3))
     }
 
     func testAccountEditingAndPrivacyBoundariesRemainAccessible() {
         launch(.account)
+        defer { app.terminate() }
         XCTAssertTrue(app.navigationBars["Account"].waitForExistence(timeout: 8))
         let privacy = element("account.privacy")
         scrollToElement(privacy)
@@ -396,6 +406,14 @@ final class MultiUserCompetitionUITests: XCTestCase {
                 "Competitors receive daily points, rounded Activity percentages and modes"
             ].exists
         )
+        let privacyPolicy = app.descendants(matching: .any)["account.privacy-policy"]
+        guard privacyPolicy.waitForExistence(timeout: 3) else {
+            return XCTFail("Privacy Policy must remain available in Account settings.")
+        }
+        scrollToElement(privacyPolicy)
+        XCTAssertGreaterThanOrEqual(privacyPolicy.frame.height, 44)
+        privacyPolicy.tap()
+        XCTAssertTrue(app.staticTexts["https://healthcomp.app/privacy"].waitForExistence(timeout: 3))
         app.navigationBars["Privacy"].buttons.firstMatch.tap()
         XCTAssertTrue(app.navigationBars["Account"].waitForExistence(timeout: 3))
         let edit = app.buttons["account.settings.edit-display-name"]

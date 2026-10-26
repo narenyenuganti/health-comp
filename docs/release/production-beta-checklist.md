@@ -30,7 +30,7 @@ Do not turn any deferred test into PASS or delete its historical evidence.
   on-device, server validation, profile-scoped cleanup and existing tests.
 - [ ] **Privacy and distribution:** reconcile the selected artifact/provider
   behavior, publish accurate policy and in-app/store links and declarations,
-  and resolve the outstanding Apple distribution question. The smaller cohort
+  and complete the applicable TestFlight Beta Review. The smaller cohort
   is not a substitute for these checks or Apple's acceptance.
 - [ ] **Deliver and smoke-test the actual build:** create the signed archive
   and export, complete TestFlight upload/processing/review as applicable, and
@@ -45,12 +45,23 @@ existing passing behavior. Rerun checks only as required by the actual changes;
 documentation changes do not require another physical scoring attempt.
 No new competition, key reset, destructive phone operation or timed-reference
 diagnostic is needed merely to close a deferred gate. Apple Support contact
-and paid setup remain held. This scope change does not authorize a purchase,
+and advance eligibility inquiries are out of scope; paid setup remains held.
+This scope change does not authorize a purchase,
 enrollment change, account deletion or production data destruction.
 
 Complete this controlled-beta goal only when all four retained checklist items
 are verified. Broader production-readiness claims require a separate resolution
 of the deferred qualifications.
+
+### Distribution decision — October 25, 2026
+
+The owner chose to proceed through normal TestFlight Beta Review using the
+existing membership, without an advance Apple Support eligibility inquiry.
+Prepare truthful privacy disclosures and submit through the ordinary review
+process. This is authorization to pursue review, not a claim that Apple has
+accepted the app or confirmed individual-membership eligibility. If Apple
+requires a response, agreement or account change, report the actual requirement;
+do not change enrollment or make a payment automatically.
 
 ## Private beta scope exception October 4 2026
 
