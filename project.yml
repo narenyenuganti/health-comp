@@ -44,6 +44,8 @@ targets:
         UIRequiredDeviceCapabilities:
           - healthkit
         NSHealthShareUsageDescription: "HealthComp reads your activity data to score competitions with friends."
+        # Upload validation requires both purpose keys; authorization remains read-only.
+        NSHealthUpdateUsageDescription: "HealthComp uses read-only Health access for Activity competitions and does not save or change Health data."
         SUPABASE_URL: "$(SUPABASE_URL)"
         SUPABASE_PUBLISHABLE_KEY: "$(SUPABASE_PUBLISHABLE_KEY)"
         HEALTHCOMP_APNS_ENVIRONMENT: "$(HEALTHCOMP_APNS_ENVIRONMENT)"
