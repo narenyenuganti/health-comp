@@ -41,5 +41,12 @@ if "$verify_bundle"; then
     || fail source_privacy_manifest_malformed
   [[ "$(jq -Sc . <<<"$manifest_json")" == "$(jq -Sc . <<<"$source_json")" ]] \
     || fail packaged_privacy_manifest_drift
+  [[ -f "$2/Info.plist" ]] || fail app_info_plist_missing
+  info_json="$(plutil -convert json -o - "$2/Info.plist" 2>/dev/null)" \
+    || fail app_info_plist_malformed
+  jq -e '
+    [.NSHealthShareUsageDescription, .NSHealthUpdateUsageDescription]
+    | all(.[]; if type == "string" then test("\\S") else false end)
+  ' <<<"$info_json" >/dev/null 2>&1 || fail healthkit_usage_descriptions_missing
 fi
 printf 'PASS: app_required_reason_manifest external_effects=0\n'
