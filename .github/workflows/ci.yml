@@ -110,6 +110,7 @@ jobs:
           xcrun simctl bootstatus "$simulator_id" -b
 
       - name: Test iOS application logic, invitation copy, and privacy disclosures
+        id: app_tests
         run: |
           set -euo pipefail
           # Local ad-hoc Simulator signing embeds the entitlements required by
@@ -120,6 +121,7 @@ jobs:
             -configuration Debug \
             -destination "platform=iOS Simulator,id=$HEALTHCOMP_CI_SIMULATOR_ID" \
             -derivedDataPath "$RUNNER_TEMP/HealthComp-DerivedData" \
+            -resultBundlePath "$RUNNER_TEMP/HealthComp-AppTests.xcresult" \
             -only-testing:HealthCompTests \
             -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testCopyCustomSchemeInvitationIncludesTheCompleteLink \
             -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testCreatingInvitationRequiresConfirmingAnExistingAccount \
@@ -144,6 +146,16 @@ jobs:
             COMPILER_INDEX_STORE_ENABLE=NO \
             SUPABASE_URL="$SUPABASE_URL" \
             SUPABASE_PUBLISHABLE_KEY="$SUPABASE_PUBLISHABLE_KEY"
+
+      - name: Retain synthetic app-test failure evidence
+        if: ${{ failure() && steps.app_tests.outcome == 'failure' }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: ios-app-test-failure-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/HealthComp-AppTests.xcresult
+          retention-days: 3
+          if-no-files-found: warn
+          include-hidden-files: false
 
       - name: Test release-style Staging browser configuration
         run: |
