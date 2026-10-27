@@ -532,11 +532,22 @@ Both hosts serve the static site in `web/` from one Cloudflare Pages project:
   each app's `applinks:$(HEALTHCOMP_INVITE_HOST)` entitlement binds it to only
   its own host;
 - `/invite/*` serves `invite.html`, whose Open Graph tags give Messages its rich
-  preview and whose button falls back to `healthcomp://invite/<token>`;
+  preview and whose button falls back to `healthcomp://invite/<token>` on
+  Production/preview hosts or `healthcomp-staging://invite/<token>` on the
+  Staging host;
 - the page never claims the token; claiming stays in the app;
 - `/` is a splash page and `404.html` answers every other path. Keep both:
   without a top-level `404.html`, Pages serves `index.html` with 200 for any
   unknown path.
+
+Staging is named **HealthComp Staging** and registers only its own competition
+scheme plus `healthcomp-staging-auth` for Apple web callbacks. Update older
+Staging builds before testing beside TestFlight: the shared `healthcomp` scheme
+does not select a deterministic receiving app. Preserve both apps' data when
+updating; namespace separation alone is not physical universal-link evidence.
+Legacy Staging custom links using `healthcomp://` no longer select Staging;
+use the Staging HTTPS link or its `healthcomp-staging://` equivalent with the
+same token. No invitation, schedule, account or stored competition is reset.
 
 Pages deploys `web/` on every push to `main`; DNS is on Cloudflare (registrar
 stays GoDaddy). `scripts/verify-website.sh <base-url>` checks both pages, the

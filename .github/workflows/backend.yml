@@ -61,11 +61,12 @@ jobs:
           bash scripts/verify-no-secrets.sh
           bash scripts/verify-supabase-layout.sh
           deno fmt --config supabase/functions/deno.json --check \
+            scripts/tests/invitation-page.test.ts \
             supabase/functions \
             supabase/tests/app-attest-hosted-regression.deno.json \
             supabase/tests/app-attest-hosted-regression.deno.lock \
             supabase/tests/edge-runtime
-          deno lint --config supabase/functions/deno.json supabase/functions
+          deno lint --config supabase/functions/deno.json supabase/functions scripts/tests/invitation-page.test.ts
           git diff --check
 
       - name: Verify migrations, policies, and Edge Functions
@@ -226,7 +227,7 @@ jobs:
             --allow-env \
             --allow-net \
             --allow-read \
-            supabase/functions
+            supabase/functions scripts/tests/invitation-page.test.ts
           deno test \
             --config supabase/tests/app-attest-hosted-regression.deno.json \
             --allow-read \
