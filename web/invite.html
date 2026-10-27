@@ -43,7 +43,9 @@
     const token = location.pathname.split("/")[2] || "";
     if (/^[A-Za-z0-9_-]{43}$/.test(token)) {
       const open = document.getElementById("open");
-      open.href = "healthcomp://invite/" + token;
+      const scheme = location.hostname === "staging.healthcomp.app"
+        ? "healthcomp-staging" : "healthcomp";
+      open.href = scheme + "://invite/" + token;
       open.hidden = false;
     }
   </script>

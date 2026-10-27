@@ -12,13 +12,24 @@ rg -Fxq 'HEALTHCOMP_ENABLE_APPLE_WEB_SIGN_IN = NO' Configuration/Base.xcconfig |
 rg -Fxq 'HEALTHCOMP_APPLE_WEB_CLIENT_ID =' Configuration/Base.xcconfig || fail services_id_not_unconfigured
 rg -Fq 'INFOPLIST_FILE: Configuration/Staging-Info.plist' project.yml || fail staging_plist_not_selected
 plutil -lint Configuration/Staging-Info.plist >/dev/null || fail invalid_staging_plist
+jq -e -s '
+  [.[0].CFBundleURLTypes[].CFBundleURLSchemes[]] as $release |
+  [.[1].CFBundleURLTypes[].CFBundleURLSchemes[]] as $staging |
+  ($release - $staging) == $release
+' <(plutil -convert json -o - HealthComp/Resources/Info.plist) \
+  <(plutil -convert json -o - Configuration/Staging-Info.plist) \
+  >/dev/null || fail staging_and_release_url_schemes_overlap
 plutil -convert json -o - Configuration/Staging-Info.plist | jq -e '
+  .CFBundleURLTypes[0].CFBundleURLSchemes == ["healthcomp-staging"] and
   .CFBundleURLTypes[1].CFBundleURLSchemes == ["healthcomp-staging-auth"] and
   .HEALTHCOMP_ENABLE_APPLE_WEB_SIGN_IN == "$(HEALTHCOMP_ENABLE_APPLE_WEB_SIGN_IN)" and
   .HEALTHCOMP_APPLE_WEB_CLIENT_ID == "$(HEALTHCOMP_APPLE_WEB_CLIENT_ID)"
 ' >/dev/null || fail staging_callback_or_opt_in_metadata_invalid
+plutil -convert json -o - Configuration/Staging-Info.plist | jq -e '
+  .CFBundleDisplayName == "HealthComp Staging"
+' >/dev/null || fail staging_display_name_not_distinct
 cmp -s \
   <(plutil -convert json -o - HealthComp/Resources/Info.plist | jq -Sc .) \
-  <(plutil -convert json -o - Configuration/Staging-Info.plist | jq -Sc 'del(.CFBundleURLTypes[1], .HEALTHCOMP_ENABLE_APPLE_WEB_SIGN_IN, .HEALTHCOMP_APPLE_WEB_CLIENT_ID)') \
+  <(plutil -convert json -o - Configuration/Staging-Info.plist | jq -Sc '.CFBundleURLTypes[0].CFBundleURLSchemes = ["healthcomp"] | del(.CFBundleDisplayName, .CFBundleURLTypes[1], .HEALTHCOMP_ENABLE_APPLE_WEB_SIGN_IN, .HEALTHCOMP_APPLE_WEB_CLIENT_ID)') \
   || fail staging_base_plist_drift
 printf 'PASS: staging_browser_build_boundary external_effects=0\n'

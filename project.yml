@@ -90,6 +90,7 @@ targets:
     type: bundle.unit-test
     platform: iOS
     sources:
+      - path: HealthCompTests/CompetitionCustomSchemeTests.swift
       - path: HealthCompTests/SupabaseAppleWebDeletionTransportTests.swift
       - path: HealthCompTests/SupabaseConfigurationTests.swift
       - path: HealthCompTests/StagingScoringResponseCaptureTests.swift

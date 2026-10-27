@@ -79,7 +79,7 @@ struct CompetitionInviteShareLink:
 
     init?(fallbackToken token: CompetitionInviteClaimToken) {
         guard let url = URL(
-            string: "healthcomp://invite/\(token.rawValue)"
+            string: "\(CompetitionRoute.customURLScheme)://invite/\(token.rawValue)"
         ),
             CompetitionRoute(url: url) == .claimInvite(token)
         else {
@@ -111,6 +111,13 @@ enum CompetitionInviteHost {
 }
 
 enum CompetitionRoute: Equatable, Sendable {
+    // Co-installed Staging must not receive production invitation links.
+    #if HEALTHCOMP_STAGING
+    static let customURLScheme = "healthcomp-staging"
+    #else
+    static let customURLScheme = "healthcomp"
+    #endif
+
     private enum UserInfoKey {
         static let version = "healthcomp.route.v"
         static let kind = "healthcomp.route.kind"
@@ -143,7 +150,7 @@ enum CompetitionRoute: Equatable, Sendable {
         }
         let encodedPath = url.path(percentEncoded: true)
         switch url.scheme {
-        case "healthcomp":
+        case let scheme? where scheme == Self.customURLScheme:
             guard encodedPath.first == "/",
                   !encodedPath.hasSuffix("/"),
                   encodedPath.dropFirst().contains("/") == false
