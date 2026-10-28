@@ -365,14 +365,8 @@ private struct CompetitionHeroCard: View {
     }
 
     private var endText: String? {
-        switch competition.lifecycle {
-        case .active, .scheduled:
-            competition.acceptedConfiguration?.schedule
-                .flatMap(competitionScheduleBoundaries)
-                .map { "ENDS \(competitionDateTimeText($0.end, locale: locale, timeZone: timeZone))" }
-        default:
-            nil
-        }
+        competitionEndText(competition, locale: locale, timeZone: timeZone)
+            .map { "ENDS \($0)" }
     }
 
     private var statement: Text {
@@ -1012,15 +1006,10 @@ private func sharingAccessibilitySummary(
     ) {
         parts.append(disclosure)
     }
-    let showsEnd: Bool
-    switch competition.lifecycle {
-    case .active, .scheduled: showsEnd = true
-    default: showsEnd = false
-    }
-    if showsEnd,
-       let schedule = competition.acceptedConfiguration?.schedule,
-       let end = competitionScheduleBoundaries(schedule)?.end {
-        parts.append("Ends \(competitionDateTimeText(end, locale: locale, timeZone: timeZone))")
+    if let end = competitionEndText(
+        competition, locale: locale, timeZone: timeZone
+    ) {
+        parts.append("Ends \(end)")
     }
     if competitionShouldShowScores(competition.lifecycle) {
         parts.append(

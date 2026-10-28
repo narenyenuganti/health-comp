@@ -574,10 +574,10 @@ private struct CompetitionScoreboardPanel: View {
 
     @ViewBuilder
     private var endText: some View {
-        if case .active = competition.lifecycle,
-           let schedule = competition.acceptedConfiguration?.schedule,
-           let end = competitionScheduleBoundaries(schedule)?.end {
-            Text("ENDS \(competitionDateTimeText(end, locale: locale, timeZone: timeZone))")
+        if let end = competitionEndText(
+            competition, locale: locale, timeZone: timeZone
+        ) {
+            Text("ENDS \(end)")
                 .foregroundStyle(Theme.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
@@ -920,6 +920,22 @@ func competitionScheduleBoundaries(
         return nil
     }
     return (firstDate, endDate)
+}
+
+func competitionEndText(
+    _ competition: LocalCompetitionPresentation,
+    locale: Locale = .current,
+    timeZone: TimeZone = .current
+) -> String? {
+    switch competition.lifecycle {
+    case .scheduled, .active, .endsToday: break
+    default: return nil
+    }
+    guard let schedule = competition.acceptedConfiguration?.schedule,
+          let end = competitionScheduleBoundaries(schedule)?.end else {
+        return nil
+    }
+    return competitionDateTimeText(end, locale: locale, timeZone: timeZone)
 }
 
 func competitionOwnerAccessibilityText(

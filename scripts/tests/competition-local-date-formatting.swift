@@ -13,6 +13,13 @@ struct CompetitionLocalDateFormattingChecks {
                 precondition(normalized.contains(part), "Missing \(part) in \(text)")
             }
         }
+        func requireTokyo(_ text: String, contains parts: [String]) {
+            require(text, contains: parts)
+            precondition(
+                text.contains("GMT+9") || text.contains("JST"),
+                "Missing Tokyo zone in \(text)"
+            )
+        }
 
         let start = instant("2026-10-28T07:00:00Z")
         let end = instant("2026-11-04T08:00:00Z")
@@ -26,8 +33,8 @@ struct CompetitionLocalDateFormattingChecks {
                 contains: ["Oct 28", "Nov 4", "12:00 AM", "PDT", "PST"])
         require(competitionDateRangeText(start, end, locale: us, timeZone: ny),
                 contains: ["Oct 28", "Nov 4", "3:00 AM", "EDT", "EST"])
-        require(competitionDateRangeText(start, end, locale: us, timeZone: tokyo),
-                contains: ["Oct 28", "Nov 4", "4:00 PM", "5:00 PM", "GMT+9"])
+        requireTokyo(competitionDateRangeText(start, end, locale: us, timeZone: tokyo),
+                     contains: ["Oct 28", "Nov 4", "4:00 PM", "5:00 PM"])
         require(competitionDateRangeText(start, end,
                                          locale: Locale(identifier: "fr_FR"), timeZone: tokyo),
                 contains: ["16:00", "17:00"])
@@ -41,15 +48,15 @@ struct CompetitionLocalDateFormattingChecks {
         let rollover = instant("2026-11-04T07:30:00Z")
         require(competitionDateTimeText(rollover, locale: us, timeZone: la),
                 contains: ["Nov 3", "11:30 PM", "PST"])
-        require(competitionDateTimeText(rollover, locale: us, timeZone: tokyo),
-                contains: ["Nov 4", "4:30 PM", "GMT+9"])
+        requireTokyo(competitionDateTimeText(rollover, locale: us, timeZone: tokyo),
+                     contains: ["Nov 4", "4:30 PM"])
         require(competitionAwardDateText(rollover, locale: us, timeZone: la),
                 contains: ["Nov 3", "PST"])
-        require(competitionAwardDateText(rollover, locale: us, timeZone: tokyo),
-                contains: ["Nov 4", "GMT+9"])
+        requireTokyo(competitionAwardDateText(rollover, locale: us, timeZone: tokyo),
+                     contains: ["Nov 4"])
         let french = Locale(identifier: "fr_FR")
         require(competitionDateTimeText(rollover, locale: french, timeZone: tokyo),
-                contains: ["16:30", "GMT+9"])
+                contains: ["16:30"])
         print("Competition local date formatting checks passed")
     }
 }

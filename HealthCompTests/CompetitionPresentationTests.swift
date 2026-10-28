@@ -244,6 +244,44 @@ final class CompetitionPresentationTests: XCTestCase {
         XCTAssertEqual(schedule.startDay.day, 28)
     }
 
+    func testFinalDayEndTextUsesViewerDateRatherThanCanonicalDay() throws {
+        let zone = "America/Los_Angeles"
+        let schedule = CompetitionSchedule(
+            calendar: try CompetitionCalendar(timeZoneIdentifier: zone),
+            startDay: try CompetitionDay(
+                era: 1, year: 2026, month: 10, day: 28,
+                timeZoneIdentifier: zone
+            )
+        )
+        let competition = LocalCompetitionPresentation(
+            id: CompetitionID(UUID()),
+            ownerDisplayName: "Naren",
+            opponentDisplayName: "Alex",
+            lifecycle: .endsToday,
+            acceptedConfiguration: LocalCompetitionAcceptedPresentation(
+                schedule: schedule, difficulty: .balanced
+            ),
+            userPoints: 0,
+            opponentPoints: 0,
+            days: [],
+            currentDayOrdinal: 7,
+            lastRefresh: nil,
+            tally: nil,
+            terminalResult: nil,
+            timeZoneIdentifier: zone
+        )
+        let text = try XCTUnwrap(competitionEndText(
+            competition,
+            locale: Locale(identifier: "en_US"),
+            timeZone: TimeZone(identifier: "Asia/Tokyo")!
+        ))
+        XCTAssertTrue(text.contains("Nov 4, 2026"))
+        XCTAssertTrue(text.contains("5:00"))
+        XCTAssertTrue(text.contains("PM"))
+        XCTAssertTrue(text.contains("GMT+9") || text.contains("JST"))
+        XCTAssertFalse(text.contains("America/Los_Angeles"))
+    }
+
     func testRefreshFailureCopyMapsEveryPrivacySafeReason() {
         let expected: [(ActivityQueryFailureReason, String)] = [
             (
