@@ -159,7 +159,7 @@ struct CompetitionRingLegend: View {
             .foregroundStyle(Theme.secondary)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(
-                "Move, Exercise and Stand are your rings. \(opponentName) shows points only."
+                "Move, Exercise and Stand are your rings. \(opponentName) is your opponent."
             )
         }
     }
@@ -172,7 +172,7 @@ struct CompetitionRingLegend: View {
     }
 
     private var opponent: some View {
-        swatch(Theme.ink, "\(opponentName.uppercased()) · POINTS ONLY")
+        swatch(Theme.ink, opponentName.uppercased())
     }
 
     private func swatch(_ color: Color, _ title: String) -> some View {
