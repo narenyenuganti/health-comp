@@ -4,6 +4,70 @@ This file records anonymized, reproducible rollout receipts. It excludes Apple
 account details, device identifiers, tokens, private screenshots, raw HealthKit
 data, exact Activity values, and reversible local fingerprints.
 
+## Controlled-beta delivery checkpoint — October 28, 2026
+
+**Delivered for external testing; controlled-beta completion remains open.**
+The [current checklist](production-beta-checklist.md#controlled-beta-delivery-checkpoint--october-28-2026)
+selects production TestFlight **1.0.2 (1)** from merged
+`9145b3199ea4245cf63007a6fdca6346edd31521`.
+
+- **Source:** [PR #174](https://github.com/narenyenuganti/health-comp/pull/174)
+  removes the opponent legend's extra qualifier, including its accessibility
+  copy. [PR #175](https://github.com/narenyenuganti/health-comp/pull/175)
+  condenses schedules and localizes displayed timestamps without changing the
+  canonical competition calendar, scoring or backend. Its exact reviewed head
+  `8a725af1ebee2e4e5ae1abf4e402d803458d6421` passed
+  [iOS CI](https://github.com/narenyenuganti/health-comp/actions/runs/40639400135)
+  and [Backend CI](https://github.com/narenyenuganti/health-comp/actions/runs/40639400130).
+  The merged and tested trees are identical. Duplicate post-merge runs were
+  cancelled, not passed; they add no qualification.
+- **Distribution package:** the retained signed App Store export passed bundle,
+  production-backend, profile, signature, entitlement, privacy and symbol checks.
+  Its IPA SHA-256 is
+  `972a2928baa24cdb330bec0bc6ce33a85663fb0e7070e7e8896040f34f736e16`.
+  Native upload and Apple processing completed. After owner reauthentication,
+  the external Friends Beta group showed this build as **Testing** on October
+  28. This clears the review wait for this build, not every distribution or
+  individual-membership eligibility question. No Apple Support inquiry occurred.
+- **Installed clients:** the Staging phone package was over-installed without
+  uninstalling; production was updated through TestFlight, not from a developer
+  archive. Each retained the same sampled profile root and relative file names
+  across its update. Both Simulator packages were also updated. These are
+  installation/metadata findings, not file-content equality, an on-device
+  executable hash or independent authenticated-server evidence.
+- **Current UI:** normal foregrounding of the updated physical production app
+  and the production Simulator companion showed their expected existing accounts,
+  opponent, active Day 1 and matching local end boundary. The physical Week
+  legend no longer has the removed qualifier. The companion's installed binary
+  hash, signature and production backend matched its retained candidate. No
+  explicit refresh, debugger, reinstall, account/key change or new invitation
+  was used for these UI observations. Automatic app/network side effects were
+  not independently measured. The dedicated Simulator was returned to its
+  original shutdown state and the external app windows were minimized.
+- **Publication:** all eight existing production website checks passed on
+  October 28, including the privacy/support pages, static association file and
+  fake-token invitation page. These HTTP checks are not physical universal-link
+  or real-invitation qualification.
+
+The physical detail screen reported **Activity source is temporarily unavailable**.
+No available production score or matching companion score readback is proved by
+this checkpoint. The source maps missing Activity-summary data to that neutral
+state, but the physical cause is not established. Do not infer denied permission,
+a backend rejection, successful zero-point acceptance or a code regression from
+the message alone. Continue the existing-match smoke check only when genuine
+source availability is confirmed, then finish the retained completion audit.
+Earlier checkpoints and owner-approved deferrals remain unchanged.
+
+Private, aggregate-only receipts remain outside this public repository:
+
+| Receipt | SHA-256 |
+| --- | --- |
+| `staging-physical-update-9145b31-20261028T074722Z.json` | `f810c97d2ab146ab32c9a2658a25783a7b29f857bddc800a310944765b22238b` |
+| `production-testflight-update-9145b31-20261028.json` | `d6a051c600ab34a1de78fcf67c1a5d53fdbce0fbd1706d6608584be7d85b3154` |
+| `production-post-update-ui-9145b31-20261028.json` | `208212e99b1b046d3e0b37689a0b8af36c71ca619f0ace102f6db26d2b2d7265` |
+| `production-companion-ui-9145b31-20261028.json` | `8ee10111f91c025d395e43139690b3e7172510c08cad197faac8faa9dbfd5686` |
+| `testflight-external-1.0.2-review-20261028.json` | `2ab33274984b4bdfcffb45cb8693eacc8513682162db32c338839b8f21acdb17` |
+
 ## Controlled friends beta scope — October 24, 2026
 
 The owner approved the smaller 2–5-person beta and the five qualification

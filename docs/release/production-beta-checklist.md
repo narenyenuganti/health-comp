@@ -1,5 +1,26 @@
 # HealthComp Production Beta Verification Checklist
 
+## Controlled-beta delivery checkpoint — October 28, 2026
+
+The selected production TestFlight build is **1.0.2 (1)** from
+`9145b3199ea4245cf63007a6fdca6346edd31521`. External **Friends Beta** now shows
+**Testing**. The signed distribution package, state-preserving phone updates
+and current two-client account/match UI are qualified in the
+[delivery evidence](production-beta-evidence.md#controlled-beta-delivery-checkpoint--october-28-2026).
+This is not a completed scoring smoke test or general production readiness.
+
+The remaining live check is an available, server-accepted production score
+and its matching companion readback in the existing competition. The phone
+currently reports unavailable Activity source data; the cause is not established.
+Confirm genuinely available Watch Activity before another ordinary scoring
+check. Do not substitute matching screens, CI, installation metadata or a
+displayed zero for accepted-score evidence. No new competition, account switch,
+key reset, reinstall or debugger is needed for this next check.
+
+Then finish the evidence-backed handoff and audit the four retained completion
+items below. Earlier dated checkpoints remain historical; the owner-approved
+deferrals are unchanged and are not passes.
+
 ## Controlled friends beta scope — October 24, 2026
 
 The owner approved a smaller completion boundary: **a controlled beta for 2–5
