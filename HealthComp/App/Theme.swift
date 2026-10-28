@@ -107,31 +107,68 @@ enum AppAppearance: String, CaseIterable, Identifiable {
 /// The mark: three ring bars (Move, Exercise, Stand) facing one neutral
 /// opponent block. Geometry lives in a 100×80 box.
 struct BrandMark: View {
+    /// Like the website, the ring bars grow out of the slash, where all
+    /// three end: once on appear, again on each tap.
+    var grows = false
+
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @State private var plays = 0
+
     var body: some View {
-        ZStack {
-            MarkPolygon([(17.4, 8), (57.4, 8), (53.8, 26), (13.8, 26)])
-                .fill(Theme.move)
-            MarkPolygon([(22.8, 31), (52.8, 31), (49.2, 49), (19.2, 49)])
-                .fill(Theme.exercise)
-            MarkPolygon([(12.2, 54), (48.2, 54), (44.6, 72), (8.6, 72)])
-                .fill(Theme.stand)
-            MarkPolygon([(63.4, 8), (91.4, 8), (78.6, 72), (50.6, 72)])
-                .fill(Theme.ink)
+        KeyframeAnimator(initialValue: [1.0, 1, 1], trigger: plays) { growth in
+            ZStack {
+                MarkPolygon([(17.4, 8), (57.4, 8), (53.8, 26), (13.8, 26)], growth: growth[0])
+                    .fill(Theme.move)
+                MarkPolygon([(22.8, 31), (52.8, 31), (49.2, 49), (19.2, 49)], growth: growth[1])
+                    .fill(Theme.exercise)
+                MarkPolygon([(12.2, 54), (48.2, 54), (44.6, 72), (8.6, 72)], growth: growth[2])
+                    .fill(Theme.stand)
+                MarkPolygon([(63.4, 8), (91.4, 8), (78.6, 72), (50.6, 72)])
+                    .fill(Theme.ink)
+            }
+        } keyframes: { _ in
+            KeyframeTrack(\.[0]) { Self.grow(after: 0) }
+            KeyframeTrack(\.[1]) { Self.grow(after: 0.15) }
+            KeyframeTrack(\.[2]) { Self.grow(after: 0.3) }
         }
         .aspectRatio(1.25, contentMode: .fit)
+        .contentShape(Rectangle())
+        .onAppear(perform: play)
+        .gesture(TapGesture().onEnded(play), including: grows ? .all : .subviews)
         .accessibilityHidden(true)
+    }
+
+    private func play() {
+        if grows && !reduceMotion { plays += 1 }
+    }
+
+    // The website's 450 ms cubic-bezier(.25, 1.2, .5, 1), which overshoots.
+    @KeyframeTrackContentBuilder<Double>
+    private static func grow(after delay: Double) -> some KeyframeTrackContent<Double> {
+        MoveKeyframe(0)
+        LinearKeyframe(0, duration: delay)
+        LinearKeyframe(1, duration: 0.45, timingCurve: .bezier(
+            startControlPoint: UnitPoint(x: 0.25, y: 1.2),
+            endControlPoint: UnitPoint(x: 0.5, y: 1)
+        ))
     }
 }
 
 private struct MarkPolygon: Shape {
     let points: [CGPoint]
+    /// Bars scale toward their right edge: corners 0 and 3 slide toward 1 and 2.
+    let growth: CGFloat
 
-    init(_ points: [(CGFloat, CGFloat)]) {
+    init(_ points: [(CGFloat, CGFloat)], growth: CGFloat = 1) {
         self.points = points.map { CGPoint(x: $0.0, y: $0.1) }
+        self.growth = growth
     }
 
     func path(in rect: CGRect) -> Path {
-        Path { path in
+        var points = points
+        points[0].x = points[1].x + (points[0].x - points[1].x) * growth
+        points[3].x = points[2].x + (points[3].x - points[2].x) * growth
+        return Path { path in
             path.addLines(points.map {
                 CGPoint(
                     x: rect.minX + $0.x / 100 * rect.width,
