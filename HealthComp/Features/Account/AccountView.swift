@@ -40,7 +40,7 @@ struct AccountView: View {
 
     private var header: some View {
         VStack(spacing: 16) {
-            BrandMark()
+            BrandMark(grows: true)
                 .frame(width: 120)
             VStack(spacing: 8) {
                 Text(title)
