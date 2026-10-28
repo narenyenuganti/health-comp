@@ -579,6 +579,7 @@ private struct CompetitionScoreboardPanel: View {
         ) {
             Text("ENDS \(end)")
                 .foregroundStyle(Theme.secondary)
+                .tracking(0)
                 .fixedSize(horizontal: false, vertical: true)
         }
     }
