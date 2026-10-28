@@ -6,6 +6,9 @@ struct CompetitionDetailView: View {
     let source: CompetitionPublicationSource
     var muteButton: CompetitionMuteButton?
 
+    @Environment(\.locale) private var locale
+    @Environment(\.timeZone) private var timeZone
+
     @State private var page: Page = .today
     @State private var drawer: Drawer? = nil
 
@@ -149,7 +152,8 @@ struct CompetitionDetailView: View {
                 Text(
                     competitionTallyDeadlineText(
                         tally,
-                        timeZoneIdentifier: competition.timeZoneIdentifier,
+                        locale: locale,
+                        timeZone: timeZone,
                         opponentDisplayName: competition.opponentDisplayName,
                         source: source
                     )
@@ -168,13 +172,13 @@ struct CompetitionDetailView: View {
         Label {
             VStack(alignment: .leading, spacing: 3) {
                 if let schedule = competition.acceptedConfiguration?.schedule,
-                   let dateRange = competitionScheduleDateRangeText(schedule) {
-                    Text("Seven-day schedule")
-                        .font(.headline)
-                        .foregroundStyle(Theme.ink)
+                   let dateRange = competitionScheduleDateRangeText(
+                       schedule, locale: locale, timeZone: timeZone
+                   ) {
                     Text(dateRange)
                         .font(.subheadline)
-                        .foregroundStyle(Theme.secondary)
+                        .foregroundStyle(Theme.ink)
+                        .fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("competition.schedule.dates")
                 } else {
                     Text("Starts next competition day")
@@ -322,7 +326,8 @@ struct CompetitionDetailView: View {
                         competitionRefreshTimelineText(
                             lastRefresh: competition.lastRefresh,
                             lastSuccessfulFullWindowRefreshAt: competition.lastSuccessfulFullWindowRefreshAt,
-                            timeZoneIdentifier: competition.timeZoneIdentifier
+                            locale: locale,
+                            timeZone: timeZone
                         ).enumerated()
                     ),
                     id: \.offset
@@ -508,6 +513,8 @@ private struct CompetitionScoreboardPanel: View {
 
     @ScaledMetric(relativeTo: .largeTitle) private var scoreSize: CGFloat = 56
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.locale) private var locale
+    @Environment(\.timeZone) private var timeZone
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -567,9 +574,12 @@ private struct CompetitionScoreboardPanel: View {
 
     @ViewBuilder
     private var endText: some View {
-        if case .active = competition.lifecycle, let last = competition.days.last {
-            Text("ENDS \(weekdayText(last.day)) \(last.day.month)/\(last.day.day)")
+        if case .active = competition.lifecycle,
+           let schedule = competition.acceptedConfiguration?.schedule,
+           let end = competitionScheduleBoundaries(schedule)?.end {
+            Text("ENDS \(competitionDateTimeText(end, locale: locale, timeZone: timeZone))")
                 .foregroundStyle(Theme.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -884,25 +894,32 @@ func competitionDayDateText(_ day: CompetitionDay) -> String {
 
 func competitionScheduleDateRangeText(
     _ schedule: CompetitionSchedule,
-    locale: Locale = .current
+    locale: Locale = .current,
+    timeZone: TimeZone = .current
 ) -> String? {
+    guard let boundaries = competitionScheduleBoundaries(schedule) else {
+        return nil
+    }
+    return competitionDateRangeText(
+        boundaries.start, boundaries.end, locale: locale, timeZone: timeZone
+    )
+}
+
+func competitionScheduleBoundaries(
+    _ schedule: CompetitionSchedule
+) -> (start: Date, end: Date)? {
     guard let days = try? schedule.calendar.sevenDayWindow(
         startingOn: schedule.startDay
     ),
         let first = days.first,
         let last = days.last,
         let firstDate = try? schedule.calendar.startOfDay(first),
-        let lastDate = try? schedule.calendar.startOfDay(last),
-        let timeZone = TimeZone(
-            identifier: schedule.calendar.timeZoneIdentifier
-        )
+        let dayAfterLast = try? schedule.calendar.day(after: last),
+        let endDate = try? schedule.calendar.startOfDay(dayAfterLast)
     else {
         return nil
     }
-    var style = Date.FormatStyle(date: .abbreviated, time: .omitted)
-        .locale(locale)
-    style.timeZone = timeZone
-    return "\(firstDate.formatted(style))–\(lastDate.formatted(style)) (\(schedule.calendar.timeZoneIdentifier))"
+    return (firstDate, endDate)
 }
 
 func competitionOwnerAccessibilityText(
@@ -1000,17 +1017,18 @@ func competitionRefreshStatusText(_ status: ActivityRefreshReadStatus) -> String
 func competitionRefreshTimelineText(
     lastRefresh: LocalCompetitionRefreshPresentation?,
     lastSuccessfulFullWindowRefreshAt: Date?,
-    timeZoneIdentifier: String
+    locale: Locale = .current,
+    timeZone: TimeZone = .current
 ) -> [String] {
     var lines: [String] = []
     if let lastRefresh {
         lines.append(
-            "Latest Activity check \(competitionDateTimeText(lastRefresh.readAt, timeZoneIdentifier: timeZoneIdentifier)): \(competitionRefreshStatusText(lastRefresh.status))"
+            "Latest Activity check \(competitionDateTimeText(lastRefresh.readAt, locale: locale, timeZone: timeZone)): \(competitionRefreshStatusText(lastRefresh.status))"
         )
     }
     if let lastSuccessfulFullWindowRefreshAt {
         lines.append(
-            "Last complete Activity read \(competitionDateTimeText(lastSuccessfulFullWindowRefreshAt, timeZoneIdentifier: timeZoneIdentifier))."
+            "Last complete Activity read \(competitionDateTimeText(lastSuccessfulFullWindowRefreshAt, locale: locale, timeZone: timeZone))."
         )
     } else if lastRefresh == nil {
         lines.append("No Activity check yet.")
@@ -1020,13 +1038,15 @@ func competitionRefreshTimelineText(
 
 func competitionTallyDeadlineText(
     _ tally: LocalCompetitionTallyPresentation,
-    timeZoneIdentifier: String,
+    locale: Locale = .current,
+    timeZone: TimeZone = .current,
     opponentDisplayName: String = LocalCompetitionIdentity.opponentDisplayName,
     source: CompetitionPublicationSource = .simulatedFixture
 ) -> String {
     let deadline = competitionDateTimeText(
         tally.bestAvailableDeadline,
-        timeZoneIdentifier: timeZoneIdentifier
+        locale: locale,
+        timeZone: timeZone
     )
     if tally.attention == .awaitingStability {
         return "If complete scores do not stabilize by \(deadline), HealthComp may finalize using the best available accepted data."
@@ -1075,18 +1095,6 @@ func competitionOwnerChartState(
     case .observed:
         day.ownerAcceptedPoints.map(CompetitionChartState.score) ?? .unscored
     }
-}
-
-func competitionDateTimeText(
-    _ date: Date,
-    timeZoneIdentifier: String
-) -> String {
-    let formatter = DateFormatter()
-    formatter.calendar = Calendar(identifier: .gregorian)
-    formatter.locale = Locale(identifier: "en_US_POSIX")
-    formatter.timeZone = TimeZone(identifier: timeZoneIdentifier)
-    formatter.dateFormat = "MMM d, h:mm a z"
-    return formatter.string(from: date)
 }
 
 func activityEvidenceCaption(

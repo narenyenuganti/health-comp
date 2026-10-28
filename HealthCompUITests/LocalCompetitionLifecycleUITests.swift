@@ -45,10 +45,11 @@ final class LocalCompetitionLifecycleUITests: XCTestCase {
         app.buttons["Start with Alex"].tap()
 
         XCTAssertTrue(app.staticTexts["Scheduled"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.staticTexts["Seven-day schedule"].exists)
+        XCTAssertFalse(app.staticTexts["Seven-day schedule"].exists)
         XCTAssertTrue(
             app.staticTexts["competition.schedule.dates"].exists
         )
+        XCTAssertTrue(app.staticTexts["competition.schedule.dates"].label.contains(":"))
         XCTAssertFalse(app.otherElements["competition.scoreHeader.naren"].exists)
         XCTAssertFalse(app.otherElements["competition.scoreHeader.alex"].exists)
         XCTAssertTrue(app.staticTexts["Scores begin Day 1"].exists)

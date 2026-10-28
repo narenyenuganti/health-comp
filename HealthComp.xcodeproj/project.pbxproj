@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		014A98BB33AD675239CEC493 /* CompetitionDateFormatting.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC3953ECC27C54F100565844 /* CompetitionDateFormatting.swift */; };
 		0387B14516F10AD6F7D9631A /* CompetitionRealtimeClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEEFCAE971C5B24E3802EA8A /* CompetitionRealtimeClientTests.swift */; };
 		044015DA32180EF60CF5DC2A /* CompetitionTraceIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB243F0BB966F7049D05D56C /* CompetitionTraceIntegrationTests.swift */; };
 		07B51177CD4962804CDB26F1 /* AuthenticationClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B9BDFDDD2E2FDAB7931BA09 /* AuthenticationClient.swift */; };
@@ -265,6 +266,7 @@
 		C4D8E971E96397AB14D983D3 /* DeviceCheckAppAttestClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceCheckAppAttestClient.swift; sourceTree = "<group>"; };
 		C552868F11DF18D3E8FB90CE /* RemoteCompetitionRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteCompetitionRuntime.swift; sourceTree = "<group>"; };
 		C80D29D0BD360D57164DC524 /* SupabaseCompetitionRemoteAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupabaseCompetitionRemoteAPI.swift; sourceTree = "<group>"; };
+		CC3953ECC27C54F100565844 /* CompetitionDateFormatting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionDateFormatting.swift; sourceTree = "<group>"; };
 		CD89B1AAB2A4AC2FD5A8C159 /* AuthenticatedProfileStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthenticatedProfileStorage.swift; sourceTree = "<group>"; };
 		CF7DE04D723EFB17C6B0F55E /* HealthKitProviderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthKitProviderTests.swift; sourceTree = "<group>"; };
 		D32005C34AC39471F5E780FB /* SupabaseCompetitionRemoteAPITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupabaseCompetitionRemoteAPITests.swift; sourceTree = "<group>"; };
@@ -503,6 +505,7 @@
 				9B370A537E958C39D00549FA /* ActivityRingsView.swift */,
 				225974742689A63371700688 /* ClaimCompetitionView.swift */,
 				6627DB76B896A69CA64FB159 /* CompetitionClient.swift */,
+				CC3953ECC27C54F100565844 /* CompetitionDateFormatting.swift */,
 				45B4CB5326E660812EDE995E /* CompetitionDetailView.swift */,
 				8E8BC3205F9F874134CE71BC /* CompetitionFeature.swift */,
 				F72580283C9D599F21484EB9 /* CompetitionInviteView.swift */,
@@ -766,6 +769,7 @@
 				8A0C6A8337123BBAC2DBA871 /* AuthenticationLifetimeTasks.swift in Sources */,
 				10877D47E948C78A37F0C748 /* ClaimCompetitionView.swift in Sources */,
 				093DC7E7B8D1993E54AF5D8F /* CompetitionClient.swift in Sources */,
+				014A98BB33AD675239CEC493 /* CompetitionDateFormatting.swift in Sources */,
 				664893A2DD239F6897D6B582 /* CompetitionDetailView.swift in Sources */,
 				C26DAEF1685314355F596514 /* CompetitionEnvironmentClient.swift in Sources */,
 				0BF4596D63CCDE7A8B41F7D7 /* CompetitionFeature.swift in Sources */,

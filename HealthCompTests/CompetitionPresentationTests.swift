@@ -185,7 +185,7 @@ final class CompetitionPresentationTests: XCTestCase {
         )
     }
 
-    func testScheduledCompetitionDisclosesConcreteFrozenDatesAndTimeZone()
+    func testScheduledCompetitionShowsActualEndInViewerTimeZone()
         throws
     {
         let timeZoneIdentifier = "America/Los_Angeles"
@@ -203,19 +203,45 @@ final class CompetitionPresentationTests: XCTestCase {
         )
 
         XCTAssertEqual(
-            competitionScheduleDateRangeText(
-                schedule,
-                locale: Locale(identifier: "en_US")
-            ),
-            "Aug 13, 2026–Aug 19, 2026 (America/Los_Angeles)"
+            competitionScheduleBoundaries(schedule)?.start,
+            ISO8601DateFormatter().date(from: "2026-08-13T07:00:00Z")
         )
         XCTAssertEqual(
-            competitionScheduleDateRangeText(
-                schedule,
-                locale: Locale(identifier: "fr_FR")
-            ),
-            "13 août 2026–19 août 2026 (America/Los_Angeles)"
+            competitionScheduleBoundaries(schedule)?.end,
+            ISO8601DateFormatter().date(from: "2026-08-20T07:00:00Z")
         )
+        let range = try XCTUnwrap(competitionScheduleDateRangeText(
+            schedule,
+            locale: Locale(identifier: "en_US"),
+            timeZone: TimeZone(identifier: "Asia/Tokyo")!
+        ))
+        XCTAssertTrue(range.contains("Aug 13"))
+        XCTAssertTrue(range.contains("Aug 20"))
+        XCTAssertTrue(range.contains("GMT+9") || range.contains("JST"))
+        XCTAssertFalse(range.contains("America/Los_Angeles"))
+        XCTAssertEqual(schedule.startDay.day, 13)
+
+        let mismatched = CompetitionSchedule(
+            calendar: try CompetitionCalendar(timeZoneIdentifier: "UTC"),
+            startDay: schedule.startDay
+        )
+        XCTAssertNil(competitionScheduleDateRangeText(mismatched))
+    }
+
+    func testAutumnScheduleEndUsesNextCanonicalDayAcrossDST() throws {
+        let zone = "America/Los_Angeles"
+        let schedule = CompetitionSchedule(
+            calendar: try CompetitionCalendar(timeZoneIdentifier: zone),
+            startDay: try CompetitionDay(
+                era: 1, year: 2026, month: 10, day: 28,
+                timeZoneIdentifier: zone
+            )
+        )
+        let boundaries = try XCTUnwrap(competitionScheduleBoundaries(schedule))
+        XCTAssertEqual(boundaries.start, ISO8601DateFormatter().date(from: "2026-10-28T07:00:00Z"))
+        XCTAssertEqual(boundaries.end, ISO8601DateFormatter().date(from: "2026-11-04T08:00:00Z"))
+        XCTAssertEqual(boundaries.end.timeIntervalSince(boundaries.start), 169 * 3_600)
+        XCTAssertEqual(schedule.startDay.day, 28)
     }
 
     func testRefreshFailureCopyMapsEveryPrivacySafeReason() {
@@ -301,11 +327,13 @@ final class CompetitionPresentationTests: XCTestCase {
                 status: .failed(reason: .protectedDataUnavailable)
             ),
             lastSuccessfulFullWindowRefreshAt: succeededAt,
-            timeZoneIdentifier: "UTC"
+            locale: Locale(identifier: "en_US"),
+            timeZone: TimeZone(identifier: "Asia/Tokyo")!
         )
 
         XCTAssertEqual(lines.count, 2)
         XCTAssertTrue(lines[0].contains("Health data is locked"))
+        XCTAssertTrue(lines[0].contains("GMT+9") || lines[0].contains("JST"))
         XCTAssertTrue(lines[1].contains("Last complete Activity read"))
         XCTAssertFalse(lines.joined(separator: " ").localizedCaseInsensitiveContains("sync"))
     }
@@ -499,7 +527,8 @@ final class CompetitionPresentationTests: XCTestCase {
         )
         let copy = competitionTallyDeadlineText(
             tally,
-            timeZoneIdentifier: "UTC"
+            locale: Locale(identifier: "en_US"),
+            timeZone: TimeZone(identifier: "UTC")!
         )
         XCTAssertTrue(copy.contains("complete scores do not stabilize"))
         XCTAssertTrue(copy.contains("best available accepted data"))
@@ -517,7 +546,8 @@ final class CompetitionPresentationTests: XCTestCase {
         )
         let incompleteCopy = competitionTallyDeadlineText(
             incomplete,
-            timeZoneIdentifier: "UTC"
+            locale: Locale(identifier: "en_US"),
+            timeZone: TimeZone(identifier: "UTC")!
         )
         XCTAssertTrue(
             incompleteCopy.contains(
@@ -593,7 +623,8 @@ final class CompetitionPresentationTests: XCTestCase {
 
         let copy = competitionTallyDeadlineText(
             tally,
-            timeZoneIdentifier: "UTC"
+            locale: Locale(identifier: "en_US"),
+            timeZone: TimeZone(identifier: "UTC")!
         )
 
         XCTAssertTrue(copy.contains("Alex’s final simulated scores"))
@@ -695,12 +726,12 @@ final class CompetitionPresentationTests: XCTestCase {
         let victory = try! XCTUnwrap(
             awards.first(where: { $0.kind == .victory })
         )
-        XCTAssertEqual(
+        XCTAssertTrue(
             competitionAwardEarnedText(
                 victory.awardedAt,
-                timeZoneIdentifier: "UTC"
-            ),
-            "Earned Jan 1, 2001"
+                locale: Locale(identifier: "en_US"),
+                timeZone: TimeZone(identifier: "UTC")!
+            ).hasPrefix("Earned Jan 1, 2001 ")
         )
         XCTAssertEqual(
             competitionVictoryCountText(1, friendDisplayName: "Alex"),

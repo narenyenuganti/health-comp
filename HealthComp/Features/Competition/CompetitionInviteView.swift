@@ -123,7 +123,7 @@ struct CompetitionInviteView: View {
         .accessibilityLabel(
             "Accept invitation from \(competition.opponentDisplayName)"
         )
-        .accessibilityHint("Starts the competition tomorrow.")
+        .accessibilityHint("Starts on the next competition calendar day.")
 
         Button(role: .destructive) {
             showsDeclineConfirmation = true

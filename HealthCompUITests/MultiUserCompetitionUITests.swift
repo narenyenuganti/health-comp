@@ -147,10 +147,9 @@ final class MultiUserCompetitionUITests: XCTestCase {
             app.navigationBars["Competition with Priya"]
                 .waitForExistence(timeout: 3)
         )
-        XCTAssertEqual(
-            app.staticTexts["competition.schedule.dates"].label,
-            "Aug 13, 2026–Aug 19, 2026 (America/Los_Angeles)"
-        )
+        let localRange = app.staticTexts["competition.schedule.dates"].label
+        XCTAssertTrue(localRange.contains(":"))
+        XCTAssertFalse(localRange.contains("America/Los_Angeles"))
         navigateBackToSharing()
 
         let active = sharingCard(state: "active", name: "Jordan")
