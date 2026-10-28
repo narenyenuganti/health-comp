@@ -13,6 +13,8 @@ struct CompetitionResultView: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.locale) private var locale
+    @Environment(\.timeZone) private var timeZone
     @ScaledMetric(relativeTo: .largeTitle) private var headlineSize: CGFloat = 64
     @State private var isRevealed = false
     @State private var isDeleteConfirmationPresented = false
@@ -425,7 +427,8 @@ struct CompetitionResultView: View {
         guard award.kind == .victory else {
             return competitionAwardEarnedText(
                 award.awardedAt,
-                timeZoneIdentifier: competition.timeZoneIdentifier
+                locale: locale,
+                timeZone: timeZone
             )
         }
         return competitionVictoryCountText(

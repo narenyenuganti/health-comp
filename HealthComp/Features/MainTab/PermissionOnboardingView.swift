@@ -159,7 +159,7 @@ struct PermissionOnboardingView: View {
                 "The lead changed in your competition with Alex. You 1,217, Alex 1,194."
             )
             exampleNotification(
-                "9:00 AM",
+                "earlier",
                 "Final competition day",
                 "Today is the final day of your activity competition with Alex."
             )

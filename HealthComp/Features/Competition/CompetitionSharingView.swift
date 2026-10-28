@@ -20,6 +20,9 @@ struct CompetitionSharingView: View {
     let reinvite: () -> Void
     let isReinviteInFlight: Bool
 
+    @Environment(\.locale) private var locale
+    @Environment(\.timeZone) private var timeZone
+
     var body: some View {
         // A plain VStack keeps every card in the hierarchy, so scrolling to a
         // card works in both directions.
@@ -113,7 +116,9 @@ struct CompetitionSharingView: View {
                 .accessibilityLabel(
                     sharingAccessibilitySummary(
                         competition,
-                        source: publication.source
+                        source: publication.source,
+                        locale: locale,
+                        timeZone: timeZone
                     )
                 )
                 .accessibilityHint("Opens this competition")
@@ -263,6 +268,9 @@ private struct CompetitionHeroCard: View {
     let competition: LocalCompetitionPresentation
     let source: CompetitionPublicationSource
 
+    @Environment(\.locale) private var locale
+    @Environment(\.timeZone) private var timeZone
+
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             statusRow
@@ -337,6 +345,7 @@ private struct CompetitionHeroCard: View {
         if let endText {
             Text(endText)
                 .foregroundStyle(Theme.secondary)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
@@ -356,12 +365,8 @@ private struct CompetitionHeroCard: View {
     }
 
     private var endText: String? {
-        switch competition.lifecycle {
-        case .active, .scheduled:
-            competition.days.last.map { "ENDS \(weekdayText($0.day))" }
-        default:
-            nil
-        }
+        competitionEndText(competition, locale: locale, timeZone: timeZone)
+            .map { "ENDS \($0)" }
     }
 
     private var statement: Text {
@@ -611,7 +616,9 @@ private struct CompetitionOutcomeChip: View {
 private struct CompetitionAwardDashboardRow: View {
     let award: LocalCompetitionAward
     let victoryCount: Int
-    let timeZoneIdentifier: String
+
+    @Environment(\.locale) private var locale
+    @Environment(\.timeZone) private var timeZone
 
     @ScaledMetric(relativeTo: .title3) private var discSize: CGFloat = 40
 
@@ -638,7 +645,8 @@ private struct CompetitionAwardDashboardRow: View {
                 Text(
                     competitionAwardEarnedText(
                         award.awardedAt,
-                        timeZoneIdentifier: timeZoneIdentifier
+                        locale: locale,
+                        timeZone: timeZone
                     )
                 )
                     .font(.caption)
@@ -665,7 +673,9 @@ private struct CompetitionAwardDashboardRow: View {
 
 private struct CompetitionRivalrySummaryCard: View {
     let summary: CompetitionRivalrySummary
-    let timeZoneIdentifier: String
+
+    @Environment(\.locale) private var locale
+    @Environment(\.timeZone) private var timeZone
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -688,7 +698,7 @@ private struct CompetitionRivalrySummaryCard: View {
 
             if let latestOwnerVictoryAt = summary.latestOwnerVictoryAt {
                 Text(
-                    "Latest victory \(competitionAwardDateText(latestOwnerVictoryAt, timeZoneIdentifier: timeZoneIdentifier))"
+                    "Latest victory \(competitionAwardDateText(latestOwnerVictoryAt, locale: locale, timeZone: timeZone))"
                 )
                 .font(.caption)
                 .foregroundStyle(Theme.secondary)
@@ -740,6 +750,9 @@ private struct CompetitionRivalrySummaryCard: View {
 struct CompetitionHistoryView: View {
     let publication: LocalCompetitionPublication
 
+    @Environment(\.locale) private var locale
+    @Environment(\.timeZone) private var timeZone
+
     @State private var page: Page = .matches
 
     private enum Page: Hashable {
@@ -751,8 +764,7 @@ struct CompetitionHistoryView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 CompetitionRivalrySummaryCard(
-                    summary: competitionRivalrySummary(publication.dashboard),
-                    timeZoneIdentifier: publication.timeZoneIdentifier
+                    summary: competitionRivalrySummary(publication.dashboard)
                 )
 
                 Picker("History", selection: $page) {
@@ -802,7 +814,9 @@ struct CompetitionHistoryView: View {
                     .accessibilityLabel(
                         sharingAccessibilitySummary(
                             competition,
-                            source: publication.source
+                            source: publication.source,
+                            locale: locale,
+                            timeZone: timeZone
                         )
                     )
                     .accessibilityHint("Opens this competition")
@@ -833,11 +847,7 @@ struct CompetitionHistoryView: View {
                         victoryCount: awards.filter {
                             $0.kind == .victory
                                 && $0.friendDisplayName == award.friendDisplayName
-                        }.count,
-                        timeZoneIdentifier: publication.dashboard.competitions
-                            .first(where: { $0.id == award.competitionID })?
-                            .timeZoneIdentifier
-                            ?? publication.timeZoneIdentifier
+                        }.count
                     )
                     if index < awards.count - 1 {
                         Rectangle()
@@ -982,7 +992,9 @@ private func sharingOutcome(
 
 private func sharingAccessibilitySummary(
     _ competition: LocalCompetitionPresentation,
-    source: CompetitionPublicationSource
+    source: CompetitionPublicationSource,
+    locale: Locale = .current,
+    timeZone: TimeZone = .current
 ) -> String {
     var parts = [
         competition.opponentDisplayName,
@@ -993,6 +1005,11 @@ private func sharingAccessibilitySummary(
         opponentDisplayName: competition.opponentDisplayName
     ) {
         parts.append(disclosure)
+    }
+    if let end = competitionEndText(
+        competition, locale: locale, timeZone: timeZone
+    ) {
+        parts.append("Ends \(end)")
     }
     if competitionShouldShowScores(competition.lifecycle) {
         parts.append(
@@ -1080,25 +1097,6 @@ func competitionRivalrySummary(
             .map(\.awardedAt)
             .max()
     )
-}
-
-func competitionAwardDateText(
-    _ date: Date,
-    timeZoneIdentifier: String
-) -> String {
-    let formatter = DateFormatter()
-    formatter.calendar = Calendar(identifier: .gregorian)
-    formatter.locale = Locale(identifier: "en_US_POSIX")
-    formatter.timeZone = TimeZone(identifier: timeZoneIdentifier)
-    formatter.dateFormat = "MMM d, yyyy"
-    return formatter.string(from: date)
-}
-
-func competitionAwardEarnedText(
-    _ date: Date,
-    timeZoneIdentifier: String
-) -> String {
-    "Earned \(competitionAwardDateText(date, timeZoneIdentifier: timeZoneIdentifier))"
 }
 
 func competitionVictoryCountText(

@@ -147,10 +147,9 @@ final class MultiUserCompetitionUITests: XCTestCase {
             app.navigationBars["Competition with Priya"]
                 .waitForExistence(timeout: 3)
         )
-        XCTAssertEqual(
-            app.staticTexts["competition.schedule.dates"].label,
-            "Aug 13, 2026–Aug 19, 2026 (America/Los_Angeles)"
-        )
+        let localRange = app.staticTexts["competition.schedule.dates"].label
+        XCTAssertTrue(localRange.contains(":"))
+        XCTAssertFalse(localRange.contains("America/Los_Angeles"))
         navigateBackToSharing()
 
         let active = sharingCard(state: "active", name: "Jordan")
@@ -620,6 +619,7 @@ final class MultiUserCompetitionUITests: XCTestCase {
                 name: "Former competitor"
             )
             scrollToElement(completed)
+            revealRemoteElementFully(completed)
             XCTAssertTrue(completed.isHittable)
             completed.tap()
             XCTAssertTrue(
@@ -758,7 +758,7 @@ final class MultiUserCompetitionUITests: XCTestCase {
 
         let currentDay = app.descendants(matching: .any)["competition.day.3"]
         scrollToElement(currentDay)
-        centerRemoteDayForScreenshot(currentDay)
+        revealRemoteElementFully(currentDay)
         assertRemoteRenderedConfiguration(expectedConfiguration)
         XCTAssertEqual(
             currentDay.label,
@@ -775,26 +775,26 @@ final class MultiUserCompetitionUITests: XCTestCase {
         try app.performAccessibilityAudit(for: .textClipped)
     }
 
-    private func centerRemoteDayForScreenshot(_ day: XCUIElement) {
+    private func revealRemoteElementFully(_ element: XCUIElement) {
         let scrollView = app.scrollViews.firstMatch
         XCTAssertTrue(scrollView.exists)
         var geometry: [String] = []
         func attachGeometry() {
             let attachment = XCTAttachment(string: geometry.joined(separator: "\n"))
-            attachment.name = "remote-day-centering-geometry"
+            attachment.name = "remote-element-visibility-geometry"
             attachment.lifetime = .keepAlways
             add(attachment)
         }
         for iteration in 0..<6 {
             let viewport = visibleRemoteScrollFrame(scrollView)
             XCTAssertGreaterThan(viewport.height, 0)
-            let dayFrame = day.frame
-            geometry.append("iteration=\(iteration); viewport=\(viewport); day=\(dayFrame)")
-            if viewport.contains(dayFrame) {
+            let elementFrame = element.frame
+            geometry.append("iteration=\(iteration); viewport=\(viewport); element=\(elementFrame)")
+            if viewport.contains(elementFrame) {
                 attachGeometry()
                 return
             }
-            let offset = (dayFrame.midY - viewport.midY) / viewport.height
+            let offset = (elementFrame.midY - viewport.midY) / viewport.height
             let distance = min(0.35, max(0.08, abs(offset)))
             let startY = offset > 0 ? 0.7 : 0.3
             let endY = startY + (offset > 0 ? -distance : distance)
@@ -804,7 +804,7 @@ final class MultiUserCompetitionUITests: XCTestCase {
             let end = scrollView.coordinate(
                 withNormalizedOffset: CGVector(dx: 0.5, dy: endY)
             )
-            // Stop before releasing so scroll momentum cannot overshoot the card.
+            // Stop before releasing so scroll momentum cannot overshoot the element.
             start.press(
                 forDuration: 0.05,
                 thenDragTo: end,
@@ -812,12 +812,12 @@ final class MultiUserCompetitionUITests: XCTestCase {
                 thenHoldForDuration: 0.2
             )
         }
-        geometry.append("final viewport=\(visibleRemoteScrollFrame(scrollView)); day=\(day.frame)")
+        geometry.append("final viewport=\(visibleRemoteScrollFrame(scrollView)); element=\(element.frame)")
         attachGeometry()
         XCTAssertTrue(
-            visibleRemoteScrollFrame(scrollView).contains(day.frame),
-            "The full fixture day must be visible before capturing visual evidence. "
-                + "viewport=\(visibleRemoteScrollFrame(scrollView)); day=\(day.frame)"
+            visibleRemoteScrollFrame(scrollView).contains(element.frame),
+            "The full element must be visible before interacting. "
+                + "viewport=\(visibleRemoteScrollFrame(scrollView)); element=\(element.frame)"
         )
     }
 
