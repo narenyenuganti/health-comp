@@ -5,6 +5,27 @@ import Dispatch
 @testable import HealthComp
 
 final class HealthKitProviderTests: XCTestCase {
+    func testActivitySummaryPredicateUsesCalendarOnlyDayComponentsAcrossTimeZones() throws {
+        for zone in ["America/Los_Angeles", "Asia/Kolkata"] {
+            let calendar = try CompetitionCalendar(timeZoneIdentifier: zone)
+            let start = try CompetitionDay(era: 1, year: 2026, month: 10, day: 29,
+                                           timeZoneIdentifier: zone)
+            let window = try CompetitionActivityWindow(calendar: calendar, startDay: start)
+            var expectedCalendar = Calendar(identifier: .gregorian)
+            expectedCalendar.timeZone = try XCTUnwrap(TimeZone(identifier: zone))
+            let expectedStart = DateComponents(calendar: expectedCalendar, era: 1,
+                                                year: 2026, month: 10, day: 29)
+            let expectedEnd = DateComponents(calendar: expectedCalendar, era: 1,
+                                              year: 2026, month: 11, day: 4)
+
+            XCTAssertEqual(
+                try HealthKitProvider.activitySummaryPredicate(for: window),
+                HKQuery.predicate(forActivitySummariesBetweenStart: expectedStart, end: expectedEnd),
+                zone
+            )
+        }
+    }
+
     func testCompetitionAuthorizationRequestsOnlyCompetitionReadTypes() async throws {
         let capturedTypes = LockedObjectTypeSet()
         let provider = HealthKitProvider(

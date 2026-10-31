@@ -360,7 +360,7 @@ final class HealthKitProvider: @unchecked Sendable {
         )
     }
 
-    private static func activitySummaryPredicate(
+    static func activitySummaryPredicate(
         for window: CompetitionActivityWindow
     ) throws -> NSPredicate {
         guard let first = window.days.first,
@@ -369,10 +369,9 @@ final class HealthKitProvider: @unchecked Sendable {
             throw CompetitionActivitySourceError.invalidResponse
         }
         let calendar = try competitionCalendar(window.calendar)
-        let timeZone = calendar.timeZone
+        // An explicit component time zone can filter out otherwise-readable day summaries.
         let start = DateComponents(
             calendar: calendar,
-            timeZone: timeZone,
             era: first.era,
             year: first.year,
             month: first.month,
@@ -380,7 +379,6 @@ final class HealthKitProvider: @unchecked Sendable {
         )
         let end = DateComponents(
             calendar: calendar,
-            timeZone: timeZone,
             era: last.era,
             year: last.year,
             month: last.month,

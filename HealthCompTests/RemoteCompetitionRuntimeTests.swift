@@ -1481,6 +1481,20 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
     func testSameDayHealthRecoveryReplacesPersistedUnavailableScoreOnce()
         async throws
     {
+        try await assertHealthRecovery(availableAfter: 60, expectedAppendedScores: 2)
+    }
+
+    func testNextDayHealthRecoveryReplacesPreviousDaysUnavailableScoreOnce()
+        async throws
+    {
+        try await assertHealthRecovery(availableAfter: 24 * 60 * 60 + 60, expectedAppendedScores: 3)
+    }
+
+    private func assertHealthRecovery(
+        availableAfter: TimeInterval,
+        expectedAppendedScores: Int
+    ) async throws
+    {
         let root = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
         for child in ["events", "outbox", "cursors"] {
@@ -1511,7 +1525,7 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
         let days = try calendar.sevenDayWindow(startingOn: startDay)
         let dayOneNoon = try calendar.startOfDay(startDay)
             .addingTimeInterval(12 * 60 * 60)
-        let availableAt = dayOneNoon.addingTimeInterval(60)
+        let availableAt = dayOneNoon.addingTimeInterval(availableAfter)
         let snapshot = ActivitySnapshot(
             moveMode: .activeEnergyKilocalories,
             standMode: .standHours,
@@ -1602,7 +1616,7 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
         }
         let appendedScores = await server.appendedScoreCount()
         let remainingOutbox = try await outboxStore.entries()
-        XCTAssertEqual(appendedScores, 2)
+        XCTAssertEqual(appendedScores, expectedAppendedScores)
         XCTAssertEqual(remainingOutbox, [])
         await recoveredRuntime.stop()
     }
