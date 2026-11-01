@@ -1755,11 +1755,30 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
             try await tallyHarness.append(for: profileID, ordinal: ordinal, revision: Int64(ordinal), at: tallyHarness.dayOneNoon)
         }
         try await tallyHarness.append(for: profileID, ordinal: 7, revision: 7, at: tallyHarness.dayOneNoon, reason: "sourceDataUnavailable")
+        for ordinal in 1...7 {
+            try await tallyHarness.append(for: tallyHarness.creatorID, ordinal: ordinal, revision: Int64(ordinal), at: tallyHarness.dayOneNoon)
+        }
         let afterWindow = tallyHarness.dayOneNoon.addingTimeInterval(6 * 86_400 + 13 * 3_600)
         let tallying = await ownerRuntime(tallyHarness, at: afterWindow, snapshots: nil).synchronizeAll()
         XCTAssertEqual(tallying.failures, [])
         let tally = try XCTUnwrap(project(tallying.successfulCompetitions, at: afterWindow).first?.tally)
         XCTAssertEqual(tally.attention, .incomplete(missingOrdinals: [7], unavailableOrdinals: []))
+
+        // The empty Day 7 row still counts for the stable check, which locks
+        // your window: once it's back, the wait is the other person's.
+        let ledger = try XCTUnwrap(tallying.successfulCompetitions.first?.journal.projection.remoteScoreLedgers[profileID])
+        try await tallyHarness.server.appendAttestation(
+            for: profileID,
+            acceptedRevisions: (1...7).map(Int64.init),
+            windowCommitmentSHA256: try ledger.windowCommitment(),
+            at: afterWindow
+        )
+        let attested = await ownerRuntime(tallyHarness, at: afterWindow, snapshots: nil).synchronizeAll()
+        XCTAssertEqual(attested.failures, [])
+        XCTAssertEqual(
+            project(attested.successfulCompetitions, at: afterWindow).first?.tally?.attention,
+            .awaitingOpponentCheck
+        )
     }
 
     func testSameDayHealthRecoveryReplacesPersistedUnavailableScoreOnce()
@@ -4204,6 +4223,35 @@ private actor TwoClientCompetitionServer {
 
     func appendedScoreCount() -> Int {
         acceptedBySemanticID.count
+    }
+
+    /// A stable check on the server, as if `profileID`'s device sent it.
+    func appendAttestation(
+        for profileID: UUID,
+        acceptedRevisions: [Int64],
+        windowCommitmentSHA256: String,
+        at attestedAt: Date
+    ) throws {
+        let serverSequence = (changes.last?.serverSequence ?? 0) + 1
+        changes.append(
+            try CompetitionChange(
+                serverSequence: serverSequence,
+                kind: .participantAttested,
+                entityID: UUID(),
+                occurredAt: attestedAt,
+                payload: .participantAttestation(
+                    try CompetitionParticipantAttestationChange(
+                        participantProfileID: profileID,
+                        basis: .stable,
+                        windowCommitmentSHA256: windowCommitmentSHA256,
+                        acceptedRevisions: acceptedRevisions,
+                        attestationVersion: 1,
+                        serverSequence: serverSequence,
+                        attestedAt: attestedAt
+                    )
+                )
+            )
+        )
     }
 
     private func descriptor() throws -> CompetitionDescriptor {

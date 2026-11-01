@@ -1021,16 +1021,26 @@ final class RemoteCompetitionClientTests: XCTestCase {
             )
         }
         // You first, then their days, then their last check.
+        XCTAssertEqual(
+            attention(ownerMissing: [7], opponentMissing: [6, 7], ownerAttestedStable: false),
+            .incomplete(missingOrdinals: [7], unavailableOrdinals: [])
+        )
         for stable in [false, true] {
-            XCTAssertEqual(
-                attention(ownerMissing: [7], opponentMissing: [6, 7], ownerAttestedStable: stable),
-                .incomplete(missingOrdinals: [7], unavailableOrdinals: [])
-            )
             XCTAssertEqual(
                 attention(ownerMissing: [], opponentMissing: [7], ownerAttestedStable: stable),
                 .opponentPlanUnavailable
             )
         }
+        // Your stable check locks your window: your missing days can't
+        // change any more, so the wait is theirs.
+        XCTAssertEqual(
+            attention(ownerMissing: [7], opponentMissing: [6, 7], ownerAttestedStable: true),
+            .opponentPlanUnavailable
+        )
+        XCTAssertEqual(
+            attention(ownerMissing: [7], opponentMissing: [], ownerAttestedStable: true),
+            .awaitingOpponentCheck
+        )
         XCTAssertEqual(
             attention(ownerMissing: [], opponentMissing: [], ownerAttestedStable: false),
             .awaitingStability
