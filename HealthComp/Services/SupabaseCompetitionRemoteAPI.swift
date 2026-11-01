@@ -348,19 +348,10 @@ enum SupabaseCompetitionRemoteAPI {
                 try await sendCompetitionCommand("cancel_competition", id, transport)
             },
             loadChallengeLinkCode: {
-                let response = try await send(
-                    .rpc(name: "get_my_challenge_link", parameters: try encode(EmptyParameters())),
-                    transport: transport
-                )
-                guard let object = try? JSONSerialization.jsonObject(with: response.data)
-                    as? [String: Any],
-                      Set(object.keys) == ["code"],
-                      let raw = object["code"] as? String,
-                      let code = CompetitionChallengeLinkCode(rawValue: raw)
-                else {
-                    throw CompetitionRemoteFailure.serverContractMismatch
-                }
-                return code
+                try await challengeLinkCode("get_my_challenge_link", transport)
+            },
+            resetChallengeLinkCode: {
+                try await challengeLinkCode("reset_my_challenge_link", transport)
             },
             resolveChallengeLink: { code in
                 let response = try await send(
@@ -372,6 +363,26 @@ enum SupabaseCompetitionRemoteAPI {
                 return try decode(AuthenticatedProfile.self, response.data, contract: .profile)
             }
         )
+    }
+
+    /// get / reset your challenge link: exactly `{code}`.
+    private static func challengeLinkCode(
+        _ name: String,
+        _ transport: CompetitionRemoteTransport
+    ) async throws -> CompetitionChallengeLinkCode {
+        let response = try await send(
+            .rpc(name: name, parameters: try encode(EmptyParameters())),
+            transport: transport
+        )
+        guard let object = try? JSONSerialization.jsonObject(with: response.data)
+            as? [String: Any],
+              Set(object.keys) == ["code"],
+              let raw = object["code"] as? String,
+              let code = CompetitionChallengeLinkCode(rawValue: raw)
+        else {
+            throw CompetitionRemoteFailure.serverContractMismatch
+        }
+        return code
     }
 
     /// accept / decline / cancel: `{competition_id}` echoing the request.

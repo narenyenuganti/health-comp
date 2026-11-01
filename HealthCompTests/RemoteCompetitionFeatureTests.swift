@@ -895,6 +895,65 @@ final class RemoteCompetitionFeatureTests: XCTestCase {
     }
 
     @MainActor
+    func testChallengeLinkResetShowsNewLinkOrKeepsOldWithError() async throws {
+        let old = try XCTUnwrap(URL(string: "https://\(Self.host)/c/Xb3kP9qL2mN8vR4tY6wZ1a"))
+        let new = try XCTUnwrap(URL(string: "https://\(Self.host)/c/Qm7tR2vX9pL4kN8wB3cY6z"))
+        let newCode = try XCTUnwrap(CompetitionChallengeLinkCode(rawValue: "Qm7tR2vX9pL4kN8wB3cY6z"))
+        let outcomes = LockIsolated<[Result<CompetitionChallengeLinkCode, CompetitionRemoteFailure>]>([
+            .failure(.retryableTransport), .success(newCode),
+        ])
+        var client = InviteCreationRecorder(results: []).client
+        client.resetChallengeLinkCode = {
+            try outcomes.withValue { $0.removeFirst() }.get()
+        }
+        var links = CompetitionInviteLinkClient.fixture(
+            host: Self.host, timeZoneIdentifier: "UTC", idempotencyKeys: []
+        )
+        links.makeChallengeLink = { URL(string: "https://\(Self.host)/c/\($0.rawValue)") }
+        var initial = CompetitionFeature.State()
+        initial.challengeLink = old
+        let store = TestStore(initialState: initial) { CompetitionFeature() }
+            withDependencies: {
+                $0.competitionClient = client
+                $0.competitionInviteLinkClient = links
+            }
+
+        // Failure keeps the old link and says so.
+        await store.send(.challengeLinkResetConfirmed) { $0.challengeLinkIsResetting = true }
+        await store.receive(.challengeLinkResetResponse(nil)) {
+            $0.challengeLinkIsResetting = false
+            $0.challengeLinkResetFailed = true
+        }
+
+        // Success shows the new link and clears the error.
+        await store.send(.challengeLinkResetConfirmed) {
+            $0.challengeLinkIsResetting = true
+            $0.challengeLinkResetFailed = false
+        }
+        await store.receive(.challengeLinkResetResponse(new)) {
+            $0.challengeLinkIsResetting = false
+            $0.challengeLink = new
+        }
+
+        await store.finish()
+
+        // Signing out clears the reset state with the link.
+        var resetting = initial
+        resetting.challengeLinkIsResetting = true
+        resetting.challengeLinkResetFailed = true
+        let stopped = TestStore(initialState: resetting) { CompetitionFeature() }
+            withDependencies: { $0.competitionClient = client }
+        // A confirm while one is running does nothing.
+        await stopped.send(.challengeLinkResetConfirmed)
+        await stopped.send(.stop) {
+            $0.challengeLink = nil
+            $0.challengeLinkIsResetting = false
+            $0.challengeLinkResetFailed = false
+        }
+        await stopped.finish()
+    }
+
+    @MainActor
     func testFindRecipientAcceptsLinkCodeAndLegacyUUID() async throws {
         let recipient = Self.recipient
         let resolved = LockIsolated<[String]>([])

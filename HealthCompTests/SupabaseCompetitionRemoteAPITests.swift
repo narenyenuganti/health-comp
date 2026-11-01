@@ -828,6 +828,23 @@ final class SupabaseCompetitionRemoteAPITests: XCTestCase {
         try assertRPC(requests[1], name: "resolve_challenge_link", body: ["code": "Xb3kP9qL2mN8vR4tY6wZ1a"])
     }
 
+    func testResetChallengeLinkCode() async throws {
+        let harness = CompetitionTransportHarness(stubs: [
+            .response(200, try jsonData(["code": "Qm7tR2vX9pL4kN8wB3cY6z"])),
+            .response(200, try jsonData(["code": "Qm7tR2vX9pL4kN8wB3cY6z", "extra": 1])),
+            .failure(.server(statusCode: 401, code: "42501", message: "active_profile_required")),
+        ])
+        let api = makeAPI(harness)
+        let code = try await api.resetChallengeLinkCode()
+        XCTAssertEqual(code.rawValue, "Qm7tR2vX9pL4kN8wB3cY6z")
+        let extraKey = await remoteFailure { _ = try await api.resetChallengeLinkCode() }
+        XCTAssertEqual(extraKey, .serverContractMismatch)
+        let signedOut = await remoteFailure { _ = try await api.resetChallengeLinkCode() }
+        XCTAssertEqual(signedOut, .unauthenticated)
+        let requests = await harness.recordedRequests()
+        try assertRPC(requests[0], name: "reset_my_challenge_link", body: [:])
+    }
+
     func testCreateClassifiesIncomingAndActiveConflicts() async throws {
         let request = try CompetitionInviteCreationRequest(
             recipientProfileID: UUID(uuidString: "12000000-0000-4000-8000-0000000000a4")!,

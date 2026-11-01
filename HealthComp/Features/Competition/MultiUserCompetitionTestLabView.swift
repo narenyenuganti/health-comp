@@ -569,6 +569,7 @@ private struct MultiUserCompetitionChallengeLinkTestLabView: View {
 
 private struct MultiUserCompetitionAccountTestLabView: View {
     @State private var openedURL: URL?
+    @State private var challengeURL = URL(string: "https://invites.ui.healthcomp.test/c/Xb3kP9qL2mN8vR4tY6wZ1a")
     @State private var muted = [
         AccountMutedPerson(id: "remote-opponent:v1:hermes", name: "Hermes"),
     ]
@@ -619,9 +620,14 @@ private struct MultiUserCompetitionAccountTestLabView: View {
                     ),
                     liveMatchCount: 2,
                     challengeLink: AccountChallengeLink(
-                        url: URL(string: "https://invites.ui.healthcomp.test/c/Xb3kP9qL2mN8vR4tY6wZ1a"),
+                        url: challengeURL,
                         failed: false,
-                        load: {}
+                        load: {},
+                        isResetting: false,
+                        resetFailed: false,
+                        reset: {
+                            challengeURL = URL(string: "https://invites.ui.healthcomp.test/c/Qm7tR2vX9pL4kN8wB3cY6z")
+                        }
                     )
                 )
             }

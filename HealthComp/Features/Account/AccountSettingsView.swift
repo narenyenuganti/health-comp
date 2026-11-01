@@ -7,6 +7,9 @@ struct AccountChallengeLink {
     let url: URL?
     let failed: Bool
     let load: () -> Void
+    let isResetting: Bool
+    let resetFailed: Bool
+    let reset: () -> Void
 }
 
 /// What Account → Notifications needs from the competition. Hosts without
@@ -103,6 +106,7 @@ struct AccountSettingsView: View {
 #endif
 
     @State private var isSignOutConfirmationPresented = false
+    @State private var isResetLinkConfirmationPresented = false
 
     @AppStorage(AppAppearance.storageKey)
     private var appearance = AppAppearance.system
@@ -223,6 +227,7 @@ struct AccountSettingsView: View {
                         .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityLabel("Your challenge link")
+                        .accessibilityValue(Self.displayText(url))
                         .accessibilityIdentifier("account.challenge-link.url")
                     let buttons = Group {
                         Button {
@@ -247,7 +252,31 @@ struct AccountSettingsView: View {
                     } else {
                         HStack(spacing: 8) { buttons }
                     }
-                    Text("Anyone with this link can challenge you. You still choose whether to accept.")
+                    let isResetting = challengeLink?.isResetting == true
+                    Button("Reset Link") { isResetLinkConfirmationPresented = true }
+                        .buttonStyle(.borderless)
+                        .frame(minHeight: 44)
+                        .disabled(isResetting)
+                        .accessibilityValue(isResetting ? "Resetting" : "")
+                        .accessibilityIdentifier("account.challenge-link.reset")
+                        .alert(
+                            "Reset your challenge link?",
+                            isPresented: $isResetLinkConfirmationPresented
+                        ) {
+                            Button("Reset Link", role: .destructive) { challengeLink?.reset() }
+                                .accessibilityIdentifier("account.challenge-link.reset.confirm")
+                            Button("Cancel", role: .cancel) {}
+                        } message: {
+                            Text("Your old link stops working. Challenges already sent stay.")
+                        }
+                    if challengeLink?.resetFailed == true {
+                        Text("Couldn’t reset your link. Try again.")
+                            .font(.callout)
+                            .foregroundStyle(Theme.ink)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("account.challenge-link.reset-error")
+                    }
+                    Text("Anyone with this link can challenge you. Reset it to turn off the old one; challenges already sent stay.")
                         .font(.caption)
                         .foregroundStyle(Theme.secondary)
                         .fixedSize(horizontal: false, vertical: true)

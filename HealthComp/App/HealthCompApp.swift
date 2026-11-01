@@ -341,7 +341,10 @@ private struct AccountSheet: View {
             ? AccountChallengeLink(
                 url: mainStore.competition.challengeLink,
                 failed: mainStore.competition.challengeLinkLoadFailed,
-                load: { mainStore.send(.competition(.challengeLinkRequested)) }
+                load: { mainStore.send(.competition(.challengeLinkRequested)) },
+                isResetting: mainStore.competition.challengeLinkIsResetting,
+                resetFailed: mainStore.competition.challengeLinkResetFailed,
+                reset: { mainStore.send(.competition(.challengeLinkResetConfirmed)) }
             )
             : nil
 #if HEALTHCOMP_STAGING

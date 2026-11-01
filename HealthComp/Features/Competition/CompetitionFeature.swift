@@ -101,6 +101,8 @@ struct CompetitionFeature {
         /// Your reusable challenge link, once loaded.
         var challengeLink: URL?
         var challengeLinkLoadFailed = false
+        var challengeLinkIsResetting = false
+        var challengeLinkResetFailed = false
 
         init(
             publication: CompetitionPublication? = nil,
@@ -154,6 +156,9 @@ struct CompetitionFeature {
         case cancelTapped(CompetitionID)
         case challengeLinkRequested
         case challengeLinkResponse(URL?)
+        /// Reset Link, after its confirmation.
+        case challengeLinkResetConfirmed
+        case challengeLinkResetResponse(URL?)
         case createInviteTapped
         case createInviteResponse(
             InviteSlot,
@@ -355,6 +360,26 @@ struct CompetitionFeature {
             case let .challengeLinkResponse(url):
                 state.challengeLink = url
                 state.challengeLinkLoadFailed = url == nil
+                return .none
+
+            case .challengeLinkResetConfirmed:
+                guard !state.challengeLinkIsResetting else { return .none }
+                state.challengeLinkIsResetting = true
+                state.challengeLinkResetFailed = false
+                return .run { send in
+                    let code = try? await competitionClient.resetChallengeLinkCode()
+                    await send(.challengeLinkResetResponse(
+                        code.flatMap(competitionInviteLinkClient.makeChallengeLink)
+                    ))
+                }
+                .cancellable(id: CancelID.challengeLink, cancelInFlight: true)
+
+            // A failure keeps showing the old link, which may or may not
+            // still work; trying again makes a new one either way.
+            case let .challengeLinkResetResponse(url):
+                state.challengeLinkIsResetting = false
+                state.challengeLinkResetFailed = url == nil
+                if let url { state.challengeLink = url }
                 return .none
 
             case .createInviteTapped:
@@ -716,6 +741,8 @@ struct CompetitionFeature {
                 state.inviteRecipientStatus = .idle
                 state.challengeLink = nil
                 state.challengeLinkLoadFailed = false
+                state.challengeLinkIsResetting = false
+                state.challengeLinkResetFailed = false
                 return .concatenate(
                     .merge(
                         .cancel(id: CancelID.publications),

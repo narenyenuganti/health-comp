@@ -93,6 +93,7 @@ struct CompetitionClient: Sendable {
         CompetitionInviteClaimRequest
     ) async throws -> CompetitionInvitePreview
     var loadChallengeLinkCode: @Sendable () async throws -> CompetitionChallengeLinkCode
+    var resetChallengeLinkCode: @Sendable () async throws -> CompetitionChallengeLinkCode
     var resolveChallengeLink: @Sendable (
         CompetitionChallengeLinkCode
     ) async throws -> AuthenticatedProfile
@@ -169,6 +170,10 @@ struct CompetitionClient: Sendable {
             CompetitionChallengeLinkCode = {
             throw CompetitionRemoteFailure.operationFailed
         },
+        resetChallengeLinkCode: @escaping @Sendable () async throws ->
+            CompetitionChallengeLinkCode = {
+            throw CompetitionRemoteFailure.operationFailed
+        },
         resolveChallengeLink: @escaping @Sendable (
             CompetitionChallengeLinkCode
         ) async throws -> AuthenticatedProfile = { _ in
@@ -202,6 +207,7 @@ struct CompetitionClient: Sendable {
         self.cancel = cancel
         self.previewInvite = previewInvite
         self.loadChallengeLinkCode = loadChallengeLinkCode
+        self.resetChallengeLinkCode = resetChallengeLinkCode
         self.resolveChallengeLink = resolveChallengeLink
     }
 

@@ -144,6 +144,9 @@ extension CompetitionClient {
             loadChallengeLinkCode: {
                 try await coordinator.remote { try await $0.loadChallengeLinkCode() }
             },
+            resetChallengeLinkCode: {
+                try await coordinator.remote { try await $0.resetChallengeLinkCode() }
+            },
             resolveChallengeLink: { code in
                 try await coordinator.remote { try await $0.resolveChallengeLink(code) }
             }

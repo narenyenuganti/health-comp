@@ -109,6 +109,10 @@ struct CompetitionRemoteAPI: Sendable {
     var loadChallengeLinkCode: @Sendable () async throws -> CompetitionChallengeLinkCode = {
         throw CompetitionRemoteFailure.operationFailed
     }
+    /// Replaces your link's code; the old link stops working.
+    var resetChallengeLinkCode: @Sendable () async throws -> CompetitionChallengeLinkCode = {
+        throw CompetitionRemoteFailure.operationFailed
+    }
     var resolveChallengeLink: @Sendable (
         CompetitionChallengeLinkCode
     ) async throws -> AuthenticatedProfile = { _ in

@@ -503,6 +503,40 @@ final class MultiUserCompetitionUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Your Challenge Code"].exists)
     }
 
+    func testAccountResetsChallengeLinkAfterConfirming() {
+        launch(.account)
+        defer { app.terminate() }
+        XCTAssertTrue(app.navigationBars["Account"].waitForExistence(timeout: 8))
+        let url = element("account.challenge-link.url")
+        let reset = element("account.challenge-link.reset")
+        scrollToElement(reset)
+        XCTAssertEqual(url.value as? String, "invites.ui.healthcomp.test/c/Xb3kP9qL2mN8vR4tY6wZ1a")
+        XCTAssertTrue(
+            app.staticTexts[
+                "Anyone with this link can challenge you. Reset it to turn off the old one; challenges already sent stay."
+            ].exists
+        )
+
+        // Cancel keeps the link.
+        reset.tap()
+        let alert = app.alerts["Reset your challenge link?"]
+        XCTAssertTrue(alert.waitForExistence(timeout: 3))
+        XCTAssertTrue(
+            alert.staticTexts["Your old link stops working. Challenges already sent stay."].exists
+        )
+        alert.buttons["Cancel"].tap()
+        XCTAssertTrue(alert.waitForNonExistence(timeout: 3))
+        XCTAssertEqual(url.value as? String, "invites.ui.healthcomp.test/c/Xb3kP9qL2mN8vR4tY6wZ1a")
+
+        // Reset Link shows the new link.
+        reset.tap()
+        XCTAssertTrue(alert.waitForExistence(timeout: 3))
+        alert.buttons["Reset Link"].tap()
+        XCTAssertTrue(alert.waitForNonExistence(timeout: 3))
+        XCTAssertEqual(url.value as? String, "invites.ui.healthcomp.test/c/Qm7tR2vX9pL4kN8wB3cY6z")
+        XCTAssertFalse(element("account.challenge-link.reset-error").exists)
+    }
+
     func testRemoteOutgoingChallengeOffersCancel() {
         launch(.sharing)
         defer { app.terminate() }
