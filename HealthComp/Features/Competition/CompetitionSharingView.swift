@@ -6,8 +6,9 @@ import SwiftUI
 /// live in History, and notifications and privacy live in Account.
 struct CompetitionSharingView: View {
     let publication: LocalCompetitionPublication
-    let inviteCreationStatus: CompetitionFeature.InviteCreationStatus
-    let createdInviteLink: CompetitionInviteShareLink?
+    let challengeStatus: CompetitionFeature.ChallengeSheetStatus
+    let senderName: String?
+    let dismissChallenge: () -> Void
     @Binding var recipientCode: String
     let recipient: AuthenticatedProfile?
     let recipientStatus: CompetitionFeature.InviteRecipientStatus
@@ -136,16 +137,21 @@ struct CompetitionSharingView: View {
                     .accessibilityHidden(true)
             }
         }
-        .sheet(isPresented: $isChallengePresented) {
+        .sheet(isPresented: $isChallengePresented, onDismiss: dismissChallenge) {
             CreateCompetitionView(
-                status: inviteCreationStatus,
-                shareLink: createdInviteLink,
+                status: challengeStatus,
                 timeZoneIdentifier: publication.timeZoneIdentifier,
+                evaluatedAt: publication.evaluatedAt,
                 recipientCode: $recipientCode,
                 recipient: recipient,
                 recipientStatus: recipientStatus,
+                senderName: senderName,
                 findRecipient: findRecipient,
-                create: createInvite
+                create: createInvite,
+                openChallenge: {
+                    isChallengePresented = false
+                    selectCompetition($0)
+                }
             )
         }
     }

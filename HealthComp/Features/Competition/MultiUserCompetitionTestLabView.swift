@@ -163,17 +163,12 @@ private struct MultiUserCompetitionSharingTestLabView: View {
     @State private var path: [CompetitionID] = []
     @State private var showsHistory = false
     @State private var isChallengePresented = false
-    @State private var inviteStatus: CompetitionFeature.InviteCreationStatus =
-        .idle
-    @State private var inviteLink: CompetitionInviteShareLink?
+    @State private var challengeStatus: CompetitionFeature.ChallengeSheetStatus = .ready
     @State private var recipientCode = ""
     @State private var recipient: AuthenticatedProfile?
     @State private var recipientStatus: CompetitionFeature.InviteRecipientStatus = .idle
     @State private var archivedIDs: Set<CompetitionID> = []
-    @State private var rematchParentID: CompetitionID?
-    @State private var rematchStatus: CompetitionFeature.InviteCreationStatus =
-        .idle
-    @State private var rematchLink: CompetitionInviteShareLink?
+    @State private var rematchState: CompetitionFeature.CompetitionRematchState = .available
     @State private var pastedInvitationStatus = "Not checked"
 
     var body: some View {
@@ -186,8 +181,14 @@ private struct MultiUserCompetitionSharingTestLabView: View {
             ) {
                 CompetitionSharingView(
                     publication: publication,
-                    inviteCreationStatus: inviteStatus,
-                    createdInviteLink: inviteLink,
+                    challengeStatus: challengeStatus,
+                    senderName: "Beta Alice",
+                    dismissChallenge: {
+                        challengeStatus = .ready
+                        recipientCode = ""
+                        recipient = nil
+                        recipientStatus = .idle
+                    },
                     recipientCode: Binding(
                         get: { recipientCode },
                         set: {
@@ -195,20 +196,11 @@ private struct MultiUserCompetitionSharingTestLabView: View {
                             recipientCode = $0
                             recipient = nil
                             recipientStatus = .idle
-                            inviteStatus = .idle
-                            inviteLink = nil
                         }
                     ),
                     recipient: recipient,
                     recipientStatus: recipientStatus,
-                    findRecipient: {
-                        if UUID(uuidString: recipientCode) == MultiUserCompetitionTestLabFixtures.pendingID.rawValue {
-                            recipient = AuthenticatedProfile(id: MultiUserCompetitionTestLabFixtures.pendingID.rawValue, displayName: "Sam")
-                            recipientStatus = .idle
-                        } else {
-                            recipientStatus = .unavailable
-                        }
-                    },
+                    findRecipient: findRecipient,
                     createInvite: createInvite,
                     isChallengePresented: $isChallengePresented,
                     selectCompetition: { path.append($0) },
@@ -216,6 +208,7 @@ private struct MultiUserCompetitionSharingTestLabView: View {
                     reinvite: {},
                     isReinviteInFlight: false,
                     challengeAgain: { _ in
+                        challengeStatus = .ready
                         recipientCode = MultiUserCompetitionTestLabFixtures.expiredRecipientID
                             .uuidString.lowercased()
                         recipient = AuthenticatedProfile(
@@ -249,7 +242,7 @@ private struct MultiUserCompetitionSharingTestLabView: View {
                 HStack {
                     PasteButton(payloadType: String.self) { strings in
                         let text = strings.first ?? ""
-                        let expectedLink = rematchLink == nil
+                        let expectedLink = rematchState == .available
                             ? "healthcomp://invite/UVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVFRUVE"
                             : "healthcomp://invite/UlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlJSUlI"
                         if text.contains(expectedLink) {
@@ -286,20 +279,23 @@ private struct MultiUserCompetitionSharingTestLabView: View {
                     competition: competition,
                     awards: publication.dashboard.awards,
                     source: .remoteParticipants,
-                    inviteCreationStatus: rematchParentID == id
-                        ? rematchStatus
-                        : .idle,
-                    createdInviteLink: rematchParentID == id
-                        ? rematchLink
-                        : nil,
+                    rematch: rematchState,
                     isCommandInFlight: false,
-                    send: handle
+                    send: handle,
+                    openCompetition: { path.append($0) }
                 )
             case .pending:
                 CompetitionInviteView(
                     competition: competition,
                     source: .remoteParticipants,
                     isCommandInFlight: false,
+                    link: .ready(
+                        MultiUserCompetitionTestLabFixtures.shareLink(
+                            byte: 0x53,
+                            usesCustomScheme: usesCustomScheme
+                        ),
+                        minimumRevision: 0
+                    ),
                     send: handle
                 )
             case .declined, .expired:
@@ -317,12 +313,32 @@ private struct MultiUserCompetitionSharingTestLabView: View {
         )
     }
 
+    private func findRecipient() {
+        let code = recipientCode.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let id = UUID(uuidString: code) else {
+            recipientStatus = .invalidCode
+            return
+        }
+        switch id {
+        case MultiUserCompetitionTestLabFixtures.ownProfileID:
+            recipientStatus = .ownCode
+        case MultiUserCompetitionTestLabFixtures.pendingID.rawValue:
+            recipient = AuthenticatedProfile(id: id, displayName: "Sam")
+            recipientStatus = .idle
+        default:
+            recipientStatus = .notFound
+        }
+    }
+
     private func createInvite() {
         guard recipient != nil else { return }
-        inviteStatus = .ready
-        inviteLink = MultiUserCompetitionTestLabFixtures.shareLink(
-            byte: 0x51,
-            usesCustomScheme: usesCustomScheme
+        challengeStatus = .sent(
+            challengeID: MultiUserCompetitionTestLabFixtures.pendingID,
+            challenge: nil,
+            link: MultiUserCompetitionTestLabFixtures.shareLink(
+                byte: 0x51,
+                usesCustomScheme: usesCustomScheme
+            )
         )
     }
 
@@ -330,12 +346,17 @@ private struct MultiUserCompetitionSharingTestLabView: View {
         switch action {
         case let .archiveTapped(id):
             archivedIDs.insert(id)
-        case let .rematchTapped(id):
-            rematchParentID = id
-            rematchStatus = .ready
-            rematchLink = MultiUserCompetitionTestLabFixtures.shareLink(
-                byte: 0x52,
-                usesCustomScheme: usesCustomScheme
+        case .rematchTapped:
+            rematchState = .sent(
+                challengeID: MultiUserCompetitionTestLabFixtures.pendingID,
+                expiresAt: nil,
+                link: .ready(
+                    MultiUserCompetitionTestLabFixtures.shareLink(
+                        byte: 0x52,
+                        usesCustomScheme: usesCustomScheme
+                    ),
+                    minimumRevision: 0
+                )
             )
         default:
             break
@@ -538,6 +559,10 @@ private enum MultiUserCompetitionTestLabFixtures {
     static let expiredID = CompetitionID(
         UUID(uuidString: "A1000000-0000-4000-8000-000000000007")!
     )
+    /// The signed-in lab account's own code.
+    static let ownProfileID = UUID(
+        uuidString: "a1000000-0000-4000-8000-000000000099"
+    )!
     static let expiredRecipientID = UUID(
         uuidString: "A1000000-0000-4000-8000-000000000008"
     )!
@@ -656,7 +681,7 @@ private enum MultiUserCompetitionTestLabFixtures {
             lifecycle: .pending(
                 direction: .outgoing,
                 createdAt: Date(timeIntervalSince1970: 1_786_867_200),
-                expiresAt: nil
+                expiresAt: Date(timeIntervalSince1970: 1_786_867_200 + 86_400)
             ),
             userPoints: 0,
             opponentPoints: 0,
