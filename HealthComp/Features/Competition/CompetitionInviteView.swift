@@ -8,7 +8,10 @@ struct CompetitionInviteView: View {
     /// The outgoing challenge's link, when this iPhone has asked for it.
     let link: CompetitionFeature.InviteLinkState?
     let send: (CompetitionFeature.Action) -> Void
+    /// The last accept, decline or cancel failed.
+    var commandFailed = false
     @State private var showsDeclineConfirmation = false
+    @State private var showsCancelConfirmation = false
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.locale) private var locale
     @Environment(\.timeZone) private var timeZone
@@ -24,7 +27,7 @@ struct CompetitionInviteView: View {
                 )
                 actionControls
                 if isRemoteOutgoing, dynamicTypeSize.isAccessibilitySize {
-                    shareControl
+                    outgoingControls
                 }
             }
             .frame(maxWidth: 560)
@@ -36,7 +39,7 @@ struct CompetitionInviteView: View {
         // The link stays in reach; PR 7 adds Cancel Challenge under it.
         .safeAreaInset(edge: .bottom) {
             if isRemoteOutgoing, !dynamicTypeSize.isAccessibilitySize {
-                shareControl
+                outgoingControls
                     .frame(maxWidth: 560)
                     .padding(.horizontal, 20)
                     .padding(.top, 12)
@@ -61,8 +64,54 @@ struct CompetitionInviteView: View {
                 send(.declineTapped(competition.id))
             }
         } message: {
-            Text("This closes the challenge without starting a match.")
+            Text(
+                source == .remoteParticipants
+                    ? "\(competition.opponentDisplayName) will see that you declined."
+                    : "This closes the challenge without starting a match."
+            )
         }
+        .confirmationDialog(
+            "Cancel your challenge to \(competition.opponentDisplayName)?",
+            isPresented: $showsCancelConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Cancel Challenge", role: .destructive) {
+                send(.cancelTapped(competition.id))
+            }
+            Button("Keep Challenge", role: .cancel) {}
+        } message: {
+            Text("\(competition.opponentDisplayName) won’t be able to accept it.")
+        }
+    }
+
+    private var outgoingControls: some View {
+        VStack(spacing: 6) {
+            shareControl
+            Button(role: .destructive) {
+                showsCancelConfirmation = true
+            } label: {
+                Text("Cancel Challenge")
+                    .font(.headline.width(.condensed))
+                    .foregroundStyle(Theme.secondary)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(isCommandInFlight)
+            .accessibilityIdentifier("competition.invite.cancel")
+            if commandFailed {
+                errorLine("Couldn’t cancel the challenge. Check your connection and try again.")
+            }
+        }
+    }
+
+    private func errorLine(_ text: String) -> some View {
+        Text(text)
+            .font(.caption)
+            .foregroundStyle(Theme.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityIdentifier("competition.invite.error")
     }
 
     // The mark, labeled: your ring bars against their single block.
@@ -115,13 +164,12 @@ struct CompetitionInviteView: View {
             if source == .remoteParticipants {
                 // The outgoing title already says who you're waiting for.
                 if direction == .incoming {
-                    Label(
-                        "Open the challenge link to review and accept",
-                        systemImage: "hourglass"
-                    )
-                    .font(.subheadline.weight(.medium))
-                    .foregroundStyle(Theme.secondary)
-                    .frame(maxWidth: .infinity, minHeight: 44)
+                    VStack(spacing: 6) {
+                        incomingButtons
+                        if commandFailed {
+                            errorLine("Couldn’t complete that. Check your connection and try again.")
+                        }
+                    }
                 }
             } else {
                 switch direction {
@@ -160,6 +208,7 @@ struct CompetitionInviteView: View {
             "Accept challenge from \(competition.opponentDisplayName)"
         )
         .accessibilityHint("Starts on the next match calendar day.")
+        .accessibilityIdentifier("competition.invite.accept")
 
         Button(role: .destructive) {
             showsDeclineConfirmation = true
@@ -179,6 +228,7 @@ struct CompetitionInviteView: View {
         .accessibilityValue(
             isCommandInFlight ? "Action in progress" : ""
         )
+        .accessibilityIdentifier("competition.invite.decline")
     }
 
     @ViewBuilder
@@ -219,7 +269,14 @@ struct CompetitionInviteView: View {
     private var directionBody: String {
         let name = competition.opponentDisplayName
         if direction == .incoming {
-            return "\(name) challenged you to compare Activity points for seven days."
+            let sentence = "\(name) challenged you to compare Activity points for seven days."
+            guard source == .remoteParticipants,
+                  let expiresAt = competition.pendingExpiresAt
+            else { return sentence }
+            let moment = competitionMomentText(
+                expiresAt, now: competition.evaluatedAt, locale: locale, timeZone: timeZone
+            )
+            return "\(sentence) Answer by \(moment). Day 1 is the day after you accept."
         }
         guard source == .remoteParticipants else {
             return "Start when you are ready. Day 1 begins on the next match calendar day."
@@ -266,8 +323,7 @@ struct CompetitionInviteView: View {
             }
 
         case .notOnThisPhone?:
-            // Until Cancel Challenge ships, it can only be left to expire.
-            Text("The link for this challenge isn’t on this iPhone.")
+            Text("The link isn’t on this iPhone. \(competition.opponentDisplayName) can still accept it in HealthComp.")
                 .font(.caption)
                 .foregroundStyle(Theme.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)

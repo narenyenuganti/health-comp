@@ -1,5 +1,13 @@
 import ComposableArchitecture
+import CoreImage.CIFilterBuiltins
 import SwiftUI
+
+/// Your reusable challenge link for Account. Nil hides the section.
+struct AccountChallengeLink {
+    let url: URL?
+    let failed: Bool
+    let load: () -> Void
+}
 
 /// What Account → Notifications needs from the competition. Hosts without
 /// competition state pass nil, which hides the row.
@@ -89,7 +97,7 @@ struct AccountSettingsView: View {
     var notifications: AccountNotificationSettings?
     var health: AccountHealthSettings?
     var liveMatchCount = 0
-    var accountCode: UUID?
+    var challengeLink: AccountChallengeLink?
 #if HEALTHCOMP_STAGING
     var refreshCompetition: (() -> Void)?
 #endif
@@ -98,16 +106,31 @@ struct AccountSettingsView: View {
 
     @AppStorage(AppAppearance.storageKey)
     private var appearance = AppAppearance.system
+    @State private var showsChallengeCode = false
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         List {
             profileSection
+            if challengeLink != nil {
+                challengeLinkSection
+            }
             settingsSection
             signOutSection
             deleteSection
         }
         .accountPageStyle(title: "Account")
-        .task { store.send(.appeared) }
+        .task {
+            store.send(.appeared)
+            if let challengeLink, challengeLink.url == nil {
+                challengeLink.load()
+            }
+        }
+        .sheet(isPresented: $showsChallengeCode) {
+            if let url = challengeLink?.url {
+                ChallengeLinkCodeView(url: url) { showsChallengeCode = false }
+            }
+        }
         .overlay {
             AccountProgressOverlay(store: store)
         }
@@ -184,28 +207,74 @@ struct AccountSettingsView: View {
                     .foregroundStyle(Theme.ink)
                     .accessibilityIdentifier("account.message")
             }
-            if let accountCode {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("HealthComp account code")
-                        .font(.headline)
-                    Text(accountCode.uuidString.lowercased())
-                        .font(.callout.monospaced())
-                        .textSelection(.enabled)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Text("Share this code with someone you want to compete with. It lets them confirm your display name and invite only this account; it does not grant access to your match history.")
-                        .font(.caption)
-                        .foregroundStyle(Theme.secondary)
-                    ShareLink(item: accountCode.uuidString.lowercased()) {
-                        Label("Share Account Code", systemImage: "square.and.arrow.up")
-                    }
-                    .frame(minHeight: 44)
-                    .accessibilityIdentifier("account.settings.share-account-code")
-                }
-            }
         } header: {
             SectionLabel("PROFILE")
         }
         .listRowBackground(Theme.panel)
+    }
+
+    private var challengeLinkSection: some View {
+        Section {
+            VStack(alignment: .leading, spacing: 12) {
+                if let url = challengeLink?.url {
+                    Text(Self.displayText(url))
+                        .font(.callout.monospaced())
+                        .foregroundStyle(Theme.ink)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityLabel("Your challenge link")
+                        .accessibilityIdentifier("account.challenge-link.url")
+                    let buttons = Group {
+                        Button {
+                            showsChallengeCode = true
+                        } label: {
+                            Label("Show Code", systemImage: "qrcode")
+                        }
+                        .buttonStyle(SecondaryButtonStyle())
+                        .accessibilityIdentifier("account.challenge-link.show-code")
+                        ShareLink(
+                            item: url,
+                            subject: Text("My HealthComp challenge link"),
+                            message: Text("Challenge me to a week of rings on HealthComp.")
+                        ) {
+                            Label("Share Link", systemImage: "square.and.arrow.up")
+                        }
+                        .buttonStyle(PrimaryButtonStyle())
+                        .accessibilityIdentifier("account.challenge-link.share")
+                    }
+                    if dynamicTypeSize.isAccessibilitySize {
+                        VStack(spacing: 8) { buttons }
+                    } else {
+                        HStack(spacing: 8) { buttons }
+                    }
+                    Text("Anyone with this link can challenge you. You still choose whether to accept.")
+                        .font(.caption)
+                        .foregroundStyle(Theme.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else if challengeLink?.failed == true {
+                    Text("Couldn’t load your link.")
+                        .font(.callout)
+                        .foregroundStyle(Theme.ink)
+                    Button("Try Again") { challengeLink?.load() }
+                        .buttonStyle(SecondaryButtonStyle())
+                        .accessibilityIdentifier("account.challenge-link.retry")
+                } else {
+                    ProgressView("Loading your link…")
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                }
+            }
+            .padding(.vertical, 4)
+        } header: {
+            SectionLabel("YOUR CHALLENGE LINK")
+        }
+        .listRowBackground(Theme.panel)
+    }
+
+    /// The URL without its scheme: "healthcomp.app/c/Xb3k…".
+    static func displayText(_ url: URL) -> String {
+        let text = url.absoluteString
+        guard let range = text.range(of: "://") else { return text }
+        return String(text[range.upperBound...])
     }
 
     private var settingsSection: some View {
@@ -818,4 +887,64 @@ private struct AppearanceThumbnail: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.ground)
     }
+}
+
+/// The QR code of your challenge link. Black on white in both modes, because
+/// scanners need dark modules on a light quiet zone.
+private struct ChallengeLinkCodeView: View {
+    let url: URL
+    let done: () -> Void
+
+    var body: some View {
+        NavigationStack {
+            GeometryReader { proxy in
+                ScrollView {
+                    VStack(spacing: 16) {
+                        let side = min(proxy.size.width - 64, 320)
+                        if let image = challengeLinkQRCode(url) {
+                            Image(uiImage: image)
+                                .interpolation(.none)
+                                .resizable()
+                                .scaledToFit()
+                                .padding(16)
+                                .background(Color.white)
+                                .frame(width: side, height: side)
+                                .accessibilityLabel("QR code for your challenge link")
+                                .accessibilityIdentifier("account.challenge-link.qr")
+                        }
+                        Text("They can scan this with the iPhone Camera.")
+                            .font(.callout)
+                            .foregroundStyle(Theme.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .padding(16)
+                    .frame(maxWidth: .infinity)
+                    .themePanel()
+                    .padding(16)
+                }
+            }
+            .background(Theme.ground)
+            .navigationTitle("Your Challenge Code")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Done", action: done)
+                }
+            }
+        }
+        .presentationDetents([.medium, .large])
+    }
+}
+
+private func challengeLinkQRCode(_ url: URL) -> UIImage? {
+    let filter = CIFilter.qrCodeGenerator()
+    filter.message = Data(url.absoluteString.utf8)
+    filter.correctionLevel = "M"
+    guard let output = filter.outputImage?
+        .transformed(by: CGAffineTransform(scaleX: 10, y: 10)),
+          let cgImage = CIContext().createCGImage(output, from: output.extent)
+    else {
+        return nil
+    }
+    return UIImage(cgImage: cgImage)
 }

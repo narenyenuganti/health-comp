@@ -25,7 +25,7 @@ final class RemoteCompetitionFeatureTests: XCTestCase {
             $0.inviteRecipientCode = recipient.id.uuidString
         }
         await store.send(.findInviteRecipientTapped) { $0.inviteRecipientStatus = .lookingUp }
-        await store.receive(.inviteRecipientResponse(recipient.id, .success(recipient))) {
+        await store.receive(.inviteRecipientResponse(recipient.id.uuidString, .success(recipient))) {
             $0.inviteRecipientStatus = .idle
             $0.inviteRecipient = recipient
         }
@@ -35,7 +35,7 @@ final class RemoteCompetitionFeatureTests: XCTestCase {
             $0.inviteRecipientCode = "another code"
             $0.inviteRecipient = nil
         }
-        await store.send(.inviteRecipientResponse(recipient.id, .success(recipient)))
+        await store.send(.inviteRecipientResponse(recipient.id.uuidString, .success(recipient)))
         await store.send(.createInviteTapped)
         await store.finish()
     }
@@ -94,7 +94,7 @@ final class RemoteCompetitionFeatureTests: XCTestCase {
             let code = Self.recipient.id.uuidString
             await store.send(.inviteRecipientCodeChanged(code)) { $0.inviteRecipientCode = code }
             await store.send(.findInviteRecipientTapped) { $0.inviteRecipientStatus = .lookingUp }
-            await store.receive(.inviteRecipientResponse(Self.recipient.id, .failure(failure))) {
+            await store.receive(.inviteRecipientResponse(Self.recipient.id.uuidString, .failure(failure))) {
                 $0.inviteRecipientStatus = expected
             }
             await store.finish()
@@ -842,6 +842,168 @@ final class RemoteCompetitionFeatureTests: XCTestCase {
 
     private static var recipientIdentity: String {
         RemoteCompetitionOpponentIdentity.identity(for: recipient.id)
+    }
+
+    @MainActor
+    func testCancelTappedRunsCommand() async {
+        let id = CompetitionID(UUID())
+        let cancelled = LockIsolated<[CompetitionID]>([])
+        var client = InviteCreationRecorder(results: []).client
+        client.cancel = { id in
+            cancelled.withValue { $0.append(id) }
+            return .remote(revision: 0)
+        }
+        let store = TestStore(initialState: CompetitionFeature.State(
+            publication: .remote(revision: 1)
+        )) { CompetitionFeature() } withDependencies: { $0.competitionClient = client }
+        await store.send(.cancelTapped(id)) { $0.commandIDsInFlight = [id] }
+        await store.receive(.commandFinished(id, expectedRevision: 0)) {
+            $0.commandIDsInFlight = []
+        }
+        XCTAssertEqual(cancelled.value, [id])
+        await store.finish()
+    }
+
+    @MainActor
+    func testChallengeLinkRequested() async throws {
+        let code = try XCTUnwrap(CompetitionChallengeLinkCode(rawValue: "Xb3kP9qL2mN8vR4tY6wZ1a"))
+        let url = try XCTUnwrap(URL(string: "https://\(Self.host)/c/Xb3kP9qL2mN8vR4tY6wZ1a"))
+        var client = InviteCreationRecorder(results: []).client
+        client.loadChallengeLinkCode = { code }
+        var links = CompetitionInviteLinkClient.fixture(
+            host: Self.host, timeZoneIdentifier: "UTC", idempotencyKeys: []
+        )
+        links.makeChallengeLink = { URL(string: "https://\(Self.host)/c/\($0.rawValue)") }
+        let store = TestStore(initialState: CompetitionFeature.State()) { CompetitionFeature() }
+            withDependencies: {
+                $0.competitionClient = client
+                $0.competitionInviteLinkClient = links
+            }
+        await store.send(.challengeLinkRequested)
+        await store.receive(.challengeLinkResponse(url)) { $0.challengeLink = url }
+        // Loaded once.
+        await store.send(.challengeLinkRequested)
+
+        var failing = InviteCreationRecorder(results: []).client
+        failing.loadChallengeLinkCode = { throw CompetitionRemoteFailure.retryableTransport }
+        let failed = TestStore(initialState: CompetitionFeature.State()) { CompetitionFeature() }
+            withDependencies: { $0.competitionClient = failing }
+        await failed.send(.challengeLinkRequested)
+        await failed.receive(.challengeLinkResponse(nil)) { $0.challengeLinkLoadFailed = true }
+        await store.finish()
+        await failed.finish()
+    }
+
+    @MainActor
+    func testFindRecipientAcceptsLinkCodeAndLegacyUUID() async throws {
+        let recipient = Self.recipient
+        let resolved = LockIsolated<[String]>([])
+        var client = InviteCreationRecorder(results: []).client
+        client.resolveChallengeLink = { code in
+            resolved.withValue { $0.append(code.rawValue) }
+            return recipient
+        }
+        client.resolveInviteRecipient = { _ in recipient }
+        let store = TestStore(initialState: CompetitionFeature.State()) { CompetitionFeature() }
+            withDependencies: { $0.competitionClient = client }
+        for input in [
+            "healthcomp://challenge/Xb3kP9qL2mN8vR4tY6wZ1a",
+            "Xb3kP9qL2mN8vR4tY6wZ1a",
+            recipient.id.uuidString.lowercased(),
+        ] {
+            await store.send(.inviteRecipientCodeChanged(input)) {
+                $0.inviteRecipientCode = input
+                $0.inviteRecipient = nil
+                $0.inviteRecipientStatus = .idle
+            }
+            await store.send(.findInviteRecipientTapped) { $0.inviteRecipientStatus = .lookingUp }
+            await store.receive(.inviteRecipientResponse(input, .success(recipient))) {
+                $0.inviteRecipient = recipient
+                $0.inviteRecipientStatus = .idle
+            }
+        }
+        XCTAssertEqual(resolved.value, ["Xb3kP9qL2mN8vR4tY6wZ1a", "Xb3kP9qL2mN8vR4tY6wZ1a"])
+
+        var own = InviteCreationRecorder(results: []).client
+        own.resolveChallengeLink = { _ in throw CompetitionRemoteFailure.ownChallengeLink }
+        let ownStore = TestStore(initialState: CompetitionFeature.State()) { CompetitionFeature() }
+            withDependencies: { $0.competitionClient = own }
+        await ownStore.send(.inviteRecipientCodeChanged("Xb3kP9qL2mN8vR4tY6wZ1a")) {
+            $0.inviteRecipientCode = "Xb3kP9qL2mN8vR4tY6wZ1a"
+        }
+        await ownStore.send(.findInviteRecipientTapped) { $0.inviteRecipientStatus = .lookingUp }
+        await ownStore.receive(.inviteRecipientResponse("Xb3kP9qL2mN8vR4tY6wZ1a", .failure(.ownChallengeLink))) {
+            $0.inviteRecipientStatus = .ownCode
+        }
+        await store.finish()
+        await ownStore.finish()
+    }
+
+    @MainActor
+    func testChallengeSheetStatusDerivesChallengedYouAndInMatch() {
+        let identity = RemoteCompetitionOpponentIdentity.identity(for: Self.recipient.id)
+        let incoming = Self.presentation(
+            CompetitionID(UUID()),
+            lifecycle: .pending(direction: .incoming, createdAt: .distantPast, expiresAt: nil),
+            identity: identity
+        )
+        let scheduled = Self.presentation(CompetitionID(UUID()), lifecycle: .scheduled, identity: identity)
+        let tallying = Self.presentation(
+            CompetitionID(UUID()), lifecycle: .tallying(startedAt: .distantPast), identity: identity
+        )
+        var state = CompetitionFeature.State(
+            publication: .remote(revision: 1, competitions: [incoming, scheduled]),
+            inviteRecipient: Self.recipient
+        )
+        XCTAssertEqual(state.challengeSheetStatus, .challengedYou(incoming))
+        state.publication = .remote(revision: 2, competitions: [scheduled])
+        XCTAssertEqual(state.challengeSheetStatus, .inMatch(scheduled))
+        // A tallying match no longer blocks a new challenge, as on the server.
+        state.publication = .remote(revision: 3, competitions: [tallying])
+        XCTAssertEqual(state.challengeSheetStatus, .ready)
+    }
+
+    @MainActor
+    func testRematchStateDerivesChallengedYouAndInMatch() {
+        let identity = RemoteCompetitionOpponentIdentity.identity(for: Self.recipient.id)
+        let parent = Self.presentation(CompetitionID(UUID()), identity: identity)
+        let incoming = Self.presentation(
+            CompetitionID(UUID()),
+            lifecycle: .pending(direction: .incoming, createdAt: .distantPast, expiresAt: nil),
+            identity: identity
+        )
+        let active = Self.presentation(CompetitionID(UUID()), lifecycle: .active(dayOrdinal: 2), identity: identity)
+        var state = CompetitionFeature.State(
+            publication: .remote(revision: 1, competitions: [parent, active, incoming])
+        )
+        XCTAssertEqual(state.rematchState(for: parent), .inMatch(active))
+        state.publication = .remote(revision: 2, competitions: [parent, incoming])
+        XCTAssertEqual(state.rematchState(for: parent), .challengedYou(incoming))
+    }
+
+    @MainActor
+    func testServerConflictSetsConflictAndReconciles() async {
+        let recorder = InviteCreationRecorder(results: [.failure(.incomingChallengeExists)])
+        let key = UUID(uuidString: "00000000-0000-4000-8000-0000000000c1")!
+        let store = TestStore(initialState: CompetitionFeature.State(
+            publication: .remote(revision: 1),
+            inviteRecipient: Self.recipient
+        )) { CompetitionFeature() } withDependencies: {
+            $0.competitionClient = recorder.client
+            $0.competitionInviteLinkClient = .fixture(
+                host: Self.host, timeZoneIdentifier: "UTC", idempotencyKeys: [key]
+            )
+        }
+        await store.send(.createInviteTapped) {
+            $0.inviteCreations[.sheet] = Creation(
+                recipientID: Self.recipient.id, idempotencyKey: key, status: .creating
+            )
+        }
+        await store.receive(.createInviteResponse(.sheet, idempotencyKey: key, .failure(.incomingChallengeExists))) {
+            $0.inviteCreations[.sheet]?.status = .failed(.conflict)
+        }
+        await store.finish()
+        XCTAssertEqual(recorder.reconcileTriggers, [.pullToRefresh])
     }
 
     private static func link(_ character: Character) throws -> CompetitionInviteShareLink {
