@@ -135,6 +135,11 @@ actor CompetitionNotificationCoordinator {
     private var knownPendingRequests: [
         String: CompetitionScheduledNotificationRequest
     ] = [:]
+    /// Records this coordinator committed that a later snapshot's journals
+    /// may not show yet, so cross-match calls ("600 today" once) see them.
+    private var committedRecords: [
+        CompetitionID: [NotificationEmissionRecorded]
+    ] = [:]
 
     init(
         planner: CompetitionNotificationPlanner,
@@ -221,8 +226,9 @@ actor CompetitionNotificationCoordinator {
     }
 
     private func reconcile(
-        _ snapshot: CompetitionNotificationPlanningSnapshot
+        _ submitted: CompetitionNotificationPlanningSnapshot
     ) async {
+        let snapshot = foldingCommittedRecords(into: submitted)
         if let knownCompetitionIDs = snapshot.knownCompetitionIDs {
             await removeOrphans(knownCompetitionIDs: knownCompetitionIDs)
             guard !isSuperseded(snapshot) else { return }
@@ -372,6 +378,8 @@ actor CompetitionNotificationCoordinator {
                     continue
                 }
                 for acceptedDecision in acceptedDecisions {
+                    committedRecords[competition.id, default: []]
+                        .append(acceptedDecision.record)
                     if case let .emission(emission) = acceptedDecision {
                         accepted.append(emission)
                     }
@@ -403,6 +411,52 @@ actor CompetitionNotificationCoordinator {
                 reportError("notification-upsert-failed")
             }
         }
+    }
+
+    /// Adds committed records the snapshot's journals don't show yet, and
+    /// forgets those they already do (or whose match left the snapshot).
+    private func foldingCommittedRecords(
+        into snapshot: CompetitionNotificationPlanningSnapshot
+    ) -> CompetitionNotificationPlanningSnapshot {
+        let competitionsByID = Dictionary(
+            snapshot.competitions.map { ($0.id, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        var kept: [CompetitionID: [NotificationEmissionRecorded]] = [:]
+        for (id, records) in committedRecords {
+            guard let competition = competitionsByID[id] else { continue }
+            let missing = records.filter {
+                !competition.emissionHistory.recordedIDs.contains($0.semanticEventID)
+            }
+            if !missing.isEmpty { kept[id] = missing }
+        }
+        committedRecords = kept
+        guard !committedRecords.isEmpty else { return snapshot }
+        return CompetitionNotificationPlanningSnapshot(
+            publicationRevision: snapshot.publicationRevision,
+            evaluatedAt: snapshot.evaluatedAt,
+            timeZoneIdentifier: snapshot.timeZoneIdentifier,
+            competitions: snapshot.competitions.map { competition in
+                guard let missing = committedRecords[competition.id] else {
+                    return competition
+                }
+                var recordedIDs = competition.emissionHistory.recordedIDs
+                var emitted = competition.emissionHistory.emittedCountByDayOrdinal
+                for record in missing where recordedIDs.insert(record.semanticEventID).inserted {
+                    if case .emitted = record.disposition,
+                       let day = record.episodeKey.dayOrdinal {
+                        emitted[day, default: 0] += 1
+                    }
+                }
+                return competition.replacingEmissionHistory(
+                    NotificationEmissionProjection(
+                        recordedIDs: recordedIDs,
+                        emittedCountByDayOrdinal: emitted
+                    )
+                )
+            },
+            knownCompetitionIDs: snapshot.knownCompetitionIDs
+        )
     }
 
     private func isSuperseded(
@@ -437,5 +491,29 @@ actor CompetitionNotificationCoordinator {
         for identifier in identifiers {
             knownPendingRequests[identifier] = nil
         }
+    }
+}
+
+private extension CompetitionNotificationCompetitionSnapshot {
+    func replacingEmissionHistory(
+        _ history: NotificationEmissionProjection
+    ) -> Self {
+        Self(
+            id: id,
+            opponentIdentity: opponentIdentity,
+            opponentDisplayName: opponentDisplayName,
+            lifecycle: lifecycle,
+            schedule: schedule,
+            ownerPoints: ownerPoints,
+            opponentPoints: opponentPoints,
+            days: days,
+            currentDayOrdinal: currentDayOrdinal,
+            latestRefresh: latestRefresh,
+            evaluationFreshness: evaluationFreshness,
+            terminalResult: terminalResult,
+            emissionHistory: history,
+            evaluatedAt: evaluatedAt,
+            timeZoneIdentifier: timeZoneIdentifier
+        )
     }
 }

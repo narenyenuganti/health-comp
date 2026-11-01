@@ -729,7 +729,8 @@ final class CompetitionNotificationPlannerTests: XCTestCase {
         opponent: Double,
         today: Double = 300,
         lifecycle: CompetitionNotificationLifecycle? = nil,
-        recorded: [(NotificationEmissionFamily, NotificationEpisodeKey)] = []
+        recorded: [(NotificationEmissionFamily, NotificationEpisodeKey)] = [],
+        days: [CompetitionNotificationDaySnapshot]? = nil
     ) throws -> CompetitionNotificationCompetitionSnapshot {
         try competitionSnapshot(
             id: competitionID("EAD172F8-531D-4327-823D-E82A4F6961" + suffix),
@@ -740,7 +741,8 @@ final class CompetitionNotificationPlannerTests: XCTestCase {
             ownerPoints: owner,
             opponentPoints: opponent,
             currentDayOwnerPoints: today,
-            recorded: recorded
+            recorded: recorded,
+            days: days
         )
     }
 
@@ -1033,6 +1035,55 @@ final class CompetitionNotificationPlannerTests: XCTestCase {
         )
     }
 
+    func testBothDayOneLeadersResolveFromEndOfDayTotals() throws {
+        let bothOnDayOne: [(NotificationEmissionFamily, NotificationEpisodeKey)] = [
+            (.leadChange, .leader(dayOrdinal: 1, leader: .owner)),
+            (.leadChange, .leader(dayOrdinal: 1, leader: .opponent)),
+        ]
+        func dayTwo(
+            dayOne: CompetitionNotificationDaySnapshot,
+            today: CompetitionNotificationDaySnapshot
+        ) throws -> CompetitionNotificationPlan {
+            try plan(snapshot([liveMatch(
+                "01",
+                day: 2,
+                owner: (dayOne.ownerAcceptedPoints ?? 0) + (today.ownerAcceptedPoints ?? 0),
+                opponent: (dayOne.opponentRevealedPoints ?? 0) + (today.opponentRevealedPoints ?? 0),
+                recorded: bothOnDayOne,
+                days: [dayOne, today]
+            )]))
+        }
+
+        // Alex ended Day 1 ahead and still leads: no "Alex took the lead".
+        let stillAlex = try dayTwo(
+            dayOne: .init(ordinal: 1, ownerAcceptedPoints: 100, opponentRevealedPoints: 200),
+            today: .init(ordinal: 2, ownerAcceptedPoints: 150, opponentRevealedPoints: 120)
+        )
+        XCTAssertFalse(stillAlex.emissionDecisions.contains { $0.record.family == .leadChange })
+        XCTAssertFalse(stillAlex.suppressionRecords.contains { $0.family == .leadChange })
+
+        // Alex ended Day 1 ahead and you pass him on Day 2: that is news.
+        let youPass = try dayTwo(
+            dayOne: .init(ordinal: 1, ownerAcceptedPoints: 100, opponentRevealedPoints: 200),
+            today: .init(ordinal: 2, ownerAcceptedPoints: 300, opponentRevealedPoints: 50)
+        )
+        XCTAssertEqual(
+            youPass.emissionDecisions.filter { $0.record.family == .leadChange }.map(\.record.episodeKey),
+            [.leader(dayOrdinal: 2, leader: .owner)]
+        )
+
+        // Day 1's end can't be told: the Day 2 leader is a silent baseline.
+        let unknown = try dayTwo(
+            dayOne: .init(ordinal: 1, ownerAcceptedPoints: 100, opponentRevealedPoints: nil),
+            today: .init(ordinal: 2, ownerAcceptedPoints: 300, opponentRevealedPoints: 50)
+        )
+        XCTAssertFalse(unknown.emissionDecisions.contains { $0.record.family == .leadChange })
+        XCTAssertEqual(
+            unknown.suppressionRecords.filter { $0.family == .leadChange }.map(\.episodeKey),
+            [.leader(dayOrdinal: 2, leader: .owner)]
+        )
+    }
+
     func testLeaderUsesDisplayedPoints() throws {
         let result = try plan(snapshot([liveMatch(
             "01", day: 4, owner: 412.3, opponent: 412.0,
@@ -1221,7 +1272,8 @@ final class CompetitionNotificationPlannerTests: XCTestCase {
         opponentIdentity: String? = nil,
         startDate: Date = Date(timeIntervalSinceReferenceDate: 1_036_800),
         terminalResult: CompetitionNotificationTerminalSnapshot? = nil,
-        recorded: [(NotificationEmissionFamily, NotificationEpisodeKey)] = []
+        recorded: [(NotificationEmissionFamily, NotificationEpisodeKey)] = [],
+        days: [CompetitionNotificationDaySnapshot]? = nil
     ) throws -> CompetitionNotificationCompetitionSnapshot {
         let calendar = try CompetitionCalendar(timeZoneIdentifier: "UTC")
         let startDay = try calendar.day(containing: startDate)
@@ -1236,7 +1288,7 @@ final class CompetitionNotificationPlannerTests: XCTestCase {
             ),
             ownerPoints: ownerPoints,
             opponentPoints: opponentPoints,
-            days: currentDayOrdinal.map {
+            days: days ?? currentDayOrdinal.map {
                 [
                     CompetitionNotificationDaySnapshot(
                         ordinal: $0,

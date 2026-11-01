@@ -461,7 +461,9 @@ final class CompetitionNotificationCoordinatorTests: XCTestCase {
         let postCount = await center.postCount
         let commitCount = await committer.callCount
         XCTAssertEqual(postCount, 1)
-        XCTAssertEqual(commitCount, 2)
+        // The coordinator remembers the committed result, so the stale
+        // resubmission plans nothing and never reaches the committer.
+        XCTAssertEqual(commitCount, 1)
     }
 
     func testArchiveCleanupRunsBeforeResultAppendAndKeepsDeliveredResult()
@@ -672,6 +674,54 @@ final class CompetitionNotificationCoordinatorTests: XCTestCase {
         let posted = await recorder.posted
         XCTAssertEqual(posted.count, 1)
         XCTAssertNil(posted.first?.route)
+    }
+
+    func testDailyMaximumPostsOnceWhenANewerSnapshotHasStaleJournals()
+        async throws {
+        let recorder = NotificationOperationRecorder()
+        let store = DedupingCommitStore()
+        let box = CoordinatorBox()
+        func twoAtMaximum(revision: UInt64) throws -> CompetitionNotificationPlanningSnapshot {
+            let single = try multiDecisionSnapshot()
+            let first = try XCTUnwrap(single.competitions.first)
+            return CompetitionNotificationPlanningSnapshot(
+                publicationRevision: revision,
+                evaluatedAt: single.evaluatedAt,
+                timeZoneIdentifier: single.timeZoneIdentifier,
+                competitions: [
+                    replacingHistory(in: first, with: NotificationEmissionProjection()),
+                    replacingHistory(
+                        in: first,
+                        with: NotificationEmissionProjection(),
+                        id: CompetitionID(UUID(uuidString: "EAD172F8-531D-4327-823D-E82A4F696068")!)
+                    ),
+                ]
+            )
+        }
+        // Both journals in the newer snapshot predate the first commit.
+        let newer = try twoAtMaximum(revision: 21)
+        let coordinator = CompetitionNotificationCoordinator(
+            planner: CompetitionNotificationPlanner(policy: .multiDecisionFixture),
+            notifications: recorder.notificationClient(
+                authorization: .authorized
+            ),
+            preferences: .constant(mutedOpponentIdentities: []),
+            commitDecisions: { competition, replan in
+                let result = try await store.commit(competition, replan: replan)
+                if await store.takeFirstAppend() {
+                    await box.coordinator?.submit(newer)
+                }
+                return result
+            }
+        )
+        box.coordinator = coordinator
+
+        await coordinator.submit(try twoAtMaximum(revision: 20))
+
+        let dailyMaximumPosts = await recorder.posted.filter {
+            $0.identifier.contains(":daily-max:")
+        }
+        XCTAssertEqual(dailyMaximumPosts.count, 1)
     }
 
     func testSupersededSnapshotStillPostsEveryAcceptedDecisionOnce()
@@ -1043,6 +1093,32 @@ private actor NotificationCommitReturnGate {
         let waiters = releaseWaiters
         releaseWaiters.removeAll()
         for waiter in waiters { waiter.resume() }
+    }
+}
+
+/// Appends only records it hasn't stored, like the runtime journals.
+private actor DedupingCommitStore {
+    private var storedIDs: Set<String> = []
+    private var firstAppendPending = true
+    private var didAppend = false
+
+    func commit(
+        _ competition: CompetitionNotificationCompetitionSnapshot,
+        replan: @escaping CompetitionNotificationCoordinator.ReplanDecisions
+    ) throws -> CompetitionNotificationDecisionCommitResult {
+        let novel = try replan(competition).filter {
+            storedIDs.insert($0.record.semanticEventID).inserted
+        }
+        guard !novel.isEmpty else { return .duplicate }
+        didAppend = true
+        return .appended(novel)
+    }
+
+    /// True once, right after the first append.
+    func takeFirstAppend() -> Bool {
+        guard didAppend, firstAppendPending else { return false }
+        firstAppendPending = false
+        return true
     }
 }
 

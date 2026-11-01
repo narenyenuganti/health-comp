@@ -1026,29 +1026,55 @@ struct CompetitionNotificationPlanner: Sendable {
         return nil
     }
 
+    /// The leader of the latest day with a recorded leader. When both leaders
+    /// are recorded for that day (a Day 1 flip, or a same-day change), the
+    /// record set can't say which came last, so that day's end-of-day shown
+    /// totals decide; nil when they can't, so the next lead is a silent
+    /// baseline rather than a guess.
     private func mostRecentRecordedLeader(
         in competition: CompetitionNotificationCompetitionSnapshot,
         through dayOrdinal: Int
     ) -> NotificationEmissionLeader? {
         guard dayOrdinal >= 1 else { return nil }
         for day in stride(from: min(dayOrdinal, 7), through: 1, by: -1) {
-            for leader in NotificationEmissionLeader.allCases {
+            let recorded = NotificationEmissionLeader.allCases.filter { leader in
                 guard let id = try? NotificationEmissionRecorded.semanticID(
                     competitionID: competition.id,
                     family: .leadChange,
-                    episodeKey: .leader(
-                        dayOrdinal: day,
-                        leader: leader
-                    )
+                    episodeKey: .leader(dayOrdinal: day, leader: leader)
                 ) else {
-                    continue
+                    return false
                 }
-                if competition.emissionHistory.recordedIDs.contains(id) {
-                    return leader
-                }
+                return competition.emissionHistory.recordedIDs.contains(id)
+            }
+            switch recorded.count {
+            case 0: continue
+            case 1: return recorded[0]
+            default: return endOfDayLeader(in: competition, day: day)
             }
         }
         return nil
+    }
+
+    /// The shown leader of the cumulative totals through `day`; nil when any
+    /// day's points are missing or the shown totals are equal.
+    private func endOfDayLeader(
+        in competition: CompetitionNotificationCompetitionSnapshot,
+        day: Int
+    ) -> NotificationEmissionLeader? {
+        var ownerTotal = 0.0
+        var opponentTotal = 0.0
+        for ordinal in 1...day {
+            guard let points = competition.days.first(where: { $0.ordinal == ordinal }),
+                  let owner = points.ownerAcceptedPoints,
+                  let opponent = points.opponentRevealedPoints
+            else {
+                return nil
+            }
+            ownerTotal += owner
+            opponentTotal += opponent
+        }
+        return displayedLeader(ownerTotal, opponentTotal)
     }
 
     private func candidate(
