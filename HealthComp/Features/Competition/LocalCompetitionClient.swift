@@ -99,6 +99,9 @@ struct LocalCompetitionDayPresentation: Equatable, Sendable {
     let ownerLatestAvailability: LocalCompetitionOwnerAvailability
     /// Revealed opponent points; `nil` can mean future or unavailable remote data.
     let opponentRevealedPoints: Double?
+    /// The other person sent this day with no score (for example tracking
+    /// paused). Remote only.
+    let opponentReportedNoData: Bool
     /// The snapshot that produced the accepted score, never reconstructed from
     /// points. It may differ from the most recent Health source evidence when
     /// downward revisions are preserved by the score ledger.
@@ -115,6 +118,7 @@ struct LocalCompetitionDayPresentation: Equatable, Sendable {
         ownerAcceptedPoints: Double?,
         ownerLatestAvailability: LocalCompetitionOwnerAvailability,
         opponentRevealedPoints: Double?,
+        opponentReportedNoData: Bool = false,
         ownerAcceptedSnapshot: ActivitySnapshot? = nil,
         ownerLatestSnapshot: ActivitySnapshot? = nil,
         scoringPolicy: ActivityScoringPolicy = .healthKitCompatibility
@@ -124,6 +128,7 @@ struct LocalCompetitionDayPresentation: Equatable, Sendable {
         self.ownerAcceptedPoints = ownerAcceptedPoints
         self.ownerLatestAvailability = ownerLatestAvailability
         self.opponentRevealedPoints = opponentRevealedPoints
+        self.opponentReportedNoData = opponentReportedNoData
         self.ownerAcceptedSnapshot = ownerAcceptedSnapshot
         self.ownerLatestSnapshot = ownerLatestSnapshot
         self.scoringPolicy = scoringPolicy
@@ -144,6 +149,8 @@ enum LocalCompetitionTallyAttention: Equatable, Sendable {
         unavailableOrdinals: Set<Int>
     )
     case unacceptedScores(ordinals: Set<Int>)
+    /// The other person's final days are not in yet: a non-final simulated
+    /// plan in the fixture, missing ledger rows in remote.
     case opponentPlanUnavailable
     case awaitingStability
 }

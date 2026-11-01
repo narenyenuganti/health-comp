@@ -1323,7 +1323,7 @@ func competitionStatusText(
     locale: Locale = .current,
     timeZone: TimeZone = .current
 ) -> CompetitionStatusText {
-    competitionStatusText(
+    let base = competitionStatusText(
         competition.lifecycle,
         schedule: competition.acceptedConfiguration?.schedule,
         opponentDisplayName: competition.opponentDisplayName,
@@ -1331,6 +1331,18 @@ func competitionStatusText(
         now: competition.evaluatedAt,
         locale: locale,
         timeZone: timeZone
+    )
+    // Only a tallying match with a deadline still ahead says when it ends.
+    guard case .tallying = competition.lifecycle,
+          style != .notification,
+          let deadline = competition.tally?.bestAvailableDeadline,
+          competition.evaluatedAt < deadline
+    else {
+        return base
+    }
+    return CompetitionStatusText(
+        title: base.title,
+        timing: "By \(competitionDeadlineText(deadline, now: competition.evaluatedAt, locale: locale, timeZone: timeZone))"
     )
 }
 
@@ -1413,17 +1425,18 @@ func competitionStatusText(
             timing: days == nil ? nil : "Ends at midnight" + zone(bounds?.end)
         )
     case .tallying:
-        CompetitionStatusText(title: "Tallying", timing: nil)
+        CompetitionStatusText(title: "Final score pending", timing: nil)
     case let .completed(outcome, _, _), let .archived(outcome, _, _, _):
         switch (outcome, style) {
-        case (.win, .notification):
-            CompetitionStatusText(title: "You beat \(name)", timing: nil)
+        case (_, .notification):
+            CompetitionStatusText(
+                title: competitionResultTitle(outcome: outcome, opponentDisplayName: name),
+                timing: nil
+            )
         case (.win, _):
             CompetitionStatusText(title: "You won", timing: week)
         case (.loss, _):
             CompetitionStatusText(title: "\(name) won", timing: week)
-        case (.tie, .notification):
-            CompetitionStatusText(title: "You tied with \(name)", timing: nil)
         case (.tie, _):
             CompetitionStatusText(title: "Tied", timing: week)
         }
