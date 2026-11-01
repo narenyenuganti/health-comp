@@ -24,6 +24,9 @@ enum MultiUserCompetitionTestLabScenario:
     case welcomeChallenge = "welcome-challenge"
     case healthOnboarding = "health-onboarding"
     case healthOnboardingChallenge = "health-onboarding-challenge"
+    /// A challenge link opened before Health is set up, through the real
+    /// Home flow.
+    case healthOnboardingClaim = "health-onboarding-claim"
 }
 
 struct MultiUserCompetitionTestLabConfiguration: Equatable, Sendable {
@@ -144,6 +147,8 @@ struct MultiUserCompetitionTestLabRootView: View {
                 continueTapped: {},
                 notNowTapped: {}
             )
+        case .healthOnboardingClaim:
+            MultiUserCompetitionPreHealthClaimTestLabView()
         }
     }
 }
@@ -397,17 +402,6 @@ private struct MultiUserCompetitionClaimTestLabView: View {
         case notNow
     }
 
-    private static let preview = CompetitionInvitePreview(
-        competitionID: MultiUserCompetitionTestLabFixtures.pendingID.rawValue,
-        state: .pending,
-        sender: AuthenticatedProfile(
-            id: MultiUserCompetitionTestLabFixtures.expiredRecipientID,
-            displayName: "Naren"
-        ),
-        timeZoneIdentifier: "America/Los_Angeles",
-        expiresAt: MultiUserCompetitionTestLabFixtures.labNow.addingTimeInterval(20 * 60 * 60)
-    )
-
     init(scenario: MultiUserCompetitionTestLabScenario) {
         self.scenario = scenario
         _isSignedIn = State(initialValue: scenario != .signedOutClaim)
@@ -416,7 +410,7 @@ private struct MultiUserCompetitionClaimTestLabView: View {
         case .offlineClaim: .retryable
         case .sharing, .sharingCustomScheme, .coldClaim, .warmClaim,
              .signedOutClaim, .challengeLink, .account, .welcome, .welcomeChallenge,
-             .healthOnboarding, .healthOnboardingChallenge:
+             .healthOnboarding, .healthOnboardingChallenge, .healthOnboardingClaim:
             .ready
         }
         _status = State(initialValue: initialStatus)
@@ -431,7 +425,7 @@ private struct MultiUserCompetitionClaimTestLabView: View {
             } else {
                 ClaimCompetitionView(
                     status: status,
-                    preview: Self.preview,
+                    preview: MultiUserCompetitionTestLabFixtures.claimPreview,
                     now: MultiUserCompetitionTestLabFixtures.labNow,
                     accept: accept,
                     notNow: { outcome = .notNow },
@@ -507,6 +501,39 @@ private struct MultiUserCompetitionClaimTestLabView: View {
             try? await Task.sleep(nanoseconds: 80_000_000)
             outcome = .accepted
         }
+    }
+}
+
+/// A fresh install: Health isn't set up and a challenge link is waiting.
+/// Runs Home's own reducer; only the server and iOS are stand-ins.
+private struct MultiUserCompetitionPreHealthClaimTestLabView: View {
+    @State private var store = Store(initialState: MainTabFeature.State()) {
+        MainTabFeature()
+    } withDependencies: {
+        let token = CompetitionInviteClaimToken(rawValue: String(repeating: "B", count: 43))!
+        $0.competitionRoutingClient = CompetitionRoutingClient(
+            routes: {
+                AsyncStream {
+                    $0.yield(CompetitionRouteEnvelope(sequence: 1, route: .claimInvite(token)))
+                }
+            },
+            enqueue: { _ in },
+            consume: { _ in }
+        )
+        var competition = CompetitionClient.storageUnavailable()
+        competition.previewInvite = { _ in MultiUserCompetitionTestLabFixtures.claimPreview }
+        $0.competitionClient = competition
+        $0.permissionOnboardingClient = PermissionOnboardingClient(
+            requestHealthAccess: {},
+            deferNotifications: {},
+            healthAccess: { .notRequested },
+            notificationsDeferred: { true }
+        )
+        $0.date = .constant(MultiUserCompetitionTestLabFixtures.labNow)
+    }
+
+    var body: some View {
+        MainTabView(store: store)
     }
 }
 
@@ -644,6 +671,13 @@ private enum MultiUserCompetitionTestLabFixtures {
     static let samLinkCode = "SamSamSamSamSamSamSam1"
     static let ownLinkCode = "OwnOwnOwnOwnOwnOwnOwn1"
     static let labNow = Date(timeIntervalSince1970: 1_786_867_200)
+    static let claimPreview = CompetitionInvitePreview(
+        competitionID: pendingID.rawValue,
+        state: .pending,
+        sender: AuthenticatedProfile(id: expiredRecipientID, displayName: "Naren"),
+        timeZoneIdentifier: "America/Los_Angeles",
+        expiresAt: labNow.addingTimeInterval(20 * 60 * 60)
+    )
 
     static func publication(
         archivedIDs: Set<CompetitionID>
