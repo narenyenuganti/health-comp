@@ -1694,7 +1694,11 @@ final class CompetitionPresentationTests: XCTestCase {
             timeZone: utc
         )
         XCTAssertEqual(text.title, "Alex sent a rematch")
-        XCTAssertEqual(text.detail, "Expires Sun 10:00 PM")
+        // ICU puts a narrow no-break space before PM.
+        XCTAssertEqual(
+            text.detail?.replacingOccurrences(of: "\u{202F}", with: " "),
+            "Expires Sun 10:00 PM"
+        )
         let undated = competitionReceivedRematchText(challenge(expiresAt: nil), locale: locale, timeZone: utc)
         XCTAssertEqual(undated.title, "Alex sent a rematch")
         XCTAssertNil(undated.detail)
