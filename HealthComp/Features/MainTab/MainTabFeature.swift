@@ -359,10 +359,12 @@ struct MainTabFeature {
                             competitionRoutingClient.consume(envelope.sequence)
                         }
                     }
-                    // A second link waits; only the newest waiting one is kept.
-                    if state.pendingClaimRoute != nil,
-                       state.inviteClaimStatus != .idle
-                        || state.claimRouteSequenceInFlight != nil {
+                    // A second link waits while another is open, still
+                    // waiting for the first publication, or just accepted
+                    // and waiting for its match. Only the newest waiting
+                    // one is kept.
+                    if state.pendingClaimRoute != nil
+                        || state.pendingClaimNavigation != nil {
                         state.queuedClaimRoute = envelope
                         return .none
                     }
@@ -1044,6 +1046,7 @@ struct MainTabFeature {
     private func advanceClaimQueue(state: inout State) -> Effect<Action> {
         guard state.inviteClaimStatus == .idle,
               state.pendingClaimRoute == nil,
+              state.pendingClaimNavigation == nil,
               state.claimRouteSequenceInFlight == nil,
               let queued = state.queuedClaimRoute
         else {
