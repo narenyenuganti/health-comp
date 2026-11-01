@@ -156,6 +156,32 @@ Deno.test("claim reports self-claim distinctly without database details", async 
   });
 });
 
+Deno.test("claim reports an overlapping match distinctly", async () => {
+  const response = await claimCompetitionInviteHandler(
+    request("AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"),
+    {
+      createUserClient: () => ({
+        auth: {
+          getUser: () =>
+            Promise.resolve({ data: { user: { id: "user-2" } }, error: null }),
+        },
+        rpc: () =>
+          Promise.resolve({
+            data: null,
+            error: { message: "active_match_exists", code: "P0001" },
+          }),
+      }),
+    },
+  );
+  assertEquals(response.status, 409);
+  assertEquals(await response.json(), {
+    error: {
+      code: "active_match_exists",
+      message: "A match with this account is in progress",
+    },
+  });
+});
+
 Deno.test("claim keeps unexpected database failures retryable", async () => {
   const response = await claimCompetitionInviteHandler(
     request("AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"),
@@ -331,6 +357,37 @@ Deno.test({
       assertEquals(creationState.competition_count, 1);
       assertEquals(creationState.derivation_version, 1);
 
+      const previewResponses = await Promise.all(
+        users.slice(1).map((user) =>
+          fetch(`${supabaseUrl}/functions/v1/preview-competition-invite`, {
+            method: "POST",
+            headers: {
+              authorization: `Bearer ${user.jwt}`,
+              "content-type": "application/json",
+            },
+            body: JSON.stringify({ token: invitation.token }),
+          })
+        ),
+      );
+      assertEquals(previewResponses.map((response) => response.status), [
+        200,
+        404,
+      ]);
+      const preview = await previewResponses[0].json();
+      assertEquals(preview.competitionId, invitation.competitionId);
+      assertEquals(preview.state, "pending");
+      assertEquals(preview.sender, {
+        id: users[0].profileId,
+        displayName: "creator",
+      });
+      assertEquals(preview.timeZoneIdentifier, "Pacific/Kiritimati");
+      assertEquals(await previewResponses[1].json(), {
+        error: {
+          code: "invite_unavailable",
+          message: "Invitation unavailable",
+        },
+      });
+
       const claimResponses = await Promise.all(
         users.slice(1).map((user) =>
           fetch(`${supabaseUrl}/functions/v1/claim-competition-invite`, {
@@ -366,6 +423,17 @@ Deno.test({
       assertEquals(competition.next_local_day, true);
       assertEquals(competition.invitees, 1);
 
+      const overlapResponse = await createRequest(crypto.randomUUID());
+      assertEquals(overlapResponse.status, 409);
+      assertEquals(await overlapResponse.json(), {
+        error: {
+          code: "active_match_exists",
+          message: "A match with this account is in progress",
+        },
+      });
+      // Synthetic boundary: the accepted match's week has ended.
+      await sql`update public.competitions set start_day = start_day - 8
+        where id = ${invitation.competitionId}::uuid`;
       const expiryResponse = await createRequest(crypto.randomUUID());
       assertEquals(expiryResponse.status, 201);
       const expiryInvitation = await expiryResponse.json();

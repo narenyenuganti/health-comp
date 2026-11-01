@@ -57,6 +57,13 @@ export async function claimCompetitionInviteHandler(
     if (error.message === "authentication_required") {
       return errorResponse(401, "unauthorized", "Authentication required");
     }
+    if (error.message === "active_match_exists") {
+      return errorResponse(
+        409,
+        "active_match_exists",
+        "A match with this account is in progress",
+      );
+    }
     if (error.code === "P0001") {
       return errorResponse(404, "invite_unavailable", "Invitation unavailable");
     }

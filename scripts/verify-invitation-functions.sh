@@ -140,7 +140,8 @@ assert_functions_child_alive
 
 NO_COLOR=1 deno test --config supabase/functions/deno.json --allow-env --allow-net \
   supabase/functions/create-competition-invite \
-  supabase/functions/claim-competition-invite >"$TEST_OUTPUT" 2>&1 &
+  supabase/functions/claim-competition-invite \
+  supabase/functions/preview-competition-invite >"$TEST_OUTPUT" 2>&1 &
 TEST_PID=$!
 while kill -0 "$TEST_PID" 2>/dev/null; do
   assert_functions_child_alive
