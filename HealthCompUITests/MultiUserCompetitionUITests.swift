@@ -30,7 +30,7 @@ final class MultiUserCompetitionUITests: XCTestCase {
         // Once sent, the sheet can't switch to someone else.
         XCTAssertTrue(app.staticTexts["Challenge sent"].exists)
         XCTAssertFalse(app.buttons["competition.create.find-recipient"].isEnabled)
-        XCTAssertFalse(app.textFields["competition.create.recipient-code"].isEnabled)
+        XCTAssertFalse(recipientCodeField.isEnabled)
         let screenshot = XCTAttachment(screenshot: app.screenshot())
         screenshot.name = "recipient-bound-invitation-confirmation"
         screenshot.lifetime = .keepAlways
@@ -50,8 +50,8 @@ final class MultiUserCompetitionUITests: XCTestCase {
 
         openChallengeDrawer()
         XCTAssertFalse(app.staticTexts["competition.create.recipient-name"].exists)
-        let field = app.textFields["competition.create.recipient-code"]
-        XCTAssertTrue(field.waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["competition.create.find-recipient"].waitForExistence(timeout: 3))
+        let field = recipientCodeField
         XCTAssertTrue(field.isEnabled)
         XCTAssertFalse((field.value as? String ?? "").contains("a1000000"))
         let reopenedCreate = app.buttons["competition.create.button"]
@@ -62,39 +62,41 @@ final class MultiUserCompetitionUITests: XCTestCase {
     func testAccountCodeErrorsAndReturnKey() {
         launch(.sharing)
         defer { app.terminate() }
-        openChallengeDrawer()
-        let field = app.textFields["competition.create.recipient-code"]
-        XCTAssertTrue(field.waitForExistence(timeout: 3))
         let error = app.staticTexts["competition.create.recipient-error"]
+        // Each code goes into a freshly opened sheet, which starts empty.
+        // Return runs Find Account; Find is never tapped.
+        func submit(_ code: String) {
+            openChallengeDrawer()
+            let field = recipientCodeField
+            XCTAssertTrue(field.waitForExistence(timeout: 3))
+            field.tap()
+            field.typeText(code + "\n")
+        }
 
-        field.tap()
-        field.typeText("abc\n")
+        submit("abc")
         XCTAssertTrue(error.waitForExistence(timeout: 3))
         XCTAssertEqual(
             error.label,
             "That isn’t a full account code. Ask them to share it again."
         )
+        closeChallengeDrawer()
 
-        replaceRecipientCode(in: field, deleting: 3, with: "a1000000-0000-4000-8000-000000000099\n")
+        submit("a1000000-0000-4000-8000-000000000099")
         XCTAssertTrue(error.waitForExistence(timeout: 3))
         XCTAssertEqual(error.label, "That’s your own code. Ask them for theirs.")
+        closeChallengeDrawer()
 
-        // Return runs Find Account; Find is never tapped.
-        replaceRecipientCode(in: field, deleting: 36, with: "a1000000-0000-4000-8000-000000000005\n")
+        submit("a1000000-0000-4000-8000-000000000005")
         let recipient = app.staticTexts["competition.create.recipient-name"]
         XCTAssertTrue(recipient.waitForExistence(timeout: 3))
         XCTAssertEqual(recipient.label, "Challenge Sam")
+        XCTAssertFalse(error.exists)
     }
 
-    private func replaceRecipientCode(
-        in field: XCUIElement,
-        deleting count: Int,
-        with text: String
-    ) {
-        field.tap()
-        field.typeText(
-            String(repeating: XCUIKeyboardKey.delete.rawValue, count: count) + text
-        )
+    // The field wraps a long code, so XCTest may expose it as a text view.
+    private var recipientCodeField: XCUIElement {
+        let field = app.textFields["competition.create.recipient-code"]
+        return field.exists ? field : app.textViews["competition.create.recipient-code"]
     }
 
     func testCopyCustomSchemeInvitationIncludesTheCompleteLink() throws {
@@ -926,7 +928,7 @@ final class MultiUserCompetitionUITests: XCTestCase {
     }
 
     private func chooseRecipient() {
-        let input = app.textFields["competition.create.recipient-code"]
+        let input = recipientCodeField
         scrollToElement(input)
         input.tap()
         input.typeText("a1000000-0000-4000-8000-000000000005")
