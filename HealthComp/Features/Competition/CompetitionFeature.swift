@@ -145,8 +145,6 @@ struct CompetitionFeature {
         Reduce { state, action in
             switch action {
             case .task:
-                let currentMutedIdentities = state.mutedOpponentIdentities
-                let loadFailed = state.mutePreferencesLoadFailed
                 let currentAuthorization = state.notificationAuthorizationState
                 return .merge(
                     .run { send in
@@ -159,19 +157,7 @@ struct CompetitionFeature {
                         id: CancelID.publications,
                         cancelInFlight: true
                     ),
-                    .run { send in
-                        do {
-                            let loaded = try await competitionClient
-                                .loadMutedOpponentIdentities()
-                            // A success after a failure clears the failure,
-                            // even when nothing changed.
-                            if loaded != currentMutedIdentities || loadFailed {
-                                await send(.mutePreferencesLoaded(loaded))
-                            }
-                        } catch {
-                            await send(.mutePreferencesLoaded(nil))
-                        }
-                    },
+                    loadMutePreferences(state: state),
                     .run { send in
                         guard let loaded = await competitionClient
                             .loadNotificationAuthorizationState(),
@@ -453,7 +439,13 @@ struct CompetitionFeature {
 
             case let .muteFinished(identity, isMuted, succeeded):
                 state.muteOpponentIdentitiesInFlight.remove(identity)
-                guard !succeeded else { return .none }
+                // A save that worked proves the store is reachable again, so
+                // a stale load failure gets another chance to clear.
+                guard !succeeded else {
+                    return state.mutePreferencesLoadFailed
+                        ? loadMutePreferences(state: state)
+                        : .none
+                }
                 if isMuted {
                     state.mutedOpponentIdentities.remove(identity)
                 } else {
@@ -507,7 +499,10 @@ struct CompetitionFeature {
                 return reconcile(trigger: .pullToRefresh)
 
             case .sceneBecameActive:
-                return reconcile(trigger: .foreground)
+                return .merge(
+                    reconcile(trigger: .foreground),
+                    loadMutePreferences(state: state)
+                )
 
             case .timeZoneChanged:
                 return reconcile(trigger: .timeZoneChange)
@@ -565,6 +560,27 @@ struct CompetitionFeature {
             return
         }
         clearInviteCreation(state: &state)
+    }
+
+    /// Reads the muted list. Skipped while a mute is saving, so the read can't
+    /// undo that optimistic change.
+    private func loadMutePreferences(state: State) -> Effect<Action> {
+        guard state.muteOpponentIdentitiesInFlight.isEmpty else { return .none }
+        let current = state.mutedOpponentIdentities
+        let loadFailed = state.mutePreferencesLoadFailed
+        return .run { send in
+            do {
+                let loaded = try await competitionClient
+                    .loadMutedOpponentIdentities()
+                // A success after a failure clears the failure, even when
+                // nothing changed.
+                if loaded != current || loadFailed {
+                    await send(.mutePreferencesLoaded(loaded))
+                }
+            } catch {
+                await send(.mutePreferencesLoaded(nil))
+            }
+        }
     }
 
     private func reconcile(
