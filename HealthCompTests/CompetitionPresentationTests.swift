@@ -117,7 +117,7 @@ final class CompetitionPresentationTests: XCTestCase {
                 direction: .outgoing,
                 opponentDisplayName: "Priya"
             ),
-            "Outgoing invitation to Priya"
+            "Challenge to Priya"
         )
         XCTAssertEqual(
             competitionResultTitle(
@@ -185,9 +185,7 @@ final class CompetitionPresentationTests: XCTestCase {
         )
     }
 
-    func testScheduledCompetitionShowsActualEndInViewerTimeZone()
-        throws
-    {
+    func testScheduleCardShowsTheInclusiveWeek() throws {
         let timeZoneIdentifier = "America/Los_Angeles"
         let schedule = CompetitionSchedule(
             calendar: try CompetitionCalendar(
@@ -212,13 +210,12 @@ final class CompetitionPresentationTests: XCTestCase {
         )
         let range = try XCTUnwrap(competitionScheduleDateRangeText(
             schedule,
-            locale: Locale(identifier: "en_US"),
-            timeZone: TimeZone(identifier: "Asia/Tokyo")!
+            now: try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-08-01T12:00:00Z")),
+            locale: Locale(identifier: "en_US")
         ))
-        XCTAssertTrue(range.contains("Aug 13"))
-        XCTAssertTrue(range.contains("Aug 20"))
-        XCTAssertTrue(range.contains("GMT+9") || range.contains("JST"))
-        XCTAssertFalse(range.contains("America/Los_Angeles"))
+        XCTAssertEqual(normalized(range), "Aug 13 – 19")
+        XCTAssertFalse(range.contains(":"))
+        XCTAssertFalse(range.contains("GMT"))
         XCTAssertEqual(schedule.startDay.day, 13)
 
         let mismatched = CompetitionSchedule(
@@ -244,42 +241,165 @@ final class CompetitionPresentationTests: XCTestCase {
         XCTAssertEqual(schedule.startDay.day, 28)
     }
 
-    func testFinalDayEndTextUsesViewerDateRatherThanCanonicalDay() throws {
+    func testStatusTextNamesEveryLifecycleInEveryStyle() throws {
         let zone = "America/Los_Angeles"
-        let schedule = CompetitionSchedule(
+        let la = try XCTUnwrap(TimeZone(identifier: zone))
+        let en = Locale(identifier: "en_US")
+        let now = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-10-31T12:00:00Z"))
+        let schedule = try statusSchedule()
+        func status(
+            _ lifecycle: LocalCompetitionLifecyclePresentation,
+            _ style: CompetitionStatusStyle,
+            schedule: CompetitionSchedule? = nil
+        ) -> CompetitionStatusText {
+            competitionStatusText(
+                lifecycle,
+                schedule: schedule,
+                opponentDisplayName: "Hermes",
+                style: style,
+                now: now,
+                locale: en,
+                timeZone: la
+            )
+        }
+        func normalizedStatus(
+            _ lifecycle: LocalCompetitionLifecyclePresentation,
+            _ style: CompetitionStatusStyle
+        ) -> [String?] {
+            let text = status(lifecycle, style, schedule: schedule)
+            return [text.title, text.timing.map(normalized)]
+        }
+        let created = Date(timeIntervalSince1970: 0)
+        let win = LocalCompetitionLifecyclePresentation.completed(
+            outcome: .win, basis: .stableAcrossPostBoundaryReads, completedAt: created
+        )
+        let loss = LocalCompetitionLifecyclePresentation.archived(
+            outcome: .loss, basis: .stableAcrossPostBoundaryReads,
+            completedAt: created, archivedAt: created
+        )
+        let tie = LocalCompetitionLifecyclePresentation.completed(
+            outcome: .tie, basis: .bestAvailable, completedAt: created
+        )
+        let week = "Oct 28 – Nov 3"
+        let expected: [(LocalCompetitionLifecyclePresentation, [CompetitionStatusStyle: [String?]])] = [
+            (.pending(direction: .outgoing, createdAt: created, expiresAt: nil), [
+                .row: ["Challenge sent", nil], .card: ["Challenge sent", nil],
+                .notification: ["Challenge to Hermes", nil],
+            ]),
+            (.pending(direction: .incoming, createdAt: created, expiresAt: nil), [
+                .row: ["Challenge received", nil], .card: ["Challenge received", nil],
+                .notification: ["Hermes challenged you", nil],
+            ]),
+            (.declined(at: created), [
+                .row: ["Declined", nil], .card: ["Declined", nil],
+                .notification: ["Challenge declined", nil],
+            ]),
+            (.expired(at: created), [
+                .row: ["Expired", nil], .card: ["Expired", nil],
+                .notification: ["Challenge expired", nil],
+            ]),
+            (.scheduled, [
+                .row: ["Starts Wed, Oct 28", nil], .card: ["Scheduled", "Starts Wed, Oct 28"],
+                .notification: ["Starts Wed, Oct 28", nil],
+            ]),
+            (.active(dayOrdinal: 4), [
+                .row: ["Day 4 of 7", "Ends Tue night"], .card: ["Day 4 of 7", "Ends Tue night"],
+                .notification: ["Day 4 of 7", nil],
+            ]),
+            (.endsToday, [
+                .row: ["Last day", "Ends at midnight"], .card: ["Last day", "Ends at midnight"],
+                .notification: ["Last day", nil],
+            ]),
+            (.tallying(startedAt: created), [
+                .row: ["Tallying", nil], .card: ["Tallying", nil],
+                .notification: ["Tallying", nil],
+            ]),
+            (win, [
+                .row: ["You won", week], .card: ["You won", week],
+                .notification: ["You beat Hermes", nil],
+            ]),
+            (loss, [
+                .row: ["Hermes won", week], .card: ["Hermes won", week],
+                .notification: ["Hermes won", nil],
+            ]),
+            (tie, [
+                .row: ["Tied", week], .card: ["Tied", week],
+                .notification: ["You tied with Hermes", nil],
+            ]),
+        ]
+        for (lifecycle, styles) in expected {
+            for (style, title) in styles {
+                XCTAssertEqual(normalizedStatus(lifecycle, style), title, "\(lifecycle) \(style)")
+            }
+        }
+
+        XCTAssertEqual(status(.active(dayOrdinal: 4), .row, schedule: schedule).line, "Day 4 of 7 · Ends Tue night")
+        XCTAssertEqual(status(.scheduled, .card, schedule: schedule).line, "Scheduled · Starts Wed, Oct 28")
+        XCTAssertNil(status(.active(dayOrdinal: 4), .row).timing)
+        XCTAssertEqual(status(.scheduled, .card), CompetitionStatusText(title: "Scheduled", timing: nil))
+
+        let presentation = LocalCompetitionPresentation(
+            id: CompetitionID(UUID()),
+            ownerDisplayName: "Naren",
+            opponentDisplayName: "Hermes",
+            lifecycle: win,
+            acceptedConfiguration: LocalCompetitionAcceptedPresentation(
+                schedule: schedule, difficulty: .balanced
+            ),
+            userPoints: 412,
+            opponentPoints: 380,
+            days: [],
+            currentDayOrdinal: nil,
+            lastRefresh: nil,
+            tally: nil,
+            terminalResult: nil,
+            evaluatedAt: try XCTUnwrap(ISO8601DateFormatter().date(from: "2027-02-01T12:00:00Z")),
+            timeZoneIdentifier: zone
+        )
+        let timing = try XCTUnwrap(
+            competitionStatusText(presentation, style: .row, locale: en, timeZone: la).timing
+        )
+        XCTAssertTrue(timing.contains("2026"), timing)
+    }
+
+    func testStatusTimingAddsCalendarZoneOnlyWhenOffsetDiffers() throws {
+        let schedule = try statusSchedule()
+        let now = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-10-31T12:00:00Z"))
+        func timing(
+            _ lifecycle: LocalCompetitionLifecyclePresentation,
+            phone: String
+        ) -> String? {
+            competitionStatusText(
+                lifecycle,
+                schedule: schedule,
+                opponentDisplayName: "Hermes",
+                style: .card,
+                now: now,
+                locale: Locale(identifier: "en_US"),
+                timeZone: TimeZone(identifier: phone)!
+            ).timing
+        }
+        XCTAssertEqual(timing(.active(dayOrdinal: 4), phone: "Asia/Tokyo"), "Ends Tue night PST")
+        XCTAssertEqual(timing(.endsToday, phone: "Asia/Tokyo"), "Ends at midnight PST")
+        XCTAssertEqual(timing(.scheduled, phone: "Asia/Tokyo"), "Starts Wed, Oct 28 PDT")
+        XCTAssertEqual(timing(.active(dayOrdinal: 4), phone: "America/Vancouver"), "Ends Tue night")
+        XCTAssertEqual(timing(.endsToday, phone: "America/Vancouver"), "Ends at midnight")
+        XCTAssertEqual(timing(.scheduled, phone: "America/Vancouver"), "Starts Wed, Oct 28")
+    }
+
+    private func statusSchedule() throws -> CompetitionSchedule {
+        let zone = "America/Los_Angeles"
+        return CompetitionSchedule(
             calendar: try CompetitionCalendar(timeZoneIdentifier: zone),
             startDay: try CompetitionDay(
                 era: 1, year: 2026, month: 10, day: 28,
                 timeZoneIdentifier: zone
             )
         )
-        let competition = LocalCompetitionPresentation(
-            id: CompetitionID(UUID()),
-            ownerDisplayName: "Naren",
-            opponentDisplayName: "Alex",
-            lifecycle: .endsToday,
-            acceptedConfiguration: LocalCompetitionAcceptedPresentation(
-                schedule: schedule, difficulty: .balanced
-            ),
-            userPoints: 0,
-            opponentPoints: 0,
-            days: [],
-            currentDayOrdinal: 7,
-            lastRefresh: nil,
-            tally: nil,
-            terminalResult: nil,
-            timeZoneIdentifier: zone
-        )
-        let text = try XCTUnwrap(competitionEndText(
-            competition,
-            locale: Locale(identifier: "en_US"),
-            timeZone: TimeZone(identifier: "Asia/Tokyo")!
-        ))
-        XCTAssertTrue(text.contains("Nov 4, 2026"))
-        XCTAssertTrue(text.contains("5:00"))
-        XCTAssertTrue(text.contains("PM"))
-        XCTAssertTrue(text.contains("GMT+9") || text.contains("JST"))
-        XCTAssertFalse(text.contains("America/Los_Angeles"))
+    }
+
+    private func normalized(_ text: String) -> String {
+        text.replacingOccurrences(of: "\\s+", with: " ", options: .regularExpression)
     }
 
     func testRefreshFailureCopyMapsEveryPrivacySafeReason() {
@@ -365,13 +485,15 @@ final class CompetitionPresentationTests: XCTestCase {
                 status: .failed(reason: .protectedDataUnavailable)
             ),
             lastSuccessfulFullWindowRefreshAt: succeededAt,
+            now: Date(timeIntervalSinceReferenceDate: 3_000),
             locale: Locale(identifier: "en_US"),
             timeZone: TimeZone(identifier: "Asia/Tokyo")!
         )
 
         XCTAssertEqual(lines.count, 2)
         XCTAssertTrue(lines[0].contains("Health data is locked"))
-        XCTAssertTrue(lines[0].contains("GMT+9") || lines[0].contains("JST"))
+        XCTAssertTrue(normalized(lines[0]).contains("Mon 9:33 AM"), lines[0])
+        XCTAssertFalse(lines[0].contains("GMT"))
         XCTAssertTrue(lines[1].contains("Last complete Activity read"))
         XCTAssertFalse(lines.joined(separator: " ").localizedCaseInsensitiveContains("sync"))
     }
@@ -442,7 +564,7 @@ final class CompetitionPresentationTests: XCTestCase {
         )
         XCTAssertEqual(
             competitionOwnerAccessibilityText(observedWithoutScore),
-            "activity observed, no accepted score"
+            "synced, no score yet"
         )
     }
 
@@ -546,7 +668,7 @@ final class CompetitionPresentationTests: XCTestCase {
 
         XCTAssertFalse(caption.contains("higher"))
         XCTAssertTrue(
-            caption.contains("preserves earlier source evidence under the competition scoring policy")
+            caption.contains("preserves earlier source evidence under the match scoring rules")
         )
     }
 
@@ -606,7 +728,7 @@ final class CompetitionPresentationTests: XCTestCase {
         let cases: [(LocalCompetitionTallyAttention, String)] = [
             (
                 .noRead,
-                "Waiting for the first complete post-competition Activity check."
+                "Waiting for the first complete Activity check after the match."
             ),
             (
                 .incomplete(
@@ -669,49 +791,64 @@ final class CompetitionPresentationTests: XCTestCase {
         XCTAssertFalse(copy.contains("accepted scores are still unavailable"))
     }
 
-    func testDayAccessibilityNamesTodayProgressClosedDateAndUpcomingState() {
+    func testDayAccessibilityNamesTodayProgressClosedDateAndUpcomingState() throws {
+        let now = try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-08-31T12:00:00Z"))
+        let en = Locale(identifier: "en_US")
         let observed = presentation(.observed, points: 321)
         let today = competitionDayAccessibilityLabel(
             observed,
             currentDayOrdinal: observed.ordinal,
-            ownerName: "Naren",
-            opponentName: "Alex"
+            opponentName: "Alex",
+            now: now,
+            locale: en
         )
-        XCTAssertTrue(today.contains("Today"))
-        XCTAssertTrue(today.contains("so far"))
+        XCTAssertTrue(today.contains("Day 2, Today, scores so far. You, 321 points."), today)
 
         let closed = competitionDayAccessibilityLabel(
             observed,
             currentDayOrdinal: nil,
-            ownerName: "Naren",
-            opponentName: "Alex"
+            opponentName: "Alex",
+            now: now,
+            locale: en
         )
-        XCTAssertTrue(closed.contains("August 9"))
-        XCTAssertTrue(closed.contains("complete"))
+        XCTAssertTrue(closed.contains("Day 2, Sun, Aug 9, complete."), closed)
+        XCTAssertTrue(closed.contains("You, 321 points"), closed)
 
         let future = competitionDayAccessibilityLabel(
             presentation(.notYetOccurred, points: nil),
             currentDayOrdinal: nil,
-            ownerName: "Naren",
-            opponentName: "Alex"
+            opponentName: "Alex",
+            now: now,
+            locale: en
         )
-        XCTAssertTrue(future.contains("upcoming"))
-        XCTAssertTrue(future.contains("--"))
-        XCTAssertTrue(future.contains("Alex, future, --"))
-        XCTAssertFalse(future.contains("Alex final"))
+        XCTAssertEqual(future, "Day 2, Sun, Aug 9, upcoming.")
+        for label in [today, closed, future] {
+            XCTAssertFalse(label.contains("--"), label)
+        }
     }
 
     func testClosedDayWithoutOpponentScoreIsUnavailableRatherThanFuture() {
         let label = competitionDayAccessibilityLabel(
             presentation(.observed, points: 321),
             currentDayOrdinal: nil,
-            ownerName: "Owner",
             opponentName: "Opponent"
         )
 
         XCTAssertTrue(label.contains("complete"))
-        XCTAssertTrue(label.contains("Opponent, score not available, --"))
-        XCTAssertFalse(label.contains("future"))
+        XCTAssertTrue(label.contains("Opponent, score not available."), label)
+        XCTAssertFalse(label.contains("upcoming"))
+        XCTAssertFalse(label.contains("--"))
+    }
+
+    func testRingPartsAddUpToTheDayTotal() {
+        let total = 232.0
+        let shares = [0.84, 22.0 / 30, 0.75]
+        let parts = shares.map { total * $0 / shares.reduce(0, +) }
+        let shown = competitionRoundedParts(parts, total: total)
+        XCTAssertEqual(shown.reduce(0, +), 232)
+        for part in shown {
+            XCTAssertEqual(part, part.rounded(), "\(part) is not whole")
+        }
     }
 
     func testTallyScoreHeaderUsesFinalDayInsteadOfToday() {
@@ -764,12 +901,14 @@ final class CompetitionPresentationTests: XCTestCase {
         let victory = try! XCTUnwrap(
             awards.first(where: { $0.kind == .victory })
         )
-        XCTAssertTrue(
-            competitionAwardEarnedText(
+        XCTAssertEqual(
+            normalized(competitionAwardEarnedText(
                 victory.awardedAt,
+                now: Date(timeIntervalSinceReferenceDate: 2_592_000),
                 locale: Locale(identifier: "en_US"),
                 timeZone: TimeZone(identifier: "UTC")!
-            ).hasPrefix("Earned Jan 1, 2001 ")
+            )),
+            "Earned Mon, Jan 1"
         )
         XCTAssertEqual(
             competitionVictoryCountText(1, friendDisplayName: "Alex"),
@@ -836,7 +975,7 @@ final class CompetitionPresentationTests: XCTestCase {
         calendar.locale = .current
         XCTAssertEqual(
             weekdayText(day),
-            calendar.shortWeekdaySymbols[3].uppercased(with: .current),
+            calendar.shortWeekdaySymbols[3],
             "September 23, 2026 is a Wednesday."
         )
     }

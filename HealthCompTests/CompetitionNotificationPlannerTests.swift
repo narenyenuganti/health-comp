@@ -72,7 +72,7 @@ final class CompetitionNotificationPlannerTests: XCTestCase {
         XCTAssertFalse(scheduled.title.contains("4000"))
         XCTAssertFalse(scheduled.body.contains("3000"))
 
-        let result = policy.content(
+        let result = CompetitionNotificationPolicy.liveV1Content(
             CompetitionNotificationMessage(
                 family: .opportunistic(.result),
                 competitionID: competitionID(
@@ -82,10 +82,87 @@ final class CompetitionNotificationPlannerTests: XCTestCase {
                 ownerPoints: 4_200,
                 opponentPoints: 3_900,
                 outcome: .win
-            )
+            ),
+            locale: Locale(identifier: "en_US")
         )
-        XCTAssertTrue(result.body.contains("4,200"))
-        XCTAssertTrue(result.body.contains("3,900"))
+        XCTAssertEqual(result.title, "You beat Alex")
+        XCTAssertEqual(result.body, "Final score: You 4,200, Alex 3,900.")
+    }
+
+    func testLivePolicyV1UsesTheUsersLocaleAndWholePoints() {
+        let content = CompetitionNotificationPolicy.liveV1Content(
+            message(.opportunistic(.leadChange), 1_217.4, 1_194),
+            locale: Locale(identifier: "de_DE")
+        )
+        XCTAssertEqual(
+            content.body,
+            "The lead changed in your match with Alex. You 1.217, Alex 1.194."
+        )
+    }
+
+    func testLivePolicyV1LifecycleTitlesMatchTheStatusFormatter() {
+        func title(
+            _ family: CompetitionNotificationMessageFamily,
+            outcome: CompetitionOutcome? = nil
+        ) -> String {
+            CompetitionNotificationPolicy.liveV1Content(
+                message(family, nil, nil, outcome),
+                locale: Locale(identifier: "en_US")
+            ).title
+        }
+        func formatter(_ lifecycle: LocalCompetitionLifecyclePresentation) -> String {
+            competitionStatusText(
+                lifecycle,
+                schedule: nil,
+                opponentDisplayName: "Alex",
+                style: .notification
+            ).title
+        }
+        XCTAssertEqual(title(.scheduled(.finalDay)), "Last day")
+        XCTAssertEqual(title(.scheduled(.finalDay)), formatter(.endsToday))
+        XCTAssertEqual(title(.scheduled(.competitionEnded)), "Tallying")
+        XCTAssertEqual(
+            title(.scheduled(.competitionEnded)),
+            formatter(.tallying(startedAt: .distantPast))
+        )
+        XCTAssertEqual(title(.scheduled(.scheduledStart)), "Day 1 of 7")
+        XCTAssertEqual(
+            title(.scheduled(.scheduledStart)),
+            formatter(.active(dayOrdinal: 1))
+        )
+        XCTAssertEqual(title(.opportunistic(.result), outcome: .loss), "Alex won")
+        XCTAssertEqual(
+            title(.opportunistic(.result), outcome: .loss),
+            formatter(.completed(
+                outcome: .loss,
+                basis: .stableAcrossPostBoundaryReads,
+                completedAt: .distantPast
+            ))
+        )
+    }
+
+    func testResultCopyShowsDecimalsOnlyWhenWholePointsWouldHideTheWinner() {
+        let content = CompetitionNotificationPolicy.liveV1Content(
+            message(.opportunistic(.result), 412.3, 412.0, .win),
+            locale: Locale(identifier: "en_US")
+        )
+        XCTAssertEqual(content.body, "Final score: You 412.30, Alex 412.00.")
+    }
+
+    private func message(
+        _ family: CompetitionNotificationMessageFamily,
+        _ ownerPoints: Double?,
+        _ opponentPoints: Double?,
+        _ outcome: CompetitionOutcome? = nil
+    ) -> CompetitionNotificationMessage {
+        CompetitionNotificationMessage(
+            family: family,
+            competitionID: competitionID("EAD172F8-531D-4327-823D-E82A4F696040"),
+            opponentDisplayName: "Alex",
+            ownerPoints: ownerPoints,
+            opponentPoints: opponentPoints,
+            outcome: outcome
+        )
     }
 
     func testDeterministicIdentifiersUseCanonicalNamespace() throws {
