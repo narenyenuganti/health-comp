@@ -892,11 +892,23 @@ private actor RemoteCompetitionClientCoordinator {
             guard runtime != nil else {
                 return publication(adding: .commandRejected(id))
             }
+            var rejected = false
             do {
                 try await command(remoteAPI, id.rawValue)
             } catch CompetitionRemoteFailure.inviteUnavailable where inviteUnavailableIsDone {
                 // No longer pending (cancelled or expired): nothing to decline.
             } catch {
+                rejected = true
+            }
+            // A challenge link's Decline can run before Health is set up.
+            // Nothing is refreshed (a refresh reads Health) or published
+            // until it starts.
+            guard hasStarted else {
+                return unpublishedPublication(
+                    issues: rejected ? [.commandRejected(id)] : []
+                )
+            }
+            if rejected {
                 return publication(adding: .commandRejected(id))
             }
             return await performReconciliation()
@@ -1337,12 +1349,19 @@ private actor RemoteCompetitionClientCoordinator {
     }
 
     private func terminalBlockedPublication() -> CompetitionPublication {
-        latestPublication ?? CompetitionPublication(
+        latestPublication ?? unpublishedPublication(issues: [.storageUnavailable])
+    }
+
+    /// An empty answer that isn't sent to subscribers.
+    private func unpublishedPublication(
+        issues: [CompetitionClientIssue]
+    ) -> CompetitionPublication {
+        CompetitionPublication(
             publicationRevision: publicationRevision,
             dashboard: CompetitionDashboard(
                 competitions: [],
                 awards: [],
-                issues: [.storageUnavailable],
+                issues: issues,
                 hiddenTerminalCompetitionCount: 0
             ),
             evaluatedAt: .distantPast,
