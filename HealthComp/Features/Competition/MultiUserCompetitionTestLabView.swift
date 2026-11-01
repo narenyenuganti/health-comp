@@ -20,7 +20,9 @@ enum MultiUserCompetitionTestLabScenario:
     case offlineClaim = "offline-claim"
     case account
     case welcome
+    case welcomeChallenge = "welcome-challenge"
     case healthOnboarding = "health-onboarding"
+    case healthOnboardingChallenge = "health-onboarding-challenge"
 }
 
 struct MultiUserCompetitionTestLabConfiguration: Equatable, Sendable {
@@ -126,10 +128,16 @@ struct MultiUserCompetitionTestLabRootView: View {
             MultiUserCompetitionAccountTestLabView()
         case .welcome:
             MultiUserCompetitionAccountTestLabView(mode: .signedOut)
-        case .healthOnboarding:
+        case .welcomeChallenge:
+            MultiUserCompetitionAccountTestLabView(
+                mode: .signedOut,
+                hasPendingChallenge: true
+            )
+        case .healthOnboarding, .healthOnboardingChallenge:
             PermissionOnboardingView(
                 step: .health,
                 isRequesting: false,
+                isForChallenge: configuration.scenario == .healthOnboardingChallenge,
                 continueTapped: {},
                 notNowTapped: {}
             )
@@ -354,7 +362,8 @@ private struct MultiUserCompetitionClaimTestLabView: View {
         case .unavailableClaim: .unavailable
         case .offlineClaim: .retryable
         case .sharing, .sharingCustomScheme, .coldClaim, .warmClaim,
-             .signedOutClaim, .account, .welcome, .healthOnboarding:
+             .signedOutClaim, .account, .welcome, .welcomeChallenge,
+             .healthOnboarding, .healthOnboardingChallenge:
             .ready
         }
         _status = State(initialValue: initialStatus)
@@ -441,9 +450,17 @@ private struct MultiUserCompetitionClaimTestLabView: View {
 
 private struct MultiUserCompetitionAccountTestLabView: View {
     @State private var openedURL: URL?
+    @State private var muted = [
+        AccountMutedPerson(id: "remote-opponent:v1:hermes", name: "Hermes"),
+    ]
     let store: StoreOf<AccountFeature>
+    let hasPendingChallenge: Bool
 
-    init(mode: AccountFeature.State.Mode = .authenticated) {
+    init(
+        mode: AccountFeature.State.Mode = .authenticated,
+        hasPendingChallenge: Bool = false
+    ) {
+        self.hasPendingChallenge = hasPendingChallenge
         self.store = Store(
             initialState: AccountFeature.State(
                 mode: mode,
@@ -465,9 +482,25 @@ private struct MultiUserCompetitionAccountTestLabView: View {
     var body: some View {
         NavigationStack {
             if store.mode == .signedOut {
-                AccountView(store: store)
+                AccountView(store: store, hasPendingChallenge: hasPendingChallenge)
             } else {
-                AccountSettingsView(store: store, accountCode: MultiUserCompetitionTestLabFixtures.pendingID.rawValue)
+                AccountSettingsView(
+                    store: store,
+                    notifications: AccountNotificationSettings(
+                        authorization: .denied,
+                        isRequestInFlight: false,
+                        request: {},
+                        mutedPeople: muted,
+                        unmute: { id in muted.removeAll { $0.id == id } }
+                    ),
+                    health: AccountHealthSettings(
+                        access: .requested,
+                        isReadFailing: false,
+                        connect: {}
+                    ),
+                    liveMatchCount: 2,
+                    accountCode: MultiUserCompetitionTestLabFixtures.pendingID.rawValue
+                )
             }
         }
         .environment(\.openURL, OpenURLAction { url in
