@@ -567,7 +567,10 @@ private struct CompetitionScoreboardPanel: View {
         .font(.themeLabel)
         .tracking(1.2)
         .textCase(.uppercase)
+        // One static element: the hit-region audit treats a traitless
+        // element as a control, and this row is read, never tapped.
         .accessibilityElement(children: .ignore)
+        .accessibilityAddTraits(.isStaticText)
         .accessibilityLabel(status.line)
         .accessibilityIdentifier("competition.status")
     }

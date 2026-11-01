@@ -1052,7 +1052,10 @@ final class MultiUserCompetitionUITests: XCTestCase {
 
     private func scrollToElement(_ element: XCUIElement) {
         for _ in 0..<24 {
-            if element.exists, element.isHittable { return }
+            // Fully on screen: a row cut by the bottom edge reports hittable,
+            // but a tap there lands on the home indicator.
+            if element.exists, element.isHittable,
+               app.frame.contains(element.frame) { return }
             // List is a CollectionView on iOS 18; keyboard dismissal can
             // remove a transient ScrollView between coordinate lookups.
             let collectionView = app.collectionViews.firstMatch

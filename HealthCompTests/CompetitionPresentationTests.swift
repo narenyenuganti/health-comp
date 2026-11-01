@@ -382,9 +382,11 @@ final class CompetitionPresentationTests: XCTestCase {
         XCTAssertEqual(timing(.active(dayOrdinal: 4), phone: "Asia/Tokyo"), "Ends Tue night PST")
         XCTAssertEqual(timing(.endsToday, phone: "Asia/Tokyo"), "Ends at midnight PST")
         XCTAssertEqual(timing(.scheduled, phone: "Asia/Tokyo"), "Starts Wed, Oct 28 PDT")
-        XCTAssertEqual(timing(.active(dayOrdinal: 4), phone: "America/Vancouver"), "Ends Tue night")
-        XCTAssertEqual(timing(.endsToday, phone: "America/Vancouver"), "Ends at midnight")
-        XCTAssertEqual(timing(.scheduled, phone: "America/Vancouver"), "Starts Wed, Oct 28")
+        // Same offset under another zone name: no suffix. (Not Vancouver:
+        // current tzdata keeps British Columbia on -07 from Nov 2026.)
+        XCTAssertEqual(timing(.active(dayOrdinal: 4), phone: "US/Pacific"), "Ends Tue night")
+        XCTAssertEqual(timing(.endsToday, phone: "US/Pacific"), "Ends at midnight")
+        XCTAssertEqual(timing(.scheduled, phone: "US/Pacific"), "Starts Wed, Oct 28")
     }
 
     private func statusSchedule() throws -> CompetitionSchedule {
