@@ -54,6 +54,10 @@ struct AppFeature {
         var isAuthenticationMonitoring: Bool
         /// The newest claim link that arrived before sign-in finished.
         var pendingChallengeSequence: UInt64?
+        /// Set when a new account's name is submitted: claim links up to
+        /// this sequence arrived before the account existed. Kept through
+        /// mount failure and Try Again.
+        var newAccountClaimLinksThrough: UInt64?
 
         var hasPendingChallenge: Bool { pendingChallengeSequence != nil }
 
@@ -362,9 +366,6 @@ struct AppFeature {
                 }
                 switch response {
                 case let .success(paths) where paths.profileID == profile.id:
-                    // The phase stays settingUpProfile from the name submit
-                    // until here.
-                    let isNewAccount = state.phase == .settingUpProfile
                     state.phase = .authenticated
                     state.profileStoragePaths = paths
                     state.account = AccountFeature.State(
@@ -374,12 +375,11 @@ struct AppFeature {
                     var mainTab = MainTabFeature.State(
                         competition: CompetitionFeature.State(ownProfile: profile)
                     )
-                    if isNewAccount {
-                        mainTab.claimLinksBeforeAccountThrough =
-                            state.pendingChallengeSequence ?? 0
-                    }
+                    mainTab.claimLinksBeforeAccountThrough =
+                        state.newAccountClaimLinksThrough ?? 0
                     state.mainTab = mainTab
                     state.pendingChallengeSequence = nil
+                    state.newAccountClaimLinksThrough = nil
                 case .failure(.profileTransitionRequiresCleanup):
                     let isUnmounted = state.profileStoragePaths == nil && state.mainTab == nil
                     becomeLaunchFailure(state: &state)
@@ -502,6 +502,14 @@ struct AppFeature {
 
             case let .account(.delegate(.displayNameSubmitted(name))):
                 guard state.phase == .settingUpProfile else { return .none }
+                // This name creates the account, so any link already here
+                // can't be for it.
+                if let sequence = state.pendingChallengeSequence {
+                    state.newAccountClaimLinksThrough = max(
+                        state.newAccountClaimLinksThrough ?? 0,
+                        sequence
+                    )
+                }
                 return bootstrapProfile(name, epoch: state.authEpoch)
 
             case let .account(.delegate(.displayNameUpdateRequested(name))):
@@ -1177,6 +1185,7 @@ struct AppFeature {
         state.profileStoragePaths = nil
         state.pendingTeardown = nil
         state.mainTab = nil
+        state.newAccountClaimLinksThrough = nil
         state.account = AccountFeature.State(mode: .signedOut)
         state.account.isBrowserSignInAvailable = authenticationClient.signInWithAppleInBrowser != nil
         state.account.isBrowserDeletionAvailable = authenticationClient.deleteAccountInBrowser != nil

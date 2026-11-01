@@ -335,7 +335,10 @@ struct MainTabFeature {
 
             case let .accountPresentationChanged(isPresented):
                 state.isAccountPresented = isPresented
-                return .none
+                // Account covers Home, so the notifications prompt waits.
+                return notificationPromptBlockerChanged(
+                    isOpen: isPresented, state: &state
+                )
 
             case let .pendingRouteTimedOut(sequence):
                 guard state.pendingRoute?.sequence == sequence else {
@@ -563,8 +566,12 @@ struct MainTabFeature {
                 if acceptedBeforeStart,
                    state.pendingClaimRoute != nil,
                    state.claimRouteSequenceInFlight == nil {
+                    // The claim sheet is about to show; the publication that
+                    // resolves the claim schedules the prompt.
                     effects.append(.send(.processPendingClaim))
-                } else if state.pendingClaimRoute != nil,
+                    return .merge(effects)
+                }
+                if state.pendingClaimRoute != nil,
                    state.claimRouteSequenceInFlight == nil,
                    state.inviteClaimStatus == .idle {
                     state.inviteClaimStatus = .ready
@@ -606,8 +613,7 @@ struct MainTabFeature {
 
             case let .challengeSheetVisibilityChanged(isOpen):
                 state.isChallengeSheetOpen = isOpen
-                guard !isOpen else { return .none }
-                return scheduleNotificationPromptIfDue(state: &state)
+                return notificationPromptBlockerChanged(isOpen: isOpen, state: &state)
 
             case .notificationPromptReady:
                 guard state.notificationPrompt == .scheduled else {
@@ -615,6 +621,7 @@ struct MainTabFeature {
                 }
                 guard state.inviteClaimStatus == .idle,
                       !state.isChallengeSheetOpen,
+                      !state.isAccountPresented,
                       state.onboarding == nil,
                       state.competition.notificationAuthorizationState
                         == .notDetermined
@@ -659,6 +666,7 @@ struct MainTabFeature {
               state.onboarding == nil,
               state.inviteClaimStatus == .idle,
               !state.isChallengeSheetOpen,
+              !state.isAccountPresented,
               state.competition.notificationAuthorizationState == .notDetermined,
               state.competition.publication?.dashboard.competitions.contains(
                   where: { Self.hasPerson($0.lifecycle) }
@@ -676,6 +684,22 @@ struct MainTabFeature {
             )
         }
         .cancellable(id: CancelID.notificationPrompt, cancelInFlight: true)
+    }
+
+    /// Another sheet opening while the prompt is `.presented` means SwiftUI
+    /// dropped the prompt (a showing prompt covers the controls that open
+    /// them), so it goes back to unscheduled and retries when they close.
+    private func notificationPromptBlockerChanged(
+        isOpen: Bool,
+        state: inout State
+    ) -> Effect<Action> {
+        if isOpen {
+            if state.notificationPrompt == .presented {
+                state.notificationPrompt = .unscheduled
+            }
+            return .none
+        }
+        return scheduleNotificationPromptIfDue(state: &state)
     }
 
     /// A pending challenge (either direction) or a match that hasn't
@@ -721,13 +745,17 @@ struct MainTabFeature {
             state.heldRouteSequence = nil
             state.lastHandledRouteSequence = envelope.sequence
             state.showsHistory = false
+            let closesAccount = state.isAccountPresented
             state.isAccountPresented = false
             state.path = [id]
             return .merge(
                 .cancel(id: CancelID.routeHold),
                 .run { _ in
                     competitionRoutingClient.consume(envelope.sequence)
-                }
+                },
+                closesAccount
+                    ? notificationPromptBlockerChanged(isOpen: false, state: &state)
+                    : .none
             )
         case .claimInvite:
             // Claim routes remain pending in the process-rooted hub until the
