@@ -206,7 +206,20 @@ private struct MultiUserCompetitionSharingTestLabView: View {
                     selectCompetition: { path.append($0) },
                     openHistory: { showsHistory = true },
                     reinvite: {},
-                    isReinviteInFlight: false
+                    isReinviteInFlight: false,
+                    challengeAgain: { _ in
+                        recipientCode = MultiUserCompetitionTestLabFixtures.expiredRecipientID
+                            .uuidString.lowercased()
+                        recipient = AuthenticatedProfile(
+                            id: MultiUserCompetitionTestLabFixtures.expiredRecipientID,
+                            displayName: "Taylor"
+                        )
+                        recipientStatus = .idle
+                        isChallengePresented = true
+                    },
+                    archive: { archivedIDs.insert($0) },
+                    commandIDsInFlight: [],
+                    retry: {}
                 )
                 .toolbar {
                     ToolbarItem(placement: .topBarTrailing) {
@@ -486,11 +499,21 @@ private enum MultiUserCompetitionTestLabFixtures {
     static let pendingID = CompetitionID(
         UUID(uuidString: "A1000000-0000-4000-8000-000000000005")!
     )
+    static let secondActiveID = CompetitionID(
+        UUID(uuidString: "A1000000-0000-4000-8000-000000000006")!
+    )
+    static let expiredID = CompetitionID(
+        UUID(uuidString: "A1000000-0000-4000-8000-000000000007")!
+    )
+    static let expiredRecipientID = UUID(
+        uuidString: "A1000000-0000-4000-8000-000000000008"
+    )!
 
     static func publication(
         archivedIDs: Set<CompetitionID>
     ) -> LocalCompetitionPublication {
         let completedAt = Date(timeIntervalSince1970: 1_787_212_800)
+        let evaluatedAt = Date(timeIntervalSince1970: 1_786_867_200)
         let scheduled = presentation(
             id: scheduledID,
             opponentName: "Priya",
@@ -510,6 +533,35 @@ private enum MultiUserCompetitionTestLabFixtures {
             days: activeDays(),
             currentDayOrdinal: 3,
             terminal: nil
+        )
+        // A second live match that ends a day after Jordan's, with a
+        // refresh problem of its own.
+        let secondActive = presentation(
+            id: secondActiveID,
+            opponentName: "Riley",
+            lifecycle: .active(dayOrdinal: 2),
+            userPoints: 1_020,
+            opponentPoints: 990,
+            days: activeDays(startDay: 14, currentDay: 2),
+            currentDayOrdinal: 2,
+            terminal: nil,
+            startDay: 14
+        )
+        let expired = presentation(
+            id: expiredID,
+            opponentName: "Taylor",
+            lifecycle: .expired(
+                at: evaluatedAt.addingTimeInterval(-2 * 60 * 60),
+                direction: .outgoing
+            ),
+            userPoints: 0,
+            opponentPoints: 0,
+            days: [],
+            currentDayOrdinal: nil,
+            terminal: nil,
+            opponentIdentity: RemoteCompetitionOpponentIdentity.identity(
+                for: expiredRecipientID
+            )
         )
         let completedTerminal = LocalCompetitionTerminalPresentation(
             userPoints: 3_520,
@@ -578,28 +630,16 @@ private enum MultiUserCompetitionTestLabFixtures {
             currentDayOrdinal: nil,
             terminal: nil
         )
-        let competitions = [scheduled, active, completed, archived, pending]
+        let competitions = [
+            scheduled, active, completed, archived, pending, secondActive, expired,
+        ]
         let awards = [
-            LocalCompetitionAward(
-                id: "remote-ui-lab:completed:completion",
-                competitionID: completedID,
-                kind: .completion,
-                awardedAt: completedAt,
-                friendDisplayName: "Former competitor"
-            ),
             LocalCompetitionAward(
                 id: "remote-ui-lab:completed:victory",
                 competitionID: completedID,
-                kind: .victory,
                 awardedAt: completedAt,
-                friendDisplayName: "Former competitor"
-            ),
-            LocalCompetitionAward(
-                id: "remote-ui-lab:archived:completion",
-                competitionID: archivedID,
-                kind: .completion,
-                awardedAt: archivedTerminal.completedAt,
-                friendDisplayName: "Morgan"
+                friendDisplayName: "Former competitor",
+                opponentIdentity: completed.opponentIdentity
             ),
         ]
         return LocalCompetitionPublication(
@@ -607,10 +647,10 @@ private enum MultiUserCompetitionTestLabFixtures {
             dashboard: LocalCompetitionDashboard(
                 competitions: competitions,
                 awards: awards,
-                issues: [],
+                issues: [.competitionFailures([secondActiveID])],
                 hiddenTerminalCompetitionCount: 0
             ),
-            evaluatedAt: Date(timeIntervalSince1970: 1_786_867_200),
+            evaluatedAt: evaluatedAt,
             timeZoneIdentifier: "America/Los_Angeles",
             source: .remoteParticipants
         )
@@ -643,14 +683,17 @@ private enum MultiUserCompetitionTestLabFixtures {
         opponentPoints: Double,
         days: [LocalCompetitionDayPresentation],
         currentDayOrdinal: Int?,
-        terminal: LocalCompetitionTerminalPresentation?
+        terminal: LocalCompetitionTerminalPresentation?,
+        startDay: Int = 13,
+        opponentIdentity: String? = nil
     ) -> LocalCompetitionPresentation {
-        let schedule = schedule()
+        let schedule = schedule(startDay: startDay)
         return LocalCompetitionPresentation(
             id: id,
             ownerDisplayName: "Beta Alice",
             opponentDisplayName: opponentName,
-            opponentIdentity: "remote-profile:v1:\(id.rawValue.uuidString.lowercased())",
+            opponentIdentity: opponentIdentity
+                ?? "remote-profile:v1:\(id.rawValue.uuidString.lowercased())",
             lifecycle: lifecycle,
             acceptedConfiguration: LocalCompetitionAcceptedPresentation(
                 schedule: schedule,
@@ -669,7 +712,7 @@ private enum MultiUserCompetitionTestLabFixtures {
         )
     }
 
-    private static func schedule() -> CompetitionSchedule {
+    private static func schedule(startDay: Int = 13) -> CompetitionSchedule {
         let calendar = try! CompetitionCalendar(
             timeZoneIdentifier: "America/Los_Angeles"
         )
@@ -679,14 +722,17 @@ private enum MultiUserCompetitionTestLabFixtures {
                 era: 1,
                 year: 2026,
                 month: 8,
-                day: 13,
+                day: startDay,
                 timeZoneIdentifier: calendar.timeZoneIdentifier
             )
         )
     }
 
-    private static func activeDays() -> [LocalCompetitionDayPresentation] {
-        let schedule = schedule()
+    private static func activeDays(
+        startDay: Int = 13,
+        currentDay: Int = 3
+    ) -> [LocalCompetitionDayPresentation] {
+        let schedule = schedule(startDay: startDay)
         let days = try! schedule.calendar.sevenDayWindow(
             startingOn: schedule.startDay
         )
@@ -696,11 +742,11 @@ private enum MultiUserCompetitionTestLabFixtures {
             LocalCompetitionDayPresentation(
                 day: day,
                 ordinal: offset + 1,
-                ownerAcceptedPoints: owner[offset],
-                ownerLatestAvailability: offset < 3
+                ownerAcceptedPoints: offset < currentDay ? owner[offset] : nil,
+                ownerLatestAvailability: offset < currentDay
                     ? .observed
                     : .notYetOccurred,
-                opponentRevealedPoints: opponent[offset]
+                opponentRevealedPoints: offset < currentDay ? opponent[offset] : nil
             )
         }
     }

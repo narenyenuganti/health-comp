@@ -1591,15 +1591,15 @@ enum RemoteCompetitionProjector {
         issues: [CompetitionClientIssue]
     ) -> CompetitionDashboard {
         let all = materializations.compactMap {
-            presentation(from: $0, profile: profile, context: context)
+            presentation(
+                from: $0,
+                profile: profile,
+                context: context,
+                closesLapsedChallenges: true
+            )
         }.sorted { $0.id.rawValue.uuidString < $1.id.rawValue.uuidString }
         let visible = all.filter {
-            switch $0.lifecycle {
-            case .declined, .expired:
-                false
-            default:
-                true
-            }
+            competitionIsRetainedOnDashboard($0.lifecycle, now: context.instant.wallDate)
         }
         return CompetitionDashboard(
             competitions: visible,
@@ -1715,7 +1715,10 @@ enum RemoteCompetitionProjector {
             } ?? baseline.opponentIdentity,
             opponentDisplayName: baseline.opponentDisplayName,
             lifecycle: notificationLifecycle(
-                lifecyclePresentation(competition.lifecycle)
+                lifecyclePresentation(
+                    competition.lifecycle,
+                    direction: loaded.journal.genesis.direction
+                )
             ),
             schedule: schedule,
             ownerPoints: terminal?.userPoints ?? ownerPoints,
@@ -1772,13 +1775,26 @@ enum RemoteCompetitionProjector {
         }
     }
 
+    /// `closesLapsedChallenges` shows a pending challenge past its expiry as
+    /// expired. The server only flips it lazily, so the dashboard does it;
+    /// notifications keep the stored lifecycle.
     private static func presentation(
         from materialization: RemoteCompetitionMaterialization,
         profile: AuthenticatedProfile,
-        context: CompetitionEnvironmentContext
+        context: CompetitionEnvironmentContext,
+        closesLapsedChallenges: Bool = false
     ) -> CompetitionPresentation? {
         let projection = materialization.journal.projection
         let competition = projection.competition
+        var lifecycle = lifecyclePresentation(
+            competition.lifecycle,
+            direction: materialization.journal.journal.genesis.direction
+        )
+        if closesLapsedChallenges,
+           case let .pending(direction, _, expiresAt?) = lifecycle,
+           expiresAt <= context.instant.wallDate {
+            lifecycle = .expired(at: expiresAt, direction: direction)
+        }
         let participantPresentation = remoteCompetitionParticipantPresentation(
             descriptor: materialization.descriptor,
             profile: profile
@@ -1810,7 +1826,7 @@ enum RemoteCompetitionProjector {
             opponentIdentity: opponentID.map {
                 RemoteCompetitionOpponentIdentity.identity(for: $0)
             } ?? "remote-profile:v1:pending",
-            lifecycle: lifecyclePresentation(competition.lifecycle),
+            lifecycle: lifecycle,
             acceptedConfiguration: schedule.map {
                 CompetitionAcceptedPresentation(
                     schedule: $0,
@@ -1892,7 +1908,8 @@ enum RemoteCompetitionProjector {
     }
 
     private static func lifecyclePresentation(
-        _ lifecycle: CompetitionLifecycle
+        _ lifecycle: CompetitionLifecycle,
+        direction: InvitationDirection
     ) -> CompetitionLifecyclePresentation {
         switch lifecycle {
         case let .pendingInvitation(invitation):
@@ -1901,8 +1918,8 @@ enum RemoteCompetitionProjector {
                 createdAt: invitation.createdAt,
                 expiresAt: invitation.expiresAt
             )
-        case let .declined(at): .declined(at: at)
-        case let .expired(at): .expired(at: at)
+        case let .declined(at): .declined(at: at, direction: direction)
+        case let .expired(at): .expired(at: at, direction: direction)
         case .scheduled: .scheduled
         case let .active(day): .active(dayOrdinal: day.ordinal)
         case .endsToday: .endsToday
@@ -1998,34 +2015,19 @@ enum RemoteCompetitionProjector {
         )
     }
 
-    private static func awards(
+    static func awards(
         from presentations: [CompetitionPresentation]
     ) -> [CompetitionAward] {
-        var result: [CompetitionAward] = []
-        for presentation in presentations {
-            guard let terminal = presentation.terminalResult else { continue }
-            let prefix = "remote-competition-award:v1:\(presentation.id.rawValue.uuidString.lowercased())"
-            result.append(
-                CompetitionAward(
-                    id: "\(prefix):completion",
-                    competitionID: presentation.id,
-                    kind: .completion,
-                    awardedAt: terminal.completedAt,
-                    friendDisplayName: presentation.opponentDisplayName
-                )
+        presentations.compactMap { presentation -> CompetitionAward? in
+            guard let terminal = presentation.terminalResult,
+                  terminal.outcome == .win else { return nil }
+            return CompetitionAward(
+                id: "remote-competition-award:v1:\(presentation.id.rawValue.uuidString.lowercased()):victory",
+                competitionID: presentation.id,
+                awardedAt: terminal.completedAt,
+                friendDisplayName: presentation.opponentDisplayName,
+                opponentIdentity: presentation.opponentIdentity
             )
-            if terminal.outcome == .win {
-                result.append(
-                    CompetitionAward(
-                        id: "\(prefix):victory",
-                        competitionID: presentation.id,
-                        kind: .victory,
-                        awardedAt: terminal.completedAt,
-                        friendDisplayName: presentation.opponentDisplayName
-                    )
-                )
-            }
-        }
-        return result.sorted { $0.id < $1.id }
+        }.sortedNewestFirst()
     }
 }

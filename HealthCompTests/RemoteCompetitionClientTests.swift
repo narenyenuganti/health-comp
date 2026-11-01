@@ -3149,23 +3149,149 @@ final class RemoteCompetitionClientTests: XCTestCase {
 
     func testRemoteDiscoveryIssueHasTruthfulRetryingMessage() {
         XCTAssertEqual(
-            competitionIssueSummary([.remoteUnavailable]),
-            "Unable to connect. HealthComp will keep trying."
+            competitionIssueSummary([.remoteUnavailable], attributedIDs: []),
+            "Offline. Scores update when you reconnect."
         )
         XCTAssertEqual(
-            competitionIssueSummary([.storageUnavailable]),
+            competitionIssueSummary([.storageUnavailable], attributedIDs: []),
             "Match storage on this iPhone is unavailable."
         )
         XCTAssertEqual(
-            competitionIssueSummary([.remoteFailure]),
+            competitionIssueSummary([.remoteFailure], attributedIDs: []),
             "Matches could not be refreshed."
         )
         XCTAssertEqual(
-            competitionIssueSummary([
-                .remoteUnavailable,
-                .authorizationUnavailable,
-            ]),
+            competitionIssueSummary(
+                [.remoteUnavailable, .authorizationUnavailable],
+                attributedIDs: []
+            ),
             "Activity authorization is unavailable."
+        )
+    }
+
+    func testLapsedPendingChallengeShowsAsExpiredForOneDayOnlyOnTheDashboard()
+        throws
+    {
+        let profile = AuthenticatedProfile(
+            id: UUID(uuidString: "83000000-0000-4000-8000-000000000001")!,
+            displayName: "Beta Alice"
+        )
+        let competitionID = UUID(
+            uuidString: "83000000-0000-4000-8000-000000000002"
+        )!
+        let expiresAt = Date(timeIntervalSince1970: 1_786_032_000)
+        let materialization = RemoteCompetitionMaterialization(
+            descriptor: try pendingDescriptor(
+                competitionID: competitionID,
+                profile: profile,
+                expiresAt: expiresAt
+            ),
+            journal: try LoadedCompetitionJournal(
+                journal: try CompetitionJournal(
+                    genesis: try CompetitionGenesis(
+                        competitionID: CompetitionID(competitionID),
+                        direction: .outgoing,
+                        createdAt: expiresAt.addingTimeInterval(-48 * 60 * 60),
+                        expiresAt: expiresAt,
+                        scoringPolicy: .healthKitCompatibility,
+                        downwardRevisionPolicy: .maximumObserved
+                    )
+                ),
+                source: .primary
+            )
+        )
+        func context(_ wallDate: Date) -> CompetitionEnvironmentContext {
+            CompetitionEnvironmentContext(
+                instant: EnvironmentInstant(
+                    wallDate: wallDate,
+                    monotonic: MonotonicInstant(
+                        epochID: "remote-lapsed-pending",
+                        nanoseconds: 1_000
+                    )
+                ),
+                timeZoneIdentifier: "UTC"
+            )
+        }
+        let hourLater = context(expiresAt.addingTimeInterval(3_600))
+
+        let dashboard = RemoteCompetitionProjector.dashboard(
+            materializations: [materialization],
+            profile: profile,
+            context: hourLater,
+            issues: []
+        )
+        XCTAssertEqual(
+            dashboard.competitions.map(\.lifecycle),
+            [.expired(at: expiresAt, direction: .outgoing)]
+        )
+        XCTAssertEqual(dashboard.hiddenTerminalCompetitionCount, 0)
+
+        let nextDay = RemoteCompetitionProjector.dashboard(
+            materializations: [materialization],
+            profile: profile,
+            context: context(expiresAt.addingTimeInterval(24 * 60 * 60)),
+            issues: []
+        )
+        XCTAssertEqual(nextDay.competitions, [])
+        XCTAssertEqual(nextDay.hiddenTerminalCompetitionCount, 1)
+
+        // Notifications keep the stored lifecycle, so expiry alerts stay
+        // with the notification planner.
+        XCTAssertEqual(
+            RemoteCompetitionProjector.notificationCompetition(
+                from: materialization,
+                profile: profile,
+                context: hourLater
+            )?.lifecycle,
+            .pending(expiresAt: expiresAt)
+        )
+    }
+
+    func testRemoteAwardsAreWinsOnlyNewestFirst() {
+        func week(
+            _ id: String,
+            _ name: String,
+            _ outcome: CompetitionOutcome,
+            completedAt: TimeInterval
+        ) -> CompetitionPresentation {
+            let completed = Date(timeIntervalSince1970: completedAt)
+            return CompetitionPresentation(
+                id: CompetitionID(UUID(uuidString: id)!),
+                ownerDisplayName: "Beta Alice",
+                opponentDisplayName: name,
+                opponentIdentity: "remote-profile:v1:\(id.lowercased())",
+                lifecycle: .completed(
+                    outcome: outcome,
+                    basis: .stableAcrossPostBoundaryReads,
+                    completedAt: completed
+                ),
+                acceptedConfiguration: nil,
+                userPoints: 0,
+                opponentPoints: 0,
+                days: [],
+                currentDayOrdinal: nil,
+                lastRefresh: nil,
+                tally: nil,
+                terminalResult: CompetitionTerminalPresentation(
+                    userPoints: 0,
+                    opponentPoints: 0,
+                    outcome: outcome,
+                    basis: .stableAcrossPostBoundaryReads,
+                    completedAt: completed
+                )
+            )
+        }
+        let older = week("84000000-0000-4000-8000-000000000001", "Hermes", .win, completedAt: 1_000)
+        let loss = week("84000000-0000-4000-8000-000000000002", "Andy", .loss, completedAt: 2_000)
+        let newer = week("84000000-0000-4000-8000-000000000003", "Andy", .win, completedAt: 3_000)
+
+        let awards = RemoteCompetitionProjector.awards(from: [older, loss, newer])
+
+        XCTAssertEqual(awards.map(\.competitionID), [newer.id, older.id])
+        XCTAssertEqual(awards.map(\.friendDisplayName), ["Andy", "Hermes"])
+        XCTAssertEqual(
+            awards.map(\.opponentIdentity),
+            [newer.opponentIdentity, older.opponentIdentity]
         )
     }
 
@@ -3497,14 +3623,27 @@ final class RemoteCompetitionClientTests: XCTestCase {
             [.activityFailures([CompetitionID(competitionID)])]
         )
         XCTAssertEqual(
-            publication.map { competitionIssueSummary($0.dashboard.issues) },
+            publication.map {
+                competitionIssueSummary($0.dashboard.issues, attributedIDs: [])
+            },
             "Matches loaded, but Activity could not be refreshed."
         )
+        XCTAssertNil(
+            publication.flatMap {
+                competitionIssueSummary(
+                    $0.dashboard.issues,
+                    attributedIDs: [CompetitionID(competitionID)]
+                )
+            }
+        )
         XCTAssertEqual(
-            competitionIssueSummary([
-                .activityFailures([CompetitionID(competitionID)]),
-                .competitionFailures([CompetitionID(competitionID)]),
-            ]),
+            competitionIssueSummary(
+                [
+                    .activityFailures([CompetitionID(competitionID)]),
+                    .competitionFailures([CompetitionID(competitionID)]),
+                ],
+                attributedIDs: []
+            ),
             "Some matches could not be refreshed."
         )
         await client.stop()

@@ -290,11 +290,11 @@ final class CompetitionPresentationTests: XCTestCase {
                 .row: ["Challenge received", nil], .card: ["Challenge received", nil],
                 .notification: ["Hermes challenged you", nil],
             ]),
-            (.declined(at: created), [
+            (.declined(at: created, direction: .incoming), [
                 .row: ["Declined", nil], .card: ["Declined", nil],
                 .notification: ["Challenge declined", nil],
             ]),
-            (.expired(at: created), [
+            (.expired(at: created, direction: .outgoing), [
                 .row: ["Expired", nil], .card: ["Expired", nil],
                 .notification: ["Challenge expired", nil],
             ]),
@@ -923,52 +923,29 @@ final class CompetitionPresentationTests: XCTestCase {
         XCTAssertEqual(competitionScorePeriodLabel(.endsToday), "Today")
     }
 
-    func testAwardEarnedDateAndRivalrySummaryComeFromCanonicalDashboard() {
-        let first = terminalPresentation(
-            id: UUID(uuidString: "00000000-0000-0000-0000-000000000101")!,
-            outcome: .win,
-            completedAt: Date(timeIntervalSinceReferenceDate: 0)
+    func testAwardsAreWinsOnlyNewestFirstWithOpponentIdentity() {
+        let first = homePresentation(
+            id: 101, name: "Hermes", identity: "remote-profile:v1:hermes",
+            lifecycle: .completed(outcome: .win, basis: .stableAcrossPostBoundaryReads,
+                                  completedAt: Date(timeIntervalSinceReferenceDate: 0))
         )
-        let second = terminalPresentation(
-            id: UUID(uuidString: "00000000-0000-0000-0000-000000000102")!,
-            outcome: .loss,
-            completedAt: Date(timeIntervalSinceReferenceDate: 86_400)
+        let second = homePresentation(
+            id: 102, name: "Andy",
+            lifecycle: .completed(outcome: .loss, basis: .stableAcrossPostBoundaryReads,
+                                  completedAt: Date(timeIntervalSinceReferenceDate: 86_400))
         )
-        let third = terminalPresentation(
-            id: UUID(uuidString: "00000000-0000-0000-0000-000000000103")!,
-            outcome: .tie,
-            completedAt: Date(timeIntervalSinceReferenceDate: 172_800)
+        let third = homePresentation(
+            id: 103, name: "Andy", identity: "remote-profile:v1:andy",
+            lifecycle: .completed(outcome: .win, basis: .stableAcrossPostBoundaryReads,
+                                  completedAt: Date(timeIntervalSinceReferenceDate: 172_800))
         )
-        let competitions = [first, second, third]
-        let awards = LocalCompetitionAward.fold(completed: competitions)
-        let dashboard = LocalCompetitionDashboard(
-            competitions: competitions,
-            awards: awards,
-            issues: [],
-            hiddenTerminalCompetitionCount: 0
-        )
+        let awards = LocalCompetitionAward.fold(completed: [first, second, third])
 
+        XCTAssertEqual(awards.map(\.competitionID), [third.id, first.id])
+        XCTAssertEqual(awards.map(\.friendDisplayName), ["Andy", "Hermes"])
         XCTAssertEqual(
-            competitionRivalrySummary(dashboard),
-            CompetitionRivalrySummary(
-                completions: 3,
-                ownerWins: 1,
-                opponentWins: 1,
-                ties: 1,
-                latestOwnerVictoryAt: Date(timeIntervalSinceReferenceDate: 0)
-            )
-        )
-        let victory = try! XCTUnwrap(
-            awards.first(where: { $0.kind == .victory })
-        )
-        XCTAssertEqual(
-            normalized(competitionAwardEarnedText(
-                victory.awardedAt,
-                now: Date(timeIntervalSinceReferenceDate: 2_592_000),
-                locale: Locale(identifier: "en_US"),
-                timeZone: TimeZone(identifier: "UTC")!
-            )),
-            "Earned Mon, Jan 1"
+            awards.map(\.opponentIdentity),
+            ["remote-profile:v1:andy", "remote-profile:v1:hermes"]
         )
         XCTAssertEqual(
             competitionVictoryCountText(1, friendDisplayName: "Alex"),
@@ -981,6 +958,390 @@ final class CompetitionPresentationTests: XCTestCase {
         XCTAssertEqual(
             competitionSharingIdentifier(first),
             "competition.sharing.completed.00000000-0000-0000-0000-000000000101"
+        )
+    }
+
+    // MARK: Home and History
+
+    func testHomeLayoutSingleLiveMatchIsTheHero() {
+        let active = homePresentation(id: 1, lifecycle: .active(dayOrdinal: 4))
+        let scheduled = homePresentation(id: 2, name: "Andy", lifecycle: .scheduled, start: (11, 2))
+
+        let layout = competitionHomeLayout(homeDashboard([scheduled, active]), now: homeNow)
+
+        XCTAssertEqual(layout.hero?.id, active.id)
+        XCTAssertEqual(layout.live, [])
+        XCTAssertEqual(layout.upNext.map(\.id), [scheduled.id])
+    }
+
+    func testHomeLayoutTwoLiveMatchesAreEqualCardsByEndTime() {
+        let hermes = homePresentation(id: 1, name: "Hermes", lifecycle: .active(dayOrdinal: 3), start: (10, 28))
+        let andy = homePresentation(id: 2, name: "Andy", lifecycle: .active(dayOrdinal: 4), start: (10, 27))
+        let tallying = homePresentation(
+            id: 3, name: "Sam", lifecycle: .tallying(startedAt: homeNow), start: (10, 21)
+        )
+        let layout = competitionHomeLayout(homeDashboard([hermes, andy, tallying]), now: homeNow)
+        XCTAssertNil(layout.hero)
+        XCTAssertEqual(layout.live.map(\.id), [tallying.id, andy.id, hermes.id])
+
+        let zoe = homePresentation(id: 4, name: "Zoe", lifecycle: .active(dayOrdinal: 3))
+        let amy = homePresentation(id: 5, name: "amy", lifecycle: .active(dayOrdinal: 3))
+        XCTAssertEqual(
+            competitionHomeLayout(homeDashboard([zoe, amy]), now: homeNow).live.map(\.id),
+            [amy.id, zoe.id]
+        )
+
+        let sameA = homePresentation(id: 7, name: "Sam", lifecycle: .active(dayOrdinal: 3))
+        let sameB = homePresentation(id: 6, name: "Sam", lifecycle: .active(dayOrdinal: 3))
+        XCTAssertEqual(
+            competitionHomeLayout(homeDashboard([sameA, sameB]), now: homeNow).live.map(\.id),
+            [sameB.id, sameA.id]
+        )
+    }
+
+    func testHomeLayoutGroupsEveryLifecycle() {
+        func incoming(_ id: Int, expiresIn hours: Double?) -> LocalCompetitionPresentation {
+            homePresentation(
+                id: id,
+                lifecycle: .pending(
+                    direction: .incoming,
+                    createdAt: homeNow.addingTimeInterval(-3_600),
+                    expiresAt: hours.map { homeNow.addingTimeInterval($0 * 3_600) }
+                ),
+                start: nil
+            )
+        }
+        let in5h = incoming(1, expiresIn: 5)
+        let in1h = incoming(2, expiresIn: 1)
+        let noExpiry = incoming(3, expiresIn: nil)
+        let active = homePresentation(id: 4, lifecycle: .active(dayOrdinal: 3))
+        let nov2 = homePresentation(id: 5, lifecycle: .scheduled, start: (11, 2))
+        let nov1 = homePresentation(id: 6, lifecycle: .scheduled, start: (11, 1))
+        let outgoing = homePresentation(
+            id: 7,
+            lifecycle: .pending(direction: .outgoing, createdAt: homeNow, expiresAt: nil),
+            start: nil
+        )
+        let closed = homePresentation(
+            id: 8,
+            lifecycle: .declined(at: homeNow.addingTimeInterval(-60), direction: .outgoing),
+            start: nil
+        )
+        let dayAgo = homePresentation(
+            id: 9,
+            lifecycle: .completed(outcome: .win, basis: .stableAcrossPostBoundaryReads,
+                                  completedAt: homeNow.addingTimeInterval(-86_400)),
+            start: (10, 24)
+        )
+        let twoDaysAgo = homePresentation(
+            id: 10,
+            lifecycle: .completed(outcome: .win, basis: .stableAcrossPostBoundaryReads,
+                                  completedAt: homeNow.addingTimeInterval(-172_800)),
+            start: (10, 24)
+        )
+        let archived = homePresentation(
+            id: 11,
+            lifecycle: .archived(outcome: .win, basis: .stableAcrossPostBoundaryReads,
+                                 completedAt: homeNow.addingTimeInterval(-86_400),
+                                 archivedAt: homeNow),
+            start: (10, 24)
+        )
+        let leftHome = homePresentation(
+            id: 12,
+            lifecycle: .completed(outcome: .loss, basis: .stableAcrossPostBoundaryReads,
+                                  completedAt: homeNow.addingTimeInterval(-14 * 86_400)),
+            start: (10, 10)
+        )
+
+        let layout = competitionHomeLayout(
+            homeDashboard([
+                in5h, in1h, noExpiry, active, nov2, nov1, outgoing, closed,
+                dayAgo, twoDaysAgo, archived, leftHome,
+            ]),
+            now: homeNow
+        )
+
+        XCTAssertEqual(layout.needsYou.map(\.id), [in1h.id, in5h.id, noExpiry.id])
+        XCTAssertEqual(layout.hero?.id, active.id)
+        XCTAssertEqual(layout.upNext.map(\.id), [nov1.id, nov2.id, outgoing.id, closed.id])
+        XCTAssertEqual(layout.recentResults.map(\.id), [dayAgo.id, twoDaysAgo.id])
+        let shown = Set(
+            ([layout.hero].compactMap { $0 } + layout.needsYou + layout.live
+                + layout.upNext + layout.recentResults).map(\.id)
+        )
+        XCTAssertFalse(shown.contains(archived.id))
+        XCTAssertFalse(shown.contains(leftHome.id))
+    }
+
+    func testHomeLayoutScheduledLeadsOnlyWhenNothingIsLive() {
+        let later = homePresentation(id: 1, lifecycle: .scheduled, start: (11, 2))
+        let sooner = homePresentation(id: 2, lifecycle: .scheduled, start: (11, 1))
+
+        let layout = competitionHomeLayout(homeDashboard([later, sooner]), now: homeNow)
+
+        XCTAssertEqual(layout.hero?.id, sooner.id)
+        XCTAssertEqual(layout.upNext.map(\.id), [later.id])
+    }
+
+    func testClosedChallengesShowOutgoingOnlyAndHonorDismissal() {
+        let expired = homePresentation(
+            id: 1,
+            lifecycle: .expired(at: homeNow.addingTimeInterval(-3_600), direction: .outgoing),
+            start: nil
+        )
+        let declinedIncoming = homePresentation(
+            id: 2,
+            lifecycle: .declined(at: homeNow.addingTimeInterval(-3_600), direction: .incoming),
+            start: nil
+        )
+        let dashboard = homeDashboard([expired, declinedIncoming])
+
+        XCTAssertEqual(
+            competitionHomeLayout(dashboard, now: homeNow).upNext.map(\.id),
+            [expired.id]
+        )
+        let dismissed = competitionHomeLayout(
+            dashboard, now: homeNow, dismissedChallengeIDs: [expired.id]
+        )
+        XCTAssertEqual(dismissed.upNext, [])
+        XCTAssertTrue(dismissed.isEmpty)
+        XCTAssertTrue(
+            competitionHomeLayout(homeDashboard([declinedIncoming]), now: homeNow).isEmpty
+        )
+    }
+
+    func testResultLeavesHomeOnTheFourthDayAfterTheWeek() throws {
+        let onTime = homePresentation(
+            id: 1,
+            lifecycle: .completed(outcome: .win, basis: .stableAcrossPostBoundaryReads,
+                                  completedAt: homeInstant("2026-10-31T08:00:00Z")),
+            start: (10, 24)
+        )
+        let leave = try XCTUnwrap(competitionResultLeavesHome(onTime))
+        XCTAssertEqual([leave.day.month, leave.day.day], [11, 3])
+        XCTAssertEqual(leave.at, homeInstant("2026-11-03T08:00:00Z"))
+        XCTAssertEqual(weekdayText(leave.day, locale: Locale(identifier: "en_US")), "Tue")
+
+        let late = homePresentation(
+            id: 2,
+            lifecycle: .completed(outcome: .win, basis: .stableAcrossPostBoundaryReads,
+                                  completedAt: homeInstant("2026-11-02T23:00:00Z")),
+            start: (10, 24)
+        )
+        let lateLeave = try XCTUnwrap(competitionResultLeavesHome(late))
+        XCTAssertEqual([lateLeave.day.month, lateLeave.day.day], [11, 4])
+
+        XCTAssertNil(competitionResultLeavesHome(
+            homePresentation(id: 3, lifecycle: .active(dayOrdinal: 2))
+        ))
+    }
+
+    func testHomeStatusLineAddsChallengeExpiry() throws {
+        let en = Locale(identifier: "en_US")
+        let la = try XCTUnwrap(TimeZone(identifier: "America/Los_Angeles"))
+        func line(
+            _ direction: InvitationDirection,
+            expiresAt: Date?
+        ) -> String {
+            normalized(competitionHomeStatusLine(
+                homePresentation(
+                    id: 1,
+                    lifecycle: .pending(direction: direction, createdAt: homeNow, expiresAt: expiresAt),
+                    start: nil
+                ),
+                locale: en,
+                timeZone: la
+            ))
+        }
+        XCTAssertEqual(
+            line(.incoming, expiresAt: homeInstant("2026-11-01T22:14:00Z")),
+            "Challenge received · Expires Sun 2:14 PM"
+        )
+        XCTAssertEqual(line(.outgoing, expiresAt: nil), "Challenge sent")
+        XCTAssertEqual(
+            line(.incoming, expiresAt: homeNow.addingTimeInterval(-60)),
+            "Challenge received"
+        )
+    }
+
+    func testOpponentRecordsGroupByIdentityAndShowTheNewestName() {
+        func week(
+            _ id: Int, _ name: String, _ identity: String,
+            _ outcome: CompetitionOutcome, start: (Int, Int)
+        ) -> LocalCompetitionPresentation {
+            homePresentation(
+                id: id, name: name, identity: identity,
+                lifecycle: .archived(outcome: outcome, basis: .stableAcrossPostBoundaryReads,
+                                     completedAt: homeNow, archivedAt: homeNow),
+                start: start
+            )
+        }
+        let weeks = [
+            week(1, "Sam", "sam-a", .win, start: (10, 3)),
+            week(2, "Sam", "sam-a", .tie, start: (10, 10)),
+            week(3, "Sam", "sam-b", .win, start: (9, 26)),
+            week(4, "Max", "max", .win, start: (9, 19)),
+            week(5, "Max", "max", .loss, start: (9, 12)),
+            week(6, "Maxine", "max", .win, start: (10, 17)),
+        ]
+
+        let records = competitionOpponentRecords(weeks)
+
+        XCTAssertEqual(records.map(\.opponentIdentity), ["max", "sam-a", "sam-b"])
+        XCTAssertEqual(records.map(\.opponentDisplayName), ["Maxine", "Sam", "Sam"])
+        XCTAssertEqual(records.map(\.text), ["2–1", "1–0–1", "1–0"])
+        XCTAssertEqual(records[1].accessibilityText, "Sam, 1 win, 0 losses, 1 tie")
+        XCTAssertEqual(records[0].accessibilityText, "Maxine, 2 wins, 1 loss")
+        XCTAssertEqual(records[0].latest.id, weeks[5].id)
+    }
+
+    func testHistorySummaryShowsTwoPeopleThenACount() {
+        func record(_ name: String, _ wins: Int, _ losses: Int) -> CompetitionOpponentRecord {
+            CompetitionOpponentRecord(
+                opponentIdentity: name,
+                opponentDisplayName: name,
+                wins: wins,
+                losses: losses,
+                ties: 0,
+                latest: homePresentation(id: 1, lifecycle: .active(dayOrdinal: 1))
+            )
+        }
+        XCTAssertEqual(competitionHistorySummaryText([record("Alex", 3, 1)]), "Alex 3–1")
+        let four = [record("Hermes", 2, 1), record("Andy", 1, 0), record("Sam", 0, 1), record("Max", 1, 1)]
+        XCTAssertEqual(
+            competitionHistorySummaryText(Array(four.prefix(2))),
+            "Hermes 2–1 · Andy 1–0"
+        )
+        XCTAssertEqual(
+            competitionHistorySummaryText(four),
+            "Hermes 2–1 · Andy 1–0 · 2 more"
+        )
+        XCTAssertEqual(
+            competitionHistorySummaryAccessibilityText(four),
+            "Hermes, 2 wins, 1 loss. Andy, 1 win, 0 losses. 2 more people"
+        )
+    }
+
+    func testHistoryWeeksAreNewestFirst() {
+        func week(_ id: Int, start: (Int, Int)) -> LocalCompetitionPresentation {
+            homePresentation(
+                id: id,
+                lifecycle: .completed(outcome: .win, basis: .stableAcrossPostBoundaryReads,
+                                      completedAt: homeNow),
+                start: start
+            )
+        }
+        let weeks = [week(1, start: (9, 1)), week(2, start: (10, 1)), week(3, start: (9, 15))]
+        let active = homePresentation(id: 4, lifecycle: .active(dayOrdinal: 2))
+
+        XCTAssertEqual(
+            competitionHistoryWeeks(weeks + [active]).map(\.id),
+            [weeks[1].id, weeks[2].id, weeks[0].id]
+        )
+    }
+
+    func testRowIssuePrefersCommandThenRefreshThenActivity() {
+        let a = CompetitionID(UUID(uuidString: "00000000-0000-0000-0000-00000000000A")!)
+        let b = CompetitionID(UUID(uuidString: "00000000-0000-0000-0000-00000000000B")!)
+        XCTAssertEqual(
+            competitionRowIssue(a, in: [
+                .activityFailures([a]), .competitionFailures([a]), .commandRejected(a),
+            ]),
+            .command
+        )
+        XCTAssertEqual(
+            competitionRowIssue(a, in: [.activityFailures([a]), .competitionFailures([a])]),
+            .refresh
+        )
+        XCTAssertEqual(competitionRowIssue(a, in: [.activityFailures([a])]), .activity)
+        XCTAssertNil(competitionRowIssue(a, in: [.commandRejected(b), .competitionFailures([b])]))
+    }
+
+    func testIssueSummaryShowsOnlyGlobalOrUnattributedProblems() {
+        let a = CompetitionID(UUID(uuidString: "00000000-0000-0000-0000-00000000000A")!)
+        XCTAssertNil(competitionIssueSummary([.competitionFailures([a])], attributedIDs: [a]))
+        XCTAssertEqual(
+            competitionIssueSummary([.competitionFailures([a])], attributedIDs: []),
+            "Some matches could not be refreshed."
+        )
+        XCTAssertEqual(
+            competitionIssueSummary([.remoteUnavailable], attributedIDs: [a]),
+            "Offline. Scores update when you reconnect."
+        )
+        XCTAssertEqual(
+            competitionIssueSummary(
+                [.commandRejected(LocalCompetitionIdentity.bootstrapCompetitionID)],
+                attributedIDs: [a]
+            ),
+            "The last match action could not be completed."
+        )
+        XCTAssertNil(competitionIssueSummary([], attributedIDs: []))
+    }
+
+    private var homeNow: Date { homeInstant("2026-10-30T17:00:00Z") }
+
+    private func homeInstant(_ text: String) -> Date {
+        ISO8601DateFormatter().date(from: text)!
+    }
+
+    private func homeDashboard(
+        _ competitions: [LocalCompetitionPresentation]
+    ) -> LocalCompetitionDashboard {
+        LocalCompetitionDashboard(
+            competitions: competitions,
+            awards: [],
+            issues: [],
+            hiddenTerminalCompetitionCount: 0
+        )
+    }
+
+    /// A match in an America/Los_Angeles calendar starting on 2026 (month, day).
+    private func homePresentation(
+        id: Int,
+        name: String = "Hermes",
+        identity: String? = nil,
+        lifecycle: LocalCompetitionLifecyclePresentation,
+        start: (month: Int, day: Int)? = (10, 28),
+        evaluatedAt: Date? = nil
+    ) -> LocalCompetitionPresentation {
+        let zone = "America/Los_Angeles"
+        let schedule = start.map {
+            CompetitionSchedule(
+                calendar: try! CompetitionCalendar(timeZoneIdentifier: zone),
+                startDay: try! CompetitionDay(
+                    era: 1, year: 2026, month: $0.month, day: $0.day,
+                    timeZoneIdentifier: zone
+                )
+            )
+        }
+        let terminal: LocalCompetitionTerminalPresentation? = switch lifecycle {
+        case let .completed(outcome, basis, completedAt),
+             let .archived(outcome, basis, completedAt, _):
+            LocalCompetitionTerminalPresentation(
+                userPoints: 0, opponentPoints: 0, outcome: outcome,
+                basis: basis, completedAt: completedAt
+            )
+        default:
+            nil
+        }
+        return LocalCompetitionPresentation(
+            id: CompetitionID(UUID(uuidString: String(format: "00000000-0000-0000-0000-%012ld", id))!),
+            ownerDisplayName: "Naren",
+            opponentDisplayName: name,
+            opponentIdentity: identity ?? "remote-profile:v1:\(name.lowercased())",
+            lifecycle: lifecycle,
+            acceptedConfiguration: schedule.map {
+                LocalCompetitionAcceptedPresentation(schedule: $0, difficulty: .balanced)
+            },
+            userPoints: 0,
+            opponentPoints: 0,
+            days: [],
+            currentDayOrdinal: nil,
+            lastRefresh: nil,
+            tally: nil,
+            terminalResult: terminal,
+            evaluatedAt: evaluatedAt ?? homeNow,
+            timeZoneIdentifier: zone
         )
     }
 
@@ -1072,46 +1433,6 @@ final class CompetitionPresentationTests: XCTestCase {
             ownerAcceptedPoints: points,
             ownerLatestAvailability: availability,
             opponentRevealedPoints: nil
-        )
-    }
-
-    private func terminalPresentation(
-        id: UUID,
-        outcome: CompetitionOutcome,
-        completedAt: Date
-    ) -> LocalCompetitionPresentation {
-        let userPoints = outcome == .loss ? 100.0 : 200.0
-        let opponentPoints: Double = switch outcome {
-        case .win: 100
-        case .loss: 200
-        case .tie: 200
-        }
-        let terminal = LocalCompetitionTerminalPresentation(
-            userPoints: userPoints,
-            opponentPoints: opponentPoints,
-            outcome: outcome,
-            basis: .stableAcrossPostBoundaryReads,
-            completedAt: completedAt
-        )
-        return LocalCompetitionPresentation(
-            id: CompetitionID(id),
-            ownerDisplayName: "Naren",
-            opponentDisplayName: "Alex",
-            lifecycle: .completed(
-                outcome: outcome,
-                basis: .stableAcrossPostBoundaryReads,
-                completedAt: completedAt
-            ),
-            acceptedConfiguration: nil,
-            userPoints: userPoints,
-            opponentPoints: opponentPoints,
-            days: [],
-            currentDayOrdinal: nil,
-            lastRefresh: nil,
-            tally: nil,
-            terminalResult: terminal,
-            evaluatedAt: completedAt,
-            timeZoneIdentifier: "UTC"
         )
     }
 }

@@ -5,6 +5,8 @@ struct CompetitionDetailView: View {
     let competition: LocalCompetitionPresentation
     let source: CompetitionPublicationSource
     var muteButton: CompetitionMuteButton?
+    var issue: CompetitionRowIssue? = nil
+    var retry: (() async -> Void)? = nil
 
     @Environment(\.locale) private var locale
     @Environment(\.timeZone) private var timeZone
@@ -29,6 +31,10 @@ struct CompetitionDetailView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
+                if let issue {
+                    CompetitionIssueLine(issue: issue, retry: retry, id: competition.id)
+                }
+
                 VStack(alignment: .leading, spacing: 12) {
                     CompetitionScoreboardPanel(
                         competition: competition,

@@ -10,6 +10,8 @@ struct CompetitionResultView: View {
     let isCommandInFlight: Bool
     let send: (CompetitionFeature.Action) -> Void
     var muteButton: CompetitionMuteButton?
+    var issue: CompetitionRowIssue? = nil
+    var retry: (() async -> Void)? = nil
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -23,6 +25,10 @@ struct CompetitionResultView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 28) {
+                if let issue {
+                    CompetitionIssueLine(issue: issue, retry: retry, id: competition.id)
+                }
+
                 resultHero
                     .opacity(isRevealed ? 1 : 0)
                     .offset(y: isRevealed || reduceMotion ? 0 : 10)
@@ -408,16 +414,12 @@ struct CompetitionResultView: View {
                             .padding(.leading, 76)
                     }
                     HStack(spacing: 14) {
-                        awardBadge(award.kind)
+                        awardBadge
 
                         VStack(alignment: .leading, spacing: 3) {
-                            Text(
-                                award.kind == .victory
-                                    ? "Victory Over \(award.friendDisplayName)"
-                                    : "Match Complete"
-                            )
-                            .font(.headline)
-                            .foregroundStyle(Theme.ink)
+                            Text("Victory Over \(award.friendDisplayName)")
+                                .font(.headline)
+                                .foregroundStyle(Theme.ink)
                             Text(awardDetail(award))
                                 .font(.caption)
                                 .foregroundStyle(Theme.secondary)
@@ -434,35 +436,18 @@ struct CompetitionResultView: View {
     }
 
     private func awardDetail(_ award: LocalCompetitionAward) -> String {
-        guard award.kind == .victory else {
-            return competitionAwardEarnedText(
-                award.awardedAt,
-                now: competition.evaluatedAt,
-                locale: locale,
-                timeZone: timeZone
-            )
-        }
-        return competitionVictoryCountText(
-            awards.filter {
-                $0.kind == .victory
-                    && $0.friendDisplayName == award.friendDisplayName
-            }.count,
+        competitionVictoryCountText(
+            awards.filter { $0.opponentIdentity == award.opponentIdentity }.count,
             friendDisplayName: award.friendDisplayName
         )
     }
 
-    // A victory is yours, so its badge is amber; completion stays neutral.
-    private func awardBadge(_ kind: LocalCompetitionAward.Kind) -> some View {
+    // A victory is yours, so its badge is amber.
+    private var awardBadge: some View {
         ZStack {
-            if kind == .victory {
-                Circle().fill(Theme.youFill)
-                Image(systemName: "trophy.fill")
-                    .foregroundStyle(Theme.onYouFill)
-            } else {
-                Circle().stroke(Theme.outline, lineWidth: 2)
-                Image(systemName: "checkmark")
-                    .foregroundStyle(Theme.ink)
-            }
+            Circle().fill(Theme.youFill)
+            Image(systemName: "trophy.fill")
+                .foregroundStyle(Theme.onYouFill)
         }
         .font(.title3.weight(.bold))
         .frame(width: 48, height: 48)

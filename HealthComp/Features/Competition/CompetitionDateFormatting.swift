@@ -178,12 +178,3 @@ func competitionMomentText(
     return competitionDateFormatter(template, locale: locale, timeZone: timeZone)
         .string(from: date)
 }
-
-func competitionAwardEarnedText(
-    _ date: Date,
-    now: Date = Date(),
-    locale: Locale = .current,
-    timeZone: TimeZone = .current
-) -> String {
-    "Earned \(competitionDayText(date, now: now, locale: locale, timeZone: timeZone))"
-}
