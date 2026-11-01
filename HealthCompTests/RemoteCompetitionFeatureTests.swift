@@ -979,6 +979,24 @@ final class RemoteCompetitionFeatureTests: XCTestCase {
         XCTAssertEqual(state.rematchState(for: parent), .inMatch(active))
         state.publication = .remote(revision: 2, competitions: [parent, incoming])
         XCTAssertEqual(state.rematchState(for: parent), .challengedYou(incoming))
+        // Their rematch of this match is .received, not .challengedYou.
+        let rematch = Self.presentation(
+            CompetitionID(UUID()),
+            lifecycle: .pending(direction: .incoming, createdAt: .distantPast, expiresAt: nil),
+            identity: identity,
+            rematchParentID: parent.id
+        )
+        state.publication = .remote(revision: 3, competitions: [parent, rematch])
+        XCTAssertEqual(state.rematchState(for: parent), .received(rematch))
+        // A cancelled child counts as no child.
+        let cancelled = Self.presentation(
+            CompetitionID(UUID()),
+            lifecycle: .cancelled(at: .distantPast),
+            identity: identity,
+            rematchParentID: parent.id
+        )
+        state.publication = .remote(revision: 4, competitions: [parent, cancelled])
+        XCTAssertEqual(state.rematchState(for: parent), .available)
     }
 
     @MainActor
