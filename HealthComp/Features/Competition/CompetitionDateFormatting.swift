@@ -179,6 +179,24 @@ func competitionMomentText(
         .string(from: date)
 }
 
+/// A tally deadline: "Wed night" when it falls exactly on midnight in
+/// `timeZone`, otherwise the moment style.
+func competitionDeadlineText(
+    _ date: Date,
+    now: Date = Date(),
+    locale: Locale = .current,
+    timeZone: TimeZone = .current
+) -> String {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = timeZone
+    guard calendar.startOfDay(for: date) == date else {
+        return competitionMomentText(date, now: now, locale: locale, timeZone: timeZone)
+    }
+    let weekday = competitionDateFormatter("EEE", locale: locale, timeZone: timeZone)
+        .string(from: date.addingTimeInterval(-1))
+    return "\(weekday) night"
+}
+
 /// "9:41 AM" when `date` is on `now`'s day in `timeZone`; otherwise the moment style.
 func competitionUpdatedText(
     _ date: Date,

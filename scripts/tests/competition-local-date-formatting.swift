@@ -98,6 +98,19 @@ struct CompetitionLocalDateFormattingChecks {
         expect(normalized(competitionUpdatedText(instant("2026-10-31T06:40:00Z"), now: updatedNow, locale: us, timeZone: la)), "Fri 11:40 PM")
         require(competitionUpdatedText(instant("2026-10-20T04:41:00Z"), now: updatedNow, locale: us, timeZone: la), contains: ["Oct 19"])
 
+        // Tally deadline
+        let tallyNow = instant("2026-11-04T05:00:00Z")
+        let midnightDeadline = instant("2026-11-05T08:00:00Z")
+        expect(competitionDeadlineText(midnightDeadline, now: tallyNow, locale: us, timeZone: la), "Wed night")
+        expect(
+            normalized(competitionDeadlineText(instant("2026-11-05T05:00:00Z"), now: tallyNow, locale: us, timeZone: la)),
+            "Wed 9:00 PM"
+        )
+        require(
+            competitionDeadlineText(midnightDeadline, now: tallyNow, locale: us, timeZone: TimeZone(identifier: "Asia/Tokyo")!),
+            contains: ["5:00 PM"]
+        )
+
         print("Competition local date formatting checks passed")
     }
 }

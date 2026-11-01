@@ -1940,7 +1940,8 @@ enum RemoteCompetitionProjector {
             tally: tallyPresentation(
                 competition: competition,
                 projection: projection,
-                ownerID: profile.id
+                ownerID: profile.id,
+                opponentID: opponentID
             ),
             terminalResult: terminal,
             evaluatedAt: context.instant.wallDate,
@@ -2016,6 +2017,8 @@ enum RemoteCompetitionProjector {
                 opponentRevealedPoints: future && terminal == nil
                     ? nil
                     : remote?.acceptedCentiPoints.map { Double($0) / 100 },
+                opponentReportedNoData: !(future && terminal == nil)
+                    && remote != nil && remote?.acceptedCentiPoints == nil,
                 ownerAcceptedSnapshot: acceptedSnapshot,
                 ownerLatestSnapshot: activityDay?.latestSnapshot,
                 scoringPolicy: .remoteWireV1
@@ -2096,42 +2099,47 @@ enum RemoteCompetitionProjector {
     private static func tallyPresentation(
         competition: Competition,
         projection: CompetitionReplayProjection,
-        ownerID: UUID
+        ownerID: UUID,
+        opponentID: UUID?
     ) -> CompetitionTallyPresentation? {
         guard case .tallying = competition.lifecycle,
               let configuration = competition.remoteConfiguration
         else { return nil }
-        let ownerLedger = projection.remoteScoreLedgers[ownerID]
-        // A "sourceDataUnavailable" row means Health had no summary: missing.
-        let missing = Set((1...7).filter {
-            guard let ownerLedger,
-                  let row = try? ownerLedger.visibleEntry(
-                      forActiveDayOrdinal: $0
-                  )
-            else { return true }
-            return row.availabilityReason == "sourceDataUnavailable"
-        })
-        let unavailable = Set((1...7).filter {
-            guard !missing.contains($0), let ownerLedger,
-                  let row = try? ownerLedger.visibleEntry(
-                      forActiveDayOrdinal: $0
-                  )
-            else { return false }
-            return row.acceptedCentiPoints == nil
-        })
-        let attention: CompetitionTallyAttention? = missing.isEmpty
-            && unavailable.isEmpty
-            ? .awaitingStability
-            : .incomplete(
-                missingOrdinals: missing,
-                unavailableOrdinals: unavailable
-            )
+        // A row that carries an unavailable reason is in: the iPhone attests
+        // stable once all seven rows exist, so it never blocks the result.
+        // Your "sourceDataUnavailable" row means Health had no summary, so
+        // it reads as missing, like the day states.
+        func missingDays(_ id: UUID?) -> Set<Int> {
+            let ledger = id.flatMap { projection.remoteScoreLedgers[$0] }
+            return Set((1...7).filter { day in
+                guard let row = ledger.flatMap({
+                    try? $0.visibleEntry(forActiveDayOrdinal: day)
+                }) else { return true }
+                return id == ownerID
+                    && row.availabilityReason == "sourceDataUnavailable"
+            })
+        }
         return CompetitionTallyPresentation(
-            attention: attention,
+            attention: remoteTallyAttention(
+                ownerMissing: missingDays(ownerID),
+                opponentMissing: missingDays(opponentID)
+            ),
             consecutiveStableCompleteReads: 0,
             stabilityStart: nil,
             bestAvailableDeadline: configuration.bestAvailableDeadline
         )
+    }
+
+    /// Waits on whoever has missing day rows: you first, then them.
+    static func remoteTallyAttention(
+        ownerMissing: Set<Int>,
+        opponentMissing: Set<Int>
+    ) -> CompetitionTallyAttention {
+        if !ownerMissing.isEmpty {
+            return .incomplete(missingOrdinals: ownerMissing, unavailableOrdinals: [])
+        }
+        if !opponentMissing.isEmpty { return .opponentPlanUnavailable }
+        return .awaitingStability
     }
 
     static func awards(
