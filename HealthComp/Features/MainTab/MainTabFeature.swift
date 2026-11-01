@@ -886,14 +886,14 @@ struct MainTabFeature {
     }
 
     /// A pending challenge (either direction) or a match that hasn't
-    /// finished. Expired and declined challenges don't count.
+    /// finished. Expired, declined and cancelled ones don't count.
     private static func hasPerson(
         _ lifecycle: LocalCompetitionLifecyclePresentation
     ) -> Bool {
         switch lifecycle {
         case .pending, .scheduled, .active, .endsToday, .tallying:
             true
-        case .declined, .expired, .completed, .archived:
+        case .declined, .expired, .cancelled, .completed, .archived:
             false
         }
     }
