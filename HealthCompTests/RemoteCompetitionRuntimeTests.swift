@@ -1596,6 +1596,31 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
         XCTAssertEqual(unknown.failedIDs, [failedID])
     }
 
+    func testFailedMatchKeepsItsLastMaterializationForALaterCancel() async throws {
+        let harness = try ownerActivityHarness()
+        defer { try? FileManager.default.removeItem(at: harness.root) }
+        let outcome = await ownerRuntime(harness, at: harness.dayOneNoon, snapshots: nil)
+            .synchronizeAll()
+        let materialization = try XCTUnwrap(outcome.successfulCompetitions.first)
+        let id = CompetitionID(materialization.descriptor.competitionID)
+
+        let failed = RemoteCompetitionRuntimeOutcome(
+            outcomes: [.failure(.init(competitionID: id, failure: .discoveryUnavailable))],
+            discoveryFailure: nil
+        ).reconciled(previous: [id: materialization])
+        XCTAssertEqual(failed.materializations, [])
+        XCTAssertEqual(failed.failedIDs, [id])
+        XCTAssertEqual(failed.lastGood, [id: materialization])
+
+        let cancelled = RemoteCompetitionRuntimeOutcome(
+            outcomes: [.failure(.init(competitionID: id, failure: .cancelled))],
+            discoveryFailure: nil
+        ).reconciled(previous: failed.lastGood)
+        XCTAssertEqual(cancelled.materializations, [materialization])
+        XCTAssertEqual(cancelled.failedIDs, [])
+        XCTAssertEqual(cancelled.lastGood, [id: materialization])
+    }
+
     func testOwnerActivityPersistsAndPublishesOffline() async throws {
         let harness = try ownerActivityHarness()
         defer { try? FileManager.default.removeItem(at: harness.root) }
