@@ -32,6 +32,7 @@ struct CompetitionInviteLinkClient: Sendable {
     var currentTimeZoneIdentifier: @Sendable () -> String
     var makeIdempotencyKey: @Sendable () -> UUID
     var canCreateShareLink: @Sendable () -> Bool = { false }
+    var makeChallengeLink: @Sendable (CompetitionChallengeLinkCode) -> URL? = { _ in nil }
 
     static func live(configuration: CompetitionInviteLinkConfiguration) -> Self {
         Self(
@@ -58,6 +59,15 @@ struct CompetitionInviteLinkClient: Sendable {
             canCreateShareLink: {
                 configuration.host != nil
                     || configuration.allowsCustomSchemeFallback
+            },
+            makeChallengeLink: { code in
+                if let host = configuration.host {
+                    return URL(string: "https://\(host)/c/\(code.rawValue)")
+                }
+                guard configuration.allowsCustomSchemeFallback else { return nil }
+                return URL(
+                    string: "\(CompetitionRoute.customURLScheme)://challenge/\(code.rawValue)"
+                )
             }
         )
     }

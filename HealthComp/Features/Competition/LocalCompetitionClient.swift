@@ -66,6 +66,8 @@ enum LocalCompetitionLifecyclePresentation: Equatable, Sendable {
     )
     case declined(at: Date, direction: InvitationDirection)
     case expired(at: Date, direction: InvitationDirection)
+    /// A scheduled match the other person cancelled before Day 1. Remote only.
+    case cancelled(at: Date)
     case scheduled
     case active(dayOrdinal: Int)
     case endsToday
@@ -303,7 +305,7 @@ func competitionIsRetainedOnDashboard(
     _ lifecycle: LocalCompetitionLifecyclePresentation, now: Date
 ) -> Bool {
     switch lifecycle {
-    case let .declined(at, _), let .expired(at, _):
+    case let .declined(at, _), let .expired(at, _), let .cancelled(at):
         now < at.addingTimeInterval(competitionClosedChallengeRetention)
     default: true
     }
@@ -347,7 +349,7 @@ extension LocalCompetitionDashboard {
             switch competition.lifecycle {
             case let .pending(_, _, expiresAt):
                 expiresAt
-            case let .declined(at, _), let .expired(at, _):
+            case let .declined(at, _), let .expired(at, _), let .cancelled(at):
                 at.addingTimeInterval(competitionClosedChallengeRetention)
             case .completed:
                 competitionResultLeavesHome(competition)?.at
@@ -1371,7 +1373,7 @@ enum LocalCompetitionProjector {
         switch lifecycle {
         case let .pending(direction, _, expiresAt):
             return .pending(direction: direction, expiresAt: expiresAt)
-        case .declined:
+        case .declined, .cancelled:
             return .declined
         case .expired:
             return .expired
