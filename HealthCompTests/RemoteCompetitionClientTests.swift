@@ -1009,23 +1009,45 @@ final class RemoteCompetitionClientTests: XCTestCase {
     }
 
     func testRemoteTallyWaitsOnWhoeverHasMissingDays() {
-        XCTAssertEqual(
+        func attention(
+            ownerMissing: Set<Int>,
+            opponentMissing: Set<Int>,
+            ownerAttestedStable: Bool
+        ) -> CompetitionTallyAttention {
             RemoteCompetitionProjector.remoteTallyAttention(
-                ownerMissing: [7], opponentMissing: [6, 7]
-            ),
+                ownerMissing: ownerMissing,
+                opponentMissing: opponentMissing,
+                ownerAttestedStable: ownerAttestedStable
+            )
+        }
+        // You first, then their days, then their last check.
+        XCTAssertEqual(
+            attention(ownerMissing: [7], opponentMissing: [6, 7], ownerAttestedStable: false),
             .incomplete(missingOrdinals: [7], unavailableOrdinals: [])
         )
+        for stable in [false, true] {
+            XCTAssertEqual(
+                attention(ownerMissing: [], opponentMissing: [7], ownerAttestedStable: stable),
+                .opponentPlanUnavailable
+            )
+        }
+        // Your stable check locks your window: your missing days can't
+        // change any more, so the wait is theirs.
         XCTAssertEqual(
-            RemoteCompetitionProjector.remoteTallyAttention(
-                ownerMissing: [], opponentMissing: [7]
-            ),
+            attention(ownerMissing: [7], opponentMissing: [6, 7], ownerAttestedStable: true),
             .opponentPlanUnavailable
         )
         XCTAssertEqual(
-            RemoteCompetitionProjector.remoteTallyAttention(
-                ownerMissing: [], opponentMissing: []
-            ),
+            attention(ownerMissing: [7], opponentMissing: [], ownerAttestedStable: true),
+            .awaitingOpponentCheck
+        )
+        XCTAssertEqual(
+            attention(ownerMissing: [], opponentMissing: [], ownerAttestedStable: false),
             .awaitingStability
+        )
+        XCTAssertEqual(
+            attention(ownerMissing: [], opponentMissing: [], ownerAttestedStable: true),
+            .awaitingOpponentCheck
         )
     }
 
