@@ -642,7 +642,9 @@ final class AppFeatureTests: XCTestCase {
                     mode: .authenticated,
                     displayName: self.profile.displayName
                 )
-                var mainTab = MainTabFeature.State()
+                var mainTab = MainTabFeature.State(
+                    competition: CompetitionFeature.State(ownProfile: self.profile)
+                )
                 mainTab.claimLinksBeforeAccountThrough = isNewAccount ? 4 : 0
                 $0.mainTab = mainTab
                 $0.pendingChallengeSequence = nil
