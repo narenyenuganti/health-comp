@@ -288,6 +288,286 @@ final class MainTabFeatureTests: XCTestCase {
     }
 
     @MainActor
+    func testFailedDeclineBeforeHealthReturnsToTheSheet() async throws {
+        let envelope = try claimEnvelope(sequence: 7)
+        let routing = MainTabRoutingRecorder()
+        let permissions = PermissionOnboardingRecorder(health: .notRequested)
+        let claims = MainTabClaimRecorder(
+            expectedToken: try XCTUnwrap(
+                CompetitionInviteClaimToken(rawValue: Self.claimToken)
+            ),
+            results: []
+        )
+        claims.declineSucceeds = false
+        let onboarding = MainTabFeature.PermissionOnboarding(steps: [.health])
+        let store = TestStore(
+            initialState: MainTabFeature.State(onboarding: onboarding)
+        ) {
+            MainTabFeature()
+        } withDependencies: {
+            $0.competitionClient = claims.client
+            $0.competitionRoutingClient = routing.client
+            $0.permissionOnboardingClient = permissions.client
+            $0.date = .constant(MainTabClaimRecorder.now)
+        }
+
+        await store.send(.routeReceived(envelope)) {
+            $0.pendingClaimRoute = envelope
+            $0.inviteClaimStatus = .loadingPreview
+        }
+        await receivePreview(store, envelope)
+        await store.send(.declineClaimConfirmed) {
+            $0.inviteClaimStatus = .declining
+        }
+        await store.receive(
+            .declineClaimFinished(sequence: envelope.sequence, succeeded: false)
+        ) {
+            $0.inviteClaimStatus = .ready
+            $0.claimDeclineFailed = true
+        }
+        await store.finish()
+        XCTAssertEqual(routing.consumedSequences, [])
+        XCTAssertEqual(permissions.calls, [])
+        XCTAssertEqual(store.state.onboarding, onboarding)
+    }
+
+    /// Decline, Not Now, or a link you already accepted: each opens the
+    /// waiting link over the Health step.
+    @MainActor
+    func testQueuedLinkOpensItsPreviewBeforeHealth() async throws {
+        enum Exit: CaseIterable { case decline, notNow, alreadyAccepted }
+        let accepted = CompetitionInvitePreview(
+            competitionID: MainTabClaimRecorder.preview.competitionID,
+            state: .accepted,
+            sender: MainTabClaimRecorder.preview.sender,
+            timeZoneIdentifier: "America/Los_Angeles",
+            expiresAt: MainTabClaimRecorder.now
+        )
+        for exit in Exit.allCases {
+            let first = try claimEnvelope(sequence: 7)
+            let second = try claimEnvelope(
+                sequence: 8,
+                token: String(repeating: "N", count: 43)
+            )
+            let routing = MainTabRoutingRecorder()
+            let claims = MainTabClaimRecorder(
+                expectedToken: try XCTUnwrap(
+                    CompetitionInviteClaimToken(rawValue: Self.claimToken)
+                ),
+                results: []
+            )
+            let onboarding = MainTabFeature.PermissionOnboarding(steps: [.health])
+            var initial = MainTabFeature.State(onboarding: onboarding)
+            if exit == .alreadyAccepted {
+                // Both links arrived; the first one's preview is answering.
+                initial.pendingClaimRoute = first
+                initial.queuedClaimRoute = second
+                initial.inviteClaimStatus = .loadingPreview
+            }
+            let store = TestStore(initialState: initial) {
+                MainTabFeature()
+            } withDependencies: {
+                $0.competitionClient = claims.client
+                $0.competitionRoutingClient = routing.client
+                $0.date = .constant(MainTabClaimRecorder.now)
+            }
+
+            switch exit {
+            case .decline, .notNow:
+                await store.send(.routeReceived(first)) {
+                    $0.pendingClaimRoute = first
+                    $0.inviteClaimStatus = .loadingPreview
+                }
+                await receivePreview(store, first)
+                await store.send(.routeReceived(second)) {
+                    $0.queuedClaimRoute = second
+                }
+                if exit == .decline {
+                    await store.send(.declineClaimConfirmed) {
+                        $0.inviteClaimStatus = .declining
+                    }
+                    await store.receive(
+                        .declineClaimFinished(sequence: first.sequence, succeeded: true)
+                    ) {
+                        $0.pendingClaimRoute = second
+                        $0.queuedClaimRoute = nil
+                        $0.lastHandledClaimRouteSequence = first.sequence
+                        $0.inviteClaimPreview = nil
+                        $0.inviteClaimPreviewEvaluatedAt = nil
+                        $0.inviteClaimStatus = .loadingPreview
+                    }
+                } else {
+                    await store.send(.notNowClaimTapped) {
+                        $0.pendingClaimRoute = second
+                        $0.queuedClaimRoute = nil
+                        $0.lastHandledClaimRouteSequence = first.sequence
+                        $0.inviteClaimPreview = nil
+                        $0.inviteClaimPreviewEvaluatedAt = nil
+                        $0.inviteClaimStatus = .loadingPreview
+                    }
+                }
+            case .alreadyAccepted:
+                await store.send(
+                    .claimPreviewResponse(sequence: first.sequence, .success(accepted))
+                ) {
+                    $0.pendingClaimRoute = second
+                    $0.queuedClaimRoute = nil
+                    $0.lastHandledClaimRouteSequence = first.sequence
+                    $0.inviteClaimStatus = .loadingPreview
+                }
+            }
+            await receivePreview(store, second)
+            await store.finish()
+            XCTAssertEqual(routing.consumedSequences, [first.sequence], "\(exit)")
+            XCTAssertEqual(claims.requestCount, 0, "\(exit)")
+            XCTAssertEqual(store.state.onboarding, onboarding, "\(exit)")
+        }
+    }
+
+    @MainActor
+    func testFailedPreviewBeforeHealthRetries() async throws {
+        let envelope = try claimEnvelope(sequence: 7)
+        let claims = MainTabClaimRecorder(
+            expectedToken: try XCTUnwrap(
+                CompetitionInviteClaimToken(rawValue: Self.claimToken)
+            ),
+            results: []
+        )
+        claims.previewResult = .failure(.operationFailed)
+        let onboarding = MainTabFeature.PermissionOnboarding(steps: [.health])
+        let store = TestStore(
+            initialState: MainTabFeature.State(onboarding: onboarding)
+        ) {
+            MainTabFeature()
+        } withDependencies: {
+            $0.competitionClient = claims.client
+            $0.competitionRoutingClient = MainTabRoutingRecorder().client
+            $0.date = .constant(MainTabClaimRecorder.now)
+        }
+
+        await store.send(.routeReceived(envelope)) {
+            $0.pendingClaimRoute = envelope
+            $0.inviteClaimStatus = .loadingPreview
+        }
+        await store.receive(
+            .claimPreviewResponse(sequence: envelope.sequence, .failure(.operationFailed))
+        ) {
+            $0.inviteClaimStatus = .retryable
+        }
+        claims.previewResult = .success(MainTabClaimRecorder.preview)
+        await store.send(.retryClaimTapped) {
+            $0.inviteClaimStatus = .loadingPreview
+        }
+        await receivePreview(store, envelope)
+        await store.finish()
+        XCTAssertEqual(claims.requestCount, 0)
+        XCTAssertEqual(store.state.onboarding, onboarding)
+    }
+
+    /// Health finished while the preview was loading, before the first
+    /// publication: a link you already accepted still opens its match.
+    @MainActor
+    func testAlreadyAcceptedLinkAfterHealthBeforeFirstPublicationOpensTheMatch()
+        async throws {
+        let envelope = try claimEnvelope(sequence: 7)
+        let matchID = CompetitionID(MainTabClaimRecorder.preview.competitionID)
+        let accepted = CompetitionInvitePreview(
+            competitionID: matchID.rawValue,
+            state: .accepted,
+            sender: MainTabClaimRecorder.preview.sender,
+            timeZoneIdentifier: "America/Los_Angeles",
+            expiresAt: MainTabClaimRecorder.now
+        )
+        let routing = MainTabRoutingRecorder()
+        let store = TestStore(
+            initialState: MainTabFeature.State(
+                pendingClaimRoute: envelope,
+                inviteClaimStatus: .loadingPreview
+            )
+        ) {
+            MainTabFeature()
+        } withDependencies: {
+            $0.competitionRoutingClient = routing.client
+            $0.continuousClock = TestClock()
+        }
+
+        await store.send(
+            .claimPreviewResponse(sequence: envelope.sequence, .success(accepted))
+        ) {
+            $0.claimRouteSequenceInFlight = envelope.sequence
+        }
+        await store.receive(
+            .claimInviteResponse(
+                sequence: envelope.sequence,
+                .success(matchID, expectedRevision: 0)
+            )
+        ) {
+            $0.pendingClaimRoute = nil
+            $0.claimRouteSequenceInFlight = nil
+            $0.lastHandledClaimRouteSequence = envelope.sequence
+            $0.pendingClaimNavigation = .init(
+                competitionID: matchID,
+                expectedPublicationRevision: 0
+            )
+            $0.inviteClaimStatus = .waitingForCompetition
+        }
+        let first = publication(revision: 1, visibleID: matchID)
+        await store.send(.competition(.publication(first))) {
+            $0.competition.publication = first
+            $0.path = [matchID]
+            $0.pendingClaimNavigation = nil
+            $0.inviteClaimStatus = .idle
+        }
+        await store.finish()
+        XCTAssertEqual(routing.consumedSequences, [envelope.sequence])
+    }
+
+    /// A link from before this account can arrive after a newer, valid one.
+    @MainActor
+    func testWrongAccountNoticeReopensTheValidLinkBehindIt() async throws {
+        let early = try claimEnvelope(sequence: 5, token: String(repeating: "E", count: 43))
+        let later = try claimEnvelope(sequence: 6)
+        let routing = MainTabRoutingRecorder()
+        let claims = MainTabClaimRecorder(
+            expectedToken: try XCTUnwrap(
+                CompetitionInviteClaimToken(rawValue: Self.claimToken)
+            ),
+            results: []
+        )
+        var initial = MainTabFeature.State(
+            onboarding: MainTabFeature.PermissionOnboarding(steps: [.health])
+        )
+        initial.claimLinksBeforeAccountThrough = 5
+        let store = TestStore(initialState: initial) {
+            MainTabFeature()
+        } withDependencies: {
+            $0.competitionClient = claims.client
+            $0.competitionRoutingClient = routing.client
+            $0.date = .constant(MainTabClaimRecorder.now)
+        }
+
+        await store.send(.routeReceived(later)) {
+            $0.pendingClaimRoute = later
+            $0.inviteClaimStatus = .loadingPreview
+        }
+        await receivePreview(store, later)
+        await store.send(.routeReceived(early)) {
+            $0.lastHandledClaimRouteSequence = early.sequence
+            $0.inviteClaimStatus = .wrongAccount
+        }
+        await store.send(.dismissClaimStatus) {
+            $0.inviteClaimPreview = nil
+            $0.inviteClaimPreviewEvaluatedAt = nil
+            $0.inviteClaimStatus = .loadingPreview
+        }
+        await receivePreview(store, later)
+        await store.finish()
+        XCTAssertEqual(store.state.pendingClaimRoute, later)
+        XCTAssertEqual(routing.consumedSequences, [early.sequence])
+        XCTAssertEqual(claims.requestCount, 0)
+    }
+
+    @MainActor
     func testAlreadyAcceptedLinkBeforeHealthIsForgottenWithoutASheet()
         async throws {
         let envelope = try claimEnvelope(sequence: 7)
@@ -2424,7 +2704,14 @@ private final class MainTabClaimRecorder: @unchecked Sendable {
         expiresAt: now.addingTimeInterval(20 * 60 * 60)
     )
 
-    var previewResult: Swift.Result<CompetitionInvitePreview, CompetitionRemoteFailure> = .success(preview)
+    private var storedPreviewResult: Swift.Result<
+        CompetitionInvitePreview, CompetitionRemoteFailure
+    > = .success(preview)
+    /// Read on each preview request.
+    var previewResult: Swift.Result<CompetitionInvitePreview, CompetitionRemoteFailure> {
+        get { lock.withLock { storedPreviewResult } }
+        set { lock.withLock { storedPreviewResult = newValue } }
+    }
     var declineSucceeds = true
     private var declines: [CompetitionID] = []
     var declinedIDs: [CompetitionID] { lock.withLock { declines } }
@@ -2434,9 +2721,11 @@ private final class MainTabClaimRecorder: @unchecked Sendable {
 
     var client: CompetitionClient {
         var client = lifecycle.client
-        let previewResult = previewResult
         let declineSucceeds = declineSucceeds
-        client.previewInvite = { _ in try previewResult.get() }
+        client.previewInvite = { [weak self] _ in
+            guard let self else { throw CompetitionRemoteFailure.operationFailed }
+            return try self.previewResult.get()
+        }
         client.decline = { [weak self] id in
             self?.lock.withLock { self?.declines.append(id) }
             return LocalCompetitionPublication(

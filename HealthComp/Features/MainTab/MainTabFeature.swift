@@ -477,9 +477,11 @@ struct MainTabFeature {
                     return .none
                 case let .success(preview):
                     // Already accepted by you (the link was tapped twice):
-                    // no sheet, go to the match. Before Health nothing has
-                    // started; it shows on Home once Health is set up.
-                    guard state.competition.publication != nil else {
+                    // no sheet, go to the match. Over the Health step nothing
+                    // has started; it shows on Home once Health is set up.
+                    // Once Health is done, the match is awaited even before
+                    // the first publication.
+                    guard state.onboarding == nil else {
                         state.inviteClaimStatus = .idle
                         return .merge(
                             consumeClaimRoute(sequence, state: &state),
@@ -708,6 +710,11 @@ struct MainTabFeature {
                 switch state.inviteClaimStatus {
                 case .unavailable, .wrongAccount, .ownChallenge, .activeMatchExists:
                     state.inviteClaimStatus = .idle
+                    // A wrong-account notice can cover a newer, valid link.
+                    if state.pendingClaimRoute != nil,
+                       state.claimRouteSequenceInFlight == nil {
+                        return startPreview(state: &state)
+                    }
                     return advanceClaimQueue(state: &state)
                 case .confirmationTimedOut:
                     state.pendingClaimNavigation = nil
