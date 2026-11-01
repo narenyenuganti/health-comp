@@ -73,6 +73,8 @@ struct ClaimCompetitionView: View {
             symbol("link.badge.plus")
         case .wrongAccount:
             symbol("person.crop.circle.badge.xmark")
+        case .ownChallenge:
+            symbol("person.crop.circle.badge.checkmark")
         case .retryable:
             symbol("wifi.exclamationmark")
         case .idle, .ready:
@@ -129,7 +131,7 @@ struct ClaimCompetitionView: View {
                     .accessibilityIdentifier("competition.claim.dismiss")
             }
 
-        case .unavailable, .wrongAccount:
+        case .unavailable, .wrongAccount, .ownChallenge:
             Button("Done", action: dismiss)
                 .buttonStyle(PrimaryButtonStyle())
                 .frame(maxWidth: 440)
@@ -176,6 +178,8 @@ struct ClaimCompetitionView: View {
             "Challenge unavailable"
         case .wrongAccount:
             "This challenge is for someone else"
+        case .ownChallenge:
+            "That’s your challenge"
         case .retryable:
             "Couldn’t connect"
         }
@@ -191,6 +195,8 @@ struct ClaimCompetitionView: View {
             "The server accepted your challenge. Waiting for the confirmed match before opening it."
         case .confirmationTimedOut:
             "The server accepted your challenge, but HealthComp hasn’t received the confirmed match yet. Try refreshing or check Home later."
+        case .ownChallenge:
+            "You sent this link. Only the person you challenged can accept it."
         case .unavailable:
             "This link may be expired, already used, or no longer valid. Ask the sender for a new challenge."
         case .wrongAccount:

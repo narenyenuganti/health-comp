@@ -216,7 +216,7 @@ struct MainTabView: View {
                     store.send(.declineClaimTapped)
                 case .retryable:
                     store.send(.dismissRetryableClaim)
-                case .unavailable, .wrongAccount:
+                case .unavailable, .wrongAccount, .ownChallenge:
                     store.send(.dismissClaimStatus)
                 case .confirmationTimedOut:
                     store.send(.dismissClaimStatus)
