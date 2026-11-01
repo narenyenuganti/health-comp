@@ -7,7 +7,8 @@
           "23LUYD78QK.com.narenyenuganti.HealthComp.staging"
         ],
         "components": [
-          { "/": "/invite/*", "comment": "Private HealthComp invitation links." }
+          { "/": "/invite/*", "comment": "Private HealthComp invitation links." },
+          { "/": "/c/*", "comment": "HealthComp challenge links." }
         ]
       }
     ]
