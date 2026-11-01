@@ -9,6 +9,76 @@
 alter table public.competition_invites
   add column challenge_link_code text
     check (challenge_link_code ~ '^[A-Za-z0-9_-]{22}$');
+-- The link-origin and idempotency lookups join invites by competition.
+create index competition_invites_competition_idx
+  on public.competition_invites(competition_id);
+
+-- A sender's only way to this recipient was a link that has since been
+-- reset: they have a link-created challenge to them, none used the current
+-- code, the recipient never challenged them, and the two never had an
+-- accepted match (one later cancelled still counts). 1.0.2 senders who
+-- never used a link and real opponents are unaffected.
+create function private.challenge_link_revoked_v1(
+  sender_profile_id uuid,
+  recipient_profile_id uuid
+)
+returns boolean language sql stable security definer set search_path = ''
+as $$
+  select exists (select 1 from public.competitions c
+      join public.competition_invites i on i.competition_id = c.id
+      where c.creator_profile_id = sender_profile_id
+        and c.invited_profile_id = recipient_profile_id
+        and i.challenge_link_code is not null)
+    and not exists (select 1 from public.competitions c
+      join public.competition_invites i on i.competition_id = c.id
+      join private.challenge_links l
+        on l.profile_id = recipient_profile_id and l.code = i.challenge_link_code
+      where c.creator_profile_id = sender_profile_id
+        and c.invited_profile_id = recipient_profile_id)
+    and not exists (select 1 from public.competitions c
+      where c.creator_profile_id = recipient_profile_id
+        and c.invited_profile_id = sender_profile_id)
+    and not exists (select 1 from public.competitions c
+      join public.competition_participants a
+        on a.competition_id = c.id and a.profile_id = sender_profile_id
+       and a.state = 'accepted'
+      join public.competition_participants b
+        on b.competition_id = c.id and b.profile_id = recipient_profile_id
+       and b.state = 'accepted'
+      where c.lifecycle in ('scheduled', 'active', 'ends_today', 'tallying',
+        'completed', 'archived', 'cancelled'));
+$$;
+revoke all on function private.challenge_link_revoked_v1(uuid, uuid)
+  from public, anon, authenticated, service_role;
+
+-- 1800's lookup, refusing a sender the reset-link rule refuses, so a
+-- blocked sender can't tell "reset on me" from "gone".
+create or replace function public.resolve_invitation_recipient(profile_id uuid)
+returns jsonb language plpgsql security definer set search_path = ''
+as $$
+declare
+  input_profile_id alias for profile_id;
+  caller_profile_id uuid;
+  recipient jsonb;
+begin
+  if (select auth.role()) is distinct from 'authenticated'
+     or (select auth.uid()) is null then
+    raise exception 'authentication_required' using errcode = '42501';
+  end if;
+  caller_profile_id := private.current_profile_id();
+  if caller_profile_id is null then
+    raise exception 'active_profile_required' using errcode = '42501';
+  end if;
+  select pg_catalog.jsonb_build_object('id', p.id, 'display_name', p.display_name)
+  into recipient from public.profiles p
+  where p.id = input_profile_id and p.id <> caller_profile_id and p.state = 'active';
+  if recipient is null
+     or private.challenge_link_revoked_v1(caller_profile_id, input_profile_id) then
+    raise exception 'recipient_unavailable' using errcode = 'P0001';
+  end if;
+  return recipient;
+end;
+$$;
 
 -- Replaces the caller's code; the old one reads as any unknown code.
 -- Same {code} shape as get_my_challenge_link.
@@ -142,30 +212,9 @@ begin
     raise exception 'recipient_unavailable' using errcode = 'P0001';
   end if;
   -- A reset link also stops its challengers from switching to the account
-  -- id they saw: refused when this sender only ever reached the recipient
-  -- through links that are no longer current, and the two never had an
-  -- accepted match. A 1.0.2 sender who never used a link, and real past
-  -- opponents, are unaffected.
+  -- id they saw (a rematch is between people who already played).
   if input_rematch_parent_id is null and input_link_code is null
-     and exists (select 1 from public.competitions c
-       join public.competition_invites i on i.competition_id = c.id
-       where c.creator_profile_id = caller_profile_id
-         and c.invited_profile_id = input_recipient_profile_id
-         and i.challenge_link_code is not null)
-     and not exists (select 1 from public.competitions c
-       join public.competition_invites i on i.competition_id = c.id
-       join private.challenge_links l
-         on l.profile_id = input_recipient_profile_id and l.code = i.challenge_link_code
-       where c.creator_profile_id = caller_profile_id
-         and c.invited_profile_id = input_recipient_profile_id)
-     and not exists (select 1 from public.competitions c
-       join public.competition_participants a
-         on a.competition_id = c.id and a.profile_id = caller_profile_id and a.state = 'accepted'
-       join public.competition_participants b
-         on b.competition_id = c.id and b.profile_id = input_recipient_profile_id
-        and b.state = 'accepted'
-       where c.lifecycle in ('scheduled', 'active', 'ends_today', 'tallying',
-         'completed', 'archived')) then
+     and private.challenge_link_revoked_v1(caller_profile_id, input_recipient_profile_id) then
     raise exception 'recipient_unavailable' using errcode = 'P0001';
   end if;
   if input_rematch_parent_id is null then

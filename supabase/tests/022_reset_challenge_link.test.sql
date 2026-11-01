@@ -245,6 +245,54 @@ select ok(pg_temp.by_id('c8000000-0000-4000-8000-000000000009', 'c8100000-0000-4
   null, 'c1', 'c8400000-0000-4000-8000-000000000041') is not null,
   'a 1.0.2 account-code sender still challenges a person who reset her link');
 
+-- The account lookup refuses the blocked sender the same way, so the name
+-- never shows before a failed send; others still see it.
+set local role authenticated;
+select pg_temp.as_user('c8000000-0000-4000-8000-000000000006');
+select throws_ok($$select public.resolve_invitation_recipient('c8100000-0000-4000-8000-000000000008')$$,
+  'P0001', 'recipient_unavailable', 'a blocked sender''s account lookup is unavailable');
+select pg_temp.as_user('c8000000-0000-4000-8000-000000000009');
+select is(public.resolve_invitation_recipient('c8100000-0000-4000-8000-000000000008'),
+  '{"id":"c8100000-0000-4000-8000-000000000008","display_name":"Hana"}'::jsonb,
+  'a 1.0.2 sender''s account lookup still works');
+reset role;
+
+-- Contact the recipient started lifts the rule: her challenge surfaces as
+-- incoming, and once it's withdrawn the sender may answer by account id.
+insert into r (label, id) values ('hf', pg_temp.by_id('c8000000-0000-4000-8000-000000000008',
+  'c8100000-0000-4000-8000-000000000006', null, 'b1', 'c8400000-0000-4000-8000-000000000051'));
+select throws_ok($$select pg_temp.by_id('c8000000-0000-4000-8000-000000000006',
+  'c8100000-0000-4000-8000-000000000008', null, 'b2', 'c8400000-0000-4000-8000-000000000052')$$,
+  'P0001', 'incoming_challenge_exists', 'the recipient''s own challenge surfaces, not the rule');
+set local role authenticated;
+select pg_temp.as_user('c8000000-0000-4000-8000-000000000008');
+select lives_ok($$select public.cancel_competition((select id from r where label = 'hf'))$$,
+  'Hana withdraws her challenge to Finn');
+reset role;
+select ok(pg_temp.by_id('c8000000-0000-4000-8000-000000000006', 'c8100000-0000-4000-8000-000000000008',
+  null, 'b3', 'c8400000-0000-4000-8000-000000000053') is not null,
+  'after contact the recipient started, the sender may challenge by account id');
+
+-- An accepted match that was later cancelled still counts as playing.
+insert into auth.users (id) values ('c8000000-0000-4000-8000-00000000000b');
+insert into public.profiles (id, auth_user_id, display_name, state) values
+  ('c8100000-0000-4000-8000-00000000000b', 'c8000000-0000-4000-8000-00000000000b', 'Kai', 'active');
+insert into r (label, id) values ('kh', pg_temp.from_link('c8000000-0000-4000-8000-00000000000b',
+  pg_temp.code('hana-3'), 'b4', 'c8400000-0000-4000-8000-000000000061'));
+set local role authenticated;
+select pg_temp.as_user('c8000000-0000-4000-8000-000000000008');
+select lives_ok($$select public.accept_competition_challenge((select id from r where label = 'kh'))$$,
+  'Hana accepts Kai''s challenge');
+select lives_ok($$select public.cancel_competition((select id from r where label = 'kh'))$$,
+  'Hana cancels the match before Day 1');
+insert into r (label, v) values ('hana-4', public.reset_my_challenge_link());
+reset role;
+select is((select lifecycle from public.competitions where id = (select id from r where label = 'kh')),
+  'cancelled', 'the accepted match is cancelled');
+select ok(pg_temp.by_id('c8000000-0000-4000-8000-00000000000b', 'c8100000-0000-4000-8000-000000000008',
+  null, 'b5', 'c8400000-0000-4000-8000-000000000062') is not null,
+  'after a reset, someone whose accepted match was cancelled may still challenge by account id');
+
 -- A current code whose owner is leaving is unavailable.
 update public.profiles set state = 'deleting' where id = 'c8100000-0000-4000-8000-00000000000a';
 select throws_ok($$select pg_temp.from_link('c8000000-0000-4000-8000-000000000009',
