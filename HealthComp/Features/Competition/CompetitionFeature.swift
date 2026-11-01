@@ -390,9 +390,13 @@ struct CompetitionFeature {
                 }
                 .cancellable(id: CancelID.challengeLink, cancelInFlight: true)
 
-            // A failed refresh keeps the link already shown.
+            // A failed refresh keeps the link already shown. A different
+            // link means a reset that looked failed did happen.
             case let .challengeLinkResponse(url):
-                if let url { state.challengeLink = url }
+                if let url, url != state.challengeLink {
+                    state.challengeLink = url
+                    state.challengeLinkResetFailed = false
+                }
                 state.challengeLinkLoadFailed = state.challengeLink == nil
                 return .none
 

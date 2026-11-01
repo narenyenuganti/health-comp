@@ -203,6 +203,40 @@ final class RemoteCompetitionFeatureTests: XCTestCase {
     }
 
     @MainActor
+    func testChallengeAgainRefusedAfterALinkResetShowsTheCollapsedCopy() async throws {
+        let key = UUID()
+        let closed = CompetitionID(UUID())
+        let recorder = InviteCreationRecorder(results: [.failure(.recipientUnavailable)])
+        let store = TestStore(initialState: CompetitionFeature.State(
+            publication: .remote(revision: 1, competitions: [Self.presentation(closed)])
+        )) {
+            CompetitionFeature()
+        } withDependencies: {
+            $0.competitionClient = recorder.client
+            $0.competitionInviteLinkClient = .fixture(host: Self.host, timeZoneIdentifier: "UTC", idempotencyKeys: [key])
+        }
+        await store.send(.challengeAgainTapped(closed)) {
+            $0.inviteRecipient = .init(Self.recipient)
+            $0.inviteRecipientCode = Self.recipient.id.uuidString.lowercased()
+        }
+        await store.send(.createInviteTapped) {
+            $0.inviteCreations[.sheet] = Creation(recipient: .profile(Self.recipient.id), idempotencyKey: key, status: .creating)
+        }
+        // The server refuses an id learned through a link that was reset.
+        await store.receive(.createInviteResponse(.sheet, idempotencyKey: key, .failure(.recipientUnavailable))) {
+            $0.inviteCreations[.sheet] = nil
+            $0.inviteRecipient = nil
+            $0.inviteRecipientStatus = .notFound
+        }
+        await store.finish()
+        XCTAssertEqual(recorder.requests.first?.recipient, .profile(Self.recipient.id))
+        XCTAssertEqual(
+            competitionRecipientErrorText(store.state.inviteRecipientStatus),
+            "No account has this link. Check it and try again."
+        )
+    }
+
+    @MainActor
     func testFailedDiscoveryAfterSuccessfulCreationPreservesShareLinkAndRetryKey() async throws {
         let id = CompetitionID(UUID())
         let key = UUID()
@@ -975,14 +1009,17 @@ final class RemoteCompetitionFeatureTests: XCTestCase {
         let new = try XCTUnwrap(URL(string: "https://\(Self.host)/c/Qm7tR2vX9pL4kN8wB3cY6z"))
         let newCode = try XCTUnwrap(CompetitionChallengeLinkCode(rawValue: "Qm7tR2vX9pL4kN8wB3cY6z"))
         let outcomes = LockIsolated<[Result<CompetitionChallengeLinkCode, CompetitionRemoteFailure>]>([
-            .failure(.retryableTransport), .success(newCode),
+            .failure(.retryableTransport), .success(newCode), .failure(.retryableTransport),
         ])
         let oldCode = try XCTUnwrap(CompetitionChallengeLinkCode(rawValue: "Xb3kP9qL2mN8vR4tY6wZ1a"))
+        let thirdCode = try XCTUnwrap(CompetitionChallengeLinkCode(rawValue: "Zz9yX8wV7uT6sR5qP4oN3m"))
+        let third = try XCTUnwrap(URL(string: "https://\(Self.host)/c/Zz9yX8wV7uT6sR5qP4oN3m"))
+        let serverCodes = LockIsolated([oldCode, thirdCode])
         var client = InviteCreationRecorder(results: []).client
         client.resetChallengeLinkCode = {
             try outcomes.withValue { $0.removeFirst() }.get()
         }
-        client.loadChallengeLinkCode = { oldCode }
+        client.loadChallengeLinkCode = { serverCodes.withValue { $0.removeFirst() } }
         var links = CompetitionInviteLinkClient.fixture(
             host: Self.host, timeZoneIdentifier: "UTC", idempotencyKeys: []
         )
@@ -1012,6 +1049,19 @@ final class RemoteCompetitionFeatureTests: XCTestCase {
         await store.receive(.challengeLinkResetResponse(new)) {
             $0.challengeLinkIsResetting = false
             $0.challengeLink = new
+        }
+
+        // A reset whose answer was lost but that did happen: the reload shows
+        // the new link and drops the error.
+        await store.send(.challengeLinkResetConfirmed) { $0.challengeLinkIsResetting = true }
+        await store.receive(.challengeLinkResetResponse(nil)) {
+            $0.challengeLinkIsResetting = false
+            $0.challengeLinkResetFailed = true
+        }
+        await store.receive(.challengeLinkRequested)
+        await store.receive(.challengeLinkResponse(third)) {
+            $0.challengeLink = third
+            $0.challengeLinkResetFailed = false
         }
 
         await store.finish()
