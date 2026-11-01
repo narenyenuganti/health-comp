@@ -9,32 +9,37 @@ struct ClaimCompetitionView: View {
 
     var body: some View {
         NavigationStack {
-            VStack(spacing: 24) {
-                Spacer(minLength: 12)
-                statusEmblem
-                VStack(spacing: 10) {
-                    Text(title)
-                        .font(.title.weight(.heavy).width(.condensed))
-                        .foregroundStyle(Theme.ink)
-                        .multilineTextAlignment(.center)
-                        .accessibilityAddTraits(.isHeader)
-                    Text(message)
-                        .font(.body)
-                        .foregroundStyle(Theme.secondary)
-                        .multilineTextAlignment(.center)
-                }
-                .frame(maxWidth: 440)
+            // Scrolls only when the rules card outgrows the sheet (AX5).
+            ScrollView {
+                VStack(spacing: 24) {
+                    Spacer(minLength: 12)
+                    statusEmblem
+                    VStack(spacing: 10) {
+                        Text(title)
+                            .font(.title.weight(.heavy).width(.condensed))
+                            .foregroundStyle(Theme.ink)
+                            .multilineTextAlignment(.center)
+                            .accessibilityAddTraits(.isHeader)
+                        Text(message)
+                            .font(.body)
+                            .foregroundStyle(Theme.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .frame(maxWidth: 440)
 
-                if status == .ready {
-                    privacyCard
-                }
+                    if status == .ready {
+                        CompetitionRulesCard(source: .remoteParticipants)
+                            .frame(maxWidth: 440)
+                    }
 
-                Spacer(minLength: 12)
-                actionControls
+                    Spacer(minLength: 12)
+                    actionControls
+                }
+                .padding(.horizontal, 24)
+                .padding(.vertical, 20)
+                .frame(maxWidth: .infinity)
             }
-            .padding(.horizontal, 24)
-            .padding(.vertical, 20)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .scrollBounceBehavior(.basedOnSize)
             .background(Theme.ground)
             .navigationTitle("Challenge")
             .navigationBarTitleDisplayMode(.inline)
@@ -77,26 +82,6 @@ struct ClaimCompetitionView: View {
         Image(systemName: name)
             .font(.system(size: 40, weight: .semibold))
             .foregroundStyle(Theme.ink)
-    }
-
-    private var privacyCard: some View {
-        VStack(spacing: 0) {
-            CompetitionRuleRow(icon: .symbol("calendar"), title: "Seven calendar days")
-            CompetitionRuleDivider()
-            CompetitionRuleRow(
-                icon: .rings,
-                title: "Up to 600 points each day",
-                detail: "1 point for every 1% of each ring"
-            )
-            CompetitionRuleDivider()
-            CompetitionRuleRow(
-                icon: .symbol("lock.iphone"),
-                title: "Raw Health data stays on this iPhone"
-            )
-        }
-        .padding(.horizontal, 16)
-        .frame(maxWidth: 440)
-        .themePanel(cornerRadius: 18)
     }
 
     @ViewBuilder

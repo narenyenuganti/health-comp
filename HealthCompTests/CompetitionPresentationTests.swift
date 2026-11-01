@@ -124,24 +124,19 @@ final class CompetitionPresentationTests: XCTestCase {
                 outcome: .loss,
                 opponentDisplayName: "Priya"
             ),
-            "Priya Won"
+            "Priya won"
         )
-        XCTAssertEqual(
-            competitionResultSubtitle(
-                outcome: .loss,
-                opponentDisplayName: "Priya",
-                source: source
+        let tallyBody = competitionTallyCopy(
+            LocalCompetitionTallyPresentation(
+                attention: .opponentPlanUnavailable,
+                consecutiveStableCompleteReads: 0,
+                stabilityStart: nil,
+                bestAvailableDeadline: .distantFuture
             ),
-            "Priya’s seven-day Activity total finished ahead."
-        )
-        XCTAssertEqual(
-            competitionTallyAttentionText(
-                .opponentPlanUnavailable,
-                opponentDisplayName: "Priya",
-                source: source
-            ),
-            "Finalizing Priya’s scores."
-        )
+            opponentDisplayName: "Priya",
+            now: .distantPast
+        ).body
+        XCTAssertTrue(tallyBody.contains("Priya"), tallyBody)
 
         let allCopy = [
             competitionInviteTitle(
@@ -152,16 +147,7 @@ final class CompetitionPresentationTests: XCTestCase {
                 outcome: .loss,
                 opponentDisplayName: "Priya"
             ),
-            competitionResultSubtitle(
-                outcome: .loss,
-                opponentDisplayName: "Priya",
-                source: source
-            ),
-            competitionTallyAttentionText(
-                .opponentPlanUnavailable,
-                opponentDisplayName: "Priya",
-                source: source
-            ),
+            tallyBody,
         ].joined(separator: " ")
         XCTAssertFalse(allCopy.contains("Alex"))
         XCTAssertFalse(allCopy.localizedCaseInsensitiveContains("simulat"))
@@ -174,14 +160,6 @@ final class CompetitionPresentationTests: XCTestCase {
                 opponentDisplayName: "Alex"
             ),
             "Alex is simulated on this iPhone."
-        )
-        XCTAssertEqual(
-            competitionResultSubtitle(
-                outcome: .loss,
-                opponentDisplayName: "Alex",
-                source: .simulatedFixture
-            ),
-            "Alex’s simulated seven-day total finished ahead."
         )
     }
 
@@ -311,8 +289,8 @@ final class CompetitionPresentationTests: XCTestCase {
                 .notification: ["Last day", nil],
             ]),
             (.tallying(startedAt: created), [
-                .row: ["Tallying", nil], .card: ["Tallying", nil],
-                .notification: ["Tallying", nil],
+                .row: ["Final score pending", nil], .card: ["Final score pending", nil],
+                .notification: ["Final score pending", nil],
             ]),
             (win, [
                 .row: ["You won", week], .card: ["You won", week],
@@ -324,7 +302,7 @@ final class CompetitionPresentationTests: XCTestCase {
             ]),
             (tie, [
                 .row: ["Tied", week], .card: ["Tied", week],
-                .notification: ["You tied with Hermes", nil],
+                .notification: ["All square with Hermes", nil],
             ]),
         ]
         for (lifecycle, styles) in expected {
@@ -796,123 +774,240 @@ final class CompetitionPresentationTests: XCTestCase {
         )
     }
 
-    func testTallyUsesProvisionalTotalsAndHonestDeadlineCopy() {
-        let deadline = Date(timeIntervalSinceReferenceDate: 1_000)
-        let tally = LocalCompetitionTallyPresentation(
-            attention: .awaitingStability,
-            consecutiveStableCompleteReads: 1,
-            stabilityStart: nil,
-            bestAvailableDeadline: deadline
-        )
-
-        XCTAssertEqual(
-            competitionScoreTotalLabel(isProvisional: true),
-            "Provisional total"
-        )
-        let copy = competitionTallyDeadlineText(
-            tally,
-            locale: Locale(identifier: "en_US"),
-            timeZone: TimeZone(identifier: "UTC")!
-        )
-        XCTAssertTrue(copy.contains("complete scores do not stabilize"))
-        XCTAssertTrue(copy.contains("best available accepted data"))
-        XCTAssertFalse(copy.contains("data is still incomplete"))
-        XCTAssertFalse(copy.contains("finalizes by"))
-
-        let incomplete = LocalCompetitionTallyPresentation(
-            attention: .incomplete(
-                missingOrdinals: [7],
-                unavailableOrdinals: []
-            ),
-            consecutiveStableCompleteReads: 0,
-            stabilityStart: nil,
-            bestAvailableDeadline: deadline
-        )
-        let incompleteCopy = competitionTallyDeadlineText(
-            incomplete,
-            locale: Locale(identifier: "en_US"),
-            timeZone: TimeZone(identifier: "UTC")!
-        )
-        XCTAssertTrue(
-            incompleteCopy.contains(
-                "complete accepted scores are still unavailable"
-            )
-        )
-        XCTAssertTrue(incompleteCopy.contains("best available accepted data"))
-    }
-
-    func testOpponentPlanAttentionUsesUserFacingSimulatedScoreCopy() {
-        XCTAssertEqual(
-            competitionTallyAttentionText(.opponentPlanUnavailable),
-            "Finalizing Alex’s scores."
-        )
-    }
-
-    func testEveryTallyAttentionHasUserFacingCopy() {
-        let cases: [(LocalCompetitionTallyAttention, String)] = [
-            (
-                .noRead,
-                "Waiting for the first complete Activity check after the match."
-            ),
-            (
-                .incomplete(
-                    missingOrdinals: [2],
-                    unavailableOrdinals: [5]
+    func testTallyCopyNamesWhoItWaitsOnAndWhetherToAct() throws {
+        let iso = ISO8601DateFormatter()
+        let deadline = try XCTUnwrap(iso.date(from: "2026-11-05T08:00:00Z"))
+        let now = try XCTUnwrap(iso.date(from: "2026-11-04T05:00:00Z"))
+        let en = Locale(identifier: "en_US")
+        let la = try XCTUnwrap(TimeZone(identifier: "America/Los_Angeles"))
+        func copy(
+            _ attention: LocalCompetitionTallyAttention?,
+            deadline: Date = deadline,
+            now: Date = now
+        ) -> CompetitionTallyCopy {
+            competitionTallyCopy(
+                LocalCompetitionTallyPresentation(
+                    attention: attention,
+                    consecutiveStableCompleteReads: 0,
+                    stabilityStart: nil,
+                    bestAvailableDeadline: deadline
                 ),
-                "Missing days: 2. Unavailable days: 5."
-            ),
-            (
-                .unacceptedScores(ordinals: [3, 4]),
-                "Waiting to accept scores for days 3, 4."
-            ),
-            (.opponentPlanUnavailable, "Finalizing Alex’s scores."),
-            (.awaitingStability, "Waiting for one more stable read."),
-        ]
-
-        for (attention, expected) in cases {
-            XCTAssertTrue(
-                competitionTallyAttentionText(attention).contains(expected),
-                "Missing tally copy for \(attention)"
+                opponentDisplayName: "Hermes",
+                now: now,
+                locale: en,
+                timeZone: la
             )
         }
-    }
+        let nothingToDo = "Nothing for you to do. If it isn’t done by Wed night, the result uses what’s in."
+        let openAgain = "Open HealthComp again before Wed night, or the result uses what’s in."
+        let expected: [(LocalCompetitionTallyAttention?, CompetitionTallyCopy)] = [
+            (.opponentPlanUnavailable, CompetitionTallyCopy(
+                headline: "Waiting for Hermes to sync",
+                body: "Nothing for you to do. If Hermes doesn’t sync by Wed night, the result uses what’s in."
+            )),
+            (.incomplete(missingOrdinals: [7], unavailableOrdinals: []), CompetitionTallyCopy(
+                headline: "Waiting for your Day 7",
+                body: "Day 7 hasn’t synced from this iPhone. \(openAgain)"
+            )),
+            (.incomplete(missingOrdinals: [5], unavailableOrdinals: [7]), CompetitionTallyCopy(
+                headline: "Waiting for your Days 5 and 7",
+                body: "HealthComp couldn’t read Days 5 and 7 on this iPhone. \(openAgain)"
+            )),
+            (.incomplete(missingOrdinals: Set(1...7), unavailableOrdinals: []), CompetitionTallyCopy(
+                headline: "Waiting for your Activity",
+                body: "7 days haven’t synced from this iPhone. \(openAgain)"
+            )),
+            (.unacceptedScores(ordinals: [3, 4]), CompetitionTallyCopy(
+                headline: "Scoring your Days 3 and 4",
+                body: nothingToDo
+            )),
+            (.noRead, CompetitionTallyCopy(
+                headline: "Checking Activity on this iPhone",
+                body: nothingToDo
+            )),
+            (.awaitingStability, CompetitionTallyCopy(
+                headline: "Checking the last scores",
+                body: "Nothing for you to do. The result is final by Wed night at the latest."
+            )),
+            (nil, CompetitionTallyCopy(
+                headline: "Checking the last scores",
+                body: "Nothing for you to do. The result is final by Wed night at the latest."
+            )),
+        ]
+        for (attention, wanted) in expected {
+            let actual = copy(attention)
+            XCTAssertEqual(actual, wanted, "\(String(describing: attention))")
+            for text in [actual.headline, actual.body] {
+                for jargon in ["days 7", "Missing days", "best available", "stable read"] {
+                    XCTAssertFalse(text.contains(jargon), text)
+                }
+            }
+        }
+        XCTAssertFalse(copy(.opponentPlanUnavailable).body.contains("your"))
 
-    func testMixedIncompleteTallyCopyNeverDropsAReason() {
-        let first = competitionTallyAttentionText(
-            .incomplete(
-                missingOrdinals: [7],
-                unavailableOrdinals: [2]
+        XCTAssertEqual(
+            copy(.incomplete(missingOrdinals: [7], unavailableOrdinals: []), now: deadline),
+            CompetitionTallyCopy(
+                headline: "Finishing the result",
+                body: "The deadline passed, so the result uses what’s in. It appears here shortly."
             )
         )
-        XCTAssertTrue(first.contains("Missing days: 7"))
-        XCTAssertTrue(first.contains("Unavailable days: 2"))
-
-        let second = competitionTallyAttentionText(
-            .incomplete(
-                missingOrdinals: [2],
-                unavailableOrdinals: [7]
-            )
+        let evening = try XCTUnwrap(iso.date(from: "2026-11-05T05:00:00Z"))
+        XCTAssertTrue(
+            normalized(copy(.opponentPlanUnavailable, deadline: evening).body)
+                .contains("by Wed 9:00 PM"),
+            copy(.opponentPlanUnavailable, deadline: evening).body
         )
-        XCTAssertTrue(second.contains("Missing days: 2"))
-        XCTAssertTrue(second.contains("Unavailable days: 7"))
+        XCTAssertEqual(competitionScoreTotalLabel(isProvisional: true), "Provisional total")
     }
 
-    func testOpponentPlanDeadlineDoesNotBlameAcceptedOwnerScores() {
-        let tally = LocalCompetitionTallyPresentation(
-            attention: .opponentPlanUnavailable,
-            consecutiveStableCompleteReads: 0,
-            stabilityStart: nil,
-            bestAvailableDeadline: Date(timeIntervalSinceReferenceDate: 1_000)
-        )
+    func testDayListTextIsSingularPluralAndCapped() {
+        let en = Locale(identifier: "en_US")
+        XCTAssertEqual(competitionDayListText([7], locale: en), "Day 7")
+        XCTAssertEqual(competitionDayListText([7, 5], locale: en), "Days 5 and 7")
+        XCTAssertEqual(competitionDayListText([3, 5, 7], locale: en), "Days 3, 5, and 7")
+        XCTAssertNil(competitionDayListText([1, 2, 3, 4], locale: en))
+        XCTAssertNil(competitionDayListText([], locale: en))
+    }
 
-        let copy = competitionTallyDeadlineText(
-            tally,
-            locale: Locale(identifier: "en_US"),
-            timeZone: TimeZone(identifier: "UTC")!
+    func testTallyingStatusShowsFinalScorePendingAndDeadline() throws {
+        let iso = ISO8601DateFormatter()
+        let deadline = try XCTUnwrap(iso.date(from: "2026-11-05T08:00:00Z"))
+        let now = try XCTUnwrap(iso.date(from: "2026-11-04T05:00:00Z"))
+        let en = Locale(identifier: "en_US")
+        let la = try XCTUnwrap(TimeZone(identifier: "America/Los_Angeles"))
+        func tallying(evaluatedAt: Date) -> LocalCompetitionPresentation {
+            LocalCompetitionPresentation(
+                id: CompetitionID(UUID()),
+                ownerDisplayName: "Naren",
+                opponentDisplayName: "Hermes",
+                lifecycle: .tallying(startedAt: now),
+                acceptedConfiguration: nil,
+                userPoints: 3_413,
+                opponentPoints: 3_398,
+                days: [],
+                currentDayOrdinal: nil,
+                lastRefresh: nil,
+                tally: LocalCompetitionTallyPresentation(
+                    attention: .awaitingStability,
+                    consecutiveStableCompleteReads: 0,
+                    stabilityStart: nil,
+                    bestAvailableDeadline: deadline
+                ),
+                terminalResult: nil,
+                evaluatedAt: evaluatedAt
+            )
+        }
+        let before = tallying(evaluatedAt: now)
+        XCTAssertEqual(
+            competitionStatusText(before, style: .card, locale: en, timeZone: la),
+            CompetitionStatusText(title: "Final score pending", timing: "By Wed night")
         )
+        XCTAssertEqual(
+            competitionStatusText(before, style: .row, locale: en, timeZone: la).line,
+            "Final score pending · By Wed night"
+        )
+        XCTAssertNil(
+            competitionStatusText(before, style: .notification, locale: en, timeZone: la).timing
+        )
+        XCTAssertNil(
+            competitionStatusText(
+                tallying(evaluatedAt: deadline), style: .card, locale: en, timeZone: la
+            ).timing
+        )
+    }
 
-        XCTAssertTrue(copy.contains("Alex’s final simulated scores"))
-        XCTAssertFalse(copy.contains("accepted scores are still unavailable"))
+    func testDayOutcomeSeparatesWonLostTiedNoDataUpcomingToday() {
+        func day(
+            _ owner: Double?,
+            _ opponent: Double?,
+            availability: LocalCompetitionOwnerAvailability = .observed
+        ) -> LocalCompetitionDayPresentation {
+            LocalCompetitionDayPresentation(
+                day: presentation(.observed, points: nil).day,
+                ordinal: 2,
+                ownerAcceptedPoints: owner,
+                ownerLatestAvailability: availability,
+                opponentRevealedPoints: opponent
+            )
+        }
+        XCTAssertEqual(competitionDayOutcome(day(320, 300), currentDayOrdinal: nil), .won)
+        XCTAssertEqual(competitionDayOutcome(day(300, 320), currentDayOrdinal: nil), .lost)
+        XCTAssertEqual(competitionDayOutcome(day(300.4, 300.2), currentDayOrdinal: nil), .tied)
+        XCTAssertEqual(competitionDayOutcome(day(0, 0), currentDayOrdinal: nil), .noData)
+        XCTAssertEqual(competitionDayOutcome(day(320, nil), currentDayOrdinal: nil), .noData)
+        XCTAssertEqual(
+            competitionDayOutcome(day(nil, 300, availability: .missing), currentDayOrdinal: nil),
+            .noData
+        )
+        XCTAssertEqual(
+            competitionDayOutcome(day(nil, nil, availability: .notYetOccurred), currentDayOrdinal: nil),
+            .upcoming
+        )
+        XCTAssertEqual(competitionDayOutcome(day(320, 300), currentDayOrdinal: 2), .today)
+    }
+
+    func testResultTitlesNameTheOtherPerson() {
+        XCTAssertEqual(competitionResultTitle(outcome: .win, opponentDisplayName: "Hermes"), "You beat Hermes")
+        XCTAssertEqual(competitionResultTitle(outcome: .loss, opponentDisplayName: "Hermes"), "Hermes won")
+        XCTAssertEqual(competitionResultTitle(outcome: .tie, opponentDisplayName: "Hermes"), "All square with Hermes")
+    }
+
+    func testMarginTextIsLabelledAndHiddenAtZero() {
+        let en = Locale(identifier: "en_US")
+        func margin(_ user: Double, _ opponent: Double, _ digits: Int) -> String? {
+            competitionMarginText(
+                userPoints: user, opponentPoints: opponent, fractionDigits: digits, locale: en
+            )
+        }
+        XCTAssertEqual(margin(3410.2, 3180, 0), "Won by 230 points")
+        XCTAssertEqual(margin(3180, 3410.2, 0), "Lost by 230 points")
+        XCTAssertEqual(margin(413, 412, 0), "Won by 1 point")
+        XCTAssertEqual(margin(412.3, 412.0, 2), "Won by 0.30 points")
+        XCTAssertNil(margin(412, 412, 0))
+        XCTAssertNil(margin(0.4, 0, 0))
+    }
+
+    func testDaysSummarySplitsWonLostTiedAndSkipsMissingDays() {
+        func day(_ owner: Double?, _ opponent: Double?) -> LocalCompetitionDayPresentation {
+            LocalCompetitionDayPresentation(
+                day: presentation(.observed, points: nil).day,
+                ordinal: 1,
+                ownerAcceptedPoints: owner,
+                ownerLatestAvailability: owner == nil ? .missing : .observed,
+                opponentRevealedPoints: opponent
+            )
+        }
+        let won = day(320, 300), lost = day(300, 320), tied = day(300, 300)
+        XCTAssertEqual(
+            competitionDaysSummaryText([won, won, lost, lost, lost, lost, tied]),
+            "won 2 days, lost 4, tied 1"
+        )
+        XCTAssertEqual(
+            competitionDaysSummaryText([won, won, won, won, won, day(320, nil), day(0, 0)]),
+            "won 5 days"
+        )
+        XCTAssertEqual(
+            competitionDaysSummaryText([lost] + Array(repeating: day(nil, nil), count: 6)),
+            "lost 1 day"
+        )
+        XCTAssertEqual(competitionDaysSummaryText(Array(repeating: tied, count: 7)), "tied 7 days")
+        XCTAssertNil(competitionDaysSummaryText(Array(repeating: day(nil, 300), count: 7)))
+    }
+
+    func testMuteFailureTextNamesThePersonAndAction() {
+        XCTAssertEqual(
+            competitionMuteFailureText(.load, opponentName: "Hermes"),
+            "Couldn’t check whether Hermes is muted."
+        )
+        XCTAssertEqual(
+            competitionMuteFailureText(.mute, opponentName: "Hermes"),
+            "Couldn’t mute Hermes. Try again from the More menu."
+        )
+        XCTAssertEqual(
+            competitionMuteFailureText(.unmute, opponentName: "Hermes"),
+            "Couldn’t unmute Hermes. Try again from the More menu."
+        )
     }
 
     func testDayAccessibilityNamesTodayProgressClosedDateAndUpcomingState() throws {
@@ -959,9 +1054,24 @@ final class CompetitionPresentationTests: XCTestCase {
         )
 
         XCTAssertTrue(label.contains("complete"))
-        XCTAssertTrue(label.contains("Opponent, score not available."), label)
+        XCTAssertTrue(label.contains("Opponent, not synced."), label)
         XCTAssertFalse(label.contains("upcoming"))
         XCTAssertFalse(label.contains("--"))
+
+        let base = presentation(.observed, points: 321)
+        let reportedNoData = competitionDayAccessibilityLabel(
+            LocalCompetitionDayPresentation(
+                day: base.day,
+                ordinal: base.ordinal,
+                ownerAcceptedPoints: 321,
+                ownerLatestAvailability: .observed,
+                opponentRevealedPoints: nil,
+                opponentReportedNoData: true
+            ),
+            currentDayOrdinal: nil,
+            opponentName: "Opponent"
+        )
+        XCTAssertTrue(reportedNoData.contains("Opponent, no data."), reportedNoData)
     }
 
     func testRingPartsAddUpToTheDayTotal() {
@@ -975,10 +1085,10 @@ final class CompetitionPresentationTests: XCTestCase {
         }
     }
 
-    func testTallyScoreHeaderUsesFinalDayInsteadOfToday() {
+    func testTallyCallsTheLastDayDay7() {
         XCTAssertEqual(
             competitionScorePeriodLabel(.tallying(startedAt: .distantPast)),
-            "Final day"
+            "Day 7"
         )
         XCTAssertEqual(
             competitionScorePeriodLabel(.active(dayOrdinal: 3)),

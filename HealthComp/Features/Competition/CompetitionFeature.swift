@@ -34,7 +34,9 @@ struct CompetitionFeature {
         var commandExpectedPublicationRevisions: [CompetitionID: UInt64]
         var mutedOpponentIdentities: Set<String>
         var muteOpponentIdentitiesInFlight: Set<String>
-        var notificationPreferenceSaveFailed: Bool
+        var mutePreferencesLoadFailed: Bool
+        /// Per person: the `isMuted` value that failed to save.
+        var muteSaveFailures: [String: Bool]
         var notificationAuthorizationState:
             CompetitionNotificationAuthorizationState?
         var notificationAuthorizationRequestIsInFlight: Bool
@@ -56,7 +58,8 @@ struct CompetitionFeature {
             commandExpectedPublicationRevisions: [CompetitionID: UInt64] = [:],
             mutedOpponentIdentities: Set<String> = [],
             muteOpponentIdentitiesInFlight: Set<String> = [],
-            notificationPreferenceSaveFailed: Bool = false,
+            mutePreferencesLoadFailed: Bool = false,
+            muteSaveFailures: [String: Bool] = [:],
             notificationAuthorizationState:
                 CompetitionNotificationAuthorizationState? = nil,
             notificationAuthorizationRequestIsInFlight: Bool = false,
@@ -74,8 +77,8 @@ struct CompetitionFeature {
             self.mutedOpponentIdentities = mutedOpponentIdentities
             self.muteOpponentIdentitiesInFlight =
                 muteOpponentIdentitiesInFlight
-            self.notificationPreferenceSaveFailed =
-                notificationPreferenceSaveFailed
+            self.mutePreferencesLoadFailed = mutePreferencesLoadFailed
+            self.muteSaveFailures = muteSaveFailures
             self.notificationAuthorizationState =
                 notificationAuthorizationState
             self.notificationAuthorizationRequestIsInFlight =
@@ -143,6 +146,7 @@ struct CompetitionFeature {
             switch action {
             case .task:
                 let currentMutedIdentities = state.mutedOpponentIdentities
+                let loadFailed = state.mutePreferencesLoadFailed
                 let currentAuthorization = state.notificationAuthorizationState
                 return .merge(
                     .run { send in
@@ -159,7 +163,9 @@ struct CompetitionFeature {
                         do {
                             let loaded = try await competitionClient
                                 .loadMutedOpponentIdentities()
-                            if loaded != currentMutedIdentities {
+                            // A success after a failure clears the failure,
+                            // even when nothing changed.
+                            if loaded != currentMutedIdentities || loadFailed {
                                 await send(.mutePreferencesLoaded(loaded))
                             }
                         } catch {
@@ -401,11 +407,11 @@ struct CompetitionFeature {
 
             case let .mutePreferencesLoaded(identities):
                 guard let identities else {
-                    state.notificationPreferenceSaveFailed = true
+                    state.mutePreferencesLoadFailed = true
                     return .none
                 }
                 state.mutedOpponentIdentities = identities
-                state.notificationPreferenceSaveFailed = false
+                state.mutePreferencesLoadFailed = false
                 return .none
 
             case let .muteTapped(identity):
@@ -422,7 +428,7 @@ struct CompetitionFeature {
                 } else {
                     state.mutedOpponentIdentities.remove(identity)
                 }
-                state.notificationPreferenceSaveFailed = false
+                state.muteSaveFailures[identity] = nil
                 return .run { send in
                     do {
                         try await competitionClient
@@ -453,7 +459,7 @@ struct CompetitionFeature {
                 } else {
                     state.mutedOpponentIdentities.insert(identity)
                 }
-                state.notificationPreferenceSaveFailed = true
+                state.muteSaveFailures[identity] = isMuted
                 return .none
 
             case let .notificationAuthorizationLoaded(authorization):
