@@ -224,11 +224,15 @@ struct MainTabView: View {
                     source: publication.source,
                     muteButton: muteButton(for: competition),
                     issue: competitionRowIssue(id, in: publication.dashboard.issues),
-                    retry: retry
+                    retry: retry,
+                    // An unstructured task, so leaving the screen mid-refresh
+                    // doesn't cancel the reconcile.
+                    refresh: { [store] in
+                        await Task {
+                            await store.send(.competition(.pullToRefresh)).finish()
+                        }.value
+                    }
                 )
-                .refreshable {
-                    await store.send(.competition(.pullToRefresh)).finish()
-                }
 
             case .completed, .archived:
                 CompetitionResultView(

@@ -1507,7 +1507,8 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
             harness,
             at: harness.dayOneNoon.addingTimeInterval(600),
             snapshots: [1: changed],
-            failAppends: true
+            acceptsAppend: { _ in false },
+            failure: .operationFailed
         ).synchronizeAll()
 
         XCTAssertEqual(secondRun.failures, [])
@@ -1515,6 +1516,84 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
         XCTAssertEqual(day.latestSnapshot, changed)
         XCTAssertEqual(day.acceptedSnapshot, first)
         XCTAssertEqual(day.acceptedClientRevision, 1)
+    }
+
+    func testReadingAcceptedInALaterRunBecomesTheAcceptedSnapshot() async throws {
+        let harness = try ownerActivityHarness()
+        defer { try? FileManager.default.removeItem(at: harness.root) }
+        let first = try harness.snapshot(move: 420)
+        // Run 1 queues revision 1, but the upload doesn't go through.
+        let offlineRuntime = ownerRuntime(
+            harness, at: harness.dayOneNoon, snapshots: [1: first],
+            acceptsAppend: { _ in false }
+        )
+        let firstRun = await offlineRuntime.synchronizeAll()
+        await offlineRuntime.stop()
+        XCTAssertEqual(firstRun.failures, [])
+        let queued = try XCTUnwrap(firstRun.successfulCompetitions.first?.ownerActivity?.days.first)
+        XCTAssertNil(queued.acceptedClientRevision)
+        XCTAssertEqual(queued.pendingSnapshot, first)
+        XCTAssertEqual(queued.pendingClientRevision, 1)
+
+        // Run 2: revision 1 finally lands (the outbox wakes first), then a
+        // newer reading queues revision 2, which doesn't go through.
+        let changed = try harness.snapshot(move: 480)
+        let server = harness.server
+        let secondRuntime = ownerRuntime(
+            harness, at: harness.dayOneNoon.addingTimeInterval(3_600), snapshots: [1: changed],
+            acceptsAppend: { $0.clientRevision == 1 },
+            beforeList: {
+                // Let the woken outbox finish storing revision 1 before the
+                // match loads, so the run reads one consistent ledger.
+                while await server.appendedScoreCount() < 1 {
+                    try? await Task.sleep(nanoseconds: 10_000_000)
+                }
+                try? await Task.sleep(nanoseconds: 300_000_000)
+            }
+        )
+        let secondRun = await secondRuntime.synchronizeAll()
+        await secondRuntime.stop()
+        XCTAssertEqual(secondRun.failures, [])
+        let materialization = try XCTUnwrap(secondRun.successfulCompetitions.first)
+        XCTAssertEqual(
+            try materialization.journal.projection.remoteScoreLedgers[profileID]?
+                .visibleEntry(forActiveDayOrdinal: 1)?.clientRevision,
+            1
+        )
+        let day = try XCTUnwrap(materialization.ownerActivity?.days.first)
+        XCTAssertEqual(day.latestSnapshot, changed)
+        XCTAssertEqual(day.acceptedSnapshot, first)
+        XCTAssertEqual(day.acceptedClientRevision, 1)
+        XCTAssertEqual(day.pendingSnapshot, changed)
+        XCTAssertEqual(day.pendingClientRevision, 2)
+        let shown = try XCTUnwrap(project([materialization], at: harness.dayOneNoon).first?.days.first)
+        XCTAssertEqual(shown.ownerAcceptedSnapshot, first)
+    }
+
+    func testCancelledMatchKeepsItsLastMaterializationAndRaisesNoIssue() async throws {
+        let harness = try ownerActivityHarness()
+        defer { try? FileManager.default.removeItem(at: harness.root) }
+        let outcome = await ownerRuntime(harness, at: harness.dayOneNoon, snapshots: nil)
+            .synchronizeAll()
+        let materialization = try XCTUnwrap(outcome.successfulCompetitions.first)
+        let cancelledID = CompetitionID(UUID(uuidString: "73000000-0000-4000-8000-000000000002")!)
+        let failedID = CompetitionID(UUID(uuidString: "73000000-0000-4000-8000-000000000003")!)
+        let mixed = RemoteCompetitionRuntimeOutcome(
+            outcomes: [
+                .success(materialization),
+                .failure(.init(competitionID: cancelledID, failure: .cancelled)),
+                .failure(.init(competitionID: failedID, failure: .discoveryUnavailable)),
+            ],
+            discoveryFailure: nil
+        )
+
+        let reconciled = mixed.reconciled(previous: [cancelledID: materialization])
+        XCTAssertEqual(reconciled.materializations, [materialization, materialization])
+        XCTAssertEqual(reconciled.failedIDs, [failedID])
+
+        let unknown = mixed.reconciled(previous: [:])
+        XCTAssertEqual(unknown.materializations, [materialization])
+        XCTAssertEqual(unknown.failedIDs, [failedID])
     }
 
     func testOwnerActivityPersistsAndPublishesOffline() async throws {
@@ -3629,8 +3708,10 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
         _ harness: OwnerActivityHarness,
         at date: Date,
         snapshots: [Int: ActivitySnapshot]?,
-        failAppends: Bool = false,
-        offline: Bool = false
+        acceptsAppend: @escaping @Sendable (CompetitionScoreRevisionRequest) -> Bool = { _ in true },
+        failure: CompetitionRemoteFailure = .retryableTransport,
+        offline: Bool = false,
+        beforeList: @escaping @Sendable () async -> Void = {}
     ) -> RemoteCompetitionRuntime {
         let noProtection = JSONCompetitionEventStoreFileProtection { _, _ in }
         let server = harness.server
@@ -3638,13 +3719,14 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
         let api = remoteAPI(
             listCompetitions: {
                 if offline { throw CompetitionRemoteFailure.retryableTransport }
+                await beforeList()
                 return try await server.listCompetitions(for: ownerID)
             },
             fetchChanges: { cursor, pageSize in
                 try await server.fetchChanges(for: ownerID, cursor: cursor, pageSize: pageSize)
             },
             appendScoreRevision: { request in
-                if failAppends { throw CompetitionRemoteFailure.operationFailed }
+                guard acceptsAppend(request) else { throw failure }
                 return try await server.appendScoreRevision(for: ownerID, request: request)
             }
         )

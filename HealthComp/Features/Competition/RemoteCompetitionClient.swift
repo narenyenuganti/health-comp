@@ -329,6 +329,9 @@ private actor RemoteCompetitionClientCoordinator {
     private var terminalPreparationWork: TerminalPreparationWork?
     private var installationCoordinator: CompetitionInstallationCoordinator?
     private var mountedCompetitionIDs: Set<CompetitionID> = []
+    /// The last good materialization of each match, shown again when its
+    /// next sync is only cancelled.
+    private var lastMaterializations: [CompetitionID: RemoteCompetitionMaterialization] = [:]
     private var hasStarted = false
     private var isStopped = false
     private var healthAuthorizationIssue: CompetitionClientIssue?
@@ -434,6 +437,7 @@ private actor RemoteCompetitionClientCoordinator {
                     )
                 )
                 self.runtime = runtime
+                self.lastMaterializations = [:]
                 let preferences = notificationPreferencesFactory(paths)
                 self.notificationPreferences = preferences
                 self.observerDeliveryReceipts =
@@ -662,9 +666,14 @@ private actor RemoteCompetitionClientCoordinator {
         if let issue = outcome.discoveryFailure?.competitionClientIssue {
             issues.append(issue)
         }
-        let failedIDs = outcome.failures.map(\.competitionID).sorted {
-            $0.rawValue.uuidString < $1.rawValue.uuidString
-        }
+        let reconciled = outcome.reconciled(previous: lastMaterializations)
+        lastMaterializations = Dictionary(
+            reconciled.materializations.map {
+                (CompetitionID($0.descriptor.competitionID), $0)
+            },
+            uniquingKeysWith: { first, _ in first }
+        )
+        let failedIDs = reconciled.failedIDs
         if !failedIDs.isEmpty {
             issues.append(.competitionFailures(failedIDs))
         }
@@ -676,7 +685,7 @@ private actor RemoteCompetitionClientCoordinator {
             issues.append(.activityFailures(activityFailedIDs))
         }
         let publication = await publish(
-            materializations: outcome.successfulCompetitions,
+            materializations: reconciled.materializations,
             profile: profile,
             issues: issues,
             knownCompetitionIDs: outcome.discoveryFailure == nil
@@ -1212,6 +1221,7 @@ private actor RemoteCompetitionClientCoordinator {
         installationCoordinator = nil
         await runtime?.stop()
         runtime = nil
+        lastMaterializations = [:]
         return stoppedTasks
     }
 
@@ -1614,6 +1624,24 @@ private actor RemoteCompetitionClientCoordinator {
             result.append(issue)
         }
         return result
+    }
+}
+
+extension RemoteCompetitionRuntimeOutcome {
+    /// A match whose sync was only cancelled (the person left the screen
+    /// mid-refresh) is not a failure: it keeps its last good materialization
+    /// and raises no issue.
+    func reconciled(
+        previous: [CompetitionID: RemoteCompetitionMaterialization]
+    ) -> (materializations: [RemoteCompetitionMaterialization], failedIDs: [CompetitionID]) {
+        let cancelled = failures.filter { $0.failure == .cancelled }
+        let failedIDs = failures.filter { $0.failure != .cancelled }
+            .map(\.competitionID)
+            .sorted { $0.rawValue.uuidString < $1.rawValue.uuidString }
+        return (
+            successfulCompetitions + cancelled.compactMap { previous[$0.competitionID] },
+            failedIDs
+        )
     }
 }
 
