@@ -3154,11 +3154,11 @@ final class RemoteCompetitionClientTests: XCTestCase {
         )
         XCTAssertEqual(
             competitionIssueSummary([.storageUnavailable]),
-            "Local competition storage is unavailable."
+            "Match storage on this iPhone is unavailable."
         )
         XCTAssertEqual(
             competitionIssueSummary([.remoteFailure]),
-            "Competition data could not be refreshed."
+            "Matches could not be refreshed."
         )
         XCTAssertEqual(
             competitionIssueSummary([
@@ -3498,14 +3498,14 @@ final class RemoteCompetitionClientTests: XCTestCase {
         )
         XCTAssertEqual(
             publication.map { competitionIssueSummary($0.dashboard.issues) },
-            "Competition is available, but Activity could not be refreshed."
+            "Matches loaded, but Activity could not be refreshed."
         )
         XCTAssertEqual(
             competitionIssueSummary([
                 .activityFailures([CompetitionID(competitionID)]),
                 .competitionFailures([CompetitionID(competitionID)]),
             ]),
-            "Some competition activity could not be refreshed."
+            "Some matches could not be refreshed."
         )
         await client.stop()
     }

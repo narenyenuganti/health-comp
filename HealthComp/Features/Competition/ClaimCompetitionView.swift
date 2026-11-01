@@ -36,7 +36,7 @@ struct ClaimCompetitionView: View {
             .padding(.vertical, 20)
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .background(Theme.ground)
-            .navigationTitle("Competition Invitation")
+            .navigationTitle("Challenge")
             .navigationBarTitleDisplayMode(.inline)
         }
         .interactiveDismissDisabled(
@@ -104,16 +104,16 @@ struct ClaimCompetitionView: View {
         switch status {
         case .ready:
             VStack(spacing: 8) {
-                Button("Accept Invitation", action: accept)
+                Button("Accept Challenge", action: accept)
                     .buttonStyle(PrimaryButtonStyle())
                     .frame(maxWidth: 440)
                     .accessibilityHint(
-                        "Claims the private invitation and schedules the competition."
+                        "Accepts the challenge and schedules the match."
                     )
                     .accessibilityIdentifier("competition.claim.accept")
-                quietButton("Decline Invitation", role: .destructive, action: decline)
+                quietButton("Decline Challenge", role: .destructive, action: decline)
                     .accessibilityHint(
-                        "Closes this invitation on this device without joining."
+                        "Closes this challenge on this device without joining."
                     )
                     .accessibilityIdentifier("competition.claim.decline")
             }
@@ -124,7 +124,7 @@ struct ClaimCompetitionView: View {
                     .buttonStyle(PrimaryButtonStyle())
                     .frame(maxWidth: 440)
                     .accessibilityIdentifier("competition.claim.retry")
-                quietButton("Decline Invitation", role: .destructive, action: decline)
+                quietButton("Decline Challenge", role: .destructive, action: decline)
                     .accessibilityIdentifier("competition.claim.decline")
             }
 
@@ -178,15 +178,15 @@ struct ClaimCompetitionView: View {
     private var title: String {
         switch status {
         case .idle, .ready:
-            "Join this competition?"
+            "Join this match?"
         case .claiming:
-            "Accepting invitation…"
+            "Accepting challenge…"
         case .waitingForCompetition:
-            "Confirming competition…"
+            "Confirming match…"
         case .confirmationTimedOut:
             "Still waiting for confirmation"
         case .unavailable:
-            "Invitation unavailable"
+            "Challenge unavailable"
         case .retryable:
             "Couldn’t connect"
         }
@@ -195,17 +195,17 @@ struct ClaimCompetitionView: View {
     private var message: String {
         switch status {
         case .idle, .ready:
-            "Accept to start a private seven-day Activity competition on the creator’s calendar schedule."
+            "Accept to start a private seven-day Activity match on the sender’s calendar."
         case .claiming:
-            "HealthComp is securely claiming this single-use invitation."
+            "HealthComp is securely accepting this single-use challenge."
         case .waitingForCompetition:
-            "The server accepted your invitation. Waiting for the confirmed competition before opening it."
+            "The server accepted your challenge. Waiting for the confirmed match before opening it."
         case .confirmationTimedOut:
-            "The server accepted your invitation, but HealthComp has not received the confirmed competition yet. Try refreshing or check Sharing later."
+            "The server accepted your challenge, but HealthComp hasn’t received the confirmed match yet. Try refreshing or check Home later."
         case .unavailable:
-            "This link may be expired, already used, or no longer valid. Ask the sender for a new invitation."
+            "This link may be expired, already used, or no longer valid. Ask the sender for a new challenge."
         case .retryable:
-            "The invitation is still private on this device. Check your connection and try again."
+            "The challenge is still private on this device. Check your connection and try again."
         }
     }
 }

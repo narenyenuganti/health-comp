@@ -54,7 +54,7 @@ struct CompetitionResultView: View {
 
                 if dataControl == .preservedHistory {
                     Label(
-                        "Archived competition history is preserved.",
+                        "Archived match history is preserved.",
                         systemImage: "archivebox.fill"
                     )
                     .font(.footnote)
@@ -81,7 +81,7 @@ struct CompetitionResultView: View {
                 .frame(maxWidth: .infinity)
                 .background(Theme.ground)
         }
-        .navigationTitle("Result")
+        .navigationTitle(competition.opponentDisplayName)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             if hasMenuActions {
@@ -96,7 +96,7 @@ struct CompetitionResultView: View {
             }
         }
         .confirmationDialog(
-            "Delete this competition from this iPhone?",
+            "Delete this match from this iPhone?",
             isPresented: $isDeleteConfirmationPresented,
             titleVisibility: .visible
         ) {
@@ -106,7 +106,7 @@ struct CompetitionResultView: View {
             Button("Cancel", role: .cancel) {}
         } message: {
             Text(
-                "This permanently removes the local competition journal and its notifications."
+                "This permanently removes the match and its notifications from this iPhone."
             )
         }
         .sheet(isPresented: $showsWeek) {
@@ -126,6 +126,7 @@ struct CompetitionResultView: View {
     private var resultHero: some View {
         VStack(spacing: 10) {
             Text(resultKicker)
+                .textCase(.uppercase)
                 .font(.themeLabel)
                 .tracking(1.2)
                 .foregroundStyle(Theme.secondary)
@@ -145,12 +146,7 @@ struct CompetitionResultView: View {
     }
 
     private var resultKicker: String {
-        var parts = ["FINAL"]
-        if let weekRangeText {
-            parts.append(weekRangeText)
-        }
-        parts.append("VS \(competition.opponentDisplayName.uppercased())")
-        return parts.joined(separator: " · ")
+        ["Final", weekRangeText].compactMap { $0 }.joined(separator: " · ")
     }
 
     private var weekRangeText: String? {
@@ -159,15 +155,22 @@ struct CompetitionResultView: View {
         else {
             return nil
         }
-        return "\(first.month)/\(first.day)–\(last.month)/\(last.day)"
+        return competitionWeekText(
+            first, last, now: competition.evaluatedAt, locale: locale, timeZone: timeZone
+        )
+    }
+
+    /// Two decimals only when whole points would hide the winner.
+    private var digits: Int {
+        competitionFinalFractionDigits(
+            userPoints: competition.userPoints,
+            opponentPoints: competition.opponentPoints
+        )
     }
 
     private var finalScore: some View {
         VStack(spacing: 16) {
-            Text("Final score")
-                .font(.themeLabel)
-                .tracking(1.2)
-                .foregroundStyle(Theme.secondary)
+            SectionLabel("FINAL SCORE")
 
             CompetitionFinalScoreLayout { finalScoreOwners }
         }
@@ -177,15 +180,16 @@ struct CompetitionResultView: View {
         .accessibilityElement(children: .ignore)
         .accessibilityIdentifier("competition.result")
         .accessibilityLabel(
-            "\(resultTitle). Final score. \(competition.ownerDisplayName) \(competitionPointsAccessibilityText(competition.userPoints)). \(competition.opponentDisplayName) \(competitionPointsAccessibilityText(competition.opponentPoints))."
+            "\(resultTitle). Final score. You \(competitionPointsAccessibilityText(competition.userPoints, fractionDigits: digits, locale: locale)). \(competition.opponentDisplayName) \(competitionPointsAccessibilityText(competition.opponentPoints, fractionDigits: digits, locale: locale))."
         )
     }
 
     @ViewBuilder
     private var finalScoreOwners: some View {
         FinalScoreOwner(
-            name: competition.ownerDisplayName,
+            name: "You",
             points: competition.userPoints,
+            fractionDigits: digits,
             tint: Theme.you
         )
         Text("–")
@@ -195,6 +199,7 @@ struct CompetitionResultView: View {
         FinalScoreOwner(
             name: competition.opponentDisplayName,
             points: competition.opponentPoints,
+            fractionDigits: digits,
             tint: Theme.ink
         )
     }
@@ -236,9 +241,14 @@ struct CompetitionResultView: View {
     }
 
     private var marginText: String? {
-        let margin = competition.userPoints - competition.opponentPoints
+        let margin = competitionDisplayedMargin(
+            userPoints: competition.userPoints,
+            opponentPoints: competition.opponentPoints,
+            fractionDigits: digits
+        )
         guard margin != 0 else { return nil }
-        return (margin > 0 ? "+" : "−") + competitionPointsText(abs(margin))
+        return (margin > 0 ? "+" : "−")
+            + competitionPointsText(abs(margin), fractionDigits: digits, locale: locale)
     }
 
     private var daysWonText: String? {
@@ -246,7 +256,7 @@ struct CompetitionResultView: View {
             guard let owner = day.ownerAcceptedPoints,
                   let opponent = day.opponentRevealedPoints
             else { return nil }
-            return owner > opponent
+            return competitionDisplayedMargin(userPoints: owner, opponentPoints: opponent) > 0
         }
         guard !decided.isEmpty else { return nil }
         return "\(decided.filter { $0 }.count) of \(competition.days.count) days"
@@ -259,10 +269,7 @@ struct CompetitionResultView: View {
         } label: {
             VStack(alignment: .leading, spacing: 12) {
                 HStack(spacing: 8) {
-                    Text("THE WEEK")
-                        .font(.themeLabel)
-                        .tracking(1.2)
-                        .foregroundStyle(Theme.ink)
+                    SectionLabel("THE WEEK")
                     Spacer(minLength: 8)
                     Image(systemName: "chevron.right")
                         .font(.caption.weight(.bold))
@@ -294,7 +301,7 @@ struct CompetitionResultView: View {
             CompetitionWeekChart(
                 days: competition.days,
                 currentDayOrdinal: nil,
-                ownerName: competition.ownerDisplayName,
+                now: competition.evaluatedAt,
                 opponentName: competition.opponentDisplayName
             )
             if competition.days.contains(where: { ringSegments($0).count == 3 }) {
@@ -327,6 +334,8 @@ struct CompetitionResultView: View {
         _ totals: [(title: String, color: Color, points: Double)]
     ) -> some View {
         let sum = totals.reduce(0.0) { $0 + $1.points }
+        // Whole parts that add up to the whole total; bars keep raw values.
+        let shown = competitionRoundedParts(totals.map(\.points), total: sum)
         // AnyLayout, not ViewThatFits, which the Dynamic Type audit flags.
         let labelsLayout = dynamicTypeSize.isAccessibilitySize
             ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
@@ -350,7 +359,7 @@ struct CompetitionResultView: View {
             }
             .frame(height: 24)
             .accessibilityHidden(true)
-            labelsLayout { ringTotalLabels(totals) }
+            labelsLayout { ringTotalLabels(totals, shown: shown) }
         }
         .accessibilityElement(children: .combine)
     }
@@ -366,7 +375,8 @@ struct CompetitionResultView: View {
 
     @ViewBuilder
     private func ringTotalLabels(
-        _ totals: [(title: String, color: Color, points: Double)]
+        _ totals: [(title: String, color: Color, points: Double)],
+        shown: [Double]
     ) -> some View {
         ForEach(totals.indices, id: \.self) { index in
             VStack(alignment: .leading, spacing: 2) {
@@ -374,7 +384,7 @@ struct CompetitionResultView: View {
                     .font(.themeLabel)
                     .tracking(1.1)
                     .foregroundStyle(Theme.secondary)
-                Text(competitionPointsText(totals[index].points.rounded()))
+                Text(competitionPointsText(shown[index], locale: locale))
                     .font(.title2.weight(.heavy).width(.condensed).monospacedDigit())
                     .foregroundStyle(Theme.ink)
             }
@@ -385,7 +395,7 @@ struct CompetitionResultView: View {
     // One line under each award; History keeps the full record.
     private var awardPresentation: some View {
         VStack(alignment: .leading, spacing: 10) {
-            SectionLabel("Awards")
+            SectionLabel("AWARDS")
 
             VStack(spacing: 0) {
                 ForEach(Array(visibleAwards.enumerated()), id: \.element.id) {
@@ -404,7 +414,7 @@ struct CompetitionResultView: View {
                             Text(
                                 award.kind == .victory
                                     ? "Victory Over \(award.friendDisplayName)"
-                                    : "Competition Complete"
+                                    : "Match Complete"
                             )
                             .font(.headline)
                             .foregroundStyle(Theme.ink)
@@ -427,6 +437,7 @@ struct CompetitionResultView: View {
         guard award.kind == .victory else {
             return competitionAwardEarnedText(
                 award.awardedAt,
+                now: competition.evaluatedAt,
                 locale: locale,
                 timeZone: timeZone
             )
@@ -513,7 +524,7 @@ struct CompetitionResultView: View {
     private var remoteRematchControl: some View {
         switch inviteCreationStatus {
         case .idle:
-            Button("Create Rematch Invitation") {
+            Button("Create Rematch Challenge") {
                 send(.rematchTapped(competition.id))
             }
             .buttonStyle(PrimaryButtonStyle())
@@ -522,7 +533,7 @@ struct CompetitionResultView: View {
         case .creating:
             HStack(spacing: 8) {
                 ProgressView()
-                Text("Creating rematch invitation…")
+                Text("Creating rematch challenge…")
             }
             .foregroundStyle(Theme.secondary)
             .frame(maxWidth: .infinity, minHeight: 54)
@@ -535,7 +546,7 @@ struct CompetitionResultView: View {
                     subject: Text("HealthComp rematch")
                 ) {
                     Label(
-                        "Share Rematch Invitation",
+                        "Share Rematch Challenge",
                         systemImage: "square.and.arrow.up"
                     )
                 }
@@ -562,7 +573,7 @@ struct CompetitionResultView: View {
             .foregroundStyle(Theme.secondary)
 
         case .pendingInvitationExists:
-            Text("An invitation to this account is already pending. It expires 24 hours after creation.")
+            Text("A challenge to this account is already waiting. It expires 24 hours after it was created.")
                 .font(.callout)
                 .foregroundStyle(Theme.secondary)
         }
@@ -726,6 +737,7 @@ struct CompetitionFinalScoreLayout: Layout {
 private struct FinalScoreOwner: View {
     let name: String
     let points: Double
+    let fractionDigits: Int
     let tint: Color
 
     @ScaledMetric(relativeTo: .largeTitle) private var scoreSize: CGFloat = 52
@@ -734,7 +746,7 @@ private struct FinalScoreOwner: View {
         VStack(spacing: 4) {
             Text(name)
                 .font(.subheadline.weight(.semibold))
-            Text(competitionPointsText(points))
+            Text(competitionPointsText(points, fractionDigits: fractionDigits))
                 .font(.score(size: scoreSize))
                 .monospacedDigit()
             Text("points")

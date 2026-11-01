@@ -44,7 +44,7 @@ struct CompetitionDetailView: View {
                     scheduledCard
                     weekSection
                 } else {
-                    Picker("Competition view", selection: $page) {
+                    Picker("Match view", selection: $page) {
                         Text("Today").tag(Page.today)
                         Text("Week").tag(Page.week)
                     }
@@ -68,7 +68,7 @@ struct CompetitionDetailView: View {
             .padding(.bottom, 24)
         }
         .background(Theme.ground)
-        .navigationTitle("Competition with \(competition.opponentDisplayName)")
+        .navigationTitle(competition.opponentDisplayName)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -120,17 +120,12 @@ struct CompetitionDetailView: View {
     }
 
     private var leadText: Text {
-        let margin = competition.userPoints - competition.opponentPoints
-        let points = Text(competitionPointsText(abs(margin))).fontWeight(.bold)
-        if margin > 0 {
-            return Text("You lead by ") + points.foregroundStyle(Theme.you)
-                + Text(".")
-        }
-        if margin < 0 {
-            return Text("\(competition.opponentDisplayName) leads by ")
-                + points.foregroundStyle(Theme.ink) + Text(".")
-        }
-        return Text("All square.")
+        competitionLeadText(
+            userPoints: competition.userPoints,
+            opponentPoints: competition.opponentPoints,
+            opponentDisplayName: competition.opponentDisplayName,
+            locale: locale
+        )
     }
 
     @ViewBuilder
@@ -152,6 +147,7 @@ struct CompetitionDetailView: View {
                 Text(
                     competitionTallyDeadlineText(
                         tally,
+                        now: competition.evaluatedAt,
                         locale: locale,
                         timeZone: timeZone,
                         opponentDisplayName: competition.opponentDisplayName,
@@ -173,7 +169,7 @@ struct CompetitionDetailView: View {
             VStack(alignment: .leading, spacing: 3) {
                 if let schedule = competition.acceptedConfiguration?.schedule,
                    let dateRange = competitionScheduleDateRangeText(
-                       schedule, locale: locale, timeZone: timeZone
+                       schedule, now: competition.evaluatedAt, locale: locale
                    ) {
                     Text(dateRange)
                         .font(.subheadline)
@@ -181,10 +177,10 @@ struct CompetitionDetailView: View {
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("competition.schedule.dates")
                 } else {
-                    Text("Starts next competition day")
+                    Text("Starts next match day")
                         .font(.headline)
                         .foregroundStyle(Theme.ink)
-                    Text("Your stored schedule sets the seven competition days.")
+                    Text("Your saved schedule sets the seven match days.")
                         .font(.subheadline)
                         .foregroundStyle(Theme.secondary)
                 }
@@ -214,7 +210,9 @@ struct CompetitionDetailView: View {
                     title: day.ordinal == competition.currentDayOrdinal
                         ? "HOW TODAY ADDS UP"
                         : "HOW DAY \(day.ordinal) ADDED UP",
-                    segments: segments.map { $0.points },
+                    segments: competitionRoundedParts(
+                        segments.map { $0.points }, total: total
+                    ),
                     labels: ringLabels(snapshot),
                     total: total,
                     opponentName: competition.opponentDisplayName,
@@ -230,7 +228,7 @@ struct CompetitionDetailView: View {
             CompetitionWeekChart(
                 days: competition.days,
                 currentDayOrdinal: competition.currentDayOrdinal,
-                ownerName: competition.ownerDisplayName,
+                now: competition.evaluatedAt,
                 opponentName: competition.opponentDisplayName,
                 showsDates: true,
                 selectDay: { drawer = .day($0.ordinal) }
@@ -303,12 +301,14 @@ struct CompetitionDetailView: View {
         if let day = competition.days.first(where: { $0.ordinal == ordinal }) {
             CompetitionDrawer(
                 title: "Day \(day.ordinal)",
-                subtitle: competitionDayDateText(day.day)
+                subtitle: competitionDayText(
+                    day.day, now: competition.evaluatedAt, locale: locale, timeZone: timeZone
+                )
             ) {
                 CompetitionWeekChart(
                     days: [day],
                     currentDayOrdinal: competition.currentDayOrdinal,
-                    ownerName: competition.ownerDisplayName,
+                    now: competition.evaluatedAt,
                     opponentName: competition.opponentDisplayName
                 )
                 dayBreakdown(day)
@@ -326,6 +326,7 @@ struct CompetitionDetailView: View {
                         competitionRefreshTimelineText(
                             lastRefresh: competition.lastRefresh,
                             lastSuccessfulFullWindowRefreshAt: competition.lastSuccessfulFullWindowRefreshAt,
+                            now: competition.evaluatedAt,
                             locale: locale,
                             timeZone: timeZone
                         ).enumerated()
@@ -541,47 +542,39 @@ private struct CompetitionScoreboardPanel: View {
     // AnyLayout, not ViewThatFits: the XCTest Dynamic Type audit flags
     // text that ViewThatFits swaps out while it cycles sizes.
     private var statusRow: some View {
+        let status = competitionStatusText(
+            competition, style: .card, locale: locale, timeZone: timeZone
+        )
         let layout = dynamicTypeSize.isAccessibilitySize
             ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4))
             : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: 8))
         return layout {
-            statusTitle
-                .frame(maxWidth: .infinity, alignment: .leading)
-            endText
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                if isLive {
+                    Circle()
+                        .fill(Theme.ink)
+                        .frame(width: 8, height: 8)
+                }
+                Text(status.title)
+                    .foregroundStyle(Theme.ink)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            if let timing = status.timing {
+                Text(timing)
+                    .foregroundStyle(Theme.secondary)
+                    .tracking(0)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
         }
         .font(.themeLabel)
         .tracking(1.2)
-    }
-
-    // The lifecycle title stays its own text: "Day 1", "Ends Today",
-    // "Tallying Points" and "Scheduled" are what people and tests look for.
-    private var statusTitle: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
-            if isLive {
-                Circle()
-                    .fill(Theme.ink)
-                    .frame(width: 8, height: 8)
-                    .accessibilityHidden(true)
-            }
-            Text(competitionDetailTitle(competition.lifecycle))
-                .foregroundStyle(Theme.ink)
-            if case .active = competition.lifecycle {
-                Text("of 7")
-                    .foregroundStyle(Theme.secondary)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private var endText: some View {
-        if let end = competitionEndText(
-            competition, locale: locale, timeZone: timeZone
-        ) {
-            Text("ENDS \(end)")
-                .foregroundStyle(Theme.secondary)
-                .tracking(0)
-                .fixedSize(horizontal: false, vertical: true)
-        }
+        .textCase(.uppercase)
+        // One static element: the hit-region audit treats a traitless
+        // element as a control, and this row is read, never tapped.
+        .accessibilityElement(children: .ignore)
+        .accessibilityAddTraits(.isStaticText)
+        .accessibilityLabel(status.line)
+        .accessibilityIdentifier("competition.status")
     }
 
     private var scoreboard: some View {
@@ -605,7 +598,7 @@ private struct CompetitionScoreboardPanel: View {
 
     private var ownerBlock: some View {
         scoreBlock(
-            name: competition.ownerDisplayName,
+            name: "You",
             today: todayDay?.ownerAcceptedPoints,
             total: competition.userPoints,
             color: Theme.you,
@@ -844,66 +837,50 @@ private func ringLabels(_ snapshot: ActivitySnapshot) -> [String] {
     return ["MOVE", "EXERCISE", stand]
 }
 
-func competitionDetailTitle(
-    _ lifecycle: LocalCompetitionLifecyclePresentation
-) -> String {
-    switch lifecycle {
-    case .scheduled: "Scheduled"
-    case let .active(dayOrdinal): "Day \(dayOrdinal)"
-    case .endsToday: "Ends Today"
-    case .tallying: "Tallying Points"
-    case .completed, .archived: "Final Result"
-    case .pending: "Invitation"
-    case .declined: "Declined"
-    case .expired: "Expired"
-    }
-}
-
 func competitionDayAccessibilityLabel(
     _ day: LocalCompetitionDayPresentation,
     currentDayOrdinal: Int? = nil,
-    ownerName: String,
-    opponentName: String
+    opponentName: String,
+    now: Date = Date(),
+    locale: Locale = .current
 ) -> String {
-    let dayContext: String
+    let date = competitionDayText(day.day, now: now, locale: locale)
     if day.ordinal == currentDayOrdinal {
-        dayContext = "Today, scores so far"
-    } else if day.ownerLatestAvailability == .notYetOccurred {
-        dayContext = "\(competitionDayDateText(day.day)), upcoming, no scores yet"
-    } else {
-        dayContext = "\(competitionDayDateText(day.day)), complete"
+        return "Day \(day.ordinal), Today, scores so far. \(competitionDayScoresAccessibilityText(day, opponentName: opponentName, locale: locale))"
     }
-    let owner = "\(ownerName), \(competitionOwnerAccessibilityText(day))"
-    let opponent: String
-    if let points = day.opponentRevealedPoints {
-        opponent = "\(opponentName), \(competitionPointsAccessibilityText(points))"
-    } else if day.ownerLatestAvailability == .notYetOccurred {
-        opponent = "\(opponentName), future, --"
-    } else {
-        opponent = "\(opponentName), score not available, --"
+    if day.ownerLatestAvailability == .notYetOccurred {
+        return "Day \(day.ordinal), \(date), upcoming."
     }
-    return "Day \(day.ordinal), \(dayContext). \(owner). \(opponent)."
+    return "Day \(day.ordinal), \(date), complete. \(competitionDayScoresAccessibilityText(day, opponentName: opponentName, locale: locale))"
 }
 
-func competitionDayDateText(_ day: CompetitionDay) -> String {
-    let symbols = DateFormatter().monthSymbols ?? []
-    let month = symbols.indices.contains(day.month - 1)
-        ? symbols[day.month - 1]
-        : String(day.month)
-    return "\(month) \(day.day)"
+private func competitionDayScoresAccessibilityText(
+    _ day: LocalCompetitionDayPresentation,
+    opponentName: String,
+    locale: Locale
+) -> String {
+    let opponent = day.opponentRevealedPoints.map {
+        competitionPointsAccessibilityText($0, locale: locale)
+    } ?? "score not available"
+    return "You, \(competitionOwnerAccessibilityText(day, locale: locale)). \(opponentName), \(opponent)."
 }
 
+/// The inclusive week, "Oct 28 – Nov 3". Nil when the stored schedule
+/// can't produce its seven days.
 func competitionScheduleDateRangeText(
     _ schedule: CompetitionSchedule,
-    locale: Locale = .current,
-    timeZone: TimeZone = .current
+    now: Date = Date(),
+    locale: Locale = .current
 ) -> String? {
-    guard let boundaries = competitionScheduleBoundaries(schedule) else {
+    guard let window = try? schedule.calendar.sevenDayWindow(
+        startingOn: schedule.startDay
+    ),
+        let first = window.first,
+        let last = window.last
+    else {
         return nil
     }
-    return competitionDateRangeText(
-        boundaries.start, boundaries.end, locale: locale, timeZone: timeZone
-    )
+    return competitionWeekText(first, last, now: now, locale: locale)
 }
 
 func competitionScheduleBoundaries(
@@ -923,45 +900,21 @@ func competitionScheduleBoundaries(
     return (firstDate, endDate)
 }
 
-func competitionEndText(
-    _ competition: LocalCompetitionPresentation,
-    locale: Locale = .current,
-    timeZone: TimeZone = .current
-) -> String? {
-    switch competition.lifecycle {
-    case .scheduled, .active, .endsToday: break
-    default: return nil
-    }
-    guard let schedule = competition.acceptedConfiguration?.schedule,
-          let end = competitionScheduleBoundaries(schedule)?.end else {
-        return nil
-    }
-    return competitionDateTimeText(end, locale: locale, timeZone: timeZone)
-}
-
 func competitionOwnerAccessibilityText(
-    _ day: LocalCompetitionDayPresentation
+    _ day: LocalCompetitionDayPresentation,
+    locale: Locale = .current
 ) -> String {
+    let points = competitionPointsAccessibilityText(day.ownerAcceptedPoints, locale: locale)
     switch day.ownerLatestAvailability {
     case .notYetOccurred:
-        "future, --"
+        return "upcoming"
     case .observed:
-        if let points = day.ownerAcceptedPoints {
-            competitionPointsAccessibilityText(points)
-        } else {
-            "activity observed, no accepted score"
-        }
+        return day.ownerAcceptedPoints == nil ? "synced, no score yet" : points
     case .missing:
-        "missing activity data, \(competitionPointsAccessibilityText(day.ownerAcceptedPoints))"
+        return "missing activity data, \(points)"
     case let .unavailable(reason):
-        "\(competitionOwnerAvailabilityText(.unavailable(reason: reason), ordinal: day.ordinal).replacingOccurrences(of: ".", with: "")), \(competitionPointsAccessibilityText(day.ownerAcceptedPoints))"
+        return "\(competitionOwnerAvailabilityText(.unavailable(reason: reason), ordinal: day.ordinal).replacingOccurrences(of: ".", with: "")), \(points)"
     }
-}
-
-func competitionPointsAccessibilityText(_ points: Double?) -> String {
-    guard let points else { return "--" }
-    let unit = points == 1 ? "point" : "points"
-    return "\(competitionPointsText(points)) \(unit)"
 }
 
 func competitionOwnerAvailabilityText(
@@ -970,7 +923,7 @@ func competitionOwnerAvailabilityText(
 ) -> String {
     switch availability {
     case .notYetOccurred: "Day \(ordinal) has not started yet"
-    case .observed: "Day \(ordinal) Activity observed"
+    case .observed: "Day \(ordinal) synced"
     case .missing: "Day \(ordinal) is missing activity data."
     case let .unavailable(reason):
         switch reason {
@@ -991,7 +944,7 @@ func competitionTallyAttentionText(
 ) -> String {
     switch attention {
     case .noRead:
-        return "Waiting for the first complete post-competition Activity check."
+        return "Waiting for the first complete Activity check after the match."
     case let .incomplete(missing, unavailable):
         if missing == [7], unavailable.isEmpty {
             return "Day 7 is missing activity data."
@@ -1034,18 +987,19 @@ func competitionRefreshStatusText(_ status: ActivityRefreshReadStatus) -> String
 func competitionRefreshTimelineText(
     lastRefresh: LocalCompetitionRefreshPresentation?,
     lastSuccessfulFullWindowRefreshAt: Date?,
+    now: Date = Date(),
     locale: Locale = .current,
     timeZone: TimeZone = .current
 ) -> [String] {
     var lines: [String] = []
     if let lastRefresh {
         lines.append(
-            "Latest Activity check \(competitionDateTimeText(lastRefresh.readAt, locale: locale, timeZone: timeZone)): \(competitionRefreshStatusText(lastRefresh.status))"
+            "Latest Activity check \(competitionMomentText(lastRefresh.readAt, now: now, locale: locale, timeZone: timeZone)): \(competitionRefreshStatusText(lastRefresh.status))"
         )
     }
     if let lastSuccessfulFullWindowRefreshAt {
         lines.append(
-            "Last complete Activity read \(competitionDateTimeText(lastSuccessfulFullWindowRefreshAt, locale: locale, timeZone: timeZone))."
+            "Last complete Activity read \(competitionMomentText(lastSuccessfulFullWindowRefreshAt, now: now, locale: locale, timeZone: timeZone))."
         )
     } else if lastRefresh == nil {
         lines.append("No Activity check yet.")
@@ -1055,13 +1009,15 @@ func competitionRefreshTimelineText(
 
 func competitionTallyDeadlineText(
     _ tally: LocalCompetitionTallyPresentation,
+    now: Date = Date(),
     locale: Locale = .current,
     timeZone: TimeZone = .current,
     opponentDisplayName: String = LocalCompetitionIdentity.opponentDisplayName,
     source: CompetitionPublicationSource = .simulatedFixture
 ) -> String {
-    let deadline = competitionDateTimeText(
+    let deadline = competitionMomentText(
         tally.bestAvailableDeadline,
+        now: now,
         locale: locale,
         timeZone: timeZone
     )
@@ -1084,6 +1040,26 @@ func competitionScorePeriodLabel(
 ) -> String {
     if case .tallying = lifecycle { return "Final day" }
     return "Today"
+}
+
+/// "You lead by 12.", "Hermes leads by 382." or "All square.", from the
+/// numbers as shown. The margin is bold, amber for you and ink for them.
+@MainActor
+func competitionLeadText(
+    userPoints: Double,
+    opponentPoints: Double,
+    opponentDisplayName: String,
+    locale: Locale = .current
+) -> Text {
+    let margin = competitionDisplayedMargin(
+        userPoints: userPoints, opponentPoints: opponentPoints
+    )
+    guard margin != 0 else { return Text("All square.") }
+    let points = Text(competitionPointsText(abs(margin), locale: locale))
+        .fontWeight(.bold)
+    return margin > 0
+        ? Text("You lead by ") + points.foregroundStyle(Theme.you) + Text(".")
+        : Text("\(opponentDisplayName) leads by ") + points.foregroundStyle(Theme.ink) + Text(".")
 }
 
 enum CompetitionChartState: Equatable {
@@ -1123,7 +1099,7 @@ func activityEvidenceCaption(
     if let acceptedSnapshot = day.ownerAcceptedSnapshot,
        let latestSnapshot = day.ownerLatestSnapshot,
        acceptedSnapshot != latestSnapshot {
-        return "Latest Activity source reading shown. The accepted score preserves earlier source evidence under the competition scoring policy."
+        return "Latest Activity source reading shown. The accepted score preserves earlier source evidence under the match scoring rules."
     }
     if day.ownerAcceptedSnapshot == nil || day.ownerLatestSnapshot == nil {
         return "Latest Activity source reading shown; accepted score \(competitionPointsAccessibilityText(acceptedPoints)). Source snapshots are unavailable for comparison."

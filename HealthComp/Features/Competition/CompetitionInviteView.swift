@@ -22,18 +22,18 @@ struct CompetitionInviteView: View {
             .frame(maxWidth: .infinity)
         }
         .background(Theme.ground)
-        .navigationTitle(navigationTitle)
+        .navigationTitle(competition.opponentDisplayName)
         .navigationBarTitleDisplayMode(.inline)
         .alert(
-            "Decline invitation from \(competition.opponentDisplayName)?",
+            "Decline challenge from \(competition.opponentDisplayName)?",
             isPresented: $showsDeclineConfirmation
         ) {
-            Button("Keep Invitation", role: .cancel) {}
-            Button("Decline Invitation", role: .destructive) {
+            Button("Keep Challenge", role: .cancel) {}
+            Button("Decline Challenge", role: .destructive) {
                 send(.declineTapped(competition.id))
             }
         } message: {
-            Text("This closes the invitation without starting a competition.")
+            Text("This closes the challenge without starting a match.")
         }
     }
 
@@ -65,7 +65,7 @@ struct CompetitionInviteView: View {
             }
             if source == .simulatedFixture, direction == .outgoing {
                 Text(
-                    "Starting simulates \(competition.opponentDisplayName) accepting this local invitation."
+                    "Starting simulates \(competition.opponentDisplayName) accepting this local challenge."
                 )
                 .font(.caption)
                 .foregroundStyle(Theme.secondary)
@@ -81,7 +81,7 @@ struct CompetitionInviteView: View {
                 Label(
                     direction == .outgoing
                         ? "Waiting for \(competition.opponentDisplayName) to accept"
-                        : "Open the invitation link to review and accept",
+                        : "Open the challenge link to review and accept",
                     systemImage: "hourglass"
                 )
                 .font(.subheadline.weight(.medium))
@@ -102,7 +102,7 @@ struct CompetitionInviteView: View {
                     .accessibilityValue(
                         isCommandInFlight ? "Action in progress" : ""
                     )
-                    .accessibilityHint("Accepts the local simulated competition")
+                    .accessibilityHint("Accepts the local simulated match")
 
                 case .incoming:
                     VStack(spacing: 6) { incomingButtons }
@@ -121,9 +121,9 @@ struct CompetitionInviteView: View {
         .buttonStyle(PrimaryButtonStyle())
         .disabled(isCommandInFlight)
         .accessibilityLabel(
-            "Accept invitation from \(competition.opponentDisplayName)"
+            "Accept challenge from \(competition.opponentDisplayName)"
         )
-        .accessibilityHint("Starts on the next competition calendar day.")
+        .accessibilityHint("Starts on the next match calendar day.")
 
         Button(role: .destructive) {
             showsDeclineConfirmation = true
@@ -137,9 +137,9 @@ struct CompetitionInviteView: View {
         .buttonStyle(.plain)
         .disabled(isCommandInFlight)
         .accessibilityLabel(
-            "Decline invitation from \(competition.opponentDisplayName)"
+            "Decline challenge from \(competition.opponentDisplayName)"
         )
-        .accessibilityHint("Closes this invitation without starting.")
+        .accessibilityHint("Closes this challenge without starting.")
         .accessibilityValue(
             isCommandInFlight ? "Action in progress" : ""
         )
@@ -166,12 +166,6 @@ struct CompetitionInviteView: View {
         return direction
     }
 
-    private var navigationTitle: String {
-        direction == .incoming
-            ? "Invitation from \(competition.opponentDisplayName)"
-            : "Compete with \(competition.opponentDisplayName)"
-    }
-
     private var directionTitle: String {
         competitionInviteTitle(
             direction: direction,
@@ -181,11 +175,11 @@ struct CompetitionInviteView: View {
 
     private var directionBody: String {
         if direction == .incoming {
-            return "\(competition.opponentDisplayName) invited you to compare Activity points for seven days."
+            return "\(competition.opponentDisplayName) challenged you to compare Activity points for seven days."
         }
         return source == .remoteParticipants
-            ? "Only this HealthComp account can accept. The invitation expires 24 hours after creation. Day 1 begins on the next competition calendar day after acceptance."
-            : "Start when you are ready. Day 1 begins on the next competition calendar day."
+            ? "Only this HealthComp account can accept. The challenge expires 24 hours after it was created. Day 1 begins on the next match calendar day after they accept."
+            : "Start when you are ready. Day 1 begins on the next match calendar day."
     }
 }
 
@@ -290,7 +284,7 @@ struct CompetitionRulesCard: View {
                 icon: .symbol("lock.iphone"),
                 title: source == .simulatedFixture
                     ? "Your Activity data stays local"
-                    : "Derived competition data is shared",
+                    : "Derived match data is shared",
                 detail: source == .simulatedFixture
                     ? nil
                     : "Daily points, rounded Activity percentages and modes"
@@ -314,6 +308,6 @@ func competitionInviteTitle(
     opponentDisplayName: String
 ) -> String {
     direction == .incoming
-        ? "Invitation from \(opponentDisplayName)"
-        : "Outgoing invitation to \(opponentDisplayName)"
+        ? "Challenge from \(opponentDisplayName)"
+        : "Challenge to \(opponentDisplayName)"
 }

@@ -96,7 +96,7 @@ struct MainTabView: View {
                         await store.send(.competition(.pullToRefresh)).finish()
                     }
                 } else {
-                    ProgressView("Loading local competition…")
+                    ProgressView("Loading matches…")
                         .foregroundStyle(Theme.secondary)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .background(Theme.ground)
@@ -227,16 +227,16 @@ struct MainTabView: View {
 
             case .declined, .expired:
                 ContentUnavailableView(
-                    "Invitation Closed",
+                    "Challenge Closed",
                     systemImage: "person.crop.circle.badge.xmark",
-                    description: Text("Return to Sharing to see current competitions.")
+                    description: Text("Go back to Home to see your matches.")
                 )
             }
         } else {
             ContentUnavailableView(
-                "Competition Unavailable",
+                "Match Unavailable",
                 systemImage: "exclamationmark.circle",
-                description: Text("Return to Sharing to refresh this competition.")
+                description: Text("Go back to Home to refresh this match.")
             )
         }
     }
@@ -275,9 +275,4 @@ struct MainTabView: View {
         @unknown default: .inactive
         }
     }
-}
-
-func competitionPointsText(_ points: Double?) -> String {
-    guard let points else { return "--" }
-    return points.formatted(.number.precision(.fractionLength(0...1)))
 }

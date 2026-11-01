@@ -21,7 +21,7 @@ final class MultiUserCompetitionUITests: XCTestCase {
         XCTAssertTrue(create.waitForExistence(timeout: 3))
         XCTAssertFalse(create.isEnabled)
         chooseRecipient()
-        XCTAssertEqual(app.staticTexts["competition.create.recipient-name"].label, "Invite Sam")
+        XCTAssertEqual(app.staticTexts["competition.create.recipient-name"].label, "Challenge Sam")
         scrollToElement(create)
         XCTAssertTrue(create.isEnabled)
         create.tap()
@@ -51,12 +51,12 @@ final class MultiUserCompetitionUITests: XCTestCase {
     func testCopyCustomSchemeRematchIncludesTheCompleteLink() throws {
         launch(.sharingCustomScheme)
         defer { app.terminate() }
-        XCTAssertTrue(app.navigationBars["Sharing"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 3))
         app.scrollViews.firstMatch.swipeUp()
         let completed = sharingCard(state: "completed", name: "Former competitor")
         scrollToElement(completed)
         completed.tap()
-        XCTAssertTrue(app.navigationBars["Result"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.navigationBars["Former competitor"].waitForExistence(timeout: 3))
         app.scrollViews.firstMatch.swipeUp()
         let create = app.buttons["competition.rematch.create"]
         scrollToElement(create)
@@ -115,7 +115,7 @@ final class MultiUserCompetitionUITests: XCTestCase {
     func testCreateRemoteUpdatesHistoryAnonymizationRematchAndArchive() throws {
         launch(.sharing)
 
-        XCTAssertTrue(app.navigationBars["Sharing"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 8))
         XCTAssertTrue(app.staticTexts["REMOTE UI TEST LAB"].exists)
         XCTAssertFalse(app.staticTexts["FIXTURE DATA"].exists)
         XCTAssertFalse(app.staticTexts.matching(
@@ -124,7 +124,7 @@ final class MultiUserCompetitionUITests: XCTestCase {
 
         openChallengeDrawer()
         let timeZone = app.staticTexts[
-            "Competition time zone, America/Los_Angeles"
+            "Match time zone, America/Los_Angeles"
         ]
         XCTAssertTrue(timeZone.waitForExistence(timeout: 3))
 
@@ -144,11 +144,11 @@ final class MultiUserCompetitionUITests: XCTestCase {
         scrollToElement(scheduled)
         scheduled.tap()
         XCTAssertTrue(
-            app.navigationBars["Competition with Priya"]
+            app.navigationBars["Priya"]
                 .waitForExistence(timeout: 3)
         )
         let localRange = app.staticTexts["competition.schedule.dates"].label
-        XCTAssertTrue(localRange.contains(":"))
+        XCTAssertFalse(localRange.contains(":"))
         XCTAssertFalse(localRange.contains("America/Los_Angeles"))
         navigateBackToSharing()
 
@@ -156,13 +156,13 @@ final class MultiUserCompetitionUITests: XCTestCase {
         scrollToElement(active)
         active.tap()
         XCTAssertTrue(
-            app.navigationBars["Competition with Jordan"]
+            app.navigationBars["Jordan"]
                 .waitForExistence(timeout: 3)
         )
-        XCTAssertTrue(app.staticTexts["Day 3"].exists)
+        XCTAssertTrue(waitForStatus("Day 3 of 7"))
         XCTAssertTrue(
             app.otherElements["competition.scoreHeader.naren"].label
-                .contains("Beta Alice")
+                .contains("You")
         )
         XCTAssertTrue(
             app.otherElements["competition.scoreHeader.alex"].label
@@ -180,7 +180,7 @@ final class MultiUserCompetitionUITests: XCTestCase {
         )
         scrollToElement(completed)
         completed.tap()
-        XCTAssertTrue(app.navigationBars["Result"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.navigationBars["Former competitor"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.staticTexts["You Won"].exists)
         XCTAssertTrue(app.staticTexts["Victory Over Former competitor"].exists)
         XCTAssertTrue(
@@ -219,7 +219,7 @@ final class MultiUserCompetitionUITests: XCTestCase {
         scrollToElement(active)
         active.tap()
         XCTAssertTrue(
-            app.navigationBars["Competition with Jordan"]
+            app.navigationBars["Jordan"]
                 .waitForExistence(timeout: 3)
         )
         showWeek()
@@ -230,7 +230,7 @@ final class MultiUserCompetitionUITests: XCTestCase {
 
         let summary = app.otherElements["competition.day.1"]
         XCTAssertTrue(summary.waitForExistence(timeout: 3))
-        XCTAssertTrue(summary.label.contains("Beta Alice, 500 points"))
+        XCTAssertTrue(summary.label.contains("You, 500 points"))
         XCTAssertTrue(summary.label.contains("Jordan, 480 points"))
         XCTAssertFalse(app.otherElements["competition.ownerRings"].exists)
     }
@@ -239,10 +239,10 @@ final class MultiUserCompetitionUITests: XCTestCase {
         for scenario in [Scenario.coldClaim, .warmClaim] {
             launch(scenario)
             XCTAssertTrue(
-                app.navigationBars["Competition Invitation"]
+                app.navigationBars["Challenge"]
                     .waitForExistence(timeout: 8)
             )
-            XCTAssertTrue(app.staticTexts["Join this competition?"].exists)
+            XCTAssertTrue(app.staticTexts["Join this match?"].exists)
             XCTAssertTrue(
                 app.staticTexts["Raw Health data stays on this iPhone"].exists
             )
@@ -287,12 +287,12 @@ final class MultiUserCompetitionUITests: XCTestCase {
     func testUnavailableConsumedAndOfflineClaimRecoveryStayPrivacyCollapsed() {
         launch(.unavailableClaim)
         XCTAssertTrue(
-            app.staticTexts["Invitation unavailable"]
+            app.staticTexts["Challenge unavailable"]
                 .waitForExistence(timeout: 8)
         )
         XCTAssertTrue(
             app.staticTexts[
-                "This link may be expired, already used, or no longer valid. Ask the sender for a new invitation."
+                "This link may be expired, already used, or no longer valid. Ask the sender for a new challenge."
             ].exists
         )
         XCTAssertFalse(app.debugDescription.contains("/invite/"))
@@ -316,12 +316,12 @@ final class MultiUserCompetitionUITests: XCTestCase {
     func testRemoteInvitationDisclosesSharedDerivedActivity() {
         launch(.sharing)
         defer { app.terminate() }
-        XCTAssertTrue(app.navigationBars["Sharing"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 8))
         let pending = sharingCard(state: "pending", name: "Sam")
         scrollToElement(pending)
         pending.tap()
-        XCTAssertTrue(app.navigationBars["Compete with Sam"].waitForExistence(timeout: 3))
-        let disclosure = app.staticTexts["Derived competition data is shared"]
+        XCTAssertTrue(app.navigationBars["Sam"].waitForExistence(timeout: 3))
+        let disclosure = app.staticTexts["Derived match data is shared"]
         XCTAssertTrue(disclosure.waitForExistence(timeout: 3))
         scrollToElement(disclosure)
         XCTAssertTrue(app.staticTexts["Daily points, rounded Activity percentages and modes"].exists)
@@ -336,7 +336,7 @@ final class MultiUserCompetitionUITests: XCTestCase {
         let disclosure = app.descendants(matching: .any).matching(
             NSPredicate(
                 format: "label CONTAINS %@ AND label CONTAINS %@",
-                "Derived competition data is shared",
+                "Derived match data is shared",
                 "Daily points, rounded Activity percentages and modes"
             )
         ).firstMatch
@@ -369,7 +369,7 @@ final class MultiUserCompetitionUITests: XCTestCase {
             NSPredicate(
                 format: "label CONTAINS %@ AND label CONTAINS %@",
                 "Their points",
-                "Competitors receive daily points, rounded Activity percentages and modes"
+                "The other person gets your daily points, rounded Activity percentages and modes"
             )
         ).firstMatch
         XCTAssertTrue(sharingDisclosure.exists)
@@ -402,7 +402,7 @@ final class MultiUserCompetitionUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Raw Health data stays on this iPhone"].exists)
         XCTAssertTrue(
             app.staticTexts[
-                "Competitors receive daily points, rounded Activity percentages and modes"
+                "The other person gets your daily points, rounded Activity percentages and modes"
             ].exists
         )
         let privacyPolicy = app.descendants(matching: .any)["account.privacy-policy"]
@@ -542,7 +542,7 @@ final class MultiUserCompetitionUITests: XCTestCase {
                 ]
             )
             XCTAssertTrue(
-                app.navigationBars["Sharing"].waitForExistence(timeout: 8)
+                app.navigationBars["Home"].waitForExistence(timeout: 8)
             )
             let open = app.buttons["competition.create.open"]
             XCTAssertTrue(open.waitForExistence(timeout: 3))
@@ -564,13 +564,13 @@ final class MultiUserCompetitionUITests: XCTestCase {
             XCTAssertTrue(active.isHittable)
             active.tap()
             XCTAssertTrue(
-                app.navigationBars["Competition with Jordan"]
+                app.navigationBars["Jordan"]
                     .waitForExistence(timeout: 3)
             )
             let owner = app.otherElements["competition.scoreHeader.naren"]
             let opponent = app.otherElements["competition.scoreHeader.alex"]
             scrollToElement(owner)
-            XCTAssertTrue(owner.label.contains("Beta Alice"))
+            XCTAssertTrue(owner.label.contains("You"))
             XCTAssertTrue(
                 owner.label.contains("Today"),
                 "Expected active current-day context in '\(owner.label)'; type \(owner.elementType), id \(owner.identifier)."
@@ -596,7 +596,7 @@ final class MultiUserCompetitionUITests: XCTestCase {
             let dayContexts: [(ordinal: Int, context: String)] = [
                 (1, ", complete."),
                 (3, "Today, scores so far"),
-                (7, "upcoming, no scores yet"),
+                (7, "upcoming."),
             ]
             for dayContext in dayContexts {
                 let day = app.descendants(matching: .any)[
@@ -606,8 +606,12 @@ final class MultiUserCompetitionUITests: XCTestCase {
                 let label = day.label
                 XCTAssertTrue(label.hasPrefix("Day \(dayContext.ordinal),"))
                 XCTAssertTrue(label.contains(dayContext.context))
-                XCTAssertTrue(label.contains("Beta Alice"))
-                XCTAssertTrue(label.contains("Jordan"))
+                if dayContext.ordinal == 7 {
+                    XCTAssertFalse(label.contains("--"))
+                } else {
+                    XCTAssertTrue(label.contains("You"))
+                    XCTAssertTrue(label.contains("Jordan"))
+                }
                 assertRemoteRenderedConfiguration(expectedConfiguration)
                 try app.performAccessibilityAudit(for: auditTypes)
             }
@@ -623,11 +627,11 @@ final class MultiUserCompetitionUITests: XCTestCase {
             XCTAssertTrue(completed.isHittable)
             completed.tap()
             XCTAssertTrue(
-                app.navigationBars["Result"].waitForExistence(timeout: 3)
+                app.navigationBars["Former competitor"].waitForExistence(timeout: 3)
             )
             let result = app.otherElements["competition.result"]
             scrollToElement(result)
-            XCTAssertTrue(result.label.contains("Beta Alice"))
+            XCTAssertTrue(result.label.contains("You"))
             XCTAssertTrue(result.label.contains("Former competitor"))
             XCTAssertTrue(result.label.contains("Final score"))
             assertRemoteRenderedConfiguration(expectedConfiguration)
@@ -670,13 +674,13 @@ final class MultiUserCompetitionUITests: XCTestCase {
         // XCTest changes the content-size category during this audit, so it
         // must run without a fixed preferred-category launch override.
         launch(.sharing)
-        XCTAssertTrue(app.navigationBars["Sharing"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 8))
 
         let active = sharingCard(state: "active", name: "Jordan")
         scrollToElement(active)
         active.tap()
         XCTAssertTrue(
-            app.navigationBars["Competition with Jordan"]
+            app.navigationBars["Jordan"]
                 .waitForExistence(timeout: 3)
         )
         scrollToElement(app.otherElements["competition.scoreHeader.naren"])
@@ -689,12 +693,12 @@ final class MultiUserCompetitionUITests: XCTestCase {
         )
         scrollToElement(completed)
         completed.tap()
-        XCTAssertTrue(app.navigationBars["Result"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.navigationBars["Former competitor"].waitForExistence(timeout: 3))
         let result = app.otherElements["competition.result"]
         scrollToElement(result)
         XCTAssertEqual(
             result.label,
-            "You Won. Final score. Beta Alice 3,520 points. Former competitor 3,410 points."
+            "You Won. Final score. You 3,520 points. Former competitor 3,410 points."
         )
         let resultScreenshot = XCTAttachment(screenshot: app.screenshot())
         resultScreenshot.name = "remote-result-default-dynamic-type"
@@ -733,7 +737,7 @@ final class MultiUserCompetitionUITests: XCTestCase {
             ]
         )
         XCTAssertTrue(
-            app.navigationBars["Sharing"].waitForExistence(timeout: 8)
+            app.navigationBars["Home"].waitForExistence(timeout: 8)
         )
         assertRemoteRenderedConfiguration(expectedConfiguration)
 
@@ -741,7 +745,7 @@ final class MultiUserCompetitionUITests: XCTestCase {
         scrollToElement(active)
         active.tap()
         XCTAssertTrue(
-            app.navigationBars["Competition with Jordan"]
+            app.navigationBars["Jordan"]
                 .waitForExistence(timeout: 3)
         )
         showWeek()
@@ -750,9 +754,8 @@ final class MultiUserCompetitionUITests: XCTestCase {
         scrollToElement(upcomingDay)
         let upcomingLabel = upcomingDay.label
         XCTAssertTrue(upcomingLabel.hasPrefix("Day 7,"))
-        XCTAssertTrue(upcomingLabel.contains("upcoming, no scores yet"))
-        XCTAssertTrue(upcomingLabel.contains("Beta Alice, future, --"))
-        XCTAssertTrue(upcomingLabel.contains("Jordan, future, --"))
+        XCTAssertTrue(upcomingLabel.contains("upcoming."))
+        XCTAssertFalse(upcomingLabel.contains("--"))
         XCTAssertFalse(upcomingLabel.contains("0 points"))
         XCTAssertFalse(upcomingLabel.localizedCaseInsensitiveContains("unavailable"))
 
@@ -762,7 +765,7 @@ final class MultiUserCompetitionUITests: XCTestCase {
         assertRemoteRenderedConfiguration(expectedConfiguration)
         XCTAssertEqual(
             currentDay.label,
-            "Day 3, Today, scores so far. Beta Alice, 430 points. Jordan, 450 points."
+            "Day 3, Today, scores so far. You, 430 points. Jordan, 450 points."
         )
         try assertNoPrivateFixtureContentIsSpoken()
 
@@ -848,7 +851,7 @@ final class MultiUserCompetitionUITests: XCTestCase {
                 "multiuser.testlab.configuration-error"
             ].waitForExistence(timeout: 8)
         )
-        XCTAssertFalse(app.navigationBars["Sharing"].exists)
+        XCTAssertFalse(app.navigationBars["Home"].exists)
     }
 
     private enum Scenario: String {
@@ -981,7 +984,7 @@ final class MultiUserCompetitionUITests: XCTestCase {
 
     private func navigateBackToSharing() {
         app.navigationBars.buttons.firstMatch.tap()
-        XCTAssertTrue(app.navigationBars["Sharing"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 3))
         resetSharingScrollToTop()
     }
 
@@ -1022,6 +1025,11 @@ final class MultiUserCompetitionUITests: XCTestCase {
     }
 
     // A match opens on Today; the day rows live on Week.
+    private func waitForStatus(_ prefix: String, timeout: TimeInterval = 5) -> Bool {
+        app.descendants(matching: .any).matching(NSPredicate(format: "identifier == %@ AND label BEGINSWITH %@",
+            "competition.status", prefix)).firstMatch.waitForExistence(timeout: timeout)
+    }
+
     private func showWeek() {
         let week = app.buttons["Week"]
         XCTAssertTrue(week.waitForExistence(timeout: 3))
@@ -1044,7 +1052,10 @@ final class MultiUserCompetitionUITests: XCTestCase {
 
     private func scrollToElement(_ element: XCUIElement) {
         for _ in 0..<24 {
-            if element.exists, element.isHittable { return }
+            // Fully on screen: a row cut by the bottom edge reports hittable,
+            // but a tap there lands on the home indicator.
+            if element.exists, element.isHittable,
+               app.frame.contains(element.frame) { return }
             // List is a CollectionView on iOS 18; keyboard dismissal can
             // remove a transient ScrollView between coordinate lookups.
             let collectionView = app.collectionViews.firstMatch

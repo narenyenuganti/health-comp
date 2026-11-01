@@ -63,94 +63,116 @@ extension CompetitionNotificationPolicy {
         content: { message in liveV1Content(message) }
     )
 
-    private static func liveV1Content(
-        _ message: CompetitionNotificationMessage
+    static func liveV1Content(
+        _ message: CompetitionNotificationMessage,
+        locale: Locale = .current
     ) -> CompetitionNotificationContent {
         let opponent = message.opponentDisplayName
+        func content(_ title: String, _ body: String) -> CompetitionNotificationContent {
+            CompetitionNotificationContent(title: title, body: body)
+        }
         switch message.family {
         case .scheduled(.inviteExpiry):
-            return CompetitionNotificationContent(
-                title: "Invitation expiring",
-                body: "Your activity competition invitation with \(opponent) expires soon."
+            return content(
+                "Challenge expiring",
+                "Your challenge with \(opponent) expires soon."
             )
         case .scheduled(.scheduledStart):
-            return CompetitionNotificationContent(
-                title: "Competition starts today",
-                body: "Your seven-day activity competition with \(opponent) starts today."
+            return content(
+                statusTitle(.active(dayOrdinal: 1), opponent: opponent),
+                "Your match with \(opponent) starts today."
             )
         case .scheduled(.finalDay):
-            return CompetitionNotificationContent(
-                title: "Final competition day",
-                body: "Today is the final day of your activity competition with \(opponent)."
+            return content(
+                statusTitle(.endsToday, opponent: opponent),
+                "Today is the last day of your match with \(opponent)."
             )
         case .scheduled(.competitionEnded):
-            return CompetitionNotificationContent(
-                title: "Tallying points",
-                body: "HealthComp is checking the latest Activity data before finalizing your result with \(opponent)."
+            return content(
+                statusTitle(.tallying(startedAt: .distantPast), opponent: opponent),
+                "HealthComp is checking the latest Activity data before finalizing your result with \(opponent)."
             )
         case .opportunistic(.leadChange):
-            return CompetitionNotificationContent(
-                title: "Lead change",
-                body: scoreCopy(
-                    prefix: "The lead changed in your competition with \(opponent).",
-                    message: message
+            return content(
+                "Lead change",
+                scoreCopy(
+                    prefix: "The lead changed in your match with \(opponent).",
+                    message: message,
+                    locale: locale
                 )
             )
         case .opportunistic(.closeScore):
-            return CompetitionNotificationContent(
-                title: "A close competition",
-                body: scoreCopy(
-                    prefix: "Your competition with \(opponent) is close.",
-                    message: message
+            return content(
+                "A close match",
+                scoreCopy(
+                    prefix: "Your match with \(opponent) is close.",
+                    message: message,
+                    locale: locale
                 )
             )
         case .opportunistic(.dailyMaximum):
-            return CompetitionNotificationContent(
-                title: "Daily maximum reached",
-                body: "You reached 600 competition points today against \(opponent)."
+            return content(
+                "Daily maximum reached",
+                "You reached 600 points today against \(opponent)."
             )
         case .opportunistic(.result):
-            let outcome: String
-            switch message.outcome {
-            case .win: outcome = "You won"
-            case .loss: outcome = "You finished behind \(opponent)"
-            case .tie: outcome = "You tied with \(opponent)"
-            case nil: outcome = "Your competition with \(opponent) is complete"
+            let title = message.outcome.map {
+                statusTitle(
+                    .completed(
+                        outcome: $0,
+                        basis: .stableAcrossPostBoundaryReads,
+                        completedAt: .distantPast
+                    ),
+                    opponent: opponent
+                )
+            } ?? "Match complete"
+            guard message.ownerPoints != nil, message.opponentPoints != nil else {
+                return content(title, "Your match with \(opponent) is complete.")
             }
-            return CompetitionNotificationContent(
-                title: "Competition complete",
-                body: scoreCopy(prefix: outcome + ".", message: message)
+            return content(
+                title,
+                scoreCopy(prefix: "Final score:", message: message, locale: locale)
             )
         case .opportunistic(.catchUp):
-            return CompetitionNotificationContent(
-                title: "Competition update",
-                body: "Open HealthComp for the latest activity competition update with \(opponent)."
+            return content(
+                "Match update",
+                "Open HealthComp for the latest on your match with \(opponent)."
             )
         }
     }
 
+    /// Lifecycle titles come from the shared status formatter, so a
+    /// notification and the screen it opens use the same words.
+    private static func statusTitle(
+        _ lifecycle: LocalCompetitionLifecyclePresentation,
+        opponent: String
+    ) -> String {
+        competitionStatusText(
+            lifecycle,
+            schedule: nil,
+            opponentDisplayName: opponent,
+            style: .notification
+        ).title
+    }
+
+    /// Whole points in the user's locale; a result whose whole points would
+    /// match uses two decimals.
     private static func scoreCopy(
         prefix: String,
-        message: CompetitionNotificationMessage
+        message: CompetitionNotificationMessage,
+        locale: Locale
     ) -> String {
         guard let ownerPoints = message.ownerPoints,
               let opponentPoints = message.opponentPoints
         else {
             return prefix
         }
-        return "\(prefix) You \(pointsText(ownerPoints)), \(message.opponentDisplayName) \(pointsText(opponentPoints))."
-    }
-
-    private static func pointsText(_ points: Double) -> String {
-        let formatter = NumberFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.numberStyle = .decimal
-        formatter.minimumFractionDigits = 0
-        formatter.maximumFractionDigits = 1
-        formatter.usesGroupingSeparator = true
-        formatter.groupingSeparator = ","
-        formatter.groupingSize = 3
-        return formatter.string(from: NSNumber(value: points)) ?? "0"
+        let digits = message.family == .opportunistic(.result)
+            ? competitionFinalFractionDigits(userPoints: ownerPoints, opponentPoints: opponentPoints)
+            : 0
+        let owner = competitionPointsText(ownerPoints, fractionDigits: digits, locale: locale)
+        let opponent = competitionPointsText(opponentPoints, fractionDigits: digits, locale: locale)
+        return "\(prefix) You \(owner), \(message.opponentDisplayName) \(opponent)."
     }
 }
 
@@ -509,14 +531,7 @@ struct CompetitionNotificationPlanner: Sendable {
                 )
             }
 
-            let leader: NotificationEmissionLeader?
-            if ownerTotal > opponentTotal {
-                leader = .owner
-            } else if opponentTotal > ownerTotal {
-                leader = .opponent
-            } else {
-                leader = nil
-            }
+            let leader = displayedLeader(ownerTotal, opponentTotal)
             if let leader, leader != previousLeader {
                 try appendStaleSuppression(
                     family: .leadChange,
@@ -675,9 +690,9 @@ struct CompetitionNotificationPlanner: Sendable {
             )
         }
 
-        if competition.ownerPoints != competition.opponentPoints {
-            let leader: NotificationEmissionLeader = competition.ownerPoints
-                > competition.opponentPoints ? .owner : .opponent
+        if let leader = displayedLeader(
+            competition.ownerPoints, competition.opponentPoints
+        ) {
             if mostRecentRecordedLeader(
                 in: competition,
                 through: ordinal
@@ -699,6 +714,20 @@ struct CompetitionNotificationPlanner: Sendable {
             }
         }
         return result
+    }
+
+    /// The leader by the whole points people see; nil when they read equal,
+    /// so "The lead changed … You 412, Alex 412." can't happen.
+    private func displayedLeader(
+        _ ownerPoints: Double,
+        _ opponentPoints: Double
+    ) -> NotificationEmissionLeader? {
+        let margin = competitionDisplayedMargin(
+            userPoints: ownerPoints, opponentPoints: opponentPoints
+        )
+        if margin > 0 { return .owner }
+        if margin < 0 { return .opponent }
+        return nil
     }
 
     private func mostRecentRecordedLeader(

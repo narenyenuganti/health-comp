@@ -52,7 +52,7 @@ struct CompetitionSharingView: View {
             .padding(.vertical, 12)
         }
         .background(Theme.ground)
-        .navigationTitle("Sharing")
+        .navigationTitle("Home")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             // The bar shows only the mark and its buttons; the title stays
@@ -121,7 +121,7 @@ struct CompetitionSharingView: View {
                         timeZone: timeZone
                     )
                 )
-                .accessibilityHint("Opens this competition")
+                .accessibilityHint("Opens this match")
         }
         .accessibilityIdentifier(competitionSharingIdentifier(competition))
     }
@@ -183,7 +183,7 @@ struct CompetitionSharingView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(CompetitionPressButtonStyle())
-        .accessibilityHint("Opens finished competitions and awards")
+        .accessibilityHint("Opens finished matches and awards")
         .accessibilityIdentifier("competition.history.open")
     }
 
@@ -193,7 +193,7 @@ struct CompetitionSharingView: View {
                 .frame(width: 96)
 
             VStack(spacing: 6) {
-                Text("No competition yet")
+                Text("No matches yet")
                     .font(.title3.weight(.heavy).width(.condensed))
                     .foregroundStyle(Theme.ink)
                 Text(emptyStateDescription)
@@ -211,7 +211,7 @@ struct CompetitionSharingView: View {
                         ProgressView()
                     } else {
                         Text(
-                            "Invite \(LocalCompetitionIdentity.opponentDisplayName) Again"
+                            "Challenge \(LocalCompetitionIdentity.opponentDisplayName) Again"
                         )
                     }
                 }
@@ -239,10 +239,10 @@ struct CompetitionSharingView: View {
         switch publication.source {
         case .simulatedFixture:
             publication.dashboard.hiddenTerminalCompetitionCount > 0
-                ? "The previous invitation closed. You can invite \(LocalCompetitionIdentity.opponentDisplayName) again."
-                : "A local invitation will appear here."
+                ? "The last challenge closed. You can challenge \(LocalCompetitionIdentity.opponentDisplayName) again."
+                : "A local challenge will appear here."
         case .remoteParticipants:
-            "Create and share a private invitation to begin."
+            "Challenge someone to start a match."
         }
     }
 
@@ -257,7 +257,7 @@ struct CompetitionSharingView: View {
         .padding(14)
         .themePanel(cornerRadius: 16)
         .accessibilityLabel(
-            "Competition status. \(competitionIssueSummary(publication.dashboard.issues))"
+            "Match status. \(competitionIssueSummary(publication.dashboard.issues))"
         )
     }
 }
@@ -324,6 +324,7 @@ private struct CompetitionHeroCard: View {
         }
         .font(.themeLabel)
         .tracking(1.2)
+        .textCase(.uppercase)
     }
 
     private var statusLeading: some View {
@@ -335,18 +336,22 @@ private struct CompetitionHeroCard: View {
                 Text("LIVE")
                     .foregroundStyle(Theme.ink)
             }
-            Text(statusText)
+            Text(status.title)
                 .foregroundStyle(Theme.secondary)
         }
     }
 
     @ViewBuilder
     private var statusTrailing: some View {
-        if let endText {
-            Text(endText)
+        if let timing = status.timing {
+            Text(timing)
                 .foregroundStyle(Theme.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         }
+    }
+
+    private var status: CompetitionStatusText {
+        competitionStatusText(competition, style: .card, locale: locale, timeZone: timeZone)
     }
 
     private var isLive: Bool {
@@ -356,39 +361,18 @@ private struct CompetitionHeroCard: View {
         }
     }
 
-    private var statusText: String {
-        if case let .active(dayOrdinal) = competition.lifecycle {
-            return "DAY \(dayOrdinal) OF 7"
-        }
-        return competitionSharingStatus(competition.lifecycle)
-            .uppercased(with: .current)
-    }
-
-    private var endText: String? {
-        competitionEndText(competition, locale: locale, timeZone: timeZone)
-            .map { "ENDS \($0)" }
-    }
-
     private var statement: Text {
-        let margin = competition.userPoints - competition.opponentPoints
-        if margin > 0 {
-            return Text("You lead by ")
-                + Text(competitionPointsText(margin))
-                    .foregroundStyle(Theme.you)
-                    .bold()
-                + Text(".")
-        }
-        if margin < 0 {
-            return Text(
-                "\(competition.opponentDisplayName) leads by \(competitionPointsText(-margin))."
-            )
-        }
-        return Text("All square.")
+        competitionLeadText(
+            userPoints: competition.userPoints,
+            opponentPoints: competition.opponentPoints,
+            opponentDisplayName: competition.opponentDisplayName,
+            locale: locale
+        )
     }
 
     private var scheduledHeadline: some View {
         VStack(alignment: .leading, spacing: 4) {
-            (Text(competition.ownerDisplayName.uppercased(with: .current))
+            (Text("YOU")
                 .foregroundStyle(Theme.you)
                 + Text("  VS  ").foregroundStyle(Theme.tertiary)
                 + Text(competition.opponentDisplayName.uppercased(with: .current))
@@ -410,7 +394,7 @@ private struct HeroScoreboard: View {
     var body: some View {
         layout {
             side(
-                name: competition.ownerDisplayName,
+                name: "You",
                 points: competition.userPoints,
                 color: Theme.you,
                 trailing: false
@@ -465,6 +449,8 @@ private struct CompetitionSharingRow: View {
     let source: CompetitionPublicationSource
 
     @ScaledMetric(relativeTo: .headline) private var badgeSize: CGFloat = 40
+    @Environment(\.locale) private var locale
+    @Environment(\.timeZone) private var timeZone
 
     var body: some View {
         ViewThatFits(in: .horizontal) {
@@ -533,14 +519,7 @@ private struct CompetitionSharingRow: View {
 
     // A finished week carries its dates, so repeat opponents stay apart.
     private var statusText: String {
-        let status = competitionSharingStatus(competition.lifecycle)
-        guard sharingOutcome(competition.lifecycle) != nil,
-              let first = competition.days.first?.day,
-              let last = competition.days.last?.day
-        else {
-            return status
-        }
-        return "\(status) · \(first.month)/\(first.day)–\(last.month)/\(last.day)"
+        competitionStatusText(competition, style: .row, locale: locale, timeZone: timeZone).line
     }
 
     // Your wins read in your color; everything else stays neutral.
@@ -551,10 +530,11 @@ private struct CompetitionSharingRow: View {
     }
 
     private var trailingScore: some View {
-        (Text(competitionPointsText(competition.userPoints))
+        let digits = sharingFractionDigits(competition)
+        return (Text(competitionPointsText(competition.userPoints, fractionDigits: digits, locale: locale))
             .foregroundStyle(Theme.you)
             + Text(" / ").foregroundStyle(Theme.faint)
-            + Text(competitionPointsText(competition.opponentPoints))
+            + Text(competitionPointsText(competition.opponentPoints, fractionDigits: digits, locale: locale))
             .foregroundStyle(Theme.ink))
             .font(.title3.weight(.heavy).width(.condensed).monospacedDigit())
     }
@@ -616,6 +596,7 @@ private struct CompetitionOutcomeChip: View {
 private struct CompetitionAwardDashboardRow: View {
     let award: LocalCompetitionAward
     let victoryCount: Int
+    let now: Date
 
     @Environment(\.locale) private var locale
     @Environment(\.timeZone) private var timeZone
@@ -638,13 +619,14 @@ private struct CompetitionAwardDashboardRow: View {
                 Text(
                     award.kind == .victory
                         ? "Victory Over \(award.friendDisplayName)"
-                        : "Competition Complete"
+                        : "Match Complete"
                 )
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(Theme.ink)
                 Text(
                     competitionAwardEarnedText(
                         award.awardedAt,
+                        now: now,
                         locale: locale,
                         timeZone: timeZone
                     )
@@ -673,6 +655,7 @@ private struct CompetitionAwardDashboardRow: View {
 
 private struct CompetitionRivalrySummaryCard: View {
     let summary: CompetitionRivalrySummary
+    let now: Date
 
     @Environment(\.locale) private var locale
     @Environment(\.timeZone) private var timeZone
@@ -698,7 +681,7 @@ private struct CompetitionRivalrySummaryCard: View {
 
             if let latestOwnerVictoryAt = summary.latestOwnerVictoryAt {
                 Text(
-                    "Latest victory \(competitionAwardDateText(latestOwnerVictoryAt, locale: locale, timeZone: timeZone))"
+                    "Latest victory \(competitionDayText(latestOwnerVictoryAt, now: now, locale: locale, timeZone: timeZone))"
                 )
                 .font(.caption)
                 .foregroundStyle(Theme.secondary)
@@ -710,7 +693,7 @@ private struct CompetitionRivalrySummaryCard: View {
     }
 
     private var title: some View {
-        Text("COMPETITION HISTORY")
+        Text("MATCH HISTORY")
             .font(.themeLabel)
             .tracking(1.2)
             .foregroundStyle(Theme.ink)
@@ -764,7 +747,8 @@ struct CompetitionHistoryView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 CompetitionRivalrySummaryCard(
-                    summary: competitionRivalrySummary(publication.dashboard)
+                    summary: competitionRivalrySummary(publication.dashboard),
+                    now: publication.evaluatedAt
                 )
 
                 Picker("History", selection: $page) {
@@ -819,7 +803,7 @@ struct CompetitionHistoryView: View {
                             timeZone: timeZone
                         )
                     )
-                    .accessibilityHint("Opens this competition")
+                    .accessibilityHint("Opens this match")
                 }
                 .buttonStyle(CompetitionRowButtonStyle())
                 .accessibilityIdentifier(competitionSharingIdentifier(competition))
@@ -833,7 +817,7 @@ struct CompetitionHistoryView: View {
     private var awardList: some View {
         let awards = publication.dashboard.awards
         if awards.isEmpty {
-            Text("Awards appear here when a competition finishes.")
+            Text("Awards appear here when a match finishes.")
                 .font(.subheadline)
                 .foregroundStyle(Theme.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -847,7 +831,8 @@ struct CompetitionHistoryView: View {
                         victoryCount: awards.filter {
                             $0.kind == .victory
                                 && $0.friendDisplayName == award.friendDisplayName
-                        }.count
+                        }.count,
+                        now: publication.evaluatedAt
                     )
                     if index < awards.count - 1 {
                         Rectangle()
@@ -990,6 +975,16 @@ private func sharingOutcome(
     }
 }
 
+/// Two decimals only on a decided result whose whole points would match.
+private func sharingFractionDigits(_ competition: LocalCompetitionPresentation) -> Int {
+    sharingOutcome(competition.lifecycle) == nil
+        ? 0
+        : competitionFinalFractionDigits(
+            userPoints: competition.userPoints,
+            opponentPoints: competition.opponentPoints
+        )
+}
+
 private func sharingAccessibilitySummary(
     _ competition: LocalCompetitionPresentation,
     source: CompetitionPublicationSource,
@@ -998,7 +993,7 @@ private func sharingAccessibilitySummary(
 ) -> String {
     var parts = [
         competition.opponentDisplayName,
-        competitionSharingStatus(competition.lifecycle),
+        competitionStatusText(competition, style: .row, locale: locale, timeZone: timeZone).line,
     ]
     if let disclosure = competitionFixtureDisclosure(
         source: source,
@@ -1006,17 +1001,13 @@ private func sharingAccessibilitySummary(
     ) {
         parts.append(disclosure)
     }
-    if let end = competitionEndText(
-        competition, locale: locale, timeZone: timeZone
-    ) {
-        parts.append("Ends \(end)")
-    }
     if competitionShouldShowScores(competition.lifecycle) {
+        let digits = sharingFractionDigits(competition)
         parts.append(
-            "\(competition.ownerDisplayName) \(competitionPointsText(competition.userPoints)) total points"
+            "You \(competitionPointsAccessibilityText(competition.userPoints, fractionDigits: digits, locale: locale))"
         )
         parts.append(
-            "\(competition.opponentDisplayName) \(competitionPointsText(competition.opponentPoints)) total points"
+            "\(competition.opponentDisplayName) \(competitionPointsAccessibilityText(competition.opponentPoints, fractionDigits: digits, locale: locale))"
         )
     }
     return parts.joined(separator: ". ")
@@ -1043,25 +1034,136 @@ struct CompetitionRowButtonStyle: ButtonStyle {
     }
 }
 
-func competitionSharingStatus(
-    _ lifecycle: LocalCompetitionLifecyclePresentation
-) -> String {
-    switch lifecycle {
-    case let .pending(direction, _, _):
-        direction == .incoming ? "Incoming invitation" : "Outgoing invitation"
-    case .declined: "Declined"
-    case .expired: "Expired"
-    case .scheduled: "Scheduled"
-    case let .active(dayOrdinal): "Day \(dayOrdinal)"
-    case .endsToday: "Ends Today"
-    case .tallying: "Tallying Points"
-    case let .completed(outcome, _, _), let .archived(outcome, _, _, _):
-        switch outcome {
-        case .win: "Won"
-        case .loss: "Lost"
-        case .tie: "Tied"
+enum CompetitionStatusStyle: Equatable, Sendable {
+    case row
+    case card
+    case notification
+}
+
+/// A lifecycle in words: the same state reads the same on every screen.
+struct CompetitionStatusText: Equatable, Sendable {
+    let title: String
+    let timing: String?
+
+    var line: String {
+        [title, timing].compactMap { $0 }.joined(separator: " · ")
+    }
+}
+
+func competitionStatusText(
+    _ competition: LocalCompetitionPresentation,
+    style: CompetitionStatusStyle,
+    locale: Locale = .current,
+    timeZone: TimeZone = .current
+) -> CompetitionStatusText {
+    competitionStatusText(
+        competition.lifecycle,
+        schedule: competition.acceptedConfiguration?.schedule,
+        opponentDisplayName: competition.opponentDisplayName,
+        style: style,
+        now: competition.evaluatedAt,
+        locale: locale,
+        timeZone: timeZone
+    )
+}
+
+func competitionStatusText(
+    _ lifecycle: LocalCompetitionLifecyclePresentation,
+    schedule: CompetitionSchedule?,
+    opponentDisplayName name: String,
+    style: CompetitionStatusStyle,
+    now: Date = Date(),
+    locale: Locale = .current,
+    timeZone: TimeZone = .current
+) -> CompetitionStatusText {
+    let days = schedule.flatMap {
+        try? $0.calendar.sevenDayWindow(startingOn: $0.startDay)
+    }
+    let bounds = schedule.flatMap(competitionScheduleBoundaries)
+    // The calendar's zone, only when its offset differs from the phone's.
+    func zone(_ instant: Date?) -> String {
+        guard let instant,
+              let identifier = schedule?.calendar.timeZoneIdentifier,
+              let calendarZone = TimeZone(identifier: identifier),
+              calendarZone.secondsFromGMT(for: instant)
+                != timeZone.secondsFromGMT(for: instant)
+        else {
+            return ""
+        }
+        return " " + (calendarZone.abbreviation(for: instant) ?? identifier)
+    }
+    var starts: String? {
+        days?.first.map {
+            "Starts \(competitionDayText($0, now: now, locale: locale, timeZone: timeZone))"
+                + zone(bounds?.start)
         }
     }
+    var week: String? {
+        guard let first = days?.first, let last = days?.last else { return nil }
+        return competitionWeekText(first, last, now: now, locale: locale, timeZone: timeZone)
+    }
+    let status: CompetitionStatusText = switch lifecycle {
+    case let .pending(direction, _, _):
+        switch (direction, style) {
+        case (.incoming, .notification):
+            CompetitionStatusText(title: "\(name) challenged you", timing: nil)
+        case (.incoming, _):
+            CompetitionStatusText(title: "Challenge received", timing: nil)
+        case (.outgoing, .notification):
+            CompetitionStatusText(title: "Challenge to \(name)", timing: nil)
+        case (.outgoing, _):
+            CompetitionStatusText(title: "Challenge sent", timing: nil)
+        }
+    case .declined:
+        CompetitionStatusText(
+            title: style == .notification ? "Challenge declined" : "Declined",
+            timing: nil
+        )
+    case .expired:
+        CompetitionStatusText(
+            title: style == .notification ? "Challenge expired" : "Expired",
+            timing: nil
+        )
+    case .scheduled:
+        switch (style, starts) {
+        case let (.card, starts?):
+            CompetitionStatusText(title: "Scheduled", timing: starts)
+        case let (_, starts?):
+            CompetitionStatusText(title: starts, timing: nil)
+        case (_, nil):
+            CompetitionStatusText(title: "Scheduled", timing: nil)
+        }
+    case let .active(dayOrdinal):
+        CompetitionStatusText(
+            title: "Day \(dayOrdinal) of 7",
+            timing: days?.last.map {
+                "Ends \(weekdayText($0, locale: locale)) night" + zone(bounds?.end)
+            }
+        )
+    case .endsToday:
+        CompetitionStatusText(
+            title: "Last day",
+            timing: days == nil ? nil : "Ends at midnight" + zone(bounds?.end)
+        )
+    case .tallying:
+        CompetitionStatusText(title: "Tallying", timing: nil)
+    case let .completed(outcome, _, _), let .archived(outcome, _, _, _):
+        switch (outcome, style) {
+        case (.win, .notification):
+            CompetitionStatusText(title: "You beat \(name)", timing: nil)
+        case (.win, _):
+            CompetitionStatusText(title: "You won", timing: week)
+        case (.loss, _):
+            CompetitionStatusText(title: "\(name) won", timing: week)
+        case (.tie, .notification):
+            CompetitionStatusText(title: "You tied with \(name)", timing: nil)
+        case (.tie, _):
+            CompetitionStatusText(title: "Tied", timing: week)
+        }
+    }
+    return style == .notification
+        ? CompetitionStatusText(title: status.title, timing: nil)
+        : status
 }
 
 func competitionShouldShowScores(
@@ -1125,13 +1227,13 @@ func competitionSharingIdentifier(
 
 func competitionIssueSummary(_ issues: [LocalCompetitionClientIssue]) -> String {
     if issues.contains(.storageUnavailable) {
-        return "Local competition storage is unavailable."
+        return "Match storage on this iPhone is unavailable."
     }
     if issues.contains(.authorizationUnavailable) {
         return "Activity authorization is unavailable."
     }
     if issues.contains(.remoteFailure) {
-        return "Competition data could not be refreshed."
+        return "Matches could not be refreshed."
     }
     if issues.contains(.remoteUnavailable) {
         return "Unable to connect. HealthComp will keep trying."
@@ -1140,13 +1242,13 @@ func competitionIssueSummary(_ issues: [LocalCompetitionClientIssue]) -> String 
         if case .competitionFailures = $0 { return true }
         return false
     }) {
-        return "Some competition activity could not be refreshed."
+        return "Some matches could not be refreshed."
     }
     if issues.contains(where: {
         if case .activityFailures = $0 { return true }
         return false
     }) {
-        return "Competition is available, but Activity could not be refreshed."
+        return "Matches loaded, but Activity could not be refreshed."
     }
-    return "The latest competition action could not be completed."
+    return "The last match action could not be completed."
 }

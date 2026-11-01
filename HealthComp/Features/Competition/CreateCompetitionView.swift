@@ -25,11 +25,11 @@ struct CreateCompetitionView: View {
                 header
                 recipientSelection
                 CompetitionRulesCard(source: .remoteParticipants)
-                Text("Your competition calendar uses \(timeZoneIdentifier).")
+                Text("Your match calendar uses \(timeZoneIdentifier).")
                     .font(.caption)
                     .foregroundStyle(Theme.secondary)
                     .accessibilityLabel(
-                        "Competition time zone, \(timeZoneIdentifier)"
+                        "Match time zone, \(timeZoneIdentifier)"
                     )
                 if !pinsControl {
                     control
@@ -130,11 +130,11 @@ struct CreateCompetitionView: View {
                     .foregroundStyle(Theme.secondary)
             }
             if let recipient {
-                Text("Invite \(recipient.displayName)")
+                Text("Challenge \(recipient.displayName)")
                     .font(.headline)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("competition.create.recipient-name")
-                Text("Confirm this is the person you intended before creating the invitation.")
+                Text("Confirm this is the person you intended before creating the challenge.")
                     .font(.caption)
                     .foregroundStyle(Theme.secondary)
             }
@@ -152,28 +152,28 @@ struct CreateCompetitionView: View {
     private var control: some View {
         switch status {
         case .idle:
-            createButton(title: "Create Private Invitation")
+            createButton(title: "Create Challenge")
 
         case .creating:
             HStack(spacing: 10) {
                 ProgressView()
-                Text("Creating invitation…")
+                Text("Creating challenge…")
                     .font(.subheadline.weight(.medium))
             }
             .foregroundStyle(Theme.secondary)
             .frame(maxWidth: .infinity, minHeight: 44)
             .accessibilityElement(children: .combine)
-            .accessibilityLabel("Creating private invitation")
+            .accessibilityLabel("Creating challenge")
 
         case .ready:
             if let shareLink {
                 VStack(alignment: .leading, spacing: 10) {
                     ShareLink(
                         item: shareLink.url.absoluteString,
-                        subject: Text("Join my HealthComp competition")
+                        subject: Text("Join my HealthComp match")
                     ) {
                         Label(
-                            "Share Private Invitation",
+                            "Share Challenge",
                             systemImage: "square.and.arrow.up"
                         )
                     }
@@ -197,7 +197,7 @@ struct CreateCompetitionView: View {
         case .retryable:
             VStack(alignment: .leading, spacing: 10) {
                 Label(
-                    "HealthComp couldn’t create the invitation. Your request can be retried safely.",
+                    "HealthComp couldn’t create the challenge. It’s safe to try again.",
                     systemImage: "wifi.exclamationmark"
                 )
                 .font(.caption)
@@ -207,7 +207,7 @@ struct CreateCompetitionView: View {
 
         case .configurationUnavailable:
             Label(
-                "Private invitation links are not configured for this build.",
+                "Challenge links are not configured for this build.",
                 systemImage: "exclamationmark.triangle.fill"
             )
             .font(.caption)
@@ -215,7 +215,7 @@ struct CreateCompetitionView: View {
             .accessibilityIdentifier("competition.create.configuration-error")
 
         case .pendingInvitationExists:
-            Text("An invitation to this account is already pending. Check your outgoing invitations; it expires 24 hours after creation.")
+            Text("A challenge to this account is already waiting. It expires 24 hours after it was created.")
                 .font(.callout)
                 .foregroundStyle(Theme.secondary)
                 .accessibilityIdentifier("competition.create.already-pending")

@@ -7,7 +7,8 @@ import SwiftUI
 struct CompetitionWeekChart: View {
     let days: [LocalCompetitionDayPresentation]
     let currentDayOrdinal: Int?
-    let ownerName: String
+    /// The projection's time, so dates agree with "Today" and "Day 4 of 7".
+    let now: Date
     let opponentName: String
     var showsDates = false
     /// Makes each day that has started open its breakdown.
@@ -45,14 +46,15 @@ struct CompetitionWeekChart: View {
             StackedDayRow(
                 day: day,
                 isToday: day.ordinal == currentDayOrdinal,
-                ownerName: ownerName,
+                now: now,
                 opponentName: opponentName
             )
         } else {
             HeadToHeadDayRow(
                 day: day,
                 isToday: day.ordinal == currentDayOrdinal,
-                showsDates: showsDates
+                showsDates: showsDates,
+                now: now
             )
         }
     }
@@ -63,8 +65,8 @@ struct CompetitionWeekChart: View {
         competitionDayAccessibilityLabel(
             day,
             currentDayOrdinal: currentDayOrdinal,
-            ownerName: ownerName,
-            opponentName: opponentName
+            opponentName: opponentName,
+            now: now
         )
     }
 }
@@ -91,6 +93,7 @@ struct CompetitionWeekStrip: View {
                                 ? "TODAY"
                                 : weekdayText(day.day)
                         )
+                        .textCase(.uppercase)
                         .font(.caption2.weight(.bold).width(.condensed))
                         .tracking(1)
                         .foregroundStyle(
@@ -128,8 +131,9 @@ struct CompetitionWeekStrip: View {
                 ? Theme.track
                 : Theme.faint
         }
-        if owner > opponent { return Theme.youFill }
-        if opponent > owner { return Theme.ink }
+        let margin = competitionDisplayedMargin(userPoints: owner, opponentPoints: opponent)
+        if margin > 0 { return Theme.youFill }
+        if margin < 0 { return Theme.ink }
         return Theme.outline
     }
 
@@ -139,7 +143,8 @@ struct CompetitionWeekStrip: View {
         else {
             return Theme.outline
         }
-        return owner >= opponent ? Theme.you : Theme.ink
+        return competitionDisplayedMargin(userPoints: owner, opponentPoints: opponent) >= 0
+            ? Theme.you : Theme.ink
     }
 }
 
@@ -159,7 +164,7 @@ struct CompetitionRingLegend: View {
             .foregroundStyle(Theme.secondary)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(
-                "Move, Exercise and Stand are your rings. \(opponentName) is your opponent."
+                "Move, Exercise and Stand are your rings. The single bar is \(opponentName)."
             )
         }
     }
@@ -187,6 +192,7 @@ private struct HeadToHeadDayRow: View {
     let day: LocalCompetitionDayPresentation
     let isToday: Bool
     let showsDates: Bool
+    let now: Date
 
     var body: some View {
         HStack(spacing: 6) {
@@ -195,7 +201,7 @@ private struct HeadToHeadDayRow: View {
                 .fixedSize()
                 .frame(minWidth: 36, alignment: .leading)
             OwnerDayBar(state: ownerState, segments: ringSegments(day))
-            DayLabel(day: day, isToday: isToday, showsDates: showsDates)
+            DayLabel(day: day, isToday: isToday, showsDates: showsDates, now: now)
             OpponentDayBar(state: opponentState)
             Text(chartValueText(opponentState))
                 .foregroundStyle(opponentColor)
@@ -225,7 +231,8 @@ private struct HeadToHeadDayRow: View {
         guard !isToday, let opponent = day.opponentRevealedPoints else {
             return Theme.you
         }
-        return owner >= opponent ? Theme.you : Theme.tertiary
+        return competitionDisplayedMargin(userPoints: owner, opponentPoints: opponent) >= 0
+            ? Theme.you : Theme.tertiary
     }
 
     private var opponentColor: Color {
@@ -233,14 +240,15 @@ private struct HeadToHeadDayRow: View {
         guard !isToday, let owner = day.ownerAcceptedPoints else {
             return Theme.ink
         }
-        return opponent >= owner ? Theme.ink : Theme.tertiary
+        return competitionDisplayedMargin(userPoints: owner, opponentPoints: opponent) <= 0
+            ? Theme.ink : Theme.tertiary
     }
 }
 
 private struct StackedDayRow: View {
     let day: LocalCompetitionDayPresentation
     let isToday: Bool
-    let ownerName: String
+    let now: Date
     let opponentName: String
 
     var body: some View {
@@ -248,10 +256,10 @@ private struct StackedDayRow: View {
             Text(isToday ? "Day \(day.ordinal) · Today" : "Day \(day.ordinal)")
                 .font(.headline)
                 .foregroundStyle(Theme.ink)
-            Text("\(day.day.month)/\(day.day.day)")
+            Text(competitionDayText(day.day, now: now))
                 .font(.subheadline.monospacedDigit())
                 .foregroundStyle(Theme.secondary)
-            score(ownerName, chartValueText(competitionOwnerChartState(day)), Theme.you)
+            score("You", chartValueText(competitionOwnerChartState(day)), Theme.you)
             score(
                 opponentName,
                 chartValueText(
@@ -279,15 +287,17 @@ private struct DayLabel: View {
     let day: LocalCompetitionDayPresentation
     let isToday: Bool
     let showsDates: Bool
+    let now: Date
 
     var body: some View {
         VStack(spacing: 0) {
             Text(isToday ? "TODAY" : weekdayText(day.day))
+                .textCase(.uppercase)
                 .font(.themeLabel)
                 .tracking(1.0)
                 .foregroundStyle(isToday ? Theme.ink : Theme.secondary)
             if showsDates {
-                Text("\(day.day.month)/\(day.day.day)")
+                Text(competitionDayText(day.day, weekday: false, now: now))
                     .font(.caption2.weight(.semibold).monospacedDigit())
                     .foregroundStyle(Theme.tertiary)
             }
@@ -394,16 +404,70 @@ private func chartValueText(_ state: CompetitionChartState) -> String {
     }
 }
 
-/// Short weekday for a competition calendar day, e.g. "WED".
-func weekdayText(_ day: CompetitionDay) -> String {
+/// A competition calendar day as UTC midnight, so it never shifts with the
+/// phone's zone.
+private func competitionDayDate(_ day: CompetitionDay) -> Date? {
     var calendar = Calendar(identifier: .gregorian)
-    calendar.timeZone = TimeZone(identifier: "UTC") ?? .current
-    calendar.locale = .current
-    guard let date = calendar.date(
+    calendar.timeZone = competitionDayTimeZone
+    return calendar.date(
         from: DateComponents(year: day.year, month: day.month, day: day.day)
-    ) else {
+    )
+}
+
+private let competitionDayTimeZone = TimeZone(identifier: "UTC")!
+
+/// Short weekday for a competition calendar day, e.g. "Wed".
+func weekdayText(_ day: CompetitionDay, locale: Locale = .current) -> String {
+    guard let date = competitionDayDate(day) else {
         return "\(day.month)/\(day.day)"
     }
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = competitionDayTimeZone
+    calendar.locale = locale
     let index = calendar.component(.weekday, from: date) - 1
-    return calendar.shortWeekdaySymbols[index].uppercased(with: .current)
+    return calendar.shortWeekdaySymbols[index]
+}
+
+/// The day style for a competition calendar day: "Thu, Oct 29". The year
+/// shows when the day's calendar year isn't the viewer's current year;
+/// UTC is only for drawing the day.
+func competitionDayText(
+    _ day: CompetitionDay,
+    weekday: Bool = true,
+    now: Date = Date(),
+    locale: Locale = .current,
+    timeZone: TimeZone = .current
+) -> String {
+    guard let date = competitionDayDate(day) else {
+        return "\(day.month)/\(day.day)"
+    }
+    return competitionDayText(
+        date,
+        weekday: weekday,
+        includesYear: day.year != competitionYear(of: now, timeZone: timeZone),
+        locale: locale,
+        timeZone: competitionDayTimeZone
+    )
+}
+
+/// The week style for two competition calendar days: "Oct 28 – Nov 3".
+func competitionWeekText(
+    _ first: CompetitionDay,
+    _ last: CompetitionDay,
+    now: Date = Date(),
+    locale: Locale = .current,
+    timeZone: TimeZone = .current
+) -> String {
+    guard let firstDate = competitionDayDate(first),
+          let lastDate = competitionDayDate(last)
+    else {
+        return "\(first.month)/\(first.day) – \(last.month)/\(last.day)"
+    }
+    return competitionWeekText(
+        firstDate,
+        lastDate,
+        includesYear: last.year != competitionYear(of: now, timeZone: timeZone),
+        locale: locale,
+        timeZone: competitionDayTimeZone
+    )
 }
