@@ -16,6 +16,8 @@ struct MainTabFeature {
         case confirmationTimedOut
         case unavailable
         case retryable
+        /// The link arrived before this account existed, so it can't be for it.
+        case wrongAccount
     }
 
     enum InviteClaimResponse: Equatable, Sendable {
@@ -29,6 +31,15 @@ struct MainTabFeature {
         var isRequesting = false
 
         var step: PermissionOnboardingStep { steps[index] }
+    }
+
+    /// The one-time notifications prompt, shown once a match with a person
+    /// exists.
+    enum NotificationPromptPhase: Equatable, Sendable {
+        case unscheduled
+        case scheduled
+        case presented
+        case finished
     }
 
     @ObservableState
@@ -49,6 +60,16 @@ struct MainTabFeature {
         /// A route to a match that isn't loaded yet: it refreshed once and
         /// waits for the match, without moving the current screens.
         var heldRouteSequence: UInt64?
+        /// Accept was tapped before the competition started; the claim is
+        /// sent on its first publication.
+        var acceptsClaimOnStart = false
+        var healthAccess: HealthAccessStatus?
+        var notificationPrompt: NotificationPromptPhase = .unscheduled
+        /// Mirrors MainTabView's Challenge sheet.
+        var isChallengeSheetOpen = false
+        /// Claim links up to this sequence arrived before this account
+        /// existed, so they can't be for it.
+        var claimLinksBeforeAccountThrough: UInt64 = 0
 
         init(
             competition: CompetitionFeature.State = CompetitionFeature.State(),
@@ -110,8 +131,15 @@ struct MainTabFeature {
         case pendingRouteTimedOut(UInt64)
         case onboardingChecked([PermissionOnboardingStep])
         case onboardingContinueTapped
-        case onboardingNotNowTapped
         case onboardingStepCompleted
+        case refreshHealthAccess
+        case healthAccessLoaded(HealthAccessStatus)
+        case connectHealthTapped
+        case challengeSheetVisibilityChanged(Bool)
+        case notificationPromptReady
+        case notificationPromptSkipped
+        case notificationPromptTurnOnTapped
+        case notificationPromptNotNowTapped
         case competition(CompetitionFeature.Action)
     }
 
@@ -125,10 +153,14 @@ struct MainTabFeature {
         case inviteClaim
         case claimConfirmationTimeout
         case routeHold
+        case notificationPrompt
     }
 
     private static let claimConfirmationTimeout: Duration = .seconds(15)
     private static let routeHoldTimeout: Duration = .seconds(15)
+    /// Lets the claim sheet finish dismissing; SwiftUI drops a sheet
+    /// presented mid-dismissal.
+    private static let notificationPromptDelay: Duration = .milliseconds(600)
 
     var body: some ReducerOf<Self> {
         Scope(state: \.competition, action: \.competition) {
@@ -144,8 +176,10 @@ struct MainTabFeature {
                         ? .run { send in
                             await send(
                                 .onboardingChecked(
-                                    await permissionOnboardingClient
-                                        .pendingSteps()
+                                    PermissionOnboardingClient.steps(
+                                        health: await permissionOnboardingClient
+                                            .healthAccess()
+                                    )
                                 )
                             )
                         }
@@ -163,7 +197,13 @@ struct MainTabFeature {
             // again before the competition has started.
             case .scenePhaseChanged(.active):
                 guard state.onboarding == nil else { return .none }
-                return .send(.competition(.sceneBecameActive))
+                // Coming back from Settings updates Account → Health.
+                return .merge(
+                    .send(.competition(.sceneBecameActive)),
+                    state.healthAccess == nil
+                        ? .none
+                        : .send(.refreshHealthAccess)
+                )
 
             case .scenePhaseChanged(.inactive),
                  .scenePhaseChanged(.background):
@@ -178,6 +218,12 @@ struct MainTabFeature {
                     return .send(.competition(.task))
                 }
                 state.onboarding = PermissionOnboarding(steps: steps)
+                // A challenge link shows its challenge before Health.
+                if state.pendingClaimRoute != nil,
+                   state.claimRouteSequenceInFlight == nil,
+                   state.inviteClaimStatus == .idle {
+                    state.inviteClaimStatus = .ready
+                }
                 return .none
 
             case .onboardingContinueTapped:
@@ -193,21 +239,9 @@ struct MainTabFeature {
                     case .health:
                         await permissionOnboardingClient.requestHealthAccess()
                     case .notifications:
-                        await permissionOnboardingClient.requestNotifications()
+                        // Notifications are asked in context, never here.
+                        break
                     }
-                    await send(.onboardingStepCompleted)
-                }
-
-            case .onboardingNotNowTapped:
-                guard let onboarding = state.onboarding,
-                      onboarding.step == .notifications,
-                      !onboarding.isRequesting
-                else {
-                    return .none
-                }
-                state.onboarding?.isRequesting = true
-                return .run { send in
-                    await permissionOnboardingClient.deferNotifications()
                     await send(.onboardingStepCompleted)
                 }
 
@@ -227,12 +261,16 @@ struct MainTabFeature {
                 state.pendingClaimNavigation = nil
                 state.inviteClaimStatus = .idle
                 state.heldRouteSequence = nil
+                state.acceptsClaimOnStart = false
+                state.isChallengeSheetOpen = false
+                state.notificationPrompt = .unscheduled
                 return .concatenate(
                     .merge(
                         .cancel(id: CancelID.routes),
                         .cancel(id: CancelID.inviteClaim),
                         .cancel(id: CancelID.claimConfirmationTimeout),
-                        .cancel(id: CancelID.routeHold)
+                        .cancel(id: CancelID.routeHold),
+                        .cancel(id: CancelID.notificationPrompt)
                     ),
                     .send(.competition(.stop))
                 )
@@ -244,11 +282,30 @@ struct MainTabFeature {
                     else {
                         return .none
                     }
+                    // Decided on the device from the order of events; no
+                    // claim request, so nothing about the link is revealed.
+                    if envelope.sequence <= state.claimLinksBeforeAccountThrough,
+                       state.claimRouteSequenceInFlight == nil {
+                        state.lastHandledClaimRouteSequence = envelope.sequence
+                        if let pending = state.pendingClaimRoute,
+                           pending.sequence <= envelope.sequence {
+                            state.pendingClaimRoute = nil
+                        }
+                        state.inviteClaimStatus = .wrongAccount
+                        return .run { _ in
+                            competitionRoutingClient.consume(envelope.sequence)
+                        }
+                    }
                     if envelope.sequence
                         >= (state.pendingClaimRoute?.sequence ?? 0) {
+                        // Accept always applies to the link on screen.
+                        if state.pendingClaimRoute != envelope {
+                            state.acceptsClaimOnStart = false
+                        }
                         state.pendingClaimRoute = envelope
                     }
-                    if state.competition.publication != nil,
+                    if state.competition.publication != nil
+                        || state.onboarding != nil,
                        state.claimRouteSequenceInFlight == nil {
                         state.inviteClaimStatus = .ready
                     }
@@ -347,6 +404,13 @@ struct MainTabFeature {
                 guard state.inviteClaimStatus == .ready else {
                     return .none
                 }
+                // Claiming needs the started competition, which starts after
+                // Health.
+                if state.competition.publication == nil {
+                    state.acceptsClaimOnStart = true
+                    state.inviteClaimStatus = .idle
+                    return .none
+                }
                 return .send(.processPendingClaim)
 
             case .declineClaimTapped:
@@ -391,15 +455,18 @@ struct MainTabFeature {
                         consumedSequence: sequence,
                         hasNewerPendingClaim: state.pendingClaimRoute != nil
                     )
+                    let prompt = scheduleNotificationPromptIfDue(state: &state)
                     guard state.pendingClaimNavigation != nil else {
                         return .merge(
                             postClaim,
-                            .cancel(id: CancelID.claimConfirmationTimeout)
+                            .cancel(id: CancelID.claimConfirmationTimeout),
+                            prompt
                         )
                     }
                     return .merge(
                         postClaim,
-                        claimConfirmationTimeoutEffect(pendingNavigation)
+                        claimConfirmationTimeoutEffect(pendingNavigation),
+                        prompt
                     )
 
                 case .failure(.inviteUnavailable):
@@ -447,7 +514,7 @@ struct MainTabFeature {
                         claimConfirmationTimeoutEffect(pendingNavigation)
                     )
                 case .idle, .ready, .claiming, .waitingForCompetition,
-                     .unavailable:
+                     .unavailable, .wrongAccount:
                     return .none
                 }
 
@@ -463,7 +530,7 @@ struct MainTabFeature {
 
             case .dismissClaimStatus:
                 switch state.inviteClaimStatus {
-                case .unavailable:
+                case .unavailable, .wrongAccount:
                     state.inviteClaimStatus = .idle
                     return .none
                 case .confirmationTimedOut:
@@ -491,16 +558,136 @@ struct MainTabFeature {
                 if let pending = state.pendingRoute {
                     effects.append(resolve(pending, state: &state))
                 }
-                if state.pendingClaimRoute != nil,
+                let acceptedBeforeStart = state.acceptsClaimOnStart
+                state.acceptsClaimOnStart = false
+                if acceptedBeforeStart,
+                   state.pendingClaimRoute != nil,
+                   state.claimRouteSequenceInFlight == nil {
+                    effects.append(.send(.processPendingClaim))
+                } else if state.pendingClaimRoute != nil,
                    state.claimRouteSequenceInFlight == nil,
                    state.inviteClaimStatus == .idle {
                     state.inviteClaimStatus = .ready
                 }
+                effects.append(scheduleNotificationPromptIfDue(state: &state))
                 return .merge(effects)
+
+            case .competition(.notificationAuthorizationLoaded):
+                return scheduleNotificationPromptIfDue(state: &state)
+
+            case .competition(.notificationAuthorizationRequestFinished):
+                if state.notificationPrompt == .presented {
+                    state.notificationPrompt = .finished
+                }
+                return .none
+
+            case .refreshHealthAccess:
+                return .run { send in
+                    await send(
+                        .healthAccessLoaded(
+                            await permissionOnboardingClient.healthAccess()
+                        )
+                    )
+                }
+
+            case let .healthAccessLoaded(access):
+                state.healthAccess = access
+                return .none
+
+            case .connectHealthTapped:
+                return .run { send in
+                    await permissionOnboardingClient.requestHealthAccess()
+                    await send(
+                        .healthAccessLoaded(
+                            await permissionOnboardingClient.healthAccess()
+                        )
+                    )
+                }
+
+            case let .challengeSheetVisibilityChanged(isOpen):
+                state.isChallengeSheetOpen = isOpen
+                guard !isOpen else { return .none }
+                return scheduleNotificationPromptIfDue(state: &state)
+
+            case .notificationPromptReady:
+                guard state.notificationPrompt == .scheduled else {
+                    return .none
+                }
+                guard state.inviteClaimStatus == .idle,
+                      !state.isChallengeSheetOpen,
+                      state.onboarding == nil,
+                      state.competition.notificationAuthorizationState
+                        == .notDetermined
+                else {
+                    // The next publication tries again.
+                    state.notificationPrompt = .unscheduled
+                    return .none
+                }
+                state.notificationPrompt = .presented
+                return .none
+
+            case .notificationPromptSkipped:
+                state.notificationPrompt = .finished
+                return .none
+
+            case .notificationPromptTurnOnTapped:
+                guard state.notificationPrompt == .presented else {
+                    return .none
+                }
+                return .send(.competition(.enableNotificationsTapped))
+
+            case .notificationPromptNotNowTapped:
+                guard state.notificationPrompt == .presented else {
+                    return .none
+                }
+                state.notificationPrompt = .finished
+                return .run { _ in
+                    await permissionOnboardingClient.deferNotifications()
+                }
 
             case .competition:
                 return .none
             }
+        }
+    }
+
+    /// Schedules the notifications prompt once a match with a person exists.
+    private func scheduleNotificationPromptIfDue(
+        state: inout State
+    ) -> Effect<Action> {
+        guard state.notificationPrompt == .unscheduled,
+              state.onboarding == nil,
+              state.inviteClaimStatus == .idle,
+              !state.isChallengeSheetOpen,
+              state.competition.notificationAuthorizationState == .notDetermined,
+              state.competition.publication?.dashboard.competitions.contains(
+                  where: { Self.hasPerson($0.lifecycle) }
+              ) == true
+        else {
+            return .none
+        }
+        state.notificationPrompt = .scheduled
+        return .run { send in
+            try await continuousClock.sleep(for: Self.notificationPromptDelay)
+            await send(
+                await permissionOnboardingClient.notificationsDeferred()
+                    ? .notificationPromptSkipped
+                    : .notificationPromptReady
+            )
+        }
+        .cancellable(id: CancelID.notificationPrompt, cancelInFlight: true)
+    }
+
+    /// A pending challenge (either direction) or a match that hasn't
+    /// finished. Expired and declined challenges don't count.
+    private static func hasPerson(
+        _ lifecycle: LocalCompetitionLifecyclePresentation
+    ) -> Bool {
+        switch lifecycle {
+        case .pending, .scheduled, .active, .endsToday, .tallying:
+            true
+        case .declined, .expired, .completed, .archived:
+            false
         }
     }
 

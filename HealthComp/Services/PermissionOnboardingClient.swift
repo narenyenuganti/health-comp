@@ -8,36 +8,34 @@ enum PermissionOnboardingStep: Equatable, Sendable {
     case notifications
 }
 
-struct PermissionOnboardingClient: Sendable {
-    var pendingSteps: @Sendable () async -> [PermissionOnboardingStep]
-    var requestHealthAccess: @Sendable () async -> Void
-    var requestNotifications: @Sendable () async -> Void
-    /// Records "Not now", so the notifications screen shows only once. The
-    /// Home button still turns them on later.
-    var deferNotifications: @Sendable () async -> Void
+/// What HealthKit will say. It never says whether reads were allowed, only
+/// whether iOS has asked.
+enum HealthAccessStatus: Equatable, Sendable {
+    case unavailable
+    case notRequested
+    case requested
+}
 
-    /// Health comes first because scoring needs it. iOS asks for Health only
-    /// once, so its own request status says whether the screen is due.
-    static func steps(
-        healthNeedsRequest: Bool,
-        notificationState: CompetitionNotificationAuthorizationState,
-        notificationsDeferred: Bool
-    ) -> [PermissionOnboardingStep] {
-        var steps: [PermissionOnboardingStep] = []
-        if healthNeedsRequest {
-            steps.append(.health)
-        }
-        if notificationState == .notDetermined, !notificationsDeferred {
-            steps.append(.notifications)
-        }
-        return steps
+struct PermissionOnboardingClient: Sendable {
+    var requestHealthAccess: @Sendable () async -> Void
+    /// Records Not now on the notifications prompt.
+    var deferNotifications: @Sendable () async -> Void
+    var healthAccess: @Sendable () async -> HealthAccessStatus
+    var notificationsDeferred: @Sendable () async -> Bool
+
+    /// The first run is Health only; notifications are asked once a match
+    /// with a person exists.
+    static func steps(health: HealthAccessStatus) -> [PermissionOnboardingStep] {
+        health == .notRequested ? [.health] : []
     }
 
+    /// `notificationsDeferred: true` keeps hosts that inject this, like the
+    /// local Test Lab, from ever showing the notifications prompt.
     static let inert = PermissionOnboardingClient(
-        pendingSteps: { [] },
         requestHealthAccess: {},
-        requestNotifications: {},
-        deferNotifications: {}
+        deferNotifications: {},
+        healthAccess: { .requested },
+        notificationsDeferred: { true }
     )
 }
 
@@ -48,28 +46,8 @@ extension PermissionOnboardingClient: TestDependencyKey {
 extension PermissionOnboardingClient: DependencyKey {
     static let liveValue: PermissionOnboardingClient = {
         let healthStore = HKHealthStore()
-        let notifications = CompetitionNotificationClient.liveValue
         let deferredKey = "healthcomp.onboarding.notificationsDeferred"
         return PermissionOnboardingClient(
-            pendingSteps: {
-                var healthNeedsRequest = false
-                if HKHealthStore.isHealthDataAvailable() {
-                    let status = try? await healthStore
-                        .statusForAuthorizationRequest(
-                            toShare: [],
-                            read: HealthKitProvider.competitionReadTypes()
-                        )
-                    healthNeedsRequest = status == .shouldRequest
-                }
-                return steps(
-                    healthNeedsRequest: healthNeedsRequest,
-                    notificationState: await notifications
-                        .authorizationState(),
-                    notificationsDeferred: UserDefaults.standard.bool(
-                        forKey: deferredKey
-                    )
-                )
-            },
             requestHealthAccess: {
                 // iOS never says whether reads were allowed, so either answer
                 // moves on.
@@ -78,11 +56,26 @@ extension PermissionOnboardingClient: DependencyKey {
                     read: HealthKitProvider.competitionReadTypes()
                 )
             },
-            requestNotifications: {
-                _ = try? await notifications.requestAuthorization()
-            },
             deferNotifications: {
                 UserDefaults.standard.set(true, forKey: deferredKey)
+            },
+            healthAccess: {
+                guard HKHealthStore.isHealthDataAvailable() else {
+                    return .unavailable
+                }
+                do {
+                    let status = try await healthStore
+                        .statusForAuthorizationRequest(
+                            toShare: [],
+                            read: HealthKitProvider.competitionReadTypes()
+                        )
+                    return status == .shouldRequest ? .notRequested : .requested
+                } catch {
+                    return .unavailable
+                }
+            },
+            notificationsDeferred: {
+                UserDefaults.standard.bool(forKey: deferredKey)
             }
         )
     }()
