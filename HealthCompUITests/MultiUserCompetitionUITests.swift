@@ -150,6 +150,7 @@ final class MultiUserCompetitionUITests: XCTestCase {
         let localRange = app.staticTexts["competition.schedule.dates"].label
         XCTAssertFalse(localRange.contains(":"))
         XCTAssertFalse(localRange.contains("America/Los_Angeles"))
+        XCTAssertTrue(localRange.hasPrefix("Day 1 is "), localRange)
         navigateBackToSharing()
 
         let active = sharingCard(state: "active", name: "Jordan")
@@ -184,7 +185,7 @@ final class MultiUserCompetitionUITests: XCTestCase {
         scrollToElement(completed)
         completed.tap()
         XCTAssertTrue(app.navigationBars["Former competitor"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.staticTexts["You Won"].exists)
+        XCTAssertTrue(app.staticTexts["You beat Former competitor"].exists)
         XCTAssertTrue(app.staticTexts["Victory Over Former competitor"].exists)
         XCTAssertTrue(
             app.otherElements["competition.result"].label
@@ -340,8 +341,9 @@ final class MultiUserCompetitionUITests: XCTestCase {
             )
             XCTAssertTrue(app.staticTexts["Join this match?"].exists)
             XCTAssertTrue(
-                app.staticTexts["Raw Health data stays on this iPhone"].exists
+                app.staticTexts["The other person sees your daily points and rounded ring percentages"].exists
             )
+            XCTAssertTrue(app.staticTexts["Most points after 7 days wins"].exists)
             XCTAssertTrue(app.buttons["competition.claim.accept"].exists)
             XCTAssertTrue(app.buttons["competition.claim.decline"].exists)
             app.buttons["competition.claim.accept"].tap()
@@ -417,10 +419,15 @@ final class MultiUserCompetitionUITests: XCTestCase {
         scrollToElement(pending)
         pending.tap()
         XCTAssertTrue(app.navigationBars["Sam"].waitForExistence(timeout: 3))
-        let disclosure = app.staticTexts["Derived match data is shared"]
+        let disclosure = app.staticTexts["Sam sees your daily points and rounded ring percentages"]
         XCTAssertTrue(disclosure.waitForExistence(timeout: 3))
         scrollToElement(disclosure)
-        XCTAssertTrue(app.staticTexts["Daily points, rounded Activity percentages and modes"].exists)
+        XCTAssertTrue(
+            app.staticTexts.matching(NSPredicate(
+                format: "label CONTAINS %@", "Your Health data stays on your iPhone"
+            )).firstMatch.exists
+        )
+        XCTAssertTrue(app.staticTexts["Day 1 is the day after the challenge is accepted."].exists)
         XCTAssertFalse(app.staticTexts["Only daily points are shared"].exists)
         XCTAssertTrue(app.staticTexts["Waiting for Sam to accept"].exists)
     }
@@ -799,7 +806,7 @@ final class MultiUserCompetitionUITests: XCTestCase {
         scrollToElement(result)
         XCTAssertEqual(
             result.label,
-            "You Won. Final score. You 3,520 points. Former competitor 3,410 points."
+            "You beat Former competitor. Final score. You 3,520 points. Former competitor 3,410 points."
         )
         let resultScreenshot = XCTAttachment(screenshot: app.screenshot())
         resultScreenshot.name = "remote-result-default-dynamic-type"

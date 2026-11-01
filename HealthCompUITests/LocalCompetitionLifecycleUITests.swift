@@ -50,10 +50,14 @@ final class LocalCompetitionLifecycleUITests: XCTestCase {
         XCTAssertTrue(
             app.staticTexts["competition.schedule.dates"].exists
         )
-        XCTAssertFalse(app.staticTexts["competition.schedule.dates"].label.contains(":"))
+        let dayOne = app.staticTexts["competition.schedule.dates"].label
+        XCTAssertFalse(dayOne.contains(":"))
+        XCTAssertTrue(dayOne.hasPrefix("Day 1 is "), dayOne)
+        XCTAssertTrue(dayOne.hasSuffix("Points start counting at midnight."), dayOne)
         XCTAssertFalse(app.otherElements["competition.scoreHeader.naren"].exists)
         XCTAssertFalse(app.otherElements["competition.scoreHeader.alex"].exists)
-        XCTAssertTrue(app.staticTexts["Scores begin Day 1"].exists)
+        XCTAssertTrue(app.staticTexts["You versus Alex"].exists)
+        XCTAssertFalse(app.buttons["Week"].exists)
         capture("light-small-scheduled")
 
         nextCheckpoint()
@@ -90,10 +94,14 @@ final class LocalCompetitionLifecycleUITests: XCTestCase {
 
         nextCheckpoint()
         XCTAssertTrue(
-            waitForStatus("Tallying")
+            waitForStatus("Final score pending")
         )
-        XCTAssertTrue(app.staticTexts["Day 7 is missing activity data."].exists)
-        tapMoreMenuItem("Activity Sync")
+        let tally = app.descendants(matching: .any)["competition.tally"]
+        XCTAssertTrue(tally.label.contains("Waiting for your Day 7"), tally.label)
+        XCTAssertFalse(tally.label.contains("days 7"))
+        XCTAssertTrue(app.buttons["Day 7"].exists)
+        XCTAssertFalse(app.buttons["Today"].exists)
+        tapMoreMenuItem("Sync status")
         XCTAssertTrue(
             app.staticTexts.matching(identifier: "competition.lastSync")
                 .firstMatch.waitForExistence(timeout: 3)
@@ -103,20 +111,24 @@ final class LocalCompetitionLifecycleUITests: XCTestCase {
         scrollToElement(tallyFinalDay)
         XCTAssertTrue(tallyFinalDay.label.contains("missing"))
         scrollToTop()
-        XCTAssertTrue(
-            app.otherElements["competition.scoreHeader.naren"].label
-                .contains("provisional total")
-        )
+        let tallyHeader = app.otherElements["competition.scoreHeader.naren"].label
+        XCTAssertTrue(tallyHeader.contains("provisional total"))
+        XCTAssertTrue(tallyHeader.contains("Day 7"))
         capture("light-small-tally")
 
         nextCheckpoint()
         XCTAssertTrue(
-            app.staticTexts["Waiting for one more stable read."]
-                .waitForExistence(timeout: 3)
+            app.descendants(matching: .any).matching(NSPredicate(
+                format: "identifier == %@ AND label CONTAINS %@",
+                "competition.tally", "Checking the last scores"
+            )).firstMatch.waitForExistence(timeout: 3)
         )
         nextCheckpoint()
 
-        XCTAssertTrue(app.staticTexts["You Won"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["You beat Alex"].waitForExistence(timeout: 3))
+        XCTAssertTrue(
+            app.staticTexts["competition.result.summary"].label.hasPrefix("Won by ")
+        )
         XCTAssertTrue(app.otherElements["competition.result"].label.contains("Final score"))
         XCTAssertTrue(app.staticTexts["Victory Over Alex"].exists)
         XCTAssertTrue(app.buttons["Rematch"].exists)
@@ -249,7 +261,8 @@ final class LocalCompetitionLifecycleUITests: XCTestCase {
         accept.tap()
 
         XCTAssertTrue(waitForStatus("Scheduled"))
-        XCTAssertTrue(app.staticTexts["Scores begin Day 1"].exists)
+        XCTAssertTrue(app.staticTexts["You versus Alex"].exists)
+        XCTAssertFalse(app.buttons["Week"].exists)
         XCTAssertFalse(app.otherElements["competition.scoreHeader.naren"].exists)
         XCTAssertFalse(app.otherElements["competition.scoreHeader.alex"].exists)
     }
@@ -338,12 +351,12 @@ final class LocalCompetitionLifecycleUITests: XCTestCase {
         let cases = [
             (
                 fixture: "loss",
-                title: "Alex Won",
+                title: "Alex won",
                 evidenceName: "light-small-loss-result"
             ),
             (
                 fixture: "tie",
-                title: "It’s a Tie",
+                title: "All square with Alex",
                 evidenceName: "light-small-tie-result"
             ),
         ]
@@ -419,7 +432,7 @@ final class LocalCompetitionLifecycleUITests: XCTestCase {
         XCTAssertTrue(waitForStatus("Last day"))
         nextCheckpoint()
         XCTAssertTrue(
-            waitForStatus("Tallying")
+            waitForStatus("Final score pending")
         )
         scrollToTop()
         capture("dark-accessibility-tally")
@@ -512,7 +525,7 @@ final class LocalCompetitionLifecycleUITests: XCTestCase {
             )
             nextCheckpoint()
             XCTAssertTrue(
-                waitForStatus("Tallying")
+                waitForStatus("Final score pending")
             )
             scrollToTop()
             capture("\(item.prefix)-tally")
