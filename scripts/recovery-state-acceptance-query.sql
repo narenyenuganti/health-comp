@@ -21,7 +21,8 @@ with expected_tables(schema_name, table_name, expected_rls, expected_force, auth
     ('private', 'apple_deletion_web_requests', true, true, false),
     ('private', 'app_attest_keys', true, true, false),
     ('private', 'app_attest_challenges', true, true, false),
-    ('private', 'app_attest_submission_grants', true, true, false)
+    ('private', 'app_attest_submission_grants', true, true, false),
+    ('private', 'challenge_links', true, true, false)
 ),
 -- Native types for columns used by the predicates. Other columns/constraints
 -- still require exact migrated-schema compatibility; this is not its substitute.
@@ -59,7 +60,9 @@ required_column_groups(table_name, type_name, column_names) as (
     ('apple_deletion_web_requests', 'timestamptz', array['created_at','expires_at']),
     ('app_attest_keys', 'uuid', array['profile_id','installation_id']),
     ('app_attest_challenges', 'uuid', array['profile_id','installation_id']),
-    ('app_attest_submission_grants', 'uuid', array['profile_id','installation_id'])
+    ('app_attest_submission_grants', 'uuid', array['profile_id','installation_id']),
+    ('challenge_links', 'uuid', array['profile_id']),
+    ('challenge_links', 'text', array['code'])
 ),
 required_columns as (
   select g.table_name, c.column_name,
