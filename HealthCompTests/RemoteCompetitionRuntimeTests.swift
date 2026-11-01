@@ -1320,6 +1320,14 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
         )
         let scoreRequests = await probe.scoreRequests()
         XCTAssertEqual(scoreRequests, [])
+        let activity = try XCTUnwrap(
+            outcome.successfulCompetitions.first?.ownerActivity
+        )
+        XCTAssertEqual(activity.checkFailure, .healthDataUnavailable)
+        XCTAssertEqual(activity.checkedAt, dayOneNoon)
+        XCTAssertNil(activity.readAt)
+        XCTAssertEqual(activity.days, [])
+        XCTAssertEqual(cached.first?.ownerActivity, activity)
     }
 
     func testOwnerHealthRefreshEnqueuesPrivacySafeRevisionAndPersistsAck()
@@ -1476,6 +1484,276 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
             materialized.journal.projection.synchronizationCursor,
             4
         )
+        let activity = try XCTUnwrap(materialized.ownerActivity)
+        XCTAssertEqual(activity.readAt, dayOneNoon)
+        XCTAssertEqual(activity.checkedAt, dayOneNoon)
+        XCTAssertNil(activity.checkFailure)
+        XCTAssertEqual(activity.days.count, 1)
+        XCTAssertEqual(activity.days.first?.latestSnapshot, snapshot)
+        XCTAssertEqual(activity.days.first?.acceptedSnapshot, snapshot)
+        XCTAssertEqual(activity.days.first?.acceptedClientRevision, 1)
+    }
+
+    func testUnsyncedReadKeepsEarlierAcceptedSnapshot() async throws {
+        let harness = try ownerActivityHarness()
+        defer { try? FileManager.default.removeItem(at: harness.root) }
+        let first = try harness.snapshot(move: 420)
+        let firstRun = await ownerRuntime(harness, at: harness.dayOneNoon, snapshots: [1: first])
+            .synchronizeAll()
+        XCTAssertEqual(firstRun.failures, [])
+
+        let changed = try harness.snapshot(move: 480)
+        let secondRun = await ownerRuntime(
+            harness,
+            at: harness.dayOneNoon.addingTimeInterval(600),
+            snapshots: [1: changed],
+            acceptsAppend: { _ in false },
+            failure: .operationFailed
+        ).synchronizeAll()
+
+        XCTAssertEqual(secondRun.failures, [])
+        let day = try XCTUnwrap(secondRun.successfulCompetitions.first?.ownerActivity?.days.first)
+        XCTAssertEqual(day.latestSnapshot, changed)
+        XCTAssertEqual(day.acceptedSnapshot, first)
+        XCTAssertEqual(day.acceptedClientRevision, 1)
+    }
+
+    func testReadingAcceptedInALaterRunBecomesTheAcceptedSnapshot() async throws {
+        let harness = try ownerActivityHarness()
+        defer { try? FileManager.default.removeItem(at: harness.root) }
+        let first = try harness.snapshot(move: 420)
+        // Run 1 queues revision 1, but the upload doesn't go through.
+        let offlineRuntime = ownerRuntime(
+            harness, at: harness.dayOneNoon, snapshots: [1: first],
+            acceptsAppend: { _ in false }
+        )
+        let firstRun = await offlineRuntime.synchronizeAll()
+        await offlineRuntime.stop()
+        XCTAssertEqual(firstRun.failures, [])
+        let queued = try XCTUnwrap(firstRun.successfulCompetitions.first?.ownerActivity?.days.first)
+        XCTAssertNil(queued.acceptedClientRevision)
+        XCTAssertEqual(queued.pendingSnapshot, first)
+        XCTAssertEqual(queued.pendingClientRevision, 1)
+
+        // Run 2: revision 1 finally lands (the outbox wakes first), then a
+        // newer reading queues revision 2, which doesn't go through.
+        let changed = try harness.snapshot(move: 480)
+        let server = harness.server
+        let secondRuntime = ownerRuntime(
+            harness, at: harness.dayOneNoon.addingTimeInterval(3_600), snapshots: [1: changed],
+            acceptsAppend: { $0.clientRevision == 1 },
+            beforeList: {
+                // Let the woken outbox finish storing revision 1 before the
+                // match loads, so the run reads one consistent ledger.
+                while await server.appendedScoreCount() < 1 {
+                    try? await Task.sleep(nanoseconds: 10_000_000)
+                }
+                try? await Task.sleep(nanoseconds: 300_000_000)
+            }
+        )
+        let secondRun = await secondRuntime.synchronizeAll()
+        await secondRuntime.stop()
+        XCTAssertEqual(secondRun.failures, [])
+        let materialization = try XCTUnwrap(secondRun.successfulCompetitions.first)
+        XCTAssertEqual(
+            try materialization.journal.projection.remoteScoreLedgers[profileID]?
+                .visibleEntry(forActiveDayOrdinal: 1)?.clientRevision,
+            1
+        )
+        let day = try XCTUnwrap(materialization.ownerActivity?.days.first)
+        XCTAssertEqual(day.latestSnapshot, changed)
+        XCTAssertEqual(day.acceptedSnapshot, first)
+        XCTAssertEqual(day.acceptedClientRevision, 1)
+        XCTAssertEqual(day.pendingSnapshot, changed)
+        XCTAssertEqual(day.pendingClientRevision, 2)
+        let shown = try XCTUnwrap(project([materialization], at: harness.dayOneNoon).first?.days.first)
+        XCTAssertEqual(shown.ownerAcceptedSnapshot, first)
+    }
+
+    func testCancelledMatchKeepsItsLastMaterializationAndRaisesNoIssue() async throws {
+        let harness = try ownerActivityHarness()
+        defer { try? FileManager.default.removeItem(at: harness.root) }
+        let outcome = await ownerRuntime(harness, at: harness.dayOneNoon, snapshots: nil)
+            .synchronizeAll()
+        let materialization = try XCTUnwrap(outcome.successfulCompetitions.first)
+        let cancelledID = CompetitionID(UUID(uuidString: "73000000-0000-4000-8000-000000000002")!)
+        let failedID = CompetitionID(UUID(uuidString: "73000000-0000-4000-8000-000000000003")!)
+        let mixed = RemoteCompetitionRuntimeOutcome(
+            outcomes: [
+                .success(materialization),
+                .failure(.init(competitionID: cancelledID, failure: .cancelled)),
+                .failure(.init(competitionID: failedID, failure: .discoveryUnavailable)),
+            ],
+            discoveryFailure: nil
+        )
+
+        let reconciled = mixed.reconciled(previous: [cancelledID: materialization])
+        XCTAssertEqual(reconciled.materializations, [materialization, materialization])
+        XCTAssertEqual(reconciled.failedIDs, [failedID])
+
+        let unknown = mixed.reconciled(previous: [:])
+        XCTAssertEqual(unknown.materializations, [materialization])
+        XCTAssertEqual(unknown.failedIDs, [failedID])
+    }
+
+    func testFailedMatchKeepsItsLastMaterializationForALaterCancel() async throws {
+        let harness = try ownerActivityHarness()
+        defer { try? FileManager.default.removeItem(at: harness.root) }
+        let outcome = await ownerRuntime(harness, at: harness.dayOneNoon, snapshots: nil)
+            .synchronizeAll()
+        let materialization = try XCTUnwrap(outcome.successfulCompetitions.first)
+        let id = CompetitionID(materialization.descriptor.competitionID)
+
+        let failed = RemoteCompetitionRuntimeOutcome(
+            outcomes: [.failure(.init(competitionID: id, failure: .discoveryUnavailable))],
+            discoveryFailure: nil
+        ).reconciled(previous: [id: materialization])
+        XCTAssertEqual(failed.materializations, [])
+        XCTAssertEqual(failed.failedIDs, [id])
+        XCTAssertEqual(failed.lastGood, [id: materialization])
+
+        let cancelled = RemoteCompetitionRuntimeOutcome(
+            outcomes: [.failure(.init(competitionID: id, failure: .cancelled))],
+            discoveryFailure: nil
+        ).reconciled(previous: failed.lastGood)
+        XCTAssertEqual(cancelled.materializations, [materialization])
+        XCTAssertEqual(cancelled.failedIDs, [])
+        XCTAssertEqual(cancelled.lastGood, [id: materialization])
+    }
+
+    func testOwnerActivityPersistsAndPublishesOffline() async throws {
+        let harness = try ownerActivityHarness()
+        defer { try? FileManager.default.removeItem(at: harness.root) }
+        let online = await ownerRuntime(
+            harness, at: harness.dayOneNoon, snapshots: [1: try harness.snapshot(move: 420)]
+        ).synchronizeAll()
+        let activity = try XCTUnwrap(online.successfulCompetitions.first?.ownerActivity)
+
+        let offline = await ownerRuntime(
+            harness, at: harness.dayOneNoon.addingTimeInterval(60), snapshots: [:], offline: true
+        ).synchronizeAll()
+
+        XCTAssertNotNil(offline.discoveryFailure)
+        XCTAssertEqual(offline.successfulCompetitions.first?.ownerActivity, activity)
+    }
+
+    func testCacheRoundTripsOwnerActivityAndOmitsTheKeyWhenAbsent() async throws {
+        let root = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let cacheStore = JSONRemoteCompetitionCacheStore(
+            rootDirectory: root,
+            fileProtection: JSONCompetitionEventStoreFileProtection { _, _ in }
+        )
+        let descriptor = try scheduledDescriptor(
+            creatorID: UUID(uuidString: "72000000-0000-4000-8000-000000000001")!,
+            inviteeID: profileID,
+            createdAt: Date(timeIntervalSince1970: 1_786_540_000)
+        )
+        let snapshot = try OwnerActivityHarness.snapshot(move: 420)
+        let activity = RemoteOwnerActivity(
+            checkedAt: Date(timeIntervalSince1970: 1_786_600_000),
+            checkFailure: nil,
+            readAt: Date(timeIntervalSince1970: 1_786_600_000),
+            days: [.init(ordinal: 1, latestSnapshot: snapshot, acceptedSnapshot: snapshot, acceptedClientRevision: 1)]
+        )
+        let fileURL = root.appendingPathComponent("competition-inventory.v1.json")
+        func isExcludedFromBackup() throws -> Bool? {
+            try fileURL.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup
+        }
+
+        let withActivity = try RemoteCompetitionCacheEntry(
+            descriptor: descriptor,
+            lastSeenServerSequence: descriptor.serverCursor,
+            ownerActivity: activity
+        )
+        try await cacheStore.save([withActivity], profileID: profileID)
+        XCTAssertEqual(try isExcludedFromBackup(), true)
+        let loaded = try await cacheStore.load(profileID: profileID)
+        XCTAssertEqual(loaded, [withActivity])
+
+        let without = try RemoteCompetitionCacheEntry(
+            descriptor: descriptor,
+            lastSeenServerSequence: descriptor.serverCursor
+        )
+        let encoded = String(decoding: try JSONEncoder().encode(without), as: UTF8.self)
+        XCTAssertFalse(encoded.contains("ownerActivity"))
+        try await cacheStore.save([without], profileID: profileID)
+        XCTAssertEqual(try isExcludedFromBackup(), true)
+        XCTAssertFalse(String(decoding: try Data(contentsOf: fileURL), as: UTF8.self).contains("ownerActivity"))
+        let reloaded = try await cacheStore.load(profileID: profileID)
+        XCTAssertEqual(reloaded, [without])
+    }
+
+    func testProjectorFeedsSnapshotsRefreshAndOtherPersonsReadTime() async throws {
+        let harness = try ownerActivityHarness()
+        defer { try? FileManager.default.removeItem(at: harness.root) }
+        let newest = harness.dayOneNoon.addingTimeInterval(-3_600)
+        // The later revision carries the earlier read time.
+        try await harness.append(for: harness.creatorID, ordinal: 1, revision: 1, at: newest)
+        try await harness.append(for: harness.creatorID, ordinal: 1, revision: 2, at: newest.addingTimeInterval(-3_600))
+        let snapshot = try harness.snapshot(move: 420)
+        let outcome = await ownerRuntime(harness, at: harness.dayOneNoon, snapshots: [1: snapshot])
+            .synchronizeAll()
+        XCTAssertEqual(outcome.failures, [])
+
+        let competition = try XCTUnwrap(project(outcome.successfulCompetitions, at: harness.dayOneNoon).first)
+        XCTAssertEqual(competition.lastRefresh?.status, .completed)
+        XCTAssertEqual(competition.lastSuccessfulFullWindowRefreshAt, harness.dayOneNoon)
+        XCTAssertEqual(competition.opponentUpdatedAt, newest)
+        XCTAssertEqual(competition.days.first?.ownerAcceptedSnapshot, snapshot)
+        XCTAssertEqual(competition.days.first?.ownerLatestSnapshot, snapshot)
+        XCTAssertEqual(competition.days.count, 7)
+        XCTAssertTrue(competition.days.allSatisfy { $0.scoringPolicy == .remoteWireV1 })
+    }
+
+    func testProjectorDropsAcceptedSnapshotWhenTheRowMovedOn() async throws {
+        let harness = try ownerActivityHarness()
+        defer { try? FileManager.default.removeItem(at: harness.root) }
+        try await harness.append(for: profileID, ordinal: 1, revision: 1, at: harness.dayOneNoon)
+        try await harness.append(for: profileID, ordinal: 1, revision: 2, at: harness.dayOneNoon)
+        let outcome = await ownerRuntime(harness, at: harness.dayOneNoon, snapshots: nil)
+            .synchronizeAll()
+        var materialization = try XCTUnwrap(outcome.successfulCompetitions.first)
+        let snapshot = try harness.snapshot(move: 420)
+        materialization.ownerActivity = RemoteOwnerActivity(
+            checkedAt: harness.dayOneNoon,
+            checkFailure: nil,
+            readAt: harness.dayOneNoon,
+            days: [.init(ordinal: 1, latestSnapshot: snapshot, acceptedSnapshot: snapshot, acceptedClientRevision: 1)]
+        )
+
+        let day = try XCTUnwrap(project([materialization], at: harness.dayOneNoon).first?.days.first)
+        XCTAssertNil(day.ownerAcceptedSnapshot)
+        XCTAssertEqual(day.ownerLatestSnapshot, snapshot)
+    }
+
+    func testRemoteTodayWithoutSummaryIsNotSyncedAndPastDayIsMissing() async throws {
+        let harness = try ownerActivityHarness()
+        defer { try? FileManager.default.removeItem(at: harness.root) }
+        let dayThreeNoon = harness.dayOneNoon.addingTimeInterval(2 * 86_400)
+        try await harness.append(for: profileID, ordinal: 1, revision: 1, at: harness.dayOneNoon, reason: "sourceDataUnavailable")
+        try await harness.append(for: profileID, ordinal: 2, revision: 2, at: harness.dayOneNoon, reason: "summaryPaused")
+        try await harness.append(for: profileID, ordinal: 3, revision: 3, at: dayThreeNoon, reason: "sourceDataUnavailable")
+        let outcome = await ownerRuntime(harness, at: dayThreeNoon, snapshots: nil).synchronizeAll()
+        XCTAssertEqual(outcome.failures, [])
+
+        let days = try XCTUnwrap(project(outcome.successfulCompetitions, at: dayThreeNoon).first?.days)
+        XCTAssertEqual(days[0].ownerLatestAvailability, .missing)
+        XCTAssertEqual(days[1].ownerLatestAvailability, .unavailable(reason: .invalidSourceData))
+        XCTAssertEqual(days[2].ownerLatestAvailability, .notSyncedYet)
+        XCTAssertEqual(days[3].ownerLatestAvailability, .notYetOccurred)
+
+        let tallyHarness = try ownerActivityHarness()
+        defer { try? FileManager.default.removeItem(at: tallyHarness.root) }
+        for ordinal in 1...6 {
+            try await tallyHarness.append(for: profileID, ordinal: ordinal, revision: Int64(ordinal), at: tallyHarness.dayOneNoon)
+        }
+        try await tallyHarness.append(for: profileID, ordinal: 7, revision: 7, at: tallyHarness.dayOneNoon, reason: "sourceDataUnavailable")
+        let afterWindow = tallyHarness.dayOneNoon.addingTimeInterval(6 * 86_400 + 13 * 3_600)
+        let tallying = await ownerRuntime(tallyHarness, at: afterWindow, snapshots: nil).synchronizeAll()
+        XCTAssertEqual(tallying.failures, [])
+        let tally = try XCTUnwrap(project(tallying.successfulCompetitions, at: afterWindow).first?.tally)
+        XCTAssertEqual(tally.attention, .incomplete(missingOrdinals: [7], unavailableOrdinals: []))
     }
 
     func testSameDayHealthRecoveryReplacesPersistedUnavailableScoreOnce()
@@ -3350,6 +3628,182 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
                 _, _ in
             }
         )
+    }
+
+    private struct OwnerActivityHarness {
+        let root: URL
+        let server: TwoClientCompetitionServer
+        let creatorID: UUID
+        let competitionID: UUID
+        let calendar: CompetitionCalendar
+        let days: [CompetitionDay]
+        let dayOneNoon: Date
+
+        static func snapshot(move: Double) throws -> ActivitySnapshot {
+            ActivitySnapshot(
+                moveMode: .activeEnergyKilocalories,
+                standMode: .standHours,
+                move: try ActivityRingReading(value: move, goal: 600),
+                exercise: try ActivityRingReading(value: 24, goal: 30),
+                standOrRoll: try ActivityRingReading(value: 10, goal: 12),
+                pauseState: .running
+            )
+        }
+
+        func snapshot(move: Double) throws -> ActivitySnapshot {
+            try Self.snapshot(move: move)
+        }
+
+        /// A score row on the server, as if `participantID`'s device sent it.
+        func append(
+            for participantID: UUID,
+            ordinal: Int,
+            revision: Int64,
+            at evaluatedAt: Date,
+            reason: String = "available"
+        ) async throws {
+            let available = reason == "available"
+            let wire = try RemoteScoreRevisionWireV1(
+                competitionID: competitionID,
+                participantID: participantID,
+                dayOrdinal: ordinal,
+                moveMode: "activeEnergyKilocalories",
+                standMode: available ? "standHours" : "unknown",
+                moveBasisPoints: available ? 9_000 : nil,
+                exerciseBasisPoints: available ? 8_500 : nil,
+                standBasisPoints: available ? 8_000 : nil,
+                availabilityReason: reason,
+                scoringPolicyIdentity: RemoteScoringWireV1.policyIdentity,
+                clientRevision: revision
+            )
+            _ = try await server.appendScoreRevision(
+                for: participantID,
+                request: CompetitionScoreRevisionRequest(
+                    competitionID: competitionID,
+                    semanticEventID: UUID(),
+                    dayOrdinal: ordinal,
+                    clientRevision: revision,
+                    evaluatedAt: evaluatedAt,
+                    moveMode: wire.moveMode,
+                    standMode: wire.standMode,
+                    moveBasisPoints: wire.moveBasisPoints,
+                    exerciseBasisPoints: wire.exerciseBasisPoints,
+                    standBasisPoints: wire.standBasisPoints,
+                    availabilityReason: wire.availabilityReason,
+                    scoringPolicyIdentity: wire.scoringPolicyIdentity,
+                    wireContentSHA256: wire.wireContentSHA256
+                )
+            )
+        }
+    }
+
+    private func ownerActivityHarness() throws -> OwnerActivityHarness {
+        let root = try makeTemporaryDirectory()
+        for child in ["events", "outbox", "cursors"] {
+            try FileManager.default.createDirectory(
+                at: root.appendingPathComponent(child),
+                withIntermediateDirectories: false
+            )
+        }
+        let creatorID = UUID(uuidString: "72000000-0000-4000-8000-000000000001")!
+        let calendar = try CompetitionCalendar(timeZoneIdentifier: "America/Los_Angeles")
+        let startDay = try CompetitionDay(
+            era: 1, year: 2026, month: 8, day: 13,
+            timeZoneIdentifier: calendar.timeZoneIdentifier
+        )
+        return OwnerActivityHarness(
+            root: root,
+            server: try TwoClientCompetitionServer(
+                competitionID: competitionID,
+                creatorID: creatorID,
+                inviteeID: profileID,
+                createdAt: Date(timeIntervalSince1970: 1_786_540_000)
+            ),
+            creatorID: creatorID,
+            competitionID: competitionID,
+            calendar: calendar,
+            days: try calendar.sevenDayWindow(startingOn: startDay),
+            dayOneNoon: try calendar.startOfDay(startDay).addingTimeInterval(12 * 60 * 60)
+        )
+    }
+
+    /// A runtime over the harness's stores. `snapshots` nil runs without
+    /// Health; otherwise unlisted days read as missing.
+    private func ownerRuntime(
+        _ harness: OwnerActivityHarness,
+        at date: Date,
+        snapshots: [Int: ActivitySnapshot]?,
+        acceptsAppend: @escaping @Sendable (CompetitionScoreRevisionRequest) -> Bool = { _ in true },
+        failure: CompetitionRemoteFailure = .retryableTransport,
+        offline: Bool = false,
+        beforeList: @escaping @Sendable () async -> Void = {}
+    ) -> RemoteCompetitionRuntime {
+        let noProtection = JSONCompetitionEventStoreFileProtection { _, _ in }
+        let server = harness.server
+        let ownerID = profileID
+        let api = remoteAPI(
+            listCompetitions: {
+                if offline { throw CompetitionRemoteFailure.retryableTransport }
+                await beforeList()
+                return try await server.listCompetitions(for: ownerID)
+            },
+            fetchChanges: { cursor, pageSize in
+                try await server.fetchChanges(for: ownerID, cursor: cursor, pageSize: pageSize)
+            },
+            appendScoreRevision: { request in
+                guard acceptsAppend(request) else { throw failure }
+                return try await server.appendScoreRevision(for: ownerID, request: request)
+            }
+        )
+        let environment = snapshots.map { snapshots in
+            CompetitionEnvironmentClient.accelerated(source: FixtureActivitySource(
+                fixture: try! ActivityFixture(
+                    initialInstant: EnvironmentInstant(
+                        wallDate: date,
+                        monotonic: MonotonicInstant(epochID: "owner-activity", nanoseconds: 1)
+                    ),
+                    timeZoneIdentifier: harness.calendar.timeZoneIdentifier,
+                    initialDays: harness.days.enumerated().map { offset, day in
+                        snapshots[offset + 1].map { .snapshot(day: day, snapshot: $0) }
+                            ?? .missing(day: day)
+                    },
+                    changes: []
+                )
+            ))
+        }
+        return RemoteCompetitionRuntime(
+            profileID: ownerID,
+            store: makeStore(root: harness.root.appendingPathComponent("events")),
+            remoteAPI: api,
+            environment: environment,
+            outboxStore: snapshots == nil ? nil : JSONCompetitionOutboxStore(
+                rootDirectory: harness.root.appendingPathComponent("outbox"),
+                fileProtection: noProtection
+            ),
+            cacheStore: JSONRemoteCompetitionCacheStore(
+                rootDirectory: harness.root.appendingPathComponent("cursors"),
+                fileProtection: noProtection
+            ),
+            now: { date }
+        )
+    }
+
+    private func project(
+        _ materializations: [RemoteCompetitionMaterialization],
+        at date: Date
+    ) -> [CompetitionPresentation] {
+        RemoteCompetitionProjector.dashboard(
+            materializations: materializations,
+            profile: AuthenticatedProfile(id: profileID, displayName: "Beta Bob"),
+            context: CompetitionEnvironmentContext(
+                instant: EnvironmentInstant(
+                    wallDate: date,
+                    monotonic: MonotonicInstant(epochID: "projector", nanoseconds: 1)
+                ),
+                timeZoneIdentifier: "America/Los_Angeles"
+            ),
+            issues: []
+        ).competitions
     }
 
     private let profileID = UUID(

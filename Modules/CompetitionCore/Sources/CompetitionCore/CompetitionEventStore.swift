@@ -910,6 +910,9 @@ public struct CompetitionReplayProjection: Equatable, Sendable {
     public let remoteWindowAttestations: [UUID: RemoteFinalWindowAttestation]
     public let synchronizationCursor: Int64
     public let sharedResult: SharedCompetitionResult?
+    /// The newest `recordedAt` (Health read time) of each participant's
+    /// accepted remote revisions; derived on replay, never persisted.
+    public let remoteLatestRecordedAt: [UUID: Date]
 
     internal init(
         competition: Competition,
@@ -919,7 +922,8 @@ public struct CompetitionReplayProjection: Equatable, Sendable {
         remoteScoreLedgers: [UUID: RemoteScoreLedger] = [:],
         remoteWindowAttestations: [UUID: RemoteFinalWindowAttestation] = [:],
         synchronizationCursor: Int64 = 0,
-        sharedResult: SharedCompetitionResult? = nil
+        sharedResult: SharedCompetitionResult? = nil,
+        remoteLatestRecordedAt: [UUID: Date] = [:]
     ) {
         self.competition = competition
         self.scoreLedger = scoreLedger
@@ -929,6 +933,7 @@ public struct CompetitionReplayProjection: Equatable, Sendable {
         self.remoteWindowAttestations = remoteWindowAttestations
         self.synchronizationCursor = synchronizationCursor
         self.sharedResult = sharedResult
+        self.remoteLatestRecordedAt = remoteLatestRecordedAt
     }
 }
 
@@ -1526,6 +1531,7 @@ public enum CompetitionReplayer {
         var workingAttestations = projection.remoteWindowAttestations
         var workingSynchronizationCursor = projection.synchronizationCursor
         var workingSharedResult = projection.sharedResult
+        var workingRemoteRecordedAt = projection.remoteLatestRecordedAt
         do {
             switch event {
             case let .remoteConfigurationAccepted(configuration):
@@ -1555,6 +1561,8 @@ public enum CompetitionReplayer {
                 }
                 _ = try ledger.accept(revision.row)
                 workingRemoteLedgers[revision.participant.profileID] = ledger
+                let pid = revision.participant.profileID
+                workingRemoteRecordedAt[pid] = max(workingRemoteRecordedAt[pid] ?? revision.recordedAt, revision.recordedAt)
 
             case let .remoteFinalWindowAttested(attestation):
                 guard let configuration = workingCompetition.remoteConfiguration,
@@ -1726,6 +1734,7 @@ public enum CompetitionReplayer {
             , remoteWindowAttestations: workingAttestations
             , synchronizationCursor: workingSynchronizationCursor
             , sharedResult: workingSharedResult
+            , remoteLatestRecordedAt: workingRemoteRecordedAt
         )
     }
 

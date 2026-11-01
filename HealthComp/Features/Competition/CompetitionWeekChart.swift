@@ -366,7 +366,23 @@ private struct OpponentDayBar: View {
     }
 }
 
-/// Splits an accepted day score by each ring's share of the accepted
+/// Each ring's scored share (value / goal, 0 when unusable), capped at
+/// `perRingCap` percent when the match caps rings.
+func competitionRingShares(
+    _ snapshot: ActivitySnapshot,
+    perRingCap: Double?
+) -> [Double] {
+    [snapshot.move, snapshot.exercise, snapshot.standOrRoll].map {
+        reading -> Double in
+        guard let value = reading.value, let goal = reading.goal,
+              value.isFinite, goal.isFinite, value >= 0, goal > 0
+        else { return 0 }
+        let share = value / goal
+        return perRingCap.map { min($0 / 100, share) } ?? share
+    }
+}
+
+/// Splits an accepted day score by each ring's scored share of the accepted
 /// snapshot, so the bar's length stays exactly the accepted points. Without a
 /// snapshot the day is one amber bar: your score, unsplit.
 func ringSegments(
@@ -378,13 +394,9 @@ func ringSegments(
     guard let snapshot = day.ownerAcceptedSnapshot else {
         return [(Theme.youFill, points)]
     }
-    let shares = [snapshot.move, snapshot.exercise, snapshot.standOrRoll].map {
-        reading -> Double in
-        guard let value = reading.value, let goal = reading.goal,
-              value.isFinite, goal.isFinite, value >= 0, goal > 0
-        else { return 0 }
-        return value / goal
-    }
+    let shares = competitionRingShares(
+        snapshot, perRingCap: day.scoringPolicy.perRingCap
+    )
     let total = shares.reduce(0, +)
     guard total > 0 else { return [(Theme.youFill, points)] }
     return zip([Theme.move, Theme.exercise, Theme.stand], shares).map {

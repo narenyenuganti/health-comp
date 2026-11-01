@@ -9,13 +9,42 @@ enum RemoteCompetitionCacheFailure: Error, Equatable, Sendable {
     case invalidDocument
 }
 
+/// What this phone last read from Health for one real match. It stays on
+/// this device: exact values and goals never go into wire payloads.
+struct RemoteOwnerActivity: Codable, Equatable, Sendable {
+    struct Day: Codable, Equatable, Sendable {
+        let ordinal: Int
+        /// Nil: Health had no summary.
+        let latestSnapshot: ActivitySnapshot?
+        /// The reading behind the accepted row.
+        let acceptedSnapshot: ActivitySnapshot?
+        /// The row it produced.
+        let acceptedClientRevision: Int64?
+        /// The reading behind a revision still waiting for the server, so
+        /// it can become the accepted reading once that revision lands.
+        var pendingSnapshot: ActivitySnapshot? = nil
+        var pendingClientRevision: Int64? = nil
+    }
+
+    /// Last read attempt.
+    let checkedAt: Date
+    let checkFailure: ActivityQueryFailureReason?
+    /// Last completed read; `days` come from it.
+    let readAt: Date?
+    /// Started days only.
+    let days: [Day]
+}
+
 struct RemoteCompetitionCacheEntry: Codable, Equatable, Sendable {
     let descriptor: CompetitionDescriptor
     let lastSeenServerSequence: Int64
+    // ponytail: owner activity rides in the 1 MiB inventory file, ~2–4 KB per match; move it to its own file if a profile nears ~250 listed matches.
+    let ownerActivity: RemoteOwnerActivity?
 
     init(
         descriptor: CompetitionDescriptor,
-        lastSeenServerSequence: Int64
+        lastSeenServerSequence: Int64,
+        ownerActivity: RemoteOwnerActivity? = nil
     ) throws {
         guard lastSeenServerSequence >= 0,
               lastSeenServerSequence <= descriptor.serverCursor
@@ -24,6 +53,7 @@ struct RemoteCompetitionCacheEntry: Codable, Equatable, Sendable {
         }
         self.descriptor = descriptor
         self.lastSeenServerSequence = lastSeenServerSequence
+        self.ownerActivity = ownerActivity
     }
 }
 
@@ -293,6 +323,13 @@ actor JSONRemoteCompetitionCacheStore: RemoteCompetitionCacheStore {
             .completeUntilFirstUserAuthentication,
             to: fileURL
         )
+        // Exact Health values must not leave this iPhone, backups included.
+        // Set after every save: the rename replaces the file.
+        var backupURL = fileURL
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        do { try backupURL.setResourceValues(values) }
+        catch { throw RemoteCompetitionCacheFailure.unsafeFilesystemEntry }
         try synchronize(rootDescriptor)
     }
 
@@ -407,6 +444,7 @@ actor JSONRemoteCompetitionCacheStore: RemoteCompetitionCacheStore {
 struct RemoteCompetitionMaterialization: Equatable, Sendable {
     let descriptor: CompetitionDescriptor
     let journal: LoadedCompetitionJournal
+    var ownerActivity: RemoteOwnerActivity? = nil
 }
 
 struct RemoteCompetitionRuntimeIDFailure: Equatable, Sendable {
@@ -427,6 +465,7 @@ private struct RemoteCompetitionSynchronizationOutcome {
 private struct RemoteOwnerScoreRefreshOutcome {
     let materialization: RemoteCompetitionMaterialization
     let activityFailure: CompetitionActivitySourceError?
+    let ownerActivity: RemoteOwnerActivity?
 }
 
 enum RemoteCompetitionRuntimeIDOutcome: Equatable, Sendable {
@@ -655,7 +694,8 @@ actor RemoteCompetitionRuntime {
                 )
                 let cacheEntry = try RemoteCompetitionCacheEntry(
                     descriptor: descriptor,
-                    lastSeenServerSequence: descriptor.serverCursor
+                    lastSeenServerSequence: descriptor.serverCursor,
+                    ownerActivity: synchronized.materialization.ownerActivity
                 )
                 outcomes.append(
                     .success(synchronized.materialization)
@@ -726,7 +766,8 @@ actor RemoteCompetitionRuntime {
                     .success(
                         RemoteCompetitionMaterialization(
                             descriptor: entry.descriptor,
-                            journal: loaded
+                            journal: loaded,
+                            ownerActivity: entry.ownerActivity
                         )
                     )
                 )
@@ -890,13 +931,16 @@ actor RemoteCompetitionRuntime {
                 )
                 contractStage = .ownerScores
                 let refreshed = try await refreshOwnerScores(
-                    in: lifecycleReconciled
+                    in: lifecycleReconciled,
+                    previous: cachedEntry?.ownerActivity
                 )
                 contractStage = .finalAttestation
+                var attested = try await enqueueFinalWindowAttestation(
+                    for: refreshed.materialization
+                )
+                attested.ownerActivity = refreshed.ownerActivity
                 return RemoteCompetitionSynchronizationOutcome(
-                    materialization: try await enqueueFinalWindowAttestation(
-                        for: refreshed.materialization
-                    ),
+                    materialization: attested,
                     activityFailure: refreshed.activityFailure
                 )
             case .declined, .expired, .cancelled:
@@ -937,7 +981,8 @@ actor RemoteCompetitionRuntime {
     }
 
     private func refreshOwnerScores(
-        in materialization: RemoteCompetitionMaterialization
+        in materialization: RemoteCompetitionMaterialization,
+        previous: RemoteOwnerActivity?
     ) async throws -> RemoteOwnerScoreRefreshOutcome {
         guard let environment, let outboxStore, let syncCoordinator,
               let configuration = materialization.journal.projection
@@ -948,7 +993,8 @@ actor RemoteCompetitionRuntime {
 #endif
             return RemoteOwnerScoreRefreshOutcome(
                 materialization: materialization,
-                activityFailure: nil
+                activityFailure: nil,
+                ownerActivity: previous
             )
         }
         switch materialization.journal.projection.competition.lifecycle {
@@ -961,7 +1007,8 @@ actor RemoteCompetitionRuntime {
 #endif
             return RemoteOwnerScoreRefreshOutcome(
                 materialization: materialization,
-                activityFailure: nil
+                activityFailure: nil,
+                ownerActivity: previous
             )
         }
 
@@ -981,7 +1028,13 @@ actor RemoteCompetitionRuntime {
 #endif
             return RemoteOwnerScoreRefreshOutcome(
                 materialization: materialization,
-                activityFailure: failure
+                activityFailure: failure,
+                ownerActivity: RemoteOwnerActivity(
+                    checkedAt: now(),
+                    checkFailure: Self.queryFailureReason(failure),
+                    readAt: previous?.readAt,
+                    days: previous?.days ?? []
+                )
             )
         } catch {
 #if HEALTHCOMP_STAGING
@@ -1033,6 +1086,8 @@ actor RemoteCompetitionRuntime {
             maximumClientRevision,
             pendingRequests.map(\.clientRevision).max() ?? 0
         )
+        // The revision each started day's reading is queued under.
+        var queuedRevisionByOrdinal: [Int: Int64] = [:]
 
         for (offset, result) in read.days.enumerated() {
             let ordinal = offset + 1
@@ -1055,6 +1110,7 @@ actor RemoteCompetitionRuntime {
                    evidence: evidence,
                    clientRevision: pending.clientRevision
                ).wireContentSHA256 == pending.wireContentSHA256 {
+                queuedRevisionByOrdinal[ordinal] = pending.clientRevision
 #if HEALTHCOMP_STAGING
                 StagingScoringOperatorControls.recordActivity(.unchangedOutbox)
                 if existingOutboxEntries.contains(where: { entry in
@@ -1111,6 +1167,7 @@ actor RemoteCompetitionRuntime {
                 .scoreRevision(request),
                 enqueuedAt: evaluatedAt
             )
+            queuedRevisionByOrdinal[ordinal] = maximumClientRevision
 #if HEALTHCOMP_STAGING
             StagingScoringOperatorControls.recordActivity(.queuedRevisions)
 #endif
@@ -1126,8 +1183,87 @@ actor RemoteCompetitionRuntime {
                 descriptor: materialization.descriptor,
                 journal: loaded
             ),
-            activityFailure: nil
+            activityFailure: nil,
+            ownerActivity: try Self.ownerActivity(
+                read: read,
+                window: window,
+                evaluatedAt: evaluatedAt,
+                ledger: loaded.projection.remoteScoreLedgers[profileID],
+                queuedRevisions: queuedRevisionByOrdinal,
+                previous: previous,
+                competitionID: configuration.competitionID.rawValue,
+                profileID: profileID
+            )
         )
+    }
+
+    /// Pairs each started day's reading with the accepted row it produced.
+    /// A reading the server hasn't accepted yet keeps the earlier accepted
+    /// reading, so the panel can still split the accepted points.
+    private static func ownerActivity(
+        read: ActivityWindowRead,
+        window: CompetitionActivityWindow,
+        evaluatedAt: Date,
+        ledger: RemoteScoreLedger?,
+        queuedRevisions: [Int: Int64],
+        previous: RemoteOwnerActivity?,
+        competitionID: UUID,
+        profileID: UUID
+    ) throws -> RemoteOwnerActivity {
+        var days: [RemoteOwnerActivity.Day] = []
+        for (offset, result) in read.days.enumerated() {
+            let ordinal = offset + 1
+            guard try window.calendar.startOfDay(result.day) <= evaluatedAt else { continue }
+            let latest: ActivitySnapshot?
+            if case let .snapshot(_, snapshot) = result { latest = snapshot } else { latest = nil }
+            let row = try ledger?.visibleEntry(forActiveDayOrdinal: ordinal)
+            let earlier = previous?.days.first(where: { $0.ordinal == ordinal })
+            var accepted: ActivitySnapshot?
+            var acceptedRevision: Int64?
+            if let row, try wire(
+                competitionID: competitionID,
+                profileID: profileID,
+                ordinal: ordinal,
+                evidence: remoteEvidence(from: result),
+                clientRevision: row.clientRevision
+            ).wireContentSHA256 == row.wireContentSHA256 {
+                accepted = latest
+                acceptedRevision = row.clientRevision
+            } else if let row, let earlier,
+                      earlier.pendingClientRevision == row.clientRevision {
+                // An earlier run's reading that has landed since.
+                accepted = earlier.pendingSnapshot
+                acceptedRevision = row.clientRevision
+            } else if let row, let earlier,
+                      earlier.acceptedClientRevision == row.clientRevision {
+                accepted = earlier.acceptedSnapshot
+                acceptedRevision = row.clientRevision
+            }
+            // ponytail: remembers only the newest queued reading per day; an
+            // older queued revision landing after a newer one was queued
+            // loses its split (the rows then fall back to the latest reading).
+            let queued = queuedRevisions[ordinal].flatMap { $0 == acceptedRevision ? nil : $0 }
+            days.append(RemoteOwnerActivity.Day(
+                ordinal: ordinal,
+                latestSnapshot: latest,
+                acceptedSnapshot: accepted,
+                acceptedClientRevision: acceptedRevision,
+                pendingSnapshot: queued == nil ? nil : latest,
+                pendingClientRevision: queued
+            ))
+        }
+        return RemoteOwnerActivity(checkedAt: evaluatedAt, checkFailure: nil, readAt: evaluatedAt, days: days)
+    }
+
+    private static func queryFailureReason(
+        _ error: CompetitionActivitySourceError
+    ) -> ActivityQueryFailureReason {
+        switch error {
+        case .healthDataUnavailable: .healthDataUnavailable
+        case .protectedDataUnavailable: .protectedDataUnavailable
+        case .invalidResponse: .invalidResponse
+        case .unclassifiedQueryFailure: .unknown
+        }
     }
 
     private func enqueueFinalWindowAttestation(

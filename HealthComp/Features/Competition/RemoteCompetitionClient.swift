@@ -329,6 +329,9 @@ private actor RemoteCompetitionClientCoordinator {
     private var terminalPreparationWork: TerminalPreparationWork?
     private var installationCoordinator: CompetitionInstallationCoordinator?
     private var mountedCompetitionIDs: Set<CompetitionID> = []
+    /// The last good materialization of each match, shown again when its
+    /// next sync is only cancelled.
+    private var lastMaterializations: [CompetitionID: RemoteCompetitionMaterialization] = [:]
     private var hasStarted = false
     private var isStopped = false
     private var healthAuthorizationIssue: CompetitionClientIssue?
@@ -434,6 +437,7 @@ private actor RemoteCompetitionClientCoordinator {
                     )
                 )
                 self.runtime = runtime
+                self.lastMaterializations = [:]
                 let preferences = notificationPreferencesFactory(paths)
                 self.notificationPreferences = preferences
                 self.observerDeliveryReceipts =
@@ -662,9 +666,9 @@ private actor RemoteCompetitionClientCoordinator {
         if let issue = outcome.discoveryFailure?.competitionClientIssue {
             issues.append(issue)
         }
-        let failedIDs = outcome.failures.map(\.competitionID).sorted {
-            $0.rawValue.uuidString < $1.rawValue.uuidString
-        }
+        let reconciled = outcome.reconciled(previous: lastMaterializations)
+        lastMaterializations = reconciled.lastGood
+        let failedIDs = reconciled.failedIDs
         if !failedIDs.isEmpty {
             issues.append(.competitionFailures(failedIDs))
         }
@@ -676,7 +680,7 @@ private actor RemoteCompetitionClientCoordinator {
             issues.append(.activityFailures(activityFailedIDs))
         }
         let publication = await publish(
-            materializations: outcome.successfulCompetitions,
+            materializations: reconciled.materializations,
             profile: profile,
             issues: issues,
             knownCompetitionIDs: outcome.discoveryFailure == nil
@@ -1212,6 +1216,7 @@ private actor RemoteCompetitionClientCoordinator {
         installationCoordinator = nil
         await runtime?.stop()
         runtime = nil
+        lastMaterializations = [:]
         return stoppedTasks
     }
 
@@ -1617,6 +1622,32 @@ private actor RemoteCompetitionClientCoordinator {
     }
 }
 
+extension RemoteCompetitionRuntimeOutcome {
+    /// A match whose sync was only cancelled (the person left the screen
+    /// mid-refresh) is not a failure: it keeps its last good materialization
+    /// and raises no issue. A failed match stays on screen with its last
+    /// presentation, so it keeps its last good materialization for a later
+    /// cancelled sync too.
+    func reconciled(
+        previous: [CompetitionID: RemoteCompetitionMaterialization]
+    ) -> (
+        materializations: [RemoteCompetitionMaterialization],
+        failedIDs: [CompetitionID],
+        lastGood: [CompetitionID: RemoteCompetitionMaterialization]
+    ) {
+        let cancelled = failures.filter { $0.failure == .cancelled }
+        let failedIDs = failures.filter { $0.failure != .cancelled }
+            .map(\.competitionID)
+            .sorted { $0.rawValue.uuidString < $1.rawValue.uuidString }
+        let materializations = successfulCompetitions
+            + cancelled.compactMap { previous[$0.competitionID] }
+        let lastGood = previous.filter { failedIDs.contains($0.key) }.merging(
+            materializations.map { (CompetitionID($0.descriptor.competitionID), $0) }
+        ) { _, new in new }
+        return (materializations, failedIDs, lastGood)
+    }
+}
+
 struct RemoteCompetitionParticipantPresentation: Equatable, Sendable {
     let ownerName: String
     let opponentName: String
@@ -1859,6 +1890,7 @@ enum RemoteCompetitionProjector {
         let opponentID = participantPresentation.opponentID
         let terminal = terminalPresentation(competition.lifecycle)
         let schedule = competition.schedule
+        let activity = materialization.ownerActivity
         let days = schedule.map {
             dayPresentations(
                 schedule: $0,
@@ -1866,7 +1898,8 @@ enum RemoteCompetitionProjector {
                 ownerID: profile.id,
                 remoteID: opponentID,
                 now: context.instant.wallDate,
-                terminal: terminal
+                terminal: terminal,
+                ownerActivity: activity
             )
         } ?? []
         let ownerPoints = projection.remoteScoreLedgers[profile.id]
@@ -1895,7 +1928,15 @@ enum RemoteCompetitionProjector {
                 schedule: schedule,
                 now: context.instant.wallDate
             ),
-            lastRefresh: nil,
+            // Remote reads don't record a trigger and no screen shows one.
+            lastRefresh: activity.map {
+                CompetitionRefreshPresentation(
+                    trigger: .reconciliationProbe,
+                    attemptedAt: $0.checkedAt,
+                    readAt: $0.checkedAt,
+                    status: $0.checkFailure.map { .failed(reason: $0) } ?? .completed
+                )
+            },
             tally: tallyPresentation(
                 competition: competition,
                 projection: projection,
@@ -1905,7 +1946,10 @@ enum RemoteCompetitionProjector {
             evaluatedAt: context.instant.wallDate,
             timeZoneIdentifier: schedule?.calendar.timeZoneIdentifier
                 ?? context.timeZoneIdentifier,
-            lastSuccessfulFullWindowRefreshAt: nil
+            lastSuccessfulFullWindowRefreshAt: activity?.readAt,
+            opponentUpdatedAt: opponentID.flatMap {
+                projection.remoteLatestRecordedAt[$0]
+            }
         )
     }
 
@@ -1915,7 +1959,8 @@ enum RemoteCompetitionProjector {
         ownerID: UUID,
         remoteID: UUID?,
         now: Date,
-        terminal: CompetitionTerminalPresentation?
+        terminal: CompetitionTerminalPresentation?,
+        ownerActivity: RemoteOwnerActivity? = nil
     ) -> [CompetitionDayPresentation] {
         guard let days = try? schedule.calendar.sevenDayWindow(
             startingOn: schedule.startDay
@@ -1923,7 +1968,12 @@ enum RemoteCompetitionProjector {
         return days.enumerated().map { offset, day in
             let ordinal = offset + 1
             let start = try? schedule.calendar.startOfDay(day)
+            let end = try? schedule.calendar.startOfDay(
+                schedule.calendar.day(after: day)
+            )
             let future = start.map { now < $0 } ?? true
+            let isToday = !future && end.map { now < $0 } == true
+            let activityDay = ownerActivity?.days.first { $0.ordinal == ordinal }
             let owner = projection.remoteScoreLedgers[ownerID].flatMap {
                 try? $0.visibleEntry(forActiveDayOrdinal: ordinal)
             }
@@ -1933,19 +1983,29 @@ enum RemoteCompetitionProjector {
                     try? $0.visibleEntry(forActiveDayOrdinal: ordinal)
                 }
             }
+            // "sourceDataUnavailable" is the runtime's row for a day Health
+            // had no summary for, so it reads as missing (or not synced yet).
             let availability: CompetitionOwnerAvailability
             if future {
                 availability = .notYetOccurred
-            } else if owner?.acceptedCentiPoints != nil {
+            } else if activityDay?.latestSnapshot != nil
+                        || owner?.acceptedCentiPoints != nil {
                 availability = .observed
-            } else if let reason = owner?.availabilityReason {
+            } else if let reason = owner?.availabilityReason,
+                      reason != "sourceDataUnavailable" {
                 availability = .unavailable(
                     reason: ActivityUnavailableReason(rawValue: reason)
                         ?? .invalidSourceData
                 )
+            } else if isToday {
+                availability = .notSyncedYet
             } else {
                 availability = .missing
             }
+            // An older reading never labels a newer row.
+            let acceptedSnapshot = activityDay?.acceptedClientRevision != nil
+                && activityDay?.acceptedClientRevision == owner?.clientRevision
+                ? activityDay?.acceptedSnapshot : nil
             return CompetitionDayPresentation(
                 day: day,
                 ordinal: ordinal,
@@ -1956,8 +2016,9 @@ enum RemoteCompetitionProjector {
                 opponentRevealedPoints: future && terminal == nil
                     ? nil
                     : remote?.acceptedCentiPoints.map { Double($0) / 100 },
-                ownerAcceptedSnapshot: nil,
-                ownerLatestSnapshot: nil
+                ownerAcceptedSnapshot: acceptedSnapshot,
+                ownerLatestSnapshot: activityDay?.latestSnapshot,
+                scoringPolicy: .remoteWireV1
             )
         }
     }
@@ -2041,11 +2102,14 @@ enum RemoteCompetitionProjector {
               let configuration = competition.remoteConfiguration
         else { return nil }
         let ownerLedger = projection.remoteScoreLedgers[ownerID]
+        // A "sourceDataUnavailable" row means Health had no summary: missing.
         let missing = Set((1...7).filter {
-            guard let ownerLedger else { return true }
-            return (try? ownerLedger.visibleEntry(
-                forActiveDayOrdinal: $0
-            )) == nil
+            guard let ownerLedger,
+                  let row = try? ownerLedger.visibleEntry(
+                      forActiveDayOrdinal: $0
+                  )
+            else { return true }
+            return row.availabilityReason == "sourceDataUnavailable"
         })
         let unavailable = Set((1...7).filter {
             guard !missing.contains($0), let ownerLedger,
