@@ -496,6 +496,7 @@ private actor RemoteCompetitionClientCoordinator {
                 self.hub = replacement
                 self.publicationRevision = 0
                 self.latestPublication = nil
+                self.latestChallenges = .empty
                 self.hasStarted = false
                 self.isStopped = false
                 let installationStore = CompetitionInstallationStateStore(
@@ -599,6 +600,7 @@ private actor RemoteCompetitionClientCoordinator {
                     self.profile = nil
                     hub = nil
                     latestPublication = nil
+                    latestChallenges = .empty
                     publicationRevision = 0
                     hasStarted = false
                     isStopped = true
@@ -683,6 +685,7 @@ private actor RemoteCompetitionClientCoordinator {
             }
             hub = nil
             latestPublication = nil
+            latestChallenges = .empty
             publicationRevision = 0
             hasStarted = false
             isStopped = true
@@ -1038,6 +1041,7 @@ private actor RemoteCompetitionClientCoordinator {
             profile = nil
             hub = nil
             latestPublication = nil
+            latestChallenges = .empty
             publicationRevision = 0
             hasStarted = false
             router.finishCurrent()
@@ -1361,6 +1365,7 @@ private actor RemoteCompetitionClientCoordinator {
         boundaryTask?.cancel()
         boundaryTask = nil
         lastPublishInputs = nil
+        latestChallenges = .empty
         if stoppedTasks.realtime != nil {
             await realtimeClient.stop()
         }
