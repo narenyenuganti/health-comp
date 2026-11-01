@@ -440,6 +440,50 @@ final class SupabaseCompetitionRemoteAPITests: XCTestCase {
         XCTAssertEqual(requestCount, 0)
     }
 
+    func testInstallationRegistrationFallsBackToLegacyCallOnUnmigratedServer()
+        async throws
+    {
+        let harness = CompetitionTransportHarness(stubs: [
+            .response(404, try jsonData([
+                "code": "PGRST202", "message": "redacted",
+            ])),
+            .response(200, try jsonData([
+                "installation_id": installationID.uuidString.lowercased(),
+                "environment": "sandbox",
+                "state": "active",
+            ])),
+        ])
+        let request = try CompetitionInstallationRequest(
+            installationID: installationID,
+            apnsToken: String(repeating: "a1", count: 32),
+            environment: .sandbox
+        )
+
+        let installation = try await makeAPI(harness)
+            .registerInstallation(request)
+
+        XCTAssertEqual(installation.state, .active)
+        let requests = await harness.recordedRequests()
+        XCTAssertEqual(requests.count, 2)
+        let legacyBody: [String: Any] = [
+            "installation_id": installationID.uuidString.lowercased(),
+            "apns_token": String(repeating: "a1", count: 32),
+            "environment": "sandbox",
+        ]
+        var currentBody = legacyBody
+        currentBody["supports_challenges"] = true
+        try assertRPC(
+            requests[0],
+            name: "register_current_device_installation",
+            body: currentBody
+        )
+        try assertRPC(
+            requests[1],
+            name: "register_current_device_installation",
+            body: legacyBody
+        )
+    }
+
     func testChallengeRetriesInstallationRegistrationRace() async throws {
         let harness = CompetitionTransportHarness(stubs: [
             .response(

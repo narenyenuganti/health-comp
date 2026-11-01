@@ -223,16 +223,31 @@ enum SupabaseCompetitionRemoteAPI {
                 return page
             },
             registerInstallation: { request in
-                let response = try await send(
-                    .rpc(
-                        name: "register_current_device_installation",
-                        parameters: try encodeWire(
-                            request,
-                            contract: .installationRequest
-                        )
-                    ),
-                    transport: transport
-                )
+                let response: CompetitionRemoteTransportResponse
+                do {
+                    response = try await send(
+                        .rpc(
+                            name: "register_current_device_installation",
+                            parameters: try encodeWire(
+                                request,
+                                contract: .installationRequest
+                            )
+                        ),
+                        transport: transport
+                    )
+                } catch CompetitionRemoteFailure.notFound {
+                    // A server without the capability-aware RPC (PGRST202)
+                    // has no challenge gate either; register the old way.
+                    response = try await send(
+                        .rpc(
+                            name: "register_current_device_installation",
+                            parameters: try encode(
+                                LegacyInstallationParameters(request)
+                            )
+                        ),
+                        transport: transport
+                    )
+                }
                 return try decode(
                     CompetitionInstallation.self,
                     response.data,
@@ -862,6 +877,25 @@ private struct BootstrapProfileParameters: Encodable {
 }
 
 private struct EmptyParameters: Encodable {}
+
+/// The three-argument registration body, for servers before 20261101002300.
+private struct LegacyInstallationParameters: Encodable {
+    let installationID: String
+    let apnsToken: String
+    let environment: CompetitionInstallationEnvironment
+
+    init(_ request: CompetitionInstallationRequest) {
+        installationID = request.installationID.uuidString.lowercased()
+        apnsToken = request.apnsToken
+        environment = request.environment
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case installationID = "installation_id"
+        case apnsToken = "apns_token"
+        case environment
+    }
+}
 
 private struct SetNotificationMuteParameters: Encodable {
     let opponentProfileID: UUID

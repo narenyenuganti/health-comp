@@ -3557,6 +3557,7 @@ private enum CompetitionWireValidator {
             ]
         )
         guard uuid(object["installation_id"]),
+              boolean(object["supports_challenges"]),
               object["supports_challenges"] as? Bool == true,
               let token = object["apns_token"] as? String,
               token.range(
