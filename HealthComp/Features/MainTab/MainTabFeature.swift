@@ -15,6 +15,8 @@ struct MainTabFeature {
         case waitingForCompetition
         case confirmationTimedOut
         case unavailable
+        /// You opened your own challenge's link.
+        case ownChallenge
         case retryable
         /// The link arrived before this account existed, so it can't be for it.
         case wrongAccount
@@ -472,7 +474,7 @@ struct MainTabFeature {
                         prompt
                     )
 
-                case .failure(.inviteUnavailable):
+                case .failure(.inviteUnavailable), .failure(.forbidden):
                     if state.pendingClaimRoute?.sequence == sequence {
                         state.pendingClaimRoute = nil
                     }
@@ -480,7 +482,9 @@ struct MainTabFeature {
                         state.lastHandledClaimRouteSequence,
                         sequence
                     )
-                    state.inviteClaimStatus = .unavailable
+                    state.inviteClaimStatus = response == .failure(.forbidden)
+                        ? .ownChallenge
+                        : .unavailable
                     return postClaimEffects(
                         consumedSequence: sequence,
                         hasNewerPendingClaim: state.pendingClaimRoute != nil
@@ -517,7 +521,7 @@ struct MainTabFeature {
                         claimConfirmationTimeoutEffect(pendingNavigation)
                     )
                 case .idle, .ready, .claiming, .waitingForCompetition,
-                     .unavailable, .wrongAccount:
+                     .unavailable, .wrongAccount, .ownChallenge:
                     return .none
                 }
 
@@ -533,7 +537,7 @@ struct MainTabFeature {
 
             case .dismissClaimStatus:
                 switch state.inviteClaimStatus {
-                case .unavailable, .wrongAccount:
+                case .unavailable, .wrongAccount, .ownChallenge:
                     state.inviteClaimStatus = .idle
                     return .none
                 case .confirmationTimedOut:

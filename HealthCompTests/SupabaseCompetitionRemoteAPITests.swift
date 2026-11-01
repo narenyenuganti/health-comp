@@ -554,7 +554,6 @@ final class SupabaseCompetitionRemoteAPITests: XCTestCase {
         let request = try CompetitionInviteClaimRequest(token: token)
         let cases = [
             (400, "invalid_request"),
-            (403, "self_claim_forbidden"),
             (404, "invite_unavailable"),
             (409, "invite_consumed"),
         ]
@@ -567,6 +566,26 @@ final class SupabaseCompetitionRemoteAPITests: XCTestCase {
                 _ = try await makeAPI(harness).claimInvite(request)
             }
             XCTAssertEqual(failure, .inviteUnavailable)
+            let requestCount = await harness.requestCount()
+            XCTAssertEqual(requestCount, 1)
+        }
+    }
+
+    func testOwnClaimMapsToForbidden() async throws {
+        let token = Data(repeating: 0x42, count: 32)
+            .base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+        let request = try CompetitionInviteClaimRequest(token: token)
+        for code in ["self_claim_forbidden", "cannot_claim_own_invite"] {
+            let harness = CompetitionTransportHarness(stubs: [
+                .response(403, try errorData(code: code)),
+            ])
+            let failure = await remoteFailure {
+                _ = try await makeAPI(harness).claimInvite(request)
+            }
+            XCTAssertEqual(failure, .forbidden)
             let requestCount = await harness.requestCount()
             XCTAssertEqual(requestCount, 1)
         }
