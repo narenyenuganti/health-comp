@@ -236,6 +236,32 @@ final class RemoteCompetitionReplayTests: XCTestCase {
         }
     }
 
+    func testReplayKeepsNewestRecordedAtPerParticipant() throws {
+        var journal = try remoteJournalPrefix()
+        XCTAssertEqual(try CompetitionReplayer.replay(journal).remoteLatestRecordedAt, [:])
+
+        let t1 = fixtureDeadline.addingTimeInterval(-3_000)
+        let t2 = fixtureDeadline.addingTimeInterval(-2_000)
+        let t3 = fixtureDeadline.addingTimeInterval(-1_000)
+        func score(_ participant: RemoteParticipant, revision: Int64, sequence: Int64, at recordedAt: Date) throws -> RemoteScoreRevision {
+            try RemoteScoreRevision(
+                competitionID: fixtureCompetitionID,
+                participant: participant,
+                row: RemoteAcceptedScoreRow(ordinal: 1, acceptedCentiPoints: 100 + Int(revision), availabilityReason: nil, wireContentSHA256: String(format: "%064x", sequence), clientRevision: revision, serverSequence: sequence),
+                recordedAt: recordedAt
+            )
+        }
+        // The remote's later client revision carries an earlier read time.
+        _ = try journal.append([
+            .remoteScoreRevisionRecorded(score(fixtureOwner, revision: 1, sequence: 1, at: t1)),
+            .remoteScoreRevisionRecorded(score(fixtureRemote, revision: 1, sequence: 2, at: t3)),
+            .remoteScoreRevisionRecorded(score(fixtureRemote, revision: 2, sequence: 3, at: t2)),
+        ], expectedCursor: journal.cursor)
+
+        let projection = try CompetitionReplayer.replay(journal)
+        XCTAssertEqual(projection.remoteLatestRecordedAt, [fixtureOwner.profileID: t1, fixtureRemote.profileID: t3])
+    }
+
     func testRemoteReplayAcceptsOnlyServerAuthoritativeResultEvidence() throws {
         let bestAvailable = try remoteJournal(
             basis: .bestAvailable,

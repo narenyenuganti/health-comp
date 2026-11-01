@@ -108,6 +108,16 @@ public struct ActivityScoringPolicy: Codable, Equatable, Sendable {
         pausedSummaryPolicy: .scoreReportedValuesWhenUnknown
     )
 
+    /// What the server scores for `healthcomp.activity-score.v1`: each ring
+    /// capped at 200%, the day at 600. Display only: remote genesis and
+    /// `remoteEvidence` stay on `.healthKitCompatibility`, and the wire clamps
+    /// separately in `RemoteScoringWireV1.quantizePercent`.
+    public static let remoteWireV1 = ActivityScoringPolicy(
+        uncheckedQuantization: .exactAggregate,
+        perRingCap: 200,
+        pausedSummaryPolicy: .scoreReportedValuesWhenUnknown
+    )
+
     public let quantization: ScoreQuantizationPolicy
     public let perRingCap: Double?
     public let pausedSummaryPolicy: PausedSummaryPolicy

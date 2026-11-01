@@ -87,6 +87,33 @@ final class RemoteScoringGoldenTests: XCTestCase {
             XCTAssertNotEqual(mutated.wireContentSHA256, original.wireContentSHA256, vector.name)
         }
     }
+    func testRemoteWireV1PolicyMatchesWireAcceptedPoints() throws {
+        let id = UUID(uuidString: "00000000-0000-0000-0000-000000000001")!
+        for (move, exercise, stand, expected) in [(1500.0, 30.0, 12.0, 400.0), (420.0, 36.0, 9.0, 279.0)] {
+            let snapshot = ActivitySnapshot(
+                moveMode: .activeEnergyKilocalories, standMode: .standHours,
+                move: try ActivityRingReading(value: move, goal: 500),
+                exercise: try ActivityRingReading(value: exercise, goal: 30),
+                standOrRoll: try ActivityRingReading(value: stand, goal: 12),
+                pauseState: .running
+            )
+            let display = try XCTUnwrap(ActivityScoreCalculator.score(snapshot, policy: .remoteWireV1).availableScore)
+            let raw = try XCTUnwrap(ActivityScoreCalculator.score(snapshot, policy: .healthKitCompatibility).availableScore)
+            let wire = try RemoteScoreRevisionWireV1(
+                competitionID: id, participantID: id, dayOrdinal: 1,
+                moveMode: "activeEnergyKilocalories", standMode: "standHours",
+                moveBasisPoints: RemoteScoringWireV1.quantizePercent(raw.movePercentage),
+                exerciseBasisPoints: RemoteScoringWireV1.quantizePercent(raw.exercisePercentage),
+                standBasisPoints: RemoteScoringWireV1.quantizePercent(raw.standOrRollPercentage),
+                availabilityReason: "available",
+                scoringPolicyIdentity: RemoteScoringWireV1.policyIdentity, clientRevision: 1
+            )
+            let accepted = Double(try XCTUnwrap(wire.acceptedCentiPoints)) / 100
+            XCTAssertEqual(accepted, expected)
+            XCTAssertEqual(display.points, accepted, accuracy: 0.015)
+            if move == 1500 { XCTAssertEqual(display.movePercentage, 200) }
+        }
+    }
     func testClientValidationExcludesNilIDsUnknownAvailableAndServerMissing() throws {
         let nilID=UUID(uuidString:"00000000-0000-0000-0000-000000000000")!, id=UUID(uuidString:"00000000-0000-0000-0000-000000000001")!
         XCTAssertThrowsError(try score(competition:nilID,participant:id,stand:"standHours",reason:"available"))
