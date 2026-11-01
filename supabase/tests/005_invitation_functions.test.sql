@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = extensions, public, pg_catalog;
 
-select plan(42);
+select plan(43);
 
 select has_function('private', 'invitation_expiry_interval_v1', array[]::text[],
   'versioned invitation-expiry policy exists');
@@ -218,6 +218,20 @@ insert into public.competition_participants (competition_id, profile_id, role, s
   ('53000000-0000-0000-0000-000000000001', '52000000-0000-0000-0000-000000000001', 'creator', 'accepted'),
   ('53000000-0000-0000-0000-000000000001', '52000000-0000-0000-0000-000000000002', 'invitee', 'accepted');
 
+set local role service_role;
+select set_config('request.jwt.claims', '{"role":"service_role"}', true);
+select throws_ok(
+  $$select public.create_competition_invite(
+    decode(repeat('03', 32), 'hex'), 'Pacific/Kiritimati',
+    '53000000-0000-0000-0000-000000000001',
+    '51000000-0000-0000-0000-000000000002',
+    '54000000-0000-4000-8000-000000000005', 1::smallint, '52000000-0000-0000-0000-000000000001'
+  )$$,
+  'P0001', 'active_match_exists', 'a scheduled match blocks a new challenge between the pair');
+reset role;
+-- Synthetic time boundary: the primary match's week has ended.
+update public.competitions set start_day = start_day - 8
+where id = (select id from invite_test_context where name = 'primary');
 set local role service_role;
 select set_config('request.jwt.claims', '{"role":"service_role"}', true);
 insert into invite_test_context
