@@ -496,6 +496,29 @@ func competitionMuteIdentity(
     return competition.opponentIdentity
 }
 
+/// Explains amber once, the first time a scoreboard shows scores.
+struct CompetitionColorHint: View {
+    static let storageKey = "healthcomp.colorHintSeen"
+
+    @AppStorage(Self.storageKey) private var isSeen = false
+
+    var body: some View {
+        if !isSeen {
+            HStack(spacing: 8) {
+                SlantedBar().fill(Theme.youFill).frame(width: 18, height: 6)
+                Text("Amber is always you.")
+                    .font(.footnote)
+                    .foregroundStyle(Theme.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            // Color carries no meaning in VoiceOver; the sides already say
+            // "YOU".
+            .accessibilityHidden(true)
+            .onDisappear { isSeen = true }
+        }
+    }
+}
+
 private struct CompetitionScoreboardPanel: View {
     let competition: LocalCompetitionPresentation
     let todayDay: LocalCompetitionDayPresentation?
@@ -521,6 +544,7 @@ private struct CompetitionScoreboardPanel: View {
                         .accessibilityHidden(true)
                     periodRow
                 }
+                CompetitionColorHint()
             } else {
                 CompetitionScheduledSummary(competition: competition)
             }
