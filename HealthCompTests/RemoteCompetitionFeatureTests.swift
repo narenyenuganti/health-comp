@@ -533,6 +533,16 @@ final class RemoteCompetitionFeatureTests: XCTestCase {
             state([pendingChild]).rematchState(for: parent),
             .sent(challengeID: pendingChild.id, expiresAt: expiresAt, link: nil)
         )
+        let incomingChild = Self.presentation(
+            CompetitionID(UUID()),
+            lifecycle: .pending(direction: .incoming, createdAt: .distantPast, expiresAt: expiresAt),
+            rematchParentID: parent.id
+        )
+        XCTAssertEqual(state([incomingChild]).rematchState(for: parent), .received(incomingChild))
+        XCTAssertEqual(
+            state([incomingChild, pendingChild]).rematchState(for: parent),
+            .sent(challengeID: pendingChild.id, expiresAt: expiresAt, link: nil)
+        )
         let scheduledChild = Self.presentation(CompetitionID(UUID()), lifecycle: .scheduled, rematchParentID: parent.id)
         XCTAssertEqual(state([scheduledChild]).rematchState(for: parent), .next(scheduledChild))
         let expiredChild = Self.presentation(
@@ -549,6 +559,30 @@ final class RemoteCompetitionFeatureTests: XCTestCase {
         XCTAssertEqual(local.rematchState(for: parent), .available)
         local.commandIDsInFlight = [parent.id]
         XCTAssertEqual(local.rematchState(for: parent), .sending)
+    }
+
+    @MainActor
+    func testIncomingRematchIsNotTreatedAsSent() async {
+        let parent = Self.presentation(CompetitionID(UUID()))
+        let incoming = Self.presentation(
+            CompetitionID(UUID()),
+            lifecycle: .pending(direction: .incoming, createdAt: .distantPast, expiresAt: nil),
+            rematchParentID: parent.id
+        )
+        let recorder = InviteCreationRecorder(results: [])
+        let store = TestStore(initialState: CompetitionFeature.State(
+            publication: .remote(revision: 1, competitions: [parent, incoming])
+        )) {
+            CompetitionFeature()
+        } withDependencies: {
+            $0.competitionClient = recorder.client
+        }
+        XCTAssertEqual(store.state.rematchState(for: parent), .received(incoming))
+        // Their challenge waits for an answer; a rematch of your own isn't sent.
+        await store.send(.rematchTapped(parent.id))
+        XCTAssertEqual(recorder.requestCount, 0)
+        XCTAssertNil(store.state.inviteLinks[incoming.id])
+        await store.finish()
     }
 
     @MainActor

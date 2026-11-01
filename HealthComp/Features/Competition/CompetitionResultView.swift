@@ -489,6 +489,17 @@ struct CompetitionResultView: View {
         case let .sent(challengeID, expiresAt, link):
             sentRow(challengeID: challengeID, expiresAt: expiresAt, link: link)
 
+        case let .received(challenge):
+            let text = competitionReceivedRematchText(challenge, locale: locale, timeZone: timeZone)
+            rematchRow(
+                title: text.title,
+                detail: text.detail,
+                hint: "Opens the challenge",
+                identifier: "competition.rematch.received"
+            ) {
+                openCompetition(challenge.id)
+            }
+
         case let .next(child):
             let text = nextRowText(child)
             rematchRow(
@@ -688,7 +699,7 @@ struct CompetitionResultView: View {
             source == .remoteParticipants ? "Rematch sent" : "Rematch ready"
         case let .failed(failure):
             competitionInviteFailureText(failure, opponentName: opponentName)
-        case .available, .sending, .next, .alreadyChallenged:
+        case .available, .sending, .received, .next, .alreadyChallenged:
             nil
         }
     }
@@ -900,4 +911,18 @@ private struct FinalScoreOwner: View {
         .foregroundStyle(tint)
         .frame(maxWidth: .infinity)
     }
+}
+
+/// "{Name} sent a rematch", with its expiry when known.
+func competitionReceivedRematchText(
+    _ challenge: LocalCompetitionPresentation,
+    locale: Locale = .current,
+    timeZone: TimeZone = .current
+) -> (title: String, detail: String?) {
+    (
+        "\(challenge.opponentDisplayName) sent a rematch",
+        challenge.pendingExpiresAt.map {
+            "Expires \(competitionMomentText($0, now: challenge.evaluatedAt, locale: locale, timeZone: timeZone))"
+        }
+    )
 }

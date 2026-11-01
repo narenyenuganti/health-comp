@@ -1668,6 +1668,38 @@ final class CompetitionPresentationTests: XCTestCase {
         )
     }
 
+    func testReceivedRematchCopy() {
+        func challenge(expiresAt: Date?) -> LocalCompetitionPresentation {
+            LocalCompetitionPresentation(
+                id: CompetitionID(UUID()),
+                ownerDisplayName: "Naren",
+                opponentDisplayName: "Alex",
+                lifecycle: .pending(direction: .incoming, createdAt: .distantPast, expiresAt: expiresAt),
+                acceptedConfiguration: nil,
+                userPoints: 0,
+                opponentPoints: 0,
+                days: [],
+                currentDayOrdinal: nil,
+                lastRefresh: nil,
+                tally: nil,
+                terminalResult: nil,
+                evaluatedAt: Date(timeIntervalSince1970: 1_786_867_200)
+            )
+        }
+        let locale = Locale(identifier: "en_US")
+        let utc = TimeZone(identifier: "UTC")!
+        let text = competitionReceivedRematchText(
+            challenge(expiresAt: Date(timeIntervalSince1970: 1_786_867_200 + 14 * 3_600)),
+            locale: locale,
+            timeZone: utc
+        )
+        XCTAssertEqual(text.title, "Alex sent a rematch")
+        XCTAssertEqual(text.detail, "Expires Sun 10:00 PM")
+        let undated = competitionReceivedRematchText(challenge(expiresAt: nil), locale: locale, timeZone: utc)
+        XCTAssertEqual(undated.title, "Alex sent a rematch")
+        XCTAssertNil(undated.detail)
+    }
+
     func testRecipientAndFailureCopy() {
         XCTAssertNil(competitionRecipientErrorText(.idle))
         XCTAssertNil(competitionRecipientErrorText(.lookingUp))

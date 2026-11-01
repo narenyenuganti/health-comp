@@ -52,6 +52,8 @@ struct CompetitionFeature {
     enum CompetitionRematchState: Equatable, Sendable {
         case available, sending
         case sent(challengeID: CompetitionID, expiresAt: Date?, link: InviteLinkState?)
+        /// The other person rematched you; it opens their challenge.
+        case received(LocalCompetitionPresentation)
         case next(LocalCompetitionPresentation)
         case alreadyChallenged(LocalCompetitionPresentation)
         case failed(InviteCreationFailure)
@@ -900,17 +902,27 @@ extension CompetitionFeature.State {
             default: false
             }
         }
-        if let child = children.first(where: \.isPending)
+        func isPendingChild(_ c: LocalCompetitionPresentation, _ direction: InvitationDirection) -> Bool {
+            if case .pending(direction, _, _) = c.lifecycle { return true }
+            return false
+        }
+        // Either person can rematch; only your own pending rematch has a link here.
+        if let child = children.first(where: { isPendingChild($0, .outgoing) })
+            ?? children.first(where: { isPendingChild($0, .incoming) })
             ?? children.first(where: isUnderway)
             ?? children.first {
-            if case let .pending(_, _, expiresAt) = child.lifecycle {
+            switch child.lifecycle {
+            case let .pending(.outgoing, _, expiresAt):
                 return .sent(
                     challengeID: child.id,
                     expiresAt: expiresAt,
                     link: inviteLinks[child.id]
                 )
+            case .pending(.incoming, _, _):
+                return .received(child)
+            default:
+                return .next(child)
             }
-            return .next(child)
         }
         guard publication?.source == .remoteParticipants else {
             return isCommandInFlight(parent.id) ? .sending : .available
