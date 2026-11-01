@@ -10,7 +10,7 @@ on:
       - "!docs/**"
       - "!web/**"
       - "!supabase/**"
-      - "!**.md"
+      - "!README.md"
       - "supabase/tests/fixtures/**"
   # Squash merges land code the PR run already passed, so main runs nightly
   # (catching merges after main moved) and on demand for exact-main evidence.
@@ -23,7 +23,8 @@ permissions:
 
 concurrency:
   group: ios-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Newer pull request pushes replace older runs; runs on main queue instead.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 env:
   DEVELOPER_DIR: /Applications/Xcode_16.4.app/Contents/Developer

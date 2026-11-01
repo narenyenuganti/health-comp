@@ -101,8 +101,9 @@ This is a scope decision, not a runtime receipt or production-readiness claim.
 ## iOS CI evidence on main — November 1, 2026
 
 iOS CI no longer runs on every push to main. It runs on pull requests that
-change app, test, script or project files, nightly on main at 09:17 UTC, and on
-demand. The merged-main and exact-main iOS runs cited in earlier checkpoints
+change anything outside docs/, web/, supabase/ (except shared test fixtures)
+and top-level Markdown, nightly on main at 09:17 UTC, and on demand. The
+merged-main and exact-main iOS runs cited in earlier checkpoints
 came from the old push trigger. For new exact-main iOS evidence, start a run
 after the merge with `gh workflow run ci.yml --ref main` and cite that run, or a
 nightly run, only when its head commit is the cited commit. Each run still
