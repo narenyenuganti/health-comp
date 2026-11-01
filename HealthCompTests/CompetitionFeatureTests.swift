@@ -800,6 +800,28 @@ final class CompetitionFeatureTests: XCTestCase {
         )
     }
 
+    @MainActor
+    func testSceneBecameActiveRereadsNotificationAuthorization() async {
+        var client = CompetitionReducerClientRecorder()
+            .client(returning: publication(revision: 1))
+        client.loadNotificationAuthorizationState = { .denied }
+        let store = TestStore(
+            initialState: CompetitionFeature.State(
+                notificationAuthorizationState: .authorized
+            )
+        ) {
+            CompetitionFeature()
+        } withDependencies: {
+            $0.competitionClient = client
+        }
+
+        await store.send(.sceneBecameActive)
+        await store.receive(.notificationAuthorizationLoaded(.denied)) {
+            $0.notificationAuthorizationState = .denied
+        }
+        await store.finish()
+    }
+
     func testScoreVisibilityBeginsOnlyWhenDayOneStarts() {
         let pendingDate = Date(timeIntervalSinceReferenceDate: 1)
         XCTAssertFalse(

@@ -30,12 +30,9 @@ final class MainTabFeatureTests: XCTestCase {
     }
 
     @MainActor
-    func testOnboardingExplainsHealthAndNotificationsBeforeTheCompetitionStarts()
-        async {
+    func testOnboardingAsksOnlyForHealthBeforeTheCompetitionStarts() async {
         let recorder = MainTabLifecycleRecorder()
-        let permissions = PermissionOnboardingRecorder(
-            steps: [.health, .notifications]
-        )
+        let permissions = PermissionOnboardingRecorder(health: .notRequested)
         let store = TestStore(initialState: MainTabFeature.State()) {
             MainTabFeature()
         } withDependencies: {
@@ -44,24 +41,101 @@ final class MainTabFeatureTests: XCTestCase {
         }
 
         await store.send(.task)
-        await store.receive(.onboardingChecked([.health, .notifications])) {
+        await store.receive(.onboardingChecked([.health])) {
             $0.onboarding = MainTabFeature.PermissionOnboarding(
-                steps: [.health, .notifications]
+                steps: [.health]
             )
         }
-        // Health can't be skipped, and prompts toggling the scene don't
-        // reach the competition before it starts.
-        await store.send(.onboardingNotNowTapped)
+        // Prompts toggling the scene don't reach the competition before it
+        // starts.
         await store.send(.scenePhaseChanged(.active))
 
         await store.send(.onboardingContinueTapped) {
             $0.onboarding?.isRequesting = true
         }
         await store.receive(.onboardingStepCompleted) {
-            $0.onboarding?.index = 1
-            $0.onboarding?.isRequesting = false
+            $0.onboarding = nil
         }
-        XCTAssertEqual(recorder.startCount, 0)
+        await store.receive(.competition(.task))
+        await store.finish()
+
+        XCTAssertEqual(permissions.calls, ["health"])
+        XCTAssertEqual(recorder.startCount, 1)
+        XCTAssertEqual(recorder.reconcileTriggers, [])
+    }
+
+    func testOnboardingShowsOnlyPermissionsIOSHasNotAskedFor() {
+        XCTAssertEqual(
+            PermissionOnboardingClient.steps(health: .notRequested),
+            [.health]
+        )
+        XCTAssertEqual(PermissionOnboardingClient.steps(health: .requested), [])
+        XCTAssertEqual(PermissionOnboardingClient.steps(health: .unavailable), [])
+    }
+
+    @MainActor
+    func testClaimLinkDuringOnboardingShowsChallengeBeforeHealth() async throws {
+        for routeFirst in [true, false] {
+            try await assertChallengeBeforeHealth(routeFirst: routeFirst)
+        }
+    }
+
+    @MainActor
+    private func assertChallengeBeforeHealth(routeFirst: Bool) async throws {
+        let claimedID = competitionID("81000000-0000-0000-0000-000000000031")
+        let token = try XCTUnwrap(
+            CompetitionInviteClaimToken(
+                rawValue: "JJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJJ"
+            )
+        )
+        let envelope = CompetitionRouteEnvelope(
+            sequence: 7,
+            route: .claimInvite(token)
+        )
+        let claims = MainTabClaimRecorder(
+            expectedToken: token,
+            results: [.success(claimedID, expectedRevision: 2)]
+        )
+        let permissions = PermissionOnboardingRecorder(health: .notRequested)
+        let routing = MainTabRoutingRecorder()
+        let store = TestStore(initialState: MainTabFeature.State()) {
+            MainTabFeature()
+        } withDependencies: {
+            $0.competitionClient = claims.client
+            $0.competitionRoutingClient = routing.client
+            $0.permissionOnboardingClient = permissions.client
+            $0.continuousClock = TestClock()
+        }
+
+        if routeFirst {
+            await store.send(.routeReceived(envelope)) {
+                $0.pendingClaimRoute = envelope
+            }
+            await store.send(.task)
+            await store.receive(.onboardingChecked([.health])) {
+                $0.onboarding = MainTabFeature.PermissionOnboarding(
+                    steps: [.health]
+                )
+                $0.inviteClaimStatus = .ready
+            }
+        } else {
+            await store.send(.task)
+            await store.receive(.onboardingChecked([.health])) {
+                $0.onboarding = MainTabFeature.PermissionOnboarding(
+                    steps: [.health]
+                )
+            }
+            await store.send(.routeReceived(envelope)) {
+                $0.pendingClaimRoute = envelope
+                $0.inviteClaimStatus = .ready
+            }
+        }
+
+        await store.send(.acceptClaimTapped) {
+            $0.acceptsClaimOnStart = true
+            $0.inviteClaimStatus = .idle
+        }
+        XCTAssertEqual(claims.requestCount, 0)
 
         await store.send(.onboardingContinueTapped) {
             $0.onboarding?.isRequesting = true
@@ -70,76 +144,589 @@ final class MainTabFeatureTests: XCTestCase {
             $0.onboarding = nil
         }
         await store.receive(.competition(.task))
-        await store.finish()
 
-        XCTAssertEqual(permissions.calls, ["health", "notifications"])
-        XCTAssertEqual(recorder.startCount, 1)
-        XCTAssertEqual(recorder.reconcileTriggers, [])
+        let first = publication(revision: 1, visibleIDs: [])
+        await store.send(.competition(.publication(first))) {
+            $0.competition.publication = first
+            $0.acceptsClaimOnStart = false
+        }
+        await store.receive(.processPendingClaim) {
+            $0.claimRouteSequenceInFlight = envelope.sequence
+            $0.inviteClaimStatus = .claiming
+        }
+        await store.receive(
+            .claimInviteResponse(
+                sequence: envelope.sequence,
+                .success(claimedID, expectedRevision: 2)
+            )
+        ) {
+            $0.pendingClaimRoute = nil
+            $0.claimRouteSequenceInFlight = nil
+            $0.lastHandledClaimRouteSequence = envelope.sequence
+            $0.pendingClaimNavigation = .init(
+                competitionID: claimedID,
+                expectedPublicationRevision: 2
+            )
+            $0.inviteClaimStatus = .waitingForCompetition
+        }
+        XCTAssertEqual(claims.requestCount, 1)
+
+        let acknowledged = publication(revision: 2, visibleID: claimedID)
+        await store.send(.competition(.publication(acknowledged))) {
+            $0.competition.publication = acknowledged
+            $0.path = [claimedID]
+            $0.pendingClaimNavigation = nil
+            $0.inviteClaimStatus = .idle
+        }
+        XCTAssertEqual(permissions.calls, ["health"])
+
+        await store.send(.stop)
+        await store.receive(.competition(.stop))
+        await store.finish()
     }
 
     @MainActor
-    func testNotNowDefersNotificationsAndStartsTheCompetition() async {
+    func testDecliningChallengeDuringOnboardingKeepsHealthStep() async throws {
+        let envelope = try claimEnvelope(sequence: 7)
+        let routing = MainTabRoutingRecorder()
+        let onboarding = MainTabFeature.PermissionOnboarding(steps: [.health])
+        let store = TestStore(
+            initialState: MainTabFeature.State(onboarding: onboarding)
+        ) {
+            MainTabFeature()
+        } withDependencies: {
+            $0.competitionRoutingClient = routing.client
+        }
+
+        await store.send(.routeReceived(envelope)) {
+            $0.pendingClaimRoute = envelope
+            $0.inviteClaimStatus = .ready
+        }
+        await store.send(.declineClaimTapped) {
+            $0.pendingClaimRoute = nil
+            $0.lastHandledClaimRouteSequence = envelope.sequence
+            $0.inviteClaimStatus = .idle
+        }
+        await store.finish()
+
+        XCTAssertEqual(routing.consumedSequences, [envelope.sequence])
+        XCTAssertEqual(store.state.onboarding, onboarding)
+        XCTAssertFalse(store.state.acceptsClaimOnStart)
+    }
+
+    @MainActor
+    func testNewerClaimLinkClearsEarlierAcceptance() async throws {
+        let first = try claimEnvelope(sequence: 7)
+        let newer = try claimEnvelope(sequence: 8)
+        let store = TestStore(
+            initialState: MainTabFeature.State(
+                onboarding: MainTabFeature.PermissionOnboarding(steps: [.health])
+            )
+        ) {
+            MainTabFeature()
+        }
+
+        await store.send(.routeReceived(first)) {
+            $0.pendingClaimRoute = first
+            $0.inviteClaimStatus = .ready
+        }
+        await store.send(.acceptClaimTapped) {
+            $0.acceptsClaimOnStart = true
+            $0.inviteClaimStatus = .idle
+        }
+        await store.send(.routeReceived(newer)) {
+            $0.pendingClaimRoute = newer
+            $0.acceptsClaimOnStart = false
+            $0.inviteClaimStatus = .ready
+        }
+    }
+
+    @MainActor
+    func testClaimLinkFromBeforeNewAccountShowsWrongAccountWithoutClaiming()
+        async throws {
+        let early = try claimEnvelope(sequence: 5)
+        let later = try claimEnvelope(sequence: 6)
+        let routing = MainTabRoutingRecorder()
+        let claims = MainTabClaimRecorder(
+            expectedToken: try XCTUnwrap(
+                CompetitionInviteClaimToken(rawValue: Self.claimToken)
+            ),
+            results: []
+        )
+        let onboarding = MainTabFeature.PermissionOnboarding(steps: [.health])
+        var initial = MainTabFeature.State(onboarding: onboarding)
+        initial.claimLinksBeforeAccountThrough = 5
+        let store = TestStore(initialState: initial) {
+            MainTabFeature()
+        } withDependencies: {
+            $0.competitionClient = claims.client
+            $0.competitionRoutingClient = routing.client
+        }
+
+        await store.send(.routeReceived(early)) {
+            $0.lastHandledClaimRouteSequence = 5
+            $0.inviteClaimStatus = .wrongAccount
+        }
+        await store.finish()
+        XCTAssertEqual(routing.consumedSequences, [5])
+        XCTAssertEqual(claims.requestCount, 0)
+        XCTAssertEqual(store.state.onboarding, onboarding)
+        XCTAssertFalse(store.state.acceptsClaimOnStart)
+
+        await store.send(.dismissClaimStatus) {
+            $0.inviteClaimStatus = .idle
+        }
+        await store.send(.routeReceived(later)) {
+            $0.pendingClaimRoute = later
+            $0.inviteClaimStatus = .ready
+        }
+    }
+
+    @MainActor
+    func testNotificationPromptWaitsForLiveOrPendingMatchThenDefersOnNotNow()
+        async {
+        let created = Date(timeIntervalSinceReferenceDate: 1)
+        let lifecycles: [LocalCompetitionLifecyclePresentation] = [
+            .pending(direction: .incoming, createdAt: created, expiresAt: nil),
+            .pending(direction: .outgoing, createdAt: created, expiresAt: nil),
+            .scheduled,
+        ]
+        for lifecycle in lifecycles {
+            let clock = TestClock()
+            let permissions = PermissionOnboardingRecorder()
+            let store = TestStore(
+                initialState: MainTabFeature.State(
+                    competition: CompetitionFeature.State(
+                        notificationAuthorizationState: .notDetermined
+                    )
+                )
+            ) {
+                MainTabFeature()
+            } withDependencies: {
+                $0.continuousClock = clock
+                $0.permissionOnboardingClient = permissions.client
+            }
+
+            let closedOnly = publication(
+                revision: 1,
+                visibleIDs: [
+                    competitionID("81000000-0000-0000-0000-000000000041"),
+                ],
+                lifecycle: .expired(at: created, direction: .outgoing)
+            )
+            await store.send(.competition(.publication(closedOnly))) {
+                $0.competition.publication = closedOnly
+            }
+            let declinedOnly = publication(
+                revision: 2,
+                visibleID: competitionID("81000000-0000-0000-0000-000000000042"),
+                lifecycle: .declined(at: created, direction: .incoming)
+            )
+            await store.send(.competition(.publication(declinedOnly))) {
+                $0.competition.publication = declinedOnly
+            }
+            let finishedOnly = publication(
+                revision: 3,
+                visibleID: competitionID("81000000-0000-0000-0000-000000000043"),
+                lifecycle: .completed(
+                    outcome: .win,
+                    basis: .stableAcrossPostBoundaryReads,
+                    completedAt: created
+                )
+            )
+            await store.send(.competition(.publication(finishedOnly))) {
+                $0.competition.publication = finishedOnly
+            }
+
+            let withPerson = publication(
+                revision: 4,
+                visibleID: competitionID("81000000-0000-0000-0000-000000000044"),
+                lifecycle: lifecycle
+            )
+            await store.send(.competition(.publication(withPerson))) {
+                $0.competition.publication = withPerson
+                $0.notificationPrompt = .scheduled
+            }
+            await clock.advance(by: .milliseconds(600))
+            await store.receive(.notificationPromptReady) {
+                $0.notificationPrompt = .presented
+            }
+            await store.send(.notificationPromptNotNowTapped) {
+                $0.notificationPrompt = .finished
+            }
+            await store.finish()
+            XCTAssertEqual(permissions.calls, ["deferNotifications"])
+
+            let later = publication(
+                revision: 5,
+                visibleID: competitionID("81000000-0000-0000-0000-000000000045"),
+                lifecycle: .active(dayOrdinal: 2)
+            )
+            await store.send(.competition(.publication(later))) {
+                $0.competition.publication = later
+            }
+            await store.finish()
+        }
+    }
+
+    @MainActor
+    func testNotificationPromptTurnOnGoesThroughCompetitionAndCloses() async {
+        var client = MainTabLifecycleRecorder().client
+        client.requestNotificationAuthorization = { .authorized }
+        var initial = MainTabFeature.State(
+            competition: CompetitionFeature.State(
+                notificationAuthorizationState: .notDetermined
+            )
+        )
+        initial.notificationPrompt = .presented
+        let store = TestStore(initialState: initial) {
+            MainTabFeature()
+        } withDependencies: {
+            $0.competitionClient = client
+        }
+
+        await store.send(.notificationPromptTurnOnTapped)
+        await store.receive(.competition(.enableNotificationsTapped)) {
+            $0.competition.notificationAuthorizationRequestIsInFlight = true
+        }
+        await store.receive(
+            .competition(.notificationAuthorizationRequestFinished(.authorized))
+        ) {
+            $0.competition.notificationAuthorizationState = .authorized
+            $0.competition.notificationAuthorizationRequestIsInFlight = false
+            $0.notificationPrompt = .finished
+        }
+        await store.finish()
+    }
+
+    @MainActor
+    func testNotificationPromptSkipsWhenDeferredOrDecided() async {
+        let match = publication(
+            revision: 1,
+            visibleID: competitionID("81000000-0000-0000-0000-000000000051")
+        )
+        let clock = TestClock()
+        let deferred = TestStore(
+            initialState: MainTabFeature.State(
+                competition: CompetitionFeature.State(
+                    notificationAuthorizationState: .notDetermined
+                )
+            )
+        ) {
+            MainTabFeature()
+        } withDependencies: {
+            $0.continuousClock = clock
+            $0.permissionOnboardingClient = PermissionOnboardingRecorder(
+                deferred: true
+            ).client
+        }
+        await deferred.send(.competition(.publication(match))) {
+            $0.competition.publication = match
+            $0.notificationPrompt = .scheduled
+        }
+        await clock.advance(by: .milliseconds(600))
+        await deferred.receive(.notificationPromptSkipped) {
+            $0.notificationPrompt = .finished
+        }
+        await deferred.finish()
+
+        let decided: [CompetitionNotificationAuthorizationState?] = [.denied, nil]
+        for authorization in decided {
+            let store = TestStore(
+                initialState: MainTabFeature.State(
+                    competition: CompetitionFeature.State(
+                        notificationAuthorizationState: authorization
+                    )
+                )
+            ) {
+                MainTabFeature()
+            }
+            await store.send(.competition(.publication(match))) {
+                $0.competition.publication = match
+            }
+            await store.finish()
+        }
+    }
+
+    @MainActor
+    func testNotificationPromptWaitsForClaimSheetAndOnboarding() async throws {
+        let match = publication(
+            revision: 1,
+            visibleID: competitionID("81000000-0000-0000-0000-000000000061")
+        )
+        let authorized = CompetitionFeature.State(
+            notificationAuthorizationState: .notDetermined
+        )
+        let pendingClaim = try claimEnvelope(sequence: 3)
+        let claimSheet = TestStore(
+            initialState: MainTabFeature.State(
+                competition: authorized,
+                pendingClaimRoute: pendingClaim,
+                inviteClaimStatus: .ready
+            )
+        ) {
+            MainTabFeature()
+        }
+        await claimSheet.send(.competition(.publication(match))) {
+            $0.competition.publication = match
+        }
+
+        let onboarding = TestStore(
+            initialState: MainTabFeature.State(
+                competition: authorized,
+                onboarding: MainTabFeature.PermissionOnboarding(steps: [.health])
+            )
+        ) {
+            MainTabFeature()
+        }
+        await onboarding.send(.competition(.publication(match))) {
+            $0.competition.publication = match
+        }
+
+        var scheduled = MainTabFeature.State(
+            competition: authorized,
+            inviteClaimStatus: .ready
+        )
+        scheduled.notificationPrompt = .scheduled
+        let sheetUp = TestStore(initialState: scheduled) {
+            MainTabFeature()
+        }
+        await sheetUp.send(.notificationPromptReady) {
+            $0.notificationPrompt = .unscheduled
+        }
+    }
+
+    @MainActor
+    func testNotificationPromptWaitsForChallengeSheet() async {
+        let clock = TestClock()
+        let store = TestStore(
+            initialState: MainTabFeature.State(
+                competition: CompetitionFeature.State(
+                    notificationAuthorizationState: .notDetermined
+                )
+            )
+        ) {
+            MainTabFeature()
+        } withDependencies: {
+            $0.continuousClock = clock
+            $0.permissionOnboardingClient = PermissionOnboardingRecorder().client
+        }
+        let sent = publication(
+            revision: 1,
+            visibleID: competitionID("81000000-0000-0000-0000-000000000071"),
+            lifecycle: .pending(
+                direction: .outgoing,
+                createdAt: Date(timeIntervalSinceReferenceDate: 1),
+                expiresAt: nil
+            )
+        )
+
+        await store.send(.challengeSheetVisibilityChanged(true)) {
+            $0.isChallengeSheetOpen = true
+        }
+        await store.send(.competition(.publication(sent))) {
+            $0.competition.publication = sent
+        }
+        await store.send(.challengeSheetVisibilityChanged(false)) {
+            $0.isChallengeSheetOpen = false
+            $0.notificationPrompt = .scheduled
+        }
+        await clock.advance(by: .milliseconds(600))
+        await store.receive(.notificationPromptReady) {
+            $0.notificationPrompt = .presented
+        }
+        await store.finish()
+    }
+
+    @MainActor
+    func testNotificationPromptWaitsForAccountSheetAndRecoversADroppedPrompt()
+        async {
+        let clock = TestClock()
+        let match = publication(
+            revision: 1,
+            visibleID: competitionID("81000000-0000-0000-0000-000000000081"),
+            lifecycle: .active(dayOrdinal: 2)
+        )
+        let store = TestStore(
+            initialState: MainTabFeature.State(
+                competition: CompetitionFeature.State(
+                    notificationAuthorizationState: .notDetermined
+                )
+            )
+        ) {
+            MainTabFeature()
+        } withDependencies: {
+            $0.continuousClock = clock
+            $0.permissionOnboardingClient = PermissionOnboardingRecorder().client
+        }
+
+        await store.send(.accountPresentationChanged(true)) {
+            $0.isAccountPresented = true
+        }
+        await store.send(.competition(.publication(match))) {
+            $0.competition.publication = match
+        }
+        await store.send(.accountPresentationChanged(false)) {
+            $0.isAccountPresented = false
+            $0.notificationPrompt = .scheduled
+        }
+        // Account opens during the delay: the ready check backs off.
+        await store.send(.accountPresentationChanged(true)) {
+            $0.isAccountPresented = true
+        }
+        await clock.advance(by: .milliseconds(600))
+        await store.receive(.notificationPromptReady) {
+            $0.notificationPrompt = .unscheduled
+        }
+        await store.send(.accountPresentationChanged(false)) {
+            $0.isAccountPresented = false
+            $0.notificationPrompt = .scheduled
+        }
+        await clock.advance(by: .milliseconds(600))
+        await store.receive(.notificationPromptReady) {
+            $0.notificationPrompt = .presented
+        }
+
+        // A sheet opening while the prompt is "presented" means the
+        // present was dropped; it retries when the sheet closes.
+        await store.send(.accountPresentationChanged(true)) {
+            $0.isAccountPresented = true
+            $0.notificationPrompt = .unscheduled
+        }
+        await store.send(.accountPresentationChanged(false)) {
+            $0.isAccountPresented = false
+            $0.notificationPrompt = .scheduled
+        }
+        await clock.advance(by: .milliseconds(600))
+        await store.receive(.notificationPromptReady) {
+            $0.notificationPrompt = .presented
+        }
+        await store.send(.challengeSheetVisibilityChanged(true)) {
+            $0.isChallengeSheetOpen = true
+            $0.notificationPrompt = .unscheduled
+        }
+        await store.finish()
+    }
+
+    @MainActor
+    func testAcceptedChallengeSchedulesNotificationPromptOnlyAfterTheClaim()
+        async throws {
+        let claimedID = competitionID("81000000-0000-0000-0000-000000000091")
+        let liveID = competitionID("81000000-0000-0000-0000-000000000092")
+        let token = try XCTUnwrap(
+            CompetitionInviteClaimToken(rawValue: Self.claimToken)
+        )
+        let envelope = try claimEnvelope(sequence: 9)
+        let claims = MainTabClaimRecorder(
+            expectedToken: token,
+            results: [.success(claimedID, expectedRevision: 2)]
+        )
+        let clock = TestClock()
+        var initial = MainTabFeature.State(
+            competition: CompetitionFeature.State(
+                notificationAuthorizationState: .notDetermined
+            ),
+            pendingClaimRoute: envelope
+        )
+        initial.acceptsClaimOnStart = true
+        let store = TestStore(initialState: initial) {
+            MainTabFeature()
+        } withDependencies: {
+            $0.competitionClient = claims.client
+            $0.competitionRoutingClient = MainTabRoutingRecorder().client
+            $0.continuousClock = clock
+            $0.permissionOnboardingClient = PermissionOnboardingRecorder().client
+        }
+
+        // A live match is already there, but the claim sheet is about to
+        // show, so the prompt waits.
+        let first = publication(
+            revision: 1,
+            visibleID: liveID,
+            lifecycle: .active(dayOrdinal: 3)
+        )
+        await store.send(.competition(.publication(first))) {
+            $0.competition.publication = first
+            $0.acceptsClaimOnStart = false
+        }
+        await store.receive(.processPendingClaim) {
+            $0.claimRouteSequenceInFlight = envelope.sequence
+            $0.inviteClaimStatus = .claiming
+        }
+        await store.receive(
+            .claimInviteResponse(
+                sequence: envelope.sequence,
+                .success(claimedID, expectedRevision: 2)
+            )
+        ) {
+            $0.pendingClaimRoute = nil
+            $0.claimRouteSequenceInFlight = nil
+            $0.lastHandledClaimRouteSequence = envelope.sequence
+            $0.pendingClaimNavigation = .init(
+                competitionID: claimedID,
+                expectedPublicationRevision: 2
+            )
+            $0.inviteClaimStatus = .waitingForCompetition
+        }
+
+        let acknowledged = publication(
+            revision: 2,
+            visibleIDs: [liveID, claimedID],
+            lifecycle: .scheduled
+        )
+        await store.send(.competition(.publication(acknowledged))) {
+            $0.competition.publication = acknowledged
+            $0.path = [claimedID]
+            $0.pendingClaimNavigation = nil
+            $0.inviteClaimStatus = .idle
+            $0.notificationPrompt = .scheduled
+        }
+        await clock.advance(by: .milliseconds(600))
+        await store.receive(.notificationPromptReady) {
+            $0.notificationPrompt = .presented
+        }
+        await store.finish()
+    }
+
+    @MainActor
+    func testHealthAccessRefreshesOnAccountAndForeground() async {
         let recorder = MainTabLifecycleRecorder()
-        let permissions = PermissionOnboardingRecorder(steps: [.notifications])
         let store = TestStore(initialState: MainTabFeature.State()) {
             MainTabFeature()
         } withDependencies: {
             $0.localCompetitionClient = recorder.client
+            $0.permissionOnboardingClient = PermissionOnboardingRecorder().client
+        }
+
+        await store.send(.scenePhaseChanged(.active))
+        await store.receive(.competition(.sceneBecameActive))
+
+        await store.send(.refreshHealthAccess)
+        await store.receive(.healthAccessLoaded(.requested)) {
+            $0.healthAccess = .requested
+        }
+        await store.send(.scenePhaseChanged(.active))
+        await store.receive(.competition(.sceneBecameActive))
+        await store.receive(.refreshHealthAccess)
+        await store.receive(.healthAccessLoaded(.requested))
+        await store.finish()
+    }
+
+    @MainActor
+    func testConnectHealthRequestsAccessThenRereads() async {
+        let permissions = PermissionOnboardingRecorder(health: .notRequested)
+        let store = TestStore(initialState: MainTabFeature.State()) {
+            MainTabFeature()
+        } withDependencies: {
             $0.permissionOnboardingClient = permissions.client
         }
 
-        await store.send(.task)
-        await store.receive(.onboardingChecked([.notifications])) {
-            $0.onboarding = MainTabFeature.PermissionOnboarding(
-                steps: [.notifications]
-            )
+        await store.send(.connectHealthTapped)
+        await store.receive(.healthAccessLoaded(.notRequested)) {
+            $0.healthAccess = .notRequested
         }
-        await store.send(.onboardingNotNowTapped) {
-            $0.onboarding?.isRequesting = true
-        }
-        await store.receive(.onboardingStepCompleted) {
-            $0.onboarding = nil
-        }
-        await store.receive(.competition(.task))
         await store.finish()
-
-        XCTAssertEqual(permissions.calls, ["deferNotifications"])
-        XCTAssertEqual(recorder.startCount, 1)
-    }
-
-    func testOnboardingShowsOnlyPermissionsIOSHasNotAskedFor() {
-        XCTAssertEqual(
-            PermissionOnboardingClient.steps(
-                healthNeedsRequest: true,
-                notificationState: .notDetermined,
-                notificationsDeferred: false
-            ),
-            [.health, .notifications]
-        )
-        XCTAssertEqual(
-            PermissionOnboardingClient.steps(
-                healthNeedsRequest: true,
-                notificationState: .denied,
-                notificationsDeferred: false
-            ),
-            [.health]
-        )
-        XCTAssertEqual(
-            PermissionOnboardingClient.steps(
-                healthNeedsRequest: false,
-                notificationState: .notDetermined,
-                notificationsDeferred: true
-            ),
-            []
-        )
-        XCTAssertEqual(
-            PermissionOnboardingClient.steps(
-                healthNeedsRequest: false,
-                notificationState: .authorized,
-                notificationsDeferred: false
-            ),
-            []
-        )
+        XCTAssertEqual(permissions.calls, ["health"])
     }
 
     @MainActor
@@ -196,10 +783,16 @@ final class MainTabFeatureTests: XCTestCase {
     @MainActor
     func testStopClearsInFlightInviteClaimState() async {
         let store = TestStore(
-            initialState: MainTabFeature.State(
-                claimRouteSequenceInFlight: 42,
-                inviteClaimStatus: .claiming
-            )
+            initialState: {
+                var state = MainTabFeature.State(
+                    claimRouteSequenceInFlight: 42,
+                    inviteClaimStatus: .claiming
+                )
+                state.acceptsClaimOnStart = true
+                state.isChallengeSheetOpen = true
+                state.notificationPrompt = .presented
+                return state
+            }()
         ) {
             MainTabFeature()
         }
@@ -207,6 +800,9 @@ final class MainTabFeatureTests: XCTestCase {
         await store.send(.stop) {
             $0.claimRouteSequenceInFlight = nil
             $0.inviteClaimStatus = .idle
+            $0.acceptsClaimOnStart = false
+            $0.isChallengeSheetOpen = false
+            $0.notificationPrompt = .unscheduled
         }
         await store.receive(.competition(.stop))
         await store.finish()
@@ -1014,6 +1610,17 @@ final class MainTabFeatureTests: XCTestCase {
     private func competitionID(_ value: String) -> CompetitionID {
         CompetitionID(UUID(uuidString: value)!)
     }
+
+    private static let claimToken = "KKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKK"
+
+    private func claimEnvelope(sequence: UInt64) throws -> CompetitionRouteEnvelope {
+        CompetitionRouteEnvelope(
+            sequence: sequence,
+            route: .claimInvite(
+                try XCTUnwrap(CompetitionInviteClaimToken(rawValue: Self.claimToken))
+            )
+        )
+    }
 }
 
 private final class MainTabRoutingRecorder: @unchecked Sendable {
@@ -1094,25 +1701,25 @@ private final class MainTabLifecycleRecorder: @unchecked Sendable {
 
 private final class PermissionOnboardingRecorder: @unchecked Sendable {
     private let lock = NSLock()
-    private let steps: [PermissionOnboardingStep]
+    private let health: HealthAccessStatus
+    private let deferred: Bool
     private var recorded: [String] = []
 
-    init(steps: [PermissionOnboardingStep]) {
-        self.steps = steps
+    init(health: HealthAccessStatus = .requested, deferred: Bool = false) {
+        self.health = health
+        self.deferred = deferred
     }
 
     var calls: [String] { lock.withLock { recorded } }
 
     var client: PermissionOnboardingClient {
         PermissionOnboardingClient(
-            pendingSteps: { [steps] in steps },
             requestHealthAccess: { [weak self] in self?.record("health") },
-            requestNotifications: { [weak self] in
-                self?.record("notifications")
-            },
             deferNotifications: { [weak self] in
                 self?.record("deferNotifications")
-            }
+            },
+            healthAccess: { [health] in health },
+            notificationsDeferred: { [deferred] in deferred }
         )
     }
 

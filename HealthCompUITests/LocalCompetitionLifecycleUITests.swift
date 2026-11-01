@@ -674,6 +674,8 @@ final class LocalCompetitionLifecycleUITests: XCTestCase {
             "--local-competition-seed", "424242",
             "--local-competition-difficulty", "balanced",
             "--local-competition-run-id", currentRunID,
+            // The one-time color hint would shift scoreboards by test order.
+            "-healthcomp.colorHintSeen", "YES",
         ] + appearanceArguments
         app.launch()
     }

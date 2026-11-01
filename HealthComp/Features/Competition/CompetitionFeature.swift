@@ -158,15 +158,7 @@ struct CompetitionFeature {
                         cancelInFlight: true
                     ),
                     loadMutePreferences(state: state),
-                    .run { send in
-                        guard let loaded = await competitionClient
-                            .loadNotificationAuthorizationState(),
-                            loaded != currentAuthorization
-                        else {
-                            return
-                        }
-                        await send(.notificationAuthorizationLoaded(loaded))
-                    }
+                    loadNotificationAuthorization(current: currentAuthorization)
                 )
 
             case let .publication(publication):
@@ -499,9 +491,13 @@ struct CompetitionFeature {
                 return reconcile(trigger: .pullToRefresh)
 
             case .sceneBecameActive:
+                // Changes made in iOS Settings show without a relaunch.
                 return .merge(
                     reconcile(trigger: .foreground),
-                    loadMutePreferences(state: state)
+                    loadMutePreferences(state: state),
+                    loadNotificationAuthorization(
+                        current: state.notificationAuthorizationState
+                    )
                 )
 
             case .timeZoneChanged:
@@ -580,6 +576,20 @@ struct CompetitionFeature {
             } catch {
                 await send(.mutePreferencesLoaded(nil))
             }
+        }
+    }
+
+    private func loadNotificationAuthorization(
+        current: CompetitionNotificationAuthorizationState?
+    ) -> Effect<Action> {
+        .run { send in
+            guard let loaded = await competitionClient
+                .loadNotificationAuthorizationState(),
+                loaded != current
+            else {
+                return
+            }
+            await send(.notificationAuthorizationLoaded(loaded))
         }
     }
 

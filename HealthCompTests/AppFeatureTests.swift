@@ -108,7 +108,7 @@ final class AppFeatureTests: XCTestCase {
         await store.skipReceivedActions(strict: false)
         XCTAssertEqual(store.state.phase, .launchFailure)
         XCTAssertEqual(store.state.account.message?.text,
-                       "This device has saved history for a different account. Sign in with the original account to continue.")
+                       "Sign in with the account you used before to continue.")
         XCTAssertNil(store.state.mainTab)
         XCTAssertNil(store.state.profileStoragePaths)
         XCTAssertEqual(try Data(contentsOf: history), bytes)
@@ -515,6 +515,155 @@ final class AppFeatureTests: XCTestCase {
         XCTAssertNil(store.state.pendingTeardown)
     }
 
+    @MainActor
+    func testTeardownFailureMessageNamesTheFailedStep() async {
+        typealias Stage = AppFeature.PendingTeardown.Stage
+        let rows: [(AppFeature.TeardownReason, Stage, AccountFeature.Message)] = [
+            (.userRequested, .prepareRuntime, .signOutFailed),
+            (.userRequested, .removeProfileStorage, .signOutCleanupFailed),
+            (.userRequested, .finishUserSignOut, .signOutFailed),
+            (.userRequested, .retireAuthentication, .signOutFinishFailed),
+            (.accountDeleted, .prepareRuntime, .deletedCleanupFailed),
+            (.accountDeleted, .retireAuthentication, .deletedCleanupFailed),
+            (.sessionEnded, .removeProfileStorage, .sessionEndedCleanupFailed),
+            (.profileConflict, .finishUserSignOut, .profileRecoveryFailed),
+            (.restoredWithoutSession, .finishUserSignOut, .tryAgain),
+            (.cancelledAuthentication, .retireAuthentication, .tryAgain),
+        ]
+        for (reason, stage, message) in rows {
+            let teardown = AppFeature.PendingTeardown(
+                reason: reason,
+                profileID: profile.id,
+                stopRuntime: true,
+                stage: stage,
+                isRunning: true
+            )
+            let store = TestStore(
+                initialState: AppFeature.State(
+                    phase: .tearingDown,
+                    pendingTeardown: teardown,
+                    authEpoch: 4
+                )
+            ) {
+                AppFeature()
+            }
+            await store.send(
+                .teardownFailed(
+                    epoch: 4,
+                    reason: reason,
+                    stage: stage,
+                    failure: .cleanupFailed
+                )
+            ) {
+                $0.phase = .launchFailure
+                $0.pendingTeardown?.isRunning = false
+                $0.account = AccountFeature.State(mode: .launchFailure)
+                $0.account.message = message
+            }
+        }
+    }
+
+    @MainActor
+    func testPendingChallengeLinkShowsOnlyBeforeAuthentication() async throws {
+        let token = try XCTUnwrap(
+            CompetitionInviteClaimToken(
+                rawValue: "LLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLLL"
+            )
+        )
+        let envelope = CompetitionRouteEnvelope(
+            sequence: 4,
+            route: .claimInvite(token)
+        )
+        let neverConsumed = CompetitionRoutingClient(
+            routes: { AsyncStream { $0.finish() } },
+            enqueue: { _ in },
+            consume: { _ in XCTFail("Welcome must never consume a link.") }
+        )
+        let storage = profileStorageFixture(for: profile)
+
+        let signedOut = TestStore(initialState: .signedOut(epoch: 1)) {
+            AppFeature()
+        } withDependencies: {
+            $0.competitionRoutingClient = neverConsumed
+        }
+        await signedOut.send(.routeReceived(envelope)) {
+            $0.pendingChallengeSequence = 4
+        }
+        XCTAssertTrue(signedOut.state.hasPendingChallenge)
+
+        // Submitting a name creates the account, so the link can't be for
+        // it. The boundary survives a failed bootstrap and Try Again.
+        var settingUp = AppFeature.State(
+            phase: .settingUpProfile,
+            account: AccountFeature.State(mode: .settingUpProfile),
+            authEpoch: 1
+        )
+        settingUp.pendingChallengeSequence = 4
+        let submit = TestStore(initialState: settingUp) {
+            AppFeature()
+        } withDependencies: {
+            $0.competitionRoutingClient = neverConsumed
+            $0.authenticationClient = .test(
+                bootstrapProfile: { _ in
+                    throw AuthenticationClientFailure.operationFailed
+                }
+            )
+        }
+        submit.exhaustivity = .off(showSkippedAssertions: false)
+        await submit.send(.account(.delegate(.displayNameSubmitted("Taylor"))))
+        await submit.finish()
+        await submit.skipReceivedActions(strict: false)
+        XCTAssertEqual(submit.state.phase, .launchFailure)
+        XCTAssertEqual(submit.state.newAccountClaimLinksThrough, 4)
+
+        for isNewAccount in [true, false] {
+            var initial = AppFeature.State(
+                phase: .bootstrappingProfile,
+                profile: profile,
+                authEpoch: 1
+            )
+            initial.pendingChallengeSequence = 4
+            initial.newAccountClaimLinksThrough = isNewAccount ? 4 : nil
+            let store = TestStore(initialState: initial) {
+                AppFeature()
+            } withDependencies: {
+                $0.competitionRoutingClient = neverConsumed
+            }
+            await store.send(
+                .profileStorageResponse(
+                    epoch: 1,
+                    profile: profile,
+                    .success(storage.paths)
+                )
+            ) {
+                $0.phase = .authenticated
+                $0.profileStoragePaths = storage.paths
+                $0.account = AccountFeature.State(
+                    mode: .authenticated,
+                    displayName: self.profile.displayName
+                )
+                var mainTab = MainTabFeature.State(
+                    competition: CompetitionFeature.State(ownProfile: self.profile)
+                )
+                mainTab.claimLinksBeforeAccountThrough = isNewAccount ? 4 : 0
+                $0.mainTab = mainTab
+                $0.pendingChallengeSequence = nil
+                $0.newAccountClaimLinksThrough = nil
+            }
+            XCTAssertFalse(store.state.hasPendingChallenge)
+        }
+
+        let authenticated = TestStore(
+            initialState: .authenticated(profile: profile, epoch: 1)
+        ) {
+            AppFeature()
+        } withDependencies: {
+            $0.competitionRoutingClient = neverConsumed
+        }
+        await authenticated.send(.routeReceived(envelope))
+        XCTAssertFalse(authenticated.state.hasPendingChallenge)
+    }
+
     private let session = AuthenticationSession(
         userID: UUID(uuidString: "93000000-0000-4000-8000-000000000001")!,
         expiresAt: Date(timeIntervalSince1970: 2_000_000_000)
@@ -563,9 +712,11 @@ final class AppFeatureTests: XCTestCase {
             $0.profileStoragePaths = nil
             $0.pendingTeardown = nil
             $0.account = AccountFeature.State(mode: .signedOut)
-            $0.account.message = reason == .sessionEnded
-                ? .sessionEnded
-                : nil
+            $0.account.message = switch reason {
+            case .sessionEnded: .sessionEnded
+            case .accountDeleted: .accountDeleted
+            default: nil
+            }
         }
     }
 
@@ -1438,7 +1589,7 @@ final class AppFeatureTests: XCTestCase {
             $0.pendingTeardown?.stage = .finishUserSignOut
             $0.pendingTeardown?.isRunning = false
             $0.account = AccountFeature.State(mode: .launchFailure)
-            $0.account.message = .tryAgain
+            $0.account.message = .signOutFailed
         }
         XCTAssertEqual(
             calls.calls,
@@ -1510,7 +1661,7 @@ final class AppFeatureTests: XCTestCase {
             $0.mainTab = nil
             $0.pendingTeardown?.isRunning = false
             $0.account = AccountFeature.State(mode: .launchFailure)
-            $0.account.message = .tryAgain
+            $0.account.message = .signOutFailed
         }
         XCTAssertEqual(
             calls.calls,
@@ -1680,6 +1831,7 @@ final class AppFeatureTests: XCTestCase {
             $0.profileStoragePaths = nil
             $0.pendingTeardown = nil
             $0.account = AccountFeature.State(mode: .signedOut)
+            $0.account.message = .accountDeleted
         }
     }
 
@@ -1797,7 +1949,7 @@ final class AppFeatureTests: XCTestCase {
         await store.receive(.account(.operationFailed(.operationFailed))) {
             $0.account.isRequestInFlight = false
             $0.account.isDeletingAccount = false
-            $0.account.message = .tryAgain
+            $0.account.message = .deleteFailed
         }
         XCTAssertEqual(store.state.phase, .authenticated)
         XCTAssertEqual(store.state.profile, profile)
@@ -1846,7 +1998,7 @@ final class AppFeatureTests: XCTestCase {
         await store.receive(.account(.operationFailed(.operationFailed))) {
             $0.account.isRequestInFlight = false
             $0.account.isDeletingAccount = false
-            $0.account.message = .tryAgain
+            $0.account.message = .deleteFailed
         }
 
         XCTAssertEqual(store.state.phase, .authenticated)
@@ -1918,6 +2070,7 @@ final class AppFeatureTests: XCTestCase {
             $0.profile = nil
             $0.pendingTeardown = nil
             $0.account = AccountFeature.State(mode: .signedOut)
+            $0.account.message = .accountDeleted
         }
 
         await store.send(
@@ -2288,7 +2441,7 @@ final class AppFeatureTests: XCTestCase {
             $0.pendingTeardown?.stage = .removeProfileStorage
             $0.pendingTeardown?.isRunning = false
             $0.account = AccountFeature.State(mode: .launchFailure)
-            $0.account.message = .tryAgain
+            $0.account.message = .signOutCleanupFailed
         }
 
         store.exhaustivity = .off(showSkippedAssertions: false)

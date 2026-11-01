@@ -6,6 +6,8 @@ struct AccountView: View {
     @Environment(\.colorScheme) private var colorScheme
 
     let store: StoreOf<AccountFeature>
+    /// A challenge link arrived before sign-in.
+    var hasPendingChallenge = false
 
     var body: some View {
         GeometryReader { proxy in
@@ -15,10 +17,10 @@ struct AccountView: View {
                     if store.mode == .settingUpProfile {
                         displayNameField
                     }
-                    if store.mode == .signedOut {
-                        colorCodeCard
-                    }
-                    if let message = store.message {
+                    // Launch failure and profile conflict fold the message
+                    // into the subtitle.
+                    if store.mode == .signedOut || store.mode == .settingUpProfile,
+                       let message = store.message {
                         Text(message.text)
                             .font(.callout)
                             .foregroundStyle(Theme.ink)
@@ -48,10 +50,13 @@ struct AccountView: View {
                     .foregroundStyle(Theme.ink)
                     .multilineTextAlignment(.center)
                     .accessibilityAddTraits(.isHeader)
-                Text(subtitle)
-                    .font(.body)
-                    .foregroundStyle(Theme.secondary)
-                    .multilineTextAlignment(.center)
+                if let subtitle {
+                    Text(subtitle)
+                        .font(.body)
+                        .foregroundStyle(Theme.secondary)
+                        .multilineTextAlignment(.center)
+                        .accessibilityIdentifier("account.subtitle")
+                }
             }
         }
     }
@@ -99,60 +104,6 @@ struct AccountView: View {
             .map { String($0).uppercased() }
     }
 
-    // Teaches the one color rule before the first competition.
-    private var colorCodeCard: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            SectionLabel("HOW TO READ IT")
-            codeRow(
-                "Your rings",
-                "Move, Exercise and Stand. Raw Health data stays on this iPhone."
-            ) {
-                VStack(alignment: .leading, spacing: 2) {
-                    SlantedBar().fill(Theme.move).frame(width: 24, height: 4)
-                    SlantedBar().fill(Theme.exercise).frame(width: 18, height: 4)
-                        .padding(.leading, 4)
-                    SlantedBar().fill(Theme.stand).frame(width: 22, height: 4)
-                }
-            }
-            codeRow("Your score", "Amber is always you.") {
-                SlantedBar().fill(Theme.youFill).frame(width: 22, height: 10)
-            }
-            codeRow(
-                "Their points",
-                "The other person gets your daily points, rounded Activity percentages and modes."
-            ) {
-                SlantedBar().fill(Theme.ink).frame(width: 12, height: 18)
-                    .padding(.leading, 5)
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(18)
-        .themePanel(cornerRadius: 18)
-    }
-
-    private func codeRow<Swatch: View>(
-        _ title: String,
-        _ detail: String,
-        @ViewBuilder swatch: () -> Swatch
-    ) -> some View {
-        HStack(alignment: .top, spacing: 14) {
-            swatch()
-                .frame(width: 28, alignment: .leading)
-                .padding(.top, 4)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.headline)
-                    .foregroundStyle(Theme.ink)
-                Text(detail)
-                    .font(.subheadline)
-                    .foregroundStyle(Theme.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .accessibilityElement(children: .combine)
-    }
-
     private var actions: some View {
         VStack(spacing: 12) {
             primaryButton
@@ -171,10 +122,12 @@ struct AccountView: View {
                 .accessibilityIdentifier("account.sign-in-with-apple.browser")
             }
             Link(destination: URL(string: "https://healthcomp.app/privacy")!) {
+                // 48, not 44: centered content can land on a fractional
+                // origin and round the target below 44 pt.
                 Text("Privacy Policy")
                     .font(.callout.weight(.semibold))
                     .foregroundStyle(Theme.ink)
-                    .frame(minHeight: 44)
+                    .frame(minHeight: 48)
                     .contentShape(Rectangle())
             }
             .accessibilityIdentifier("account.privacy-policy")
@@ -221,7 +174,7 @@ struct AccountView: View {
             .accessibilityIdentifier("account.retry")
 
         case .profileConflict:
-            Button("Use Another Account") {
+            Button("Sign Out to Switch") {
                 store.send(.signOutButtonTapped)
             }
             .buttonStyle(PrimaryButtonStyle())
@@ -238,26 +191,28 @@ struct AccountView: View {
 
     private var title: String {
         switch store.mode {
-        case .signedOut: "Welcome to HealthComp"
+        case .signedOut:
+            hasPendingChallenge ? "You have a challenge" : "Welcome to HealthComp"
         case .settingUpProfile: "Choose your display name"
-        case .launchFailure: "Unable to connect"
-        case .profileConflict: "Sign in with the original account"
+        case .launchFailure: store.message?.failureTitle ?? "Couldn’t connect"
+        case .profileConflict: "This iPhone has history for another account"
         case .authenticated: "Account"
         }
     }
 
-    private var subtitle: String {
+    private var subtitle: String? {
         switch store.mode {
         case .signedOut:
-            "Sign in to play private Activity matches."
+            hasPendingChallenge ? "Sign in with the account it was sent to." : nil
         case .settingUpProfile:
+            // A new account can't be a challenge's recipient.
             "The people you play will see this name. You can change it later."
         case .launchFailure:
-            "Your local data is safe. Check your connection and retry."
+            store.message?.text ?? "Check your connection and try again."
         case .profileConflict:
-            "Only this device’s session will be signed out. Saved history and your other devices are unchanged."
+            "Only this iPhone is signed out. Saved history and your other devices are unchanged."
         case .authenticated:
-            "Signing out removes this profile’s local match cache from this device."
+            nil
         }
     }
 }
