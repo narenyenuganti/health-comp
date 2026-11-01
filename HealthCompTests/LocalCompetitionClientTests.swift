@@ -505,12 +505,14 @@ final class LocalCompetitionClientTests: XCTestCase {
         let relaunched = LocalCompetitionAward.fold(completed: presentations)
 
         XCTAssertEqual(first, relaunched)
-        XCTAssertEqual(first.filter { $0.kind == .completion }.count, 3)
-        XCTAssertEqual(first.filter { $0.kind == .victory }.count, 1)
-        XCTAssertEqual(first.first { $0.kind == .victory }?.competitionID, winID)
+        XCTAssertEqual(first.count, 1)
+        XCTAssertEqual(first.first?.competitionID, winID)
+        XCTAssertEqual(first.first?.friendDisplayName, "Alex")
+        XCTAssertEqual(
+            first.first?.opponentIdentity,
+            LocalCompetitionIdentity.opponentIdentity
+        )
         XCTAssertTrue(first.allSatisfy { $0.awardedAt == completedAt })
-        XCTAssertTrue(first.allSatisfy { $0.friendDisplayName == "Alex" })
-        XCTAssertEqual(Set(first.map(\.id)).count, first.count)
     }
 
     func testDesiredWindowIsSharedReleasedAtLastTerminalAndStopKeepsItEmpty() async throws {
@@ -1014,7 +1016,8 @@ final class LocalCompetitionClientTests: XCTestCase {
         )
         _ = await nextPublication(from: setup.client.start())
         let declined = await setup.client.decline(sourceID)
-        XCTAssertTrue(declined.dashboard.competitions.isEmpty)
+        // The closed challenge stays a day so its screen can say so.
+        XCTAssertEqual(declined.dashboard.competitions.map(\.id), [sourceID])
         let independentClient = LocalCompetitionClient.make(
             environment: .accelerated(source: setup.source),
             storeAvailability: .available(setup.store),
@@ -1073,7 +1076,7 @@ final class LocalCompetitionClientTests: XCTestCase {
         let relaunchedPublication = await nextPublication(from: relaunched.start())
         XCTAssertEqual(
             relaunchedPublication.dashboard.competitions.map(\.id),
-            [childID]
+            [childID, sourceID]
         )
         _ = await relaunched.reinvite()
         let relaunchedIDs = try await setup.store.ids()
@@ -1120,13 +1123,18 @@ final class LocalCompetitionClientTests: XCTestCase {
             configuration: .testing
         )
         let expired = await nextPublication(from: client.start())
-        XCTAssertTrue(expired.dashboard.competitions.isEmpty)
+        XCTAssertEqual(
+            expired.dashboard.competitions.map(\.lifecycle),
+            [.expired(at: now.addingTimeInterval(-60), direction: .outgoing)]
+        )
 
         let recovered = await client.reinvite()
 
-        XCTAssertEqual(recovered.dashboard.competitions.count, 1)
-        guard case .pending(direction: .outgoing, _, _) =
-            recovered.dashboard.competitions[0].lifecycle else {
+        XCTAssertEqual(recovered.dashboard.competitions.count, 2)
+        let child = recovered.dashboard.competitions.first {
+            $0.id == LocalCompetitionIdentity.rematchID(for: sourceID)
+        }
+        guard case .pending(direction: .outgoing, _, _)? = child?.lifecycle else {
             return XCTFail("Expired recovery must be outgoing and pending")
         }
         await client.stop()
@@ -1156,7 +1164,7 @@ final class LocalCompetitionClientTests: XCTestCase {
 
         let publication = await setup.client.reinvite()
 
-        XCTAssertTrue(publication.dashboard.competitions.isEmpty)
+        XCTAssertEqual(publication.dashboard.competitions.map(\.id), [sourceID])
         XCTAssertTrue(publication.dashboard.issues.contains(.commandRejected(sourceID)))
         let remainingIDs = try await setup.store.ids()
         XCTAssertEqual(remainingIDs, [sourceID])
@@ -1187,9 +1195,9 @@ final class LocalCompetitionClientTests: XCTestCase {
         let publication = await setup.client.reinvite()
         let storedConflict = try await setup.store.load(childID)
 
-        XCTAssertEqual(publication.dashboard.competitions.count, 1)
-        guard case .pending(direction: .incoming, _, _) =
-            publication.dashboard.competitions[0].lifecycle
+        XCTAssertEqual(publication.dashboard.competitions.count, 2)
+        guard case .pending(direction: .incoming, _, _)? =
+            publication.dashboard.competitions.first(where: { $0.id == childID })?.lifecycle
         else {
             return XCTFail("Recovery must not bless a mismatched child")
         }
@@ -1238,12 +1246,88 @@ final class LocalCompetitionClientTests: XCTestCase {
         let declined = await client.decline(id)
         let hiddenSnapshot = await notifications.snapshot(at: 1)
 
-        XCTAssertEqual(declined.dashboard.competitions, [])
-        XCTAssertEqual(declined.dashboard.hiddenTerminalCompetitionCount, 1)
+        // The closed challenge stays a day; Home keeps an incoming one off.
+        XCTAssertEqual(declined.dashboard.competitions.map(\.id), [id])
+        guard case .declined(_, .incoming)? = declined.dashboard.competitions.first?.lifecycle else {
+            return XCTFail("Expected an incoming decline")
+        }
+        XCTAssertEqual(declined.dashboard.hiddenTerminalCompetitionCount, 0)
         XCTAssertEqual(hiddenSnapshot.knownCompetitionIDs, [id])
         XCTAssertEqual(hiddenSnapshot.competitions.count, 1)
         XCTAssertEqual(hiddenSnapshot.competitions.first?.lifecycle, .declined)
         await client.stop()
+    }
+
+    func testFailedRefreshKeepsTheLastPresentationWithItsIssue() async throws {
+        let id = CompetitionID(
+            UUID(uuidString: "71000000-0000-0000-0000-00000000000A")!
+        )
+        let setup = try await makePendingClient(
+            id: id,
+            epochID: "client-failed-refresh"
+        )
+        let first = await nextPublication(from: setup.client.start())
+        let shown = try XCTUnwrap(first.dashboard.competitions.first)
+        await setup.store.failLoads(of: id)
+
+        let failed = await setup.client.reconcileAll(.pullToRefresh)
+
+        XCTAssertEqual(failed.dashboard.competitions, [shown])
+        XCTAssertTrue(failed.dashboard.issues.contains(.competitionFailures([id])))
+        XCTAssertEqual(competitionRowIssue(id, in: failed.dashboard.issues), .refresh)
+        // Home draws the match with its own line, so the banner stays away.
+        let layout = competitionHomeLayout(failed.dashboard, now: failed.evaluatedAt)
+        XCTAssertEqual(layout.needsYou.map(\.id), [id])
+        XCTAssertNil(competitionIssueSummary(failed.dashboard.issues, attributedIDs: [id]))
+        await setup.client.stop()
+    }
+
+    func testClosedInvitationStaysOnDashboardForOneDay() async throws {
+        let id = CompetitionID(
+            UUID(uuidString: "71000000-0000-0000-0000-000000000009")!
+        )
+        let setup = try await makePendingClient(
+            id: id,
+            epochID: "client-closed-retention"
+        )
+        var iterator = setup.client.start().makeAsyncIterator()
+        _ = await iterator.next()
+        _ = await setup.client.decline(id)
+        await setup.client.stop()
+        let optionalLoaded = try await setup.store.load(id)
+        let loaded = try XCTUnwrap(optionalLoaded)
+        guard case let .declined(at) = loaded.projection.competition.lifecycle else {
+            return XCTFail("Expected a declined journal")
+        }
+        func dashboard(after offset: TimeInterval) -> LocalCompetitionDashboard {
+            LocalCompetitionProjector.dashboard(
+                journals: [loaded],
+                context: CompetitionEnvironmentContext(
+                    instant: EnvironmentInstant(
+                        wallDate: at.addingTimeInterval(offset),
+                        monotonic: MonotonicInstant(
+                            epochID: "client-closed-retention",
+                            nanoseconds: 2_000
+                        )
+                    ),
+                    timeZoneIdentifier: "UTC"
+                ),
+                configuration: .testing,
+                issues: []
+            )
+        }
+
+        let lastMinute = dashboard(after: 24 * 60 * 60 - 60)
+        XCTAssertEqual(lastMinute.competitions.map(\.id), [id])
+        XCTAssertEqual(
+            lastMinute.competitions.first?.lifecycle,
+            .declined(at: at, direction: .incoming)
+        )
+        XCTAssertEqual(lastMinute.hiddenTerminalCompetitionCount, 0)
+
+        let nextDay = dashboard(after: 24 * 60 * 60)
+        XCTAssertEqual(nextDay.competitions, [])
+        XCTAssertEqual(nextDay.hiddenTerminalCompetitionCount, 1)
     }
 
     func testNotificationSubmitDoesNotBlockCanonicalPublicationAndDeleteCancelsFirst()
@@ -1889,6 +1973,11 @@ private extension CompetitionNotificationPolicy {
 private actor ClientTestEventStore: CompetitionEventStore {
     private var journals: [CompetitionID: CompetitionJournal] = [:]
     private var tombstonedIDs: Set<CompetitionID> = []
+    private var failingLoadIDs: Set<CompetitionID> = []
+
+    func failLoads(of id: CompetitionID) {
+        failingLoadIDs.insert(id)
+    }
     private var appendCounts: [CompetitionID: Int] = [:]
     private(set) var successfulCreateCount = 0
 
@@ -1899,6 +1988,9 @@ private actor ClientTestEventStore: CompetitionEventStore {
     }
 
     func load(_ id: CompetitionID) async throws -> LoadedCompetitionJournal? {
+        if failingLoadIDs.contains(id) {
+            throw CompetitionEventStoreError.identityNotFound
+        }
         guard let journal = journals[id] else { return nil }
         return try LoadedCompetitionJournal(journal: journal, source: .primary)
     }

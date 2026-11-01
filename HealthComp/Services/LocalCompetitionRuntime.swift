@@ -403,7 +403,27 @@ actor LocalCompetitionRuntime {
                     }
                 }
 
-            case .declined, .expired, .completed, .archived:
+            // Home regroups when a closed challenge has been shown a day and
+            // when a result moves to History.
+            case let .declined(at), let .expired(at):
+                let leaves = at.addingTimeInterval(
+                    competitionClosedChallengeRetention
+                )
+                if leaves > now {
+                    candidates.append(leaves)
+                }
+
+            case let .completed(completed):
+                if let schedule = competition.schedule,
+                   let leaves = competitionResultLeavesHome(
+                       schedule: schedule,
+                       completedAt: completed.completedAt
+                   )?.at,
+                   leaves > now {
+                    candidates.append(leaves)
+                }
+
+            case .archived:
                 break
             }
         }

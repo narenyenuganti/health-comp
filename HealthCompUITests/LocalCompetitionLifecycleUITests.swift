@@ -27,7 +27,8 @@ final class LocalCompetitionLifecycleUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 8))
         XCTAssertTrue(app.staticTexts["FIXTURE DATA"].exists)
         XCTAssertTrue(app.staticTexts["Alex"].exists)
-        XCTAssertTrue(app.staticTexts["Challenge sent"].exists)
+        // The row adds the challenge's expiry after its status.
+        XCTAssertTrue(staticText(beginningWith: "Challenge sent").exists)
         XCTAssertTrue(
             app.staticTexts["Alex is simulated on this iPhone."].exists
         )
@@ -109,7 +110,6 @@ final class LocalCompetitionLifecycleUITests: XCTestCase {
 
         XCTAssertTrue(app.staticTexts["You Won"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.otherElements["competition.result"].label.contains("Final score"))
-        XCTAssertTrue(app.staticTexts["Match Complete"].exists)
         XCTAssertTrue(app.staticTexts["Victory Over Alex"].exists)
         XCTAssertTrue(app.buttons["Rematch"].exists)
         XCTAssertTrue(moreMenu.exists)
@@ -124,35 +124,36 @@ final class LocalCompetitionLifecycleUITests: XCTestCase {
         scrollToElement(pendingSharingCard)
         XCTAssertEqual(sharingCards(state: "pending").count, 1)
         XCTAssertEqual(sharingCards(state: "completed").count, 1)
+        // The rematch waits in Up next; the result sits in Recent results.
+        XCTAssertTrue(app.descendants(matching: .any)["competition.home.upNext"].exists)
+        XCTAssertTrue(app.descendants(matching: .any)["competition.home.results"].exists)
 
         openHistory()
         let rivalry = app.descendants(matching: .any)["competition.rivalry"]
         scrollToElement(rivalry)
         XCTAssertTrue(rivalry.exists)
-        app.buttons["Awards"].tap()
-        XCTAssertTrue(
-            app.staticTexts["Match Complete"].waitForExistence(timeout: 3)
+        let records = app.descendants(matching: .any).matching(
+            NSPredicate(format: "identifier BEGINSWITH %@", "competition.record.")
         )
-        XCTAssertTrue(app.staticTexts["Victory Over Alex"].exists)
-        let earned = app.staticTexts.matching(
-            NSPredicate(format: "label BEGINSWITH %@", "Earned ")
-        ).firstMatch
-        scrollToElement(earned)
-        XCTAssertTrue(earned.exists)
+        XCTAssertEqual(records.count, 1)
+        XCTAssertTrue(records.firstMatch.label.contains("Alex"))
+        XCTAssertTrue(records.firstMatch.label.contains("1 win"))
+        XCTAssertEqual(sharingCards(state: "completed").count, 1)
+        XCTAssertFalse(app.buttons["Awards"].exists)
         app.navigationBars.buttons.firstMatch.tap()
         XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 3))
 
+        // Swiping a result left reveals Archive; it moves to History.
         let completed = sharingCards(state: "completed").firstMatch
         scrollToElement(completed)
-        completed.tap()
-        XCTAssertTrue(app.navigationBars["Alex"].waitForExistence(timeout: 3))
-        tapMoreMenuItem("Archive")
-        XCTAssertTrue(
-            app.buttons["Archive"].waitForNonExistence(timeout: 5)
-        )
-        app.navigationBars.buttons.firstMatch.tap()
-        XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 3))
-        // Archived competitions leave Home for History.
+        completed.swipeLeft()
+        let archive = app.buttons.matching(
+            NSPredicate(format: "identifier BEGINSWITH %@", "competition.archive.")
+        ).firstMatch
+        XCTAssertTrue(archive.waitForExistence(timeout: 3))
+        archive.tap()
+        XCTAssertTrue(completed.waitForNonExistence(timeout: 5))
+        XCTAssertEqual(sharingCards(state: "completed").count, 0)
         XCTAssertEqual(sharingCards(state: "archived").count, 0)
         openHistory()
         XCTAssertEqual(sharingCards(state: "archived").count, 1)
@@ -199,11 +200,11 @@ final class LocalCompetitionLifecycleUITests: XCTestCase {
         capture("light-small-deleted")
     }
 
-    func testIncomingDeclinePopsAndReinviteIsReachableAndIdempotent() {
+    func testIncomingDeclineClosesInPlaceAndReinviteIsReachableAndIdempotent() {
         launch(fixture: "late-sync", direction: "incoming")
 
         XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 8))
-        XCTAssertTrue(app.staticTexts["Challenge received"].exists)
+        XCTAssertTrue(staticText(beginningWith: "Challenge received").exists)
         pendingSharingCard.tap()
         XCTAssertTrue(
             app.staticTexts["Challenge from Alex"].waitForExistence(timeout: 3)
@@ -216,6 +217,12 @@ final class LocalCompetitionLifecycleUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Alex"].exists)
         XCTAssertTrue(confirmation.buttons["Keep Challenge"].exists)
         confirmation.buttons["Decline Challenge"].tap()
+        // The screen stays and says what happened.
+        let closed = app.descendants(matching: .any)["competition.closed"]
+        XCTAssertTrue(closed.waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["Challenge declined"].exists)
+        XCTAssertTrue(app.navigationBars["Alex"].exists)
+        app.navigationBars.buttons.firstMatch.tap()
         XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 3))
         let reinvite = app.buttons["Challenge Alex Again"]
         XCTAssertTrue(reinvite.waitForExistence(timeout: 3))
@@ -600,6 +607,12 @@ final class LocalCompetitionLifecycleUITests: XCTestCase {
         scrollToElement(history)
         history.tap()
         XCTAssertTrue(app.navigationBars["History"].waitForExistence(timeout: 3))
+    }
+
+    private func staticText(beginningWith prefix: String) -> XCUIElement {
+        app.staticTexts.matching(
+            NSPredicate(format: "label BEGINSWITH %@", prefix)
+        ).firstMatch
     }
 
     private var pendingSharingCard: XCUIElement {

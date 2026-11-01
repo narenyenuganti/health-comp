@@ -305,6 +305,13 @@ private actor RemoteCompetitionClientCoordinator {
     private var latestPublication: CompetitionPublication?
     private var signalTask: Task<Void, Never>?
     private var realtimeTask: Task<Void, Never>?
+    /// Republishes the last inputs when Home's grouping changes on its own.
+    private var boundaryTask: Task<Void, Never>?
+    private var lastPublishInputs: (
+        materializations: [RemoteCompetitionMaterialization],
+        issues: [CompetitionClientIssue],
+        knownCompetitionIDs: Set<CompetitionID>?
+    )?
     private var notificationCoordinator: CompetitionNotificationCoordinatorClient =
         .noop
     private var notificationPreferences: CompetitionNotificationPreferencesClient =
@@ -1184,6 +1191,9 @@ private actor RemoteCompetitionClientCoordinator {
         stoppedTasks.realtime?.cancel()
         signalTask = nil
         realtimeTask = nil
+        boundaryTask?.cancel()
+        boundaryTask = nil
+        lastPublishInputs = nil
         if stoppedTasks.realtime != nil {
             await realtimeClient.stop()
         }
@@ -1500,9 +1510,18 @@ private actor RemoteCompetitionClientCoordinator {
                 profile: profile,
                 context: context,
                 issues: issues
+            ).keepingFailedCompetitions(
+                from: latestPublication?.dashboard,
+                now: context.instant.wallDate
             ),
             evaluatedAt: context.instant.wallDate,
             timeZoneIdentifier: context.timeZoneIdentifier
+        )
+        lastPublishInputs = (materializations, issues, knownCompetitionIDs)
+        scheduleBoundaryRepublish(
+            at: publication.dashboard.nextHomeBoundary(
+                after: context.instant.wallDate
+            )
         )
         let materializedIDs = Set(materializations.map {
             CompetitionID($0.descriptor.competitionID)
@@ -1522,6 +1541,42 @@ private actor RemoteCompetitionClientCoordinator {
             )
         )
         return publication
+    }
+
+    // ponytail: one republish at the next boundary, rescheduled by every publish; no network.
+    private func scheduleBoundaryRepublish(at wake: Date?) {
+        boundaryTask?.cancel()
+        boundaryTask = nil
+        guard let wake else { return }
+        let generation = runtimeGeneration
+        boundaryTask = Task { [weak self, environment] in
+            do {
+                try await environment.wait(until: wake)
+            } catch {
+                return
+            }
+            guard !Task.isCancelled else { return }
+            await self?.republishAtBoundary(generation: generation)
+        }
+    }
+
+    private func republishAtBoundary(generation: UInt64) async {
+        await withOperationGate {
+            guard generation == runtimeGeneration,
+                  terminalTeardown == nil,
+                  !isStopped,
+                  let profile,
+                  let inputs = lastPublishInputs
+            else {
+                return
+            }
+            _ = await publish(
+                materializations: inputs.materializations,
+                profile: profile,
+                issues: inputs.issues,
+                knownCompetitionIDs: inputs.knownCompetitionIDs
+            )
+        }
     }
 
     private func publish(
@@ -1591,15 +1646,15 @@ enum RemoteCompetitionProjector {
         issues: [CompetitionClientIssue]
     ) -> CompetitionDashboard {
         let all = materializations.compactMap {
-            presentation(from: $0, profile: profile, context: context)
+            presentation(
+                from: $0,
+                profile: profile,
+                context: context,
+                closesLapsedChallenges: true
+            )
         }.sorted { $0.id.rawValue.uuidString < $1.id.rawValue.uuidString }
         let visible = all.filter {
-            switch $0.lifecycle {
-            case .declined, .expired:
-                false
-            default:
-                true
-            }
+            competitionIsRetainedOnDashboard($0.lifecycle, now: context.instant.wallDate)
         }
         return CompetitionDashboard(
             competitions: visible,
@@ -1715,7 +1770,10 @@ enum RemoteCompetitionProjector {
             } ?? baseline.opponentIdentity,
             opponentDisplayName: baseline.opponentDisplayName,
             lifecycle: notificationLifecycle(
-                lifecyclePresentation(competition.lifecycle)
+                lifecyclePresentation(
+                    competition.lifecycle,
+                    direction: loaded.journal.genesis.direction
+                )
             ),
             schedule: schedule,
             ownerPoints: terminal?.userPoints ?? ownerPoints,
@@ -1772,13 +1830,26 @@ enum RemoteCompetitionProjector {
         }
     }
 
+    /// `closesLapsedChallenges` shows a pending challenge past its expiry as
+    /// expired. The server only flips it lazily, so the dashboard does it;
+    /// notifications keep the stored lifecycle.
     private static func presentation(
         from materialization: RemoteCompetitionMaterialization,
         profile: AuthenticatedProfile,
-        context: CompetitionEnvironmentContext
+        context: CompetitionEnvironmentContext,
+        closesLapsedChallenges: Bool = false
     ) -> CompetitionPresentation? {
         let projection = materialization.journal.projection
         let competition = projection.competition
+        var lifecycle = lifecyclePresentation(
+            competition.lifecycle,
+            direction: materialization.journal.journal.genesis.direction
+        )
+        if closesLapsedChallenges,
+           case let .pending(direction, _, expiresAt?) = lifecycle,
+           expiresAt <= context.instant.wallDate {
+            lifecycle = .expired(at: expiresAt, direction: direction)
+        }
         let participantPresentation = remoteCompetitionParticipantPresentation(
             descriptor: materialization.descriptor,
             profile: profile
@@ -1810,7 +1881,7 @@ enum RemoteCompetitionProjector {
             opponentIdentity: opponentID.map {
                 RemoteCompetitionOpponentIdentity.identity(for: $0)
             } ?? "remote-profile:v1:pending",
-            lifecycle: lifecyclePresentation(competition.lifecycle),
+            lifecycle: lifecycle,
             acceptedConfiguration: schedule.map {
                 CompetitionAcceptedPresentation(
                     schedule: $0,
@@ -1892,7 +1963,8 @@ enum RemoteCompetitionProjector {
     }
 
     private static func lifecyclePresentation(
-        _ lifecycle: CompetitionLifecycle
+        _ lifecycle: CompetitionLifecycle,
+        direction: InvitationDirection
     ) -> CompetitionLifecyclePresentation {
         switch lifecycle {
         case let .pendingInvitation(invitation):
@@ -1901,8 +1973,8 @@ enum RemoteCompetitionProjector {
                 createdAt: invitation.createdAt,
                 expiresAt: invitation.expiresAt
             )
-        case let .declined(at): .declined(at: at)
-        case let .expired(at): .expired(at: at)
+        case let .declined(at): .declined(at: at, direction: direction)
+        case let .expired(at): .expired(at: at, direction: direction)
         case .scheduled: .scheduled
         case let .active(day): .active(dayOrdinal: day.ordinal)
         case .endsToday: .endsToday
@@ -1998,34 +2070,19 @@ enum RemoteCompetitionProjector {
         )
     }
 
-    private static func awards(
+    static func awards(
         from presentations: [CompetitionPresentation]
     ) -> [CompetitionAward] {
-        var result: [CompetitionAward] = []
-        for presentation in presentations {
-            guard let terminal = presentation.terminalResult else { continue }
-            let prefix = "remote-competition-award:v1:\(presentation.id.rawValue.uuidString.lowercased())"
-            result.append(
-                CompetitionAward(
-                    id: "\(prefix):completion",
-                    competitionID: presentation.id,
-                    kind: .completion,
-                    awardedAt: terminal.completedAt,
-                    friendDisplayName: presentation.opponentDisplayName
-                )
+        presentations.compactMap { presentation -> CompetitionAward? in
+            guard let terminal = presentation.terminalResult,
+                  terminal.outcome == .win else { return nil }
+            return CompetitionAward(
+                id: "remote-competition-award:v1:\(presentation.id.rawValue.uuidString.lowercased()):victory",
+                competitionID: presentation.id,
+                awardedAt: terminal.completedAt,
+                friendDisplayName: presentation.opponentDisplayName,
+                opponentIdentity: presentation.opponentIdentity
             )
-            if terminal.outcome == .win {
-                result.append(
-                    CompetitionAward(
-                        id: "\(prefix):victory",
-                        competitionID: presentation.id,
-                        kind: .victory,
-                        awardedAt: terminal.completedAt,
-                        friendDisplayName: presentation.opponentDisplayName
-                    )
-                )
-            }
-        }
-        return result.sorted { $0.id < $1.id }
+        }.sortedNewestFirst()
     }
 }

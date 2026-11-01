@@ -204,10 +204,7 @@ final class CompetitionFeatureTests: XCTestCase {
             return XCTFail("The 1ns testing wake must complete a win")
         }
         XCTAssertEqual(completedCompetition.userPoints, 4_200)
-        XCTAssertEqual(
-            completed.dashboard.awards.map(\.kind),
-            [.completion, .victory]
-        )
+        XCTAssertEqual(completed.dashboard.awards.count, 1)
         XCTAssertTrue(
             completed.dashboard.awards.allSatisfy { $0.competitionID == sourceID }
         )
@@ -746,6 +743,66 @@ final class CompetitionFeatureTests: XCTestCase {
                 )
             )
         }
+    }
+
+    @MainActor
+    func testChallengeAgainPrefillsTheSameAccountWithoutRematchParent() async {
+        let profileID = UUID(uuidString: "85000000-0000-4000-8000-000000000001")!
+        let closedID = CompetitionID(UUID(uuidString: "85000000-0000-4000-8000-000000000002")!)
+        let staleParent = CompetitionID(UUID(uuidString: "85000000-0000-4000-8000-000000000003")!)
+        func publication(_ source: CompetitionPublicationSource) -> LocalCompetitionPublication {
+            LocalCompetitionPublication(
+                publicationRevision: 1,
+                dashboard: LocalCompetitionDashboard(
+                    competitions: [
+                        LocalCompetitionPresentation(
+                            id: closedID,
+                            ownerDisplayName: "Naren",
+                            opponentDisplayName: "Sam",
+                            opponentIdentity: RemoteCompetitionOpponentIdentity.identity(for: profileID),
+                            lifecycle: .expired(at: Date(timeIntervalSince1970: 0), direction: .outgoing),
+                            acceptedConfiguration: nil,
+                            userPoints: 0,
+                            opponentPoints: 0,
+                            days: [],
+                            currentDayOrdinal: nil,
+                            lastRefresh: nil,
+                            tally: nil,
+                            terminalResult: nil
+                        ),
+                    ],
+                    awards: [],
+                    issues: [],
+                    hiddenTerminalCompetitionCount: 0
+                ),
+                source: source
+            )
+        }
+        let store = TestStore(
+            initialState: CompetitionFeature.State(
+                publication: publication(.remoteParticipants),
+                inviteCreationStatus: .retryable,
+                inviteCreationRematchParentID: staleParent
+            )
+        ) {
+            CompetitionFeature()
+        }
+
+        // No client call is made: nothing is created until Create is tapped.
+        await store.send(.challengeAgainTapped(closedID)) {
+            $0.inviteCreationStatus = .idle
+            $0.inviteCreationRematchParentID = nil
+            $0.inviteRecipient = AuthenticatedProfile(id: profileID, displayName: "Sam")
+            $0.inviteRecipientCode = profileID.uuidString.lowercased()
+            $0.inviteRecipientStatus = .idle
+        }
+
+        let fixture = TestStore(
+            initialState: CompetitionFeature.State(publication: publication(.simulatedFixture))
+        ) {
+            CompetitionFeature()
+        }
+        await fixture.send(.challengeAgainTapped(closedID))
     }
 
     private func publication(revision: UInt64) -> LocalCompetitionPublication {

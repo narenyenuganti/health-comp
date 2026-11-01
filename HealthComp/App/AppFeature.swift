@@ -93,7 +93,9 @@ struct AppFeature {
                     mode: .authenticated,
                     displayName: profile.displayName
                 ),
-                mainTab: MainTabFeature.State(),
+                mainTab: MainTabFeature.State(
+                    competition: CompetitionFeature.State(ownProfile: profile)
+                ),
                 profile: profile,
                 authEpoch: epoch
             )
@@ -186,6 +188,7 @@ struct AppFeature {
     @Dependency(\.authenticatedProfileStorage)
     private var authenticatedProfileStorage
     @Dependency(\.competitionClient) private var competitionClient
+    @Dependency(\.competitionRoutingClient) private var competitionRoutingClient
     private let profileTransitionGate = AppProfileTransitionGate()
 
     private enum CancelID {
@@ -353,7 +356,9 @@ struct AppFeature {
                         mode: .authenticated,
                         displayName: profile.displayName
                     )
-                    state.mainTab = MainTabFeature.State()
+                    state.mainTab = MainTabFeature.State(
+                        competition: CompetitionFeature.State(ownProfile: profile)
+                    )
                 case .failure(.profileTransitionRequiresCleanup):
                     let isUnmounted = state.profileStoragePaths == nil && state.mainTab == nil
                     becomeLaunchFailure(state: &state)
@@ -477,6 +482,7 @@ struct AppFeature {
                 switch response {
                 case let .success(profile) where profile.id == currentProfile.id:
                     state.profile = profile
+                    state.mainTab?.competition.ownProfile = profile
                     return .merge(
                         .send(
                             .account(
@@ -610,6 +616,13 @@ struct AppFeature {
         }
         .ifLet(\.mainTab, action: \.mainTab) {
             MainTabFeature()
+        }
+        // A route held for this profile must not reach the next one.
+        .onChange(of: { $0.mainTab?.pendingRoute?.sequence }) { heldSequence, _ in
+            Reduce { state, _ in
+                guard state.mainTab == nil, let heldSequence else { return .none }
+                return .run { _ in competitionRoutingClient.consume(heldSequence) }
+            }
         }
     }
 

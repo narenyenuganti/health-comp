@@ -64,8 +64,8 @@ enum LocalCompetitionLifecyclePresentation: Equatable, Sendable {
         createdAt: Date,
         expiresAt: Date?
     )
-    case declined(at: Date)
-    case expired(at: Date)
+    case declined(at: Date, direction: InvitationDirection)
+    case expired(at: Date, direction: InvitationDirection)
     case scheduled
     case active(dayOrdinal: Int)
     case endsToday
@@ -216,48 +216,42 @@ struct LocalCompetitionPresentation: Equatable, Identifiable, Sendable {
 }
 
 struct LocalCompetitionAward: Equatable, Identifiable, Sendable {
-    enum Kind: String, Equatable, Sendable {
-        case completion
-        case victory
-    }
-
     let id: String
     let competitionID: CompetitionID
-    let kind: Kind
     let awardedAt: Date
     let friendDisplayName: String
+    let opponentIdentity: String
 
+    /// A win is the award: one per won week, newest first. Folding the same
+    /// week twice keeps one award.
     static func fold(
         completed presentations: [LocalCompetitionPresentation]
     ) -> [Self] {
         var awardsByID: [String: Self] = [:]
         for presentation in presentations {
-            guard let terminal = presentation.terminalResult else { continue }
+            guard let terminal = presentation.terminalResult,
+                  terminal.outcome == .win else { continue }
             let prefix = [
                 "local-competition-award",
                 "v1",
                 presentation.id.rawValue.uuidString.lowercased(),
             ].joined(separator: ":")
-            let completion = Self(
-                id: "\(prefix):completion",
+            let victory = Self(
+                id: "\(prefix):victory",
                 competitionID: presentation.id,
-                kind: .completion,
                 awardedAt: terminal.completedAt,
-                friendDisplayName: LocalCompetitionIdentity.opponentDisplayName
+                friendDisplayName: presentation.opponentDisplayName,
+                opponentIdentity: presentation.opponentIdentity
             )
-            awardsByID[completion.id] = completion
-            if terminal.outcome == .win {
-                let victory = Self(
-                    id: "\(prefix):victory",
-                    competitionID: presentation.id,
-                    kind: .victory,
-                    awardedAt: terminal.completedAt,
-                    friendDisplayName: LocalCompetitionIdentity.opponentDisplayName
-                )
-                awardsByID[victory.id] = victory
-            }
+            awardsByID[victory.id] = victory
         }
-        return awardsByID.values.sorted { $0.id < $1.id }
+        return Array(awardsByID.values).sortedNewestFirst()
+    }
+}
+
+extension [LocalCompetitionAward] {
+    func sortedNewestFirst() -> Self {
+        sorted { ($0.awardedAt, $1.id) > ($1.awardedAt, $0.id) }
     }
 }
 
@@ -279,6 +273,68 @@ struct LocalCompetitionDashboard: Equatable, Sendable {
     let awards: [LocalCompetitionAward]
     let issues: [LocalCompetitionClientIssue]
     let hiddenTerminalCompetitionCount: Int
+}
+
+/// Closed challenges stay a day so Home and an open challenge screen can say what happened.
+let competitionClosedChallengeRetention: TimeInterval = 24 * 60 * 60
+
+func competitionIsRetainedOnDashboard(
+    _ lifecycle: LocalCompetitionLifecyclePresentation, now: Date
+) -> Bool {
+    switch lifecycle {
+    case let .declined(at, _), let .expired(at, _):
+        now < at.addingTimeInterval(competitionClosedChallengeRetention)
+    default: true
+    }
+}
+
+extension LocalCompetitionDashboard {
+    /// The projector drops a match whose refresh failed. Keep its last
+    /// published presentation so it stays on screen with its problem line
+    /// and an open screen doesn't pop.
+    func keepingFailedCompetitions(
+        from previous: LocalCompetitionDashboard?,
+        now: Date
+    ) -> Self {
+        let failedIDs = Set(issues.flatMap { issue -> [CompetitionID] in
+            if case let .competitionFailures(ids) = issue { return ids }
+            return []
+        })
+        let shownIDs = Set(competitions.map(\.id))
+        let kept = (previous?.competitions ?? []).filter {
+            failedIDs.contains($0.id) && !shownIDs.contains($0.id)
+                && competitionIsRetainedOnDashboard($0.lifecycle, now: now)
+        }
+        guard !kept.isEmpty else { return self }
+        let keptIDs = Set(kept.map(\.id))
+        return Self(
+            competitions: (competitions + kept).sorted {
+                $0.id.rawValue.uuidString < $1.id.rawValue.uuidString
+            },
+            awards: (awards + (previous?.awards ?? []).filter {
+                keptIDs.contains($0.competitionID)
+            }).sortedNewestFirst(),
+            issues: issues,
+            hiddenTerminalCompetitionCount: hiddenTerminalCompetitionCount
+        )
+    }
+
+    /// The next instant Home changes on its own: a pending challenge lapses,
+    /// a closed one leaves after a day, or a result moves to History.
+    func nextHomeBoundary(after now: Date) -> Date? {
+        competitions.compactMap { competition -> Date? in
+            switch competition.lifecycle {
+            case let .pending(_, _, expiresAt):
+                expiresAt
+            case let .declined(at, _), let .expired(at, _):
+                at.addingTimeInterval(competitionClosedChallengeRetention)
+            case .completed:
+                competitionResultLeavesHome(competition)?.at
+            default:
+                nil
+            }
+        }.filter { $0 > now }.min()
+    }
 }
 
 enum CompetitionPublicationSource: Equatable, Sendable {
@@ -1003,6 +1059,9 @@ private actor LocalCompetitionCoordinator {
             context: context,
             configuration: configuration,
             issues: Self.deduplicated(publicationIssues)
+        ).keepingFailedCompetitions(
+            from: latestPublication?.dashboard,
+            now: context.instant.wallDate
         )
         let publication = LocalCompetitionPublication(
             publicationRevision: publicationRevision,
@@ -1174,13 +1233,8 @@ enum LocalCompetitionProjector {
                 configuration: configuration
             )
         }.sorted { $0.id.rawValue.uuidString < $1.id.rawValue.uuidString }
-        let visible = all.filter { presentation in
-            switch presentation.lifecycle {
-            case .declined, .expired:
-                return false
-            default:
-                return true
-            }
+        let visible = all.filter {
+            competitionIsRetainedOnDashboard($0.lifecycle, now: context.instant.wallDate)
         }
         return LocalCompetitionDashboard(
             competitions: visible,
@@ -1315,7 +1369,10 @@ enum LocalCompetitionProjector {
         let projection = loaded.projection
         let competition = projection.competition
         let terminal = terminalPresentation(for: competition.lifecycle)
-        let lifecycle = lifecyclePresentation(competition.lifecycle)
+        let lifecycle = lifecyclePresentation(
+            competition.lifecycle,
+            direction: loaded.journal.genesis.direction
+        )
         let plan = competition.opponentPlan
         let acceptedConfiguration = plan.map {
             LocalCompetitionAcceptedPresentation(
@@ -1374,7 +1431,8 @@ enum LocalCompetitionProjector {
     }
 
     private static func lifecyclePresentation(
-        _ lifecycle: CompetitionLifecycle
+        _ lifecycle: CompetitionLifecycle,
+        direction: InvitationDirection
     ) -> LocalCompetitionLifecyclePresentation {
         switch lifecycle {
         case let .pendingInvitation(invitation):
@@ -1383,8 +1441,8 @@ enum LocalCompetitionProjector {
                 createdAt: invitation.createdAt,
                 expiresAt: invitation.expiresAt
             )
-        case let .declined(at): return .declined(at: at)
-        case let .expired(at): return .expired(at: at)
+        case let .declined(at): return .declined(at: at, direction: direction)
+        case let .expired(at): return .expired(at: at, direction: direction)
         case .scheduled: return .scheduled
         case let .active(day): return .active(dayOrdinal: day.ordinal)
         case .endsToday: return .endsToday

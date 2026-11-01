@@ -44,6 +44,11 @@ struct MainTabFeature {
         var inviteClaimStatus: InviteClaimStatus
         /// Shown instead of Home; the competition starts once it finishes.
         var onboarding: PermissionOnboarding?
+        var showsHistory: Bool
+        var isAccountPresented: Bool
+        /// A route to a match that isn't loaded yet: it refreshed once and
+        /// waits for the match, without moving the current screens.
+        var heldRouteSequence: UInt64?
 
         init(
             competition: CompetitionFeature.State = CompetitionFeature.State(),
@@ -55,7 +60,10 @@ struct MainTabFeature {
             claimRouteSequenceInFlight: UInt64? = nil,
             pendingClaimNavigation: PendingClaimNavigation? = nil,
             inviteClaimStatus: InviteClaimStatus = .idle,
-            onboarding: PermissionOnboarding? = nil
+            onboarding: PermissionOnboarding? = nil,
+            showsHistory: Bool = false,
+            isAccountPresented: Bool = false,
+            heldRouteSequence: UInt64? = nil
         ) {
             self.competition = competition
             self.path = path
@@ -67,6 +75,9 @@ struct MainTabFeature {
             self.pendingClaimNavigation = pendingClaimNavigation
             self.inviteClaimStatus = inviteClaimStatus
             self.onboarding = onboarding
+            self.showsHistory = showsHistory
+            self.isAccountPresented = isAccountPresented
+            self.heldRouteSequence = heldRouteSequence
         }
     }
 
@@ -94,6 +105,9 @@ struct MainTabFeature {
         case dismissRetryableClaim
         case dismissClaimStatus
         case pathChanged([CompetitionID])
+        case historyPresentationChanged(Bool)
+        case accountPresentationChanged(Bool)
+        case pendingRouteTimedOut(UInt64)
         case onboardingChecked([PermissionOnboardingStep])
         case onboardingContinueTapped
         case onboardingNotNowTapped
@@ -110,9 +124,11 @@ struct MainTabFeature {
         case routes
         case inviteClaim
         case claimConfirmationTimeout
+        case routeHold
     }
 
     private static let claimConfirmationTimeout: Duration = .seconds(15)
+    private static let routeHoldTimeout: Duration = .seconds(15)
 
     var body: some ReducerOf<Self> {
         Scope(state: \.competition, action: \.competition) {
@@ -210,11 +226,13 @@ struct MainTabFeature {
                 state.claimRouteSequenceInFlight = nil
                 state.pendingClaimNavigation = nil
                 state.inviteClaimStatus = .idle
+                state.heldRouteSequence = nil
                 return .concatenate(
                     .merge(
                         .cancel(id: CancelID.routes),
                         .cancel(id: CancelID.inviteClaim),
-                        .cancel(id: CancelID.claimConfirmationTimeout)
+                        .cancel(id: CancelID.claimConfirmationTimeout),
+                        .cancel(id: CancelID.routeHold)
                     ),
                     .send(.competition(.stop))
                 )
@@ -253,6 +271,28 @@ struct MainTabFeature {
                 let visible = visibleCompetitionIDs(in: state)
                 state.path = path.filter(visible.contains)
                 return .none
+
+            case let .historyPresentationChanged(isPresented):
+                state.showsHistory = isPresented
+                return .none
+
+            case let .accountPresentationChanged(isPresented):
+                state.isAccountPresented = isPresented
+                return .none
+
+            case let .pendingRouteTimedOut(sequence):
+                guard state.pendingRoute?.sequence == sequence else {
+                    return .none
+                }
+                state.pendingRoute = nil
+                state.heldRouteSequence = nil
+                state.lastHandledRouteSequence = max(
+                    state.lastHandledRouteSequence,
+                    sequence
+                )
+                return .run { _ in
+                    competitionRoutingClient.consume(sequence)
+                }
 
             case .processPendingClaim:
                 guard state.competition.publication != nil,
@@ -472,20 +512,42 @@ struct MainTabFeature {
             state.pendingRoute = nil
             return .none
         }
-        state.pendingRoute = nil
-        state.lastHandledRouteSequence = envelope.sequence
         switch envelope.route {
         case let .competition(id):
-            state.path = visibleCompetitionIDs(in: state).contains(id)
-                ? [id]
-                : []
+            guard visibleCompetitionIDs(in: state).contains(id) else {
+                // Keep the stack as it is; refresh and time out once per route.
+                state.pendingRoute = envelope
+                guard state.heldRouteSequence != envelope.sequence else {
+                    return .none
+                }
+                state.heldRouteSequence = envelope.sequence
+                return .merge(
+                    .send(.competition(.pullToRefresh)),
+                    .run { send in
+                        try await continuousClock.sleep(for: Self.routeHoldTimeout)
+                        await send(.pendingRouteTimedOut(envelope.sequence))
+                    }
+                    .cancellable(id: CancelID.routeHold, cancelInFlight: true)
+                )
+            }
+            state.pendingRoute = nil
+            state.heldRouteSequence = nil
+            state.lastHandledRouteSequence = envelope.sequence
+            state.showsHistory = false
+            state.isAccountPresented = false
+            state.path = [id]
+            return .merge(
+                .cancel(id: CancelID.routeHold),
+                .run { _ in
+                    competitionRoutingClient.consume(envelope.sequence)
+                }
+            )
         case .claimInvite:
             // Claim routes remain pending in the process-rooted hub until the
             // authenticated claim flow explicitly accepts or rejects them.
+            state.pendingRoute = nil
+            state.lastHandledRouteSequence = envelope.sequence
             return .none
-        }
-        return .run { _ in
-            competitionRoutingClient.consume(envelope.sequence)
         }
     }
 

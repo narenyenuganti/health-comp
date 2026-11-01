@@ -92,15 +92,6 @@ struct CompetitionLocalDateFormattingChecks {
         )
         require(competitionMomentText(moment, now: now, locale: fr, timeZone: la), contains: ["21:41"])
 
-        expect(
-            normalized(competitionAwardEarnedText(
-                instant("2001-01-01T12:00:00Z"),
-                now: instant("2001-02-01T12:00:00Z"),
-                locale: us,
-                timeZone: utc
-            )),
-            "Earned Mon, Jan 1"
-        )
         print("Competition local date formatting checks passed")
     }
 }

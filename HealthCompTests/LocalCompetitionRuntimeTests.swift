@@ -585,6 +585,52 @@ final class LocalCompetitionRuntimeTests: XCTestCase {
         )
     }
 
+    func testNextWakeIncludesTheDayAClosedChallengeLeavesHome() async throws {
+        let now = try date(year: 2026, month: 7, day: 2, hour: 12)
+        let id = CompetitionID(
+            UUID(uuidString: "50000000-0000-0000-0000-000000000002")!
+        )
+        let store = RuntimeTestEventStore()
+        let source = FixtureActivitySource(
+            fixture: try ActivityFixture(
+                initialInstant: EnvironmentInstant(
+                    wallDate: now,
+                    monotonic: MonotonicInstant(
+                        epochID: "closed-challenge-wake",
+                        nanoseconds: 1_000
+                    )
+                ),
+                initialDays: [],
+                changes: []
+            )
+        )
+        let runtime = LocalCompetitionRuntime(
+            environment: .accelerated(source: source),
+            store: store,
+            configuration: .testing
+        )
+        _ = try await runtime.create(
+            try CompetitionGenesis(
+                competitionID: id,
+                direction: .incoming,
+                createdAt: now.addingTimeInterval(-60),
+                expiresAt: now.addingTimeInterval(48 * 60 * 60),
+                scoringPolicy: .healthKitCompatibility,
+                downwardRevisionPolicy: .maximumObserved
+            )
+        )
+        let declined = try await runtime.decline(competitionID: id)
+        guard case let .declined(at) = declined.projection.competition.lifecycle else {
+            return XCTFail("Expected a decline")
+        }
+        let loaded = await runtime.loadAll().successfulJournals
+        let context = await source.context()
+
+        let wake = await runtime.nextWake(in: loaded, context: context)
+
+        XCTAssertEqual(wake, at.addingTimeInterval(24 * 60 * 60))
+    }
+
     func testRefreshThenArchiveShareOneMutationGate() async throws {
         let setup = try await makeAcceptedCompetition(conflictOnce: false)
         let endBoundary = try setup.window.calendar.startOfDay(
