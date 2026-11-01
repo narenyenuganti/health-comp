@@ -453,36 +453,41 @@ final class MultiUserCompetitionUITests: XCTestCase {
         ).firstMatch.exists)
     }
 
-    func testWelcomeDisclosesSharedDerivedActivity() {
+    func testChallengeHealthOnboardingFramesTheMatch() {
+        launch(.healthOnboardingChallenge)
+        defer { app.terminate() }
+        XCTAssertTrue(
+            app.staticTexts["Connect Health so your rings count"]
+                .waitForExistence(timeout: 8)
+        )
+        XCTAssertTrue(
+            app.staticTexts[
+                "HealthComp reads your Activity rings to score each match day. You’ll join the match right after."
+            ].exists
+        )
+        XCTAssertTrue(app.buttons["Connect Health"].exists)
+        let disclosure = app.descendants(matching: .any).matching(
+            NSPredicate(
+                format: "label CONTAINS %@ AND label CONTAINS %@",
+                "Derived match data is shared",
+                "Daily points, rounded Activity percentages and modes"
+            )
+        ).firstMatch
+        XCTAssertTrue(disclosure.waitForExistence(timeout: 3))
+    }
+
+    func testWelcomeIsSignInAndPrivacyPolicyOnly() {
         launch(.welcome)
         defer { app.terminate() }
         XCTAssertTrue(app.staticTexts["Welcome to HealthComp"].waitForExistence(timeout: 8))
-        let rawBoundary = app.descendants(matching: .any).matching(
-            NSPredicate(
-                format: "label CONTAINS %@ AND label CONTAINS %@",
-                "Your rings",
-                "Raw Health data stays on this iPhone"
-            )
-        ).firstMatch
-        guard rawBoundary.waitForExistence(timeout: 3) else {
-            return XCTFail("Welcome must distinguish raw Health data from shared derived Activity.")
-        }
-        scrollToElement(rawBoundary)
-        let sharingDisclosure = app.descendants(matching: .any).matching(
-            NSPredicate(
-                format: "label CONTAINS %@ AND label CONTAINS %@",
-                "Their points",
-                "The other person gets your daily points, rounded Activity percentages and modes"
-            )
-        ).firstMatch
-        XCTAssertTrue(sharingDisclosure.exists)
-        scrollToElement(sharingDisclosure)
+        XCTAssertTrue(
+            app.descendants(matching: .any)["account.sign-in-with-apple"].exists
+        )
+        XCTAssertFalse(app.staticTexts["HOW TO READ IT"].exists)
         XCTAssertFalse(app.descendants(matching: .any).matching(
-            NSPredicate(format: "label CONTAINS %@", "The detail never leaves your iPhone")
+            NSPredicate(format: "label CONTAINS %@", "Your rings")
         ).firstMatch.exists)
-        XCTAssertFalse(app.descendants(matching: .any).matching(
-            NSPredicate(format: "label CONTAINS %@", "Your opponent sees only your daily total")
-        ).firstMatch.exists)
+        XCTAssertFalse(app.staticTexts["account.subtitle"].exists)
         let privacyPolicy = app.descendants(matching: .any)["account.privacy-policy"]
         guard privacyPolicy.waitForExistence(timeout: 3) else {
             return XCTFail("Privacy Policy must be available before signing in.")
@@ -492,6 +497,18 @@ final class MultiUserCompetitionUITests: XCTestCase {
         privacyPolicy.tap()
         let openedURL = app.staticTexts["https://healthcomp.app/privacy"]
         XCTAssertTrue(openedURL.waitForExistence(timeout: 3))
+    }
+
+    func testWelcomeWithPendingChallengeAsksToSignIn() {
+        launch(.welcomeChallenge)
+        defer { app.terminate() }
+        XCTAssertTrue(app.staticTexts["You have a challenge"].waitForExistence(timeout: 8))
+        let subtitle = app.staticTexts["account.subtitle"]
+        XCTAssertTrue(subtitle.exists)
+        XCTAssertEqual(subtitle.label, "Sign in with the account it was sent to.")
+        XCTAssertTrue(
+            app.descendants(matching: .any)["account.sign-in-with-apple"].exists
+        )
     }
 
     func testAccountEditingAndPrivacyBoundariesRemainAccessible() {
@@ -535,7 +552,7 @@ final class MultiUserCompetitionUITests: XCTestCase {
         )
         XCTAssertEqual(
             app.staticTexts["account.message"].label,
-            "Choose a name from 1 to 64 characters without line breaks."
+            "That name is reserved. Try another."
         )
         // Sign out sits below Appearance, under the keyboard; Return
         // dismisses it so the list can scroll.
@@ -547,52 +564,122 @@ final class MultiUserCompetitionUITests: XCTestCase {
         launch(.account)
         XCTAssertTrue(app.navigationBars["Account"].waitForExistence(timeout: 8))
 
-        let deletePage = element("account.delete.open")
-        scrollToElement(deletePage)
-        deletePage.tap()
-        XCTAssertTrue(
-            app.navigationBars["Delete Account"].waitForExistence(timeout: 3)
-        )
         let deleteAccount = app.buttons["account.delete"]
         scrollToElement(deleteAccount)
         deleteAccount.tap()
+        XCTAssertFalse(app.navigationBars["Delete Account"].exists)
 
         let alert = app.alerts["Delete Account?"]
         XCTAssertTrue(alert.waitForExistence(timeout: 3))
         XCTAssertTrue(
-            alert.staticTexts[
-                "You will confirm with Sign in with Apple. This permanently deletes your account and cannot be undone."
-            ].exists
+            text(
+                "You’ll confirm with Sign in with Apple. Live matches are cancelled, and finished matches stay in the other person’s history under the name Former competitor. This can’t be undone.",
+                in: alert
+            ).exists
         )
         XCTAssertTrue(alert.buttons["Delete Account"].exists)
         alert.buttons["Cancel"].tap()
 
         XCTAssertTrue(alert.waitForNonExistence(timeout: 3))
-        XCTAssertTrue(app.navigationBars["Delete Account"].exists)
+        XCTAssertTrue(app.navigationBars["Account"].exists)
         XCTAssertTrue(deleteAccount.exists)
         XCTAssertFalse(app.progressIndicators["Deleting account"].exists)
     }
 
-    func testAccountDeletionFailureRemainsVisibleOnDeletionPage() {
+    func testAccountDeletionFailureShowsUnderDeleteRow() {
         launch(.account)
         XCTAssertTrue(app.navigationBars["Account"].waitForExistence(timeout: 8))
-        let deletePage = element("account.delete.open")
-        scrollToElement(deletePage)
-        deletePage.tap()
-        XCTAssertTrue(
-            app.navigationBars["Delete Account"].waitForExistence(timeout: 3)
-        )
-        app.buttons["account.delete"].tap()
+        let deleteAccount = app.buttons["account.delete"]
+        scrollToElement(deleteAccount)
+        deleteAccount.tap()
         let alert = app.alerts["Delete Account?"]
         XCTAssertTrue(alert.waitForExistence(timeout: 3))
         alert.buttons["account.delete.confirm"].firstMatch.tap()
 
         let message = app.staticTexts["account.message"]
         XCTAssertTrue(message.waitForExistence(timeout: 3))
-        XCTAssertEqual(message.label, "HealthComp could not connect. Please try again.")
-        XCTAssertTrue(app.navigationBars["Delete Account"].exists)
+        XCTAssertEqual(
+            message.label,
+            "Couldn’t delete your account. Check your connection and try again."
+        )
         XCTAssertTrue(app.buttons["account.delete"].isEnabled)
         XCTAssertFalse(app.progressIndicators["Deleting account"].exists)
+    }
+
+    func testSignOutAsksFirstAndStatesTheEffect() {
+        launch(.account)
+        defer { app.terminate() }
+        XCTAssertTrue(app.navigationBars["Account"].waitForExistence(timeout: 8))
+        let signOut = app.buttons["account.sign-out"]
+        scrollToElement(signOut)
+        signOut.tap()
+
+        let alert = app.alerts["Sign out?"]
+        XCTAssertTrue(alert.waitForExistence(timeout: 3))
+        XCTAssertTrue(
+            text(
+                "While you’re signed out, your points stop reaching your 2 live matches and notifications stop. Sign back in before they end to catch up.",
+                in: alert
+            ).exists
+        )
+        alert.buttons["Cancel"].tap()
+        XCTAssertTrue(alert.waitForNonExistence(timeout: 3))
+        XCTAssertNotEqual(signOut.value as? String, "Signing out")
+
+        signOut.tap()
+        XCTAssertTrue(alert.waitForExistence(timeout: 3))
+        alert.buttons["account.sign-out.confirm"].firstMatch.tap()
+        XCTAssertTrue(alert.waitForNonExistence(timeout: 3))
+        XCTAssertEqual(signOut.value as? String, "Signing out")
+    }
+
+    func testNotificationsPageOpensSettingsAndUnmutes() throws {
+        launch(.account)
+        defer { app.terminate() }
+        XCTAssertTrue(app.navigationBars["Account"].waitForExistence(timeout: 8))
+        element("account.notifications").tap()
+        XCTAssertTrue(app.navigationBars["Notifications"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["Turned off in iOS Settings"].exists)
+        let mutedHeader = app.staticTexts["MUTED"]
+        XCTAssertTrue(mutedHeader.exists)
+        // The remote suite's audit set. `.dynamicType` flags a different
+        // List element on each run here (header, name, initial), so it's
+        // left to the local suite's single-screen audit, as elsewhere.
+        try app.performAccessibilityAudit(
+            for: XCUIAccessibilityAuditType.textClipped
+                .union(.hitRegion)
+                .union(.sufficientElementDescription)
+        )
+
+        app.buttons["account.notifications.settings"].tap()
+        XCTAssertTrue(
+            app.staticTexts[UIApplication.openNotificationSettingsURLString]
+                .waitForExistence(timeout: 3)
+        )
+
+        let unmute = app.buttons["Unmute Hermes"]
+        XCTAssertTrue(unmute.exists)
+        unmute.tap()
+        XCTAssertTrue(mutedHeader.waitForNonExistence(timeout: 3))
+        XCTAssertFalse(app.buttons["account.notifications.unmute"].exists)
+    }
+
+    func testHealthPageOpensSettings() {
+        launch(.account)
+        defer { app.terminate() }
+        XCTAssertTrue(app.navigationBars["Account"].waitForExistence(timeout: 8))
+        element("account.health").tap()
+        XCTAssertTrue(app.navigationBars["Health"].waitForExistence(timeout: 3))
+        XCTAssertTrue(
+            text(
+                "iOS doesn’t tell apps whether Health access is on. If your points aren’t updating, turn on all categories for HealthComp in Settings → Privacy & Security → Health."
+            ).exists
+        )
+        app.buttons["account.health.settings"].tap()
+        XCTAssertTrue(
+            app.staticTexts[UIApplication.openSettingsURLString]
+                .waitForExistence(timeout: 3)
+        )
     }
 
     func testRemoteAppearanceSwitchRendersLightAndDark() {
@@ -972,7 +1059,9 @@ final class MultiUserCompetitionUITests: XCTestCase {
         case offlineClaim = "offline-claim"
         case account
         case welcome
+        case welcomeChallenge = "welcome-challenge"
         case healthOnboarding = "health-onboarding"
+        case healthOnboardingChallenge = "health-onboarding-challenge"
     }
 
     private func launch(
@@ -987,8 +1076,20 @@ final class MultiUserCompetitionUITests: XCTestCase {
         app.launchArguments = [
             "--multi-user-competition-test-lab",
             "--multi-user-competition-scenario", scenario.rawValue,
+            // The one-time color hint would shift scoreboards by test order.
+            "-healthcomp.colorHintSeen", "YES",
         ] + appearanceArguments
         app.launch()
+    }
+
+    /// Subscripts reject identifiers over 128 characters; match the label.
+    private func text(
+        _ label: String,
+        in root: XCUIElement? = nil
+    ) -> XCUIElement {
+        (root ?? app).staticTexts
+            .matching(NSPredicate(format: "label == %@", label))
+            .firstMatch
     }
 
     // List rows that push a page may surface as cells, not buttons.
