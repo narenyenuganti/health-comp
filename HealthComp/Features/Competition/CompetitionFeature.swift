@@ -47,6 +47,8 @@ struct CompetitionFeature {
         var inviteRecipientStatus: InviteRecipientStatus = .idle
         var createdInviteCompetitionID: CompetitionID?
         var createdInviteExpectedPublicationRevision: UInt64 = 0
+        /// The signed-in profile, so Home can draw its initial.
+        var ownProfile: AuthenticatedProfile?
 
         init(
             publication: CompetitionPublication? = nil,
@@ -62,7 +64,8 @@ struct CompetitionFeature {
             inviteCreationIdempotencyKey: UUID? = nil,
             inviteCreationRematchParentID: CompetitionID? = nil,
             createdInviteLink: CompetitionInviteShareLink? = nil,
-            inviteRecipient: AuthenticatedProfile? = nil
+            inviteRecipient: AuthenticatedProfile? = nil,
+            ownProfile: AuthenticatedProfile? = nil
         ) {
             self.publication = publication
             self.commandIDsInFlight = commandIDsInFlight
@@ -83,6 +86,7 @@ struct CompetitionFeature {
                 inviteCreationRematchParentID
             self.createdInviteLink = createdInviteLink
             self.inviteRecipient = inviteRecipient
+            self.ownProfile = ownProfile
         }
 
         func isCommandInFlight(_ id: CompetitionID) -> Bool {
@@ -105,6 +109,7 @@ struct CompetitionFeature {
         case declineTapped(CompetitionID)
         case archiveTapped(CompetitionID)
         case rematchTapped(CompetitionID)
+        case challengeAgainTapped(CompetitionID)
         case reinviteTapped
         case deleteTapped(CompetitionID)
         case commandFinished(CompetitionID, expectedRevision: UInt64)
@@ -348,6 +353,22 @@ struct CompetitionFeature {
                         )
                     )
                 }
+
+            // Prefills the Challenge sheet with the same account as a closed
+            // challenge. Nothing is created until Create is tapped.
+            case let .challengeAgainTapped(id):
+                guard state.publication?.source == .remoteParticipants,
+                      state.inviteCreationStatus != .creating,
+                      let parent = state.publication?.dashboard.competitions.first(where: { $0.id == id }),
+                      let profileID = RemoteCompetitionOpponentIdentity.profileID(parent.opponentIdentity)
+                else { return .none }
+                if state.inviteCreationRematchParentID != nil || state.inviteRecipient?.id != profileID {
+                    clearInviteCreation(state: &state)
+                }
+                state.inviteRecipient = AuthenticatedProfile(id: profileID, displayName: parent.opponentDisplayName)
+                state.inviteRecipientCode = profileID.uuidString.lowercased()
+                state.inviteRecipientStatus = .idle
+                return .none
 
             case .reinviteTapped:
                 let id = LocalCompetitionIdentity.bootstrapCompetitionID

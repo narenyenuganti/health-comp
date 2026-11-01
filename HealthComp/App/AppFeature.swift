@@ -93,7 +93,9 @@ struct AppFeature {
                     mode: .authenticated,
                     displayName: profile.displayName
                 ),
-                mainTab: MainTabFeature.State(),
+                mainTab: MainTabFeature.State(
+                    competition: CompetitionFeature.State(ownProfile: profile)
+                ),
                 profile: profile,
                 authEpoch: epoch
             )
@@ -353,7 +355,9 @@ struct AppFeature {
                         mode: .authenticated,
                         displayName: profile.displayName
                     )
-                    state.mainTab = MainTabFeature.State()
+                    state.mainTab = MainTabFeature.State(
+                        competition: CompetitionFeature.State(ownProfile: profile)
+                    )
                 case .failure(.profileTransitionRequiresCleanup):
                     let isUnmounted = state.profileStoragePaths == nil && state.mainTab == nil
                     becomeLaunchFailure(state: &state)
@@ -477,6 +481,7 @@ struct AppFeature {
                 switch response {
                 case let .success(profile) where profile.id == currentProfile.id:
                     state.profile = profile
+                    state.mainTab?.competition.ownProfile = profile
                     return .merge(
                         .send(
                             .account(

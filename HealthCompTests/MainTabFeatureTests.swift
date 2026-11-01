@@ -282,27 +282,148 @@ final class MainTabFeatureTests: XCTestCase {
     }
 
     @MainActor
-    func testArchivedRoutesWhileUnknownConsumesAtRoot() async {
-        let archivedID = competitionID(
-            "81000000-0000-0000-0000-000000000004"
-        )
-        let unknownID = competitionID(
-            "81000000-0000-0000-0000-000000000005"
-        )
+    func testUnknownRouteHoldsTheStackAndRefreshesOnce() async {
+        let archivedID = competitionID("81000000-0000-0000-0000-000000000004")
+        let unknownID = competitionID("81000000-0000-0000-0000-000000000005")
         let routing = MainTabRoutingRecorder()
+        let recorder = MainTabLifecycleRecorder()
         let archived = publication(
             revision: 5,
             visibleID: archivedID,
-            lifecycle: .archived(
-                outcome: .win,
-                basis: .stableAcrossPostBoundaryReads,
-                completedAt: Date(timeIntervalSinceReferenceDate: 10),
-                archivedAt: Date(timeIntervalSinceReferenceDate: 11)
-            )
+            lifecycle: archivedLifecycle
         )
         let store = TestStore(
             initialState: MainTabFeature.State(
-                competition: CompetitionFeature.State(publication: archived)
+                competition: CompetitionFeature.State(publication: archived),
+                path: [archivedID]
+            )
+        ) {
+            MainTabFeature()
+        } withDependencies: {
+            $0.competitionRoutingClient = routing.client
+            $0.localCompetitionClient = recorder.client
+            $0.continuousClock = TestClock()
+        }
+        let envelope = CompetitionRouteEnvelope(
+            sequence: 2,
+            route: .competition(unknownID)
+        )
+
+        await store.send(.routeReceived(envelope)) {
+            $0.pendingRoute = envelope
+            $0.heldRouteSequence = 2
+        }
+        await store.receive(.competition(.pullToRefresh))
+
+        // A publication without the match keeps holding and doesn't refresh again.
+        let unrelated = publication(
+            revision: 6,
+            visibleID: archivedID,
+            lifecycle: archivedLifecycle
+        )
+        await store.send(.competition(.publication(unrelated))) {
+            $0.competition.publication = unrelated
+        }
+
+        await store.send(.stop) {
+            $0.heldRouteSequence = nil
+        }
+        await store.receive(.competition(.stop))
+        await store.finish()
+        XCTAssertEqual(recorder.reconcileTriggers, [.pullToRefresh])
+        XCTAssertEqual(routing.consumedSequences, [])
+    }
+
+    @MainActor
+    func testHeldRouteOpensWhenItsCompetitionAppears() async {
+        let id = competitionID("81000000-0000-0000-0000-000000000007")
+        let routing = MainTabRoutingRecorder()
+        let empty = publication(revision: 1, visibleIDs: [])
+        let store = TestStore(
+            initialState: MainTabFeature.State(
+                competition: CompetitionFeature.State(publication: empty)
+            )
+        ) {
+            MainTabFeature()
+        } withDependencies: {
+            $0.competitionRoutingClient = routing.client
+            $0.localCompetitionClient = MainTabLifecycleRecorder().client
+            $0.continuousClock = TestClock()
+        }
+        let envelope = CompetitionRouteEnvelope(sequence: 2, route: .competition(id))
+
+        await store.send(.routeReceived(envelope)) {
+            $0.pendingRoute = envelope
+            $0.heldRouteSequence = 2
+        }
+        await store.receive(.competition(.pullToRefresh))
+
+        let loaded = publication(revision: 2, visibleID: id)
+        await store.send(.competition(.publication(loaded))) {
+            $0.competition.publication = loaded
+            $0.pendingRoute = nil
+            $0.heldRouteSequence = nil
+            $0.lastHandledRouteSequence = 2
+            $0.path = [id]
+        }
+        await store.finish()
+        XCTAssertEqual(routing.consumedSequences, [2])
+    }
+
+    @MainActor
+    func testHeldRouteTimesOutWithoutClearingTheStack() async {
+        let archivedID = competitionID("81000000-0000-0000-0000-000000000008")
+        let unknownID = competitionID("81000000-0000-0000-0000-000000000009")
+        let routing = MainTabRoutingRecorder()
+        let clock = TestClock()
+        let archived = publication(
+            revision: 5,
+            visibleID: archivedID,
+            lifecycle: archivedLifecycle
+        )
+        let store = TestStore(
+            initialState: MainTabFeature.State(
+                competition: CompetitionFeature.State(publication: archived),
+                path: [archivedID]
+            )
+        ) {
+            MainTabFeature()
+        } withDependencies: {
+            $0.competitionRoutingClient = routing.client
+            $0.localCompetitionClient = MainTabLifecycleRecorder().client
+            $0.continuousClock = clock
+        }
+        let envelope = CompetitionRouteEnvelope(
+            sequence: 2,
+            route: .competition(unknownID)
+        )
+
+        await store.send(.routeReceived(envelope)) {
+            $0.pendingRoute = envelope
+            $0.heldRouteSequence = 2
+        }
+        await store.receive(.competition(.pullToRefresh))
+        await clock.advance(by: .seconds(15))
+        await store.receive(.pendingRouteTimedOut(2)) {
+            $0.pendingRoute = nil
+            $0.heldRouteSequence = nil
+            $0.lastHandledRouteSequence = 2
+        }
+        await store.finish()
+        XCTAssertEqual(store.state.path, [archivedID])
+        XCTAssertEqual(routing.consumedSequences, [2])
+    }
+
+    @MainActor
+    func testRouteClosesHistoryAndAccountBeforeOpening() async {
+        let id = competitionID("81000000-0000-0000-0000-00000000000A")
+        let routing = MainTabRoutingRecorder()
+        let visible = publication(revision: 1, visibleID: id)
+        let store = TestStore(
+            initialState: MainTabFeature.State(
+                competition: CompetitionFeature.State(publication: visible),
+                showsHistory: true,
+                isAccountPresented: true
             )
         ) {
             MainTabFeature()
@@ -311,30 +432,44 @@ final class MainTabFeatureTests: XCTestCase {
         }
 
         await store.send(
-            .routeReceived(
-                CompetitionRouteEnvelope(
-                    sequence: 1,
-                    route: .competition(archivedID)
-                )
-            )
+            .routeReceived(CompetitionRouteEnvelope(sequence: 3, route: .competition(id)))
         ) {
-            $0.path = [archivedID]
-            $0.lastHandledRouteSequence = 1
+            $0.showsHistory = false
+            $0.isAccountPresented = false
+            $0.path = [id]
+            $0.lastHandledRouteSequence = 3
         }
-        await store.send(
-            .routeReceived(
-                CompetitionRouteEnvelope(
-                    sequence: 2,
-                    route: .competition(unknownID)
-                )
-            )
-        ) {
-            $0.path = []
-            $0.lastHandledRouteSequence = 2
+        await store.finish()
+        XCTAssertEqual(routing.consumedSequences, [3])
+    }
+
+    @MainActor
+    func testHistoryAndAccountPresentationActionsSetState() async {
+        let store = TestStore(initialState: MainTabFeature.State()) {
+            MainTabFeature()
         }
 
-        XCTAssertEqual(routing.consumedSequences, [1, 2])
-        await store.finish()
+        await store.send(.historyPresentationChanged(true)) {
+            $0.showsHistory = true
+        }
+        await store.send(.accountPresentationChanged(true)) {
+            $0.isAccountPresented = true
+        }
+        await store.send(.historyPresentationChanged(false)) {
+            $0.showsHistory = false
+        }
+        await store.send(.accountPresentationChanged(false)) {
+            $0.isAccountPresented = false
+        }
+    }
+
+    private var archivedLifecycle: LocalCompetitionLifecyclePresentation {
+        .archived(
+            outcome: .win,
+            basis: .stableAcrossPostBoundaryReads,
+            completedAt: Date(timeIntervalSinceReferenceDate: 10),
+            archivedAt: Date(timeIntervalSinceReferenceDate: 11)
+        )
     }
 
     @MainActor

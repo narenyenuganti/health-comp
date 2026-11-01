@@ -646,7 +646,9 @@ final class AppFeatureTests: XCTestCase {
                 mode: .authenticated,
                 displayName: profile.displayName
             )
-            $0.mainTab = MainTabFeature.State()
+            $0.mainTab = MainTabFeature.State(
+                competition: CompetitionFeature.State(ownProfile: profile)
+            )
         }
         XCTAssertEqual(
             competitionMounts.calls,
@@ -723,7 +725,9 @@ final class AppFeatureTests: XCTestCase {
                 mode: .authenticated,
                 displayName: profile.displayName
             )
-            $0.mainTab = MainTabFeature.State()
+            $0.mainTab = MainTabFeature.State(
+                competition: CompetitionFeature.State(ownProfile: profile)
+            )
         }
         XCTAssertEqual(recorder.calls, ["refresh", "bootstrap"])
     }
@@ -836,7 +840,9 @@ final class AppFeatureTests: XCTestCase {
                 mode: .authenticated,
                 displayName: profile.displayName
             )
-            $0.mainTab = MainTabFeature.State()
+            $0.mainTab = MainTabFeature.State(
+                competition: CompetitionFeature.State(ownProfile: profile)
+            )
         }
         XCTAssertEqual(names.calls, ["nil", "Taylor"])
     }
@@ -888,7 +894,9 @@ final class AppFeatureTests: XCTestCase {
                 mode: .authenticated,
                 displayName: profile.displayName
             )
-            $0.mainTab = MainTabFeature.State()
+            $0.mainTab = MainTabFeature.State(
+                competition: CompetitionFeature.State(ownProfile: profile)
+            )
         }
 
         let cancelled = TestStore(initialState: .signedOut(epoch: 4)) {
@@ -981,6 +989,8 @@ final class AppFeatureTests: XCTestCase {
             .updateProfileResponse(epoch: 8, .success(updated))
         ) {
             $0.profile = updated
+            // Home's avatar reads the competition's copy of the profile.
+            $0.mainTab?.competition.ownProfile = updated
         }
         await store.receive(
             .account(.profileUpdateFinished("Taylor Prime"))

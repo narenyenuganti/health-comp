@@ -272,19 +272,22 @@ private struct AuthenticatedRootView: View {
     let accountStore: StoreOf<AccountFeature>
     let accountCode: UUID?
 
-    @State private var isAccountPresented = false
-
     var body: some View {
         MainTabView(
             store: mainStore,
-            openAccount: { isAccountPresented = true }
+            openAccount: { mainStore.send(.accountPresentationChanged(true)) }
         )
-        .sheet(isPresented: $isAccountPresented) {
+        .sheet(
+            isPresented: Binding(
+                get: { mainStore.isAccountPresented },
+                set: { mainStore.send(.accountPresentationChanged($0)) }
+            )
+        ) {
             AccountSheet(
                 mainStore: mainStore,
                 accountStore: accountStore,
                 accountCode: accountCode,
-                done: { isAccountPresented = false }
+                done: { mainStore.send(.accountPresentationChanged(false)) }
             )
         }
     }
