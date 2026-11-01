@@ -933,6 +933,11 @@ func competitionTallyCopy(
             headline: "Waiting for \(name) to sync",
             body: "Nothing for you to do. If \(name) doesn’t sync by \(deadline), the result uses what’s in."
         )
+    case .awaitingOpponentCheck:
+        return CompetitionTallyCopy(
+            headline: "Waiting for \(name)’s last check",
+            body: "Nothing for you to do. If \(name) doesn’t open HealthComp by \(deadline), the result uses what’s in."
+        )
     case let .incomplete(missing, unavailable) where unavailable.isEmpty:
         let days = competitionDayListText(missing, locale: locale)
         let verb = missing.count == 1 ? "hasn’t" : "haven’t"

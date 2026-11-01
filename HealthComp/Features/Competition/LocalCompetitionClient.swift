@@ -154,6 +154,8 @@ enum LocalCompetitionTallyAttention: Equatable, Sendable {
     /// The other person's final days are not in yet: a non-final simulated
     /// plan in the fixture, missing ledger rows in remote.
     case opponentPlanUnavailable
+    /// Remote only: your last check is in and the other person's isn't.
+    case awaitingOpponentCheck
     case awaitingStability
 }
 

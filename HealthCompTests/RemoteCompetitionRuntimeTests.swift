@@ -2475,7 +2475,7 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
             creatorID: creatorID,
             inviteeID: profileID,
             createdAt: createdAt,
-            nextServerSequence: 11,
+            nextServerSequence: 18,
             lifecycle: .tallying
         )
         var changes = try scheduledHistoryPage(
@@ -2484,58 +2484,61 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
             inviteeID: profileID,
             createdAt: createdAt
         ).changes
-        for ordinal in 1...7 {
-            let sequence = Int64(ordinal + 3)
-            let wire = try RemoteScoreRevisionWireV1(
-                competitionID: competitionID,
-                participantID: profileID,
-                dayOrdinal: ordinal,
-                moveMode: "activeEnergyKilocalories",
-                standMode: "standHours",
-                moveBasisPoints: 10_000,
-                exerciseBasisPoints: 10_000,
-                standBasisPoints: 10_000,
-                availabilityReason: "available",
-                scoringPolicyIdentity: RemoteScoringWireV1.policyIdentity,
-                clientRevision: Int64(ordinal)
-            )
-            let evaluatedAt = createdAt.addingTimeInterval(
-                TimeInterval(sequence * 60)
-            )
-            changes.append(
-                try CompetitionChange(
-                    serverSequence: sequence,
-                    kind: .scoreRevisionRecorded,
-                    entityID: profileID,
-                    occurredAt: evaluatedAt,
-                    payload: .score(
-                        try CompetitionScoreChange(
-                            participantProfileID: profileID,
-                            dayOrdinal: ordinal,
-                            clientRevision: Int64(ordinal),
-                            moveMode: wire.moveMode,
-                            standMode: wire.standMode,
-                            moveBasisPoints: wire.moveBasisPoints,
-                            exerciseBasisPoints: wire.exerciseBasisPoints,
-                            standBasisPoints: wire.standBasisPoints,
-                            acceptedCentiPoints: wire.acceptedCentiPoints,
-                            availabilityReason: wire.availabilityReason,
-                            scoringPolicyIdentity: wire
-                                .scoringPolicyIdentity,
-                            wireDigestVersion: 1,
-                            wireContentSHA256: wire.wireContentSHA256,
-                            serverSequence: sequence,
-                            evaluatedAt: evaluatedAt
+        // Both people's days are in; the other person's check isn't.
+        for (index, participantID) in [profileID, creatorID].enumerated() {
+            for ordinal in 1...7 {
+                let sequence = Int64(index * 7 + ordinal + 3)
+                let wire = try RemoteScoreRevisionWireV1(
+                    competitionID: competitionID,
+                    participantID: participantID,
+                    dayOrdinal: ordinal,
+                    moveMode: "activeEnergyKilocalories",
+                    standMode: "standHours",
+                    moveBasisPoints: 10_000,
+                    exerciseBasisPoints: 10_000,
+                    standBasisPoints: 10_000,
+                    availabilityReason: "available",
+                    scoringPolicyIdentity: RemoteScoringWireV1.policyIdentity,
+                    clientRevision: Int64(ordinal)
+                )
+                let evaluatedAt = createdAt.addingTimeInterval(
+                    TimeInterval(sequence * 60)
+                )
+                changes.append(
+                    try CompetitionChange(
+                        serverSequence: sequence,
+                        kind: .scoreRevisionRecorded,
+                        entityID: participantID,
+                        occurredAt: evaluatedAt,
+                        payload: .score(
+                            try CompetitionScoreChange(
+                                participantProfileID: participantID,
+                                dayOrdinal: ordinal,
+                                clientRevision: Int64(ordinal),
+                                moveMode: wire.moveMode,
+                                standMode: wire.standMode,
+                                moveBasisPoints: wire.moveBasisPoints,
+                                exerciseBasisPoints: wire.exerciseBasisPoints,
+                                standBasisPoints: wire.standBasisPoints,
+                                acceptedCentiPoints: wire.acceptedCentiPoints,
+                                availabilityReason: wire.availabilityReason,
+                                scoringPolicyIdentity: wire
+                                    .scoringPolicyIdentity,
+                                wireDigestVersion: 1,
+                                wireContentSHA256: wire.wireContentSHA256,
+                                serverSequence: sequence,
+                                evaluatedAt: evaluatedAt
+                            )
                         )
                     )
                 )
-            )
+            }
         }
         let page = try CompetitionChangePage(
             competitionID: competitionID,
             afterServerSequence: 0,
-            snapshotServerSequence: 10,
-            nextServerSequence: 10,
+            snapshotServerSequence: 17,
+            nextServerSequence: 17,
             hasMore: false,
             changes: changes
         )
@@ -2552,7 +2555,7 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
                         disposition: .appended,
                         windowCommitmentSHA256: request
                             .windowCommitmentSHA256,
-                        entityServerSequence: 11
+                        entityServerSequence: 18
                     )
                 }
             ),
@@ -2590,10 +2593,16 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
         else {
             return XCTFail("Expected durable attestation acknowledgment")
         }
-        XCTAssertEqual(receipt.entityServerSequence, 11)
+        XCTAssertEqual(receipt.entityServerSequence, 18)
         XCTAssertNil(
             materialized.journal.projection
                 .remoteWindowAttestations[profileID]
+        )
+        // Your check is still on its way, so nobody else is named yet.
+        XCTAssertEqual(
+            project([materialized], at: descriptor.bestAvailableDeadline!.addingTimeInterval(-3_600))
+                .first?.tally?.attention,
+            .awaitingStability
         )
 
         let attestedAt = try XCTUnwrap(descriptor.bestAvailableDeadline)
@@ -2602,11 +2611,11 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
             creatorID: creatorID,
             inviteeID: profileID,
             createdAt: createdAt,
-            nextServerSequence: 12,
+            nextServerSequence: 19,
             lifecycle: .tallying
         )
         let attestationChange = try CompetitionChange(
-            serverSequence: 11,
+            serverSequence: 18,
             kind: .participantAttested,
             // The feed entity is the attestation row, not its participant.
             entityID: UUID(
@@ -2621,7 +2630,7 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
                         .windowCommitmentSHA256,
                     acceptedRevisions: request.acceptedRevisions,
                     attestationVersion: request.attestationVersion,
-                    serverSequence: 11,
+                    serverSequence: 18,
                     attestedAt: attestedAt
                 )
             )
@@ -2629,8 +2638,8 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
         let pageWithAttestation = try CompetitionChangePage(
             competitionID: competitionID,
             afterServerSequence: 0,
-            snapshotServerSequence: 11,
-            nextServerSequence: 11,
+            snapshotServerSequence: 18,
+            nextServerSequence: 18,
             hasMore: false,
             changes: changes + [attestationChange]
         )
@@ -2653,6 +2662,13 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
                 .remoteWindowAttestations[profileID]?
                 .windowCommitment,
             request.windowCommitmentSHA256
+        )
+        // Yours is in and the match is still open, so the server is
+        // waiting on theirs: both stable finalizes in the same transaction.
+        XCTAssertEqual(
+            project(reconciled.successfulCompetitions, at: attestedAt)
+                .first?.tally?.attention,
+            .awaitingOpponentCheck
         )
         let cleanedEntries = try await outboxStore.entries()
         XCTAssertEqual(cleanedEntries, [])
