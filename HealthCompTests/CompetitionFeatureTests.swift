@@ -458,6 +458,75 @@ final class CompetitionFeatureTests: XCTestCase {
     }
 
     @MainActor
+    func testSuccessfulMuteAfterLoadFailureClearsTheLoadFailure() async {
+        let identity = LocalCompetitionIdentity.opponentIdentity
+        let stored = LockIsolated<Set<String>?>(nil)
+        var client = CompetitionReducerClientRecorder().client(
+            returning: publication(revision: 1)
+        )
+        client.loadMutedOpponentIdentities = {
+            guard let value = stored.value else {
+                throw CompetitionFeatureFixtureError.preferenceWriteFailed
+            }
+            return value
+        }
+        client.setNotificationMuted = { identity, isMuted in
+            stored.setValue(isMuted ? [identity] : [])
+        }
+        let store = TestStore(initialState: CompetitionFeature.State()) {
+            CompetitionFeature()
+        } withDependencies: {
+            $0.competitionClient = client
+        }
+
+        await store.send(.task)
+        await store.receive(.mutePreferencesLoaded(nil)) {
+            $0.mutePreferencesLoadFailed = true
+        }
+        await store.finish()
+
+        await store.send(.muteTapped(identity)) {
+            $0.mutedOpponentIdentities.insert(identity)
+            $0.muteOpponentIdentitiesInFlight.insert(identity)
+        }
+        await store.receive(.muteFinished(identity, isMuted: true, succeeded: true)) {
+            $0.muteOpponentIdentitiesInFlight.remove(identity)
+        }
+        await store.receive(.mutePreferencesLoaded([identity])) {
+            $0.mutePreferencesLoadFailed = false
+        }
+        await store.finish()
+    }
+
+    @MainActor
+    func testSceneBecomingActiveRetriesAFailedMuteLoad() async {
+        let fails = LockIsolated(true)
+        var client = CompetitionReducerClientRecorder().client(
+            returning: publication(revision: 1)
+        )
+        client.loadMutedOpponentIdentities = {
+            if fails.value {
+                throw CompetitionFeatureFixtureError.preferenceWriteFailed
+            }
+            return []
+        }
+        let store = TestStore(
+            initialState: CompetitionFeature.State(mutePreferencesLoadFailed: true)
+        ) {
+            CompetitionFeature()
+        } withDependencies: {
+            $0.competitionClient = client
+        }
+
+        fails.setValue(false)
+        await store.send(.sceneBecameActive)
+        await store.receive(.mutePreferencesLoaded([])) {
+            $0.mutePreferencesLoadFailed = false
+        }
+        await store.finish()
+    }
+
+    @MainActor
     func testRetappingClearsOnlyThatPersonsSaveFailure() async {
         let client = CompetitionReducerClientRecorder().client(
             returning: publication(revision: 1)
