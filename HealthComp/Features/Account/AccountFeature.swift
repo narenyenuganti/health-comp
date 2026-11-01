@@ -34,10 +34,18 @@ struct AccountFeature {
     enum Message: Equatable, Sendable {
         case invalidCredential
         case invalidDisplayName
+        case reservedDisplayName
         case reauthenticationRequired
+        case deleteFailed
+        case accountDeleted
         case sessionEnded
         case profileConflict
         case profileRecoveryFailed
+        case signOutFailed
+        case signOutCleanupFailed
+        case signOutFinishFailed
+        case deletedCleanupFailed
+        case sessionEndedCleanupFailed
         case tryAgain
 
         var text: String {
@@ -46,17 +54,54 @@ struct AccountFeature {
                 "Apple sign-in could not be verified. Please try again."
             case .invalidDisplayName:
                 "Choose a name from 1 to 64 characters without line breaks."
+            case .reservedDisplayName:
+                "That name is reserved. Try another."
             case .reauthenticationRequired:
                 "Confirm with Sign in with Apple to delete your account."
+            case .deleteFailed:
+                "Couldn’t delete your account. Check your connection and try again."
+            case .accountDeleted:
+                "Account deleted."
             case .sessionEnded:
                 "Your session ended. Sign in again to continue."
             case .profileConflict:
-                "This device has saved history for a different account. Sign in with the original account to continue."
+                "Sign in with the account you used before to continue."
             case .profileRecoveryFailed:
-                "Could not finish signing out on this device. Your saved history is safe. Try again."
-            case .tryAgain:
-                "HealthComp could not connect. Please try again."
+                "Your saved history is safe. Check your connection and try again."
+            case .signOutCleanupFailed:
+                "HealthComp couldn’t remove your data from this iPhone. Try again."
+            case .signOutFinishFailed:
+                "You’re signed out, but HealthComp couldn’t finish clearing this iPhone. Try again."
+            case .deletedCleanupFailed:
+                "Your account is deleted, but HealthComp couldn’t finish clearing this iPhone. Try again."
+            case .sessionEndedCleanupFailed:
+                "HealthComp couldn’t finish clearing this iPhone. Try again."
+            case .signOutFailed, .tryAgain:
+                "Check your connection and try again."
             }
+        }
+
+        /// The launch-failure title, naming the step that failed.
+        var failureTitle: String? {
+            switch self {
+            case .tryAgain: "Couldn’t connect"
+            case .invalidCredential: "Couldn’t sign in"
+            case .profileConflict: "This iPhone has history for another account"
+            case .signOutFailed, .signOutCleanupFailed, .profileRecoveryFailed:
+                "Couldn’t sign out"
+            case .signOutFinishFailed: "Couldn’t finish signing out"
+            case .deletedCleanupFailed: "Account deleted"
+            case .sessionEndedCleanupFailed: "Your session ended"
+            case .invalidDisplayName, .reservedDisplayName,
+                 .reauthenticationRequired, .deleteFailed, .accountDeleted,
+                 .sessionEnded:
+                nil
+            }
+        }
+
+        /// Shown under Delete Account instead of in the profile section.
+        var isDeletionMessage: Bool {
+            self == .deleteFailed || self == .reauthenticationRequired
         }
     }
 
@@ -133,10 +178,11 @@ struct AccountFeature {
 
             case .submitDisplayNameButtonTapped:
                 guard !state.isRequestInFlight else { return .none }
-                guard let displayName = validDisplayName(state.displayName) else {
-                    state.message = .invalidDisplayName
+                if let problem = displayNameProblem(state.displayName) {
+                    state.message = problem
                     return .none
                 }
+                let displayName = trimmedDisplayName(state.displayName)
                 state.displayName = displayName
                 beginRequest(state: &state)
                 return .send(.delegate(.displayNameSubmitted(displayName)))
@@ -169,11 +215,11 @@ struct AccountFeature {
                 else {
                     return .none
                 }
-                guard let displayName = validDisplayName(state.displayName)
-                else {
-                    state.message = .invalidDisplayName
+                if let problem = displayNameProblem(state.displayName) {
+                    state.message = problem
                     return .none
                 }
+                let displayName = trimmedDisplayName(state.displayName)
                 state.displayName = displayName
                 beginRequest(state: &state)
                 return .send(
@@ -228,9 +274,12 @@ struct AccountFeature {
                 return .send(.delegate(.deleteAccountRequested))
 
             case let .operationFailed(failure):
+                let wasDeleting = state.isDeletingAccount
                 state.isRequestInFlight = false
                 state.isDeletingAccount = false
-                state.message = message(for: failure)
+                state.message = wasDeleting
+                    ? deletionMessage(for: failure)
+                    : message(for: failure)
                 return .none
 
             case .operationFinished:
@@ -254,17 +303,33 @@ struct AccountFeature {
         state.message = nil
     }
 
-    private func validDisplayName(_ value: String) -> String? {
-        let value = value.trimmingCharacters(in: .whitespacesAndNewlines)
+    private func trimmedDisplayName(_ value: String) -> String {
+        value.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
+    /// The server rejects the same names; checking here keeps the message
+    /// specific.
+    private func displayNameProblem(_ value: String) -> Message? {
+        let value = trimmedDisplayName(value)
+        if value == "Former competitor" { return .reservedDisplayName }
         guard (1...64).contains(value.count),
-              value != "Former competitor",
               !value.unicodeScalars.contains(where: {
                 CharacterSet.controlCharacters.contains($0)
               })
         else {
-            return nil
+            return .invalidDisplayName
         }
-        return value
+        return nil
+    }
+
+    private func deletionMessage(
+        for failure: AuthenticationClientFailure
+    ) -> Message? {
+        switch failure {
+        case .cancelled: nil
+        case .reauthenticationRequired: .reauthenticationRequired
+        default: .deleteFailed
+        }
     }
 
     private func message(for failure: AuthenticationClientFailure) -> Message? {

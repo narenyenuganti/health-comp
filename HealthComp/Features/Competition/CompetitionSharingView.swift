@@ -1502,7 +1502,7 @@ func competitionIssueSummary(
         return "Match storage on this iPhone is unavailable."
     }
     if remaining.contains(.authorizationUnavailable) {
-        return "Activity authorization is unavailable."
+        return "HealthComp can’t read Health. Check Account → Health."
     }
     if remaining.contains(.remoteFailure) {
         return "Matches could not be refreshed."
