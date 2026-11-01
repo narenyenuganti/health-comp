@@ -2010,7 +2010,7 @@ private extension CompetitionNotificationPolicy {
             maximumPostsPerEvaluation: 1,
             maximumPostsPerCompetitionDay: 2,
             scheduledFireDate: { _, baseDate, _ in baseDate },
-            isCloseScore: { _, _ in false },
+            isCloseScore: { _, _, _ in false },
             isDailyMaximum: { _ in false },
             priority: { family in family == .result ? 1 : 0 },
             content: { message in

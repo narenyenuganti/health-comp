@@ -1858,6 +1858,14 @@ final class LocalCompetitionRuntimeTests: XCTestCase {
         )
         return CompetitionNotificationEmissionDecision(
             record: record,
+            message: CompetitionNotificationMessage(
+                family: .opportunistic(family),
+                competitionID: competitionID,
+                opponentDisplayName: "Alex",
+                ownerPoints: nil,
+                opponentPoints: nil,
+                outcome: nil
+            ),
             request: CompetitionImmediateNotificationRequest(
                 identifier: record.semanticEventID,
                 content: CompetitionNotificationContent(

@@ -375,6 +375,9 @@ Pending work before available_at is normal. Repeated attempts, expired leases,
 or pending work beyond the retry window require worker and schedule readback.
 Do not expose APNs tokens or their hashes while diagnosing delivery.
 
+`score_update` and `result` work resolves as `discarded` without APNs; the app
+posts match notifications.
+
 ### Support events
 
 ~~~sql

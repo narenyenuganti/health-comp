@@ -3264,7 +3264,7 @@ final class RemoteCompetitionClientTests: XCTestCase {
                 profile: profile,
                 context: hourLater
             )?.lifecycle,
-            .pending(expiresAt: expiresAt)
+            .pending(direction: .outgoing, expiresAt: expiresAt)
         )
     }
 

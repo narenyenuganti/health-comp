@@ -195,6 +195,14 @@ final class CompetitionTraceIntegrationTests: XCTestCase {
                 .emission(
                     CompetitionNotificationEmissionDecision(
                         record: resultRecord,
+                        message: CompetitionNotificationMessage(
+                            family: .opportunistic(.result),
+                            competitionID: competitionID,
+                            opponentDisplayName: "Alex",
+                            ownerPoints: nil,
+                            opponentPoints: nil,
+                            outcome: nil
+                        ),
                         request: CompetitionImmediateNotificationRequest(
                             identifier: resultRecord.semanticEventID,
                             content: CompetitionNotificationContent(

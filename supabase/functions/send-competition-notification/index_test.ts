@@ -44,6 +44,18 @@ const item = {
   environment: "sandbox" as const,
 };
 const workerAuthorization = `Bearer ${"w".repeat(43)}`;
+// A stand-in alert so the APNs send path stays covered now that score and
+// result work no longer alerts.
+const testAlertPayload = {
+  aps: {
+    alert: { title: "t", body: "b" },
+    sound: "default",
+    "thread-id": "competition:c3000000-0000-4000-8000-000000000001",
+  },
+  "healthcomp.route.v": 1,
+  "healthcomp.route.kind": "competition",
+  "healthcomp.route.competitionID": "c3000000-0000-4000-8000-000000000001",
+};
 
 Deno.test("sandbox APNs acceptance privately correlates the returned delivery-log identifier", async () => {
   const calls: { name: string; args: Record<string, unknown> }[] = [];
@@ -219,6 +231,7 @@ function dependencies(
     createServiceClient: () => client,
     createProviderToken: () => Promise.resolve("provider-jwt"),
     send,
+    payload: () => testAlertPayload,
   };
 }
 
@@ -242,6 +255,9 @@ Deno.test("notification worker is service-only before touching secrets or RPC", 
         },
         send: () => {
           throw new Error("must not send");
+        },
+        payload: () => {
+          throw new Error("must not build a payload");
         },
       },
     );
@@ -319,6 +335,9 @@ Deno.test("missing APNs configuration fails before leasing durable work", async 
     send: () => {
       throw new Error("must not send");
     },
+    payload: () => {
+      throw new Error("must not build a payload");
+    },
   });
   assertEquals(response.status, 500);
   assertEquals(await response.json(), {
@@ -329,35 +348,60 @@ Deno.test("missing APNs configuration fails before leasing durable work", async 
   });
 });
 
-Deno.test("payloads are generic, route-only, and contain no score or identity", () => {
-  assertEquals(competitionNotificationPayload(item), {
-    aps: {
-      alert: {
-        title: "Competition updated",
-        body: "Open HealthComp to see the latest confirmed activity update.",
-      },
-      sound: "default",
-      "thread-id": "competition:c3000000-0000-4000-8000-000000000001",
+Deno.test("score and result work no longer alerts", async () => {
+  const resultItem = {
+    ...item,
+    workId: "c1000000-0000-4000-8000-000000000002",
+    leaseToken: "c2000000-0000-4000-8000-000000000002",
+    semanticId: item.semanticId.replace(":score_update:", ":result:"),
+    kind: "result" as const,
+  };
+  assertEquals(competitionNotificationPayload(item), null);
+  assertEquals(competitionNotificationPayload(resultItem), null);
+
+  const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+  let sends = 0;
+  const client: NotificationRpcClient = {
+    rpc: (name, args) => {
+      calls.push({ name, args });
+      if (name === "lease_competition_notification_work") {
+        return Promise.resolve({
+          data: { items: [item, resultItem] },
+          error: null,
+        });
+      }
+      return Promise.resolve({ data: true, error: null });
     },
-    "healthcomp.route.v": 1,
-    "healthcomp.route.kind": "competition",
-    "healthcomp.route.competitionID": "c3000000-0000-4000-8000-000000000001",
+  };
+  const response = await sendCompetitionNotificationHandler(
+    request('{"batchSize":2}'),
+    {
+      ...dependencies(client, () => {
+        sends += 1;
+        return Promise.resolve(new Response(null, { status: 200 }));
+      }),
+      payload: competitionNotificationPayload,
+    },
+  );
+
+  assertEquals(response.status, 200);
+  assertEquals(sends, 0);
+  assertEquals(await response.json(), {
+    leasedCount: "2",
+    sentCount: "0",
+    retriedCount: "0",
+    invalidTokenCount: "0",
+    discardedCount: "2",
+    unresolvedCount: "0",
   });
   assertEquals(
-    competitionNotificationPayload({ ...item, kind: "result" }),
-    {
-      aps: {
-        alert: {
-          title: "Competition complete",
-          body: "Open HealthComp to see the confirmed result.",
-        },
-        sound: "default",
-        "thread-id": "competition:c3000000-0000-4000-8000-000000000001",
-      },
-      "healthcomp.route.v": 1,
-      "healthcomp.route.kind": "competition",
-      "healthcomp.route.competitionID": "c3000000-0000-4000-8000-000000000001",
-    },
+    calls.slice(1).map((call) => call.args),
+    [item, resultItem].map((work) => ({
+      work_id: work.workId,
+      lease_token: work.leaseToken,
+      outcome: "discard",
+      retry_after_seconds: null,
+    })),
   );
 });
 
@@ -469,10 +513,7 @@ Deno.test("successful APNs post resolves durable work without leaking identifier
     sentRequest?.headers.get("apns-collapse-id"),
     `healthcomp:${item.competitionId}`,
   );
-  assertEquals(
-    JSON.parse(await sentRequest!.text()),
-    competitionNotificationPayload(item),
-  );
+  assertEquals(JSON.parse(await sentRequest!.text()), testAlertPayload);
 });
 
 Deno.test("bounded APNs batch starts sends concurrently within its lease", async () => {

@@ -35,6 +35,7 @@ export interface NotificationWorkerDependencies {
   createServiceClient(): NotificationRpcClient;
   createProviderToken(configuration: ApnsConfiguration): Promise<string>;
   send(request: Request): Promise<Response>;
+  payload(item: NotificationWorkItem): Record<string, unknown> | null;
 }
 
 type ResolutionOutcome = "sent" | "retry" | "invalid_token" | "discard";
@@ -86,6 +87,7 @@ const defaults: NotificationWorkerDependencies = {
     defaultServiceDependencies.createServiceClient() as NotificationRpcClient,
   createProviderToken: createApnsProviderToken,
   send: (request) => fetch(request),
+  payload: competitionNotificationPayload,
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -252,34 +254,21 @@ export async function createApnsProviderToken(
   return `${input}.${base64Url(signature)}`;
 }
 
+// The app owns every visible match notification (named, with scores, in the
+// user's locale), so score uploads and results no longer alert. A null payload
+// resolves the work row as discarded without contacting APNs.
+// ponytail: triggers still enqueue score/result rows that resolve as discarded; drop enqueue_competition_notification_work_from_score/_from_result in a forward migration (e.g. with PR 7's) once pgTAP 012/019 fixtures insert work rows directly.
 export function competitionNotificationPayload(
-  item: Pick<NotificationWorkItem, "competitionId" | "kind">,
-): Record<string, unknown> {
-  const alert = item.kind === "result"
-    ? {
-      title: "Competition complete",
-      body: "Open HealthComp to see the confirmed result.",
-    }
-    : {
-      title: "Competition updated",
-      body: "Open HealthComp to see the latest confirmed activity update.",
-    };
-  return {
-    aps: {
-      alert,
-      sound: "default",
-      "thread-id": `competition:${item.competitionId}`,
-    },
-    "healthcomp.route.v": 1,
-    "healthcomp.route.kind": "competition",
-    "healthcomp.route.competitionID": item.competitionId,
-  };
+  _item: Pick<NotificationWorkItem, "competitionId" | "kind">,
+): Record<string, unknown> | null {
+  return null;
 }
 
 function apnsRequest(
   item: NotificationWorkItem,
   configuration: ApnsConfiguration,
   providerToken: string,
+  payload: Record<string, unknown>,
 ): Request {
   const host = item.environment === "production"
     ? "api.push.apple.com"
@@ -298,7 +287,7 @@ function apnsRequest(
       "apns-id": item.workId,
       "apns-collapse-id": `healthcomp:${item.competitionId}`,
     },
-    body: JSON.stringify(competitionNotificationPayload(item)),
+    body: JSON.stringify(payload),
     signal: AbortSignal.timeout(10_000),
   });
 }
@@ -445,15 +434,25 @@ export async function sendCompetitionNotificationHandler(
       items.slice(offset, offset + maximumConcurrentSends).map(
         async (item): Promise<Resolution | null> => {
           let decision: Resolution;
-          try {
-            decision = await resolution(
-              await deps.send(
-                apnsRequest(item, deps.configuration!, providerToken),
-              ),
-              item.environment,
-            );
-          } catch {
-            decision = { outcome: "retry", retryAfterSeconds: 60 };
+          const payload = deps.payload(item);
+          if (payload === null) {
+            decision = { outcome: "discard", retryAfterSeconds: null };
+          } else {
+            try {
+              decision = await resolution(
+                await deps.send(
+                  apnsRequest(
+                    item,
+                    deps.configuration!,
+                    providerToken,
+                    payload,
+                  ),
+                ),
+                item.environment,
+              );
+            } catch {
+              decision = { outcome: "retry", retryAfterSeconds: 60 };
+            }
           }
           try {
             const resolved = await client.rpc(

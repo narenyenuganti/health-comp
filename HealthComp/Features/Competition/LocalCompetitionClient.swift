@@ -1357,8 +1357,8 @@ enum LocalCompetitionProjector {
         _ lifecycle: LocalCompetitionLifecyclePresentation
     ) -> CompetitionNotificationLifecycle {
         switch lifecycle {
-        case let .pending(_, _, expiresAt):
-            return .pending(expiresAt: expiresAt)
+        case let .pending(direction, _, expiresAt):
+            return .pending(direction: direction, expiresAt: expiresAt)
         case .declined:
             return .declined
         case .expired:

@@ -302,7 +302,10 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
             id: CompetitionID(descriptor.competitionID),
             opponentIdentity: "remote-profile:v1:pending",
             opponentDisplayName: "Waiting for competitor",
-            lifecycle: .pending(expiresAt: descriptor.invitationExpiresAt),
+            lifecycle: .pending(
+                direction: .outgoing,
+                expiresAt: descriptor.invitationExpiresAt
+            ),
             schedule: nil,
             ownerPoints: 0,
             opponentPoints: 0,
@@ -401,7 +404,10 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
             id: CompetitionID(descriptor.competitionID),
             opponentIdentity: "remote-profile:v1:pending",
             opponentDisplayName: "Waiting for competitor",
-            lifecycle: .pending(expiresAt: descriptor.invitationExpiresAt),
+            lifecycle: .pending(
+                direction: .outgoing,
+                expiresAt: descriptor.invitationExpiresAt
+            ),
             schedule: nil,
             ownerPoints: 0,
             opponentPoints: 0,
