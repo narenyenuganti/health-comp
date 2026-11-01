@@ -107,6 +107,24 @@ struct CreateCompetitionView: View {
             && !recipientCode.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
+    private var codeBinding: Binding<String> {
+        Binding(
+            get: { recipientCode },
+            set: { newValue in
+                guard newValue.contains(where: \.isNewline) else {
+                    recipientCode = newValue
+                    return
+                }
+                let code = newValue.filter { !$0.isNewline }
+                recipientCode = code
+                if !isLocked, recipientStatus != .lookingUp,
+                   !code.trimmingCharacters(in: .whitespaces).isEmpty {
+                    find()
+                }
+            }
+        )
+    }
+
     private func find() {
         recipientCodeIsFocused = false
         findRecipient()
@@ -159,13 +177,16 @@ struct CreateCompetitionView: View {
             Text("Ask them to share their HealthComp account code from Account.")
                 .font(.subheadline)
                 .foregroundStyle(Theme.secondary)
-            TextField("HealthComp account code", text: $recipientCode)
+            // A long code wraps instead of clipping, and the reserved lines
+            // keep the field itself a 44 pt target (a one-line field fails
+            // both audits). Return runs Find rather than adding a line.
+            TextField("HealthComp account code", text: codeBinding, axis: .vertical)
                 .focused($recipientCodeIsFocused)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .font(.body.monospaced())
+                .lineLimit(3, reservesSpace: true)
                 .submitLabel(.search)
-                .onSubmit { if canFind { find() } }
                 .padding(12)
                 .background(Theme.control, in: RoundedRectangle(cornerRadius: 10))
                 .disabled(isLocked)
