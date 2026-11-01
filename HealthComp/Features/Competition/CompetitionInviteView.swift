@@ -13,7 +13,10 @@ struct CompetitionInviteView: View {
             VStack(alignment: .leading, spacing: 24) {
                 faceOff
                 invitationCopy
-                CompetitionRulesCard(source: source)
+                CompetitionRulesCard(
+                    source: source,
+                    opponentName: competition.opponentDisplayName
+                )
                 actionControls
             }
             .frame(maxWidth: 560)
@@ -229,10 +232,12 @@ struct CompetitionRuleRow: View {
                 Text(title)
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(Theme.ink)
+                    .fixedSize(horizontal: false, vertical: true)
                 if let detail {
                     Text(detail)
                         .font(.footnote)
                         .foregroundStyle(Theme.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
             Spacer(minLength: 0)
@@ -265,30 +270,47 @@ struct CompetitionRuleDivider: View {
     }
 }
 
-/// Calendar, scoring and what is shared: shown before a challenge starts and
+/// The one rules and consent card: the week, scoring, who wins and what the
+/// other person sees. Shown on the create, challenge and claim screens and
 /// from a match's ••• menu.
 struct CompetitionRulesCard: View {
     let source: CompetitionPublicationSource
+    var opponentName: String? = nil
+    var weekText: String? = nil
 
     var body: some View {
         VStack(spacing: 0) {
-            CompetitionRuleRow(icon: .symbol("calendar"), title: "Seven calendar days")
+            CompetitionRuleRow(
+                icon: .symbol("calendar"),
+                title: "Seven days",
+                detail: weekText ?? "Day 1 is the day after the challenge is accepted."
+            )
             CompetitionRuleDivider()
             CompetitionRuleRow(
                 icon: .rings,
-                title: "Up to 600 points each day",
-                detail: "1 point for every 1% of each ring"
+                title: "1 point per 1% of each ring",
+                detail: "Up to 600 points a day"
             )
             CompetitionRuleDivider()
             CompetitionRuleRow(
-                icon: .symbol("lock.iphone"),
-                title: source == .simulatedFixture
-                    ? "Your Activity data stays local"
-                    : "Derived match data is shared",
-                detail: source == .simulatedFixture
-                    ? nil
-                    : "Daily points, rounded Activity percentages and modes"
+                icon: .symbol("trophy"),
+                title: "Most points after 7 days wins",
+                detail: "Equal totals tie. A day with no data scores 0."
             )
+            CompetitionRuleDivider()
+            if source == .simulatedFixture {
+                CompetitionRuleRow(
+                    icon: .symbol("lock.iphone"),
+                    title: "Nothing leaves this iPhone",
+                    detail: opponentName.map { "\($0) is simulated." }
+                )
+            } else {
+                CompetitionRuleRow(
+                    icon: .symbol("lock.iphone"),
+                    title: "\(opponentName ?? "The other person") sees your daily points and rounded ring percentages",
+                    detail: "Also whether you use Move Time or Roll, why a day has no data, and when your iPhone last updated your scores. Your Health data stays on your iPhone."
+                )
+            }
         }
         .padding(.horizontal, 16)
         .themePanel(cornerRadius: 18)

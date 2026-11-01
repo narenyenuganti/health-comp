@@ -17,7 +17,7 @@ struct CompetitionResultView: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.locale) private var locale
     @Environment(\.timeZone) private var timeZone
-    @ScaledMetric(relativeTo: .largeTitle) private var headlineSize: CGFloat = 64
+    @ScaledMetric(relativeTo: .largeTitle) private var headlineSize: CGFloat = 52
     @State private var isRevealed = false
     @State private var isDeleteConfirmationPresented = false
     @State private var showsWeek = false
@@ -29,13 +29,15 @@ struct CompetitionResultView: View {
                     CompetitionIssueLine(issue: issue, retry: retry, id: competition.id)
                 }
 
+                muteButton?.failureNote
+
                 resultHero
                     .opacity(isRevealed ? 1 : 0)
                     .offset(y: isRevealed || reduceMotion ? 0 : 10)
 
                 VStack(spacing: 12) {
                     finalScore
-                    marginChips
+                    summaryLine
                 }
                 .opacity(isRevealed ? 1 : 0)
 
@@ -68,8 +70,6 @@ struct CompetitionResultView: View {
                     .frame(maxWidth: .infinity, minHeight: 44)
                     .accessibilityIdentifier("competition.history.preserved")
                 }
-
-                muteButton?.saveFailure
             }
             .frame(maxWidth: 560)
             .padding(.horizontal, 16)
@@ -139,20 +139,42 @@ struct CompetitionResultView: View {
                 .multilineTextAlignment(.center)
             Text(resultTitle)
                 .font(.score(size: headlineSize))
-                .foregroundStyle(outcome == .win ? Theme.you : Theme.ink)
+                .foregroundStyle(titleColor)
                 .multilineTextAlignment(.center)
+                .lineLimit(2)
+                .minimumScaleFactor(0.5)
                 .accessibilityAddTraits(.isHeader)
-            Text(resultSubtitle)
-                .font(.body)
-                .foregroundStyle(Theme.secondary)
-                .multilineTextAlignment(.center)
+            if let disclosure = competitionFixtureDisclosure(
+                source: source,
+                opponentDisplayName: competition.opponentDisplayName
+            ) {
+                Text(disclosure)
+                    .font(.body)
+                    .foregroundStyle(Theme.secondary)
+                    .multilineTextAlignment(.center)
+            }
         }
         .frame(maxWidth: .infinity)
         .padding(.vertical, 8)
     }
 
     private var resultKicker: String {
-        ["Final", weekRangeText].compactMap { $0 }.joined(separator: " · ")
+        ["Final", weekRangeText, isMuted ? "Muted" : nil]
+            .compactMap { $0 }
+            .joined(separator: " · ")
+    }
+
+    private var isMuted: Bool {
+        muteButton?.isMuted == true
+    }
+
+    // The tie is neutral: neither your amber nor their ink.
+    private var titleColor: Color {
+        switch outcome {
+        case .win: Theme.you
+        case .loss: Theme.ink
+        case .tie: Theme.secondary
+        }
     }
 
     private var weekRangeText: String? {
@@ -210,62 +232,36 @@ struct CompetitionResultView: View {
         )
     }
 
-    // The margin is yours, so it is amber: filled for a win, outlined otherwise.
+    /// "Won by 230 points · won 2 days, lost 4, tied 1", either part alone,
+    /// or nothing when neither has anything to say.
     @ViewBuilder
-    private var marginChips: some View {
-        if marginText != nil || daysWonText != nil {
-            HStack(spacing: 10) {
-                if let marginText {
-                    Text(marginText)
-                        .font(.headline.weight(.heavy).width(.condensed).monospacedDigit())
-                        .foregroundStyle(outcome == .win ? Theme.onYouFill : Theme.you)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 6)
-                        .background { chipBackground(filled: outcome == .win) }
-                }
-                if let daysWonText {
-                    Text(daysWonText)
-                        .font(.subheadline.weight(.bold).width(.condensed))
-                        .foregroundStyle(Theme.ink)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 6)
-                        .background { chipBackground(filled: false) }
-                }
-            }
-            .frame(maxWidth: .infinity)
-            .accessibilityElement(children: .combine)
-        }
-    }
-
-    @ViewBuilder
-    private func chipBackground(filled: Bool) -> some View {
-        if filled {
-            SlantedBar().fill(Theme.youFill)
-        } else {
-            SlantedBar().stroke(Theme.outline, lineWidth: 1.5)
-        }
-    }
-
-    private var marginText: String? {
-        let margin = competitionDisplayedMargin(
+    private var summaryLine: some View {
+        let margin = competitionMarginText(
             userPoints: competition.userPoints,
             opponentPoints: competition.opponentPoints,
-            fractionDigits: digits
+            fractionDigits: digits,
+            locale: locale
         )
-        guard margin != 0 else { return nil }
-        return (margin > 0 ? "+" : "−")
-            + competitionPointsText(abs(margin), fractionDigits: digits, locale: locale)
-    }
-
-    private var daysWonText: String? {
-        let decided = competition.days.compactMap { day -> Bool? in
-            guard let owner = day.ownerAcceptedPoints,
-                  let opponent = day.opponentRevealedPoints
-            else { return nil }
-            return competitionDisplayedMargin(userPoints: owner, opponentPoints: opponent) > 0
+        let days = competitionDaysSummaryText(competition.days)
+        if margin != nil || days != nil {
+            let marginColor = competitionDisplayedMargin(
+                userPoints: competition.userPoints,
+                opponentPoints: competition.opponentPoints,
+                fractionDigits: digits
+            ) > 0 ? Theme.you : Theme.ink
+            let marginText = margin.map {
+                Text($0).bold().foregroundStyle(marginColor)
+            }
+            let daysText = days.map { Text($0).foregroundStyle(Theme.secondary) }
+            let separator = marginText != nil && daysText != nil
+                ? Text(" · ").foregroundStyle(Theme.tertiary)
+                : Text("")
+            ((marginText ?? Text("")) + separator + (daysText ?? Text("")))
+                .font(.subheadline)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity)
+                .accessibilityIdentifier("competition.result.summary")
         }
-        guard !decided.isEmpty else { return nil }
-        return "\(decided.filter { $0 }.count) of \(competition.days.count) days"
     }
 
     // A glance at who won each day; the scores open in a drawer.
@@ -298,8 +294,9 @@ struct CompetitionResultView: View {
     }
 
     private var weekCardAccessibilityLabel: String {
-        guard let daysWonText else { return "The week" }
-        return "The week. You won \(daysWonText)"
+        ["The week", competitionDaysSummaryText(competition.days)]
+            .compactMap { $0 }
+            .joined(separator: ". ")
     }
 
     private var weekDrawer: some View {
@@ -310,9 +307,10 @@ struct CompetitionResultView: View {
                 now: competition.evaluatedAt,
                 opponentName: competition.opponentDisplayName
             )
-            if competition.days.contains(where: { ringSegments($0).count == 3 }) {
-                CompetitionRingLegend(opponentName: competition.opponentDisplayName)
-            }
+            CompetitionRingLegend(
+                days: competition.days,
+                opponentName: competition.opponentDisplayName
+            )
             if let ringTotals {
                 ringTotalsSection(ringTotals)
             }
@@ -332,7 +330,7 @@ struct CompetitionResultView: View {
         return [
             ("MOVE", Theme.move, totals[0]),
             ("EXERCISE", Theme.exercise, totals[1]),
-            ("STAND", Theme.stand, totals[2]),
+            (competitionStandTitle(competition.days), Theme.stand, totals[2]),
         ]
     }
 
@@ -598,14 +596,6 @@ struct CompetitionResultView: View {
         )
     }
 
-    private var resultSubtitle: String {
-        competitionResultSubtitle(
-            outcome: outcome,
-            opponentDisplayName: competition.opponentDisplayName,
-            source: source
-        )
-    }
-
     private var isArchived: Bool {
         if case .archived = competition.lifecycle { return true }
         return false
@@ -635,27 +625,43 @@ func competitionResultTitle(
     opponentDisplayName: String
 ) -> String {
     switch outcome {
-    case .win: "You Won"
-    case .loss: "\(opponentDisplayName) Won"
-    case .tie: "It’s a Tie"
+    case .win: "You beat \(opponentDisplayName)"
+    case .loss: "\(opponentDisplayName) won"
+    case .tie: "All square with \(opponentDisplayName)"
     }
 }
 
-func competitionResultSubtitle(
-    outcome: CompetitionOutcome,
-    opponentDisplayName: String,
-    source: CompetitionPublicationSource
-) -> String {
-    switch outcome {
-    case .win:
-        "Your seven-day Activity total finished ahead."
-    case .loss:
-        source == .simulatedFixture
-            ? "\(opponentDisplayName)’s simulated seven-day total finished ahead."
-            : "\(opponentDisplayName)’s seven-day Activity total finished ahead."
-    case .tie:
-        "Both seven-day totals finished even."
-    }
+/// "Won by 230 points" or "Lost by 1 point", from the margin as shown. Nil
+/// when the shown totals are equal.
+func competitionMarginText(
+    userPoints: Double,
+    opponentPoints: Double,
+    fractionDigits: Int,
+    locale: Locale = .current
+) -> String? {
+    let margin = competitionDisplayedMargin(
+        userPoints: userPoints,
+        opponentPoints: opponentPoints,
+        fractionDigits: fractionDigits
+    )
+    guard margin != 0 else { return nil }
+    return (margin > 0 ? "Won by " : "Lost by ")
+        + competitionPointsAccessibilityText(
+            abs(margin), fractionDigits: fractionDigits, locale: locale
+        )
+}
+
+/// "won 2 days, lost 4, tied 1": only days with both scores, never a 0–0
+/// day. Nil when no day counts.
+func competitionDaysSummaryText(_ days: [LocalCompetitionDayPresentation]) -> String? {
+    let outcomes = days.map { competitionDayOutcome($0, currentDayOrdinal: nil) }
+    let parts = [("won", CompetitionDayOutcome.won), ("lost", .lost), ("tied", .tied)]
+        .map { verb, outcome in (verb, outcomes.filter { $0 == outcome }.count) }
+        .filter { $0.1 > 0 }
+    guard let first = parts.first else { return nil }
+    let rest = parts.dropFirst().map { "\($0.0) \($0.1)" }
+    return (["\(first.0) \(first.1) \(first.1 == 1 ? "day" : "days")"] + rest)
+        .joined(separator: ", ")
 }
 
 // Keep one owner hierarchy while fitting the native stack to available width.

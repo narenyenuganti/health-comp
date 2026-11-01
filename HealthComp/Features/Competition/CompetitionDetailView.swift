@@ -37,11 +37,14 @@ struct CompetitionDetailView: View {
                     CompetitionIssueLine(issue: issue, retry: retry, id: competition.id)
                 }
 
+                muteButton?.failureNote
+
                 VStack(alignment: .leading, spacing: 12) {
                     CompetitionScoreboardPanel(
                         competition: competition,
                         todayDay: todayDay,
-                        isProvisional: scoresAreProvisional
+                        isProvisional: scoresAreProvisional,
+                        isMuted: muteButton?.isMuted == true
                     )
                     leadStatement
                     freshnessLine
@@ -49,12 +52,9 @@ struct CompetitionDetailView: View {
 
                 tallyPanel
 
-                if case .scheduled = competition.lifecycle {
-                    scheduledCard
-                    weekSection
-                } else {
+                if competitionShouldShowScores(competition.lifecycle) {
                     Picker("Match view", selection: $page) {
-                        Text("Today").tag(Page.today)
+                        Text(todayTabTitle).tag(Page.today)
                         Text("Week").tag(Page.week)
                     }
                     .pickerStyle(.segmented)
@@ -66,8 +66,6 @@ struct CompetitionDetailView: View {
                         weekSection
                     }
                 }
-
-                muteButton?.saveFailure
             }
             .padding(.horizontal, 16)
             .padding(.top, 12)
@@ -87,14 +85,14 @@ struct CompetitionDetailView: View {
                         drawer = .activitySync
                     } label: {
                         Label(
-                            "Activity Sync",
+                            "Sync status",
                             systemImage: "arrow.triangle.2.circlepath"
                         )
                     }
                     Button {
                         drawer = .rules
                     } label: {
-                        Label("Rules", systemImage: "list.bullet")
+                        Label("How scoring works", systemImage: "list.bullet")
                     }
                 } label: {
                     CompetitionMoreLabel()
@@ -109,8 +107,16 @@ struct CompetitionDetailView: View {
             case .activitySync:
                 activitySyncDrawer
             case .rules:
-                CompetitionDrawer(title: "Rules") {
-                    CompetitionRulesCard(source: source)
+                CompetitionDrawer(title: "How scoring works") {
+                    CompetitionRulesCard(
+                        source: source,
+                        opponentName: competition.opponentDisplayName,
+                        weekText: competition.acceptedConfiguration.flatMap {
+                            competitionScheduleDateRangeText(
+                                $0.schedule, now: competition.evaluatedAt, locale: locale
+                            )
+                        }
+                    )
                 }
             }
         }
@@ -145,74 +151,36 @@ struct CompetitionDetailView: View {
             opponentPoints: competition.opponentPoints,
             opponentDisplayName: competition.opponentDisplayName,
             locale: locale
-        )
+        ) + Text(scoresAreProvisional ? " Not final yet." : "")
     }
 
+    // Who or what the result waits on, and whether you need to act.
     @ViewBuilder
     private var tallyPanel: some View {
         if let tally = competition.tally {
-            VStack(alignment: .leading, spacing: 8) {
-                if let attention = tally.attention {
-                    Label(
-                        competitionTallyAttentionText(
-                            attention,
-                            opponentDisplayName: competition.opponentDisplayName,
-                            source: source
-                        ),
-                        systemImage: tallyStatusSymbol(attention)
-                    )
+            let copy = competitionTallyCopy(
+                tally,
+                opponentDisplayName: competition.opponentDisplayName,
+                now: competition.evaluatedAt,
+                locale: locale,
+                timeZone: timeZone
+            )
+            VStack(alignment: .leading, spacing: 4) {
+                Text(copy.headline)
                     .font(.subheadline.weight(.semibold))
                     .foregroundStyle(Theme.ink)
-                }
-                Text(
-                    competitionTallyDeadlineText(
-                        tally,
-                        now: competition.evaluatedAt,
-                        locale: locale,
-                        timeZone: timeZone,
-                        opponentDisplayName: competition.opponentDisplayName,
-                        source: source
-                    )
-                )
-                .font(.caption)
-                .foregroundStyle(Theme.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(copy.body)
+                    .font(.subheadline)
+                    .foregroundStyle(Theme.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(16)
             .themePanel(cornerRadius: 16)
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("competition.tally")
         }
-    }
-
-    private var scheduledCard: some View {
-        Label {
-            VStack(alignment: .leading, spacing: 3) {
-                if let schedule = competition.acceptedConfiguration?.schedule,
-                   let dateRange = competitionScheduleDateRangeText(
-                       schedule, now: competition.evaluatedAt, locale: locale
-                   ) {
-                    Text(dateRange)
-                        .font(.subheadline)
-                        .foregroundStyle(Theme.ink)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .accessibilityIdentifier("competition.schedule.dates")
-                } else {
-                    Text("Starts next match day")
-                        .font(.headline)
-                        .foregroundStyle(Theme.ink)
-                    Text("Your saved schedule sets the seven match days.")
-                        .font(.subheadline)
-                        .foregroundStyle(Theme.secondary)
-                }
-            }
-        } icon: {
-            Image(systemName: "calendar.badge.clock")
-                .font(.title2)
-                .foregroundStyle(Theme.ink)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
-        .themePanel(cornerRadius: 16)
     }
 
     private var weekSection: some View {
@@ -226,7 +194,10 @@ struct CompetitionDetailView: View {
                 showsDates: true,
                 selectDay: { drawer = .day($0.ordinal) }
             )
-            CompetitionRingLegend(opponentName: competition.opponentDisplayName)
+            CompetitionRingLegend(
+                days: competition.days,
+                opponentName: competition.opponentDisplayName
+            )
         }
     }
 
@@ -309,7 +280,7 @@ struct CompetitionDetailView: View {
     }
 
     private var activitySyncDrawer: some View {
-        CompetitionDrawer(title: "Activity Sync") {
+        CompetitionDrawer(title: "Sync status") {
             VStack(alignment: .leading, spacing: 8) {
                 ForEach(
                     Array(
@@ -338,6 +309,13 @@ struct CompetitionDetailView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .themePanel(cornerRadius: 18)
         }
+    }
+
+    /// "Today" while a day is live, else the day it shows: "Day 7".
+    private var todayTabTitle: String {
+        todayDay.map {
+            $0.ordinal == competition.currentDayOrdinal ? "Today" : "Day \($0.ordinal)"
+        } ?? "Today"
     }
 
     private var todayDay: LocalCompetitionDayPresentation? {
@@ -375,42 +353,61 @@ private extension View {
     }
 }
 
+enum CompetitionMuteFailure: Equatable, Sendable {
+    case load
+    case mute
+    case unmute
+}
+
 /// Mutes one person, so every match with them goes quiet, not just this one.
 /// It sits in a match's ••• menu.
 struct CompetitionMuteButton: View {
     let opponentName: String
     let isMuted: Bool
     let isInFlight: Bool
-    let saveFailed: Bool
+    let failure: CompetitionMuteFailure?
     let toggle: () -> Void
 
     var body: some View {
         Button(action: toggle) {
             Label(
-                isMuted
-                    ? "Unmute \(opponentName) Notifications"
-                    : "Mute \(opponentName) Notifications",
+                isMuted ? "Unmute \(opponentName)" : "Mute \(opponentName)",
                 systemImage: isMuted ? "bell.fill" : "bell.slash.fill"
             )
+            Text("All your matches with \(opponentName)")
         }
         .disabled(isInFlight)
         .accessibilityIdentifier("competition.notifications.mute")
     }
 
-    /// The menu closes before the save finishes, so a failure shows on the page.
+    /// The menu closes before the save finishes, so a failure shows at the
+    /// top of the page.
     @ViewBuilder
-    var saveFailure: some View {
-        if saveFailed {
+    var failureNote: some View {
+        if let failure {
             Label(
-                "Notification preference could not be saved.",
-                systemImage: "exclamationmark.triangle.fill"
+                competitionMuteFailureText(failure, opponentName: opponentName),
+                systemImage: "exclamationmark.circle"
             )
             .font(.caption)
             .foregroundStyle(Theme.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .fixedSize(horizontal: false, vertical: true)
             .accessibilityIdentifier(
                 "competition.notifications.preference-error"
             )
         }
+    }
+}
+
+func competitionMuteFailureText(
+    _ failure: CompetitionMuteFailure,
+    opponentName: String
+) -> String {
+    switch failure {
+    case .load: "Couldn’t check whether \(opponentName) is muted."
+    case .mute: "Couldn’t mute \(opponentName). Try again from the More menu."
+    case .unmute: "Couldn’t unmute \(opponentName). Try again from the More menu."
     }
 }
 
@@ -503,6 +500,7 @@ private struct CompetitionScoreboardPanel: View {
     let competition: LocalCompetitionPresentation
     let todayDay: LocalCompetitionDayPresentation?
     let isProvisional: Bool
+    let isMuted: Bool
 
     @ScaledMetric(relativeTo: .largeTitle) private var scoreSize: CGFloat = 56
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -514,16 +512,17 @@ private struct CompetitionScoreboardPanel: View {
             statusRow
             if competitionShouldShowScores(competition.lifecycle) {
                 scoreboard
-                Rectangle()
-                    .fill(Theme.hairline)
-                    .frame(height: 1)
-                    .accessibilityHidden(true)
-                periodRow
+                if isProvisional {
+                    provisionalTag
+                } else {
+                    Rectangle()
+                        .fill(Theme.hairline)
+                        .frame(height: 1)
+                        .accessibilityHidden(true)
+                    periodRow
+                }
             } else {
-                Label("Scores begin Day 1", systemImage: "clock")
-                    .font(.headline)
-                    .foregroundStyle(Theme.ink)
-                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                CompetitionScheduledSummary(competition: competition)
             }
         }
         .padding(18)
@@ -547,8 +546,8 @@ private struct CompetitionScoreboardPanel: View {
                         .fill(Theme.ink)
                         .frame(width: 8, height: 8)
                 }
-                Text(status.title)
-                    .foregroundStyle(Theme.ink)
+                Text(status.title).foregroundStyle(Theme.ink)
+                    + Text(isMuted ? " · Muted" : "").foregroundStyle(Theme.secondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             if let timing = status.timing {
@@ -565,8 +564,22 @@ private struct CompetitionScoreboardPanel: View {
         // element as a control, and this row is read, never tapped.
         .accessibilityElement(children: .ignore)
         .accessibilityAddTraits(.isStaticText)
-        .accessibilityLabel(status.line)
+        .accessibilityLabel(status.line + (isMuted ? ". Muted" : ""))
         .accessibilityIdentifier("competition.status")
+    }
+
+    // The score headers already say "provisional total".
+    private var provisionalTag: some View {
+        Text("PROVISIONAL")
+            .font(.themeLabel)
+            .tracking(1.2)
+            .foregroundStyle(Theme.secondary)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 2)
+            .overlay(Capsule().stroke(Theme.outline))
+            .fixedSize()
+            .frame(maxWidth: .infinity)
+            .accessibilityHidden(true)
     }
 
     private var scoreboard: some View {
@@ -691,6 +704,49 @@ private struct CompetitionScoreboardPanel: View {
     }
 }
 
+/// A scheduled match: who plays, when Day 1 is, and the week ahead.
+struct CompetitionScheduledSummary: View {
+    let competition: LocalCompetitionPresentation
+
+    @Environment(\.locale) private var locale
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            (
+                Text("YOU").foregroundStyle(Theme.you)
+                    + Text("  VS  ")
+                    .font(.title3.weight(.heavy).width(.condensed))
+                    .foregroundStyle(Theme.tertiary)
+                    + Text(competition.opponentDisplayName.uppercased())
+                    .foregroundStyle(Theme.ink)
+            )
+            .font(.title.weight(.heavy).width(.condensed))
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityLabel("You versus \(competition.opponentDisplayName)")
+            Text(dayOneText)
+                .font(.body)
+                .foregroundStyle(Theme.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("competition.schedule.dates")
+            if !competition.days.isEmpty {
+                CompetitionWeekStrip(days: competition.days, currentDayOrdinal: nil)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    // The same words for both people in any zone: each scores their own
+    // Activity for that calendar date.
+    private var dayOneText: String {
+        guard let first = competition.days.first?.day
+            ?? competition.acceptedConfiguration?.schedule.startDay
+        else {
+            return "Day 1 starts on the next match day."
+        }
+        return "Day 1 is \(weekdayName(first, locale: locale)). Points start counting at midnight."
+    }
+}
+
 func competitionDayAccessibilityLabel(
     _ day: LocalCompetitionDayPresentation,
     currentDayOrdinal: Int? = nil,
@@ -715,7 +771,7 @@ private func competitionDayScoresAccessibilityText(
 ) -> String {
     let opponent = day.opponentRevealedPoints.map {
         competitionPointsAccessibilityText($0, locale: locale)
-    } ?? "score not available"
+    } ?? (day.opponentReportedNoData ? "no data" : "not synced")
     return "You, \(competitionOwnerAccessibilityText(day, locale: locale)). \(opponentName), \(opponent)."
 }
 
@@ -794,30 +850,65 @@ func competitionOwnerAvailabilityText(
     }
 }
 
-func competitionTallyAttentionText(
-    _ attention: LocalCompetitionTallyAttention,
-    opponentDisplayName: String = LocalCompetitionIdentity.opponentDisplayName,
-    source _: CompetitionPublicationSource = .simulatedFixture
-) -> String {
-    switch attention {
-    case .noRead:
-        return "Waiting for the first complete Activity check after the match."
-    case let .incomplete(missing, unavailable):
-        if missing == [7], unavailable.isEmpty {
-            return "Day 7 is missing activity data."
-        }
-        if unavailable == [7], missing.isEmpty {
-            return "Day 7 activity source is unavailable."
-        }
-        let missingText = missing.sorted().map(String.init).joined(separator: ", ")
-        let unavailableText = unavailable.sorted().map(String.init).joined(separator: ", ")
-        return "Needs Activity data. Missing days: \(missingText.isEmpty ? "none" : missingText). Unavailable days: \(unavailableText.isEmpty ? "none" : unavailableText)."
-    case let .unacceptedScores(ordinals):
-        return "Waiting to accept scores for days \(ordinals.sorted().map(String.init).joined(separator: ", "))."
+struct CompetitionTallyCopy: Equatable {
+    let headline: String
+    let body: String
+}
+
+/// What a tallying match waits on and whether you need to do anything.
+func competitionTallyCopy(
+    _ tally: LocalCompetitionTallyPresentation,
+    opponentDisplayName name: String,
+    now: Date,
+    locale: Locale = .current,
+    timeZone: TimeZone = .current
+) -> CompetitionTallyCopy {
+    guard now < tally.bestAvailableDeadline else {
+        return CompetitionTallyCopy(
+            headline: "Finishing the result",
+            body: "The deadline passed, so the result uses what’s in. It appears here shortly."
+        )
+    }
+    let deadline = competitionDeadlineText(
+        tally.bestAvailableDeadline, now: now, locale: locale, timeZone: timeZone
+    )
+    let nothingToDo = "Nothing for you to do. If it isn’t done by \(deadline), the result uses what’s in."
+    let openAgain = "Open HealthComp again before \(deadline), or the result uses what’s in."
+    switch tally.attention {
     case .opponentPlanUnavailable:
-        return "Finalizing \(opponentDisplayName)’s scores."
-    case .awaitingStability:
-        return "Waiting for one more stable read."
+        return CompetitionTallyCopy(
+            headline: "Waiting for \(name) to sync",
+            body: "Nothing for you to do. If \(name) doesn’t sync by \(deadline), the result uses what’s in."
+        )
+    case let .incomplete(missing, unavailable) where unavailable.isEmpty:
+        let days = competitionDayListText(missing, locale: locale)
+        let verb = missing.count == 1 ? "hasn’t" : "haven’t"
+        return CompetitionTallyCopy(
+            headline: "Waiting for your \(days ?? "Activity")",
+            body: "\(days ?? "\(missing.count) days") \(verb) synced from this iPhone. \(openAgain)"
+        )
+    case let .incomplete(missing, unavailable):
+        let all = missing.union(unavailable)
+        let days = competitionDayListText(all, locale: locale)
+        return CompetitionTallyCopy(
+            headline: "Waiting for your \(days ?? "Activity")",
+            body: "HealthComp couldn’t read \(days ?? "\(all.count) days") on this iPhone. \(openAgain)"
+        )
+    case let .unacceptedScores(ordinals):
+        return CompetitionTallyCopy(
+            headline: "Scoring your \(competitionDayListText(ordinals, locale: locale) ?? "Activity")",
+            body: nothingToDo
+        )
+    case .noRead:
+        return CompetitionTallyCopy(
+            headline: "Checking Activity on this iPhone",
+            body: nothingToDo
+        )
+    case .awaitingStability, nil:
+        return CompetitionTallyCopy(
+            headline: "Checking the last scores",
+            body: "Nothing for you to do. The result is final by \(deadline) at the latest."
+        )
     }
 }
 
@@ -885,30 +976,6 @@ func competitionFreshnessText(
     }
 }
 
-func competitionTallyDeadlineText(
-    _ tally: LocalCompetitionTallyPresentation,
-    now: Date = Date(),
-    locale: Locale = .current,
-    timeZone: TimeZone = .current,
-    opponentDisplayName: String = LocalCompetitionIdentity.opponentDisplayName,
-    source: CompetitionPublicationSource = .simulatedFixture
-) -> String {
-    let deadline = competitionMomentText(
-        tally.bestAvailableDeadline,
-        now: now,
-        locale: locale,
-        timeZone: timeZone
-    )
-    if tally.attention == .awaitingStability {
-        return "If complete scores do not stabilize by \(deadline), HealthComp may finalize using the best available accepted data."
-    }
-    if tally.attention == .opponentPlanUnavailable {
-        let qualifier = source == .simulatedFixture ? " simulated" : ""
-        return "If \(opponentDisplayName)’s final\(qualifier) scores are still unavailable after \(deadline), HealthComp may finalize using the best available accepted data."
-    }
-    return "If complete accepted scores are still unavailable after \(deadline), HealthComp may finalize using the best available accepted data."
-}
-
 func competitionScoreTotalLabel(isProvisional: Bool) -> String {
     isProvisional ? "Provisional total" : "Total"
 }
@@ -916,7 +983,7 @@ func competitionScoreTotalLabel(isProvisional: Bool) -> String {
 func competitionScorePeriodLabel(
     _ lifecycle: LocalCompetitionLifecyclePresentation
 ) -> String {
-    if case .tallying = lifecycle { return "Final day" }
+    if case .tallying = lifecycle { return "Day 7" }
     return "Today"
 }
 
@@ -989,13 +1056,5 @@ private func availabilityTint(
     switch availability {
     case .observed, .unavailable: Theme.ink
     case .notYetOccurred, .notSyncedYet, .missing: Theme.secondary
-    }
-}
-
-private func tallyStatusSymbol(_ attention: LocalCompetitionTallyAttention) -> String {
-    switch attention {
-    case .awaitingStability: "arrow.triangle.2.circlepath"
-    case .noRead, .incomplete, .unacceptedScores, .opponentPlanUnavailable:
-        "exclamationmark.triangle.fill"
     }
 }

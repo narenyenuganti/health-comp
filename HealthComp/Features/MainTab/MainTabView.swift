@@ -300,7 +300,9 @@ struct MainTabView: View {
                 .contains(identity),
             isInFlight: store.competition.muteOpponentIdentitiesInFlight
                 .contains(identity),
-            saveFailed: store.competition.notificationPreferenceSaveFailed,
+            failure: store.competition.muteSaveFailures[identity]
+                .map { $0 ? CompetitionMuteFailure.mute : .unmute }
+                ?? (store.competition.mutePreferencesLoadFailed ? .load : nil),
             toggle: { store.send(.competition(.muteTapped(identity))) }
         )
     }
