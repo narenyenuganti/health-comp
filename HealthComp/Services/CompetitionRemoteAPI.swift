@@ -8,6 +8,12 @@ enum CompetitionRemoteFailure: Error, Equatable, Sendable {
     case inviteUnavailable
     case recipientUnavailable
     case pendingInvitationExists
+    /// The two people share a match whose week hasn't ended.
+    case activeMatchExists
+    /// The chosen person already challenged you.
+    case incomingChallengeExists
+    /// The challenge link is your own.
+    case ownChallengeLink
     case divergentDuplicate
     case staleRevision
     case finalizedCompetition
@@ -83,6 +89,69 @@ struct CompetitionRemoteAPI: Sendable {
     var resolveInviteRecipient: @Sendable (UUID) async throws -> AuthenticatedProfile = { _ in
         throw CompetitionRemoteFailure.operationFailed
     }
+    var listChallenges: @Sendable () async throws -> CompetitionChallengeList = {
+        throw CompetitionRemoteFailure.operationFailed
+    }
+    var previewInvite: @Sendable (
+        CompetitionInviteClaimRequest
+    ) async throws -> CompetitionInvitePreview = { _ in
+        throw CompetitionRemoteFailure.operationFailed
+    }
+    var acceptChallenge: @Sendable (UUID) async throws -> Void = { _ in
+        throw CompetitionRemoteFailure.operationFailed
+    }
+    var declineChallenge: @Sendable (UUID) async throws -> Void = { _ in
+        throw CompetitionRemoteFailure.operationFailed
+    }
+    var cancelCompetition: @Sendable (UUID) async throws -> Void = { _ in
+        throw CompetitionRemoteFailure.operationFailed
+    }
+    var loadChallengeLinkCode: @Sendable () async throws -> CompetitionChallengeLinkCode = {
+        throw CompetitionRemoteFailure.operationFailed
+    }
+    var resolveChallengeLink: @Sendable (
+        CompetitionChallengeLinkCode
+    ) async throws -> AuthenticatedProfile = { _ in
+        throw CompetitionRemoteFailure.operationFailed
+    }
+}
+
+/// What the person a challenge was sent to may see before accepting it.
+struct CompetitionInvitePreview: Equatable, Sendable {
+    enum State: String, Equatable, Sendable { case pending, accepted }
+
+    let competitionID: UUID
+    let state: State
+    let sender: AuthenticatedProfile
+    let timeZoneIdentifier: String
+    let expiresAt: Date
+}
+
+/// Challenges sent to you, and the last day's declines and cancels that the
+/// other person did.
+struct CompetitionChallengeList: Equatable, Sendable {
+    struct Incoming: Equatable, Sendable {
+        let competitionID: UUID
+        let sender: AuthenticatedProfile
+        let timeZoneIdentifier: String
+        let createdAt: Date
+        let expiresAt: Date
+    }
+
+    struct Closed: Equatable, Sendable {
+        enum Kind: String, Equatable, Sendable { case declined, cancelled }
+
+        let competitionID: UUID
+        let kind: Kind
+        /// "Former competitor" once that person deleted their account.
+        let other: AuthenticatedProfile
+        let closedAt: Date
+    }
+
+    var incoming: [Incoming]
+    var closed: [Closed]
+
+    static let empty = Self(incoming: [], closed: [])
 }
 
 enum CompetitionRemoteTransportRequest: Equatable, Sendable {

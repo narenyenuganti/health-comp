@@ -87,6 +87,15 @@ struct CompetitionClient: Sendable {
     var restoreInvite: @Sendable (
         CompetitionID
     ) async throws -> CompetitionInviteCreationOutcome
+    /// Withdraws your pending challenge, or cancels a match before Day 1.
+    var cancel: @Sendable (CompetitionID) async -> CompetitionPublication
+    var previewInvite: @Sendable (
+        CompetitionInviteClaimRequest
+    ) async throws -> CompetitionInvitePreview
+    var loadChallengeLinkCode: @Sendable () async throws -> CompetitionChallengeLinkCode
+    var resolveChallengeLink: @Sendable (
+        CompetitionChallengeLinkCode
+    ) async throws -> AuthenticatedProfile
 
     init(
         start: @escaping @Sendable () -> AsyncStream<CompetitionPublication>,
@@ -147,6 +156,23 @@ struct CompetitionClient: Sendable {
             CompetitionID
         ) async throws -> CompetitionInviteCreationOutcome = { _ in
             throw CompetitionRemoteFailure.notFound
+        },
+        cancel: @escaping @Sendable (
+            CompetitionID
+        ) async -> CompetitionPublication = { _ in .inert },
+        previewInvite: @escaping @Sendable (
+            CompetitionInviteClaimRequest
+        ) async throws -> CompetitionInvitePreview = { _ in
+            throw CompetitionRemoteFailure.operationFailed
+        },
+        loadChallengeLinkCode: @escaping @Sendable () async throws ->
+            CompetitionChallengeLinkCode = {
+            throw CompetitionRemoteFailure.operationFailed
+        },
+        resolveChallengeLink: @escaping @Sendable (
+            CompetitionChallengeLinkCode
+        ) async throws -> AuthenticatedProfile = { _ in
+            throw CompetitionRemoteFailure.operationFailed
         }
     ) {
         self.start = start
@@ -173,6 +199,10 @@ struct CompetitionClient: Sendable {
         self.claimInvite = claimInvite
         self.resolveInviteRecipient = resolveInviteRecipient
         self.restoreInvite = restoreInvite
+        self.cancel = cancel
+        self.previewInvite = previewInvite
+        self.loadChallengeLinkCode = loadChallengeLinkCode
+        self.resolveChallengeLink = resolveChallengeLink
     }
 
     func prepareForProfileTeardown(
