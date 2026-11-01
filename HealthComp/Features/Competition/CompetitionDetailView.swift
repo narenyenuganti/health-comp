@@ -9,12 +9,15 @@ struct CompetitionDetailView: View {
     var retry: (() async -> Void)? = nil
     /// Pull to refresh on the match screen only; drawers don't inherit it.
     var refresh: (@Sendable () async -> Void)?
+    /// Real scheduled matches only: Cancel Match in the ••• menu.
+    var cancelMatch: CompetitionCancelMatch? = nil
 
     @Environment(\.locale) private var locale
     @Environment(\.timeZone) private var timeZone
 
     @State private var page: Page = .today
     @State private var drawer: Drawer? = nil
+    @State private var showsCancelConfirmation = false
 
     /// Today's numbers or the whole week; the scoreboard stays above both.
     private enum Page: Hashable {
@@ -48,6 +51,13 @@ struct CompetitionDetailView: View {
                     )
                     leadStatement
                     freshnessLine
+                    if cancelMatch?.failed == true {
+                        Text("Couldn’t cancel the match. It may have already started.")
+                            .font(.callout)
+                            .foregroundStyle(Theme.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("competition.cancel.error")
+                    }
                 }
 
                 tallyPanel
@@ -94,11 +104,30 @@ struct CompetitionDetailView: View {
                     } label: {
                         Label("How scoring works", systemImage: "list.bullet")
                     }
+                    if let cancelMatch, case .scheduled = competition.lifecycle {
+                        Button(role: .destructive) {
+                            showsCancelConfirmation = true
+                        } label: {
+                            Label("Cancel Match", systemImage: "xmark.circle")
+                        }
+                        .disabled(cancelMatch.isInFlight)
+                        .accessibilityIdentifier("competition.match.cancel")
+                    }
                 } label: {
                     CompetitionMoreLabel()
                 }
                 .accessibilityIdentifier("competition.more")
             }
+        }
+        .confirmationDialog(
+            "Cancel your match with \(competition.opponentDisplayName)?",
+            isPresented: $showsCancelConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Cancel Match", role: .destructive) { cancelMatch?.cancel() }
+            Button("Keep Match", role: .cancel) {}
+        } message: {
+            Text("It hasn’t started yet. \(competition.opponentDisplayName) will be told.")
         }
         .sheet(item: $drawer) { item in
             switch item {
@@ -1081,4 +1110,10 @@ private func availabilityTint(
     case .observed, .unavailable: Theme.ink
     case .notYetOccurred, .notSyncedYet, .missing: Theme.secondary
     }
+}
+
+struct CompetitionCancelMatch {
+    let isInFlight: Bool
+    let failed: Bool
+    let cancel: () -> Void
 }

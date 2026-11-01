@@ -13,6 +13,8 @@ struct CompetitionFeature {
 
     enum InviteCreationFailure: Equatable, Sendable {
         case connection, unavailable, recipientGone, alreadyPending
+        /// The server knew of a challenge or match with them first.
+        case conflict
     }
 
     struct InviteCreation: Equatable, Sendable {
@@ -41,6 +43,10 @@ struct CompetitionFeature {
     enum ChallengeSheetStatus: Equatable, Sendable {
         case ready, creating
         case alreadyChallenged(LocalCompetitionPresentation)
+        /// They already challenged you.
+        case challengedYou(LocalCompetitionPresentation)
+        /// You already have a match with them that hasn't ended.
+        case inMatch(LocalCompetitionPresentation)
         case sent(
             challengeID: CompetitionID,
             challenge: LocalCompetitionPresentation?,
@@ -56,6 +62,8 @@ struct CompetitionFeature {
         case received(LocalCompetitionPresentation)
         case next(LocalCompetitionPresentation)
         case alreadyChallenged(LocalCompetitionPresentation)
+        case challengedYou(LocalCompetitionPresentation)
+        case inMatch(LocalCompetitionPresentation)
         case failed(InviteCreationFailure)
     }
 
@@ -90,6 +98,9 @@ struct CompetitionFeature {
         var inviteRecipientStatus: InviteRecipientStatus = .idle
         /// The signed-in profile, so Home can draw its initial.
         var ownProfile: AuthenticatedProfile?
+        /// Your reusable challenge link, once loaded.
+        var challengeLink: URL?
+        var challengeLinkLoadFailed = false
 
         init(
             publication: CompetitionPublication? = nil,
@@ -136,7 +147,13 @@ struct CompetitionFeature {
         case publication(CompetitionPublication)
         case inviteRecipientCodeChanged(String)
         case findInviteRecipientTapped
-        case inviteRecipientResponse(UUID, Result<AuthenticatedProfile, CompetitionRemoteFailure>)
+        /// The trimmed input that was looked up, and its answer.
+        case inviteRecipientResponse(String, Result<AuthenticatedProfile, CompetitionRemoteFailure>)
+        /// Someone's challenge link resolved: prefill the + sheet's person.
+        case challengeRecipientChosen(AuthenticatedProfile)
+        case cancelTapped(CompetitionID)
+        case challengeLinkRequested
+        case challengeLinkResponse(URL?)
         case createInviteTapped
         case createInviteResponse(
             InviteSlot,
@@ -178,6 +195,7 @@ struct CompetitionFeature {
         case inviteCreation
         case inviteRecipient
         case inviteLink
+        case challengeLink
     }
 
     var body: some ReducerOf<Self> {
@@ -231,59 +249,120 @@ struct CompetitionFeature {
                 return .cancel(id: CancelID.inviteRecipient)
 
             case .findInviteRecipientTapped:
-                let code = state.inviteRecipientCode
+                let input = state.inviteRecipientCode
                     .trimmingCharacters(in: .whitespacesAndNewlines)
                 guard !state.isChallengeSheetLocked,
                       state.inviteRecipientStatus != .lookingUp,
-                      !code.isEmpty else { return .none }
-                guard let id = UUID(uuidString: code),
-                      id != UUID(uuidString: "00000000-0000-0000-0000-000000000000") else {
+                      !input.isEmpty else { return .none }
+                // A challenge link (either URL form) or its bare code, or a
+                // 1.0.2 account code.
+                let lookup: @Sendable () async throws -> AuthenticatedProfile
+                var expectedID: UUID?
+                if let code = Self.challengeLinkCode(in: input) {
+                    lookup = { [competitionClient] in
+                        try await competitionClient.resolveChallengeLink(code)
+                    }
+                } else if let id = UUID(uuidString: input),
+                          id != UUID(uuidString: "00000000-0000-0000-0000-000000000000") {
+                    // Your own code never reaches the server.
+                    guard id != state.ownProfile?.id else {
+                        state.inviteRecipientStatus = .ownCode
+                        return .none
+                    }
+                    expectedID = id
+                    lookup = { [competitionClient] in
+                        try await competitionClient.resolveInviteRecipient(id)
+                    }
+                } else {
                     state.inviteRecipientStatus = .invalidCode
-                    return .none
-                }
-                // Your own code never reaches the server.
-                guard id != state.ownProfile?.id else {
-                    state.inviteRecipientStatus = .ownCode
                     return .none
                 }
                 state.inviteRecipient = nil
                 state.inviteRecipientStatus = .lookingUp
                 dropFailedSheetCreation(state: &state)
-                return .run { send in
+                return .run { [expectedID] send in
                     do {
-                        let recipient = try await competitionClient.resolveInviteRecipient(id)
+                        let recipient = try await lookup()
                         guard !Task.isCancelled else { return }
-                        await send(.inviteRecipientResponse(id, .success(recipient)))
+                        guard expectedID.map({ $0 == recipient.id }) ?? true else {
+                            await send(.inviteRecipientResponse(input, .failure(.notFound)))
+                            return
+                        }
+                        await send(.inviteRecipientResponse(input, .success(recipient)))
                     } catch is CancellationError {
                         return
                     } catch {
                         guard !Task.isCancelled else { return }
-                        await send(.inviteRecipientResponse(id, .failure(
+                        await send(.inviteRecipientResponse(input, .failure(
                             (error as? CompetitionRemoteFailure) ?? .operationFailed
                         )))
                     }
                 }
                 .cancellable(id: CancelID.inviteRecipient, cancelInFlight: true)
 
-            case let .inviteRecipientResponse(id, result):
+            case let .inviteRecipientResponse(input, result):
                 guard state.inviteRecipientStatus == .lookingUp,
-                      UUID(uuidString: state.inviteRecipientCode.trimmingCharacters(in: .whitespacesAndNewlines)) == id
+                      state.inviteRecipientCode.trimmingCharacters(in: .whitespacesAndNewlines) == input
                 else { return .none }
                 state.inviteRecipient = nil
                 switch result {
-                case let .success(recipient) where recipient.id == id:
+                case let .success(recipient) where recipient.id == state.ownProfile?.id:
+                    state.inviteRecipientStatus = .ownCode
+                case let .success(recipient):
                     state.inviteRecipient = recipient
                     state.inviteRecipientStatus = .idle
-                case .success, .failure(.recipientUnavailable), .failure(.notFound):
+                case .failure(.ownChallengeLink):
+                    state.inviteRecipientStatus = .ownCode
+                case .failure(.recipientUnavailable), .failure(.notFound):
                     state.inviteRecipientStatus = .notFound
                 case .failure:
                     state.inviteRecipientStatus = .connectionFailed
                 }
                 return .none
 
-            case .createInviteTapped:
-                if case .alreadyChallenged = state.challengeSheetStatus {
+            case let .challengeRecipientChosen(recipient):
+                state.inviteCreations[.sheet] = nil
+                state.inviteRecipient = recipient
+                state.inviteRecipientCode = recipient.id.uuidString.lowercased()
+                state.inviteRecipientStatus = .idle
+                return .cancel(id: CancelID.inviteRecipient)
+
+            case let .cancelTapped(id):
+                guard state.commandIDsInFlight.insert(id).inserted else {
                     return .none
+                }
+                return .run { send in
+                    let returned = await competitionClient.cancel(id)
+                    await send(
+                        .commandFinished(
+                            id,
+                            expectedRevision: returned.publicationRevision
+                        )
+                    )
+                }
+
+            case .challengeLinkRequested:
+                guard state.challengeLink == nil else { return .none }
+                state.challengeLinkLoadFailed = false
+                return .run { send in
+                    let code = try? await competitionClient.loadChallengeLinkCode()
+                    await send(.challengeLinkResponse(
+                        code.flatMap(competitionInviteLinkClient.makeChallengeLink)
+                    ))
+                }
+                .cancellable(id: CancelID.challengeLink, cancelInFlight: true)
+
+            case let .challengeLinkResponse(url):
+                state.challengeLink = url
+                state.challengeLinkLoadFailed = url == nil
+                return .none
+
+            case .createInviteTapped:
+                switch state.challengeSheetStatus {
+                case .alreadyChallenged, .challengedYou, .inMatch:
+                    return .none
+                default:
+                    break
                 }
                 return beginInviteCreation(
                     state: &state,
@@ -313,6 +392,10 @@ struct CompetitionFeature {
                 case .failure(.pendingInvitationExists):
                     creation.status = .failed(.alreadyPending)
                     // The existing challenge shows up, then offers Open Challenge.
+                    effect = reconcile(trigger: .pullToRefresh)
+                case .failure(.activeMatchExists), .failure(.incomingChallengeExists):
+                    creation.status = .failed(.conflict)
+                    // Once the dashboard catches up, the derived row replaces this.
                     effect = reconcile(trigger: .pullToRefresh)
                 case .failure(.recipientUnavailable), .failure(.forbidden):
                     guard slot == .sheet else {
@@ -631,17 +714,29 @@ struct CompetitionFeature {
                 state.inviteRecipient = nil
                 state.inviteRecipientCode = ""
                 state.inviteRecipientStatus = .idle
+                state.challengeLink = nil
+                state.challengeLinkLoadFailed = false
                 return .concatenate(
                     .merge(
                         .cancel(id: CancelID.publications),
                         .cancel(id: CancelID.inviteRecipient),
                         .cancel(id: CancelID.inviteCreation),
-                        .cancel(id: CancelID.inviteLink)
+                        .cancel(id: CancelID.inviteLink),
+                        .cancel(id: CancelID.challengeLink)
                     ),
                     .run { _ in await competitionClient.stop() }
                 )
             }
         }
+    }
+
+    /// A challenge link URL (https or the app's scheme) or a bare 22-character code.
+    static func challengeLinkCode(in input: String) -> CompetitionChallengeLinkCode? {
+        if let url = URL(string: input),
+           case let .challengeLink(code)? = CompetitionRoute(url: url) {
+            return code
+        }
+        return CompetitionChallengeLinkCode(rawValue: input)
     }
 
     private func dropFailedSheetCreation(state: inout State) {
@@ -875,14 +970,49 @@ extension CompetitionFeature.State {
                 link: link
             )
         }
-        if let inviteRecipient,
-           let existing = pendingOutgoingChallenge(
-               to: RemoteCompetitionOpponentIdentity.identity(for: inviteRecipient.id)
-           ) {
-            return .alreadyChallenged(existing)
+        if let inviteRecipient {
+            let identity = RemoteCompetitionOpponentIdentity.identity(for: inviteRecipient.id)
+            if let existing = pendingOutgoingChallenge(to: identity) {
+                return .alreadyChallenged(existing)
+            }
+            if let incoming = incomingChallenge(from: identity) {
+                return .challengedYou(incoming)
+            }
+            if let match = matchInProgress(with: identity) {
+                return .inMatch(match)
+            }
         }
         if case let .failed(failure)? = creation?.status { return .failed(failure) }
         return .ready
+    }
+
+    /// Their pending challenge to you.
+    func incomingChallenge(from opponentIdentity: String) -> LocalCompetitionPresentation? {
+        guard let publication, publication.source == .remoteParticipants else { return nil }
+        return publication.dashboard.competitions.first {
+            guard case .pending(.incoming, _, _) = $0.lifecycle else { return false }
+            return $0.opponentIdentity == opponentIdentity
+        }
+    }
+
+    /// A match with them whose week hasn't ended, earliest start first.
+    /// Tallying doesn't count, matching the server.
+    func matchInProgress(with opponentIdentity: String) -> LocalCompetitionPresentation? {
+        guard let publication, publication.source == .remoteParticipants else { return nil }
+        return publication.dashboard.competitions.filter {
+            switch $0.lifecycle {
+            case .scheduled, .active, .endsToday:
+                return $0.opponentIdentity == opponentIdentity
+            default:
+                return false
+            }
+        }.min {
+            let lhs = $0.acceptedConfiguration.flatMap { competitionScheduleBoundaries($0.schedule)?.start }
+                ?? .distantFuture
+            let rhs = $1.acceptedConfiguration.flatMap { competitionScheduleBoundaries($0.schedule)?.start }
+                ?? .distantFuture
+            return lhs < rhs
+        }
     }
 
     func rematchState(
@@ -892,7 +1022,7 @@ extension CompetitionFeature.State {
             guard $0.rematchParentID == parent.id else { return false }
             switch $0.lifecycle {
             // A closed child counts as no child; Home already shows how it closed.
-            case .declined, .expired: return false
+            case .declined, .expired, .cancelled: return false
             default: return true
             }
         }
@@ -938,6 +1068,12 @@ extension CompetitionFeature.State {
         }
         if let existing = pendingOutgoingChallenge(to: parent.opponentIdentity) {
             return .alreadyChallenged(existing)
+        }
+        if let match = matchInProgress(with: parent.opponentIdentity) {
+            return .inMatch(match)
+        }
+        if let incoming = incomingChallenge(from: parent.opponentIdentity) {
+            return .challengedYou(incoming)
         }
         if case let .failed(failure)? = creation?.status { return .failed(failure) }
         return .available

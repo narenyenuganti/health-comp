@@ -64,7 +64,7 @@ final class MultiUserCompetitionUITests: XCTestCase {
         defer { app.terminate() }
         let error = app.staticTexts["competition.create.recipient-error"]
         // Each code goes into a freshly opened sheet, which starts empty.
-        // Return runs Find Account; Find is never tapped.
+        // Return runs Find; Find is never tapped.
         func submit(_ code: String) {
             openChallengeDrawer()
             let field = recipientCodeField
@@ -77,13 +77,20 @@ final class MultiUserCompetitionUITests: XCTestCase {
         XCTAssertTrue(error.waitForExistence(timeout: 3))
         XCTAssertEqual(
             error.label,
-            "That isn’t a full account code. Ask them to share it again."
+            "That isn’t a full challenge link. Ask them to share it again."
         )
         closeChallengeDrawer()
 
         submit("a1000000-0000-4000-8000-000000000099")
         XCTAssertTrue(error.waitForExistence(timeout: 3))
-        XCTAssertEqual(error.label, "That’s your own code. Ask them for theirs.")
+        XCTAssertEqual(error.label, "That’s your own link. Ask them for theirs.")
+        closeChallengeDrawer()
+
+        // A challenge link finds the person too.
+        submit("healthcomp://challenge/SamSamSamSamSamSamSam1")
+        let linked = app.staticTexts["competition.create.recipient-name"]
+        XCTAssertTrue(linked.waitForExistence(timeout: 3))
+        XCTAssertEqual(linked.label, "Challenge Sam")
         closeChallengeDrawer()
 
         submit("a1000000-0000-4000-8000-000000000005")
@@ -411,12 +418,19 @@ final class MultiUserCompetitionUITests: XCTestCase {
                 app.navigationBars["Challenge"]
                     .waitForExistence(timeout: 8)
             )
-            XCTAssertTrue(app.staticTexts["Join this match?"].exists)
+            XCTAssertEqual(
+                app.staticTexts["competition.claim.sender"].label,
+                "Naren challenged you"
+            )
             XCTAssertTrue(
-                app.staticTexts["The other person sees your daily points and rounded ring percentages"].exists
+                element("competition.claim.start").label.contains("Pacific Time")
+            )
+            XCTAssertTrue(
+                app.staticTexts["Naren sees your daily points and rounded ring percentages"].exists
             )
             XCTAssertTrue(app.staticTexts["Most points after 7 days wins"].exists)
             XCTAssertTrue(app.buttons["competition.claim.accept"].exists)
+            XCTAssertTrue(app.buttons["competition.claim.not-now"].exists)
             XCTAssertTrue(app.buttons["competition.claim.decline"].exists)
             app.buttons["competition.claim.accept"].tap()
             XCTAssertTrue(
@@ -448,10 +462,125 @@ final class MultiUserCompetitionUITests: XCTestCase {
                 .waitForExistence(timeout: 3)
         )
         app.buttons["competition.claim.decline"].tap()
+        let confirm = app.buttons["Decline Challenge"]
+        XCTAssertTrue(confirm.waitForExistence(timeout: 3))
+        confirm.tap()
         XCTAssertTrue(
             app.staticTexts["Invitation Declined"]
                 .waitForExistence(timeout: 3)
         )
+
+        // Not Now only closes the sheet.
+        launch(.coldClaim)
+        let notNow = app.buttons["competition.claim.not-now"]
+        XCTAssertTrue(notNow.waitForExistence(timeout: 8))
+        notNow.tap()
+        XCTAssertTrue(
+            app.staticTexts["Challenge Kept"].waitForExistence(timeout: 3)
+        )
+    }
+
+    func testAccountShowsChallengeLinkAndCode() {
+        launch(.account)
+        defer { app.terminate() }
+        XCTAssertTrue(app.navigationBars["Account"].waitForExistence(timeout: 8))
+        let url = element("account.challenge-link.url")
+        XCTAssertTrue(url.waitForExistence(timeout: 3))
+        XCTAssertTrue(url.label.contains("Your challenge link"))
+        XCTAssertTrue(element("account.challenge-link.share").exists)
+        XCTAssertFalse(
+            app.debugDescription.range(
+                of: "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+                options: [.regularExpression, .caseInsensitive]
+            ) != nil,
+            "Account shows no 36-character account code"
+        )
+        let showCode = element("account.challenge-link.show-code")
+        scrollToElement(showCode)
+        showCode.tap()
+        XCTAssertTrue(element("account.challenge-link.qr").waitForExistence(timeout: 3))
+        XCTAssertTrue(app.navigationBars["Your Challenge Code"].exists)
+    }
+
+    func testRemoteOutgoingChallengeOffersCancel() {
+        launch(.sharing)
+        defer { app.terminate() }
+        XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 8))
+        let pending = sharingCard(state: "pending", name: "Sam")
+        scrollToElement(pending)
+        pending.tap()
+        XCTAssertTrue(app.buttons["competition.invite.share"].waitForExistence(timeout: 3))
+        let cancel = app.buttons["competition.invite.cancel"]
+        XCTAssertTrue(cancel.exists)
+        cancel.tap()
+        // The dialog's destructive button, not the screen's.
+        let confirm = app.buttons.matching(
+            NSPredicate(
+                format: "label == %@ AND identifier != %@",
+                "Cancel Challenge",
+                "competition.invite.cancel"
+            )
+        ).firstMatch
+        XCTAssertTrue(confirm.waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["Sam won’t be able to accept it."].exists)
+        confirm.tap()
+        XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 3))
+    }
+
+    func testChallengeLinkSheetSendsFromSomeonesLink() {
+        launch(.challengeLink)
+        defer { app.terminate() }
+        let name = element("competition.link.name")
+        XCTAssertTrue(name.waitForExistence(timeout: 8))
+        XCTAssertEqual(name.label, "Challenge Maya?")
+        XCTAssertTrue(app.staticTexts["Maya gets it in HealthComp. Nothing to send back."].exists)
+        app.buttons["competition.link.send"].tap()
+        XCTAssertTrue(app.staticTexts["Sending…"].waitForExistence(timeout: 3))
+    }
+
+    func testChallengeScreensAppearanceAndTypeSizeMatrix() throws {
+        let auditTypes = XCUIAccessibilityAuditType.textClipped
+            .union(.hitRegion)
+            .union(.sufficientElementDescription)
+        for (appearance, size) in [
+            ("Light", "UICTContentSizeCategoryXS"),
+            ("Dark", "UICTContentSizeCategoryAccessibilityXXXL"),
+        ] {
+            let arguments = [
+                "-AppleInterfaceStyle", appearance,
+                "-UIPreferredContentSizeCategoryName", size,
+                "-UIAccessibilityReduceMotionEnabled", "YES",
+            ]
+            launch(.coldClaim, appearanceArguments: arguments)
+            XCTAssertTrue(app.buttons["competition.claim.accept"].waitForExistence(timeout: 8))
+            attachScreenshot("claim-\(appearance)-\(size)")
+            try app.performAccessibilityAudit(for: auditTypes)
+
+            launch(.challengeLink, appearanceArguments: arguments)
+            XCTAssertTrue(element("competition.link.name").waitForExistence(timeout: 8))
+            attachScreenshot("challenge-link-\(appearance)-\(size)")
+            try app.performAccessibilityAudit(for: auditTypes)
+
+            launch(.account, appearanceArguments: arguments)
+            let url = element("account.challenge-link.url")
+            XCTAssertTrue(url.waitForExistence(timeout: 8))
+            scrollToElement(url)
+            attachScreenshot("account-challenge-link-\(appearance)-\(size)")
+            let showCode = element("account.challenge-link.show-code")
+            scrollToElement(showCode)
+            showCode.tap()
+            XCTAssertTrue(element("account.challenge-link.qr").waitForExistence(timeout: 3))
+            attachScreenshot("challenge-code-\(appearance)-\(size)")
+            try app.performAccessibilityAudit(for: auditTypes)
+        }
+        app.terminate()
+    }
+
+    private func attachScreenshot(_ name: String) {
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = name
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
     }
 
     func testUnavailableConsumedAndOfflineClaimRecoveryStayPrivacyCollapsed() {
@@ -1134,6 +1263,7 @@ final class MultiUserCompetitionUITests: XCTestCase {
         case signedOutClaim = "signed-out-claim"
         case unavailableClaim = "unavailable-claim"
         case offlineClaim = "offline-claim"
+        case challengeLink = "challenge-link"
         case account
         case welcome
         case welcomeChallenge = "welcome-challenge"

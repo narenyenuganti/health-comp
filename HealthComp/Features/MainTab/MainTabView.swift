@@ -46,11 +46,37 @@ struct MainTabView: View {
         .sheet(isPresented: claimSheetPresented) {
             ClaimCompetitionView(
                 status: store.inviteClaimStatus,
+                preview: store.inviteClaimPreview,
+                now: store.inviteClaimPreviewEvaluatedAt ?? Date(),
+                hasQueuedChallenge: store.queuedClaimRoute != nil,
+                declineFailed: store.claimDeclineFailed,
                 accept: { store.send(.acceptClaimTapped) },
-                decline: { store.send(.declineClaimTapped) },
+                notNow: { store.send(.notNowClaimTapped) },
+                decline: { store.send(.declineClaimConfirmed) },
                 retry: { store.send(.retryClaimTapped) },
                 dismiss: { store.send(.dismissClaimStatus) }
             )
+        }
+        .sheet(item: Binding(
+            get: { store.challengeFromLink },
+            set: { if $0 == nil { store.send(.dismissChallengeFromLink) } }
+        )) { link in
+            ChallengeFromLinkView(
+                link: link,
+                status: store.competition.challengeSheetStatus,
+                send: { store.send(.sendChallengeFromLinkTapped) },
+                retry: { store.send(.retryChallengeFromLinkTapped) },
+                openCompetition: { id in
+                    store.send(.dismissChallengeFromLink)
+                    store.send(.pathChanged([id]))
+                },
+                close: { store.send(.dismissChallengeFromLink) }
+            )
+        }
+        .onChange(of: isChallengePresented) { _, isPresented in
+            if isPresented, store.competition.publication?.source == .remoteParticipants {
+                store.send(.competition(.challengeLinkRequested))
+            }
         }
     }
 
@@ -70,6 +96,7 @@ struct MainTabView: View {
                         publication: publication,
                         challengeStatus: store.competition.challengeSheetStatus,
                         senderName: store.competition.ownProfile?.displayName,
+                        ownChallengeLink: store.competition.challengeLink,
                         dismissChallenge: {
                             store.send(.competition(.challengeSheetDismissed))
                         },
@@ -212,15 +239,12 @@ struct MainTabView: View {
             set: { isPresented in
                 guard !isPresented else { return }
                 switch store.inviteClaimStatus {
-                case .ready:
-                    store.send(.declineClaimTapped)
-                case .retryable:
-                    store.send(.dismissRetryableClaim)
-                case .unavailable, .wrongAccount, .ownChallenge:
+                case .loadingPreview, .ready, .retryable:
+                    store.send(.notNowClaimTapped)
+                case .unavailable, .wrongAccount, .ownChallenge, .activeMatchExists,
+                     .confirmationTimedOut:
                     store.send(.dismissClaimStatus)
-                case .confirmationTimedOut:
-                    store.send(.dismissClaimStatus)
-                case .idle, .claiming, .waitingForCompetition:
+                case .idle, .declining, .claiming, .waitingForCompetition:
                     break
                 }
             }
@@ -241,7 +265,8 @@ struct MainTabView: View {
                     isCommandInFlight: store.competition
                         .isCommandInFlight(id),
                     link: store.competition.inviteLinks[id],
-                    send: sendCompetitionAction
+                    send: sendCompetitionAction,
+                    commandFailed: publication.dashboard.issues.contains(.commandRejected(id))
                 )
 
             case .scheduled, .active, .endsToday, .tallying:
@@ -257,7 +282,14 @@ struct MainTabView: View {
                         await Task {
                             await store.send(.competition(.pullToRefresh)).finish()
                         }.value
-                    }
+                    },
+                    cancelMatch: publication.source == .remoteParticipants
+                        ? CompetitionCancelMatch(
+                            isInFlight: store.competition.isCommandInFlight(id),
+                            failed: publication.dashboard.issues.contains(.commandRejected(id)),
+                            cancel: { store.send(.competition(.cancelTapped(id))) }
+                        )
+                        : nil
                 )
 
             case .completed, .archived:
@@ -275,7 +307,7 @@ struct MainTabView: View {
                     retry: retry
                 )
 
-            case .declined, .expired:
+            case .declined, .expired, .cancelled:
                 CompetitionClosedChallengeView(
                     competition: competition,
                     canChallengeAgain: publication.source == .simulatedFixture
@@ -354,13 +386,17 @@ private struct CompetitionClosedChallengeView: View {
         let text = competitionClosedChallengeText(
             competition, locale: locale, timeZone: timeZone
         )
+        let isCancelledMatch = if case .cancelled = competition.lifecycle { true } else { false }
         ContentUnavailableView {
             Label(
                 text?.title ?? competition.opponentDisplayName,
-                systemImage: "person.crop.circle.badge.xmark"
+                systemImage: isCancelledMatch
+                    ? "calendar.badge.minus" : "person.crop.circle.badge.xmark"
             )
         } description: {
-            if let line = text?.line {
+            if isCancelledMatch {
+                Text("\(competition.opponentDisplayName) cancelled it before it started. Nothing was recorded.")
+            } else if let line = text?.line {
                 Text("\(line).")
             }
         } actions: {

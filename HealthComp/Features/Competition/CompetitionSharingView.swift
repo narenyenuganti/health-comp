@@ -8,6 +8,7 @@ struct CompetitionSharingView: View {
     let publication: LocalCompetitionPublication
     let challengeStatus: CompetitionFeature.ChallengeSheetStatus
     let senderName: String?
+    var ownChallengeLink: URL? = nil
     let dismissChallenge: () -> Void
     @Binding var recipientCode: String
     let recipient: AuthenticatedProfile?
@@ -146,6 +147,7 @@ struct CompetitionSharingView: View {
                 recipient: recipient,
                 recipientStatus: recipientStatus,
                 senderName: senderName,
+                ownChallengeLink: ownChallengeLink,
                 findRecipient: findRecipient,
                 create: createInvite,
                 openChallenge: {
@@ -368,7 +370,7 @@ struct CompetitionSharingView: View {
         publication.dashboard.hiddenTerminalCompetitionCount > 0
             || publication.dashboard.competitions.contains {
                 switch $0.lifecycle {
-                case .declined, .expired: true
+                case .declined, .expired, .cancelled: true
                 default: false
                 }
             }
@@ -1409,6 +1411,11 @@ func competitionStatusText(
             title: style == .notification ? "Challenge expired" : "Expired",
             timing: nil
         )
+    case .cancelled:
+        CompetitionStatusText(
+            title: style == .card ? "Cancelled" : "Match cancelled",
+            timing: nil
+        )
     case .scheduled:
         switch (style, starts) {
         case let (.card, starts?):
@@ -1456,7 +1463,7 @@ func competitionShouldShowScores(
     _ lifecycle: LocalCompetitionLifecyclePresentation
 ) -> Bool {
     switch lifecycle {
-    case .pending, .scheduled, .declined, .expired:
+    case .pending, .scheduled, .declined, .expired, .cancelled:
         return false
     case .active, .endsToday, .tallying, .completed, .archived:
         return true
@@ -1477,6 +1484,7 @@ func competitionSharingIdentifier(
     case .pending: "pending"
     case .declined: "declined"
     case .expired: "expired"
+    case .cancelled: "cancelled"
     case .scheduled: "scheduled"
     case .active: "active"
     case .endsToday: "ends-today"
@@ -1570,7 +1578,7 @@ func competitionHomeLayout(
             live.append(competition)
         case .scheduled:
             scheduled.append(competition)
-        case .declined, .expired:
+        case .declined, .expired, .cancelled:
             if competitionIsClosedOutgoing(competition.lifecycle),
                !dismissedChallengeIDs.contains(competition.id) {
                 closed.append(competition)
@@ -1597,7 +1605,7 @@ func competitionHomeLayout(
     }
     func closedAt(_ competition: LocalCompetitionPresentation) -> Date {
         switch competition.lifecycle {
-        case let .declined(at, _), let .expired(at, _): at
+        case let .declined(at, _), let .expired(at, _), let .cancelled(at): at
         default: .distantPast
         }
     }
@@ -1674,7 +1682,7 @@ private func competitionAscending<Key: Comparable>(
 
 func competitionIsClosedOutgoing(_ lifecycle: LocalCompetitionLifecyclePresentation) -> Bool {
     switch lifecycle {
-    case .declined(_, .outgoing), .expired(_, .outgoing): true
+    case .declined(_, .outgoing), .expired(_, .outgoing), .cancelled: true
     default: false
     }
 }
@@ -1747,6 +1755,8 @@ func competitionClosedChallengeText(
         return ("Challenge declined", "You declined \(name)’s challenge")
     case let .expired(at, .incoming):
         return ("Challenge expired", "\(name)’s challenge expired \(moment(at))")
+    case let .cancelled(at):
+        return ("Match cancelled", "\(name) cancelled it \(moment(at))")
     default:
         return nil
     }

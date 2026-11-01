@@ -18,6 +18,7 @@ enum MultiUserCompetitionTestLabScenario:
     case signedOutClaim = "signed-out-claim"
     case unavailableClaim = "unavailable-claim"
     case offlineClaim = "offline-claim"
+    case challengeLink = "challenge-link"
     case account
     case welcome
     case welcomeChallenge = "welcome-challenge"
@@ -124,6 +125,8 @@ struct MultiUserCompetitionTestLabRootView: View {
             MultiUserCompetitionClaimTestLabView(
                 scenario: configuration.scenario
             )
+        case .challengeLink:
+            MultiUserCompetitionChallengeLinkTestLabView()
         case .account:
             MultiUserCompetitionAccountTestLabView()
         case .welcome:
@@ -298,7 +301,7 @@ private struct MultiUserCompetitionSharingTestLabView: View {
                     ),
                     send: handle
                 )
-            case .declined, .expired:
+            case .declined, .expired, .cancelled:
                 ContentUnavailableView(
                     "Invitation Closed",
                     systemImage: "person.crop.circle.badge.xmark"
@@ -315,6 +318,21 @@ private struct MultiUserCompetitionSharingTestLabView: View {
 
     private func findRecipient() {
         let code = recipientCode.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let linkCode = CompetitionFeature.challengeLinkCode(in: code) {
+            switch linkCode.rawValue {
+            case MultiUserCompetitionTestLabFixtures.ownLinkCode:
+                recipientStatus = .ownCode
+            case MultiUserCompetitionTestLabFixtures.samLinkCode:
+                recipient = AuthenticatedProfile(
+                    id: MultiUserCompetitionTestLabFixtures.pendingID.rawValue,
+                    displayName: "Sam"
+                )
+                recipientStatus = .idle
+            default:
+                recipientStatus = .notFound
+            }
+            return
+        }
         guard let id = UUID(uuidString: code) else {
             recipientStatus = .invalidCode
             return
@@ -346,6 +364,8 @@ private struct MultiUserCompetitionSharingTestLabView: View {
         switch action {
         case let .archiveTapped(id):
             archivedIDs.insert(id)
+        case .cancelTapped:
+            path.removeAll()
         case .rematchTapped:
             rematchState = .sent(
                 challengeID: MultiUserCompetitionTestLabFixtures.pendingID,
@@ -374,7 +394,19 @@ private struct MultiUserCompetitionClaimTestLabView: View {
         case accepted
         case declined
         case dismissed
+        case notNow
     }
+
+    private static let preview = CompetitionInvitePreview(
+        competitionID: MultiUserCompetitionTestLabFixtures.pendingID.rawValue,
+        state: .pending,
+        sender: AuthenticatedProfile(
+            id: MultiUserCompetitionTestLabFixtures.expiredRecipientID,
+            displayName: "Naren"
+        ),
+        timeZoneIdentifier: "America/Los_Angeles",
+        expiresAt: MultiUserCompetitionTestLabFixtures.labNow.addingTimeInterval(20 * 60 * 60)
+    )
 
     init(scenario: MultiUserCompetitionTestLabScenario) {
         self.scenario = scenario
@@ -383,7 +415,7 @@ private struct MultiUserCompetitionClaimTestLabView: View {
         case .unavailableClaim: .unavailable
         case .offlineClaim: .retryable
         case .sharing, .sharingCustomScheme, .coldClaim, .warmClaim,
-             .signedOutClaim, .account, .welcome, .welcomeChallenge,
+             .signedOutClaim, .challengeLink, .account, .welcome, .welcomeChallenge,
              .healthOnboarding, .healthOnboardingChallenge:
             .ready
         }
@@ -399,7 +431,10 @@ private struct MultiUserCompetitionClaimTestLabView: View {
             } else {
                 ClaimCompetitionView(
                     status: status,
+                    preview: Self.preview,
+                    now: MultiUserCompetitionTestLabFixtures.labNow,
                     accept: accept,
+                    notNow: { outcome = .notNow },
                     decline: { outcome = .declined },
                     retry: { status = .ready },
                     dismiss: { outcome = .dismissed }
@@ -449,6 +484,12 @@ private struct MultiUserCompetitionClaimTestLabView: View {
                 "link.badge.plus",
                 "Ask the sender for a new private invitation."
             )
+        case .notNow:
+            (
+                "Challenge Kept",
+                "clock",
+                "It stays on Home until it expires."
+            )
         }
         return ContentUnavailableView(
             presentation.0,
@@ -466,6 +507,36 @@ private struct MultiUserCompetitionClaimTestLabView: View {
             try? await Task.sleep(nanoseconds: 80_000_000)
             outcome = .accepted
         }
+    }
+}
+
+/// Someone's challenge link opened on this iPhone: "Challenge Maya?".
+private struct MultiUserCompetitionChallengeLinkTestLabView: View {
+    @State private var status: CompetitionFeature.ChallengeSheetStatus = .ready
+    @State private var isPresented = true
+
+    var body: some View {
+        Color.clear
+            .sheet(isPresented: $isPresented) {
+                ChallengeFromLinkView(
+                    link: MainTabFeature.ChallengeFromLink(
+                        sequence: 1,
+                        code: CompetitionChallengeLinkCode(
+                            rawValue: MultiUserCompetitionTestLabFixtures.samLinkCode
+                        )!,
+                        status: .ready(AuthenticatedProfile(
+                            id: MultiUserCompetitionTestLabFixtures.expiredRecipientID,
+                            displayName: "Maya"
+                        ))
+                    ),
+                    status: status,
+                    send: { status = .creating },
+                    retry: {},
+                    openCompetition: { _ in isPresented = false },
+                    close: { isPresented = false }
+                )
+            }
+            .accessibilityIdentifier("multiuser.challenge-link.root")
     }
 }
 
@@ -520,7 +591,11 @@ private struct MultiUserCompetitionAccountTestLabView: View {
                         connect: {}
                     ),
                     liveMatchCount: 2,
-                    accountCode: MultiUserCompetitionTestLabFixtures.pendingID.rawValue
+                    challengeLink: AccountChallengeLink(
+                        url: URL(string: "https://invites.ui.healthcomp.test/c/Xb3kP9qL2mN8vR4tY6wZ1a"),
+                        failed: false,
+                        load: {}
+                    )
                 )
             }
         }
@@ -566,6 +641,9 @@ private enum MultiUserCompetitionTestLabFixtures {
     static let expiredRecipientID = UUID(
         uuidString: "A1000000-0000-4000-8000-000000000008"
     )!
+    static let samLinkCode = "SamSamSamSamSamSamSam1"
+    static let ownLinkCode = "OwnOwnOwnOwnOwnOwnOwn1"
+    static let labNow = Date(timeIntervalSince1970: 1_786_867_200)
 
     static func publication(
         archivedIDs: Set<CompetitionID>
