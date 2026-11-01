@@ -470,6 +470,20 @@ may use the identifier privately in Apple's console, but retain only aggregate
 delivery findings in qualification evidence. Physical delivery and route
 checks remain separate required gates.
 
+### Challenge push capability
+
+Migration `20261101002300` adds `device_installations.supports_challenges`
+(default false) and a four-argument `register_current_device_installation`
+that sets it. The lease discards challenge received, declined and match
+cancelled work for installations without it; score and result work is
+unchanged. 1.0.2 keeps calling the original three-argument RPC, which now
+records false, so it gets no challenge pushes it cannot show.
+
+Promote the migration before any TestFlight build that registers with the
+capability; that build's registration fails against a server without the
+four-argument RPC. Existing installations stay false until their app next
+launches and registers again.
+
 ## Finalizer and notification repair schedules
 
 These schedules are hosted environment state, not proof supplied by source.
