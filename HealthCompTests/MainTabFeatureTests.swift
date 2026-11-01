@@ -312,7 +312,7 @@ final class MainTabFeatureTests: XCTestCase {
                 visibleIDs: [
                     competitionID("81000000-0000-0000-0000-000000000041"),
                 ],
-                lifecycle: .expired(at: created)
+                lifecycle: .expired(at: created, direction: .outgoing)
             )
             await store.send(.competition(.publication(closedOnly))) {
                 $0.competition.publication = closedOnly
@@ -320,7 +320,7 @@ final class MainTabFeatureTests: XCTestCase {
             let declinedOnly = publication(
                 revision: 2,
                 visibleID: competitionID("81000000-0000-0000-0000-000000000042"),
-                lifecycle: .declined(at: created)
+                lifecycle: .declined(at: created, direction: .incoming)
             )
             await store.send(.competition(.publication(declinedOnly))) {
                 $0.competition.publication = declinedOnly
