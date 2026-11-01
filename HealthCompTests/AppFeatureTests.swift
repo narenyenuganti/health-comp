@@ -591,18 +591,39 @@ final class AppFeatureTests: XCTestCase {
         }
         XCTAssertTrue(signedOut.state.hasPendingChallenge)
 
-        // A new account is newer than the link, so MainTab learns it can't
-        // be the recipient.
+        // Submitting a name creates the account, so the link can't be for
+        // it. The boundary survives a failed bootstrap and Try Again.
+        var settingUp = AppFeature.State(
+            phase: .settingUpProfile,
+            account: AccountFeature.State(mode: .settingUpProfile),
+            authEpoch: 1
+        )
+        settingUp.pendingChallengeSequence = 4
+        let submit = TestStore(initialState: settingUp) {
+            AppFeature()
+        } withDependencies: {
+            $0.competitionRoutingClient = neverConsumed
+            $0.authenticationClient = .test(
+                bootstrapProfile: { _ in
+                    throw AuthenticationClientFailure.operationFailed
+                }
+            )
+        }
+        submit.exhaustivity = .off(showSkippedAssertions: false)
+        await submit.send(.account(.delegate(.displayNameSubmitted("Taylor"))))
+        await submit.finish()
+        await submit.skipReceivedActions(strict: false)
+        XCTAssertEqual(submit.state.phase, .launchFailure)
+        XCTAssertEqual(submit.state.newAccountClaimLinksThrough, 4)
+
         for isNewAccount in [true, false] {
             var initial = AppFeature.State(
-                phase: isNewAccount ? .settingUpProfile : .bootstrappingProfile,
-                account: AccountFeature.State(
-                    mode: isNewAccount ? .settingUpProfile : .signedOut
-                ),
+                phase: .bootstrappingProfile,
                 profile: profile,
                 authEpoch: 1
             )
             initial.pendingChallengeSequence = 4
+            initial.newAccountClaimLinksThrough = isNewAccount ? 4 : nil
             let store = TestStore(initialState: initial) {
                 AppFeature()
             } withDependencies: {
@@ -625,6 +646,7 @@ final class AppFeatureTests: XCTestCase {
                 mainTab.claimLinksBeforeAccountThrough = isNewAccount ? 4 : 0
                 $0.mainTab = mainTab
                 $0.pendingChallengeSequence = nil
+                $0.newAccountClaimLinksThrough = nil
             }
             XCTAssertFalse(store.state.hasPendingChallenge)
         }

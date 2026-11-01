@@ -539,6 +539,156 @@ final class MainTabFeatureTests: XCTestCase {
     }
 
     @MainActor
+    func testNotificationPromptWaitsForAccountSheetAndRecoversADroppedPrompt()
+        async {
+        let clock = TestClock()
+        let match = publication(
+            revision: 1,
+            visibleID: competitionID("81000000-0000-0000-0000-000000000081"),
+            lifecycle: .active(dayOrdinal: 2)
+        )
+        let store = TestStore(
+            initialState: MainTabFeature.State(
+                competition: CompetitionFeature.State(
+                    notificationAuthorizationState: .notDetermined
+                )
+            )
+        ) {
+            MainTabFeature()
+        } withDependencies: {
+            $0.continuousClock = clock
+            $0.permissionOnboardingClient = PermissionOnboardingRecorder().client
+        }
+
+        await store.send(.accountPresentationChanged(true)) {
+            $0.isAccountPresented = true
+        }
+        await store.send(.competition(.publication(match))) {
+            $0.competition.publication = match
+        }
+        await store.send(.accountPresentationChanged(false)) {
+            $0.isAccountPresented = false
+            $0.notificationPrompt = .scheduled
+        }
+        // Account opens during the delay: the ready check backs off.
+        await store.send(.accountPresentationChanged(true)) {
+            $0.isAccountPresented = true
+        }
+        await clock.advance(by: .milliseconds(600))
+        await store.receive(.notificationPromptReady) {
+            $0.notificationPrompt = .unscheduled
+        }
+        await store.send(.accountPresentationChanged(false)) {
+            $0.isAccountPresented = false
+            $0.notificationPrompt = .scheduled
+        }
+        await clock.advance(by: .milliseconds(600))
+        await store.receive(.notificationPromptReady) {
+            $0.notificationPrompt = .presented
+        }
+
+        // A sheet opening while the prompt is "presented" means the
+        // present was dropped; it retries when the sheet closes.
+        await store.send(.accountPresentationChanged(true)) {
+            $0.isAccountPresented = true
+            $0.notificationPrompt = .unscheduled
+        }
+        await store.send(.accountPresentationChanged(false)) {
+            $0.isAccountPresented = false
+            $0.notificationPrompt = .scheduled
+        }
+        await clock.advance(by: .milliseconds(600))
+        await store.receive(.notificationPromptReady) {
+            $0.notificationPrompt = .presented
+        }
+        await store.send(.challengeSheetVisibilityChanged(true)) {
+            $0.isChallengeSheetOpen = true
+            $0.notificationPrompt = .unscheduled
+        }
+        await store.finish()
+    }
+
+    @MainActor
+    func testAcceptedChallengeSchedulesNotificationPromptOnlyAfterTheClaim()
+        async throws {
+        let claimedID = competitionID("81000000-0000-0000-0000-000000000091")
+        let liveID = competitionID("81000000-0000-0000-0000-000000000092")
+        let token = try XCTUnwrap(
+            CompetitionInviteClaimToken(rawValue: Self.claimToken)
+        )
+        let envelope = try claimEnvelope(sequence: 9)
+        let claims = MainTabClaimRecorder(
+            expectedToken: token,
+            results: [.success(claimedID, expectedRevision: 2)]
+        )
+        let clock = TestClock()
+        var initial = MainTabFeature.State(
+            competition: CompetitionFeature.State(
+                notificationAuthorizationState: .notDetermined
+            ),
+            pendingClaimRoute: envelope
+        )
+        initial.acceptsClaimOnStart = true
+        let store = TestStore(initialState: initial) {
+            MainTabFeature()
+        } withDependencies: {
+            $0.competitionClient = claims.client
+            $0.competitionRoutingClient = MainTabRoutingRecorder().client
+            $0.continuousClock = clock
+            $0.permissionOnboardingClient = PermissionOnboardingRecorder().client
+        }
+
+        // A live match is already there, but the claim sheet is about to
+        // show, so the prompt waits.
+        let first = publication(
+            revision: 1,
+            visibleID: liveID,
+            lifecycle: .active(dayOrdinal: 3)
+        )
+        await store.send(.competition(.publication(first))) {
+            $0.competition.publication = first
+            $0.acceptsClaimOnStart = false
+        }
+        await store.receive(.processPendingClaim) {
+            $0.claimRouteSequenceInFlight = envelope.sequence
+            $0.inviteClaimStatus = .claiming
+        }
+        await store.receive(
+            .claimInviteResponse(
+                sequence: envelope.sequence,
+                .success(claimedID, expectedRevision: 2)
+            )
+        ) {
+            $0.pendingClaimRoute = nil
+            $0.claimRouteSequenceInFlight = nil
+            $0.lastHandledClaimRouteSequence = envelope.sequence
+            $0.pendingClaimNavigation = .init(
+                competitionID: claimedID,
+                expectedPublicationRevision: 2
+            )
+            $0.inviteClaimStatus = .waitingForCompetition
+        }
+
+        let acknowledged = publication(
+            revision: 2,
+            visibleIDs: [liveID, claimedID],
+            lifecycle: .scheduled
+        )
+        await store.send(.competition(.publication(acknowledged))) {
+            $0.competition.publication = acknowledged
+            $0.path = [claimedID]
+            $0.pendingClaimNavigation = nil
+            $0.inviteClaimStatus = .idle
+            $0.notificationPrompt = .scheduled
+        }
+        await clock.advance(by: .milliseconds(600))
+        await store.receive(.notificationPromptReady) {
+            $0.notificationPrompt = .presented
+        }
+        await store.finish()
+    }
+
+    @MainActor
     func testHealthAccessRefreshesOnAccountAndForeground() async {
         let recorder = MainTabLifecycleRecorder()
         let store = TestStore(initialState: MainTabFeature.State()) {
