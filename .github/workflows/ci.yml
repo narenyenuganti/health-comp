@@ -137,6 +137,11 @@ jobs:
             -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testWelcomeIsSignInAndPrivacyPolicyOnly \
             -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testHealthOnboardingDisclosesSharedDerivedActivity \
             -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testRemoteInvitationDisclosesSharedDerivedActivity \
+            -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testWelcomeWithPendingChallengeAsksToSignIn \
+            -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testChallengeHealthOnboardingFramesTheMatch \
+            -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testSignOutAsksFirstAndStatesTheEffect \
+            -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testNotificationsPageOpensSettingsAndUnmutes \
+            -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testHealthPageOpensSettings \
             -parallel-testing-enabled NO \
             -maximum-concurrent-test-simulator-destinations 1 \
             -maximum-parallel-testing-workers 1 \
