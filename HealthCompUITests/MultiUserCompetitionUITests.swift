@@ -213,6 +213,91 @@ final class MultiUserCompetitionUITests: XCTestCase {
         XCTAssertFalse(app.buttons["Delete Local Data"].exists)
     }
 
+    func testHomeGroupsLiveMatchesByEndTimeAndShowsMatchIssues() {
+        launch(.sharing)
+        XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 8))
+
+        let live = app.descendants(matching: .any)["competition.home.live"]
+        XCTAssertTrue(live.waitForExistence(timeout: 3))
+        XCTAssertTrue(
+            live.staticTexts.matching(
+                NSPredicate(format: "label BEGINSWITH %@", "LIVE · 2")
+            ).firstMatch.exists
+        )
+        let jordan = sharingCard(state: "active", name: "Jordan")
+        let riley = sharingCard(state: "active", name: "Riley")
+        XCTAssertTrue(jordan.exists)
+        XCTAssertTrue(riley.exists)
+        // Jordan's week ends a day before Riley's.
+        XCTAssertLessThan(jordan.frame.minY, riley.frame.minY)
+
+        let rileyID = "a1000000-0000-4000-8000-000000000006"
+        let issue = app.descendants(matching: .any)["competition.issue.\(rileyID)"]
+        XCTAssertTrue(issue.exists)
+        XCTAssertEqual(issue.label, "Couldn’t update scores")
+        XCTAssertTrue(app.buttons["competition.issue.retry.\(rileyID)"].exists)
+        XCTAssertFalse(
+            app.staticTexts.matching(
+                NSPredicate(format: "label BEGINSWITH %@", "Some matches")
+            ).firstMatch.exists
+        )
+
+        let upNext = app.descendants(matching: .any)["competition.home.upNext"]
+        let priya = upNext.buttons.matching(
+            NSPredicate(
+                format: "identifier BEGINSWITH %@ AND label CONTAINS %@",
+                "competition.sharing.scheduled.", "Priya"
+            )
+        ).firstMatch
+        scrollToElement(priya)
+        XCTAssertTrue(priya.exists)
+
+        let results = app.descendants(matching: .any)["competition.home.results"]
+        let former = results.buttons.matching(
+            NSPredicate(
+                format: "identifier BEGINSWITH %@ AND label CONTAINS %@",
+                "competition.sharing.completed.", "Former competitor"
+            )
+        ).firstMatch
+        scrollToElement(former)
+        XCTAssertTrue(former.label.contains("Moves to History"))
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "remote-home-groups"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+    }
+
+    func testClosedChallengeRowChallengesAgainAndDismisses() {
+        launch(.sharing)
+        XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 8))
+
+        let taylorID = "a1000000-0000-4000-8000-000000000007"
+        let row = app.descendants(matching: .any)["competition.sharing.expired.\(taylorID)"]
+        let again = app.buttons["competition.closedRow.again.\(taylorID)"]
+        scrollToElement(again)
+        XCTAssertTrue(row.exists)
+        XCTAssertTrue(
+            row.descendants(matching: .any).matching(
+                NSPredicate(format: "label CONTAINS %@", "Taylor didn’t accept")
+            ).firstMatch.exists
+        )
+        let screenshot = XCTAttachment(screenshot: app.screenshot())
+        screenshot.name = "remote-home-closed-row"
+        screenshot.lifetime = .keepAlways
+        add(screenshot)
+
+        again.tap()
+        let recipient = app.staticTexts["competition.create.recipient-name"]
+        XCTAssertTrue(recipient.waitForExistence(timeout: 3))
+        XCTAssertEqual(recipient.label, "Challenge Taylor")
+        closeChallengeDrawer()
+
+        let dismiss = app.buttons["competition.closedRow.dismiss.\(taylorID)"]
+        scrollToElement(dismiss)
+        dismiss.tap()
+        XCTAssertTrue(row.waitForNonExistence(timeout: 3))
+    }
+
     func testRemoteDayDrawerShowsBothAcceptedScoresWithoutRawHealthSnapshots() {
         launch(.sharing)
         let active = sharingCard(state: "active", name: "Jordan")
@@ -548,6 +633,11 @@ final class MultiUserCompetitionUITests: XCTestCase {
             XCTAssertTrue(open.waitForExistence(timeout: 3))
             XCTAssertTrue(open.isHittable)
             assertRemoteRenderedConfiguration(expectedConfiguration)
+            let homeScreenshot = XCTAttachment(screenshot: app.screenshot())
+            homeScreenshot.name =
+                "remote-home-\(item.appearance)-\(item.expectedDynamicTypeSize)"
+            homeScreenshot.lifetime = .keepAlways
+            add(homeScreenshot)
             try app.performAccessibilityAudit(for: auditTypes)
             try assertNoPrivateFixtureContentIsSpoken()
 
