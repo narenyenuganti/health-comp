@@ -35,14 +35,14 @@ Deno.test({
           key: string,
           digest: string,
           recipient = users[1].profile,
+          sender = users[0].user,
         ) => {
           return await sql.begin(async (tx) => {
             await tx`set local role service_role`;
             await tx`select set_config('request.jwt.claims','{"role":"service_role"}',true)`;
             return (await tx`select public.create_competition_invite(decode(${digest},'hex'),'UTC',null,
-            ${
-              users[0].user
-            }::uuid,${key}::uuid,1::smallint,${recipient}::uuid) id`)[0].id;
+            ${sender}::uuid,${key}::uuid,1::smallint,${recipient}::uuid) id`)[0]
+              .id;
           });
         };
         const key = crypto.randomUUID();
@@ -65,20 +65,32 @@ Deno.test({
           ),
           true,
         );
+        const otherDigest = randomBytes(32).toString("hex");
         const other = await create(
           crypto.randomUUID(),
-          randomBytes(32).toString("hex"),
+          otherDigest,
           users[2].profile,
         );
         assertEquals(other !== retries[0], true);
 
-        const claim = async (user: string) => {
+        const claim = async (user: string, digest = retryDigest) => {
           return await sql.begin(async (tx) => {
             await tx`set local role authenticated`;
             await tx`select set_config('request.jwt.claims',${
               JSON.stringify({ sub: user, role: "authenticated" })
             },true)`;
-            return (await tx`select public.claim_competition_invite(decode(${retryDigest},'hex')) id`)[
+            return (await tx`select public.claim_competition_invite(decode(${digest},'hex')) id`)[
+              0
+            ].id;
+          });
+        };
+        const acceptById = async (user: string, competition: string) => {
+          return await sql.begin(async (tx) => {
+            await tx`set local role authenticated`;
+            await tx`select set_config('request.jwt.claims',${
+              JSON.stringify({ sub: user, role: "authenticated" })
+            },true)`;
+            return (await tx`select public.accept_competition_challenge(${competition}::uuid)->>'competition_id' id`)[
               0
             ].id;
           });
@@ -99,10 +111,73 @@ Deno.test({
           ),
           true,
         );
-        // Acceptance frees the sender/recipient pair without changing the accepted competition.
+        // The accepted match now blocks a new challenge between the pair.
+        const overlap = await Promise.allSettled([
+          create(crypto.randomUUID(), randomBytes(32).toString("hex")),
+        ]);
         assertEquals(
-          await create(crypto.randomUUID(), randomBytes(32).toString("hex")) !==
-            retries[0],
+          overlap[0].status === "rejected" &&
+            overlap[0].reason instanceof postgres.PostgresError &&
+            overlap[0].reason.message === "active_match_exists",
+          true,
+        );
+
+        // Claim by token and accept in the app race to exactly one acceptance.
+        const acceptances = await Promise.allSettled(
+          Array.from(
+            { length: 100 },
+            (_, index) =>
+              index % 2 === 0
+                ? claim(users[2].user, otherDigest)
+                : acceptById(users[2].user, other),
+          ),
+        );
+        assertEquals(
+          acceptances.every((result) =>
+            result.status === "fulfilled" && result.value === other
+          ),
+          true,
+        );
+        assertEquals(
+          (await sql`select count(*)::int n from public.competition_change_log
+            where competition_id = ${other}::uuid
+              and change_kind = 'participant_state_changed'`)[0].n,
+          1,
+        );
+
+        // Reciprocal creates between a free pair serialize: exactly one wins.
+        const reciprocal = await Promise.allSettled(
+          Array.from(
+            { length: 40 },
+            (_, index) =>
+              index % 2 === 0
+                ? create(
+                  crypto.randomUUID(),
+                  randomBytes(32).toString("hex"),
+                  users[2].profile,
+                  users[1].user,
+                )
+                : create(
+                  crypto.randomUUID(),
+                  randomBytes(32).toString("hex"),
+                  users[1].profile,
+                  users[2].user,
+                ),
+          ),
+        );
+        const winners = reciprocal.flatMap((result, index) =>
+          result.status === "fulfilled" ? [index % 2] : []
+        );
+        assertEquals(winners.length, 1);
+        assertEquals(
+          reciprocal.every((result, index) =>
+            result.status === "fulfilled" ||
+            (result.reason instanceof postgres.PostgresError &&
+              result.reason.message ===
+                (index % 2 === winners[0]
+                  ? "pending_invitation_exists"
+                  : "incoming_challenge_exists"))
+          ),
           true,
         );
       } finally {

@@ -20,7 +20,7 @@ begin
     or current_setting('healthcomp.recovery_fixture', true) is distinct from 'synthetic-20260928'
     or batch not in (1,2)
     or coalesce((select max(version) from supabase_migrations.schema_migrations)
-      not in ('20260913001400','20261019001800'),true)
+      not in ('20260913001400','20261019001800','20261101001900'),true)
     or (select count(*) from public.competitions) <> batch - 1
     or (select count(*) from auth.users) <> 2 * (batch - 1)
   then raise exception using errcode='P0001',message='isolated_fixture_required'; end if;
@@ -32,7 +32,7 @@ begin
   select md5('recovery-profile-' || batch || '-' || n)::uuid,
     md5('recovery-auth-' || batch || '-' || n)::uuid,'Synthetic recovery ' || n,'active'
     from generate_series(1,2) n;
-  if (select max(version) from supabase_migrations.schema_migrations) = '20261019001800' then
+  if (select max(version) from supabase_migrations.schema_migrations) >= '20261019001800' then
     execute 'insert into public.competitions(id,creator_profile_id,invited_profile_id,
       time_zone_identifier,start_day,scoring_policy_identity,lifecycle,
       invitation_expires_at,best_available_deadline)

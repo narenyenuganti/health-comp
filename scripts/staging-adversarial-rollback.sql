@@ -719,15 +719,39 @@ do $same_claimant$
 declare
   first_claim uuid;
   second_claim uuid;
+  returned_state text;
+  returned_message text;
 begin
+  -- The pair's active fixture match blocks acceptance until its week ends.
+  begin
+    perform public.claim_competition_invite(
+      pg_catalog.decode(pg_catalog.repeat('91', 32), 'hex')
+    );
+  exception
+    when others then
+      get stacked diagnostics
+        returned_state = returned_sqlstate,
+        returned_message = message_text;
+  end;
+  -- End that week only for the replay, then restore the active fixture.
+  execute 'reset role';
+  update public.competitions set start_day = start_day - 7
+  where id = 'f1920000-0000-4000-8000-000000000002';
+  execute 'set local role authenticated';
   first_claim := public.claim_competition_invite(
     pg_catalog.decode(pg_catalog.repeat('91', 32), 'hex')
   );
   second_claim := public.claim_competition_invite(
     pg_catalog.decode(pg_catalog.repeat('91', 32), 'hex')
   );
+  execute 'reset role';
+  update public.competitions set start_day = start_day + 7
+  where id = 'f1920000-0000-4000-8000-000000000002';
+  execute 'set local role authenticated';
 
-  if first_claim <> 'f1920000-0000-4000-8000-000000000001'::uuid
+  if returned_state is distinct from 'P0001'
+     or returned_message is distinct from 'active_match_exists'
+     or first_claim <> 'f1920000-0000-4000-8000-000000000001'::uuid
      or second_claim <> first_claim
      or (
        select pg_catalog.count(*)
