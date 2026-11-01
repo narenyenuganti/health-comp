@@ -470,6 +470,31 @@ may use the identifier privately in Apple's console, but retain only aggregate
 delivery findings in qualification evidence. Physical delivery and route
 checks remain separate required gates.
 
+### Challenge push capability
+
+Migration `20261101002300` adds `device_installations.supports_challenges`
+(default false) and a four-argument `register_current_device_installation`
+that sets it. The lease discards challenge received, declined and match
+cancelled work for installations without it; score and result work is
+unchanged. 1.0.2 keeps calling the original three-argument RPC, which now
+records false, so it gets no challenge pushes it cannot show.
+
+The app works against either server: if the four-argument RPC is missing
+(PGRST202), it retries once with the three-argument call, and a server
+without the migration has no challenge gate. The migration only needs to
+land for challenge pushes to be filtered.
+
+Edges:
+
+- Existing installations stay false until their app next launches and
+  registers again. A challenge sent after a 1.0.2 user upgrades but before
+  their first launch of the new build gets no push; it still shows in the
+  app.
+- Any build distributed from #186 up to, but not including, this change
+  registers through the three-argument call and gets no challenge pushes
+  until it updates. None had been distributed when this landed, because
+  that server work was not yet deployed.
+
 ## Finalizer and notification repair schedules
 
 These schedules are hosted environment state, not proof supplied by source.

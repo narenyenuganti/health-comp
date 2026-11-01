@@ -349,6 +349,7 @@ final class CompetitionSyncModelsTests: XCTestCase {
                 "installation_id": installationID.uuidString.lowercased(),
                 "apns_token": String(repeating: "a1", count: 32),
                 "environment": "sandbox",
+                "supports_challenges": true,
             ] as NSDictionary
         )
 

@@ -40,13 +40,13 @@ insert into public.profiles (id, auth_user_id, display_name, state) values
   ('c7100000-0000-4000-8000-000000000003', 'c7000000-0000-4000-8000-000000000003', 'Third', 'active'),
   ('c7100000-0000-4000-8000-000000000004', 'c7000000-0000-4000-8000-000000000004', 'Dana', 'active'),
   ('c7100000-0000-4000-8000-000000000005', 'c7000000-0000-4000-8000-000000000005', 'Eve', 'active');
--- Naren has two installations; everyone else one.
-insert into public.device_installations (id, profile_id, installation_id, apns_token, environment, state) values
-  ('c7200000-0000-4000-8000-000000000001', 'c7100000-0000-4000-8000-000000000001', 'c7300000-0000-4000-8000-000000000001', repeat('a1', 32), 'sandbox', 'active'),
-  ('c7200000-0000-4000-8000-000000000006', 'c7100000-0000-4000-8000-000000000001', 'c7300000-0000-4000-8000-000000000006', repeat('a6', 32), 'sandbox', 'active'),
-  ('c7200000-0000-4000-8000-000000000002', 'c7100000-0000-4000-8000-000000000002', 'c7300000-0000-4000-8000-000000000002', repeat('a2', 32), 'sandbox', 'active'),
-  ('c7200000-0000-4000-8000-000000000003', 'c7100000-0000-4000-8000-000000000003', 'c7300000-0000-4000-8000-000000000003', repeat('a3', 32), 'sandbox', 'active'),
-  ('c7200000-0000-4000-8000-000000000004', 'c7100000-0000-4000-8000-000000000004', 'c7300000-0000-4000-8000-000000000004', repeat('a4', 32), 'sandbox', 'active');
+-- Naren has two installations; everyone else one. All run a challenge-capable app.
+insert into public.device_installations (id, profile_id, installation_id, apns_token, environment, state, supports_challenges) values
+  ('c7200000-0000-4000-8000-000000000001', 'c7100000-0000-4000-8000-000000000001', 'c7300000-0000-4000-8000-000000000001', repeat('a1', 32), 'sandbox', 'active', true),
+  ('c7200000-0000-4000-8000-000000000006', 'c7100000-0000-4000-8000-000000000001', 'c7300000-0000-4000-8000-000000000006', repeat('a6', 32), 'sandbox', 'active', true),
+  ('c7200000-0000-4000-8000-000000000002', 'c7100000-0000-4000-8000-000000000002', 'c7300000-0000-4000-8000-000000000002', repeat('a2', 32), 'sandbox', 'active', true),
+  ('c7200000-0000-4000-8000-000000000003', 'c7100000-0000-4000-8000-000000000003', 'c7300000-0000-4000-8000-000000000003', repeat('a3', 32), 'sandbox', 'active', true),
+  ('c7200000-0000-4000-8000-000000000004', 'c7100000-0000-4000-8000-000000000004', 'c7300000-0000-4000-8000-000000000004', repeat('a4', 32), 'sandbox', 'active', true);
 
 create temporary table r (label text primary key, id uuid, v jsonb);
 grant all on r to authenticated, service_role;
