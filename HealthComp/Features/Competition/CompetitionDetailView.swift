@@ -7,6 +7,8 @@ struct CompetitionDetailView: View {
     var muteButton: CompetitionMuteButton?
     var issue: CompetitionRowIssue? = nil
     var retry: (() async -> Void)? = nil
+    /// Pull to refresh on the match screen only; drawers don't inherit it.
+    var refresh: (@Sendable () async -> Void)?
 
     @Environment(\.locale) private var locale
     @Environment(\.timeZone) private var timeZone
@@ -71,6 +73,7 @@ struct CompetitionDetailView: View {
             .padding(.top, 12)
             .padding(.bottom, 24)
         }
+        .refreshable(refresh)
         .background(Theme.ground)
         .navigationTitle(competition.opponentDisplayName)
         .navigationBarTitleDisplayMode(.inline)
@@ -358,6 +361,17 @@ struct CompetitionDetailView: View {
     private var scoresAreProvisional: Bool {
         if case .tallying = competition.lifecycle { return true }
         return false
+    }
+}
+
+private extension View {
+    @ViewBuilder
+    func refreshable(_ action: (@Sendable () async -> Void)?) -> some View {
+        if let action {
+            refreshable(action: action)
+        } else {
+            self
+        }
     }
 }
 

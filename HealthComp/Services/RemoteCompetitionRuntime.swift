@@ -20,6 +20,10 @@ struct RemoteOwnerActivity: Codable, Equatable, Sendable {
         let acceptedSnapshot: ActivitySnapshot?
         /// The row it produced.
         let acceptedClientRevision: Int64?
+        /// The reading behind a revision still waiting for the server, so
+        /// it can become the accepted reading once that revision lands.
+        var pendingSnapshot: ActivitySnapshot? = nil
+        var pendingClientRevision: Int64? = nil
     }
 
     /// Last read attempt.
@@ -1082,6 +1086,8 @@ actor RemoteCompetitionRuntime {
             maximumClientRevision,
             pendingRequests.map(\.clientRevision).max() ?? 0
         )
+        // The revision each started day's reading is queued under.
+        var queuedRevisionByOrdinal: [Int: Int64] = [:]
 
         for (offset, result) in read.days.enumerated() {
             let ordinal = offset + 1
@@ -1104,6 +1110,7 @@ actor RemoteCompetitionRuntime {
                    evidence: evidence,
                    clientRevision: pending.clientRevision
                ).wireContentSHA256 == pending.wireContentSHA256 {
+                queuedRevisionByOrdinal[ordinal] = pending.clientRevision
 #if HEALTHCOMP_STAGING
                 StagingScoringOperatorControls.recordActivity(.unchangedOutbox)
                 if existingOutboxEntries.contains(where: { entry in
@@ -1160,6 +1167,7 @@ actor RemoteCompetitionRuntime {
                 .scoreRevision(request),
                 enqueuedAt: evaluatedAt
             )
+            queuedRevisionByOrdinal[ordinal] = maximumClientRevision
 #if HEALTHCOMP_STAGING
             StagingScoringOperatorControls.recordActivity(.queuedRevisions)
 #endif
@@ -1181,6 +1189,7 @@ actor RemoteCompetitionRuntime {
                 window: window,
                 evaluatedAt: evaluatedAt,
                 ledger: loaded.projection.remoteScoreLedgers[profileID],
+                queuedRevisions: queuedRevisionByOrdinal,
                 previous: previous,
                 competitionID: configuration.competitionID.rawValue,
                 profileID: profileID
@@ -1196,6 +1205,7 @@ actor RemoteCompetitionRuntime {
         window: CompetitionActivityWindow,
         evaluatedAt: Date,
         ledger: RemoteScoreLedger?,
+        queuedRevisions: [Int: Int64],
         previous: RemoteOwnerActivity?,
         competitionID: UUID,
         profileID: UUID
@@ -1207,6 +1217,7 @@ actor RemoteCompetitionRuntime {
             let latest: ActivitySnapshot?
             if case let .snapshot(_, snapshot) = result { latest = snapshot } else { latest = nil }
             let row = try ledger?.visibleEntry(forActiveDayOrdinal: ordinal)
+            let earlier = previous?.days.first(where: { $0.ordinal == ordinal })
             var accepted: ActivitySnapshot?
             var acceptedRevision: Int64?
             if let row, try wire(
@@ -1218,17 +1229,27 @@ actor RemoteCompetitionRuntime {
             ).wireContentSHA256 == row.wireContentSHA256 {
                 accepted = latest
                 acceptedRevision = row.clientRevision
-            } else if let row,
-                      let earlier = previous?.days.first(where: { $0.ordinal == ordinal }),
+            } else if let row, let earlier,
+                      earlier.pendingClientRevision == row.clientRevision {
+                // An earlier run's reading that has landed since.
+                accepted = earlier.pendingSnapshot
+                acceptedRevision = row.clientRevision
+            } else if let row, let earlier,
                       earlier.acceptedClientRevision == row.clientRevision {
                 accepted = earlier.acceptedSnapshot
                 acceptedRevision = row.clientRevision
             }
+            // ponytail: remembers only the newest queued reading per day; an
+            // older queued revision landing after a newer one was queued
+            // loses its split (the rows then fall back to the latest reading).
+            let queued = queuedRevisions[ordinal].flatMap { $0 == acceptedRevision ? nil : $0 }
             days.append(RemoteOwnerActivity.Day(
                 ordinal: ordinal,
                 latestSnapshot: latest,
                 acceptedSnapshot: accepted,
-                acceptedClientRevision: acceptedRevision
+                acceptedClientRevision: acceptedRevision,
+                pendingSnapshot: queued == nil ? nil : latest,
+                pendingClientRevision: queued
             ))
         }
         return RemoteOwnerActivity(checkedAt: evaluatedAt, checkFailure: nil, readAt: evaluatedAt, days: days)
