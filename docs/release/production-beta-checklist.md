@@ -98,6 +98,20 @@ records the matching boundary. Actual recovery, protection against resurrecting
 deleted identities, and all other unwaived qualification gates remain open.
 This is a scope decision, not a runtime receipt or production-readiness claim.
 
+## iOS CI evidence on main — November 1, 2026
+
+iOS CI no longer runs on every push to main. It runs on pull requests that
+change app, test, script or project files, nightly on main at 09:17 UTC, and on
+demand. The merged-main and exact-main iOS runs cited in earlier checkpoints
+came from the old push trigger. For new exact-main iOS evidence, start a run
+after the merge with `gh workflow run ci.yml --ref main` and cite that run, or a
+nightly run, only when its head commit is the cited commit. Each run still
+covers project generation, Core in Debug and Release, the app tests and selected
+UI tests, release-style Staging tests, all three unsigned device configurations
+(Debug, Staging and Release), dedicated CI Simulator cleanup and the clean-tree
+check, now split across three parallel jobs. Backend CI still runs on every
+push to main.
+
 ## Current qualification checkpoint — October 23, 2026 UTC
 
 **Not production-ready.** Staging now has a fresh accepted score bound to the
