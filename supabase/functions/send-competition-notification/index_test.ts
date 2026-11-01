@@ -405,6 +405,76 @@ Deno.test("score and result work no longer alerts", async () => {
   );
 });
 
+Deno.test("challenge payloads are generic and route to the challenge", () => {
+  for (
+    const [kind, alert] of [
+      ["challenge_received", {
+        title: "New challenge",
+        body: "Open HealthComp to accept or decline.",
+      }],
+      ["challenge_declined", { title: "Challenge declined" }],
+      ["match_cancelled", { title: "Match cancelled" }],
+    ] as const
+  ) {
+    assertEquals(competitionNotificationPayload({ ...item, kind }), {
+      aps: {
+        alert,
+        sound: "default",
+        "thread-id": "competition:c3000000-0000-4000-8000-000000000001",
+      },
+      "healthcomp.route.v": 1,
+      "healthcomp.route.kind": "competition",
+      "healthcomp.route.competitionID": "c3000000-0000-4000-8000-000000000001",
+    });
+  }
+});
+
+Deno.test("challenge work items are leased and sent with the existing seven keys", async () => {
+  const kinds = [
+    "challenge_received",
+    "challenge_declined",
+    "match_cancelled",
+  ] as const;
+  const items = kinds.map((kind, index) => ({
+    ...item,
+    kind,
+    workId: `c1000000-0000-4000-8000-00000000001${index}`,
+    semanticId: item.semanticId.replace(":score_update:", `:${kind}:`),
+  }));
+  const sentBodies: unknown[] = [];
+  const client: NotificationRpcClient = {
+    rpc: (name) =>
+      Promise.resolve(
+        name === "lease_competition_notification_work"
+          ? { data: { items }, error: null }
+          : { data: true, error: null },
+      ),
+  };
+  const response = await sendCompetitionNotificationHandler(
+    request('{"batchSize":3}'),
+    dependencies(client, async (outbound) => {
+      sentBodies.push(JSON.parse(await outbound.text()));
+      return new Response(null, { status: 200 });
+    }),
+  );
+  assertEquals(response.status, 200);
+  assertEquals(sentBodies.length, 3);
+
+  const extraKey = await sendCompetitionNotificationHandler(
+    request(),
+    dependencies({
+      rpc: () =>
+        Promise.resolve({
+          data: { items: [{ ...items[0], sourceDisplayName: "Naren" }] },
+          error: null,
+        }),
+    }, () => {
+      throw new Error("must not send");
+    }),
+  );
+  assertEquals(extraKey.status, 502);
+});
+
 Deno.test("APNs provider token is a verifiable ES256 JWT", async () => {
   const keyPair = await crypto.subtle.generateKey(
     { name: "ECDSA", namedCurve: "P-256" },

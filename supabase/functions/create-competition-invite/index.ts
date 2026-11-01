@@ -153,6 +153,20 @@ export async function createCompetitionInviteHandler(
         "An invitation to this account is already pending",
       );
     }
+    if (error.message === "active_match_exists") {
+      return errorResponse(
+        409,
+        "active_match_exists",
+        "A match with this account is in progress",
+      );
+    }
+    if (error.message === "incoming_challenge_exists") {
+      return errorResponse(
+        409,
+        "incoming_challenge_exists",
+        "This account already challenged you",
+      );
+    }
     if (error.message === "recipient_unavailable") {
       return errorResponse(
         404,

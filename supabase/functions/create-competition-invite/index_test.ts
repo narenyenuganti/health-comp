@@ -349,13 +349,23 @@ Deno.test("create maps divergent idempotency reuse without database details", as
   });
 });
 
-Deno.test("create reports an existing pending invitation and an unavailable recipient safely", async () => {
+Deno.test("create reports pending, overlap, reciprocal and unavailable recipients safely", async () => {
   for (
     const [code, status, message] of [
       [
         "pending_invitation_exists",
         409,
         "An invitation to this account is already pending",
+      ],
+      [
+        "active_match_exists",
+        409,
+        "A match with this account is in progress",
+      ],
+      [
+        "incoming_challenge_exists",
+        409,
+        "This account already challenged you",
       ],
       ["recipient_unavailable", 404, "Recipient unavailable"],
     ] as const

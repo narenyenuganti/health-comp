@@ -19,12 +19,20 @@ interface ApnsConfiguration {
   privateKey: string;
 }
 
+const workKinds = [
+  "score_update",
+  "result",
+  "challenge_received",
+  "challenge_declined",
+  "match_cancelled",
+] as const;
+
 interface NotificationWorkItem {
   workId: string;
   leaseToken: string;
   semanticId: string;
   competitionId: string;
-  kind: "score_update" | "result";
+  kind: typeof workKinds[number];
   apnsToken: string;
   environment: "sandbox" | "production";
 }
@@ -163,7 +171,7 @@ function parseWorkItem(value: unknown): NotificationWorkItem | null {
     containsASCIIControlCharacter(value.semanticId) ||
     typeof value.apnsToken !== "string" ||
     !tokenPattern.test(value.apnsToken) ||
-    (value.kind !== "score_update" && value.kind !== "result") ||
+    !workKinds.includes(value.kind as NotificationWorkItem["kind"]) ||
     (value.environment !== "sandbox" && value.environment !== "production")
   ) return null;
   return value as unknown as NotificationWorkItem;
@@ -258,10 +266,33 @@ export async function createApnsProviderToken(
 // user's locale), so score uploads and results no longer alert. A null payload
 // resolves the work row as discarded without contacting APNs.
 // ponytail: triggers still enqueue score/result rows that resolve as discarded; drop enqueue_competition_notification_work_from_score/_from_result in a forward migration (e.g. with PR 7's) once pgTAP 012/019 fixtures insert work rows directly.
+// Challenge alerts stay generic: no name, so they are safe on a lock screen.
+const challengeAlerts: Partial<
+  Record<NotificationWorkItem["kind"], { title: string; body?: string }>
+> = {
+  challenge_received: {
+    title: "New challenge",
+    body: "Open HealthComp to accept or decline.",
+  },
+  challenge_declined: { title: "Challenge declined" },
+  match_cancelled: { title: "Match cancelled" },
+};
+
 export function competitionNotificationPayload(
-  _item: Pick<NotificationWorkItem, "competitionId" | "kind">,
+  item: Pick<NotificationWorkItem, "competitionId" | "kind">,
 ): Record<string, unknown> | null {
-  return null;
+  const alert = challengeAlerts[item.kind];
+  if (!alert) return null;
+  return {
+    aps: {
+      alert,
+      sound: "default",
+      "thread-id": `competition:${item.competitionId}`,
+    },
+    "healthcomp.route.v": 1,
+    "healthcomp.route.kind": "competition",
+    "healthcomp.route.competitionID": item.competitionId,
+  };
 }
 
 function apnsRequest(
