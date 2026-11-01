@@ -661,27 +661,46 @@ final class SupabaseCompetitionRemoteAPITests: XCTestCase {
         )])
     }
 
-    func testListChallengesRejectsExtraKeysAndFormerCompetitorSender() async throws {
-        let incoming: [String: Any] = [
-            "competition_id": "13000000-0000-4000-8000-000000000001",
-            "sender": ["id": "12000000-0000-4000-8000-0000000000a1", "display_name": "Naren"],
-            "time_zone_identifier": "UTC",
-            "created_at": "2026-11-01T21:14:00+00:00",
-            "expires_at": "2026-11-02T21:14:00+00:00",
-        ]
-        var extra = incoming
-        extra["score"] = 1
-        var former = incoming
-        former["sender"] = ["id": "12000000-0000-4000-8000-0000000000a1", "display_name": "Former competitor"]
-        for body in [
-            ["incoming": [extra], "closed": []],
-            ["incoming": [former], "closed": []],
-            ["incoming": [incoming], "closed": [], "history": []],
-        ] as [[String: Any]] {
-            let harness = CompetitionTransportHarness(stubs: [.response(200, try jsonData(body))])
-            let failure = await remoteFailure { _ = try await makeAPI(harness).listChallenges() }
-            XCTAssertEqual(failure, .serverContractMismatch)
+    func testListChallengesSkipsBadRowsAndKeepsZWJNames() async throws {
+        func incoming(_ id: String, name: String, timeZone: String = "UTC") -> [String: Any] {
+            [
+                "competition_id": id,
+                "sender": ["id": "12000000-0000-4000-8000-0000000000a1", "display_name": name],
+                "time_zone_identifier": timeZone,
+                "created_at": "2026-11-01T21:14:00+00:00",
+                "expires_at": "2026-11-02T21:14:00+00:00",
+            ]
         }
+        // A family emoji joined with U+200D, which the server accepts.
+        let family = "Sam \u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}"
+        var extra = incoming("13000000-0000-4000-8000-000000000002", name: "Extra")
+        extra["score"] = 1
+        let body: [String: Any] = [
+            "incoming": [
+                incoming("13000000-0000-4000-8000-000000000001", name: family),
+                extra,
+                incoming("13000000-0000-4000-8000-000000000003", name: "Former competitor"),
+                incoming("13000000-0000-4000-8000-000000000004", name: "Bell\u{7}"),
+                incoming("13000000-0000-4000-8000-000000000005", name: "Zone", timeZone: "Mars/Olympus"),
+                incoming("13000000-0000-4000-8000-000000000006", name: "Naren"),
+            ],
+            "closed": [
+                ["competition_id": "13000000-0000-4000-8000-000000000007", "kind": "conceded",
+                 "other": ["id": "12000000-0000-4000-8000-0000000000a2", "display_name": "Maya"],
+                 "closed_at": "2026-11-01T20:00:00+00:00"],
+            ],
+        ]
+        let harness = CompetitionTransportHarness(stubs: [.response(200, try jsonData(body))])
+        let list = try await makeAPI(harness).listChallenges()
+        XCTAssertEqual(list.incoming.map(\.sender.displayName), [family, "Naren"])
+        XCTAssertEqual(list.closed, [])
+
+        // The list's own shape still has to be exact.
+        let malformed = CompetitionTransportHarness(stubs: [
+            .response(200, try jsonData(["incoming": [], "closed": [], "history": []])),
+        ])
+        let failure = await remoteFailure { _ = try await makeAPI(malformed).listChallenges() }
+        XCTAssertEqual(failure, .serverContractMismatch)
     }
 
     func testPreviewInviteUsesFunctionAndMapsErrors() async throws {
