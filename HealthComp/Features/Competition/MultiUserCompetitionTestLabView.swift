@@ -513,7 +513,6 @@ private enum MultiUserCompetitionTestLabFixtures {
         archivedIDs: Set<CompetitionID>
     ) -> LocalCompetitionPublication {
         let completedAt = Date(timeIntervalSince1970: 1_787_212_800)
-        let evaluatedAt = Date(timeIntervalSince1970: 1_786_867_200)
         let scheduled = presentation(
             id: scheduledID,
             opponentName: "Priya",
@@ -532,7 +531,9 @@ private enum MultiUserCompetitionTestLabFixtures {
             opponentPoints: 1_440,
             days: activeDays(),
             currentDayOrdinal: 3,
-            terminal: nil
+            terminal: nil,
+            refreshedAt: evaluatedAt.addingTimeInterval(-600),
+            opponentUpdatedAt: evaluatedAt.addingTimeInterval(-3_600)
         )
         // A second live match that ends a day after Jordan's, with a
         // refresh problem of its own.
@@ -685,7 +686,9 @@ private enum MultiUserCompetitionTestLabFixtures {
         currentDayOrdinal: Int?,
         terminal: LocalCompetitionTerminalPresentation?,
         startDay: Int = 13,
-        opponentIdentity: String? = nil
+        opponentIdentity: String? = nil,
+        refreshedAt: Date? = nil,
+        opponentUpdatedAt: Date? = nil
     ) -> LocalCompetitionPresentation {
         let schedule = schedule(startDay: startDay)
         return LocalCompetitionPresentation(
@@ -703,14 +706,24 @@ private enum MultiUserCompetitionTestLabFixtures {
             opponentPoints: opponentPoints,
             days: days,
             currentDayOrdinal: currentDayOrdinal,
-            lastRefresh: nil,
+            lastRefresh: refreshedAt.map {
+                LocalCompetitionRefreshPresentation(
+                    trigger: .reconciliationProbe,
+                    attemptedAt: $0,
+                    readAt: $0,
+                    status: .completed
+                )
+            },
             tally: nil,
             terminalResult: terminal,
-            evaluatedAt: Date(timeIntervalSince1970: 1_786_867_200),
+            evaluatedAt: evaluatedAt,
             timeZoneIdentifier: "America/Los_Angeles",
-            lastSuccessfulFullWindowRefreshAt: nil
+            lastSuccessfulFullWindowRefreshAt: refreshedAt,
+            opponentUpdatedAt: opponentUpdatedAt
         )
     }
+
+    private static let evaluatedAt = Date(timeIntervalSince1970: 1_786_867_200)
 
     private static func schedule(startDay: Int = 13) -> CompetitionSchedule {
         let calendar = try! CompetitionCalendar(
@@ -738,6 +751,24 @@ private enum MultiUserCompetitionTestLabFixtures {
         )
         let owner: [Double?] = [500, 520, 430, nil, nil, nil, nil]
         let opponent: [Double?] = [480, 510, 450, nil, nil, nil, nil]
+        // Rings that score exactly the owner points with no ring over 200%,
+        // so a real match could produce them.
+        func rings(_ move: Double, _ exercise: Double, _ stand: Double, standGoal: Double) -> ActivitySnapshot {
+            ActivitySnapshot(
+                moveMode: .activeEnergyKilocalories,
+                standMode: .standHours,
+                move: try! ActivityRingReading(value: move, goal: 500),
+                exercise: try! ActivityRingReading(value: exercise, goal: 30),
+                standOrRoll: try! ActivityRingReading(value: stand, goal: standGoal),
+                pauseState: .running
+            )
+        }
+        let snapshots: [ActivitySnapshot?] = [
+            rings(1_000, 60, 12, standGoal: 12),
+            rings(1_000, 60, 12, standGoal: 10),
+            rings(900, 45, 12, standGoal: 12),
+            nil, nil, nil, nil,
+        ]
         return days.enumerated().map { offset, day in
             LocalCompetitionDayPresentation(
                 day: day,
@@ -746,7 +777,10 @@ private enum MultiUserCompetitionTestLabFixtures {
                 ownerLatestAvailability: offset < currentDay
                     ? .observed
                     : .notYetOccurred,
-                opponentRevealedPoints: offset < currentDay ? opponent[offset] : nil
+                opponentRevealedPoints: offset < currentDay ? opponent[offset] : nil,
+                ownerAcceptedSnapshot: offset < currentDay ? snapshots[offset] : nil,
+                ownerLatestSnapshot: offset < currentDay ? snapshots[offset] : nil,
+                scoringPolicy: .remoteWireV1
             )
         }
     }

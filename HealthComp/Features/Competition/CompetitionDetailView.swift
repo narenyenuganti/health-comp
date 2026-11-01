@@ -42,6 +42,7 @@ struct CompetitionDetailView: View {
                         isProvisional: scoresAreProvisional
                     )
                     leadStatement
+                    freshnessLine
                 }
 
                 tallyPanel
@@ -58,10 +59,7 @@ struct CompetitionDetailView: View {
 
                     switch page {
                     case .today:
-                        if let day = todayDay {
-                            dayBreakdown(day)
-                        }
-                        ringsSection
+                        todayActivity
                     case .week:
                         weekSection
                     }
@@ -122,6 +120,19 @@ struct CompetitionDetailView: View {
                 .font(.body)
                 .foregroundStyle(Theme.secondary)
                 .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    @ViewBuilder
+    private var freshnessLine: some View {
+        if competitionShouldShowScores(competition.lifecycle),
+           let text = competitionFreshnessText(competition, locale: locale, timeZone: timeZone) {
+            Text(text)
+                .font(.caption)
+                .foregroundStyle(Theme.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityIdentifier("competition.updated")
         }
     }
 
@@ -201,33 +212,6 @@ struct CompetitionDetailView: View {
         .themePanel(cornerRadius: 16)
     }
 
-    // "How the day adds up" needs the accepted snapshot to split its points
-    // by ring; without it the week chart already shows the total.
-    @ViewBuilder
-    private func dayBreakdown(
-        _ day: LocalCompetitionDayPresentation
-    ) -> some View {
-        if competitionShouldShowScores(competition.lifecycle),
-           let total = day.ownerAcceptedPoints,
-           let snapshot = day.ownerAcceptedSnapshot {
-            let segments = ringSegments(day)
-            if segments.count == 3 {
-                TodayBreakdown(
-                    title: day.ordinal == competition.currentDayOrdinal
-                        ? "HOW TODAY ADDS UP"
-                        : "HOW DAY \(day.ordinal) ADDED UP",
-                    segments: competitionRoundedParts(
-                        segments.map { $0.points }, total: total
-                    ),
-                    labels: ringLabels(snapshot),
-                    total: total,
-                    opponentName: competition.opponentDisplayName,
-                    opponentPoints: day.opponentRevealedPoints
-                )
-            }
-        }
-    }
-
     private var weekSection: some View {
         VStack(alignment: .leading, spacing: 12) {
             SectionLabel("THE WEEK")
@@ -243,62 +227,61 @@ struct CompetitionDetailView: View {
         }
     }
 
-    private var ringsSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            SectionLabel(ringsTitle)
-            ringsPanel(activityDay)
-        }
-    }
-
-    private func ringsPanel(
-        _ day: LocalCompetitionDayPresentation?
-    ) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            if let day,
-               case .observed = day.ownerLatestAvailability,
-               let snapshot = day.ownerLatestSnapshot {
-                ActivityRingsView(
-                    snapshot: snapshot,
-                    ownerDisplayName: competition.ownerDisplayName,
-                    acceptedPoints: day.ownerAcceptedPoints
-                )
-            } else if let day {
-                Label(
-                    competitionOwnerAvailabilityText(
-                        day.ownerLatestAvailability,
-                        ordinal: day.ordinal
-                    ),
-                    systemImage: availabilitySymbol(day.ownerLatestAvailability)
-                )
-                .font(.subheadline.weight(.medium))
-                .foregroundStyle(availabilityTint(day.ownerLatestAvailability))
-                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-            } else {
-                Label(
-                    "Activity appears when Day 1 begins.",
-                    systemImage: "clock"
-                )
+    @ViewBuilder
+    private var todayActivity: some View {
+        if let day = activityDay {
+            dayActivity(day, showsPullHint: true)
+        } else {
+            Label("Activity appears when Day 1 begins.", systemImage: "clock")
                 .font(.subheadline)
                 .foregroundStyle(Theme.secondary)
-                .frame(minHeight: 44)
-            }
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                .padding(16)
+                .themePanel()
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(16)
-        .themePanel()
     }
 
+    /// The day's ring panel, or one line saying why there isn't one.
     @ViewBuilder
-    private func evidenceCaption(
-        _ day: LocalCompetitionDayPresentation?
+    private func dayActivity(
+        _ day: LocalCompetitionDayPresentation,
+        showsPullHint: Bool
     ) -> some View {
-        if let day,
-           case .observed = day.ownerLatestAvailability,
-           day.ownerLatestSnapshot != nil {
-            Text(activityEvidenceCaption(day))
-                .font(.caption)
-                .foregroundStyle(Theme.secondary)
-                .fixedSize(horizontal: false, vertical: true)
+        if let panel = competitionRingPanel(day, locale: locale) {
+            ActivityRingsView(panel: panel)
+        } else if day.ownerLatestAvailability == .notSyncedYet {
+            VStack(alignment: .leading, spacing: 4) {
+                Label(
+                    competitionOwnerAvailabilityText(.notSyncedYet, ordinal: day.ordinal),
+                    systemImage: availabilitySymbol(.notSyncedYet)
+                )
+                .font(.headline)
+                .foregroundStyle(Theme.ink)
+                if showsPullHint {
+                    Text("Your rings update as you move. Pull down to check now.")
+                        .font(.subheadline)
+                        .foregroundStyle(Theme.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            .padding(16)
+            .themePanel()
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("competition.notSynced")
+        } else {
+            Label(
+                competitionOwnerAvailabilityText(
+                    day.ownerLatestAvailability,
+                    ordinal: day.ordinal
+                ),
+                systemImage: availabilitySymbol(day.ownerLatestAvailability)
+            )
+            .font(.subheadline.weight(.medium))
+            .foregroundStyle(availabilityTint(day.ownerLatestAvailability))
+            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+            .padding(16)
+            .themePanel()
         }
     }
 
@@ -317,9 +300,7 @@ struct CompetitionDetailView: View {
                     now: competition.evaluatedAt,
                     opponentName: competition.opponentDisplayName
                 )
-                dayBreakdown(day)
-                ringsPanel(day)
-                evidenceCaption(day)
+                dayActivity(day, showsPullHint: false)
             }
         }
     }
@@ -353,16 +334,7 @@ struct CompetitionDetailView: View {
             .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)
             .themePanel(cornerRadius: 18)
-
-            evidenceCaption(activityDay)
         }
-    }
-
-    private var ringsTitle: String {
-        guard let day = activityDay else { return "YOUR RINGS" }
-        return day.ordinal == competition.currentDayOrdinal
-            ? "YOUR RINGS · TODAY"
-            : "YOUR RINGS · DAY \(day.ordinal)"
     }
 
     private var todayDay: LocalCompetitionDayPresentation? {
@@ -705,144 +677,6 @@ private struct CompetitionScoreboardPanel: View {
     }
 }
 
-/// Move + Exercise + Stand = the day's accepted points, as ring-colored
-/// blocks. The opponent only shares a total, so theirs is one neutral block.
-private struct TodayBreakdown: View {
-    let title: String
-    let segments: [Double]
-    let labels: [String]
-    let total: Double
-    let opponentName: String
-    let opponentPoints: Double?
-
-    @ScaledMetric(relativeTo: .title) private var blockNumber: CGFloat = 26
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-
-    private let colors = [Theme.move, Theme.exercise, Theme.stand]
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            SectionLabel(title)
-            // A size switch, not ViewThatFits, which the Dynamic Type audit
-            // flags. The equation fits a 375pt phone through xLarge.
-            VStack(alignment: .leading, spacing: 0) {
-                if dynamicTypeSize >= .xxLarge { list } else { equation }
-            }
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel(
-                "\(labels[0].capitalized) \(competitionPointsText(segments[0])) plus \(labels[1].capitalized) \(competitionPointsText(segments[1])) plus \(labels[2].capitalized) \(competitionPointsText(segments[2])) equals \(competitionPointsAccessibilityText(total))."
-            )
-            if let opponentPoints {
-                opponentRow(opponentPoints)
-            }
-        }
-    }
-
-    private var equation: some View {
-        HStack(alignment: .top, spacing: 6) {
-            block(0)
-            operatorText("+")
-            block(1)
-            operatorText("+")
-            block(2)
-            operatorText("=")
-            VStack(spacing: 6) {
-                Text(competitionPointsText(total))
-                    .font(.score(size: blockNumber * 1.4).monospacedDigit())
-                    .foregroundStyle(Theme.you)
-                    .frame(minHeight: 50)
-                Text("POINTS")
-                    .font(.themeLabel)
-                    .tracking(1)
-                    .foregroundStyle(Theme.secondary)
-            }
-            .fixedSize()
-        }
-    }
-
-    private func block(_ index: Int) -> some View {
-        VStack(spacing: 6) {
-            Text(competitionPointsText(segments[index]))
-                .font(.score(size: blockNumber).monospacedDigit())
-                .foregroundStyle(.white)
-                .padding(.horizontal, 12)
-                .frame(minWidth: 60, minHeight: 50)
-                .background(SlantedBar().fill(colors[index]))
-            Text(labels[index])
-                .font(.themeLabel)
-                .tracking(1)
-                .foregroundStyle(Theme.secondary)
-        }
-        .fixedSize()
-    }
-
-    private func operatorText(_ symbol: String) -> some View {
-        Text(symbol)
-            .font(.title2.weight(.bold))
-            .foregroundStyle(Theme.tertiary)
-            .frame(minHeight: 50)
-            .fixedSize()
-    }
-
-    private var list: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            ForEach(0..<3, id: \.self) { index in
-                HStack(spacing: 10) {
-                    SlantedBar()
-                        .fill(colors[index])
-                        .frame(width: 14, height: 14)
-                    Text(labels[index].capitalized)
-                        .foregroundStyle(Theme.ink)
-                    Spacer(minLength: 8)
-                    Text(competitionPointsText(segments[index]))
-                        .foregroundStyle(Theme.ink)
-                }
-            }
-            Rectangle().fill(Theme.hairline).frame(height: 1)
-            HStack(spacing: 10) {
-                Text("Points")
-                    .foregroundStyle(Theme.ink)
-                Spacer(minLength: 8)
-                Text(competitionPointsText(total))
-                    .foregroundStyle(Theme.you)
-            }
-        }
-        .font(.headline.monospacedDigit())
-        .padding(16)
-        .themePanel(cornerRadius: 16)
-    }
-
-    private func opponentRow(_ points: Double) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            opponentBlock(points)
-            opponentNote
-        }
-        .accessibilityElement(children: .combine)
-    }
-
-    private func opponentBlock(_ points: Double) -> some View {
-        Text(competitionPointsText(points))
-            .font(.score(size: blockNumber * 0.85).monospacedDigit())
-            .foregroundStyle(Theme.onInk)
-            .padding(.horizontal, 12)
-            .frame(minWidth: 60, minHeight: 36)
-            .background(SlantedBar().fill(Theme.ink))
-            .fixedSize()
-    }
-
-    private var opponentNote: some View {
-        Text("\(opponentName)’s points. Their ring detail stays on their iPhone.")
-            .font(.subheadline)
-            .foregroundStyle(Theme.secondary)
-            .fixedSize(horizontal: false, vertical: true)
-    }
-}
-
-private func ringLabels(_ snapshot: ActivitySnapshot) -> [String] {
-    let stand = snapshot.standMode == .rollHours ? "ROLL" : "STAND"
-    return ["MOVE", "EXERCISE", stand]
-}
-
 func competitionDayAccessibilityLabel(
     _ day: LocalCompetitionDayPresentation,
     currentDayOrdinal: Int? = nil,
@@ -914,6 +748,8 @@ func competitionOwnerAccessibilityText(
     switch day.ownerLatestAvailability {
     case .notYetOccurred:
         return "upcoming"
+    case .notSyncedYet:
+        return "not synced yet"
     case .observed:
         return day.ownerAcceptedPoints == nil ? "synced, no score yet" : points
     case .missing:
@@ -929,6 +765,7 @@ func competitionOwnerAvailabilityText(
 ) -> String {
     switch availability {
     case .notYetOccurred: "Day \(ordinal) has not started yet"
+    case .notSyncedYet: "Today hasn’t synced yet"
     case .observed: "Day \(ordinal) synced"
     case .missing: "Day \(ordinal) is missing activity data."
     case let .unavailable(reason):
@@ -1013,6 +850,27 @@ func competitionRefreshTimelineText(
     return lines
 }
 
+/// "You: updated 9:41 AM · Hermes: updated 11:40 PM", or just the side that
+/// has a time. Nil when neither does.
+func competitionFreshnessText(
+    _ competition: LocalCompetitionPresentation,
+    locale: Locale = .current,
+    timeZone: TimeZone = .current
+) -> String? {
+    func time(_ date: Date) -> String {
+        competitionUpdatedText(date, now: competition.evaluatedAt, locale: locale, timeZone: timeZone)
+    }
+    let you = competition.lastSuccessfulFullWindowRefreshAt.map(time)
+    let them = competition.opponentUpdatedAt.map(time)
+    let name = competition.opponentDisplayName
+    switch (you, them) {
+    case let (you?, them?): return "You: updated \(you) · \(name): updated \(them)"
+    case let (you?, nil): return "Updated \(you)"
+    case let (nil, them?): return "\(name): updated \(them)"
+    case (nil, nil): return nil
+    }
+}
+
 func competitionTallyDeadlineText(
     _ tally: LocalCompetitionTallyPresentation,
     now: Date = Date(),
@@ -1084,6 +942,8 @@ func competitionOwnerChartState(
     switch day.ownerLatestAvailability {
     case .notYetOccurred:
         .future
+    case .notSyncedYet:
+        .unscored
     case .missing:
         day.ownerAcceptedPoints.map(CompetitionChartState.missingWithScore)
             ?? .missing
@@ -1096,28 +956,12 @@ func competitionOwnerChartState(
     }
 }
 
-func activityEvidenceCaption(
-    _ day: LocalCompetitionDayPresentation
-) -> String {
-    guard let acceptedPoints = day.ownerAcceptedPoints else {
-        return "Latest Activity source reading shown. No accepted score is available for this day."
-    }
-    if let acceptedSnapshot = day.ownerAcceptedSnapshot,
-       let latestSnapshot = day.ownerLatestSnapshot,
-       acceptedSnapshot != latestSnapshot {
-        return "Latest Activity source reading shown. The accepted score preserves earlier source evidence under the match scoring rules."
-    }
-    if day.ownerAcceptedSnapshot == nil || day.ownerLatestSnapshot == nil {
-        return "Latest Activity source reading shown; accepted score \(competitionPointsAccessibilityText(acceptedPoints)). Source snapshots are unavailable for comparison."
-    }
-    return "Latest Activity source reading shown; accepted score \(competitionPointsAccessibilityText(acceptedPoints))."
-}
-
 private func availabilitySymbol(
     _ availability: LocalCompetitionOwnerAvailability
 ) -> String {
     switch availability {
     case .notYetOccurred: "clock"
+    case .notSyncedYet: "arrow.triangle.2.circlepath"
     case .observed: "checkmark.circle.fill"
     case .missing: "questionmark.circle"
     case .unavailable: "exclamationmark.triangle.fill"
@@ -1130,7 +974,7 @@ private func availabilityTint(
 ) -> Color {
     switch availability {
     case .observed, .unavailable: Theme.ink
-    case .notYetOccurred, .missing: Theme.secondary
+    case .notYetOccurred, .notSyncedYet, .missing: Theme.secondary
     }
 }
 

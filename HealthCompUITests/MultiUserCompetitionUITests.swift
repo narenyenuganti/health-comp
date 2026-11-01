@@ -160,6 +160,9 @@ final class MultiUserCompetitionUITests: XCTestCase {
                 .waitForExistence(timeout: 3)
         )
         XCTAssertTrue(waitForStatus("Day 3 of 7"))
+        let updated = app.staticTexts["competition.updated"].label
+        XCTAssertTrue(updated.hasPrefix("You: updated"), updated)
+        XCTAssertTrue(updated.contains("Jordan: updated"), updated)
         XCTAssertTrue(
             app.otherElements["competition.scoreHeader.naren"].label
                 .contains("You")
@@ -298,7 +301,7 @@ final class MultiUserCompetitionUITests: XCTestCase {
         XCTAssertTrue(row.waitForNonExistence(timeout: 3))
     }
 
-    func testRemoteDayDrawerShowsBothAcceptedScoresWithoutRawHealthSnapshots() {
+    func testRemoteDayDrawerShowsRingsThatAddUpToTheDayScore() {
         launch(.sharing)
         let active = sharingCard(state: "active", name: "Jordan")
         scrollToElement(active)
@@ -317,7 +320,15 @@ final class MultiUserCompetitionUITests: XCTestCase {
         XCTAssertTrue(summary.waitForExistence(timeout: 3))
         XCTAssertTrue(summary.label.contains("You, 500 points"))
         XCTAssertTrue(summary.label.contains("Jordan, 480 points"))
-        XCTAssertFalse(app.otherElements["competition.ownerRings"].exists)
+        let rings = app.otherElements["competition.ownerRings"]
+        XCTAssertTrue(rings.exists)
+        XCTAssertTrue(rings.label.contains("Move, 1,000 of 500 kilocalories, 200 points"), rings.label)
+        XCTAssertTrue(rings.label.contains("Stand, 12 of 12 hours, 100 points"), rings.label)
+        XCTAssertTrue(
+            app.staticTexts[
+                "1 point per 1% of each ring, up to 200% per ring. Your ring values stay on this iPhone."
+            ].exists
+        )
     }
 
     func testColdWarmAndSignedOutClaimConfirmationFlows() {

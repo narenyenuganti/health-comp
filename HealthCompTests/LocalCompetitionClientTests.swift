@@ -482,6 +482,59 @@ final class LocalCompetitionClientTests: XCTestCase {
         await client.stop()
     }
 
+    func testTodayWithoutHealthSummaryIsNotSyncedYetAndPastDaysStayMissing() async throws {
+        func days(observingToday: Bool) async throws -> [LocalCompetitionDayPresentation] {
+            let store = ClientTestEventStore()
+            let id = CompetitionID(
+                UUID(uuidString: "30000000-0000-0000-0000-000000000002")!
+            )
+            let accepted = try await makeAccepted(
+                store: store,
+                id: id,
+                acceptedAt: Date(timeIntervalSinceReferenceDate: 1_200_000)
+            )
+            let currentDate = accepted.activeDate.addingTimeInterval(24 * 60 * 60)
+            let source = FixtureActivitySource(
+                fixture: try ActivityFixture(
+                    initialInstant: EnvironmentInstant(
+                        wallDate: currentDate,
+                        monotonic: MonotonicInstant(
+                            epochID: "not-synced-yet",
+                            nanoseconds: 1_000
+                        )
+                    ),
+                    initialDays: observingToday
+                        ? [.snapshot(
+                            day: accepted.window.days[1],
+                            snapshot: try makeSnapshot(moveValue: 350)
+                        )]
+                        : [],
+                    changes: []
+                )
+            )
+            let client = LocalCompetitionClient.make(
+                environment: .accelerated(source: source),
+                storeAvailability: .available(store),
+                configuration: .testing
+            )
+            let publication = await nextPublication(from: client.start())
+            await client.stop()
+            let presentation = try XCTUnwrap(
+                publication.dashboard.competitions.first { $0.id == id }
+            )
+            XCTAssertEqual(presentation.currentDayOrdinal, 2)
+            return presentation.days
+        }
+
+        let observed = try await days(observingToday: true)
+        XCTAssertEqual(observed[0].ownerLatestAvailability, .missing)
+        XCTAssertEqual(observed[1].ownerLatestAvailability, .observed)
+
+        let unread = try await days(observingToday: false)
+        XCTAssertEqual(unread[0].ownerLatestAvailability, .missing)
+        XCTAssertEqual(unread[1].ownerLatestAvailability, .notSyncedYet)
+    }
+
     func testAwardsFoldIsStableIdempotentAndOnlyWinsEarnVictory() throws {
         let completedAt = Date(timeIntervalSinceReferenceDate: 2_000_000)
         let winID = CompetitionID(

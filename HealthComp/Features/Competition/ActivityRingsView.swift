@@ -1,403 +1,161 @@
 import CompetitionCore
-import HealthKit
-import HealthKitUI
 import SwiftUI
 
-struct ActivityRingsView: View {
-    let snapshot: ActivitySnapshot
-    var ownerDisplayName = LocalCompetitionIdentity.ownerDisplayName
-    var acceptedPoints: Double?
-    var animatesChanges = true
-
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-
-    var body: some View {
-        Group {
-            if let content = ActivityRingContent(snapshot: snapshot),
-               let summary = content.makeHealthKitSummary() {
-                ringLayout {
-                    SystemActivityRingView(
-                        activitySummary: summary,
-                        animated: animatesChanges && !reduceMotion
-                    )
-                    .frame(width: 96, height: 96)
-                    .padding(10)
-                    // Apple's ring view is designed for a black background.
-                    .background(
-                        Color.black,
-                        in: RoundedRectangle(
-                            cornerRadius: 20,
-                            style: .continuous
-                        )
-                    )
-                    .frame(
-                        maxWidth: dynamicTypeSize.isAccessibilitySize
-                            ? .infinity
-                            : nil
-                    )
-                    .accessibilityHidden(true)
-                    ringText(content)
-                }
-                .accessibilityElement(children: .ignore)
-                .accessibilityIdentifier("competition.ownerRings")
-                .accessibilityLabel(
-                    activityRingAccessibilityLabel(
-                        snapshot,
-                        ownerDisplayName: ownerDisplayName,
-                        acceptedPoints: acceptedPoints
-                    )
-                )
-            } else {
-                activityTextFallback
-                    .accessibilityElement(children: .combine)
-                    .accessibilityIdentifier("competition.ownerActivityText")
-                    .accessibilityLabel(
-                        activityRingAccessibilityLabel(
-                            snapshot,
-                            ownerDisplayName: ownerDisplayName,
-                            acceptedPoints: acceptedPoints
-                        )
-                    )
-            }
-        }
-    }
-
-    private var ringLayout: AnyLayout {
-        dynamicTypeSize.isAccessibilitySize
-            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 14))
-            : AnyLayout(HStackLayout(alignment: .center, spacing: 18))
-    }
-
-    private func ringText(_ content: ActivityRingContent) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            ActivityValueRow(
-                title: content.moveTitle,
-                value: content.moveValueText,
-                percent: activityPercentFigure(content.moveValue, goal: content.moveGoal),
-                tint: Theme.move
-            )
-            ActivityValueRow(
-                title: "Exercise",
-                value: content.exerciseValueText,
-                percent: activityPercentFigure(
-                    content.exerciseValue,
-                    goal: content.exerciseGoal
-                ),
-                tint: Theme.exercise
-            )
-            ActivityValueRow(
-                title: content.standTitle,
-                value: content.standValueText,
-                percent: activityPercentFigure(content.standValue, goal: content.standGoal),
-                tint: Theme.stand
-            )
-            pauseText
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private var activityTextFallback: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Label("Activity details", systemImage: "figure.walk.motion")
-                .font(.headline)
-                .foregroundStyle(Theme.ink)
-            fallbackRow(title: moveTitle, reading: snapshot.move, unit: moveUnit)
-            fallbackRow(
-                title: "Exercise",
-                reading: snapshot.exercise,
-                unit: "minutes"
-            )
-            fallbackRow(
-                title: standTitle,
-                reading: snapshot.standOrRoll,
-                unit: "hours"
-            )
-            pauseText
-            Text("System Activity rings are unavailable for this summary.")
-                .font(.caption)
-                .foregroundStyle(Theme.secondary)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private func fallbackRow(
-        title: String,
-        reading: ActivityRingReading,
-        unit: String
-    ) -> some View {
-        HStack(alignment: .firstTextBaseline) {
-            Text(title)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(Theme.ink)
-            Spacer()
-            Text(activityReadingText(reading, unit: unit))
-                .font(.subheadline.monospacedDigit())
-                .foregroundStyle(Theme.secondary)
-        }
-    }
-
-    // Paused reads stronger, never in an alert color.
-    private var pauseText: some View {
-        Text(activityPauseText(snapshot.pauseState))
-            .font(.caption.weight(snapshot.pauseState == .paused ? .bold : .medium))
-            .foregroundStyle(
-                snapshot.pauseState == .paused ? Theme.ink : Theme.secondary
-            )
-    }
-
-    private var moveTitle: String {
-        snapshot.moveMode == .moveMinutes ? "Move Time" : "Move"
-    }
-
-    private var moveUnit: String {
-        snapshot.moveMode == .moveMinutes ? "minutes" : "kilocalories"
-    }
-
-    private var standTitle: String {
-        switch snapshot.standMode {
-        case .standHours: "Stand"
-        case .rollHours: "Roll"
-        case .unknown: "Stand or Roll"
-        }
-    }
-}
-
-private struct ActivityValueRow: View {
+struct CompetitionRingRow: Equatable, Sendable {
+    /// "Move" | "Move Time" | "Exercise" | "Stand" | "Roll" | "Stand or Roll"
     let title: String
-    let value: String
-    let percent: String
-    let tint: Color
-
-    var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            SlantedBar()
-                .fill(tint)
-                .frame(width: 10, height: 10)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 1) {
-                Text(title)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(Theme.ink)
-                Text(value)
-                    .font(.footnote.monospacedDigit())
-                    .foregroundStyle(Theme.secondary)
-            }
-            Spacer(minLength: 8)
-            Text(percent)
-                .font(.headline.weight(.heavy).width(.condensed).monospacedDigit())
-                .foregroundStyle(Theme.ink)
-        }
-    }
+    /// "420/500 kcal" | "No data"
+    let detail: String
+    /// "420 of 500 kilocalories" | "no data"
+    let spokenDetail: String
+    /// Whole points; nil when the reading has no score.
+    let points: Double?
 }
 
-// Visible ring progress, e.g. "84%". Spoken text keeps "84 percent".
-private func activityPercentFigure(_ value: Double, goal: Double) -> String {
-    "\((value / goal * 100).formatted(.number.precision(.fractionLength(0))))%"
+struct CompetitionRingPanel: Equatable, Sendable {
+    /// Always Move, Exercise, Stand.
+    let rows: [CompetitionRingRow]
+    let isPaused: Bool
+    let note: String?
+    let footer: String
+    let accessibilityLabel: String
 }
 
-private struct SystemActivityRingView: UIViewRepresentable {
-    let activitySummary: HKActivitySummary
-    let animated: Bool
-
-    func makeUIView(context: Context) -> HKActivityRingView {
-        let view = HKActivityRingView(frame: .zero)
-        view.isAccessibilityElement = false
-        return view
+/// One snapshot as three ring rows whose points add up to the day's points:
+/// the accepted snapshot when there is one, otherwise the latest. Nil when the
+/// day has neither snapshot.
+func competitionRingPanel(
+    _ day: LocalCompetitionDayPresentation,
+    locale: Locale = .current
+) -> CompetitionRingPanel? {
+    guard let snapshot = day.ownerAcceptedSnapshot ?? day.ownerLatestSnapshot else {
+        return nil
+    }
+    let isAccepted = day.ownerAcceptedSnapshot != nil
+    let total = isAccepted
+        ? day.ownerAcceptedPoints
+        : ActivityScoreCalculator.score(snapshot, policy: day.scoringPolicy).availableScore?.points
+    let shares = competitionRingShares(snapshot, perRingCap: day.scoringPolicy.perRingCap)
+    let sum = shares.reduce(0, +)
+    let points = total.map { total in
+        competitionRoundedParts(shares.map { sum > 0 ? total * $0 / sum : 0 }, total: total)
     }
 
-    func updateUIView(_ uiView: HKActivityRingView, context: Context) {
-        uiView.setActivitySummary(activitySummary, animated: animated)
+    func number(_ value: Double) -> String {
+        value.formatted(.number.precision(.fractionLength(0)).locale(locale))
     }
-}
-
-private struct ActivityRingContent {
-    let snapshot: ActivitySnapshot
-    let moveValue: Double
-    let moveGoal: Double
-    let exerciseValue: Double
-    let exerciseGoal: Double
-    let standValue: Double
-    let standGoal: Double
-
-    init?(snapshot: ActivitySnapshot) {
-        guard let moveValue = snapshot.move.value,
-              let moveGoal = snapshot.move.goal,
-              let exerciseValue = snapshot.exercise.value,
-              let exerciseGoal = snapshot.exercise.goal,
-              let standValue = snapshot.standOrRoll.value,
-              let standGoal = snapshot.standOrRoll.goal,
-              [moveValue, moveGoal, exerciseValue, exerciseGoal, standValue, standGoal]
-                .allSatisfy({ $0.isFinite && $0 >= 0 }),
-              moveGoal > 0,
-              exerciseGoal > 0,
-              standGoal > 0
-        else {
-            return nil
+    func row(_ index: Int, _ title: String, _ reading: ActivityRingReading, _ unit: String, _ spokenUnit: String) -> CompetitionRingRow {
+        guard let value = reading.value, let goal = reading.goal, goal > 0 else {
+            return CompetitionRingRow(title: title, detail: "No data", spokenDetail: "no data", points: points?[index])
         }
-        self.snapshot = snapshot
-        self.moveValue = moveValue
-        self.moveGoal = moveGoal
-        self.exerciseValue = exerciseValue
-        self.exerciseGoal = exerciseGoal
-        self.standValue = standValue
-        self.standGoal = standGoal
-    }
-
-    func makeHealthKitSummary() -> HKActivitySummary? {
-        let summary = HKActivitySummary()
-        switch snapshot.moveMode {
-        case .activeEnergyKilocalories:
-            summary.activityMoveMode = .activeEnergy
-            summary.activeEnergyBurned = HKQuantity(
-                unit: .kilocalorie(),
-                doubleValue: moveValue
-            )
-            summary.activeEnergyBurnedGoal = HKQuantity(
-                unit: .kilocalorie(),
-                doubleValue: moveGoal
-            )
-        case .moveMinutes:
-            summary.activityMoveMode = .appleMoveTime
-            summary.appleMoveTime = HKQuantity(
-                unit: .minute(),
-                doubleValue: moveValue
-            )
-            summary.appleMoveTimeGoal = HKQuantity(
-                unit: .minute(),
-                doubleValue: moveGoal
-            )
-        }
-        summary.appleExerciseTime = HKQuantity(
-            unit: .minute(),
-            doubleValue: exerciseValue
-        )
-        summary.exerciseTimeGoal = HKQuantity(
-            unit: .minute(),
-            doubleValue: exerciseGoal
-        )
-        summary.appleStandHours = HKQuantity(
-            unit: .count(),
-            doubleValue: standValue
-        )
-        summary.standHoursGoal = HKQuantity(
-            unit: .count(),
-            doubleValue: standGoal
-        )
-        if #available(iOS 18.0, *), snapshot.pauseState != .unknown {
-            summary.isPaused = snapshot.pauseState == .paused
-        }
-        return summary
-    }
-
-    var moveTitle: String {
-        snapshot.moveMode == .moveMinutes ? "Move Time" : "Move"
-    }
-
-    var standTitle: String {
-        switch snapshot.standMode {
-        case .standHours: "Stand"
-        case .rollHours: "Roll"
-        case .unknown: "Stand or Roll"
-        }
-    }
-
-    var moveValueText: String {
-        let unit = snapshot.moveMode == .moveMinutes ? "minutes" : "kilocalories"
-        return "\(activityNumber(moveValue)) of \(activityNumber(moveGoal)) \(unit)"
-    }
-
-    var exerciseValueText: String {
-        "\(activityNumber(exerciseValue)) of \(activityNumber(exerciseGoal)) minutes"
-    }
-
-    var standValueText: String {
-        "\(activityNumber(standValue)) of \(activityNumber(standGoal)) hours"
-    }
-
-    var movePercentText: String { activityPercent(moveValue, goal: moveGoal) }
-    var exercisePercentText: String {
-        activityPercent(exerciseValue, goal: exerciseGoal)
-    }
-    var standPercentText: String { activityPercent(standValue, goal: standGoal) }
-
-    func accessibilityLabel(
-        ownerDisplayName: String,
-        acceptedPoints: Double?
-    ) -> String {
-        [
-            "\(ownerDisplayName) activity",
-            acceptedPoints.map(activityAcceptedPointsText),
-            "\(moveTitle), \(moveValueText), \(movePercentText)",
-            "Exercise, \(exerciseValueText), \(exercisePercentText)",
-            "\(standTitle), \(standValueText), \(standPercentText)",
-            activityPauseText(snapshot.pauseState),
-        ].compactMap { $0 }.joined(separator: ". ")
-    }
-}
-
-func activityRingSupportsSystemPresentation(_ snapshot: ActivitySnapshot) -> Bool {
-    ActivityRingContent(snapshot: snapshot) != nil
-}
-
-func activityRingAccessibilityLabel(
-    _ snapshot: ActivitySnapshot,
-    ownerDisplayName: String,
-    acceptedPoints: Double?
-) -> String {
-    if let content = ActivityRingContent(snapshot: snapshot) {
-        return content.accessibilityLabel(
-            ownerDisplayName: ownerDisplayName,
-            acceptedPoints: acceptedPoints
+        return CompetitionRingRow(
+            title: title,
+            detail: "\(number(value))/\(number(goal)) \(unit)",
+            spokenDetail: "\(number(value)) of \(number(goal)) \(spokenUnit)",
+            points: points?[index]
         )
     }
 
-    let moveTitle = snapshot.moveMode == .moveMinutes ? "Move Time" : "Move"
-    let moveUnit = snapshot.moveMode == .moveMinutes ? "minutes" : "kilocalories"
-    let standTitle: String = switch snapshot.standMode {
+    let minutes = snapshot.moveMode == .moveMinutes
+    let standTitle = switch snapshot.standMode {
     case .standHours: "Stand"
     case .rollHours: "Roll"
     case .unknown: "Stand or Roll"
     }
-    return [
-        "\(ownerDisplayName) activity",
-        acceptedPoints.map(activityAcceptedPointsText),
-        "\(moveTitle), \(activityReadingText(snapshot.move, unit: moveUnit))",
-        "Exercise, \(activityReadingText(snapshot.exercise, unit: "minutes"))",
-        "\(standTitle), \(activityReadingText(snapshot.standOrRoll, unit: "hours"))",
-        activityPauseText(snapshot.pauseState),
-        "System Activity rings unavailable",
-    ].compactMap { $0 }.joined(separator: ". ")
-}
+    let rows = [
+        row(0, minutes ? "Move Time" : "Move", snapshot.move, minutes ? "min" : "kcal", minutes ? "minutes" : "kilocalories"),
+        row(1, "Exercise", snapshot.exercise, "min", "minutes"),
+        row(2, standTitle, snapshot.standOrRoll, "hr", "hours"),
+    ]
+    let isPaused = snapshot.pauseState == .paused
 
-private func activityAcceptedPointsText(_ points: Double) -> String {
-    let unit = points.rounded(.toNearestOrAwayFromZero) == 1 ? "point" : "points"
-    return "\(competitionPointsText(points)) accepted \(unit)"
-}
-
-private func activityNumber(_ value: Double) -> String {
-    value.formatted(.number.precision(.fractionLength(0...1)))
-}
-
-private func activityPercent(_ value: Double, goal: Double) -> String {
-    let percentage = value / goal * 100
-    return "\(percentage.formatted(.number.precision(.fractionLength(0)))) percent"
-}
-
-private func activityReadingText(
-    _ reading: ActivityRingReading,
-    unit: String
-) -> String {
-    guard let value = reading.value, let goal = reading.goal, goal > 0 else {
-        return "value or goal unavailable"
+    let note: String? = if isAccepted, day.ownerLatestSnapshot != snapshot {
+        "Points use an earlier reading. Your rings have changed since."
+    } else if !isAccepted, total != nil {
+        "These points haven’t synced yet."
+    } else {
+        nil
     }
-    return "\(activityNumber(value)) of \(activityNumber(goal)) \(unit), \(activityPercent(value, goal: goal))"
+
+    let rule: String = if let cap = day.scoringPolicy.perRingCap {
+        "1 point per 1% of each ring, up to \(Int(cap))% per ring."
+    } else if sum * 100 > ActivityScore.maximumDailyPoints {
+        "Capped at 600 points a day."
+    } else {
+        "1 point per 1% of each ring."
+    }
+
+    let spokenRows = rows.map { row in
+        "\(row.title), \(row.spokenDetail)"
+            + (row.points.map { ", \(competitionPointsAccessibilityText($0, locale: locale))" } ?? "")
+    }
+    let spoken = (["Your rings"] + spokenRows
+        + (isPaused ? ["Activity tracking paused"] : [])
+        + [note].compactMap { $0.map { String($0.dropLast()) } })
+        .joined(separator: ". ") + "."
+
+    return CompetitionRingPanel(
+        rows: rows,
+        isPaused: isPaused,
+        note: note,
+        footer: "\(rule) Your ring values stay on this iPhone.",
+        accessibilityLabel: spoken
+    )
 }
 
-private func activityPauseText(_ state: ActivityPauseState) -> String {
-    switch state {
-    case .running: "Activity tracking running"
-    case .paused: "Activity tracking paused"
-    case .unknown: "Activity tracking pause status unknown"
+/// Your rings for one day: three rows that add up to the day's points, then
+/// the scoring rule. Ring colors appear only here, on your own rows.
+struct ActivityRingsView: View {
+    let panel: CompetitionRingPanel
+
+    @Environment(\.locale) private var locale
+
+    private let colors = [Theme.move, Theme.exercise, Theme.stand]
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            VStack(alignment: .leading, spacing: 12) {
+                ForEach(Array(panel.rows.enumerated()), id: \.offset) { index, row in
+                    HStack(alignment: .firstTextBaseline, spacing: 10) {
+                        SlantedBar()
+                            .fill(colors[index])
+                            .frame(width: 10, height: 10)
+                        (Text(row.title).fontWeight(.semibold).foregroundStyle(Theme.ink)
+                            + Text(" · \(row.detail)").foregroundStyle(Theme.secondary))
+                            .font(.subheadline)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        if let points = row.points {
+                            Text(competitionPointsText(points, locale: locale))
+                                .font(.headline.weight(.heavy).width(.condensed).monospacedDigit())
+                                .foregroundStyle(Theme.ink)
+                                .fixedSize()
+                        }
+                    }
+                }
+                if panel.isPaused {
+                    Text("Activity tracking paused")
+                        .font(.caption.bold())
+                        .foregroundStyle(Theme.ink)
+                }
+                if let note = panel.note {
+                    Text(note)
+                        .font(.caption)
+                        .foregroundStyle(Theme.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(16)
+            .themePanel()
+            .accessibilityElement(children: .ignore)
+            .accessibilityIdentifier("competition.ownerRings")
+            .accessibilityLabel(panel.accessibilityLabel)
+
+            Text(panel.footer)
+                .font(.caption)
+                .foregroundStyle(Theme.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
     }
 }

@@ -92,6 +92,12 @@ struct CompetitionLocalDateFormattingChecks {
         )
         require(competitionMomentText(moment, now: now, locale: fr, timeZone: la), contains: ["21:41"])
 
+        // Updated: time only on the same day, else the moment style
+        let updatedNow = instant("2026-10-31T16:41:00Z")
+        expect(normalized(competitionUpdatedText(updatedNow, now: updatedNow, locale: us, timeZone: la)), "9:41 AM")
+        expect(normalized(competitionUpdatedText(instant("2026-10-31T06:40:00Z"), now: updatedNow, locale: us, timeZone: la)), "Fri 11:40 PM")
+        require(competitionUpdatedText(instant("2026-10-20T04:41:00Z"), now: updatedNow, locale: us, timeZone: la), contains: ["Oct 19"])
+
         print("Competition local date formatting checks passed")
     }
 }
