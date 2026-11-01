@@ -1668,6 +1668,13 @@ func competitionResultLeavesHome(
     guard let schedule = competition.acceptedConfiguration?.schedule,
           let completedAt = competition.terminalResult?.completedAt
     else { return nil }
+    return competitionResultLeavesHome(schedule: schedule, completedAt: completedAt)
+}
+
+func competitionResultLeavesHome(
+    schedule: CompetitionSchedule,
+    completedAt: Date
+) -> (day: CompetitionDay, at: Date)? {
     let calendar = schedule.calendar
     func advanced(_ day: CompetitionDay, by count: Int) throws -> CompetitionDay {
         try (0..<count).reduce(day) { day, _ in try calendar.day(after: day) }

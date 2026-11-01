@@ -288,6 +288,55 @@ func competitionIsRetainedOnDashboard(
     }
 }
 
+extension LocalCompetitionDashboard {
+    /// The projector drops a match whose refresh failed. Keep its last
+    /// published presentation so it stays on screen with its problem line
+    /// and an open screen doesn't pop.
+    func keepingFailedCompetitions(
+        from previous: LocalCompetitionDashboard?,
+        now: Date
+    ) -> Self {
+        let failedIDs = Set(issues.flatMap { issue -> [CompetitionID] in
+            if case let .competitionFailures(ids) = issue { return ids }
+            return []
+        })
+        let shownIDs = Set(competitions.map(\.id))
+        let kept = (previous?.competitions ?? []).filter {
+            failedIDs.contains($0.id) && !shownIDs.contains($0.id)
+                && competitionIsRetainedOnDashboard($0.lifecycle, now: now)
+        }
+        guard !kept.isEmpty else { return self }
+        let keptIDs = Set(kept.map(\.id))
+        return Self(
+            competitions: (competitions + kept).sorted {
+                $0.id.rawValue.uuidString < $1.id.rawValue.uuidString
+            },
+            awards: (awards + (previous?.awards ?? []).filter {
+                keptIDs.contains($0.competitionID)
+            }).sortedNewestFirst(),
+            issues: issues,
+            hiddenTerminalCompetitionCount: hiddenTerminalCompetitionCount
+        )
+    }
+
+    /// The next instant Home changes on its own: a pending challenge lapses,
+    /// a closed one leaves after a day, or a result moves to History.
+    func nextHomeBoundary(after now: Date) -> Date? {
+        competitions.compactMap { competition -> Date? in
+            switch competition.lifecycle {
+            case let .pending(_, _, expiresAt):
+                expiresAt
+            case let .declined(at, _), let .expired(at, _):
+                at.addingTimeInterval(competitionClosedChallengeRetention)
+            case .completed:
+                competitionResultLeavesHome(competition)?.at
+            default:
+                nil
+            }
+        }.filter { $0 > now }.min()
+    }
+}
+
 enum CompetitionPublicationSource: Equatable, Sendable {
     case simulatedFixture
     case remoteParticipants
@@ -1010,6 +1059,9 @@ private actor LocalCompetitionCoordinator {
             context: context,
             configuration: configuration,
             issues: Self.deduplicated(publicationIssues)
+        ).keepingFailedCompetitions(
+            from: latestPublication?.dashboard,
+            now: context.instant.wallDate
         )
         let publication = LocalCompetitionPublication(
             publicationRevision: publicationRevision,

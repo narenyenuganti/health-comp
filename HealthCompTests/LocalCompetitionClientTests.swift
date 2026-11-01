@@ -1258,6 +1258,30 @@ final class LocalCompetitionClientTests: XCTestCase {
         await client.stop()
     }
 
+    func testFailedRefreshKeepsTheLastPresentationWithItsIssue() async throws {
+        let id = CompetitionID(
+            UUID(uuidString: "71000000-0000-0000-0000-00000000000A")!
+        )
+        let setup = try await makePendingClient(
+            id: id,
+            epochID: "client-failed-refresh"
+        )
+        let first = await nextPublication(from: setup.client.start())
+        let shown = try XCTUnwrap(first.dashboard.competitions.first)
+        await setup.store.failLoads(of: id)
+
+        let failed = await setup.client.reconcileAll(.pullToRefresh)
+
+        XCTAssertEqual(failed.dashboard.competitions, [shown])
+        XCTAssertTrue(failed.dashboard.issues.contains(.competitionFailures([id])))
+        XCTAssertEqual(competitionRowIssue(id, in: failed.dashboard.issues), .refresh)
+        // Home draws the match with its own line, so the banner stays away.
+        let layout = competitionHomeLayout(failed.dashboard, now: failed.evaluatedAt)
+        XCTAssertEqual(layout.needsYou.map(\.id), [id])
+        XCTAssertNil(competitionIssueSummary(failed.dashboard.issues, attributedIDs: [id]))
+        await setup.client.stop()
+    }
+
     func testClosedInvitationStaysOnDashboardForOneDay() async throws {
         let id = CompetitionID(
             UUID(uuidString: "71000000-0000-0000-0000-000000000009")!
@@ -1949,6 +1973,11 @@ private extension CompetitionNotificationPolicy {
 private actor ClientTestEventStore: CompetitionEventStore {
     private var journals: [CompetitionID: CompetitionJournal] = [:]
     private var tombstonedIDs: Set<CompetitionID> = []
+    private var failingLoadIDs: Set<CompetitionID> = []
+
+    func failLoads(of id: CompetitionID) {
+        failingLoadIDs.insert(id)
+    }
     private var appendCounts: [CompetitionID: Int] = [:]
     private(set) var successfulCreateCount = 0
 
@@ -1959,6 +1988,9 @@ private actor ClientTestEventStore: CompetitionEventStore {
     }
 
     func load(_ id: CompetitionID) async throws -> LoadedCompetitionJournal? {
+        if failingLoadIDs.contains(id) {
+            throw CompetitionEventStoreError.identityNotFound
+        }
         guard let journal = journals[id] else { return nil }
         return try LoadedCompetitionJournal(journal: journal, source: .primary)
     }

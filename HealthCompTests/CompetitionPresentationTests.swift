@@ -1278,6 +1278,39 @@ final class CompetitionPresentationTests: XCTestCase {
         XCTAssertNil(competitionIssueSummary([], attributedIDs: []))
     }
 
+    func testNextHomeBoundaryIsTheEarliestChangeStillAhead() {
+        let pending = homePresentation(
+            id: 1,
+            lifecycle: .pending(direction: .outgoing, createdAt: homeNow,
+                                expiresAt: homeNow.addingTimeInterval(5 * 3_600)),
+            start: nil
+        )
+        let closed = homePresentation(
+            id: 2,
+            lifecycle: .declined(at: homeNow.addingTimeInterval(-23 * 3_600), direction: .outgoing),
+            start: nil
+        )
+        let result = homePresentation(
+            id: 3,
+            lifecycle: .completed(outcome: .win, basis: .stableAcrossPostBoundaryReads,
+                                  completedAt: homeInstant("2026-10-31T08:00:00Z")),
+            start: (10, 24)
+        )
+        XCTAssertEqual(
+            homeDashboard([pending, closed, result]).nextHomeBoundary(after: homeNow),
+            homeNow.addingTimeInterval(3_600)
+        )
+        XCTAssertEqual(
+            homeDashboard([pending, result]).nextHomeBoundary(after: homeNow),
+            homeNow.addingTimeInterval(5 * 3_600)
+        )
+        XCTAssertEqual(
+            homeDashboard([result]).nextHomeBoundary(after: homeNow),
+            homeInstant("2026-11-03T08:00:00Z")
+        )
+        XCTAssertNil(homeDashboard([]).nextHomeBoundary(after: homeNow))
+    }
+
     private var homeNow: Date { homeInstant("2026-10-30T17:00:00Z") }
 
     private func homeInstant(_ text: String) -> Date {

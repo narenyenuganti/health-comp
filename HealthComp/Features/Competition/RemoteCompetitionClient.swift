@@ -305,6 +305,13 @@ private actor RemoteCompetitionClientCoordinator {
     private var latestPublication: CompetitionPublication?
     private var signalTask: Task<Void, Never>?
     private var realtimeTask: Task<Void, Never>?
+    /// Republishes the last inputs when Home's grouping changes on its own.
+    private var boundaryTask: Task<Void, Never>?
+    private var lastPublishInputs: (
+        materializations: [RemoteCompetitionMaterialization],
+        issues: [CompetitionClientIssue],
+        knownCompetitionIDs: Set<CompetitionID>?
+    )?
     private var notificationCoordinator: CompetitionNotificationCoordinatorClient =
         .noop
     private var notificationPreferences: CompetitionNotificationPreferencesClient =
@@ -1184,6 +1191,9 @@ private actor RemoteCompetitionClientCoordinator {
         stoppedTasks.realtime?.cancel()
         signalTask = nil
         realtimeTask = nil
+        boundaryTask?.cancel()
+        boundaryTask = nil
+        lastPublishInputs = nil
         if stoppedTasks.realtime != nil {
             await realtimeClient.stop()
         }
@@ -1500,9 +1510,18 @@ private actor RemoteCompetitionClientCoordinator {
                 profile: profile,
                 context: context,
                 issues: issues
+            ).keepingFailedCompetitions(
+                from: latestPublication?.dashboard,
+                now: context.instant.wallDate
             ),
             evaluatedAt: context.instant.wallDate,
             timeZoneIdentifier: context.timeZoneIdentifier
+        )
+        lastPublishInputs = (materializations, issues, knownCompetitionIDs)
+        scheduleBoundaryRepublish(
+            at: publication.dashboard.nextHomeBoundary(
+                after: context.instant.wallDate
+            )
         )
         let materializedIDs = Set(materializations.map {
             CompetitionID($0.descriptor.competitionID)
@@ -1522,6 +1541,42 @@ private actor RemoteCompetitionClientCoordinator {
             )
         )
         return publication
+    }
+
+    // ponytail: one republish at the next boundary, rescheduled by every publish; no network.
+    private func scheduleBoundaryRepublish(at wake: Date?) {
+        boundaryTask?.cancel()
+        boundaryTask = nil
+        guard let wake else { return }
+        let generation = runtimeGeneration
+        boundaryTask = Task { [weak self, environment] in
+            do {
+                try await environment.wait(until: wake)
+            } catch {
+                return
+            }
+            guard !Task.isCancelled else { return }
+            await self?.republishAtBoundary(generation: generation)
+        }
+    }
+
+    private func republishAtBoundary(generation: UInt64) async {
+        await withOperationGate {
+            guard generation == runtimeGeneration,
+                  terminalTeardown == nil,
+                  !isStopped,
+                  let profile,
+                  let inputs = lastPublishInputs
+            else {
+                return
+            }
+            _ = await publish(
+                materializations: inputs.materializations,
+                profile: profile,
+                issues: inputs.issues,
+                knownCompetitionIDs: inputs.knownCompetitionIDs
+            )
+        }
     }
 
     private func publish(

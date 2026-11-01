@@ -3437,6 +3437,78 @@ final class RemoteCompetitionClientTests: XCTestCase {
         XCTAssertEqual(remaining, [], "Profile teardown must cancel prior work")
     }
 
+    func testFailedRefreshKeepsTheLastPresentationWithItsIssue()
+        async throws
+    {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: root,
+            withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: root) }
+        let profile = AuthenticatedProfile(
+            id: UUID(uuidString: "81000000-0000-4000-8000-000000000001")!,
+            displayName: "Beta Alice"
+        )
+        let paths = AuthenticatedProfileStoragePaths(
+            profileID: profile.id,
+            rootDirectory: root
+        )
+        for directory in paths.fixedDirectories {
+            try FileManager.default.createDirectory(
+                at: directory,
+                withIntermediateDirectories: true
+            )
+        }
+        let competitionID = UUID(
+            uuidString: "82000000-0000-4000-8000-00000000000A"
+        )!
+        let createdAt = Date(timeIntervalSince1970: 1_786_540_000)
+        let descriptor = try pendingDescriptor(
+            competitionID: competitionID,
+            profile: profile,
+            expiresAt: createdAt.addingTimeInterval(48 * 60 * 60)
+        )
+        let page = try pendingHistoryPage(
+            descriptor: descriptor,
+            profileID: profile.id,
+            createdAt: createdAt
+        )
+        let fetches = RemoteCompetitionFetchSequenceProbe(page: page)
+        let client = CompetitionClient.remote(
+            remoteAPI: remoteAPI(
+                listCompetitions: { [descriptor] },
+                fetchChanges: { _, _ in try await fetches.fetch() }
+            ),
+            environment: try environment(),
+            notificationClient: RemoteCompetitionNotificationProbe().client,
+            notificationPreferencesFactory: { _ in
+                .constant(mutedOpponentIdentities: [])
+            }
+        )
+
+        try await client.mountAuthenticatedProfile(profile, paths)
+        var iterator = client.start().makeAsyncIterator()
+        let optionalFirst = await iterator.next()
+        let first = try XCTUnwrap(optionalFirst)
+        let shown = try XCTUnwrap(first.dashboard.competitions.first)
+        await fetches.failSubsequentFetches()
+
+        let failed = await client.reconcileAll(.pullToRefresh)
+        let id = CompetitionID(competitionID)
+
+        XCTAssertEqual(failed.dashboard.competitions, [shown])
+        XCTAssertEqual(failed.dashboard.issues, [.competitionFailures([id])])
+        XCTAssertEqual(competitionRowIssue(id, in: failed.dashboard.issues), .refresh)
+        let layout = competitionHomeLayout(failed.dashboard, now: failed.evaluatedAt)
+        let drawn = ([layout.hero].compactMap { $0 } + layout.needsYou + layout.live
+            + layout.upNext + layout.recentResults).map(\.id)
+        XCTAssertEqual(drawn, [id])
+        XCTAssertNil(competitionIssueSummary(failed.dashboard.issues, attributedIDs: Set(drawn)))
+        await client.stop()
+    }
+
     func testRelaunchResumesFromDurableServerCursor()
         async throws
     {

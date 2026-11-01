@@ -1291,6 +1291,53 @@ final class AppFeatureTests: XCTestCase {
     }
 
     @MainActor
+    func testSignOutConsumesARouteHeldForTheSignedOutProfile() async {
+        let calls = OrderedCallRecorder()
+        let storage = profileStorageFixture(for: profile, recorder: calls)
+        var initial = AppFeature.State.authenticated(profile: profile, epoch: 3)
+        initial.mainTab?.pendingRoute = CompetitionRouteEnvelope(
+            sequence: 7,
+            route: .competition(
+                CompetitionID(UUID(uuidString: "86000000-0000-4000-8000-000000000001")!)
+            )
+        )
+        initial.mainTab?.heldRouteSequence = 7
+        let store = TestStore(initialState: initial) {
+            AppFeature()
+        } withDependencies: {
+            $0.authenticationClient = .test(signOut: { calls.record("auth-sign-out") })
+            $0.authenticatedProfileStorage = storage.client
+            $0.competitionClient = .test(
+                stop: { calls.record("runtime-stop") },
+                prepareForProfileTeardown: { _ in }
+            )
+            $0.competitionRoutingClient = CompetitionRoutingClient(
+                routes: { AsyncStream { $0.finish() } },
+                enqueue: { _ in },
+                consume: { calls.record("route-consumed:\($0)") }
+            )
+        }
+
+        await store.send(.account(.signOutButtonTapped)) {
+            $0.account.isRequestInFlight = true
+        }
+        await store.receive(.account(.delegate(.signOutRequested))) {
+            $0.authEpoch = 4
+            $0.phase = .tearingDown
+            $0.mainTab = nil
+            $0.pendingTeardown = AppFeature.PendingTeardown(
+                reason: .userRequested,
+                profileID: self.profile.id,
+                stopRuntime: true,
+                stage: .prepareRuntime,
+                isRunning: true
+            )
+        }
+        await receiveSuccessfulTeardown(store, epoch: 4, reason: .userRequested)
+        XCTAssertTrue(calls.calls.contains("route-consumed:7"), "\(calls.calls)")
+    }
+
+    @MainActor
     func testExpectedSignedOutEchoPreservesUserRequestedTeardownReason() async {
         let pendingTeardown = AppFeature.PendingTeardown(
             reason: .userRequested,
