@@ -17,8 +17,9 @@ struct MainTabView: View {
                 PermissionOnboardingView(
                     step: onboarding.step,
                     isRequesting: onboarding.isRequesting,
+                    isForChallenge: store.acceptsClaimOnStart,
                     continueTapped: { store.send(.onboardingContinueTapped) },
-                    notNowTapped: { store.send(.onboardingNotNowTapped) }
+                    notNowTapped: {}
                 )
             } else {
                 home
@@ -29,6 +30,11 @@ struct MainTabView: View {
         }
         .onChange(of: scenePhase) { _, newValue in
             store.send(.scenePhaseChanged(Self.sceneState(newValue)))
+        }
+        // Keeps the notifications prompt from presenting under the
+        // Challenge sheet, where SwiftUI would drop it.
+        .onChange(of: isChallengePresented) { _, isOpen in
+            store.send(.challengeSheetVisibilityChanged(isOpen))
         }
         .onReceive(
             NotificationCenter.default.publisher(
@@ -122,6 +128,28 @@ struct MainTabView: View {
                 }
             }
         }
+        // Here, not on the root Group, so it doesn't share a view with the
+        // claim sheet.
+        .sheet(isPresented: notificationPromptPresented) {
+            PermissionOnboardingView(
+                step: .notifications,
+                isRequesting: store.competition
+                    .notificationAuthorizationRequestIsInFlight,
+                continueTapped: { store.send(.notificationPromptTurnOnTapped) },
+                notNowTapped: { store.send(.notificationPromptNotNowTapped) }
+            )
+        }
+    }
+
+    private var notificationPromptPresented: Binding<Bool> {
+        Binding(
+            get: { store.notificationPrompt == .presented },
+            set: { isPresented in
+                if !isPresented {
+                    store.send(.notificationPromptNotNowTapped)
+                }
+            }
+        )
     }
 
     @ToolbarContentBuilder
@@ -191,7 +219,7 @@ struct MainTabView: View {
                     store.send(.declineClaimTapped)
                 case .retryable:
                     store.send(.dismissRetryableClaim)
-                case .unavailable:
+                case .unavailable, .wrongAccount:
                     store.send(.dismissClaimStatus)
                 case .confirmationTimedOut:
                     store.send(.dismissClaimStatus)

@@ -5,6 +5,8 @@ import SwiftUI
 struct PermissionOnboardingView: View {
     let step: PermissionOnboardingStep
     let isRequesting: Bool
+    /// Accept was tapped on a challenge, so Health is asked in its terms.
+    var isForChallenge = false
     let continueTapped: () -> Void
     let notNowTapped: () -> Void
 
@@ -50,21 +52,35 @@ struct PermissionOnboardingView: View {
                 .font(.themeLabel)
                 .tracking(1.4)
                 .foregroundStyle(Theme.secondary)
-            Text(
-                step == .health
-                    ? "Score with your rings"
-                    : "Know when the lead changes"
-            )
-            .font(.largeTitle.weight(.heavy).width(.condensed))
-            .foregroundStyle(Theme.ink)
-            .accessibilityAddTraits(.isHeader)
-            Text(
-                step == .health
-                    ? "HealthComp reads your Activity rings to score each match day."
-                    : "HealthComp only sends match moments, like these."
-            )
-            .font(.body)
-            .foregroundStyle(Theme.secondary)
+            Text(title)
+                .font(.largeTitle.weight(.heavy).width(.condensed))
+                .foregroundStyle(Theme.ink)
+                .accessibilityAddTraits(.isHeader)
+            Text(message)
+                .font(.body)
+                .foregroundStyle(Theme.secondary)
+        }
+    }
+
+    private var title: String {
+        switch step {
+        case .health:
+            isForChallenge
+                ? "Connect Health so your rings count"
+                : "Score with your rings"
+        case .notifications:
+            "Know when the lead changes"
+        }
+    }
+
+    private var message: String {
+        switch step {
+        case .health:
+            isForChallenge
+                ? "HealthComp reads your Activity rings to score each match day. You’ll join the match right after."
+                : "HealthComp reads your Activity rings to score each match day."
+        case .notifications:
+            "HealthComp only sends match moments, like these."
         }
     }
 
