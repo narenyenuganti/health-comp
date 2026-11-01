@@ -173,7 +173,7 @@ private struct MultiUserCompetitionSharingTestLabView: View {
     @State private var isChallengePresented = false
     @State private var challengeStatus: CompetitionFeature.ChallengeSheetStatus = .ready
     @State private var recipientCode = ""
-    @State private var recipient: AuthenticatedProfile?
+    @State private var recipient: CompetitionFeature.InviteRecipient?
     @State private var recipientStatus: CompetitionFeature.InviteRecipientStatus = .idle
     @State private var archivedIDs: Set<CompetitionID> = []
     @State private var rematchState: CompetitionFeature.CompetitionRematchState = .available
@@ -219,10 +219,10 @@ private struct MultiUserCompetitionSharingTestLabView: View {
                         challengeStatus = .ready
                         recipientCode = MultiUserCompetitionTestLabFixtures.expiredRecipientID
                             .uuidString.lowercased()
-                        recipient = AuthenticatedProfile(
+                        recipient = .init(AuthenticatedProfile(
                             id: MultiUserCompetitionTestLabFixtures.expiredRecipientID,
                             displayName: "Taylor"
-                        )
+                        ))
                         recipientStatus = .idle
                         isChallengePresented = true
                     },
@@ -328,10 +328,7 @@ private struct MultiUserCompetitionSharingTestLabView: View {
             case MultiUserCompetitionTestLabFixtures.ownLinkCode:
                 recipientStatus = .ownCode
             case MultiUserCompetitionTestLabFixtures.samLinkCode:
-                recipient = AuthenticatedProfile(
-                    id: MultiUserCompetitionTestLabFixtures.pendingID.rawValue,
-                    displayName: "Sam"
-                )
+                recipient = .init(link: linkCode, displayName: "Sam")
                 recipientStatus = .idle
             default:
                 recipientStatus = .notFound
@@ -346,7 +343,7 @@ private struct MultiUserCompetitionSharingTestLabView: View {
         case MultiUserCompetitionTestLabFixtures.ownProfileID:
             recipientStatus = .ownCode
         case MultiUserCompetitionTestLabFixtures.pendingID.rawValue:
-            recipient = AuthenticatedProfile(id: id, displayName: "Sam")
+            recipient = .init(AuthenticatedProfile(id: id, displayName: "Sam"))
             recipientStatus = .idle
         default:
             recipientStatus = .notFound
@@ -551,10 +548,7 @@ private struct MultiUserCompetitionChallengeLinkTestLabView: View {
                         code: CompetitionChallengeLinkCode(
                             rawValue: MultiUserCompetitionTestLabFixtures.samLinkCode
                         )!,
-                        status: .ready(AuthenticatedProfile(
-                            id: MultiUserCompetitionTestLabFixtures.expiredRecipientID,
-                            displayName: "Maya"
-                        ))
+                        status: .ready(displayName: "Maya")
                     ),
                     status: status,
                     send: { status = .creating },

@@ -24,7 +24,7 @@ struct CompetitionFeature {
             case failed(InviteCreationFailure)
         }
 
-        var recipientID: UUID
+        var recipient: CompetitionInviteRecipient
         var idempotencyKey: UUID
         var status: Status
     }
@@ -34,6 +34,29 @@ struct CompetitionFeature {
         case ready(CompetitionInviteShareLink, minimumRevision: UInt64)
         case notOnThisPhone
         case failed
+    }
+
+    /// The + sheet's person. Someone found by their challenge link is kept
+    /// as the link's code: the link never gives out their account id.
+    struct InviteRecipient: Equatable, Sendable {
+        let target: CompetitionInviteRecipient
+        let displayName: String
+
+        init(_ profile: AuthenticatedProfile) {
+            target = .profile(profile.id)
+            displayName = profile.displayName
+        }
+
+        init(link code: CompetitionChallengeLinkCode, displayName: String) {
+            target = .challengeLink(code)
+            self.displayName = displayName
+        }
+
+        /// Only an account id lets the sheet see an existing challenge or
+        /// match first; for a link, the server says so on Send.
+        var profileID: UUID? {
+            if case let .profile(id) = target { id } else { nil }
+        }
     }
 
     enum InviteRecipientStatus: Equatable, Sendable {
@@ -93,7 +116,7 @@ struct CompetitionFeature {
         var inviteCreations: [InviteSlot: InviteCreation]
         var inviteLinks: [CompetitionID: InviteLinkState]
         // The + sheet's person; a rematch never writes these.
-        var inviteRecipient: AuthenticatedProfile?
+        var inviteRecipient: InviteRecipient?
         var inviteRecipientCode = ""
         var inviteRecipientStatus: InviteRecipientStatus = .idle
         /// The signed-in profile, so Home can draw its initial.
@@ -117,7 +140,7 @@ struct CompetitionFeature {
             notificationAuthorizationRequestIsInFlight: Bool = false,
             inviteCreations: [InviteSlot: InviteCreation] = [:],
             inviteLinks: [CompetitionID: InviteLinkState] = [:],
-            inviteRecipient: AuthenticatedProfile? = nil,
+            inviteRecipient: InviteRecipient? = nil,
             ownProfile: AuthenticatedProfile? = nil
         ) {
             self.publication = publication
@@ -150,9 +173,9 @@ struct CompetitionFeature {
         case inviteRecipientCodeChanged(String)
         case findInviteRecipientTapped
         /// The trimmed input that was looked up, and its answer.
-        case inviteRecipientResponse(String, Result<AuthenticatedProfile, CompetitionRemoteFailure>)
+        case inviteRecipientResponse(String, Result<InviteRecipient, CompetitionRemoteFailure>)
         /// Someone's challenge link resolved: prefill the + sheet's person.
-        case challengeRecipientChosen(AuthenticatedProfile)
+        case challengeRecipientChosen(InviteRecipient)
         case cancelTapped(CompetitionID)
         case challengeLinkRequested
         case challengeLinkResponse(URL?)
@@ -201,6 +224,7 @@ struct CompetitionFeature {
         case inviteRecipient
         case inviteLink
         case challengeLink
+        case challengeLinkReset
     }
 
     var body: some ReducerOf<Self> {
@@ -261,11 +285,14 @@ struct CompetitionFeature {
                       !input.isEmpty else { return .none }
                 // A challenge link (either URL form) or its bare code, or a
                 // 1.0.2 account code.
-                let lookup: @Sendable () async throws -> AuthenticatedProfile
+                let lookup: @Sendable () async throws -> InviteRecipient
                 var expectedID: UUID?
                 if let code = Self.challengeLinkCode(in: input) {
                     lookup = { [competitionClient] in
-                        try await competitionClient.resolveChallengeLink(code)
+                        InviteRecipient(
+                            link: code,
+                            displayName: try await competitionClient.resolveChallengeLink(code)
+                        )
                     }
                 } else if let id = UUID(uuidString: input),
                           id != UUID(uuidString: "00000000-0000-0000-0000-000000000000") {
@@ -276,7 +303,7 @@ struct CompetitionFeature {
                     }
                     expectedID = id
                     lookup = { [competitionClient] in
-                        try await competitionClient.resolveInviteRecipient(id)
+                        InviteRecipient(try await competitionClient.resolveInviteRecipient(id))
                     }
                 } else {
                     state.inviteRecipientStatus = .invalidCode
@@ -289,7 +316,7 @@ struct CompetitionFeature {
                     do {
                         let recipient = try await lookup()
                         guard !Task.isCancelled else { return }
-                        guard expectedID.map({ $0 == recipient.id }) ?? true else {
+                        guard expectedID.map({ $0 == recipient.profileID }) ?? true else {
                             await send(.inviteRecipientResponse(input, .failure(.notFound)))
                             return
                         }
@@ -311,7 +338,8 @@ struct CompetitionFeature {
                 else { return .none }
                 state.inviteRecipient = nil
                 switch result {
-                case let .success(recipient) where recipient.id == state.ownProfile?.id:
+                case let .success(recipient)
+                    where recipient.profileID != nil && recipient.profileID == state.ownProfile?.id:
                     state.inviteRecipientStatus = .ownCode
                 case let .success(recipient):
                     state.inviteRecipient = recipient
@@ -328,7 +356,10 @@ struct CompetitionFeature {
             case let .challengeRecipientChosen(recipient):
                 state.inviteCreations[.sheet] = nil
                 state.inviteRecipient = recipient
-                state.inviteRecipientCode = recipient.id.uuidString.lowercased()
+                state.inviteRecipientCode = switch recipient.target {
+                case let .profile(id): id.uuidString.lowercased()
+                case let .challengeLink(code): code.rawValue
+                }
                 state.inviteRecipientStatus = .idle
                 return .cancel(id: CancelID.inviteRecipient)
 
@@ -346,8 +377,10 @@ struct CompetitionFeature {
                     )
                 }
 
+            // Loaded each time it's shown, so a reset on another iPhone
+            // shows here too. A reset in flight answers for itself.
             case .challengeLinkRequested:
-                guard state.challengeLink == nil else { return .none }
+                guard !state.challengeLinkIsResetting else { return .none }
                 state.challengeLinkLoadFailed = false
                 return .run { send in
                     let code = try? await competitionClient.loadChallengeLinkCode()
@@ -357,29 +390,35 @@ struct CompetitionFeature {
                 }
                 .cancellable(id: CancelID.challengeLink, cancelInFlight: true)
 
+            // A failed refresh keeps the link already shown.
             case let .challengeLinkResponse(url):
-                state.challengeLink = url
-                state.challengeLinkLoadFailed = url == nil
+                if let url { state.challengeLink = url }
+                state.challengeLinkLoadFailed = state.challengeLink == nil
                 return .none
 
             case .challengeLinkResetConfirmed:
                 guard !state.challengeLinkIsResetting else { return .none }
                 state.challengeLinkIsResetting = true
                 state.challengeLinkResetFailed = false
-                return .run { send in
-                    let code = try? await competitionClient.resetChallengeLinkCode()
-                    await send(.challengeLinkResetResponse(
-                        code.flatMap(competitionInviteLinkClient.makeChallengeLink)
-                    ))
-                }
-                .cancellable(id: CancelID.challengeLink, cancelInFlight: true)
+                return .merge(
+                    // A load started before the reset could bring back the old code.
+                    .cancel(id: CancelID.challengeLink),
+                    .run { send in
+                        let code = try? await competitionClient.resetChallengeLinkCode()
+                        await send(.challengeLinkResetResponse(
+                            code.flatMap(competitionInviteLinkClient.makeChallengeLink)
+                        ))
+                    }
+                    .cancellable(id: CancelID.challengeLinkReset, cancelInFlight: true)
+                )
 
-            // A failure keeps showing the old link, which may or may not
-            // still work; trying again makes a new one either way.
+            // A failed reset may still have happened on the server, so the
+            // link is loaded again to show what the server has.
             case let .challengeLinkResetResponse(url):
                 state.challengeLinkIsResetting = false
                 state.challengeLinkResetFailed = url == nil
-                if let url { state.challengeLink = url }
+                guard let url else { return .send(.challengeLinkRequested) }
+                state.challengeLink = url
                 return .none
 
             case .createInviteTapped:
@@ -552,10 +591,10 @@ struct CompetitionFeature {
                     return beginInviteCreation(
                         state: &state,
                         slot: .rematch(of: id),
-                        recipient: AuthenticatedProfile(
+                        recipient: InviteRecipient(AuthenticatedProfile(
                             id: profileID,
                             displayName: parent.opponentDisplayName
-                        )
+                        ))
                     )
                 }
                 guard state.commandIDsInFlight.insert(id).inserted else {
@@ -579,7 +618,9 @@ struct CompetitionFeature {
                       let profileID = RemoteCompetitionOpponentIdentity.profileID(parent.opponentIdentity)
                 else { return .none }
                 state.inviteCreations[.sheet] = nil
-                state.inviteRecipient = AuthenticatedProfile(id: profileID, displayName: parent.opponentDisplayName)
+                state.inviteRecipient = InviteRecipient(
+                    AuthenticatedProfile(id: profileID, displayName: parent.opponentDisplayName)
+                )
                 state.inviteRecipientCode = profileID.uuidString.lowercased()
                 state.inviteRecipientStatus = .idle
                 return .cancel(id: CancelID.inviteRecipient)
@@ -727,7 +768,9 @@ struct CompetitionFeature {
                     loadMutePreferences(state: state),
                     loadNotificationAuthorization(
                         current: state.notificationAuthorizationState
-                    )
+                    ),
+                    // Only a link already shown is refreshed.
+                    state.challengeLink == nil ? .none : .send(.challengeLinkRequested)
                 )
 
             case .timeZoneChanged:
@@ -749,7 +792,8 @@ struct CompetitionFeature {
                         .cancel(id: CancelID.inviteRecipient),
                         .cancel(id: CancelID.inviteCreation),
                         .cancel(id: CancelID.inviteLink),
-                        .cancel(id: CancelID.challengeLink)
+                        .cancel(id: CancelID.challengeLink),
+                        .cancel(id: CancelID.challengeLinkReset)
                     ),
                     .run { _ in await competitionClient.stop() }
                 )
@@ -862,7 +906,7 @@ struct CompetitionFeature {
     private func beginInviteCreation(
         state: inout State,
         slot: InviteSlot,
-        recipient: AuthenticatedProfile?
+        recipient: InviteRecipient?
     ) -> Effect<Action> {
         guard let recipient else { return .none }
         let existing = state.inviteCreations[slot]
@@ -874,7 +918,7 @@ struct CompetitionFeature {
         }
         guard competitionInviteLinkClient.canCreateShareLink() else {
             state.inviteCreations[slot] = InviteCreation(
-                recipientID: recipient.id,
+                recipient: recipient.target,
                 idempotencyKey: competitionInviteLinkClient.makeIdempotencyKey(),
                 status: .failed(.unavailable)
             )
@@ -883,14 +927,14 @@ struct CompetitionFeature {
         // Try Again after a lost connection replays the same request.
         let idempotencyKey: UUID
         if let existing,
-           existing.recipientID == recipient.id,
+           existing.recipient == recipient.target,
            existing.status == .failed(.connection) {
             idempotencyKey = existing.idempotencyKey
         } else {
             idempotencyKey = competitionInviteLinkClient.makeIdempotencyKey()
         }
         state.inviteCreations[slot] = InviteCreation(
-            recipientID: recipient.id,
+            recipient: recipient.target,
             idempotencyKey: idempotencyKey,
             status: .creating
         )
@@ -901,7 +945,7 @@ struct CompetitionFeature {
         return .run { send in
             do {
                 let request = try CompetitionInviteCreationRequest(
-                    recipientProfileID: recipient.id,
+                    recipient: recipient.target,
                     timeZoneIdentifier: timeZoneIdentifier,
                     rematchParentID: rematchParentID?.rawValue,
                     idempotencyKey: idempotencyKey
@@ -997,8 +1041,8 @@ extension CompetitionFeature.State {
                 link: link
             )
         }
-        if let inviteRecipient {
-            let identity = RemoteCompetitionOpponentIdentity.identity(for: inviteRecipient.id)
+        if let profileID = inviteRecipient?.profileID {
+            let identity = RemoteCompetitionOpponentIdentity.identity(for: profileID)
             if let existing = pendingOutgoingChallenge(to: identity) {
                 return .alreadyChallenged(existing)
             }

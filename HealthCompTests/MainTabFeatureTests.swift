@@ -2416,14 +2416,12 @@ final class MainTabFeatureTests: XCTestCase {
     @MainActor
     func testChallengeLinkResolvesToReadyAndPrefillsThePerson() async throws {
         let code = try XCTUnwrap(CompetitionChallengeLinkCode(rawValue: "Xb3kP9qL2mN8vR4tY6wZ1a"))
-        let maya = AuthenticatedProfile(
-            id: UUID(uuidString: "82000000-0000-0000-0000-000000000042")!,
-            displayName: "Maya"
-        )
+        // The link gives a name, and the sheet keeps the code to send by.
+        let maya = CompetitionFeature.InviteRecipient(link: code, displayName: "Maya")
         let envelope = CompetitionRouteEnvelope(sequence: 50, route: .challengeLink(code))
         let routing = MainTabRoutingRecorder()
         var client = MainTabLifecycleRecorder().client
-        client.resolveChallengeLink = { _ in maya }
+        client.resolveChallengeLink = { _ in "Maya" }
         let store = TestStore(
             initialState: MainTabFeature.State(
                 competition: CompetitionFeature.State(
@@ -2440,12 +2438,12 @@ final class MainTabFeatureTests: XCTestCase {
             $0.lastHandledRouteSequence = envelope.sequence
             $0.challengeFromLink = .init(sequence: 50, code: code, status: .resolving)
         }
-        await store.receive(.challengeLinkResolved(sequence: 50, .success(maya))) {
-            $0.challengeFromLink?.status = .ready(maya)
+        await store.receive(.challengeLinkResolved(sequence: 50, .success("Maya"))) {
+            $0.challengeFromLink?.status = .ready(displayName: "Maya")
         }
         await store.receive(.competition(.challengeRecipientChosen(maya))) {
             $0.competition.inviteRecipient = maya
-            $0.competition.inviteRecipientCode = maya.id.uuidString.lowercased()
+            $0.competition.inviteRecipientCode = code.rawValue
         }
         await store.send(.dismissChallengeFromLink) {
             $0.challengeFromLink = nil
@@ -2455,6 +2453,34 @@ final class MainTabFeatureTests: XCTestCase {
             $0.competition.inviteRecipientCode = ""
         }
         XCTAssertEqual(routing.consumedSequences, [envelope.sequence])
+        await store.finish()
+    }
+
+    @MainActor
+    func testChallengeLinkResetBeforeSendShowsUnavailable() async throws {
+        let code = try XCTUnwrap(CompetitionChallengeLinkCode(rawValue: "Xb3kP9qL2mN8vR4tY6wZ1a"))
+        let key = UUID()
+        var competition = CompetitionFeature.State(
+            publication: publication(revision: 1, visibleIDs: []),
+            inviteCreations: [.sheet: .init(recipient: .challengeLink(code), idempotencyKey: key, status: .creating)],
+            inviteRecipient: .init(link: code, displayName: "Maya")
+        )
+        competition.inviteRecipientCode = code.rawValue
+        var initial = MainTabFeature.State(competition: competition)
+        initial.challengeFromLink = .init(sequence: 52, code: code, status: .ready(displayName: "Maya"))
+        let store = TestStore(initialState: initial) {
+            MainTabFeature()
+        } withDependencies: {
+            $0.competitionClient = MainTabLifecycleRecorder().client
+            $0.competitionRoutingClient = MainTabRoutingRecorder().client
+        }
+        // The same collapsed copy as a link that never existed.
+        await store.send(.competition(.createInviteResponse(.sheet, idempotencyKey: key, .failure(.recipientUnavailable)))) {
+            $0.competition.inviteCreations[.sheet] = nil
+            $0.competition.inviteRecipient = nil
+            $0.competition.inviteRecipientStatus = .notFound
+            $0.challengeFromLink?.status = .unavailable
+        }
         await store.finish()
     }
 

@@ -113,9 +113,10 @@ struct CompetitionRemoteAPI: Sendable {
     var resetChallengeLinkCode: @Sendable () async throws -> CompetitionChallengeLinkCode = {
         throw CompetitionRemoteFailure.operationFailed
     }
+    /// The link owner's display name; a link never gives out their account id.
     var resolveChallengeLink: @Sendable (
         CompetitionChallengeLinkCode
-    ) async throws -> AuthenticatedProfile = { _ in
+    ) async throws -> String = { _ in
         throw CompetitionRemoteFailure.operationFailed
     }
 }

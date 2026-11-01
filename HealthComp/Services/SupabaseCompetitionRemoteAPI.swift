@@ -360,7 +360,11 @@ enum SupabaseCompetitionRemoteAPI {
                     )),
                     transport: transport
                 )
-                return try decode(AuthenticatedProfile.self, response.data, contract: .profile)
+                do {
+                    return try CompetitionWireCodec.challengeLinkOwnerName(from: response.data)
+                } catch {
+                    throw CompetitionRemoteFailure.serverContractMismatch
+                }
             }
         )
     }

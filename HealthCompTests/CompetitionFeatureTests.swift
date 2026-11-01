@@ -934,7 +934,7 @@ final class CompetitionFeatureTests: XCTestCase {
             initialState: CompetitionFeature.State(
                 publication: publication(.remoteParticipants),
                 inviteCreations: [.sheet: CompetitionFeature.InviteCreation(
-                    recipientID: UUID(), idempotencyKey: UUID(), status: .creating
+                    recipient: .profile(UUID()), idempotencyKey: UUID(), status: .creating
                 )]
             )
         ) {
@@ -947,7 +947,7 @@ final class CompetitionFeatureTests: XCTestCase {
         }
         // No client call is made: nothing is created until Create is tapped.
         await store.send(.challengeAgainTapped(closedID)) {
-            $0.inviteRecipient = AuthenticatedProfile(id: profileID, displayName: "Sam")
+            $0.inviteRecipient = .init(AuthenticatedProfile(id: profileID, displayName: "Sam"))
             $0.inviteRecipientCode = profileID.uuidString.lowercased()
         }
         XCTAssertEqual(store.state.challengeSheetStatus, .ready)

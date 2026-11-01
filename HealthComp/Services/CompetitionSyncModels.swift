@@ -976,11 +976,37 @@ struct CompetitionDescriptor: Codable, Equatable, Sendable {
     }
 }
 
+extension CompetitionWireCodec {
+    /// resolve_challenge_link: exactly `{display_name}`, never an account id.
+    static func challengeLinkOwnerName(from data: Data) throws -> String {
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              Set(object.keys) == ["display_name"],
+              let name = object["display_name"] as? String,
+              CompetitionWireValue.validPresentationName(name)
+        else {
+            throw CompetitionWireContractError.serverContractMismatch
+        }
+        return name
+    }
+}
+
+/// Who a new challenge goes to. A challenge link is sent as its code, so the
+/// server can refuse a code its owner has reset. An account id is for
+/// rematches, Challenge Again and 1.0.2 account codes.
+enum CompetitionInviteRecipient: Equatable, Sendable {
+    case profile(UUID)
+    case challengeLink(CompetitionChallengeLinkCode)
+}
+
 struct CompetitionInviteCreationRequest: Codable, Equatable, Sendable {
-    let recipientProfileID: UUID
+    let recipient: CompetitionInviteRecipient
     let timeZoneIdentifier: String
     let rematchParentID: UUID?
     let idempotencyKey: UUID
+
+    var recipientProfileID: UUID? {
+        if case let .profile(id) = recipient { id } else { nil }
+    }
 
     init(
         recipientProfileID: UUID,
@@ -988,7 +1014,26 @@ struct CompetitionInviteCreationRequest: Codable, Equatable, Sendable {
         rematchParentID: UUID?,
         idempotencyKey: UUID
     ) throws {
-        guard CompetitionWireValue.validUUID(recipientProfileID),
+        try self.init(
+            recipient: .profile(recipientProfileID),
+            timeZoneIdentifier: timeZoneIdentifier,
+            rematchParentID: rematchParentID,
+            idempotencyKey: idempotencyKey
+        )
+    }
+
+    init(
+        recipient: CompetitionInviteRecipient,
+        timeZoneIdentifier: String,
+        rematchParentID: UUID?,
+        idempotencyKey: UUID
+    ) throws {
+        let validRecipient = switch recipient {
+        case let .profile(id): CompetitionWireValue.validUUID(id)
+        // A rematch is between people who already played, never by link.
+        case .challengeLink: rematchParentID == nil
+        }
+        guard validRecipient,
               !timeZoneIdentifier.isEmpty,
               timeZoneIdentifier.count <= 255,
               rematchParentID.map(CompetitionWireValue.validUUID) ?? true,
@@ -996,7 +1041,7 @@ struct CompetitionInviteCreationRequest: Codable, Equatable, Sendable {
         else {
             throw CompetitionWireContractError.serverContractMismatch
         }
-        self.recipientProfileID = recipientProfileID
+        self.recipient = recipient
         self.timeZoneIdentifier = timeZoneIdentifier
         self.rematchParentID = rematchParentID
         self.idempotencyKey = idempotencyKey
@@ -1004,6 +1049,7 @@ struct CompetitionInviteCreationRequest: Codable, Equatable, Sendable {
 
     private enum CodingKeys: String, CodingKey {
         case recipientProfileID = "recipientProfileId"
+        case challengeLinkCode
         case timeZoneIdentifier
         case rematchParentID = "rematchParentId"
         case idempotencyKey
@@ -1011,8 +1057,19 @@ struct CompetitionInviteCreationRequest: Codable, Equatable, Sendable {
 
     init(from decoder: Decoder) throws {
         let container = try decoder.container(keyedBy: CodingKeys.self)
+        let recipient: CompetitionInviteRecipient
+        if container.contains(.challengeLinkCode) {
+            guard !container.contains(.recipientProfileID),
+                  let code = CompetitionChallengeLinkCode(
+                      rawValue: try container.decode(String.self, forKey: .challengeLinkCode)
+                  )
+            else { throw CompetitionWireContractError.serverContractMismatch }
+            recipient = .challengeLink(code)
+        } else {
+            recipient = .profile(try container.wireUUID(forKey: .recipientProfileID))
+        }
         try self.init(
-            recipientProfileID: try container.wireUUID(forKey: .recipientProfileID),
+            recipient: recipient,
             timeZoneIdentifier: try container.decode(
                 String.self,
                 forKey: .timeZoneIdentifier
@@ -1026,7 +1083,12 @@ struct CompetitionInviteCreationRequest: Codable, Equatable, Sendable {
 
     func encode(to encoder: Encoder) throws {
         var container = encoder.container(keyedBy: CodingKeys.self)
-        try container.encodeWireUUID(recipientProfileID, forKey: .recipientProfileID)
+        switch recipient {
+        case let .profile(id):
+            try container.encodeWireUUID(id, forKey: .recipientProfileID)
+        case let .challengeLink(code):
+            try container.encode(code.rawValue, forKey: .challengeLinkCode)
+        }
         try container.encode(
             timeZoneIdentifier,
             forKey: .timeZoneIdentifier
@@ -3267,15 +3329,22 @@ private enum CompetitionWireValidator {
     }
 
     private static func validateInviteCreationRequest(_ value: Any) throws {
+        let byLink = (value as? [String: Any])?["challengeLinkCode"] != nil
         let object = try exactObject(
             value,
-            keys: ["idempotencyKey", "rematchParentId", "timeZoneIdentifier", "recipientProfileId"]
+            keys: ["idempotencyKey", "rematchParentId", "timeZoneIdentifier",
+                   byLink ? "challengeLinkCode" : "recipientProfileId"]
         )
+        let validRecipient = byLink
+            ? (object["challengeLinkCode"] as? String)
+                .flatMap(CompetitionChallengeLinkCode.init(rawValue:)) != nil
+                && object["rematchParentId"] is NSNull
+            : uuid(object["recipientProfileId"])
         guard let timeZone = object["timeZoneIdentifier"] as? String,
               !timeZone.isEmpty,
               timeZone.count <= 255,
               uuidOrNull(object["rematchParentId"]),
-              uuid(object["recipientProfileId"]),
+              validRecipient,
               uuid(object["idempotencyKey"])
         else {
             throw CompetitionWireContractError.serverContractMismatch

@@ -126,9 +126,7 @@ struct AccountSettingsView: View {
         .accountPageStyle(title: "Account")
         .task {
             store.send(.appeared)
-            if let challengeLink, challengeLink.url == nil {
-                challengeLink.load()
-            }
+            challengeLink?.load()
         }
         .sheet(isPresented: $showsChallengeCode) {
             if let url = challengeLink?.url {
@@ -221,6 +219,7 @@ struct AccountSettingsView: View {
         Section {
             VStack(alignment: .leading, spacing: 12) {
                 if let url = challengeLink?.url {
+                    let isResetting = challengeLink?.isResetting == true
                     Text(Self.displayText(url))
                         .font(.callout.monospaced())
                         .foregroundStyle(Theme.ink)
@@ -236,6 +235,7 @@ struct AccountSettingsView: View {
                             Label("Show Code", systemImage: "qrcode")
                         }
                         .buttonStyle(SecondaryButtonStyle())
+                        .disabled(isResetting)
                         .accessibilityIdentifier("account.challenge-link.show-code")
                         ShareLink(
                             item: url,
@@ -245,6 +245,7 @@ struct AccountSettingsView: View {
                             Label("Share Link", systemImage: "square.and.arrow.up")
                         }
                         .buttonStyle(PrimaryButtonStyle())
+                        .disabled(isResetting)
                         .accessibilityIdentifier("account.challenge-link.share")
                     }
                     if dynamicTypeSize.isAccessibilitySize {
@@ -252,7 +253,6 @@ struct AccountSettingsView: View {
                     } else {
                         HStack(spacing: 8) { buttons }
                     }
-                    let isResetting = challengeLink?.isResetting == true
                     Button("Reset Link") { isResetLinkConfirmationPresented = true }
                         .buttonStyle(.borderless)
                         .frame(minHeight: 44)

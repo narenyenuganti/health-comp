@@ -94,9 +94,10 @@ struct CompetitionClient: Sendable {
     ) async throws -> CompetitionInvitePreview
     var loadChallengeLinkCode: @Sendable () async throws -> CompetitionChallengeLinkCode
     var resetChallengeLinkCode: @Sendable () async throws -> CompetitionChallengeLinkCode
+    /// The link owner's display name.
     var resolveChallengeLink: @Sendable (
         CompetitionChallengeLinkCode
-    ) async throws -> AuthenticatedProfile
+    ) async throws -> String
 
     init(
         start: @escaping @Sendable () -> AsyncStream<CompetitionPublication>,
@@ -176,7 +177,7 @@ struct CompetitionClient: Sendable {
         },
         resolveChallengeLink: @escaping @Sendable (
             CompetitionChallengeLinkCode
-        ) async throws -> AuthenticatedProfile = { _ in
+        ) async throws -> String = { _ in
             throw CompetitionRemoteFailure.operationFailed
         }
     ) {
