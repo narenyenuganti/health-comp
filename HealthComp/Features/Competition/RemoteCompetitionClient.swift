@@ -1578,7 +1578,7 @@ func remoteCompetitionParticipantPresentation(
     let opponent = descriptor.participants.first { $0.profileID != profile.id }
     return RemoteCompetitionParticipantPresentation(
         ownerName: ownerName,
-        opponentName: opponent?.profile.displayName ?? "Waiting for competitor",
+        opponentName: opponent?.profile.displayName ?? "Someone",
         opponentID: opponent?.profileID
     )
 }

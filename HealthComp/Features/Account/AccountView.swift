@@ -119,7 +119,7 @@ struct AccountView: View {
             }
             codeRow(
                 "Their points",
-                "Competitors receive daily points, rounded Activity percentages and modes."
+                "The other person gets your daily points, rounded Activity percentages and modes."
             ) {
                 SlantedBar().fill(Theme.ink).frame(width: 12, height: 18)
                     .padding(.leading, 5)
@@ -249,15 +249,15 @@ struct AccountView: View {
     private var subtitle: String {
         switch store.mode {
         case .signedOut:
-            "Sign in to join private Activity competitions."
+            "Sign in to play private Activity matches."
         case .settingUpProfile:
-            "Your competitor will see this name. You can change it later."
+            "The people you play will see this name. You can change it later."
         case .launchFailure:
             "Your local data is safe. Check your connection and retry."
         case .profileConflict:
             "Only this device’s session will be signed out. Saved history and your other devices are unchanged."
         case .authenticated:
-            "Signing out removes this profile’s local competition cache from this device."
+            "Signing out removes this profile’s local match cache from this device."
         }
     }
 }

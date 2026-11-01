@@ -86,7 +86,7 @@ struct AccountSettingsView: View {
                             .font(.title3.weight(.bold).width(.condensed))
                             .foregroundStyle(Theme.you)
                             .multilineTextAlignment(.leading)
-                        Text("Display name · shown to competitors")
+                        Text("Display name · shown to people you play")
                             .font(.subheadline)
                             .foregroundStyle(Theme.secondary)
                     }
@@ -119,7 +119,7 @@ struct AccountSettingsView: View {
                         .font(.callout.monospaced())
                         .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
-                    Text("Share this code with someone you want to compete with. It lets them confirm your display name and invite only this account; it does not grant access to your competition history.")
+                    Text("Share this code with someone you want to compete with. It lets them confirm your display name and invite only this account; it does not grant access to your match history.")
                         .font(.caption)
                         .foregroundStyle(Theme.secondary)
                     ShareLink(item: accountCode.uuidString.lowercased()) {
@@ -196,7 +196,7 @@ struct AccountSettingsView: View {
             )
         } footer: {
             Text(
-                "Signing out removes this profile’s local competition cache from this device. Completed shared history remains on the server."
+                "Signing out removes this profile’s local match cache from this device. Completed shared history remains on the server."
             )
             .foregroundStyle(Theme.secondary)
         }
@@ -241,7 +241,7 @@ private struct AccountNotificationsPage: View {
         List {
             Section {
                 LabeledContent(
-                    "Competition notifications",
+                    "Match notifications",
                     value: settings.statusText
                 )
                 switch settings.authorization {
@@ -251,7 +251,7 @@ private struct AccountNotificationsPage: View {
                             ProgressView()
                         } else {
                             Label(
-                                "Enable Competition Notifications",
+                                "Enable Match Notifications",
                                 systemImage: "bell.badge.fill"
                             )
                         }
@@ -262,7 +262,7 @@ private struct AccountNotificationsPage: View {
 
                 case .denied:
                     Label(
-                        "Competition notifications are disabled in Settings.",
+                        "Match notifications are disabled in Settings.",
                         systemImage: "bell.slash.fill"
                     )
                     .foregroundStyle(Theme.secondary)
@@ -272,7 +272,7 @@ private struct AccountNotificationsPage: View {
                 }
             } footer: {
                 Text(
-                    "HealthComp only sends competition moments, like lead changes and results. To mute someone, open your match with them."
+                    "HealthComp only sends match moments, like lead changes and results. To mute someone, open your match with them."
                 )
                 .foregroundStyle(Theme.secondary)
             }
@@ -291,7 +291,7 @@ private struct AccountPrivacyPage: View {
                     systemImage: "lock.iphone"
                 )
                 Label(
-                    "Competitors receive daily points, rounded Activity percentages and modes",
+                    "The other person gets your daily points, rounded Activity percentages and modes",
                     systemImage: "person.2.shield"
                 )
                 Link(destination: URL(string: "https://healthcomp.app/privacy")!) {
@@ -333,7 +333,7 @@ private struct AccountDeletionPage: View {
                 }
             } footer: {
                 Text(
-                    "Deletion is permanent. Active competitions are cancelled, this profile’s local data is removed, and completed shared history remains for the other participant as Former competitor."
+                    "Deletion is permanent. Live matches are cancelled, this profile’s local data is removed, and finished matches stay in the other person’s history under the name Former competitor."
                 )
                 .foregroundStyle(Theme.secondary)
             }
