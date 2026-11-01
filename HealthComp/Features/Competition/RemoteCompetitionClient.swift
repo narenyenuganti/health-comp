@@ -127,7 +127,8 @@ extension CompetitionClient {
             },
             resolveInviteRecipient: { profileID in
                 try await coordinator.resolveInviteRecipient(profileID)
-            }
+            },
+            restoreInvite: { id in try await coordinator.restoreInvite(id) }
         )
     }
 }
@@ -248,6 +249,75 @@ enum ProfileScopedAppAttestRemoteAPI {
     }
 }
 
+/// The create requests of this profile's recent challenges, so a pending
+/// challenge's link survives relaunch. Holds no secret: a key is useless
+/// without the sender's session and the server's secret.
+actor RemoteInviteRequestStore {
+    private struct Entry: Codable {
+        let request: CompetitionInviteCreationRequest
+        let createdAt: Date
+    }
+
+    private struct Document: Codable {
+        var version = 1
+        var entries: [String: Entry]
+    }
+
+    /// A challenge expires after 24 hours; an hour of slack covers clock skew.
+    static let retention: TimeInterval = 25 * 3_600
+
+    private let fileURL: URL
+
+    init(fileURL: URL) {
+        self.fileURL = fileURL
+    }
+
+    func save(
+        _ request: CompetitionInviteCreationRequest,
+        for id: CompetitionID,
+        now: Date
+    ) {
+        var entries = load().filter {
+            now.timeIntervalSince($0.value.createdAt) < Self.retention
+        }
+        let key = id.rawValue.uuidString.lowercased()
+        entries[key] = Entry(
+            request: request,
+            createdAt: entries[key]?.createdAt ?? now
+        )
+        guard let data = try? JSONEncoder().encode(Document(entries: entries))
+        else { return }
+        // ponytail: errors are swallowed; losing the file only shows "isn't on this iPhone"
+        try? FileManager.default.createDirectory(
+            at: fileURL.deletingLastPathComponent(),
+            withIntermediateDirectories: true
+        )
+        try? data.write(
+            to: fileURL,
+            options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication]
+        )
+    }
+
+    func request(
+        for id: CompetitionID,
+        now: Date
+    ) -> CompetitionInviteCreationRequest? {
+        guard let entry = load()[id.rawValue.uuidString.lowercased()],
+              now.timeIntervalSince(entry.createdAt) < Self.retention
+        else { return nil }
+        return entry.request
+    }
+
+    // An unreadable or corrupt file counts as empty.
+    private func load() -> [String: Entry] {
+        guard let data = try? Data(contentsOf: fileURL),
+              let document = try? JSONDecoder().decode(Document.self, from: data),
+              document.version == 1
+        else { return [:] }
+        return document.entries
+    }
+}
+
 private actor RemoteCompetitionClientCoordinator {
     private struct OperationWaiter {
         let id: UUID
@@ -328,6 +398,7 @@ private actor RemoteCompetitionClientCoordinator {
     private var terminalTeardown: TerminalTeardown?
     private var terminalPreparationWork: TerminalPreparationWork?
     private var installationCoordinator: CompetitionInstallationCoordinator?
+    private var inviteRequests: RemoteInviteRequestStore?
     private var mountedCompetitionIDs: Set<CompetitionID> = []
     /// The last good materialization of each match, shown again when its
     /// next sync is only cancelled.
@@ -409,6 +480,10 @@ private actor RemoteCompetitionClientCoordinator {
                 self.isStopped = false
                 let installationStore = CompetitionInstallationStateStore(
                     directory: paths.installationsDirectory
+                )
+                self.inviteRequests = RemoteInviteRequestStore(
+                    fileURL: paths.rootDirectory
+                        .appendingPathComponent("InviteRequests.json")
                 )
                 var mountedRemoteAPI = remoteAPI
                 if let appAttestServiceFactory {
@@ -819,12 +894,36 @@ private actor RemoteCompetitionClientCoordinator {
                 throw CompetitionRemoteFailure.unauthenticated
             }
             let invite = try await remoteAPI.createInvite(request)
+            // Replaying this request later returns the same link.
+            await inviteRequests?.save(
+                request,
+                for: CompetitionID(invite.competitionID),
+                now: await environment.context().instant.wallDate
+            )
             let publication = await performReconciliation()
             return CompetitionInviteCreationOutcome(
                 invite: invite,
                 expectedPublicationRevision: publication.publicationRevision
             )
         }
+    }
+
+    /// Gets a pending challenge's link back by replaying its create request:
+    /// the server answers the same key with the same challenge and token.
+    func restoreInvite(
+        _ id: CompetitionID
+    ) async throws -> CompetitionInviteCreationOutcome {
+        guard let request = await inviteRequests?.request(
+            for: id,
+            now: await environment.context().instant.wallDate
+        ) else {
+            throw CompetitionRemoteFailure.notFound
+        }
+        let outcome = try await createInvite(request)
+        guard outcome.invite.competitionID == id.rawValue else {
+            throw CompetitionRemoteFailure.serverContractMismatch
+        }
+        return outcome
     }
 
     func claimInvite(
@@ -1207,6 +1306,7 @@ private actor RemoteCompetitionClientCoordinator {
             await notificationCoordinator.cancelAll(competitionID)
         }
         mountedCompetitionIDs = []
+        inviteRequests = nil
         notificationCoordinator = .noop
         notificationPreferences = .unavailable
         observerDeliveryReceipts = .discarding
@@ -1950,7 +2050,9 @@ enum RemoteCompetitionProjector {
             lastSuccessfulFullWindowRefreshAt: activity?.readAt,
             opponentUpdatedAt: opponentID.flatMap {
                 projection.remoteLatestRecordedAt[$0]
-            }
+            },
+            rematchParentID: materialization.descriptor.rematchParentID
+                .map(CompetitionID.init)
         )
     }
 

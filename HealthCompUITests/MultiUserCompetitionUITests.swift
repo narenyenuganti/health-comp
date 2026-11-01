@@ -27,10 +27,76 @@ final class MultiUserCompetitionUITests: XCTestCase {
         create.tap()
         XCTAssertTrue(app.buttons["competition.create.share"].waitForExistence(timeout: 3))
         XCTAssertFalse(app.staticTexts["Waiting for someone to accept. The link works once."].exists)
+        // Once sent, the sheet can't switch to someone else.
+        XCTAssertTrue(app.staticTexts["Challenge sent"].exists)
+        XCTAssertFalse(app.buttons["competition.create.find-recipient"].isEnabled)
+        XCTAssertFalse(recipientCodeField.isEnabled)
         let screenshot = XCTAttachment(screenshot: app.screenshot())
         screenshot.name = "recipient-bound-invitation-confirmation"
         screenshot.lifetime = .keepAlways
         add(screenshot)
+    }
+
+    func testChallengeSheetReopensEmpty() {
+        launch(.sharing)
+        defer { app.terminate() }
+        openChallengeDrawer()
+        chooseRecipient()
+        let create = app.buttons["competition.create.button"]
+        scrollToElement(create)
+        create.tap()
+        XCTAssertTrue(app.buttons["competition.create.share"].waitForExistence(timeout: 3))
+        closeChallengeDrawer()
+
+        openChallengeDrawer()
+        XCTAssertFalse(app.staticTexts["competition.create.recipient-name"].exists)
+        XCTAssertTrue(app.buttons["competition.create.find-recipient"].waitForExistence(timeout: 3))
+        let field = recipientCodeField
+        XCTAssertTrue(field.isEnabled)
+        XCTAssertFalse((field.value as? String ?? "").contains("a1000000"))
+        let reopenedCreate = app.buttons["competition.create.button"]
+        scrollToElement(reopenedCreate)
+        XCTAssertFalse(reopenedCreate.isEnabled)
+    }
+
+    func testAccountCodeErrorsAndReturnKey() {
+        launch(.sharing)
+        defer { app.terminate() }
+        let error = app.staticTexts["competition.create.recipient-error"]
+        // Each code goes into a freshly opened sheet, which starts empty.
+        // Return runs Find Account; Find is never tapped.
+        func submit(_ code: String) {
+            openChallengeDrawer()
+            let field = recipientCodeField
+            XCTAssertTrue(field.waitForExistence(timeout: 3))
+            field.tap()
+            field.typeText(code + "\n")
+        }
+
+        submit("abc")
+        XCTAssertTrue(error.waitForExistence(timeout: 3))
+        XCTAssertEqual(
+            error.label,
+            "That isn’t a full account code. Ask them to share it again."
+        )
+        closeChallengeDrawer()
+
+        submit("a1000000-0000-4000-8000-000000000099")
+        XCTAssertTrue(error.waitForExistence(timeout: 3))
+        XCTAssertEqual(error.label, "That’s your own code. Ask them for theirs.")
+        closeChallengeDrawer()
+
+        submit("a1000000-0000-4000-8000-000000000005")
+        let recipient = app.staticTexts["competition.create.recipient-name"]
+        XCTAssertTrue(recipient.waitForExistence(timeout: 3))
+        XCTAssertEqual(recipient.label, "Challenge Sam")
+        XCTAssertFalse(error.exists)
+    }
+
+    // The field wraps a long code, so XCTest may expose it as a text view.
+    private var recipientCodeField: XCUIElement {
+        let field = app.textFields["competition.create.recipient-code"]
+        return field.exists ? field : app.textViews["competition.create.recipient-code"]
     }
 
     func testCopyCustomSchemeInvitationIncludesTheCompleteLink() throws {
@@ -123,10 +189,12 @@ final class MultiUserCompetitionUITests: XCTestCase {
         ).firstMatch.exists)
 
         openChallengeDrawer()
-        let timeZone = app.staticTexts[
-            "Match time zone, America/Los_Angeles"
-        ]
+        let timeZone = app.staticTexts["competition.create.time-zone"]
         XCTAssertTrue(timeZone.waitForExistence(timeout: 3))
+        XCTAssertEqual(
+            timeZone.label,
+            "Days run midnight to midnight, Pacific Time."
+        )
 
         chooseRecipient()
         let create = app.buttons["competition.create.button"]
@@ -198,7 +266,11 @@ final class MultiUserCompetitionUITests: XCTestCase {
 
         let rematch = app.buttons["competition.rematch.create"]
         scrollToElement(rematch)
+        XCTAssertEqual(rematch.label, "Rematch Former competitor")
         rematch.tap()
+        let rematchSent = app.descendants(matching: .any)["competition.rematch.sent"]
+        XCTAssertTrue(rematchSent.waitForExistence(timeout: 3))
+        XCTAssertTrue(rematchSent.label.contains("Rematch sent"))
         XCTAssertTrue(
             app.buttons["competition.rematch.share"]
                 .waitForExistence(timeout: 3)
@@ -429,7 +501,14 @@ final class MultiUserCompetitionUITests: XCTestCase {
         )
         XCTAssertTrue(app.staticTexts["Day 1 is the day after the challenge is accepted."].exists)
         XCTAssertFalse(app.staticTexts["Only daily points are shared"].exists)
-        XCTAssertTrue(app.staticTexts["Waiting for Sam to accept"].exists)
+        XCTAssertTrue(app.staticTexts["Waiting for Sam"].exists)
+        XCTAssertTrue(
+            app.descendants(matching: .any)["competition.invite.share"].exists
+        )
+        XCTAssertTrue(
+            app.staticTexts["competition.invite.expiry"].label
+                .hasPrefix("Expires ")
+        )
     }
 
     func testHealthOnboardingDisclosesSharedDerivedActivity() {
@@ -849,9 +928,7 @@ final class MultiUserCompetitionUITests: XCTestCase {
     }
 
     private func chooseRecipient() {
-        let field = app.textFields["competition.create.recipient-code"]
-        let multilineField = app.textViews["competition.create.recipient-code"]
-        let input = field.exists ? field : multilineField
+        let input = recipientCodeField
         scrollToElement(input)
         input.tap()
         input.typeText("a1000000-0000-4000-8000-000000000005")

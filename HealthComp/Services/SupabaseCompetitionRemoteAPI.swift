@@ -441,6 +441,14 @@ enum SupabaseCompetitionRemoteAPI {
             ]) {
             return .unauthenticated
         }
+        // Your own link says so; every other claim failure stays collapsed.
+        if context == .claimInvite,
+           !identifiers.isDisjoint(with: [
+               "self_claim_forbidden",
+               "cannot_claim_own_invite",
+           ]) {
+            return .forbidden
+        }
         if context == .claimInvite,
            let statusCode,
            (400...499).contains(statusCode) {

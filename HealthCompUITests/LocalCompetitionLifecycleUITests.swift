@@ -131,14 +131,18 @@ final class LocalCompetitionLifecycleUITests: XCTestCase {
         )
         XCTAssertTrue(app.otherElements["competition.result"].label.contains("Final score"))
         XCTAssertTrue(app.staticTexts["Victory Over Alex"].exists)
-        XCTAssertTrue(app.buttons["Rematch"].exists)
+        XCTAssertEqual(app.buttons["competition.rematch.create"].label, "Rematch Alex")
         XCTAssertTrue(moreMenu.exists)
         XCTAssertTrue(app.otherElements["competition.result"].label.contains("You"))
         XCTAssertTrue(app.otherElements["competition.result"].label.contains("Alex"))
         capture("light-small-result")
 
-        let rematch = app.buttons["Rematch"]
-        rematch.doubleTap()
+        // A single tap: the double-submit guard has its own test, and a
+        // second tap here could open the new row.
+        app.buttons["competition.rematch.create"].tap()
+        let rematchReady = app.descendants(matching: .any)["competition.rematch.sent"]
+        XCTAssertTrue(rematchReady.waitForExistence(timeout: 3))
+        XCTAssertTrue(rematchReady.label.contains("Rematch ready"))
         app.navigationBars.buttons.firstMatch.tap()
         XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 3))
         scrollToElement(pendingSharingCard)

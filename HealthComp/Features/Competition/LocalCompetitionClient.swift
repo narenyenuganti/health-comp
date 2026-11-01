@@ -191,6 +191,8 @@ struct LocalCompetitionPresentation: Equatable, Identifiable, Sendable {
     let lastSuccessfulFullWindowRefreshAt: Date?
     /// The other person's newest accepted Health read time (real matches only).
     let opponentUpdatedAt: Date?
+    /// The finished match this challenge is a rematch of.
+    var rematchParentID: CompetitionID?
 
     init(
         id: CompetitionID,
@@ -209,7 +211,8 @@ struct LocalCompetitionPresentation: Equatable, Identifiable, Sendable {
         evaluatedAt: Date = .distantPast,
         timeZoneIdentifier: String = "UTC",
         lastSuccessfulFullWindowRefreshAt: Date? = nil,
-        opponentUpdatedAt: Date? = nil
+        opponentUpdatedAt: Date? = nil,
+        rematchParentID: CompetitionID? = nil
     ) {
         self.id = id
         self.ownerDisplayName = ownerDisplayName
@@ -229,6 +232,7 @@ struct LocalCompetitionPresentation: Equatable, Identifiable, Sendable {
         self.lastSuccessfulFullWindowRefreshAt =
             lastSuccessfulFullWindowRefreshAt
         self.opponentUpdatedAt = opponentUpdatedAt
+        self.rematchParentID = rematchParentID
     }
 }
 
@@ -1243,13 +1247,21 @@ enum LocalCompetitionProjector {
         configuration: LocalCompetitionRuntimeConfiguration,
         issues: [LocalCompetitionClientIssue]
     ) -> LocalCompetitionDashboard {
-        let all = journals.map {
+        var all = journals.map {
             presentation(
                 from: $0,
                 context: context,
                 configuration: configuration
             )
         }.sorted { $0.id.rawValue.uuidString < $1.id.rawValue.uuidString }
+        // A rematch has the deterministic id `rematch` gives it.
+        let parentsByRematchID = Dictionary(
+            all.map { (LocalCompetitionIdentity.rematchID(for: $0.id), $0.id) },
+            uniquingKeysWith: { first, _ in first }
+        )
+        for index in all.indices {
+            all[index].rematchParentID = parentsByRematchID[all[index].id]
+        }
         let visible = all.filter {
             competitionIsRetainedOnDashboard($0.lifecycle, now: context.instant.wallDate)
         }

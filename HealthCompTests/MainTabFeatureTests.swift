@@ -1329,6 +1329,62 @@ final class MainTabFeatureTests: XCTestCase {
     }
 
     @MainActor
+    func testOwnClaimShowsOwnChallenge() async throws {
+        let token = try XCTUnwrap(
+            CompetitionInviteClaimToken(
+                rawValue: "OOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOOO"
+            )
+        )
+        let envelope = CompetitionRouteEnvelope(
+            sequence: 9,
+            route: .claimInvite(token)
+        )
+        let routing = MainTabRoutingRecorder()
+        let claims = MainTabClaimRecorder(
+            expectedToken: token,
+            results: [.failure(.forbidden)]
+        )
+        let initial = publication(revision: 1, visibleIDs: [])
+        let store = TestStore(
+            initialState: MainTabFeature.State(
+                competition: CompetitionFeature.State(publication: initial)
+            )
+        ) {
+            MainTabFeature()
+        } withDependencies: {
+            $0.competitionClient = claims.client
+            $0.competitionRoutingClient = routing.client
+        }
+
+        await store.send(.routeReceived(envelope)) {
+            $0.pendingClaimRoute = envelope
+            $0.inviteClaimStatus = .ready
+        }
+        await store.send(.acceptClaimTapped)
+        await store.receive(.processPendingClaim) {
+            $0.claimRouteSequenceInFlight = envelope.sequence
+            $0.inviteClaimStatus = .claiming
+        }
+        await store.receive(
+            .claimInviteResponse(
+                sequence: envelope.sequence,
+                .failure(.forbidden)
+            )
+        ) {
+            $0.pendingClaimRoute = nil
+            $0.claimRouteSequenceInFlight = nil
+            $0.lastHandledClaimRouteSequence = envelope.sequence
+            $0.inviteClaimStatus = .ownChallenge
+        }
+        await store.send(.dismissClaimStatus) {
+            $0.inviteClaimStatus = .idle
+        }
+
+        XCTAssertEqual(routing.consumedSequences, [envelope.sequence])
+        await store.finish()
+    }
+
+    @MainActor
     func testRetryableClaimKeepsTokenPendingUntilExplicitRetry() async throws {
         let claimedID = competitionID(
             "81000000-0000-0000-0000-000000000008"

@@ -68,14 +68,11 @@ struct MainTabView: View {
                 if let publication = store.competition.publication {
                     CompetitionSharingView(
                         publication: publication,
-                        inviteCreationStatus: store.competition
-                            .inviteCreationRematchParentID == nil
-                                ? store.competition.inviteCreationStatus
-                                : .idle,
-                        createdInviteLink: store.competition
-                            .inviteCreationRematchParentID == nil
-                                ? store.competition.createdInviteLink
-                                : nil,
+                        challengeStatus: store.competition.challengeSheetStatus,
+                        senderName: store.competition.ownProfile?.displayName,
+                        dismissChallenge: {
+                            store.send(.competition(.challengeSheetDismissed))
+                        },
                         recipientCode: Binding(
                             get: { store.competition.inviteRecipientCode },
                             set: { store.send(.competition(.inviteRecipientCodeChanged($0))) }
@@ -219,7 +216,7 @@ struct MainTabView: View {
                     store.send(.declineClaimTapped)
                 case .retryable:
                     store.send(.dismissRetryableClaim)
-                case .unavailable, .wrongAccount:
+                case .unavailable, .wrongAccount, .ownChallenge:
                     store.send(.dismissClaimStatus)
                 case .confirmationTimedOut:
                     store.send(.dismissClaimStatus)
@@ -243,6 +240,7 @@ struct MainTabView: View {
                     source: publication.source,
                     isCommandInFlight: store.competition
                         .isCommandInFlight(id),
+                    link: store.competition.inviteLinks[id],
                     send: sendCompetitionAction
                 )
 
@@ -267,17 +265,11 @@ struct MainTabView: View {
                     competition: competition,
                     awards: publication.dashboard.awards,
                     source: publication.source,
-                    inviteCreationStatus: store.competition
-                        .inviteCreationRematchParentID == id
-                            ? store.competition.inviteCreationStatus
-                            : .idle,
-                    createdInviteLink: store.competition
-                        .inviteCreationRematchParentID == id
-                            ? store.competition.createdInviteLink
-                            : nil,
+                    rematch: store.competition.rematchState(for: competition),
                     isCommandInFlight: store.competition
                         .isCommandInFlight(id),
                     send: sendCompetitionAction,
+                    openCompetition: { store.send(.pathChanged(store.path + [$0])) },
                     muteButton: muteButton(for: competition),
                     issue: competitionRowIssue(id, in: publication.dashboard.issues),
                     retry: retry

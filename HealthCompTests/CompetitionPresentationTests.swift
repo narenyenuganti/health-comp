@@ -1642,6 +1642,99 @@ final class CompetitionPresentationTests: XCTestCase {
             opponentRevealedPoints: nil
         )
     }
+
+    func testTimeZoneTextUsesGenericName() {
+        XCTAssertEqual(
+            competitionTimeZoneText("America/Los_Angeles", locale: Locale(identifier: "en_US")),
+            "Days run midnight to midnight, Pacific Time."
+        )
+        XCTAssertEqual(
+            competitionTimeZoneText("Not/AZone", locale: Locale(identifier: "en_US")),
+            "Days run midnight to midnight, Not/AZone."
+        )
+    }
+
+    func testShareMessageCarriesSenderAndLink() throws {
+        let token = try XCTUnwrap(CompetitionInviteClaimToken(rawValue: String(repeating: "A", count: 43)))
+        let link = try XCTUnwrap(CompetitionInviteShareLink(host: "invites.healthcomp.example", token: token))
+        let url = "https://invites.healthcomp.example/invite/" + String(repeating: "A", count: 43)
+        XCTAssertEqual(
+            competitionShareMessage(senderName: "Naren", link: link),
+            "Naren challenged you to a week of rings on HealthComp: \(url)"
+        )
+        XCTAssertEqual(
+            competitionShareMessage(senderName: nil, link: link),
+            "Join me for a week of rings on HealthComp: \(url)"
+        )
+    }
+
+    func testReceivedRematchCopy() {
+        func challenge(expiresAt: Date?) -> LocalCompetitionPresentation {
+            LocalCompetitionPresentation(
+                id: CompetitionID(UUID()),
+                ownerDisplayName: "Naren",
+                opponentDisplayName: "Alex",
+                lifecycle: .pending(direction: .incoming, createdAt: .distantPast, expiresAt: expiresAt),
+                acceptedConfiguration: nil,
+                userPoints: 0,
+                opponentPoints: 0,
+                days: [],
+                currentDayOrdinal: nil,
+                lastRefresh: nil,
+                tally: nil,
+                terminalResult: nil,
+                evaluatedAt: Date(timeIntervalSince1970: 1_786_867_200)
+            )
+        }
+        let locale = Locale(identifier: "en_US")
+        let utc = TimeZone(identifier: "UTC")!
+        let text = competitionReceivedRematchText(
+            challenge(expiresAt: Date(timeIntervalSince1970: 1_786_867_200 + 14 * 3_600)),
+            locale: locale,
+            timeZone: utc
+        )
+        XCTAssertEqual(text.title, "Alex sent a rematch")
+        // ICU puts a narrow no-break space before PM.
+        XCTAssertEqual(
+            text.detail?.replacingOccurrences(of: "\u{202F}", with: " "),
+            "Expires Sun 10:00 PM"
+        )
+        let undated = competitionReceivedRematchText(challenge(expiresAt: nil), locale: locale, timeZone: utc)
+        XCTAssertEqual(undated.title, "Alex sent a rematch")
+        XCTAssertNil(undated.detail)
+    }
+
+    func testRecipientAndFailureCopy() {
+        XCTAssertNil(competitionRecipientErrorText(.idle))
+        XCTAssertNil(competitionRecipientErrorText(.lookingUp))
+        XCTAssertEqual(
+            competitionRecipientErrorText(.invalidCode),
+            "That isn’t a full account code. Ask them to share it again."
+        )
+        XCTAssertEqual(competitionRecipientErrorText(.ownCode), "That’s your own code. Ask them for theirs.")
+        XCTAssertEqual(competitionRecipientErrorText(.notFound), "No account has this code. Check it and try again.")
+        XCTAssertEqual(
+            competitionRecipientErrorText(.connectionFailed),
+            "Couldn’t look up that code. Check your connection and try again."
+        )
+        XCTAssertEqual(
+            competitionInviteFailureText(.connection, opponentName: "Hermes"),
+            "Couldn’t send the challenge. Check your connection and try again."
+        )
+        // Test builds are Debug, so the configuration line names the build.
+        XCTAssertEqual(
+            competitionInviteFailureText(.unavailable, opponentName: "Hermes"),
+            "Challenge links are not configured for this build."
+        )
+        XCTAssertEqual(
+            competitionInviteFailureText(.recipientGone, opponentName: "Hermes"),
+            "Hermes isn’t on HealthComp anymore."
+        )
+        XCTAssertEqual(
+            competitionInviteFailureText(.alreadyPending, opponentName: "Hermes"),
+            "You already challenged Hermes. It expires 24 hours after you sent it."
+        )
+    }
 }
 
 private enum FinalScoreLayoutProposal: CaseIterable {
