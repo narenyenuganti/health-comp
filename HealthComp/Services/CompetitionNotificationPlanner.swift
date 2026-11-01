@@ -531,14 +531,7 @@ struct CompetitionNotificationPlanner: Sendable {
                 )
             }
 
-            let leader: NotificationEmissionLeader?
-            if ownerTotal > opponentTotal {
-                leader = .owner
-            } else if opponentTotal > ownerTotal {
-                leader = .opponent
-            } else {
-                leader = nil
-            }
+            let leader = displayedLeader(ownerTotal, opponentTotal)
             if let leader, leader != previousLeader {
                 try appendStaleSuppression(
                     family: .leadChange,
@@ -697,9 +690,9 @@ struct CompetitionNotificationPlanner: Sendable {
             )
         }
 
-        if competition.ownerPoints != competition.opponentPoints {
-            let leader: NotificationEmissionLeader = competition.ownerPoints
-                > competition.opponentPoints ? .owner : .opponent
+        if let leader = displayedLeader(
+            competition.ownerPoints, competition.opponentPoints
+        ) {
             if mostRecentRecordedLeader(
                 in: competition,
                 through: ordinal
@@ -721,6 +714,20 @@ struct CompetitionNotificationPlanner: Sendable {
             }
         }
         return result
+    }
+
+    /// The leader by the whole points people see; nil when they read equal,
+    /// so "The lead changed … You 412, Alex 412." can't happen.
+    private func displayedLeader(
+        _ ownerPoints: Double,
+        _ opponentPoints: Double
+    ) -> NotificationEmissionLeader? {
+        let margin = competitionDisplayedMargin(
+            userPoints: ownerPoints, opponentPoints: opponentPoints
+        )
+        if margin > 0 { return .owner }
+        if margin < 0 { return .opponent }
+        return nil
     }
 
     private func mostRecentRecordedLeader(

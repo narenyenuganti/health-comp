@@ -371,7 +371,8 @@ func activityRingAccessibilityLabel(
 }
 
 private func activityAcceptedPointsText(_ points: Double) -> String {
-    "\(competitionPointsText(points)) accepted \(points == 1 ? "point" : "points")"
+    let unit = points.rounded(.toNearestOrAwayFromZero) == 1 ? "point" : "points"
+    return "\(competitionPointsText(points)) accepted \(unit)"
 }
 
 private func activityNumber(_ value: Double) -> String {

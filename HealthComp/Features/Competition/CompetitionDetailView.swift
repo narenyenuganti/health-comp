@@ -301,7 +301,9 @@ struct CompetitionDetailView: View {
         if let day = competition.days.first(where: { $0.ordinal == ordinal }) {
             CompetitionDrawer(
                 title: "Day \(day.ordinal)",
-                subtitle: competitionDayText(day.day, now: competition.evaluatedAt, locale: locale)
+                subtitle: competitionDayText(
+                    day.day, now: competition.evaluatedAt, locale: locale, timeZone: timeZone
+                )
             ) {
                 CompetitionWeekChart(
                     days: [day],

@@ -317,6 +317,69 @@ final class CompetitionNotificationPlannerTests: XCTestCase {
         )
     }
 
+    func testLeadChangeNeedsALeadInTheShownWholePoints() throws {
+        func leadChangeFamilies(_ owner: Double, _ opponent: Double) throws -> Int {
+            let plan = try CompetitionNotificationPlanner(policy: .fixture).plan(
+                try planningSnapshot(
+                    lifecycle: .active(dayOrdinal: 4),
+                    currentDayOrdinal: 4,
+                    latestRefresh: .completed,
+                    ownerPoints: owner,
+                    opponentPoints: opponent
+                ),
+                authorization: .authorized,
+                mutedOpponentIdentities: []
+            )
+            return plan.emissionDecisions.filter { $0.record.family == .leadChange }.count
+                + plan.suppressionRecords.filter { $0.family == .leadChange }.count
+        }
+        // 412.4 vs 412.3 reads "412" and "412": no lead to announce.
+        XCTAssertEqual(try leadChangeFamilies(412.4, 412.3), 0)
+        XCTAssertEqual(try leadChangeFamilies(500, 412.3), 1)
+    }
+
+    func testPastDaysWithoutAShownLeadSuppressNoLeadChange() throws {
+        let base = try competitionSnapshot(
+            id: competitionID("EAD172F8-531D-4327-823D-E82A4F696047"),
+            lifecycle: .active(dayOrdinal: 2),
+            currentDayOrdinal: 2,
+            latestRefresh: .completed,
+            evaluationFreshness: .notFresh,
+            ownerPoints: 412.4,
+            opponentPoints: 412.3
+        )
+        let competition = CompetitionNotificationCompetitionSnapshot(
+            id: base.id,
+            opponentIdentity: base.opponentIdentity,
+            opponentDisplayName: base.opponentDisplayName,
+            lifecycle: base.lifecycle,
+            schedule: base.schedule,
+            ownerPoints: base.ownerPoints,
+            opponentPoints: base.opponentPoints,
+            days: [
+                .init(ordinal: 1, ownerAcceptedPoints: 412.4, opponentRevealedPoints: 412.3),
+                .init(ordinal: 2, ownerAcceptedPoints: 0, opponentRevealedPoints: 0),
+            ],
+            currentDayOrdinal: 2,
+            latestRefresh: .completed,
+            evaluationFreshness: .notFresh,
+            terminalResult: nil,
+            emissionHistory: NotificationEmissionProjection()
+        )
+        let plan = try CompetitionNotificationPlanner(policy: .fixture).plan(
+            CompetitionNotificationPlanningSnapshot(
+                publicationRevision: 14,
+                evaluatedAt: fixedDate,
+                timeZoneIdentifier: "UTC",
+                competitions: [competition]
+            ),
+            authorization: .authorized,
+            mutedOpponentIdentities: []
+        )
+        XCTAssertFalse(plan.suppressionRecords.contains { $0.family == .leadChange })
+        XCTAssertFalse(plan.emissionDecisions.contains { $0.record.family == .leadChange })
+    }
+
     func testOldCompletedRefreshOnCommandPublicationProducesNoExactScoreCopy()
         throws {
         let snapshot = try planningSnapshot(

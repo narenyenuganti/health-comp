@@ -1094,13 +1094,13 @@ func competitionStatusText(
     }
     var starts: String? {
         days?.first.map {
-            "Starts \(competitionDayText($0, now: now, locale: locale))"
+            "Starts \(competitionDayText($0, now: now, locale: locale, timeZone: timeZone))"
                 + zone(bounds?.start)
         }
     }
     var week: String? {
         guard let first = days?.first, let last = days?.last else { return nil }
-        return competitionWeekText(first, last, now: now, locale: locale)
+        return competitionWeekText(first, last, now: now, locale: locale, timeZone: timeZone)
     }
     let status: CompetitionStatusText = switch lifecycle {
     case let .pending(direction, _, _):

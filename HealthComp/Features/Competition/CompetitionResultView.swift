@@ -155,7 +155,9 @@ struct CompetitionResultView: View {
         else {
             return nil
         }
-        return competitionWeekText(first, last, now: competition.evaluatedAt, locale: locale)
+        return competitionWeekText(
+            first, last, now: competition.evaluatedAt, locale: locale, timeZone: timeZone
+        )
     }
 
     /// Two decimals only when whole points would hide the winner.

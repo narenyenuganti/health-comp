@@ -53,6 +53,11 @@ struct CompetitionLocalDateFormattingChecks {
         precondition(competitionFinalFractionDigits(userPoints: 412, opponentPoints: 412) == 0)
         precondition(competitionFinalFractionDigits(userPoints: 420, opponentPoints: 412.3) == 0)
         precondition(competitionFinalFractionDigits(userPoints: 412.46, opponentPoints: 412.54) == 0)
+        // More decimals until a decided result's numbers differ, capped at 4.
+        precondition(competitionFinalFractionDigits(userPoints: 412.3333, opponentPoints: 412.3349) == 3)
+        expect(competitionPointsText(412.3333, fractionDigits: 3, locale: us), "412.333")
+        expect(competitionPointsText(412.3349, fractionDigits: 3, locale: us), "412.335")
+        precondition(competitionFinalFractionDigits(userPoints: 412.30001, opponentPoints: 412.30002) == 4)
 
         expect(competitionRoundedParts([120.4, 80.4, 31.4], total: 232.2), [121, 80, 31])
         expect(competitionRoundedParts([0.5, 0.5, 0.5], total: 1.5), [0, 1, 1])

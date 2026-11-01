@@ -45,11 +45,20 @@ func competitionDisplayedMargin(
         - competitionDisplayedPoints(opponentPoints, fractionDigits)
 }
 
-/// Two decimals only when whole points would hide a decided winner.
+/// Whole points, unless they would hide a decided winner: then two decimals,
+/// or more (up to four) until the two numbers differ.
 func competitionFinalFractionDigits(userPoints: Double, opponentPoints: Double) -> Int {
-    userPoints != opponentPoints
-        && competitionDisplayedMargin(userPoints: userPoints, opponentPoints: opponentPoints) == 0
-        ? 2 : 0
+    guard userPoints != opponentPoints,
+          competitionDisplayedMargin(userPoints: userPoints, opponentPoints: opponentPoints) == 0
+    else {
+        return 0
+    }
+    // ponytail: capped at 4; totals are stored in hundredths, so 2 is the real case.
+    return (2...4).first {
+        competitionDisplayedMargin(
+            userPoints: userPoints, opponentPoints: opponentPoints, fractionDigits: $0
+        ) != 0
+    } ?? 4
 }
 
 /// Whole parts that add up to the whole total: the remainder goes to the
@@ -82,6 +91,13 @@ private func competitionIsSameYear(_ date: Date, _ now: Date, timeZone: TimeZone
     return calendar.component(.year, from: date) == calendar.component(.year, from: now)
 }
 
+/// The year of `now` where the viewer is.
+func competitionYear(of now: Date, timeZone: TimeZone) -> Int {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = timeZone
+    return calendar.component(.year, from: now)
+}
+
 /// A day: "Thu, Oct 29", with the year only when it isn't the current one.
 func competitionDayText(
     _ date: Date,
@@ -90,9 +106,24 @@ func competitionDayText(
     locale: Locale = .current,
     timeZone: TimeZone = .current
 ) -> String {
-    let template = (weekday ? "EEE" : "")
-        + (competitionIsSameYear(date, now, timeZone: timeZone) ? "" : "y")
-        + "MMMd"
+    competitionDayText(
+        date,
+        weekday: weekday,
+        includesYear: !competitionIsSameYear(date, now, timeZone: timeZone),
+        locale: locale,
+        timeZone: timeZone
+    )
+}
+
+/// The day style with the year decided by the caller.
+func competitionDayText(
+    _ date: Date,
+    weekday: Bool,
+    includesYear: Bool,
+    locale: Locale,
+    timeZone: TimeZone
+) -> String {
+    let template = (weekday ? "EEE" : "") + (includesYear ? "y" : "") + "MMMd"
     return competitionDateFormatter(template, locale: locale, timeZone: timeZone)
         .string(from: date)
 }
@@ -105,12 +136,28 @@ func competitionWeekText(
     locale: Locale = .current,
     timeZone: TimeZone = .current
 ) -> String {
+    competitionWeekText(
+        first,
+        last,
+        includesYear: !competitionIsSameYear(last, now, timeZone: timeZone),
+        locale: locale,
+        timeZone: timeZone
+    )
+}
+
+/// The week style with the year decided by the caller.
+func competitionWeekText(
+    _ first: Date,
+    _ last: Date,
+    includesYear: Bool,
+    locale: Locale,
+    timeZone: TimeZone
+) -> String {
     let formatter = DateIntervalFormatter()
     formatter.calendar = Calendar(identifier: .gregorian)
     formatter.locale = locale
     formatter.timeZone = timeZone
-    formatter.dateTemplate = competitionIsSameYear(last, now, timeZone: timeZone)
-        ? "MMMd" : "yMMMd"
+    formatter.dateTemplate = includesYear ? "yMMMd" : "MMMd"
     return formatter.string(from: first, to: last)
 }
 

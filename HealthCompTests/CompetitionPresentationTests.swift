@@ -589,6 +589,64 @@ final class CompetitionPresentationTests: XCTestCase {
         XCTAssertTrue(label.contains("pause status unknown"))
     }
 
+    func testAcceptedPointsPluralizeOnTheShownNumber() throws {
+        let snapshot = try makeSnapshot(
+            moveMode: .activeEnergyKilocalories,
+            standMode: .standHours,
+            pauseState: .running
+        )
+        func label(_ points: Double) -> String {
+            activityRingAccessibilityLabel(
+                snapshot, ownerDisplayName: "Naren", acceptedPoints: points
+            )
+        }
+        for points in [0.6, 1.4] {
+            XCTAssertTrue(label(points).contains("1 accepted point."), label(points))
+        }
+        XCTAssertTrue(label(1.6).contains("2 accepted points"), label(1.6))
+        XCTAssertTrue(label(0.4).contains("0 accepted points"), label(0.4))
+    }
+
+    func testCompetitionDayYearFollowsTheViewersNewYearNotUTC() throws {
+        let iso = ISO8601DateFormatter()
+        let en = Locale(identifier: "en_US")
+        let la = try XCTUnwrap(TimeZone(identifier: "America/Los_Angeles"))
+        let tokyo = try XCTUnwrap(TimeZone(identifier: "Asia/Tokyo"))
+        let dec31 = try CompetitionDay(
+            era: 1, year: 2026, month: 12, day: 31,
+            timeZoneIdentifier: "America/Los_Angeles"
+        )
+        let jan1 = try CompetitionDay(
+            era: 1, year: 2027, month: 1, day: 1,
+            timeZoneIdentifier: "Asia/Tokyo"
+        )
+        let dec25 = try CompetitionDay(
+            era: 1, year: 2026, month: 12, day: 25,
+            timeZoneIdentifier: "America/Los_Angeles"
+        )
+        // 5 PM Dec 31 in LA is already 2027 in UTC.
+        let laEvening = try XCTUnwrap(iso.date(from: "2027-01-01T01:00:00Z"))
+        XCTAssertEqual(
+            competitionDayText(dec31, now: laEvening, locale: en, timeZone: la),
+            "Thu, Dec 31"
+        )
+        XCTAssertEqual(
+            normalized(competitionWeekText(dec25, dec31, now: laEvening, locale: en, timeZone: la)),
+            "Dec 25 – 31"
+        )
+        // 8 AM Jan 1 in Tokyo is still 2026 in UTC.
+        let tokyoMorning = try XCTUnwrap(iso.date(from: "2026-12-31T23:00:00Z"))
+        XCTAssertEqual(
+            competitionDayText(jan1, now: tokyoMorning, locale: en, timeZone: tokyo),
+            "Fri, Jan 1"
+        )
+        // A different year still shows.
+        XCTAssertEqual(
+            competitionDayText(dec31, now: tokyoMorning, locale: en, timeZone: tokyo),
+            "Thu, Dec 31, 2026"
+        )
+    }
+
     func testMoveTimeRollAccessibilityUsesFullTruthfulUnits() throws {
         let snapshot = try makeSnapshot(
             moveMode: .moveMinutes,

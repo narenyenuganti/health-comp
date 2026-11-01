@@ -428,18 +428,25 @@ func weekdayText(_ day: CompetitionDay, locale: Locale = .current) -> String {
     return calendar.shortWeekdaySymbols[index]
 }
 
-/// The day style for a competition calendar day: "Thu, Oct 29".
+/// The day style for a competition calendar day: "Thu, Oct 29". The year
+/// shows when the day's calendar year isn't the viewer's current year;
+/// UTC is only for drawing the day.
 func competitionDayText(
     _ day: CompetitionDay,
     weekday: Bool = true,
     now: Date = Date(),
-    locale: Locale = .current
+    locale: Locale = .current,
+    timeZone: TimeZone = .current
 ) -> String {
     guard let date = competitionDayDate(day) else {
         return "\(day.month)/\(day.day)"
     }
     return competitionDayText(
-        date, weekday: weekday, now: now, locale: locale, timeZone: competitionDayTimeZone
+        date,
+        weekday: weekday,
+        includesYear: day.year != competitionYear(of: now, timeZone: timeZone),
+        locale: locale,
+        timeZone: competitionDayTimeZone
     )
 }
 
@@ -448,7 +455,8 @@ func competitionWeekText(
     _ first: CompetitionDay,
     _ last: CompetitionDay,
     now: Date = Date(),
-    locale: Locale = .current
+    locale: Locale = .current,
+    timeZone: TimeZone = .current
 ) -> String {
     guard let firstDate = competitionDayDate(first),
           let lastDate = competitionDayDate(last)
@@ -456,6 +464,10 @@ func competitionWeekText(
         return "\(first.month)/\(first.day) – \(last.month)/\(last.day)"
     }
     return competitionWeekText(
-        firstDate, lastDate, now: now, locale: locale, timeZone: competitionDayTimeZone
+        firstDate,
+        lastDate,
+        includesYear: last.year != competitionYear(of: now, timeZone: timeZone),
+        locale: locale,
+        timeZone: competitionDayTimeZone
     )
 }
