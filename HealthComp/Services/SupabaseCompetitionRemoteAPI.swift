@@ -662,7 +662,9 @@ enum SupabaseCompetitionRemoteAPI {
 
     /// Exact keys, at most 50 rows each. Timestamps are Postgres JSON
     /// (`2026-11-01T21:14:00.123456+00:00`). A closed row may name
-    /// "Former competitor"; an incoming sender never does.
+    /// "Former competitor"; an incoming sender never does. A row this app
+    /// can't read (say, a time zone iOS doesn't know) is skipped, so one
+    /// row never hides the rest.
     private static func decodeChallengeList(_ data: Data) throws -> CompetitionChallengeList {
         func date(_ value: Any?) -> Date? {
             (value as? String).flatMap { try? CompetitionWireCodec.date($0) }
@@ -689,7 +691,7 @@ enum SupabaseCompetitionRemoteAPI {
                   let createdAt = date(row["created_at"]),
                   let expiresAt = date(row["expires_at"])
             else {
-                throw CompetitionRemoteFailure.serverContractMismatch
+                continue
             }
             list.incoming.append(.init(
                 competitionID: id, sender: sender, timeZoneIdentifier: timeZone,
@@ -703,7 +705,7 @@ enum SupabaseCompetitionRemoteAPI {
                   let other = challengeProfile(row["other"], idKey: "id", nameKey: "display_name"),
                   let closedAt = date(row["closed_at"])
             else {
-                throw CompetitionRemoteFailure.serverContractMismatch
+                continue
             }
             list.closed.append(.init(competitionID: id, kind: kind, other: other, closedAt: closedAt))
         }
@@ -719,9 +721,10 @@ enum SupabaseCompetitionRemoteAPI {
               Set(object.keys) == [idKey, nameKey],
               let id = (object[idKey] as? String).flatMap(wireUUID),
               let name = object[nameKey] as? String,
-              name == name.trimmingCharacters(in: .whitespacesAndNewlines),
-              (1...64).contains(name.count),
-              !name.unicodeScalars.contains(where: CharacterSet.controlCharacters.contains)
+              // The server's display-name rule: 1-64 code points, no Cc
+              // control characters. Format characters such as ZWJ are fine.
+              (1...64).contains(name.unicodeScalars.count),
+              !name.unicodeScalars.contains(where: { $0.properties.generalCategory == .control })
         else {
             return nil
         }
