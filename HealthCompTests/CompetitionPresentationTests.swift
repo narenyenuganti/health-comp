@@ -1705,17 +1705,21 @@ final class CompetitionPresentationTests: XCTestCase {
     }
 
     func testRecipientAndFailureCopy() {
+        XCTAssertEqual(
+            competitionInviteFailureText(.conflict, opponentName: "Maya"),
+            "You already have a challenge or match with Maya."
+        )
         XCTAssertNil(competitionRecipientErrorText(.idle))
         XCTAssertNil(competitionRecipientErrorText(.lookingUp))
         XCTAssertEqual(
             competitionRecipientErrorText(.invalidCode),
-            "That isn’t a full account code. Ask them to share it again."
+            "That isn’t a full challenge link. Ask them to share it again."
         )
-        XCTAssertEqual(competitionRecipientErrorText(.ownCode), "That’s your own code. Ask them for theirs.")
-        XCTAssertEqual(competitionRecipientErrorText(.notFound), "No account has this code. Check it and try again.")
+        XCTAssertEqual(competitionRecipientErrorText(.ownCode), "That’s your own link. Ask them for theirs.")
+        XCTAssertEqual(competitionRecipientErrorText(.notFound), "No account has this link. Check it and try again.")
         XCTAssertEqual(
             competitionRecipientErrorText(.connectionFailed),
-            "Couldn’t look up that code. Check your connection and try again."
+            "Couldn’t look up that link. Check your connection and try again."
         )
         XCTAssertEqual(
             competitionInviteFailureText(.connection, opponentName: "Hermes"),

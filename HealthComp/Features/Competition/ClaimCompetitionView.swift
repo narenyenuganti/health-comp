@@ -1,15 +1,29 @@
+import CompetitionCore
 import SwiftUI
 
 struct ClaimCompetitionView: View {
     let status: MainTabFeature.InviteClaimStatus
+    /// Who sent it, from the server; shown only to the person it was sent to.
+    var preview: CompetitionInvitePreview? = nil
+    var now: Date = Date()
+    var hasQueuedChallenge = false
+    var declineFailed = false
     let accept: () -> Void
+    let notNow: () -> Void
+    /// Runs after the confirmation; the sender is told.
     let decline: () -> Void
     let retry: () -> Void
     let dismiss: () -> Void
 
+    @State private var showsDeclineConfirmation = false
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.locale) private var locale
+    @Environment(\.timeZone) private var timeZone
+
     var body: some View {
+        // At accessibility sizes the controls scroll with the content.
+        let pinsControls = !dynamicTypeSize.isAccessibilitySize
         NavigationStack {
-            // Scrolls only when the rules card outgrows the sheet (AX5).
             ScrollView {
                 VStack(spacing: 24) {
                     Spacer(minLength: 12)
@@ -19,35 +33,122 @@ struct ClaimCompetitionView: View {
                             .font(.title.weight(.heavy).width(.condensed))
                             .foregroundStyle(Theme.ink)
                             .multilineTextAlignment(.center)
+                            .fixedSize(horizontal: false, vertical: true)
                             .accessibilityAddTraits(.isHeader)
-                        Text(message)
-                            .font(.body)
-                            .foregroundStyle(Theme.secondary)
-                            .multilineTextAlignment(.center)
+                            .accessibilityIdentifier(showsPreview ? "competition.claim.sender" : "")
+                        if showsPreview, let preview {
+                            previewLines(preview)
+                        } else if let message {
+                            Text(message)
+                                .font(.body)
+                                .foregroundStyle(Theme.secondary)
+                                .multilineTextAlignment(.center)
+                        }
                     }
                     .frame(maxWidth: 440)
 
-                    if status == .ready {
-                        CompetitionRulesCard(source: .remoteParticipants)
-                            .frame(maxWidth: 440)
+                    if showsPreview {
+                        CompetitionRulesCard(
+                            source: .remoteParticipants,
+                            opponentName: preview?.sender.displayName
+                        )
+                        .frame(maxWidth: 440)
                     }
 
-                    Spacer(minLength: 12)
-                    actionControls
+                    if hasQueuedChallenge {
+                        Text("Another challenge link is waiting.")
+                            .font(.caption)
+                            .foregroundStyle(Theme.secondary)
+                    }
+
+                    if !pinsControls {
+                        actionControls
+                    }
                 }
                 .padding(.horizontal, 24)
                 .padding(.vertical, 20)
                 .frame(maxWidth: .infinity)
             }
             .scrollBounceBehavior(.basedOnSize)
+            .safeAreaInset(edge: .bottom) {
+                if pinsControls {
+                    actionControls
+                        .padding(.horizontal, 24)
+                        .padding(.top, 12)
+                        .padding(.bottom, 8)
+                        .frame(maxWidth: .infinity)
+                        .background(Theme.ground)
+                }
+            }
             .background(Theme.ground)
             .navigationTitle("Challenge")
             .navigationBarTitleDisplayMode(.inline)
         }
+        .presentationDetents([.large])
+        .presentationDragIndicator(.visible)
         .interactiveDismissDisabled(
             status == .claiming || status == .waitingForCompetition
+                || status == .declining
         )
+        .confirmationDialog(
+            "Decline challenge from \(senderName)?",
+            isPresented: $showsDeclineConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Decline Challenge", role: .destructive, action: decline)
+            Button("Keep Challenge", role: .cancel) {}
+        } message: {
+            Text("\(senderName) will see that you declined.")
+        }
         .accessibilityIdentifier("competition.claim.sheet")
+    }
+
+    private var showsPreview: Bool {
+        (status == .ready || status == .declining) && preview != nil
+    }
+
+    private var senderName: String {
+        preview?.sender.displayName ?? "the sender"
+    }
+
+    @ViewBuilder
+    private func previewLines(_ preview: CompetitionInvitePreview) -> some View {
+        let zone = competitionTimeZoneName(preview.timeZoneIdentifier, locale: locale)
+        let startDay = competitionClaimStartDay(preview, now: now)
+        VStack(spacing: 4) {
+            if let startDay {
+                Text("Starts \(competitionDayText(startDay, now: now, locale: locale, timeZone: timeZone)) · \(zone)")
+            } else {
+                Text(zone)
+            }
+            Text("Answer by \(competitionMomentText(preview.expiresAt, now: now, locale: locale, timeZone: timeZone))")
+        }
+        .font(.body)
+        .foregroundStyle(Theme.secondary)
+        .multilineTextAlignment(.center)
+        .fixedSize(horizontal: false, vertical: true)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(previewAccessibilityLabel(preview, startDay: startDay, zone: zone))
+        .accessibilityIdentifier("competition.claim.start")
+    }
+
+    private func previewAccessibilityLabel(
+        _ preview: CompetitionInvitePreview,
+        startDay: CompetitionDay?,
+        zone: String
+    ) -> String {
+        let expiry = preview.expiresAt.formatted(
+            Date.FormatStyle(date: .complete, time: .shortened, locale: locale, timeZone: timeZone)
+        )
+        guard let startDay,
+              let calendar = try? CompetitionCalendar(timeZoneIdentifier: preview.timeZoneIdentifier),
+              let date = try? calendar.startOfDay(startDay)
+        else {
+            return "\(zone). Answer by \(expiry)."
+        }
+        var style = Date.FormatStyle(date: .complete, time: .omitted, locale: locale)
+        style.timeZone = TimeZone(identifier: preview.timeZoneIdentifier) ?? timeZone
+        return "Starts \(date.formatted(style)), \(zone). Answer by \(expiry)."
     }
 
     private var statusEmblem: some View {
@@ -63,7 +164,7 @@ struct ClaimCompetitionView: View {
     @ViewBuilder
     private var statusIcon: some View {
         switch status {
-        case .claiming, .waitingForCompetition:
+        case .loadingPreview, .claiming, .waitingForCompetition:
             ProgressView()
                 .controlSize(.large)
                 .tint(Theme.ink)
@@ -75,10 +176,17 @@ struct ClaimCompetitionView: View {
             symbol("person.crop.circle.badge.xmark")
         case .ownChallenge:
             symbol("person.crop.circle.badge.checkmark")
+        case .activeMatchExists:
+            symbol("calendar.badge.clock")
         case .retryable:
             symbol("wifi.exclamationmark")
-        case .idle, .ready:
-            BrandMark().frame(width: 58)
+        case .idle, .ready, .declining:
+            if let preview {
+                CompetitionInvitationFaceOff(opponentDisplayName: preview.sender.displayName)
+                    .frame(width: 96)
+            } else {
+                BrandMark().frame(width: 58)
+            }
         }
     }
 
@@ -91,20 +199,51 @@ struct ClaimCompetitionView: View {
     @ViewBuilder
     private var actionControls: some View {
         switch status {
-        case .ready:
+        case .ready, .declining:
             VStack(spacing: 8) {
-                Button("Accept Challenge", action: accept)
+                Button("Accept", action: accept)
                     .buttonStyle(PrimaryButtonStyle())
                     .frame(maxWidth: 440)
-                    .accessibilityHint(
-                        "Accepts the challenge and schedules the match."
-                    )
+                    .disabled(status == .declining)
+                    .accessibilityLabel("Accept \(senderName)’s challenge")
                     .accessibilityIdentifier("competition.claim.accept")
-                quietButton("Decline Challenge", role: .destructive, action: decline)
-                    .accessibilityHint(
-                        "Closes this challenge on this device without joining."
-                    )
+                Button("Not Now", action: notNow)
+                    .buttonStyle(SecondaryButtonStyle())
+                    .frame(maxWidth: 440)
+                    .disabled(status == .declining)
+                    .accessibilityLabel("Not now")
+                    .accessibilityHint("Keeps the challenge on Home")
+                    .accessibilityIdentifier("competition.claim.not-now")
+                if status == .declining {
+                    HStack(spacing: 8) {
+                        ProgressView()
+                        Text("Declining…")
+                    }
+                    .font(.headline.width(.condensed))
+                    .foregroundStyle(Theme.secondary)
+                    .frame(maxWidth: 440, minHeight: 44)
+                    .accessibilityElement(children: .combine)
+                } else if preview != nil {
+                    // Shown over Health before anything has started, the
+                    // challenge has no preview yet, so there's nothing to
+                    // decline on the server; Not Now still works.
+                    quietButton("Decline", role: .destructive) {
+                        showsDeclineConfirmation = true
+                    }
+                    .accessibilityLabel("Decline \(senderName)’s challenge")
+                    .accessibilityHint("\(senderName) is told")
                     .accessibilityIdentifier("competition.claim.decline")
+                }
+                Text(
+                    declineFailed
+                        ? "Couldn’t decline. Check your connection and try again."
+                        : "\(senderName) is told if you decline."
+                )
+                .font(.caption)
+                .foregroundStyle(Theme.secondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier(declineFailed ? "competition.claim.decline-error" : "")
             }
 
         case .retryable:
@@ -113,8 +252,10 @@ struct ClaimCompetitionView: View {
                     .buttonStyle(PrimaryButtonStyle())
                     .frame(maxWidth: 440)
                     .accessibilityIdentifier("competition.claim.retry")
-                quietButton("Decline Challenge", role: .destructive, action: decline)
-                    .accessibilityIdentifier("competition.claim.decline")
+                Button("Not Now", action: notNow)
+                    .buttonStyle(SecondaryButtonStyle())
+                    .frame(maxWidth: 440)
+                    .accessibilityIdentifier("competition.claim.not-now")
             }
 
         case .confirmationTimedOut:
@@ -131,7 +272,7 @@ struct ClaimCompetitionView: View {
                     .accessibilityIdentifier("competition.claim.dismiss")
             }
 
-        case .unavailable, .wrongAccount, .ownChallenge:
+        case .unavailable, .wrongAccount, .ownChallenge, .activeMatchExists:
             Button("Done", action: dismiss)
                 .buttonStyle(PrimaryButtonStyle())
                 .frame(maxWidth: 440)
@@ -143,7 +284,7 @@ struct ClaimCompetitionView: View {
                 .foregroundStyle(Theme.secondary)
                 .multilineTextAlignment(.center)
 
-        case .idle:
+        case .loadingPreview, .idle:
             EmptyView()
         }
     }
@@ -166,8 +307,10 @@ struct ClaimCompetitionView: View {
 
     private var title: String {
         switch status {
-        case .idle, .ready:
-            "Join this match?"
+        case .loadingPreview:
+            "Opening challenge…"
+        case .idle, .ready, .declining:
+            preview.map { "\($0.sender.displayName) challenged you" } ?? "Join this match?"
         case .claiming:
             "Accepting challenge…"
         case .waitingForCompetition:
@@ -180,14 +323,18 @@ struct ClaimCompetitionView: View {
             "This challenge is for someone else"
         case .ownChallenge:
             "That’s your challenge"
+        case .activeMatchExists:
+            "You’re already in a match"
         case .retryable:
             "Couldn’t connect"
         }
     }
 
-    private var message: String {
+    private var message: String? {
         switch status {
-        case .idle, .ready:
+        case .loadingPreview:
+            nil
+        case .idle, .ready, .declining:
             "Accept to start a private seven-day Activity match on the sender’s calendar."
         case .claiming:
             "HealthComp is securely accepting this single-use challenge."
@@ -197,6 +344,8 @@ struct ClaimCompetitionView: View {
             "The server accepted your challenge, but HealthComp hasn’t received the confirmed match yet. Try refreshing or check Home later."
         case .ownChallenge:
             "You sent this link. Only the person you challenged can accept it."
+        case .activeMatchExists:
+            "You can accept a new challenge from this person after your current match ends."
         case .unavailable:
             "This link may be expired, already used, or no longer valid. Ask the sender for a new challenge."
         case .wrongAccount:
@@ -205,4 +354,17 @@ struct ClaimCompetitionView: View {
             "The challenge is still private on this device. Check your connection and try again."
         }
     }
+}
+
+/// "Pacific Time": the sender's calendar, always shown because it defines
+/// the week.
+func competitionTimeZoneName(_ identifier: String, locale: Locale = .current) -> String {
+    TimeZone(identifier: identifier)?.localizedName(for: .generic, locale: locale) ?? identifier
+}
+
+/// Day 1 if accepted at `now`: the day after acceptance in the sender's
+/// calendar, the same rule the server freezes at accept time.
+func competitionClaimStartDay(_ preview: CompetitionInvitePreview, now: Date) -> CompetitionDay? {
+    let calendar = try? CompetitionCalendar(timeZoneIdentifier: preview.timeZoneIdentifier)
+    return try? calendar?.startDay(afterAcceptanceAt: now)
 }

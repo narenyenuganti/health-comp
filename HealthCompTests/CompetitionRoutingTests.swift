@@ -23,6 +23,61 @@ final class CompetitionRoutingTests: XCTestCase {
         )
     }
 
+    func testChallengeLinkParsesHttpsAndCustomScheme() throws {
+        let raw = "Xb3kP9qL2mN8vR4tY6wZ1a"
+        let code = try XCTUnwrap(CompetitionChallengeLinkCode(rawValue: raw))
+        XCTAssertEqual(
+            CompetitionRoute(url: URL(string: "healthcomp://challenge/\(raw)")!),
+            .challengeLink(code)
+        )
+        XCTAssertEqual(
+            CompetitionRoute(
+                url: URL(string: "https://healthcomp.app/c/\(raw)")!,
+                allowedInviteHost: "healthcomp.app"
+            ),
+            .challengeLink(code)
+        )
+        let link = try XCTUnwrap(
+            CompetitionInviteLinkClient.live(configuration: CompetitionInviteLinkConfiguration(
+                infoDictionary: ["HEALTHCOMP_INVITE_HOST": "healthcomp.app"]
+            )).makeChallengeLink(code)
+        )
+        XCTAssertEqual(link.absoluteString, "https://healthcomp.app/c/\(raw)")
+        let fallback = try XCTUnwrap(
+            CompetitionInviteLinkClient.live(configuration: CompetitionInviteLinkConfiguration(
+                infoDictionary: ["HEALTHCOMP_ALLOW_CUSTOM_INVITE_SCHEME": "YES"]
+            )).makeChallengeLink(code)
+        )
+        XCTAssertEqual(CompetitionRoute(url: fallback), .challengeLink(code))
+    }
+
+    func testChallengeLinkRejectsWrongLengthQueryTrailingSlashAndHost() {
+        let raw = "Xb3kP9qL2mN8vR4tY6wZ1a"
+        for value in [
+            "https://healthcomp.app/c/\(raw.dropLast())",
+            "https://healthcomp.app/c/\(raw)a",
+            "https://healthcomp.app/c/\(raw)?x=1",
+            "https://healthcomp.app/c/\(raw)/",
+            "https://evil.example/c/\(raw)",
+            "https://healthcomp.app/c/\(raw)/extra",
+            "healthcomp://challenge/\(raw)/extra",
+            "healthcomp://challenge/short",
+        ] {
+            XCTAssertNil(
+                CompetitionRoute(url: URL(string: value)!, allowedInviteHost: "healthcomp.app"),
+                value
+            )
+        }
+    }
+
+    func testChallengeLinkNeverEntersUserInfoAndIsRedacted() throws {
+        let raw = "Xb3kP9qL2mN8vR4tY6wZ1a"
+        let code = try XCTUnwrap(CompetitionChallengeLinkCode(rawValue: raw))
+        XCTAssertTrue(CompetitionRoute.challengeLink(code).userInfo.isEmpty)
+        XCTAssertFalse(String(describing: code).contains(raw))
+        XCTAssertFalse(String(reflecting: code).contains(raw))
+    }
+
     func testStrictFallbackInviteURLParsesWithoutExposingTokenDescription() {
         let token = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
         let route = CompetitionRoute(

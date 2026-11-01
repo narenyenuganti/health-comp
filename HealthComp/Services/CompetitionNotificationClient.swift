@@ -53,6 +53,34 @@ struct CompetitionInviteClaimToken:
     }
 }
 
+/// A person's reusable challenge link code (`/c/<code>`). It only lets
+/// someone create a pending challenge to that person.
+struct CompetitionChallengeLinkCode:
+    Equatable,
+    Sendable,
+    CustomStringConvertible,
+    CustomDebugStringConvertible,
+    CustomReflectable
+{
+    let rawValue: String
+
+    init?(rawValue: String) {
+        guard rawValue.range(
+            of: "^[A-Za-z0-9_-]{22}$",
+            options: .regularExpression
+        ) != nil else {
+            return nil
+        }
+        self.rawValue = rawValue
+    }
+
+    var description: String { "[REDACTED CHALLENGE LINK]" }
+    var debugDescription: String { description }
+    var customMirror: Mirror {
+        Mirror(self, children: ["value": description])
+    }
+}
+
 struct CompetitionInviteShareLink:
     Equatable,
     Sendable,
@@ -127,10 +155,13 @@ enum CompetitionRoute: Equatable, Sendable {
     enum Kind: Hashable, Sendable {
         case competition
         case claimInvite
+        case challengeLink
     }
 
     case competition(CompetitionID)
     case claimInvite(CompetitionInviteClaimToken)
+    /// Someone's challenge link: offers to challenge them.
+    case challengeLink(CompetitionChallengeLinkCode)
 
     init?(url: URL) {
         self.init(
@@ -175,6 +206,14 @@ enum CompetitionRoute: Equatable, Sendable {
                 }
                 self = .claimInvite(token)
 
+            case "challenge":
+                guard let code = CompetitionChallengeLinkCode(
+                    rawValue: pathValue
+                ) else {
+                    return nil
+                }
+                self = .challengeLink(code)
+
             default:
                 return nil
             }
@@ -183,11 +222,21 @@ enum CompetitionRoute: Equatable, Sendable {
             guard let allowedInviteHost,
                   CompetitionInviteHost.isValid(allowedInviteHost),
                   url.host == allowedInviteHost,
-                  encodedPath.hasPrefix("/invite/"),
                   !encodedPath.hasSuffix("/")
             else {
                 return nil
             }
+            if encodedPath.hasPrefix("/c/") {
+                let pathValue = String(encodedPath.dropFirst("/c/".count))
+                guard let code = CompetitionChallengeLinkCode(
+                    rawValue: pathValue
+                ) else {
+                    return nil
+                }
+                self = .challengeLink(code)
+                return
+            }
+            guard encodedPath.hasPrefix("/invite/") else { return nil }
             let pathValue = String(encodedPath.dropFirst("/invite/".count))
             guard !pathValue.isEmpty,
                   !pathValue.contains("/"),
@@ -238,9 +287,9 @@ enum CompetitionRoute: Equatable, Sendable {
                 UserInfoKey.competitionID:
                     id.rawValue.uuidString.lowercased(),
             ]
-        case .claimInvite:
-            // Invite tokens are intentionally forbidden from notification
-            // payloads. An empty payload fails closed when decoded.
+        case .claimInvite, .challengeLink:
+            // Invite tokens and link codes are intentionally forbidden from
+            // notification payloads. An empty payload fails closed when decoded.
             return [:]
         }
     }
@@ -251,6 +300,8 @@ enum CompetitionRoute: Equatable, Sendable {
             .competition
         case .claimInvite:
             .claimInvite
+        case .challengeLink:
+            .challengeLink
         }
     }
 }

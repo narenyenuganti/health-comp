@@ -202,7 +202,7 @@ final class MainTabFeatureTests: XCTestCase {
             $0.pendingClaimRoute = envelope
             $0.inviteClaimStatus = .ready
         }
-        await store.send(.declineClaimTapped) {
+        await store.send(.notNowClaimTapped) {
             $0.pendingClaimRoute = nil
             $0.lastHandledClaimRouteSequence = envelope.sequence
             $0.inviteClaimStatus = .idle
@@ -215,9 +215,10 @@ final class MainTabFeatureTests: XCTestCase {
     }
 
     @MainActor
-    func testNewerClaimLinkClearsEarlierAcceptance() async throws {
+    func testNewerClaimLinkWaitsBehindAnEarlierAcceptance() async throws {
         let first = try claimEnvelope(sequence: 7)
-        let newer = try claimEnvelope(sequence: 8)
+        // A different link: the same link again is ignored.
+        let newer = try claimEnvelope(sequence: 8, token: String(repeating: "N", count: 43))
         let store = TestStore(
             initialState: MainTabFeature.State(
                 onboarding: MainTabFeature.PermissionOnboarding(steps: [.health])
@@ -234,10 +235,9 @@ final class MainTabFeatureTests: XCTestCase {
             $0.acceptsClaimOnStart = true
             $0.inviteClaimStatus = .idle
         }
+        // The accepted link stays on screen; the newer one waits for it.
         await store.send(.routeReceived(newer)) {
-            $0.pendingClaimRoute = newer
-            $0.acceptsClaimOnStart = false
-            $0.inviteClaimStatus = .ready
+            $0.queuedClaimRoute = newer
         }
     }
 
@@ -1115,6 +1115,7 @@ final class MainTabFeatureTests: XCTestCase {
         } withDependencies: {
             $0.competitionClient = claims.client
             $0.competitionRoutingClient = routing.client
+            $0.date = .constant(MainTabClaimRecorder.now)
             $0.continuousClock = clock
         }
 
@@ -1126,8 +1127,9 @@ final class MainTabFeatureTests: XCTestCase {
         let first = publication(revision: 1, visibleIDs: [])
         await store.send(.competition(.publication(first))) {
             $0.competition.publication = first
-            $0.inviteClaimStatus = .ready
+            $0.inviteClaimStatus = .loadingPreview
         }
+        await receivePreview(store, envelope)
         XCTAssertEqual(claims.requestCount, 0)
 
         await store.send(.acceptClaimTapped)
@@ -1144,6 +1146,8 @@ final class MainTabFeatureTests: XCTestCase {
             $0.pendingClaimRoute = nil
             $0.claimRouteSequenceInFlight = nil
             $0.lastHandledClaimRouteSequence = envelope.sequence
+            $0.inviteClaimPreview = nil
+            $0.inviteClaimPreviewEvaluatedAt = nil
             $0.pendingClaimNavigation = .init(
                 competitionID: claimedID,
                 expectedPublicationRevision: 3
@@ -1223,13 +1227,15 @@ final class MainTabFeatureTests: XCTestCase {
         } withDependencies: {
             $0.competitionClient = claims.client
             $0.competitionRoutingClient = routing.client
+            $0.date = .constant(MainTabClaimRecorder.now)
             $0.continuousClock = clock
         }
 
         await store.send(.routeReceived(envelope)) {
             $0.pendingClaimRoute = envelope
-            $0.inviteClaimStatus = .ready
+            $0.inviteClaimStatus = .loadingPreview
         }
+        await receivePreview(store, envelope)
         await store.send(.acceptClaimTapped)
         await store.receive(.processPendingClaim) {
             $0.claimRouteSequenceInFlight = envelope.sequence
@@ -1244,6 +1250,8 @@ final class MainTabFeatureTests: XCTestCase {
             $0.pendingClaimRoute = nil
             $0.claimRouteSequenceInFlight = nil
             $0.lastHandledClaimRouteSequence = envelope.sequence
+            $0.inviteClaimPreview = nil
+            $0.inviteClaimPreviewEvaluatedAt = nil
             $0.pendingClaimNavigation = pendingNavigation
             $0.inviteClaimStatus = .waitingForCompetition
         }
@@ -1299,12 +1307,14 @@ final class MainTabFeatureTests: XCTestCase {
         } withDependencies: {
             $0.competitionClient = claims.client
             $0.competitionRoutingClient = routing.client
+            $0.date = .constant(MainTabClaimRecorder.now)
         }
 
         await store.send(.routeReceived(envelope)) {
             $0.pendingClaimRoute = envelope
-            $0.inviteClaimStatus = .ready
+            $0.inviteClaimStatus = .loadingPreview
         }
+        await receivePreview(store, envelope)
         await store.send(.acceptClaimTapped)
         await store.receive(.processPendingClaim) {
             $0.claimRouteSequenceInFlight = envelope.sequence
@@ -1319,6 +1329,8 @@ final class MainTabFeatureTests: XCTestCase {
             $0.pendingClaimRoute = nil
             $0.claimRouteSequenceInFlight = nil
             $0.lastHandledClaimRouteSequence = envelope.sequence
+            $0.inviteClaimPreview = nil
+            $0.inviteClaimPreviewEvaluatedAt = nil
             $0.inviteClaimStatus = .unavailable
         }
         await store.send(.routeReceived(envelope))
@@ -1354,12 +1366,14 @@ final class MainTabFeatureTests: XCTestCase {
         } withDependencies: {
             $0.competitionClient = claims.client
             $0.competitionRoutingClient = routing.client
+            $0.date = .constant(MainTabClaimRecorder.now)
         }
 
         await store.send(.routeReceived(envelope)) {
             $0.pendingClaimRoute = envelope
-            $0.inviteClaimStatus = .ready
+            $0.inviteClaimStatus = .loadingPreview
         }
+        await receivePreview(store, envelope)
         await store.send(.acceptClaimTapped)
         await store.receive(.processPendingClaim) {
             $0.claimRouteSequenceInFlight = envelope.sequence
@@ -1374,6 +1388,8 @@ final class MainTabFeatureTests: XCTestCase {
             $0.pendingClaimRoute = nil
             $0.claimRouteSequenceInFlight = nil
             $0.lastHandledClaimRouteSequence = envelope.sequence
+            $0.inviteClaimPreview = nil
+            $0.inviteClaimPreviewEvaluatedAt = nil
             $0.inviteClaimStatus = .ownChallenge
         }
         await store.send(.dismissClaimStatus) {
@@ -1417,13 +1433,15 @@ final class MainTabFeatureTests: XCTestCase {
         } withDependencies: {
             $0.competitionClient = claims.client
             $0.competitionRoutingClient = routing.client
+            $0.date = .constant(MainTabClaimRecorder.now)
             $0.continuousClock = clock
         }
 
         await store.send(.routeReceived(envelope)) {
             $0.pendingClaimRoute = envelope
-            $0.inviteClaimStatus = .ready
+            $0.inviteClaimStatus = .loadingPreview
         }
+        await receivePreview(store, envelope)
         await store.send(.acceptClaimTapped)
         await store.receive(.processPendingClaim) {
             $0.claimRouteSequenceInFlight = envelope.sequence
@@ -1454,6 +1472,8 @@ final class MainTabFeatureTests: XCTestCase {
             $0.pendingClaimRoute = nil
             $0.claimRouteSequenceInFlight = nil
             $0.lastHandledClaimRouteSequence = envelope.sequence
+            $0.inviteClaimPreview = nil
+            $0.inviteClaimPreviewEvaluatedAt = nil
             $0.pendingClaimNavigation = .init(
                 competitionID: claimedID,
                 expectedPublicationRevision: 2
@@ -1508,7 +1528,7 @@ final class MainTabFeatureTests: XCTestCase {
     }
 
     @MainActor
-    func testDismissingRetryableClaimKeepsTokenPending() async throws {
+    func testNotNowOnRetryableClaimForgetsTheLink() async throws {
         let token = try XCTUnwrap(
             CompetitionInviteClaimToken(
                 rawValue: "FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"
@@ -1530,17 +1550,18 @@ final class MainTabFeatureTests: XCTestCase {
             $0.competitionRoutingClient = routing.client
         }
 
-        await store.send(.dismissRetryableClaim) {
+        await store.send(.notNowClaimTapped) {
+            $0.pendingClaimRoute = nil
+            $0.lastHandledClaimRouteSequence = envelope.sequence
             $0.inviteClaimStatus = .idle
         }
 
-        XCTAssertEqual(store.state.pendingClaimRoute, envelope)
-        XCTAssertEqual(routing.consumedSequences, [])
+        XCTAssertEqual(routing.consumedSequences, [envelope.sequence])
         await store.finish()
     }
 
     @MainActor
-    func testDecliningClaimConsumesRouteWithoutCallingServer() async throws {
+    func testNotNowConsumesRouteWithoutCallingServer() async throws {
         let token = try XCTUnwrap(
             CompetitionInviteClaimToken(
                 rawValue: "DDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDDD"
@@ -1565,16 +1586,20 @@ final class MainTabFeatureTests: XCTestCase {
         } withDependencies: {
             $0.competitionClient = claims.client
             $0.competitionRoutingClient = routing.client
+            $0.date = .constant(MainTabClaimRecorder.now)
         }
 
         await store.send(.routeReceived(envelope)) {
             $0.pendingClaimRoute = envelope
-            $0.inviteClaimStatus = .ready
+            $0.inviteClaimStatus = .loadingPreview
         }
-        await store.send(.declineClaimTapped) {
+        await receivePreview(store, envelope)
+        await store.send(.notNowClaimTapped) {
             $0.pendingClaimRoute = nil
             $0.lastHandledClaimRouteSequence = envelope.sequence
             $0.inviteClaimStatus = .idle
+            $0.inviteClaimPreview = nil
+            $0.inviteClaimPreviewEvaluatedAt = nil
         }
 
         XCTAssertEqual(claims.requestCount, 0)
@@ -1583,7 +1608,7 @@ final class MainTabFeatureTests: XCTestCase {
     }
 
     @MainActor
-    func testDecliningRetryableClaimConsumesRouteWithoutCallingServer()
+    func testNotNowOnRetryableClaimConsumesRouteWithoutCallingServer()
         async throws
     {
         let token = try XCTUnwrap(
@@ -1607,17 +1632,443 @@ final class MainTabFeatureTests: XCTestCase {
         } withDependencies: {
             $0.competitionClient = claims.client
             $0.competitionRoutingClient = routing.client
+            $0.date = .constant(MainTabClaimRecorder.now)
         }
 
-        await store.send(.declineClaimTapped) {
+        await store.send(.notNowClaimTapped) {
             $0.pendingClaimRoute = nil
             $0.lastHandledClaimRouteSequence = envelope.sequence
             $0.inviteClaimStatus = .idle
+            $0.inviteClaimPreview = nil
+            $0.inviteClaimPreviewEvaluatedAt = nil
         }
 
         XCTAssertEqual(claims.requestCount, 0)
         XCTAssertEqual(routing.consumedSequences, [envelope.sequence])
         await store.finish()
+    }
+
+    @MainActor
+    func testSecondClaimLinkIsQueuedNotReplacedAndOpensAfterNotNow() async throws {
+        let first = CompetitionRouteEnvelope(
+            sequence: 20,
+            route: .claimInvite(try XCTUnwrap(CompetitionInviteClaimToken(
+                rawValue: "QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ"
+            )))
+        )
+        let second = CompetitionRouteEnvelope(
+            sequence: 21,
+            route: .claimInvite(try XCTUnwrap(CompetitionInviteClaimToken(
+                rawValue: "RRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRRR"
+            )))
+        )
+        let routing = MainTabRoutingRecorder()
+        let claims = MainTabClaimRecorder(expectedToken: try XCTUnwrap(
+            CompetitionInviteClaimToken(rawValue: "QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ")
+        ), results: [])
+        let store = TestStore(
+            initialState: MainTabFeature.State(
+                competition: CompetitionFeature.State(
+                    publication: publication(revision: 1, visibleIDs: [])
+                )
+            )
+        ) {
+            MainTabFeature()
+        } withDependencies: {
+            $0.competitionClient = claims.client
+            $0.competitionRoutingClient = routing.client
+            $0.date = .constant(MainTabClaimRecorder.now)
+        }
+
+        await store.send(.routeReceived(first)) {
+            $0.pendingClaimRoute = first
+            $0.inviteClaimStatus = .loadingPreview
+        }
+        await receivePreview(store, first)
+        await store.send(.routeReceived(second)) {
+            $0.queuedClaimRoute = second
+        }
+        // The same link again is ignored.
+        let duplicate = CompetitionRouteEnvelope(sequence: 22, route: first.route)
+        await store.send(.routeReceived(duplicate))
+        XCTAssertEqual(store.state.pendingClaimRoute, first)
+
+        await store.send(.notNowClaimTapped) {
+            $0.pendingClaimRoute = second
+            $0.queuedClaimRoute = nil
+            $0.lastHandledClaimRouteSequence = first.sequence
+            $0.inviteClaimPreview = nil
+            $0.inviteClaimPreviewEvaluatedAt = nil
+            $0.inviteClaimStatus = .loadingPreview
+        }
+        await receivePreview(store, second)
+        XCTAssertEqual(claims.requestCount, 0)
+        XCTAssertEqual(routing.consumedSequences, [duplicate.sequence, first.sequence])
+        await store.finish()
+    }
+
+    @MainActor
+    func testSecondClaimLinkWaitsDuringColdStart() async throws {
+        let firstToken = try XCTUnwrap(CompetitionInviteClaimToken(
+            rawValue: "WWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWWW"
+        ))
+        let first = CompetitionRouteEnvelope(sequence: 60, route: .claimInvite(firstToken))
+        let second = CompetitionRouteEnvelope(
+            sequence: 61,
+            route: .claimInvite(try XCTUnwrap(CompetitionInviteClaimToken(
+                rawValue: "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
+            )))
+        )
+        let claims = MainTabClaimRecorder(expectedToken: firstToken, results: [])
+        let store = TestStore(initialState: MainTabFeature.State()) {
+            MainTabFeature()
+        } withDependencies: {
+            $0.competitionClient = claims.client
+            $0.competitionRoutingClient = MainTabRoutingRecorder().client
+            $0.date = .constant(MainTabClaimRecorder.now)
+        }
+        // No publication yet: the first link is still idle.
+        await store.send(.routeReceived(first)) { $0.pendingClaimRoute = first }
+        await store.send(.routeReceived(second)) { $0.queuedClaimRoute = second }
+
+        let initial = publication(revision: 1, visibleIDs: [])
+        await store.send(.competition(.publication(initial))) {
+            $0.competition.publication = initial
+            $0.inviteClaimStatus = .loadingPreview
+        }
+        await receivePreview(store, first)
+        XCTAssertEqual(store.state.queuedClaimRoute, second)
+        await store.finish()
+    }
+
+    @MainActor
+    func testSecondClaimLinkWaitsWhileTheAcceptedMatchLoads() async throws {
+        let matchID = competitionID("81000000-0000-0000-0000-000000000070")
+        let firstToken = try XCTUnwrap(CompetitionInviteClaimToken(
+            rawValue: "YYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYYY"
+        ))
+        let first = CompetitionRouteEnvelope(sequence: 70, route: .claimInvite(firstToken))
+        let second = CompetitionRouteEnvelope(
+            sequence: 71,
+            route: .claimInvite(try XCTUnwrap(CompetitionInviteClaimToken(
+                rawValue: "ZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZZ"
+            )))
+        )
+        let routing = MainTabRoutingRecorder()
+        let claims = MainTabClaimRecorder(
+            expectedToken: firstToken,
+            results: [.success(matchID, expectedRevision: 2)]
+        )
+        let clock = TestClock()
+        let store = TestStore(
+            initialState: MainTabFeature.State(
+                competition: CompetitionFeature.State(
+                    publication: publication(revision: 1, visibleIDs: [])
+                )
+            )
+        ) {
+            MainTabFeature()
+        } withDependencies: {
+            $0.competitionClient = claims.client
+            $0.competitionRoutingClient = routing.client
+            $0.continuousClock = clock
+            $0.date = .constant(MainTabClaimRecorder.now)
+        }
+        await store.send(.routeReceived(first)) {
+            $0.pendingClaimRoute = first
+            $0.inviteClaimStatus = .loadingPreview
+        }
+        await receivePreview(store, first)
+        await store.send(.acceptClaimTapped)
+        await store.receive(.processPendingClaim) {
+            $0.claimRouteSequenceInFlight = first.sequence
+            $0.inviteClaimStatus = .claiming
+        }
+        await store.receive(.claimInviteResponse(
+            sequence: first.sequence,
+            .success(matchID, expectedRevision: 2)
+        )) {
+            $0.pendingClaimRoute = nil
+            $0.claimRouteSequenceInFlight = nil
+            $0.lastHandledClaimRouteSequence = first.sequence
+            $0.inviteClaimPreview = nil
+            $0.inviteClaimPreviewEvaluatedAt = nil
+            $0.pendingClaimNavigation = .init(competitionID: matchID, expectedPublicationRevision: 2)
+            $0.inviteClaimStatus = .waitingForCompetition
+        }
+        // The second link waits for the match instead of starting.
+        await store.send(.routeReceived(second)) { $0.queuedClaimRoute = second }
+
+        let acknowledged = publication(revision: 2, visibleID: matchID)
+        await store.send(.competition(.publication(acknowledged))) {
+            $0.competition.publication = acknowledged
+            $0.path = [matchID]
+            $0.pendingClaimNavigation = nil
+            $0.pendingClaimRoute = second
+            $0.queuedClaimRoute = nil
+            $0.inviteClaimStatus = .loadingPreview
+        }
+        await receivePreview(store, second)
+        await clock.advance(by: .seconds(15))
+        await store.finish()
+    }
+
+    @MainActor
+    func testDeclineConfirmedCallsDeclineAndConsumes() async throws {
+        let token = try XCTUnwrap(CompetitionInviteClaimToken(
+            rawValue: "SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS"
+        ))
+        let envelope = CompetitionRouteEnvelope(sequence: 30, route: .claimInvite(token))
+        let routing = MainTabRoutingRecorder()
+        let claims = MainTabClaimRecorder(expectedToken: token, results: [])
+        let store = TestStore(
+            initialState: MainTabFeature.State(
+                competition: CompetitionFeature.State(
+                    publication: publication(revision: 1, visibleIDs: [])
+                )
+            )
+        ) {
+            MainTabFeature()
+        } withDependencies: {
+            $0.competitionClient = claims.client
+            $0.competitionRoutingClient = routing.client
+            $0.date = .constant(MainTabClaimRecorder.now)
+        }
+
+        await store.send(.routeReceived(envelope)) {
+            $0.pendingClaimRoute = envelope
+            $0.inviteClaimStatus = .loadingPreview
+        }
+        await receivePreview(store, envelope)
+        await store.send(.declineClaimConfirmed) {
+            $0.inviteClaimStatus = .declining
+        }
+        await store.receive(.declineClaimFinished(sequence: envelope.sequence, succeeded: true)) {
+            $0.pendingClaimRoute = nil
+            $0.lastHandledClaimRouteSequence = envelope.sequence
+            $0.inviteClaimPreview = nil
+            $0.inviteClaimPreviewEvaluatedAt = nil
+            $0.inviteClaimStatus = .idle
+        }
+        XCTAssertEqual(
+            claims.declinedIDs,
+            [CompetitionID(MainTabClaimRecorder.preview.competitionID)]
+        )
+        XCTAssertEqual(claims.requestCount, 0)
+        XCTAssertEqual(routing.consumedSequences, [envelope.sequence])
+        await store.finish()
+    }
+
+    @MainActor
+    func testDeclineFailureReturnsToReadyWithError() async throws {
+        let token = try XCTUnwrap(CompetitionInviteClaimToken(
+            rawValue: "TTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTTT"
+        ))
+        let envelope = CompetitionRouteEnvelope(sequence: 31, route: .claimInvite(token))
+        let routing = MainTabRoutingRecorder()
+        let claims = MainTabClaimRecorder(expectedToken: token, results: [])
+        claims.declineSucceeds = false
+        let store = TestStore(
+            initialState: MainTabFeature.State(
+                competition: CompetitionFeature.State(
+                    publication: publication(revision: 1, visibleIDs: [])
+                )
+            )
+        ) {
+            MainTabFeature()
+        } withDependencies: {
+            $0.competitionClient = claims.client
+            $0.competitionRoutingClient = routing.client
+            $0.date = .constant(MainTabClaimRecorder.now)
+        }
+
+        await store.send(.routeReceived(envelope)) {
+            $0.pendingClaimRoute = envelope
+            $0.inviteClaimStatus = .loadingPreview
+        }
+        await receivePreview(store, envelope)
+        await store.send(.declineClaimConfirmed) {
+            $0.inviteClaimStatus = .declining
+        }
+        await store.receive(.declineClaimFinished(sequence: envelope.sequence, succeeded: false)) {
+            $0.inviteClaimStatus = .ready
+            $0.claimDeclineFailed = true
+        }
+        XCTAssertEqual(routing.consumedSequences, [])
+        await store.finish()
+    }
+
+    @MainActor
+    func testPreviewOwnChallengeActiveMatchAndUnavailableStatuses() async throws {
+        let token = try XCTUnwrap(CompetitionInviteClaimToken(
+            rawValue: "UUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUUU"
+        ))
+        for (failure, status) in [
+            (CompetitionRemoteFailure.forbidden, MainTabFeature.InviteClaimStatus.ownChallenge),
+            (.activeMatchExists, .activeMatchExists),
+            (.inviteUnavailable, .unavailable),
+        ] {
+            let envelope = CompetitionRouteEnvelope(sequence: 40, route: .claimInvite(token))
+            let routing = MainTabRoutingRecorder()
+            let claims = MainTabClaimRecorder(expectedToken: token, results: [])
+            claims.previewResult = .failure(failure)
+            let store = TestStore(
+                initialState: MainTabFeature.State(
+                    competition: CompetitionFeature.State(
+                        publication: publication(revision: 1, visibleIDs: [])
+                    )
+                )
+            ) {
+                MainTabFeature()
+            } withDependencies: {
+                $0.competitionClient = claims.client
+                $0.competitionRoutingClient = routing.client
+                $0.date = .constant(MainTabClaimRecorder.now)
+            }
+            await store.send(.routeReceived(envelope)) {
+                $0.pendingClaimRoute = envelope
+                $0.inviteClaimStatus = .loadingPreview
+            }
+            await store.receive(.claimPreviewResponse(sequence: envelope.sequence, .failure(failure))) {
+                $0.pendingClaimRoute = nil
+                $0.lastHandledClaimRouteSequence = envelope.sequence
+                $0.inviteClaimStatus = status
+            }
+            await store.send(.dismissClaimStatus) { $0.inviteClaimStatus = .idle }
+            XCTAssertEqual(routing.consumedSequences, [envelope.sequence])
+            XCTAssertEqual(claims.requestCount, 0)
+            await store.finish()
+        }
+    }
+
+    @MainActor
+    func testPreviewAlreadyAcceptedGoesToTheMatch() async throws {
+        let token = try XCTUnwrap(CompetitionInviteClaimToken(
+            rawValue: "VVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV"
+        ))
+        let envelope = CompetitionRouteEnvelope(sequence: 41, route: .claimInvite(token))
+        let matchID = CompetitionID(MainTabClaimRecorder.preview.competitionID)
+        let routing = MainTabRoutingRecorder()
+        let claims = MainTabClaimRecorder(expectedToken: token, results: [])
+        claims.previewResult = .success(CompetitionInvitePreview(
+            competitionID: matchID.rawValue,
+            state: .accepted,
+            sender: MainTabClaimRecorder.preview.sender,
+            timeZoneIdentifier: "America/Los_Angeles",
+            expiresAt: MainTabClaimRecorder.now
+        ))
+        let visible = publication(revision: 4, visibleID: matchID)
+        let store = TestStore(
+            initialState: MainTabFeature.State(
+                competition: CompetitionFeature.State(publication: visible)
+            )
+        ) {
+            MainTabFeature()
+        } withDependencies: {
+            $0.competitionClient = claims.client
+            $0.competitionRoutingClient = routing.client
+            $0.date = .constant(MainTabClaimRecorder.now)
+        }
+        await store.send(.routeReceived(envelope)) {
+            $0.pendingClaimRoute = envelope
+            $0.inviteClaimStatus = .loadingPreview
+        }
+        await store.receive(.claimPreviewResponse(
+            sequence: envelope.sequence,
+            .success(try claims.previewResult.get())
+        )) {
+            $0.claimRouteSequenceInFlight = envelope.sequence
+        }
+        await store.receive(.claimInviteResponse(
+            sequence: envelope.sequence,
+            .success(matchID, expectedRevision: 4)
+        )) {
+            $0.pendingClaimRoute = nil
+            $0.claimRouteSequenceInFlight = nil
+            $0.lastHandledClaimRouteSequence = envelope.sequence
+            $0.path = [matchID]
+            $0.inviteClaimStatus = .idle
+        }
+        XCTAssertEqual(claims.requestCount, 0)
+        await store.finish()
+    }
+
+    @MainActor
+    func testChallengeLinkResolvesToReadyAndPrefillsThePerson() async throws {
+        let code = try XCTUnwrap(CompetitionChallengeLinkCode(rawValue: "Xb3kP9qL2mN8vR4tY6wZ1a"))
+        let maya = AuthenticatedProfile(
+            id: UUID(uuidString: "82000000-0000-0000-0000-000000000042")!,
+            displayName: "Maya"
+        )
+        let envelope = CompetitionRouteEnvelope(sequence: 50, route: .challengeLink(code))
+        let routing = MainTabRoutingRecorder()
+        var client = MainTabLifecycleRecorder().client
+        client.resolveChallengeLink = { _ in maya }
+        let store = TestStore(
+            initialState: MainTabFeature.State(
+                competition: CompetitionFeature.State(
+                    publication: publication(revision: 1, visibleIDs: [])
+                )
+            )
+        ) {
+            MainTabFeature()
+        } withDependencies: {
+            $0.competitionClient = client
+            $0.competitionRoutingClient = routing.client
+        }
+        await store.send(.routeReceived(envelope)) {
+            $0.lastHandledRouteSequence = envelope.sequence
+            $0.challengeFromLink = .init(sequence: 50, code: code, status: .resolving)
+        }
+        await store.receive(.challengeLinkResolved(sequence: 50, .success(maya))) {
+            $0.challengeFromLink?.status = .ready(maya)
+        }
+        await store.receive(.competition(.challengeRecipientChosen(maya))) {
+            $0.competition.inviteRecipient = maya
+            $0.competition.inviteRecipientCode = maya.id.uuidString.lowercased()
+        }
+        await store.send(.dismissChallengeFromLink) {
+            $0.challengeFromLink = nil
+        }
+        await store.receive(.competition(.challengeSheetDismissed)) {
+            $0.competition.inviteRecipient = nil
+            $0.competition.inviteRecipientCode = ""
+        }
+        XCTAssertEqual(routing.consumedSequences, [envelope.sequence])
+        await store.finish()
+    }
+
+    @MainActor
+    func testChallengeLinkOwnUnavailableAndRetry() async throws {
+        let code = try XCTUnwrap(CompetitionChallengeLinkCode(rawValue: "Own0wn0wn0wn0wn0wn0wn0"))
+        for (failure, status) in [
+            (CompetitionRemoteFailure.ownChallengeLink, MainTabFeature.ChallengeFromLink.Status.ownLink),
+            (.recipientUnavailable, .unavailable),
+            (.retryableTransport, .retryable),
+        ] {
+            var client = MainTabLifecycleRecorder().client
+            client.resolveChallengeLink = { _ in throw failure }
+            let store = TestStore(
+                initialState: MainTabFeature.State(
+                    competition: CompetitionFeature.State(
+                        publication: publication(revision: 1, visibleIDs: [])
+                    )
+                )
+            ) {
+                MainTabFeature()
+            } withDependencies: {
+                $0.competitionClient = client
+                $0.competitionRoutingClient = MainTabRoutingRecorder().client
+            }
+            await store.send(.routeReceived(.init(sequence: 51, route: .challengeLink(code)))) {
+                $0.lastHandledRouteSequence = 51
+                $0.challengeFromLink = .init(sequence: 51, code: code, status: .resolving)
+            }
+            await store.receive(.challengeLinkResolved(sequence: 51, .failure(failure))) {
+                $0.challengeFromLink?.status = status
+            }
+            await store.finish()
+        }
     }
 
     private func publication(
@@ -1669,13 +2120,32 @@ final class MainTabFeatureTests: XCTestCase {
 
     private static let claimToken = "KKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKK"
 
-    private func claimEnvelope(sequence: UInt64) throws -> CompetitionRouteEnvelope {
+    private func claimEnvelope(
+        sequence: UInt64,
+        token: String = MainTabFeatureTests.claimToken
+    ) throws -> CompetitionRouteEnvelope {
         CompetitionRouteEnvelope(
             sequence: sequence,
             route: .claimInvite(
-                try XCTUnwrap(CompetitionInviteClaimToken(rawValue: Self.claimToken))
+                try XCTUnwrap(CompetitionInviteClaimToken(rawValue: token))
             )
         )
+    }
+
+    /// The recorder's preview arrives and the sheet becomes ready.
+    @MainActor
+    private func receivePreview(
+        _ store: TestStore<MainTabFeature.State, MainTabFeature.Action>,
+        _ envelope: CompetitionRouteEnvelope,
+        _ preview: CompetitionInvitePreview = MainTabClaimRecorder.preview
+    ) async {
+        await store.receive(
+            .claimPreviewResponse(sequence: envelope.sequence, .success(preview))
+        ) {
+            $0.inviteClaimPreview = preview
+            $0.inviteClaimPreviewEvaluatedAt = MainTabClaimRecorder.now
+            $0.inviteClaimStatus = .ready
+        }
     }
 }
 
@@ -1802,11 +2272,43 @@ private final class MainTabClaimRecorder: @unchecked Sendable {
         self.results = results
     }
 
+    static let now = Date(timeIntervalSinceReferenceDate: 800_000_000)
+    static let preview = CompetitionInvitePreview(
+        competitionID: UUID(uuidString: "81000000-0000-0000-0000-0000000000ff")!,
+        state: .pending,
+        sender: AuthenticatedProfile(
+            id: UUID(uuidString: "82000000-0000-0000-0000-0000000000ff")!,
+            displayName: "Naren"
+        ),
+        timeZoneIdentifier: "America/Los_Angeles",
+        expiresAt: now.addingTimeInterval(20 * 60 * 60)
+    )
+
+    var previewResult: Swift.Result<CompetitionInvitePreview, CompetitionRemoteFailure> = .success(preview)
+    var declineSucceeds = true
+    private var declines: [CompetitionID] = []
+    var declinedIDs: [CompetitionID] { lock.withLock { declines } }
+
     var requestCount: Int { lock.withLock { requests } }
     var allTokensMatched: Bool { lock.withLock { matched } }
 
     var client: CompetitionClient {
         var client = lifecycle.client
+        let previewResult = previewResult
+        let declineSucceeds = declineSucceeds
+        client.previewInvite = { _ in try previewResult.get() }
+        client.decline = { [weak self] id in
+            self?.lock.withLock { self?.declines.append(id) }
+            return LocalCompetitionPublication(
+                publicationRevision: 0,
+                dashboard: LocalCompetitionDashboard(
+                    competitions: [],
+                    awards: [],
+                    issues: declineSucceeds ? [] : [.commandRejected(id)],
+                    hiddenTerminalCompetitionCount: 0
+                )
+            )
+        }
         client.claimInvite = { [weak self] request in
             guard let self else { throw CompetitionRemoteFailure.operationFailed }
             return try self.lock.withLock {

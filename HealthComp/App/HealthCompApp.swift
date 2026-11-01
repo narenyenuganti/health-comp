@@ -235,8 +235,7 @@ struct AppRootView: View {
                         accountStore: store.scope(
                             state: \.account,
                             action: \.account
-                        ),
-                        accountCode: store.profile?.id
+                        )
                     )
                 }
             }
@@ -271,7 +270,6 @@ private struct AppProgressView: View {
 private struct AuthenticatedRootView: View {
     let mainStore: StoreOf<MainTabFeature>
     let accountStore: StoreOf<AccountFeature>
-    let accountCode: UUID?
 
     var body: some View {
         MainTabView(
@@ -287,7 +285,6 @@ private struct AuthenticatedRootView: View {
             AccountSheet(
                 mainStore: mainStore,
                 accountStore: accountStore,
-                accountCode: accountCode,
                 done: { mainStore.send(.accountPresentationChanged(false)) }
             )
         }
@@ -299,7 +296,6 @@ private struct AuthenticatedRootView: View {
 private struct AccountSheet: View {
     let mainStore: StoreOf<MainTabFeature>
     let accountStore: StoreOf<AccountFeature>
-    let accountCode: UUID?
     let done: () -> Void
 
     var body: some View {
@@ -340,13 +336,21 @@ private struct AccountSheet: View {
             )
         }
         let liveMatchCount = accountLiveMatchCount(competitions)
+        // Challenge links are between real accounts only.
+        let challengeLink = mainStore.competition.publication?.source == .remoteParticipants
+            ? AccountChallengeLink(
+                url: mainStore.competition.challengeLink,
+                failed: mainStore.competition.challengeLinkLoadFailed,
+                load: { mainStore.send(.competition(.challengeLinkRequested)) }
+            )
+            : nil
 #if HEALTHCOMP_STAGING
         return AccountSettingsView(
             store: accountStore,
             notifications: notifications,
             health: health,
             liveMatchCount: liveMatchCount,
-            accountCode: accountCode,
+            challengeLink: challengeLink,
             refreshCompetition: { mainStore.send(.competition(.pullToRefresh)) }
         )
 #else
@@ -355,7 +359,7 @@ private struct AccountSheet: View {
             notifications: notifications,
             health: health,
             liveMatchCount: liveMatchCount,
-            accountCode: accountCode
+            challengeLink: challengeLink
         )
 #endif
     }

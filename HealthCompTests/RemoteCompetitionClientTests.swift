@@ -1107,6 +1107,73 @@ final class RemoteCompetitionClientTests: XCTestCase {
         XCTAssertEqual(listCount, 3)
     }
 
+    func testChallengesFromOneProfileNeverReachTheNextAfterAFailedFetch()
+        async throws
+    {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let first = AuthenticatedProfile(
+            id: UUID(uuidString: "81000000-0000-4000-8000-000000000011")!,
+            displayName: "Beta Alice"
+        )
+        let second = AuthenticatedProfile(
+            id: UUID(uuidString: "81000000-0000-4000-8000-000000000012")!,
+            displayName: "Beta Bob"
+        )
+        let firstPaths = AuthenticatedProfileStoragePaths(
+            profileID: first.id,
+            rootDirectory: root.appendingPathComponent("first", isDirectory: true)
+        )
+        let secondPaths = AuthenticatedProfileStoragePaths(
+            profileID: second.id,
+            rootDirectory: root.appendingPathComponent("second", isDirectory: true)
+        )
+        for directory in firstPaths.fixedDirectories + secondPaths.fixedDirectories {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        }
+        let challengeID = UUID(uuidString: "81000000-0000-4000-8000-0000000000c1")!
+        let calls = ChallengeFetchCounter()
+        var api = remoteAPI(listCompetitions: { [] })
+        // Only the first profile's first fetch succeeds.
+        api.listChallenges = {
+            let call = calls.next()
+            guard call == 1 else { throw CompetitionRemoteFailure.retryableTransport }
+            return CompetitionChallengeList(
+                incoming: [.init(
+                    competitionID: challengeID,
+                    sender: AuthenticatedProfile(
+                        id: UUID(uuidString: "81000000-0000-4000-8000-0000000000c2")!,
+                        displayName: "Naren"
+                    ),
+                    timeZoneIdentifier: "UTC",
+                    createdAt: .distantPast,
+                    expiresAt: .distantFuture
+                )],
+                closed: []
+            )
+        }
+        let client = CompetitionClient.remote(remoteAPI: api, environment: try environment())
+
+        try await client.mountAuthenticatedProfile(first, firstPaths)
+        var firstIterator = client.start().makeAsyncIterator()
+        let firstPublication = await firstIterator.next()
+        XCTAssertEqual(
+            firstPublication?.dashboard.competitions.map(\.id.rawValue),
+            [challengeID]
+        )
+
+        try await client.prepareForProfileTeardown(requireRemoteInstallationRemoval: false)
+        await client.stop()
+        try await client.mountAuthenticatedProfile(second, secondPaths)
+        var secondIterator = client.start().makeAsyncIterator()
+        let secondPublication = await secondIterator.next()
+        XCTAssertEqual(secondPublication?.dashboard.competitions, [])
+        XCTAssertGreaterThanOrEqual(calls.count, 2)
+        await client.stop()
+    }
+
     func testStartAfterStopCannotRestartUntilAProfileIsMountedAgain()
         async throws
     {
@@ -5185,4 +5252,133 @@ private actor SerializedRemoteCompetitionListProbe {
     func maximumConcurrentCalls() -> Int {
         maximumActiveCalls
     }
+}
+
+final class RemoteChallengeProjectionTests: XCTestCase {
+    private let profile = AuthenticatedProfile(
+        id: UUID(uuidString: "84000000-0000-4000-8000-000000000001")!,
+        displayName: "Beta Alice"
+    )
+    private let naren = AuthenticatedProfile(
+        id: UUID(uuidString: "84000000-0000-4000-8000-000000000002")!,
+        displayName: "Naren"
+    )
+    private let now = Date(timeIntervalSince1970: 1_786_032_000)
+
+    private func context(_ wallDate: Date) -> CompetitionEnvironmentContext {
+        CompetitionEnvironmentContext(
+            instant: EnvironmentInstant(
+                wallDate: wallDate,
+                monotonic: MonotonicInstant(epochID: "remote-challenges", nanoseconds: 1_000)
+            ),
+            timeZoneIdentifier: "UTC"
+        )
+    }
+
+    private func list() -> CompetitionChallengeList {
+        CompetitionChallengeList(
+            incoming: [
+                .init(
+                    competitionID: UUID(uuidString: "84000000-0000-4000-8000-0000000000a1")!,
+                    sender: naren,
+                    timeZoneIdentifier: "America/Los_Angeles",
+                    createdAt: now.addingTimeInterval(-3_600),
+                    expiresAt: now.addingTimeInterval(20 * 3_600)
+                ),
+                .init(
+                    competitionID: UUID(uuidString: "84000000-0000-4000-8000-0000000000a2")!,
+                    sender: naren,
+                    timeZoneIdentifier: "UTC",
+                    createdAt: now.addingTimeInterval(-90_000),
+                    expiresAt: now.addingTimeInterval(-60)
+                ),
+            ],
+            closed: [
+                .init(
+                    competitionID: UUID(uuidString: "84000000-0000-4000-8000-0000000000b1")!,
+                    kind: .declined,
+                    other: naren,
+                    closedAt: now.addingTimeInterval(-3_600)
+                ),
+                .init(
+                    competitionID: UUID(uuidString: "84000000-0000-4000-8000-0000000000b2")!,
+                    kind: .cancelled,
+                    other: AuthenticatedProfile(
+                        id: UUID(uuidString: "84000000-0000-4000-8000-000000000003")!,
+                        displayName: "Former competitor"
+                    ),
+                    closedAt: now.addingTimeInterval(-7_200)
+                ),
+                .init(
+                    competitionID: UUID(uuidString: "84000000-0000-4000-8000-0000000000b3")!,
+                    kind: .declined,
+                    other: naren,
+                    closedAt: now.addingTimeInterval(-90_000)
+                ),
+            ]
+        )
+    }
+
+    func testProjectorAddsIncomingChallengeWithSenderIdentityAndDropsExpired() {
+        let dashboard = RemoteCompetitionProjector.dashboard(
+            materializations: [],
+            profile: profile,
+            context: context(now),
+            issues: [],
+            challenges: list()
+        )
+        let incoming = dashboard.competitions.filter {
+            if case .pending(.incoming, _, _) = $0.lifecycle { return true }
+            return false
+        }
+        XCTAssertEqual(incoming.map(\.id.rawValue.uuidString), ["84000000-0000-4000-8000-0000000000A1"])
+        XCTAssertEqual(incoming.first?.opponentDisplayName, "Naren")
+        XCTAssertEqual(
+            incoming.first?.opponentIdentity,
+            RemoteCompetitionOpponentIdentity.identity(for: naren.id)
+        )
+        XCTAssertEqual(incoming.first?.timeZoneIdentifier, "America/Los_Angeles")
+    }
+
+    func testProjectorAddsClosedDeclinedAndCancelledWithin24Hours() {
+        let dashboard = RemoteCompetitionProjector.dashboard(
+            materializations: [],
+            profile: profile,
+            context: context(now),
+            issues: [],
+            challenges: list()
+        )
+        let closed = dashboard.competitions.compactMap { competition -> String? in
+            switch competition.lifecycle {
+            case .declined(_, .outgoing): "declined \(competition.opponentDisplayName)"
+            case .cancelled: "cancelled \(competition.opponentDisplayName)"
+            default: nil
+            }
+        }
+        XCTAssertEqual(Set(closed), ["declined Naren", "cancelled Former competitor"])
+        XCTAssertEqual(
+            competitionHomeLayout(dashboard, now: now).upNext.count,
+            2,
+            "closed rows go to Up next"
+        )
+    }
+
+    func testProjectorSkipsChallengesAlreadyMaterialized() {
+        let presentations = RemoteCompetitionProjector.challengePresentations(
+            list(),
+            excluding: [CompetitionID(UUID(uuidString: "84000000-0000-4000-8000-0000000000a1")!)],
+            profile: profile,
+            context: context(now)
+        )
+        XCTAssertFalse(presentations.contains {
+            $0.id.rawValue == UUID(uuidString: "84000000-0000-4000-8000-0000000000a1")!
+        })
+    }
+}
+
+private final class ChallengeFetchCounter: @unchecked Sendable {
+    private let lock = NSLock()
+    private var value = 0
+    var count: Int { lock.withLock { value } }
+    func next() -> Int { lock.withLock { value += 1; return value } }
 }

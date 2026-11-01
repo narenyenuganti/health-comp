@@ -43,7 +43,9 @@ continue to work.
 
 Pending recipient membership is visible to the creator but is not accepted
 membership: it must not grant the chosen recipient competition/history access
-before they open and accept the link. Expiry and duplicate checks run on the server.
+before they accept it, by opening the link or from the incoming challenge in the
+app. Only the bound account can accept. Expiry and duplicate checks run on the
+server.
 
 ## Verification interfaces
 

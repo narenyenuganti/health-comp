@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 # Smoke-tests the static site in web/ on a running host: `npx wrangler pages
-# dev web`, a Pages preview URL, or a live invite host. The invite token is
-# fake; never pass or paste a real invite link.
+# dev web`, a Pages preview URL, or a live invite host. The invite token and
+# challenge code are fake; never pass or paste a real invite or challenge link.
 set -euo pipefail
 
 base="${1:?usage: scripts/verify-website.sh <base-url>}"
 base="${base%/}"
 token=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA
+code=AAAAAAAAAAAAAAAAAAAAAA
 scratch="$(mktemp -d)"
 trap 'rm -rf "$scratch"' EXIT
 failures=0
@@ -50,12 +51,15 @@ expect /privacy 200 'HealthComp privacy' \
 expect /no-such-page 404 'Page not found'
 expect "/invite/$token" 200 'cache-control: no-store' 'referrer-policy: no-referrer' \
   'x-robots-tag: noindex' 'content="https://healthcomp.app/og.png"'
+expect "/c/$code" 200 'cache-control: no-store' 'referrer-policy: no-referrer' \
+  'x-robots-tag: noindex' 'Open in HealthComp to challenge them'
 expect /.well-known/apple-app-site-association 200 'content-type: application/json' \
-  '"23LUYD78QK.com.narenyenuganti.HealthComp"' '"23LUYD78QK.com.narenyenuganti.HealthComp.staging"'
+  '"23LUYD78QK.com.narenyenuganti.HealthComp"' '"23LUYD78QK.com.narenyenuganti.HealthComp.staging"' \
+  '"/invite/*"' '"/c/*"'
 expect /og.png 200 'content-type: image/png'
 expect /apple-touch-icon.png 200 'content-type: image/png'
 
 if ((failures)); then
-  printf '%d of 8 checks failed\n' "$failures" >&2
+  printf '%d of 9 checks failed\n' "$failures" >&2
   exit 1
 fi

@@ -11,6 +11,8 @@ struct CreateCompetitionView: View {
     let recipient: AuthenticatedProfile?
     let recipientStatus: CompetitionFeature.InviteRecipientStatus
     let senderName: String?
+    /// Your own challenge link; Share Your Link shows once it has loaded.
+    var ownChallengeLink: URL? = nil
     let findRecipient: () -> Void
     let create: () -> Void
     let openChallenge: (CompetitionID) -> Void
@@ -84,7 +86,7 @@ struct CreateCompetitionView: View {
                 announce("Challenge sent")
             case let .failed(failure):
                 announce(competitionInviteFailureText(failure, opponentName: recipientName))
-            case .ready, .creating, .alreadyChallenged:
+            case .ready, .creating, .alreadyChallenged, .challengedYou, .inMatch:
                 break
             }
         }
@@ -97,7 +99,7 @@ struct CreateCompetitionView: View {
     private var isLocked: Bool {
         switch status {
         case .creating, .sent: true
-        case .ready, .alreadyChallenged, .failed: false
+        case .ready, .alreadyChallenged, .challengedYou, .inMatch, .failed: false
         }
     }
 
@@ -171,16 +173,16 @@ struct CreateCompetitionView: View {
 
     private var recipientSelection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("RECIPIENT")
+            Text("THEIR CHALLENGE LINK")
                 .font(.themeLabel)
                 .foregroundStyle(Theme.secondary)
-            Text("Ask them to share their HealthComp account code from Account.")
+            Text("Paste the challenge link they shared. Or send them yours so they can challenge you.")
                 .font(.subheadline)
                 .foregroundStyle(Theme.secondary)
             // A long code wraps instead of clipping, and the reserved lines
             // keep the field itself a 44 pt target (a one-line field fails
             // both audits). Return runs Find rather than adding a line.
-            TextField("HealthComp account code", text: codeBinding, axis: .vertical)
+            TextField("Challenge link", text: codeBinding, axis: .vertical)
                 .focused($recipientCodeIsFocused)
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
@@ -191,10 +193,21 @@ struct CreateCompetitionView: View {
                 .background(Theme.control, in: RoundedRectangle(cornerRadius: 10))
                 .disabled(isLocked)
                 .accessibilityIdentifier("competition.create.recipient-code")
-            Button("Find Account", action: find)
+            Button("Find", action: find)
                 .buttonStyle(SecondaryButtonStyle())
                 .disabled(!canFind)
                 .accessibilityIdentifier("competition.create.find-recipient")
+            if let ownChallengeLink {
+                ShareLink(
+                    item: ownChallengeLink,
+                    subject: Text("My HealthComp challenge link"),
+                    message: Text("Challenge me to a week of rings on HealthComp.")
+                ) {
+                    Label("Share Your Link", systemImage: "square.and.arrow.up")
+                }
+                .buttonStyle(SecondaryButtonStyle())
+                .accessibilityIdentifier("competition.create.share-own-link")
+            }
             if recipientStatus == .lookingUp {
                 ProgressView("Finding account…")
             } else if let error = competitionRecipientErrorText(recipientStatus) {
@@ -240,6 +253,20 @@ struct CreateCompetitionView: View {
                     .accessibilityIdentifier("competition.create.open-existing")
             }
 
+        case let .challengedYou(challenge):
+            conflictControl(
+                "\(challenge.opponentDisplayName) already challenged you.",
+                button: "Review Challenge",
+                id: challenge.id
+            )
+
+        case let .inMatch(match):
+            conflictControl(
+                "You already have a match with \(match.opponentDisplayName).",
+                button: "View Match",
+                id: match.id
+            )
+
         case .creating:
             HStack(spacing: 10) {
                 ProgressView()
@@ -275,12 +302,32 @@ struct CreateCompetitionView: View {
             .foregroundStyle(Theme.secondary)
             .accessibilityIdentifier("competition.create.configuration-error")
 
+        case .failed(.conflict):
+            Text(competitionInviteFailureText(.conflict, opponentName: recipientName))
+                .font(.callout)
+                .foregroundStyle(Theme.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("competition.create.conflict")
+
         case let .failed(failure):
             Text(competitionInviteFailureText(failure, opponentName: recipientName))
                 .font(.callout)
                 .foregroundStyle(Theme.secondary)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityIdentifier("competition.create.already-pending")
+        }
+    }
+
+    private func conflictControl(_ text: String, button: String, id: CompetitionID) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(text)
+                .font(.callout)
+                .foregroundStyle(Theme.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("competition.create.conflict")
+            Button(button) { openChallenge(id) }
+                .buttonStyle(PrimaryButtonStyle())
+                .accessibilityIdentifier("competition.create.open-existing")
         }
     }
 
@@ -319,10 +366,11 @@ struct CreateCompetitionView: View {
 
     private func waitingText(_ challenge: LocalCompetitionPresentation?) -> String {
         let name = challenge?.opponentDisplayName ?? recipientName
+        // The share is optional: the challenge already reached them in the app.
         if let expiresAt = challenge?.pendingExpiresAt {
-            return "Waiting for \(name). Expires \(moment(expiresAt))."
+            return "\(name) gets it in HealthComp. Waiting for \(name). Expires \(moment(expiresAt))."
         }
-        return "Waiting for \(name). Expires in 24 hours."
+        return "\(name) gets it in HealthComp. Waiting for \(name). Expires in 24 hours."
     }
 
     private func alreadyChallengedText(_ challenge: LocalCompetitionPresentation) -> String {
@@ -374,10 +422,10 @@ func competitionRecipientErrorText(
 ) -> String? {
     switch status {
     case .idle, .lookingUp: nil
-    case .invalidCode: "That isn’t a full account code. Ask them to share it again."
-    case .ownCode: "That’s your own code. Ask them for theirs."
-    case .notFound: "No account has this code. Check it and try again."
-    case .connectionFailed: "Couldn’t look up that code. Check your connection and try again."
+    case .invalidCode: "That isn’t a full challenge link. Ask them to share it again."
+    case .ownCode: "That’s your own link. Ask them for theirs."
+    case .notFound: "No account has this link. Check it and try again."
+    case .connectionFailed: "Couldn’t look up that link. Check your connection and try again."
     }
 }
 
@@ -398,5 +446,174 @@ func competitionInviteFailureText(
         return "\(opponentName) isn’t on HealthComp anymore."
     case .alreadyPending:
         return "You already challenged \(opponentName). It expires 24 hours after you sent it."
+    case .conflict:
+        return "You already have a challenge or match with \(opponentName)."
+    }
+}
+
+/// "Challenge Maya?": someone's challenge link, opened on this iPhone.
+struct ChallengeFromLinkView: View {
+    let link: MainTabFeature.ChallengeFromLink
+    /// The + sheet's slot, which this sheet sends through.
+    let status: CompetitionFeature.ChallengeSheetStatus
+    let send: () -> Void
+    let retry: () -> Void
+    let openCompetition: (CompetitionID) -> Void
+    let close: () -> Void
+
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    var body: some View {
+        let pinsControl = !dynamicTypeSize.isAccessibilitySize
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                HStack(alignment: .top) {
+                    Spacer()
+                    CompetitionDrawerCloseButton(action: close)
+                        .accessibilityIdentifier("competition.link.close")
+                }
+                content
+                if !pinsControl, case .ready = link.status {
+                    control
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 16)
+            .padding(.bottom, 16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .scrollBounceBehavior(.basedOnSize)
+        .safeAreaInset(edge: .bottom) {
+            if pinsControl, case .ready = link.status {
+                control
+                    .padding(.horizontal, 20)
+                    .padding(.top, 12)
+                    .padding(.bottom, 8)
+                    .background(Theme.ground)
+            }
+        }
+        .background(Theme.ground)
+        .presentationDetents([.large])
+        .presentationDragIndicator(.visible)
+        .presentationBackground(Theme.ground)
+        .interactiveDismissDisabled(status == .creating)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("competition.link.sheet")
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        switch link.status {
+        case .resolving:
+            ProgressView("Opening link…")
+                .frame(maxWidth: .infinity, minHeight: 200)
+        case let .ready(person):
+            HStack(alignment: .top, spacing: 14) {
+                Text(person.displayName.first.map { String($0).uppercased() } ?? "?")
+                    .font(.title3.weight(.heavy).width(.condensed))
+                    .foregroundStyle(Theme.ink)
+                    .frame(width: 44, height: 44)
+                    .background(Theme.control, in: Circle())
+                    .accessibilityHidden(true)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Challenge \(person.displayName)?")
+                        .font(.title3.weight(.heavy).width(.condensed))
+                        .foregroundStyle(Theme.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityAddTraits(.isHeader)
+                        .accessibilityIdentifier("competition.link.name")
+                    Text("From \(person.displayName)’s challenge link")
+                        .font(.subheadline)
+                        .foregroundStyle(Theme.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            CompetitionRulesCard(source: .remoteParticipants, opponentName: person.displayName)
+        case .ownLink:
+            message("That’s your link", "Share it with someone so they can challenge you.")
+        case .unavailable:
+            message("Link not found", "This challenge link isn’t active. Ask for a new one.")
+        case .retryable:
+            message("Couldn’t connect", "Check your connection and try again.")
+            Button("Try Again", action: retry)
+                .buttonStyle(PrimaryButtonStyle())
+                .accessibilityIdentifier("competition.link.retry")
+        }
+    }
+
+    private func message(_ title: String, _ body: String) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.title3.weight(.heavy).width(.condensed))
+                .foregroundStyle(Theme.ink)
+                .accessibilityAddTraits(.isHeader)
+            Text(body)
+                .font(.body)
+                .foregroundStyle(Theme.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private var name: String {
+        if case let .ready(person) = link.status { return person.displayName }
+        return "them"
+    }
+
+    @ViewBuilder
+    private var control: some View {
+        switch status {
+        case .ready:
+            VStack(alignment: .leading, spacing: 8) {
+                Button("Send Challenge", action: send)
+                    .buttonStyle(PrimaryButtonStyle())
+                    .accessibilityIdentifier("competition.link.send")
+                Text("\(name) gets it in HealthComp. Nothing to send back.")
+                    .font(.caption)
+                    .foregroundStyle(Theme.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        case .creating, .sent:
+            HStack(spacing: 10) {
+                ProgressView()
+                Text("Sending…")
+                    .font(.subheadline.weight(.medium))
+            }
+            .foregroundStyle(Theme.secondary)
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .accessibilityElement(children: .combine)
+        case let .alreadyChallenged(challenge):
+            existing("You already challenged \(challenge.opponentDisplayName).", "Open Challenge", challenge.id)
+        case let .challengedYou(challenge):
+            existing("\(challenge.opponentDisplayName) already challenged you.", "Review Challenge", challenge.id)
+        case let .inMatch(match):
+            existing("You already have a match with \(match.opponentDisplayName).", "View Match", match.id)
+        case let .failed(failure):
+            VStack(alignment: .leading, spacing: 8) {
+                Text(competitionInviteFailureText(failure, opponentName: name))
+                    .font(.callout)
+                    .foregroundStyle(Theme.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("competition.create.send-error")
+                if failure == .connection {
+                    Button("Try Again", action: send)
+                        .buttonStyle(PrimaryButtonStyle())
+                        .accessibilityIdentifier("competition.link.send")
+                }
+            }
+        }
+    }
+
+    private func existing(_ text: String, _ button: String, _ id: CompetitionID) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(text)
+                .font(.callout)
+                .foregroundStyle(Theme.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("competition.create.conflict")
+            Button(button) { openCompetition(id) }
+                .buttonStyle(PrimaryButtonStyle())
+                .accessibilityIdentifier("competition.create.open-existing")
+        }
     }
 }

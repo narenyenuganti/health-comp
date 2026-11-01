@@ -434,6 +434,23 @@ insert into public.profiles (
   '81000000-0000-0000-0000-000000000003',
   'Second Creator', 'active'
 );
+-- The second creator challenges a third account: the first creator's pending
+-- challenge to them would make a challenge back a reciprocal conflict.
+insert into auth.users (
+  id, instance_id, aud, role, email, encrypted_password, created_at, updated_at
+) values (
+  '81000000-0000-0000-0000-000000000005',
+  '00000000-0000-0000-0000-000000000000',
+  'authenticated', 'authenticated', 'invite-third-recipient@example.invalid', '',
+  now(), now()
+);
+insert into public.profiles (
+  id, auth_user_id, display_name, state
+) values (
+  '82000000-0000-0000-0000-000000000005',
+  '81000000-0000-0000-0000-000000000005',
+  'Third Recipient', 'active'
+);
 
 create temporary table idempotent_invite_results (
   name text primary key,
@@ -527,7 +544,7 @@ select lives_ok(
       decode(repeat('44', 32), 'hex'), 'UTC', null,
       '81000000-0000-0000-0000-000000000003',
       '84000000-0000-4000-8000-000000000001', 1::smallint,
-      (select (payload->>'id')::uuid from profile_api_results where name = 'bootstrap')
+      '82000000-0000-0000-0000-000000000005'
     )$$,
   'another creator may independently use the same UUID key'
 );

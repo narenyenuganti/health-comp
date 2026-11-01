@@ -591,6 +591,217 @@ final class SupabaseCompetitionRemoteAPITests: XCTestCase {
         }
     }
 
+    func testListedCancelledMatchDecodesWithoutASchedule() async throws {
+        // What the server stores after Cancel Match: no start day or deadline.
+        var cancelled = descriptorObject()
+        cancelled["lifecycle"] = "cancelled"
+        cancelled["time_zone_identifier"] = "America/Los_Angeles"
+        cancelled["participants"] = [
+            [
+                "profile_id": profileID.uuidString.lowercased(),
+                "role": "creator",
+                "state": "accepted",
+                "profile": profileObject(name: "Beta Alice"),
+            ],
+            [
+                "profile_id": "12000000-0000-4000-8000-0000000000b9",
+                "role": "invitee",
+                "state": "accepted",
+                "profile": ["id": "12000000-0000-4000-8000-0000000000b9", "display_name": "Maya"],
+            ],
+        ]
+        let harness = CompetitionTransportHarness(stubs: [.response(200, try jsonData([cancelled]))])
+        let listed = try await makeAPI(harness).listCompetitions()
+        XCTAssertEqual(listed.map(\.lifecycle), [.cancelled])
+
+        // A schedule left on a cancelled row would fail the whole listing.
+        var stale = cancelled
+        stale["start_day"] = "2026-11-02"
+        stale["best_available_deadline"] = "2026-11-10T08:00:00+00:00"
+        let staleHarness = CompetitionTransportHarness(stubs: [.response(200, try jsonData([stale]))])
+        let failure = await remoteFailure { _ = try await makeAPI(staleHarness).listCompetitions() }
+        XCTAssertEqual(failure, .serverContractMismatch)
+    }
+
+    func testListChallengesDecodesIncomingAndClosedWithPostgresTimestamps() async throws {
+        let sender = "12000000-0000-4000-8000-0000000000a1"
+        let other = "12000000-0000-4000-8000-0000000000a2"
+        let harness = CompetitionTransportHarness(stubs: [
+            .response(200, try jsonData([
+                "incoming": [[
+                    "competition_id": "13000000-0000-4000-8000-000000000001",
+                    "sender": ["id": sender, "display_name": "Naren"],
+                    "time_zone_identifier": "America/Los_Angeles",
+                    "created_at": "2026-11-01T21:14:00.123456+00:00",
+                    "expires_at": "2026-11-02T21:14:00.123456+00:00",
+                ]],
+                "closed": [[
+                    "competition_id": "13000000-0000-4000-8000-000000000002",
+                    "kind": "cancelled",
+                    "other": ["id": other, "display_name": "Former competitor"],
+                    "closed_at": "2026-11-01T20:00:00+00:00",
+                ]],
+            ])),
+        ])
+        let list = try await makeAPI(harness).listChallenges()
+        let requests = await harness.recordedRequests()
+        try assertRPC(requests[0], name: "list_challenges", body: [:])
+        XCTAssertEqual(list.incoming.count, 1)
+        XCTAssertEqual(list.incoming[0].sender.displayName, "Naren")
+        XCTAssertEqual(
+            list.incoming[0].expiresAt.timeIntervalSince(list.incoming[0].createdAt),
+            86_400,
+            accuracy: 0.001
+        )
+        XCTAssertEqual(list.closed, [CompetitionChallengeList.Closed(
+            competitionID: UUID(uuidString: "13000000-0000-4000-8000-000000000002")!,
+            kind: .cancelled,
+            other: AuthenticatedProfile(id: UUID(uuidString: other)!, displayName: "Former competitor"),
+            closedAt: try XCTUnwrap(ISO8601DateFormatter().date(from: "2026-11-01T20:00:00Z"))
+        )])
+    }
+
+    func testListChallengesSkipsBadRowsAndKeepsZWJNames() async throws {
+        func incoming(_ id: String, name: String, timeZone: String = "UTC") -> [String: Any] {
+            [
+                "competition_id": id,
+                "sender": ["id": "12000000-0000-4000-8000-0000000000a1", "display_name": name],
+                "time_zone_identifier": timeZone,
+                "created_at": "2026-11-01T21:14:00+00:00",
+                "expires_at": "2026-11-02T21:14:00+00:00",
+            ]
+        }
+        // A family emoji joined with U+200D, which the server accepts.
+        let family = "Sam \u{1F468}\u{200D}\u{1F469}\u{200D}\u{1F467}"
+        var extra = incoming("13000000-0000-4000-8000-000000000002", name: "Extra")
+        extra["score"] = 1
+        let body: [String: Any] = [
+            "incoming": [
+                incoming("13000000-0000-4000-8000-000000000001", name: family),
+                extra,
+                incoming("13000000-0000-4000-8000-000000000003", name: "Former competitor"),
+                incoming("13000000-0000-4000-8000-000000000004", name: "Bell\u{7}"),
+                incoming("13000000-0000-4000-8000-000000000005", name: "Zone", timeZone: "Mars/Olympus"),
+                incoming("13000000-0000-4000-8000-000000000006", name: "Naren"),
+            ],
+            "closed": [
+                ["competition_id": "13000000-0000-4000-8000-000000000007", "kind": "conceded",
+                 "other": ["id": "12000000-0000-4000-8000-0000000000a2", "display_name": "Maya"],
+                 "closed_at": "2026-11-01T20:00:00+00:00"],
+            ],
+        ]
+        let harness = CompetitionTransportHarness(stubs: [.response(200, try jsonData(body))])
+        let list = try await makeAPI(harness).listChallenges()
+        XCTAssertEqual(list.incoming.map(\.sender.displayName), [family, "Naren"])
+        XCTAssertEqual(list.closed, [])
+
+        // The list's own shape still has to be exact.
+        let malformed = CompetitionTransportHarness(stubs: [
+            .response(200, try jsonData(["incoming": [], "closed": [], "history": []])),
+        ])
+        let failure = await remoteFailure { _ = try await makeAPI(malformed).listChallenges() }
+        XCTAssertEqual(failure, .serverContractMismatch)
+    }
+
+    func testPreviewInviteUsesFunctionAndMapsErrors() async throws {
+        let token = Data(repeating: 0x42, count: 32)
+            .base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+        let request = try CompetitionInviteClaimRequest(token: token)
+        let harness = CompetitionTransportHarness(stubs: [
+            .response(200, try jsonData([
+                "competitionId": "13000000-0000-4000-8000-000000000001",
+                "state": "pending",
+                "sender": ["id": "12000000-0000-4000-8000-0000000000a1", "displayName": "Naren"],
+                "timeZoneIdentifier": "America/Los_Angeles",
+                "expiresAt": "2026-11-02T21:14:00.5+00:00",
+            ])),
+        ])
+        let preview = try await makeAPI(harness).previewInvite(request)
+        XCTAssertEqual(preview.sender.displayName, "Naren")
+        XCTAssertEqual(preview.state, .pending)
+        let requests = await harness.recordedRequests()
+        try assertFunction(requests[0], name: "preview-competition-invite", body: ["token": token])
+
+        for (status, code, expected) in [
+            (409, "self_claim_forbidden", CompetitionRemoteFailure.forbidden),
+            (409, "active_match_exists", .activeMatchExists),
+            (404, "invite_unavailable", .inviteUnavailable),
+        ] {
+            let failing = CompetitionTransportHarness(stubs: [.response(status, try errorData(code: code))])
+            let failure = await remoteFailure { _ = try await makeAPI(failing).previewInvite(request) }
+            XCTAssertEqual(failure, expected)
+        }
+    }
+
+    func testAcceptDeclineCancelSendCompetitionIDAndValidateEcho() async throws {
+        let id = UUID(uuidString: "13000000-0000-4000-8000-000000000009")!
+        let echo = try jsonData(["competition_id": id.uuidString.lowercased()])
+        let harness = CompetitionTransportHarness(stubs: [
+            .response(200, echo), .response(200, echo), .response(200, echo),
+            .response(200, try jsonData(["competition_id": "13000000-0000-4000-8000-000000000008"])),
+        ])
+        let api = makeAPI(harness)
+        try await api.acceptChallenge(id)
+        try await api.declineChallenge(id)
+        try await api.cancelCompetition(id)
+        let failure = await remoteFailure { try await api.cancelCompetition(id) }
+        XCTAssertEqual(failure, .serverContractMismatch)
+        let requests = await harness.recordedRequests()
+        let body = ["competition_id": id.uuidString.lowercased()]
+        try assertRPC(requests[0], name: "accept_competition_challenge", body: body)
+        try assertRPC(requests[1], name: "decline_competition_challenge", body: body)
+        try assertRPC(requests[2], name: "cancel_competition", body: body)
+
+        let refused = CompetitionTransportHarness(stubs: [
+            .failure(.server(statusCode: 400, code: "P0001", message: "cancel_not_allowed")),
+        ])
+        let cancelFailure = await remoteFailure { try await makeAPI(refused).cancelCompetition(id) }
+        XCTAssertEqual(cancelFailure, .forbidden)
+    }
+
+    func testChallengeLinkCodeAndResolve() async throws {
+        let profile = "12000000-0000-4000-8000-0000000000a3"
+        let harness = CompetitionTransportHarness(stubs: [
+            .response(200, try jsonData(["code": "Xb3kP9qL2mN8vR4tY6wZ1a"])),
+            .response(200, try jsonData(["id": profile, "display_name": "Maya"])),
+            .failure(.server(statusCode: 400, code: "P0001", message: "own_challenge_link")),
+            .response(200, try jsonData(["code": "short"])),
+        ])
+        let api = makeAPI(harness)
+        let code = try await api.loadChallengeLinkCode()
+        XCTAssertEqual(code.rawValue, "Xb3kP9qL2mN8vR4tY6wZ1a")
+        let maya = try await api.resolveChallengeLink(code)
+        XCTAssertEqual(maya.displayName, "Maya")
+        let own = await remoteFailure { _ = try await api.resolveChallengeLink(code) }
+        XCTAssertEqual(own, .ownChallengeLink)
+        let malformed = await remoteFailure { _ = try await api.loadChallengeLinkCode() }
+        XCTAssertEqual(malformed, .serverContractMismatch)
+        let requests = await harness.recordedRequests()
+        try assertRPC(requests[0], name: "get_my_challenge_link", body: [:])
+        try assertRPC(requests[1], name: "resolve_challenge_link", body: ["code": "Xb3kP9qL2mN8vR4tY6wZ1a"])
+    }
+
+    func testCreateClassifiesIncomingAndActiveConflicts() async throws {
+        let request = try CompetitionInviteCreationRequest(
+            recipientProfileID: UUID(uuidString: "12000000-0000-4000-8000-0000000000a4")!,
+            timeZoneIdentifier: "UTC",
+            rematchParentID: nil,
+            idempotencyKey: UUID(uuidString: "84000000-0000-4000-8000-000000000001")!
+        )
+        for (code, expected) in [
+            ("active_match_exists", CompetitionRemoteFailure.activeMatchExists),
+            ("incoming_challenge_exists", .incomingChallengeExists),
+            ("pending_invitation_exists", .pendingInvitationExists),
+        ] {
+            let harness = CompetitionTransportHarness(stubs: [.response(409, try errorData(code: code))])
+            let failure = await remoteFailure { _ = try await makeAPI(harness).createInvite(request) }
+            XCTAssertEqual(failure, expected)
+        }
+    }
+
     func testCancellationIsPreservedWithoutRetry() async {
         let harness = CompetitionTransportHarness(stubs: [
             .failure(.cancelled),

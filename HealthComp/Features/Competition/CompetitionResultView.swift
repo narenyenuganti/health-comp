@@ -522,6 +522,28 @@ struct CompetitionResultView: View {
                     .accessibilityIdentifier("competition.rematch.open-existing")
             }
 
+        case let .inMatch(match):
+            VStack(alignment: .leading, spacing: 10) {
+                Text("You’re already in a match with \(opponentName).")
+                    .font(.callout)
+                    .foregroundStyle(Theme.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button("View Match") { openCompetition(match.id) }
+                    .buttonStyle(PrimaryButtonStyle())
+                    .accessibilityIdentifier("competition.rematch.view-match")
+            }
+
+        case let .challengedYou(challenge):
+            VStack(alignment: .leading, spacing: 10) {
+                Text("\(opponentName) already challenged you.")
+                    .font(.callout)
+                    .foregroundStyle(Theme.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button("Review Challenge") { openCompetition(challenge.id) }
+                    .buttonStyle(PrimaryButtonStyle())
+                    .accessibilityIdentifier("competition.rematch.review")
+            }
+
         case let .failed(failure):
             VStack(alignment: .leading, spacing: 10) {
                 Text(competitionInviteFailureText(failure, opponentName: opponentName))
@@ -699,7 +721,7 @@ struct CompetitionResultView: View {
             source == .remoteParticipants ? "Rematch sent" : "Rematch ready"
         case let .failed(failure):
             competitionInviteFailureText(failure, opponentName: opponentName)
-        case .available, .sending, .received, .next, .alreadyChallenged:
+        case .available, .sending, .received, .next, .alreadyChallenged, .inMatch, .challengedYou:
             nil
         }
     }

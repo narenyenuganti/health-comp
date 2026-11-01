@@ -75,8 +75,14 @@ extension CompetitionClient {
             reconcileAll: { trigger in
                 await coordinator.reconcileAll(trigger: trigger)
             },
-            accept: { id in await coordinator.unsupported(id) },
-            decline: { id in await coordinator.unsupported(id) },
+            accept: { id in
+                await coordinator.respond(id) { try await $0.acceptChallenge($1) }
+            },
+            decline: { id in
+                await coordinator.respond(id, inviteUnavailableIsDone: true) {
+                    try await $0.declineChallenge($1)
+                }
+            },
             archive: { id in await coordinator.archive(id) },
             rematch: { id in await coordinator.unsupported(id) },
             reinvite: { await coordinator.unsupported(nil) },
@@ -128,7 +134,19 @@ extension CompetitionClient {
             resolveInviteRecipient: { profileID in
                 try await coordinator.resolveInviteRecipient(profileID)
             },
-            restoreInvite: { id in try await coordinator.restoreInvite(id) }
+            restoreInvite: { id in try await coordinator.restoreInvite(id) },
+            cancel: { id in
+                await coordinator.respond(id) { try await $0.cancelCompetition($1) }
+            },
+            previewInvite: { request in
+                try await coordinator.remote { try await $0.previewInvite(request) }
+            },
+            loadChallengeLinkCode: {
+                try await coordinator.remote { try await $0.loadChallengeLinkCode() }
+            },
+            resolveChallengeLink: { code in
+                try await coordinator.remote { try await $0.resolveChallengeLink(code) }
+            }
         )
     }
 }
@@ -403,6 +421,8 @@ private actor RemoteCompetitionClientCoordinator {
     /// The last good materialization of each match, shown again when its
     /// next sync is only cancelled.
     private var lastMaterializations: [CompetitionID: RemoteCompetitionMaterialization] = [:]
+    /// The last challenge list; kept when a refresh can't load it.
+    private var latestChallenges = CompetitionChallengeList.empty
     private var hasStarted = false
     private var isStopped = false
     private var healthAuthorizationIssue: CompetitionClientIssue?
@@ -476,6 +496,7 @@ private actor RemoteCompetitionClientCoordinator {
                 self.hub = replacement
                 self.publicationRevision = 0
                 self.latestPublication = nil
+                self.latestChallenges = .empty
                 self.hasStarted = false
                 self.isStopped = false
                 let installationStore = CompetitionInstallationStateStore(
@@ -579,6 +600,7 @@ private actor RemoteCompetitionClientCoordinator {
                     self.profile = nil
                     hub = nil
                     latestPublication = nil
+                    latestChallenges = .empty
                     publicationRevision = 0
                     hasStarted = false
                     isStopped = true
@@ -663,6 +685,7 @@ private actor RemoteCompetitionClientCoordinator {
             }
             hub = nil
             latestPublication = nil
+            latestChallenges = .empty
             publicationRevision = 0
             hasStarted = false
             isStopped = true
@@ -735,6 +758,9 @@ private actor RemoteCompetitionClientCoordinator {
         }
         await installationCoordinator?.reconcile()
         let outcome = await runtime.synchronizeAll()
+        if let challenges = try? await remoteAPI.listChallenges() {
+            latestChallenges = challenges
+        }
         for failure in outcome.failures {
             failure.failure.recordRefreshDiagnostic()
         }
@@ -850,6 +876,47 @@ private actor RemoteCompetitionClientCoordinator {
             return publication(adding: .commandRejected(id))
         }
         return publication
+    }
+
+    /// Accept, decline or cancel: the server command, then a refresh. A
+    /// failure marks the match `commandRejected`.
+    func respond(
+        _ id: CompetitionID,
+        inviteUnavailableIsDone: Bool = false,
+        _ command: @escaping @Sendable (CompetitionRemoteAPI, UUID) async throws -> Void
+    ) async -> CompetitionPublication {
+        guard let publication = await withCancellableOperationGateIfActive({
+            guard terminalTeardown == nil else {
+                return terminalBlockedPublication()
+            }
+            guard runtime != nil else {
+                return publication(adding: .commandRejected(id))
+            }
+            do {
+                try await command(remoteAPI, id.rawValue)
+            } catch CompetitionRemoteFailure.inviteUnavailable where inviteUnavailableIsDone {
+                // No longer pending (cancelled or expired): nothing to decline.
+            } catch {
+                return publication(adding: .commandRejected(id))
+            }
+            return await performReconciliation()
+        }) else {
+            return publication(adding: .commandRejected(id))
+        }
+        return publication
+    }
+
+    /// A read-only server call that needs a signed-in, running profile.
+    func remote<Value: Sendable>(
+        _ operation: @escaping @Sendable (CompetitionRemoteAPI) async throws -> Value
+    ) async throws -> Value {
+        try await withCancellableOperationGate {
+            guard terminalTeardown == nil else {
+                throw EnvironmentSignalOwnershipError.activeOwnerNotRetired
+            }
+            guard runtime != nil else { throw CompetitionRemoteFailure.unauthenticated }
+            return try await operation(remoteAPI)
+        }
     }
 
     private func publication(
@@ -974,6 +1041,7 @@ private actor RemoteCompetitionClientCoordinator {
             profile = nil
             hub = nil
             latestPublication = nil
+            latestChallenges = .empty
             publicationRevision = 0
             hasStarted = false
             router.finishCurrent()
@@ -1297,6 +1365,7 @@ private actor RemoteCompetitionClientCoordinator {
         boundaryTask?.cancel()
         boundaryTask = nil
         lastPublishInputs = nil
+        latestChallenges = .empty
         if stoppedTasks.realtime != nil {
             await realtimeClient.stop()
         }
@@ -1614,7 +1683,8 @@ private actor RemoteCompetitionClientCoordinator {
                 materializations: materializations,
                 profile: profile,
                 context: context,
-                issues: issues
+                issues: issues,
+                challenges: latestChallenges
             ).keepingFailedCompetitions(
                 from: latestPublication?.dashboard,
                 now: context.instant.wallDate
@@ -1774,16 +1844,23 @@ enum RemoteCompetitionProjector {
         materializations: [RemoteCompetitionMaterialization],
         profile: AuthenticatedProfile,
         context: CompetitionEnvironmentContext,
-        issues: [CompetitionClientIssue]
+        issues: [CompetitionClientIssue],
+        challenges: CompetitionChallengeList = .empty
     ) -> CompetitionDashboard {
-        let all = materializations.compactMap {
+        let materialized = materializations.compactMap {
             presentation(
                 from: $0,
                 profile: profile,
                 context: context,
                 closesLapsedChallenges: true
             )
-        }.sorted { $0.id.rawValue.uuidString < $1.id.rawValue.uuidString }
+        }
+        let all = (materialized + challengePresentations(
+            challenges,
+            excluding: Set(materialized.map(\.id)),
+            profile: profile,
+            context: context
+        )).sorted { $0.id.rawValue.uuidString < $1.id.rawValue.uuidString }
         let visible = all.filter {
             competitionIsRetainedOnDashboard($0.lifecycle, now: context.instant.wallDate)
         }
@@ -1793,6 +1870,63 @@ enum RemoteCompetitionProjector {
             issues: issues,
             hiddenTerminalCompetitionCount: all.count - visible.count
         )
+    }
+
+    /// Incoming challenges and the last day's declines and cancels. They have
+    /// no local journal, so they never schedule notifications.
+    static func challengePresentations(
+        _ challenges: CompetitionChallengeList,
+        excluding materializedIDs: Set<CompetitionID>,
+        profile: AuthenticatedProfile,
+        context: CompetitionEnvironmentContext
+    ) -> [CompetitionPresentation] {
+        let now = context.instant.wallDate
+        func presentation(
+            _ id: UUID,
+            other: AuthenticatedProfile,
+            lifecycle: CompetitionLifecyclePresentation,
+            timeZoneIdentifier: String
+        ) -> CompetitionPresentation? {
+            guard !materializedIDs.contains(CompetitionID(id)) else { return nil }
+            return CompetitionPresentation(
+                id: CompetitionID(id),
+                ownerDisplayName: profile.displayName,
+                opponentDisplayName: other.displayName,
+                opponentIdentity: RemoteCompetitionOpponentIdentity.identity(for: other.id),
+                lifecycle: lifecycle,
+                acceptedConfiguration: nil,
+                userPoints: 0,
+                opponentPoints: 0,
+                days: [],
+                currentDayOrdinal: nil,
+                lastRefresh: nil,
+                tally: nil,
+                terminalResult: nil,
+                evaluatedAt: now,
+                timeZoneIdentifier: timeZoneIdentifier
+            )
+        }
+        let incoming = challenges.incoming.filter { $0.expiresAt > now }.compactMap {
+            presentation(
+                $0.competitionID,
+                other: $0.sender,
+                lifecycle: .pending(direction: .incoming, createdAt: $0.createdAt, expiresAt: $0.expiresAt),
+                timeZoneIdentifier: $0.timeZoneIdentifier
+            )
+        }
+        let closed = challenges.closed
+            .filter { $0.closedAt > now.addingTimeInterval(-competitionClosedChallengeRetention) }
+            .compactMap { row -> CompetitionPresentation? in
+                presentation(
+                    row.competitionID,
+                    other: row.other,
+                    lifecycle: row.kind == .declined
+                        ? .declined(at: row.closedAt, direction: .outgoing)
+                        : .cancelled(at: row.closedAt),
+                    timeZoneIdentifier: context.timeZoneIdentifier
+                )
+            }
+        return incoming + closed
     }
 
     static func notificationSnapshot(
@@ -1942,7 +2076,7 @@ enum RemoteCompetitionProjector {
         switch lifecycle {
         case let .pending(direction, _, expiresAt):
             .pending(direction: direction, expiresAt: expiresAt)
-        case .declined:
+        case .declined, .cancelled:
             .declined
         case .expired:
             .expired

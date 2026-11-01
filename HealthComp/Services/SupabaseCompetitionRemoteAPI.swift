@@ -121,7 +121,7 @@ enum SupabaseCompetitionRemoteAPI {
                     ),
                     transport: transport
                 )
-                let archivedID = try decodeArchiveResponse(response.data)
+                let archivedID = try decodeCompetitionIDResponse(response.data)
                 guard archivedID == competitionID else {
                     throw CompetitionRemoteFailure.serverContractMismatch
                 }
@@ -304,8 +304,80 @@ enum SupabaseCompetitionRemoteAPI {
                     throw CompetitionRemoteFailure.serverContractMismatch
                 }
                 return profile
+            },
+            listChallenges: {
+                let response = try await sendReadOnly(
+                    .rpc(name: "list_challenges", parameters: try encode(EmptyParameters())),
+                    transport: transport
+                )
+                return try decodeChallengeList(response.data)
+            },
+            previewInvite: { request in
+                let response = try await send(
+                    .function(
+                        name: "preview-competition-invite",
+                        body: try encodeWire(request, contract: .inviteClaimRequest)
+                    ),
+                    transport: transport,
+                    context: .previewInvite
+                )
+                return try decodeInvitePreview(response.data)
+            },
+            acceptChallenge: { id in
+                try await sendCompetitionCommand("accept_competition_challenge", id, transport)
+            },
+            declineChallenge: { id in
+                try await sendCompetitionCommand("decline_competition_challenge", id, transport)
+            },
+            cancelCompetition: { id in
+                try await sendCompetitionCommand("cancel_competition", id, transport)
+            },
+            loadChallengeLinkCode: {
+                let response = try await send(
+                    .rpc(name: "get_my_challenge_link", parameters: try encode(EmptyParameters())),
+                    transport: transport
+                )
+                guard let object = try? JSONSerialization.jsonObject(with: response.data)
+                    as? [String: Any],
+                      Set(object.keys) == ["code"],
+                      let raw = object["code"] as? String,
+                      let code = CompetitionChallengeLinkCode(rawValue: raw)
+                else {
+                    throw CompetitionRemoteFailure.serverContractMismatch
+                }
+                return code
+            },
+            resolveChallengeLink: { code in
+                let response = try await send(
+                    .rpc(name: "resolve_challenge_link", parameters: try encode(
+                        ["code": code.rawValue]
+                    )),
+                    transport: transport
+                )
+                return try decode(AuthenticatedProfile.self, response.data, contract: .profile)
             }
         )
+    }
+
+    /// accept / decline / cancel: `{competition_id}` echoing the request.
+    private static func sendCompetitionCommand(
+        _ name: String,
+        _ competitionID: UUID,
+        _ transport: CompetitionRemoteTransport
+    ) async throws {
+        try validateUUID(competitionID)
+        let response = try await send(
+            .rpc(
+                name: name,
+                parameters: try encode(
+                    ArchiveCompetitionParameters(competitionID: competitionID)
+                )
+            ),
+            transport: transport
+        )
+        guard try decodeCompetitionIDResponse(response.data) == competitionID else {
+            throw CompetitionRemoteFailure.serverContractMismatch
+        }
     }
 
     static func live(
@@ -333,6 +405,7 @@ enum SupabaseCompetitionRemoteAPI {
     private enum ErrorContext: Equatable {
         case general
         case claimInvite
+        case previewInvite
         case appAttestChallenge
         case appAttestSubmission
     }
@@ -441,15 +514,25 @@ enum SupabaseCompetitionRemoteAPI {
             ]) {
             return .unauthenticated
         }
+        if identifiers.contains("active_match_exists") {
+            return .activeMatchExists
+        }
+        if identifiers.contains("incoming_challenge_exists") {
+            return .incomingChallengeExists
+        }
+        if identifiers.contains("own_challenge_link") {
+            return .ownChallengeLink
+        }
+        let isClaimContext = context == .claimInvite || context == .previewInvite
         // Your own link says so; every other claim failure stays collapsed.
-        if context == .claimInvite,
+        if isClaimContext,
            !identifiers.isDisjoint(with: [
                "self_claim_forbidden",
                "cannot_claim_own_invite",
            ]) {
             return .forbidden
         }
-        if context == .claimInvite,
+        if isClaimContext,
            let statusCode,
            (400...499).contains(statusCode) {
             return .inviteUnavailable
@@ -513,6 +596,7 @@ enum SupabaseCompetitionRemoteAPI {
         }
         if !identifiers.isDisjoint(with: [
             "forbidden",
+            "cancel_not_allowed",
             "rematch_not_allowed",
             "installation_unavailable",
             "opponent_unavailable",
@@ -541,7 +625,7 @@ enum SupabaseCompetitionRemoteAPI {
         }
     }
 
-    private static func decodeArchiveResponse(_ data: Data) throws -> UUID {
+    private static func decodeCompetitionIDResponse(_ data: Data) throws -> UUID {
         guard let object = try? JSONSerialization.jsonObject(with: data)
             as? [String: Any],
               Set(object.keys) == ["competition_id"],
@@ -550,6 +634,109 @@ enum SupabaseCompetitionRemoteAPI {
               id.uuidString.lowercased() == value
         else {
             throw CompetitionRemoteFailure.serverContractMismatch
+        }
+        return id
+    }
+
+    private static func decodeInvitePreview(_ data: Data) throws -> CompetitionInvitePreview {
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              Set(object.keys) == ["competitionId", "state", "sender", "timeZoneIdentifier", "expiresAt"],
+              let id = (object["competitionId"] as? String).flatMap(wireUUID),
+              let state = (object["state"] as? String).flatMap(CompetitionInvitePreview.State.init(rawValue:)),
+              let sender = challengeProfile(object["sender"], idKey: "id", nameKey: "displayName"),
+              sender.displayName != "Former competitor",
+              let timeZone = object["timeZoneIdentifier"] as? String,
+              TimeZone(identifier: timeZone) != nil,
+              let expiresAt = (object["expiresAt"] as? String).flatMap({ try? CompetitionWireCodec.date($0) })
+        else {
+            throw CompetitionRemoteFailure.serverContractMismatch
+        }
+        return CompetitionInvitePreview(
+            competitionID: id,
+            state: state,
+            sender: sender,
+            timeZoneIdentifier: timeZone,
+            expiresAt: expiresAt
+        )
+    }
+
+    /// Exact keys, at most 50 rows each. Timestamps are Postgres JSON
+    /// (`2026-11-01T21:14:00.123456+00:00`). A closed row may name
+    /// "Former competitor"; an incoming sender never does. A row this app
+    /// can't read (say, a time zone iOS doesn't know) is skipped, so one
+    /// row never hides the rest.
+    private static func decodeChallengeList(_ data: Data) throws -> CompetitionChallengeList {
+        func date(_ value: Any?) -> Date? {
+            (value as? String).flatMap { try? CompetitionWireCodec.date($0) }
+        }
+        func uuid(_ value: Any?) -> UUID? {
+            (value as? String).flatMap(wireUUID)
+        }
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              Set(object.keys) == ["incoming", "closed"],
+              let incomingRows = object["incoming"] as? [[String: Any]],
+              let closedRows = object["closed"] as? [[String: Any]],
+              incomingRows.count <= 50, closedRows.count <= 50
+        else {
+            throw CompetitionRemoteFailure.serverContractMismatch
+        }
+        var list = CompetitionChallengeList.empty
+        for row in incomingRows {
+            guard Set(row.keys) == ["competition_id", "sender", "time_zone_identifier", "created_at", "expires_at"],
+                  let id = uuid(row["competition_id"]),
+                  let sender = challengeProfile(row["sender"], idKey: "id", nameKey: "display_name"),
+                  sender.displayName != "Former competitor",
+                  let timeZone = row["time_zone_identifier"] as? String,
+                  TimeZone(identifier: timeZone) != nil,
+                  let createdAt = date(row["created_at"]),
+                  let expiresAt = date(row["expires_at"])
+            else {
+                continue
+            }
+            list.incoming.append(.init(
+                competitionID: id, sender: sender, timeZoneIdentifier: timeZone,
+                createdAt: createdAt, expiresAt: expiresAt
+            ))
+        }
+        for row in closedRows {
+            guard Set(row.keys) == ["competition_id", "kind", "other", "closed_at"],
+                  let id = uuid(row["competition_id"]),
+                  let kind = (row["kind"] as? String).flatMap(CompetitionChallengeList.Closed.Kind.init(rawValue:)),
+                  let other = challengeProfile(row["other"], idKey: "id", nameKey: "display_name"),
+                  let closedAt = date(row["closed_at"])
+            else {
+                continue
+            }
+            list.closed.append(.init(competitionID: id, kind: kind, other: other, closedAt: closedAt))
+        }
+        return list
+    }
+
+    private static func challengeProfile(
+        _ value: Any?,
+        idKey: String,
+        nameKey: String
+    ) -> AuthenticatedProfile? {
+        guard let object = value as? [String: Any],
+              Set(object.keys) == [idKey, nameKey],
+              let id = (object[idKey] as? String).flatMap(wireUUID),
+              let name = object[nameKey] as? String,
+              // The server's display-name rule: 1-64 code points, no Cc
+              // control characters. Format characters such as ZWJ are fine.
+              (1...64).contains(name.unicodeScalars.count),
+              !name.unicodeScalars.contains(where: { $0.properties.generalCategory == .control })
+        else {
+            return nil
+        }
+        return AuthenticatedProfile(id: id, displayName: name)
+    }
+
+    private static func wireUUID(_ value: String) -> UUID? {
+        guard value == value.lowercased(),
+              let id = UUID(uuidString: value),
+              id.uuidString != "00000000-0000-0000-0000-000000000000"
+        else {
+            return nil
         }
         return id
     }
