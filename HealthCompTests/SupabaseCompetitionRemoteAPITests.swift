@@ -591,6 +591,38 @@ final class SupabaseCompetitionRemoteAPITests: XCTestCase {
         }
     }
 
+    func testListedCancelledMatchDecodesWithoutASchedule() async throws {
+        // What the server stores after Cancel Match: no start day or deadline.
+        var cancelled = descriptorObject()
+        cancelled["lifecycle"] = "cancelled"
+        cancelled["time_zone_identifier"] = "America/Los_Angeles"
+        cancelled["participants"] = [
+            [
+                "profile_id": profileID.uuidString.lowercased(),
+                "role": "creator",
+                "state": "accepted",
+                "profile": profileObject(name: "Beta Alice"),
+            ],
+            [
+                "profile_id": "12000000-0000-4000-8000-0000000000b9",
+                "role": "invitee",
+                "state": "accepted",
+                "profile": ["id": "12000000-0000-4000-8000-0000000000b9", "display_name": "Maya"],
+            ],
+        ]
+        let harness = CompetitionTransportHarness(stubs: [.response(200, try jsonData([cancelled]))])
+        let listed = try await makeAPI(harness).listCompetitions()
+        XCTAssertEqual(listed.map(\.lifecycle), [.cancelled])
+
+        // A schedule left on a cancelled row would fail the whole listing.
+        var stale = cancelled
+        stale["start_day"] = "2026-11-02"
+        stale["best_available_deadline"] = "2026-11-10T08:00:00+00:00"
+        let staleHarness = CompetitionTransportHarness(stubs: [.response(200, try jsonData([stale]))])
+        let failure = await remoteFailure { _ = try await makeAPI(staleHarness).listCompetitions() }
+        XCTAssertEqual(failure, .serverContractMismatch)
+    }
+
     func testListChallengesDecodesIncomingAndClosedWithPostgresTimestamps() async throws {
         let sender = "12000000-0000-4000-8000-0000000000a1"
         let other = "12000000-0000-4000-8000-0000000000a2"
