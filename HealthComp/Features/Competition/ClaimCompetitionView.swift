@@ -223,7 +223,10 @@ struct ClaimCompetitionView: View {
                     .foregroundStyle(Theme.secondary)
                     .frame(maxWidth: 440, minHeight: 44)
                     .accessibilityElement(children: .combine)
-                } else {
+                } else if preview != nil {
+                    // Shown over Health before anything has started, the
+                    // challenge has no preview yet, so there's nothing to
+                    // decline on the server; Not Now still works.
                     quietButton("Decline", role: .destructive) {
                         showsDeclineConfirmation = true
                     }

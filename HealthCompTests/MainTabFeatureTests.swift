@@ -202,7 +202,7 @@ final class MainTabFeatureTests: XCTestCase {
             $0.pendingClaimRoute = envelope
             $0.inviteClaimStatus = .ready
         }
-        await store.send(.declineClaimTapped) {
+        await store.send(.notNowClaimTapped) {
             $0.pendingClaimRoute = nil
             $0.lastHandledClaimRouteSequence = envelope.sequence
             $0.inviteClaimStatus = .idle
@@ -215,9 +215,10 @@ final class MainTabFeatureTests: XCTestCase {
     }
 
     @MainActor
-    func testNewerClaimLinkClearsEarlierAcceptance() async throws {
+    func testNewerClaimLinkWaitsBehindAnEarlierAcceptance() async throws {
         let first = try claimEnvelope(sequence: 7)
-        let newer = try claimEnvelope(sequence: 8)
+        // A different link: the same link again is ignored.
+        let newer = try claimEnvelope(sequence: 8, token: String(repeating: "N", count: 43))
         let store = TestStore(
             initialState: MainTabFeature.State(
                 onboarding: MainTabFeature.PermissionOnboarding(steps: [.health])
@@ -234,10 +235,9 @@ final class MainTabFeatureTests: XCTestCase {
             $0.acceptsClaimOnStart = true
             $0.inviteClaimStatus = .idle
         }
+        // The accepted link stays on screen; the newer one waits for it.
         await store.send(.routeReceived(newer)) {
-            $0.pendingClaimRoute = newer
-            $0.acceptsClaimOnStart = false
-            $0.inviteClaimStatus = .ready
+            $0.queuedClaimRoute = newer
         }
     }
 
@@ -2120,11 +2120,14 @@ final class MainTabFeatureTests: XCTestCase {
 
     private static let claimToken = "KKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKKK"
 
-    private func claimEnvelope(sequence: UInt64) throws -> CompetitionRouteEnvelope {
+    private func claimEnvelope(
+        sequence: UInt64,
+        token: String = MainTabFeatureTests.claimToken
+    ) throws -> CompetitionRouteEnvelope {
         CompetitionRouteEnvelope(
             sequence: sequence,
             route: .claimInvite(
-                try XCTUnwrap(CompetitionInviteClaimToken(rawValue: Self.claimToken))
+                try XCTUnwrap(CompetitionInviteClaimToken(rawValue: token))
             )
         )
     }
