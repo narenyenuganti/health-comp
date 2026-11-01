@@ -34,7 +34,9 @@ struct CompetitionFeature {
         var commandExpectedPublicationRevisions: [CompetitionID: UInt64]
         var mutedOpponentIdentities: Set<String>
         var muteOpponentIdentitiesInFlight: Set<String>
-        var notificationPreferenceSaveFailed: Bool
+        var mutePreferencesLoadFailed: Bool
+        /// Per person: the `isMuted` value that failed to save.
+        var muteSaveFailures: [String: Bool]
         var notificationAuthorizationState:
             CompetitionNotificationAuthorizationState?
         var notificationAuthorizationRequestIsInFlight: Bool
@@ -56,7 +58,8 @@ struct CompetitionFeature {
             commandExpectedPublicationRevisions: [CompetitionID: UInt64] = [:],
             mutedOpponentIdentities: Set<String> = [],
             muteOpponentIdentitiesInFlight: Set<String> = [],
-            notificationPreferenceSaveFailed: Bool = false,
+            mutePreferencesLoadFailed: Bool = false,
+            muteSaveFailures: [String: Bool] = [:],
             notificationAuthorizationState:
                 CompetitionNotificationAuthorizationState? = nil,
             notificationAuthorizationRequestIsInFlight: Bool = false,
@@ -74,8 +77,8 @@ struct CompetitionFeature {
             self.mutedOpponentIdentities = mutedOpponentIdentities
             self.muteOpponentIdentitiesInFlight =
                 muteOpponentIdentitiesInFlight
-            self.notificationPreferenceSaveFailed =
-                notificationPreferenceSaveFailed
+            self.mutePreferencesLoadFailed = mutePreferencesLoadFailed
+            self.muteSaveFailures = muteSaveFailures
             self.notificationAuthorizationState =
                 notificationAuthorizationState
             self.notificationAuthorizationRequestIsInFlight =
@@ -142,7 +145,6 @@ struct CompetitionFeature {
         Reduce { state, action in
             switch action {
             case .task:
-                let currentMutedIdentities = state.mutedOpponentIdentities
                 let currentAuthorization = state.notificationAuthorizationState
                 return .merge(
                     .run { send in
@@ -155,17 +157,7 @@ struct CompetitionFeature {
                         id: CancelID.publications,
                         cancelInFlight: true
                     ),
-                    .run { send in
-                        do {
-                            let loaded = try await competitionClient
-                                .loadMutedOpponentIdentities()
-                            if loaded != currentMutedIdentities {
-                                await send(.mutePreferencesLoaded(loaded))
-                            }
-                        } catch {
-                            await send(.mutePreferencesLoaded(nil))
-                        }
-                    },
+                    loadMutePreferences(state: state),
                     .run { send in
                         guard let loaded = await competitionClient
                             .loadNotificationAuthorizationState(),
@@ -401,11 +393,11 @@ struct CompetitionFeature {
 
             case let .mutePreferencesLoaded(identities):
                 guard let identities else {
-                    state.notificationPreferenceSaveFailed = true
+                    state.mutePreferencesLoadFailed = true
                     return .none
                 }
                 state.mutedOpponentIdentities = identities
-                state.notificationPreferenceSaveFailed = false
+                state.mutePreferencesLoadFailed = false
                 return .none
 
             case let .muteTapped(identity):
@@ -422,7 +414,7 @@ struct CompetitionFeature {
                 } else {
                     state.mutedOpponentIdentities.remove(identity)
                 }
-                state.notificationPreferenceSaveFailed = false
+                state.muteSaveFailures[identity] = nil
                 return .run { send in
                     do {
                         try await competitionClient
@@ -447,13 +439,19 @@ struct CompetitionFeature {
 
             case let .muteFinished(identity, isMuted, succeeded):
                 state.muteOpponentIdentitiesInFlight.remove(identity)
-                guard !succeeded else { return .none }
+                // A save that worked proves the store is reachable again, so
+                // a stale load failure gets another chance to clear.
+                guard !succeeded else {
+                    return state.mutePreferencesLoadFailed
+                        ? loadMutePreferences(state: state)
+                        : .none
+                }
                 if isMuted {
                     state.mutedOpponentIdentities.remove(identity)
                 } else {
                     state.mutedOpponentIdentities.insert(identity)
                 }
-                state.notificationPreferenceSaveFailed = true
+                state.muteSaveFailures[identity] = isMuted
                 return .none
 
             case let .notificationAuthorizationLoaded(authorization):
@@ -501,7 +499,10 @@ struct CompetitionFeature {
                 return reconcile(trigger: .pullToRefresh)
 
             case .sceneBecameActive:
-                return reconcile(trigger: .foreground)
+                return .merge(
+                    reconcile(trigger: .foreground),
+                    loadMutePreferences(state: state)
+                )
 
             case .timeZoneChanged:
                 return reconcile(trigger: .timeZoneChange)
@@ -559,6 +560,27 @@ struct CompetitionFeature {
             return
         }
         clearInviteCreation(state: &state)
+    }
+
+    /// Reads the muted list. Skipped while a mute is saving, so the read can't
+    /// undo that optimistic change.
+    private func loadMutePreferences(state: State) -> Effect<Action> {
+        guard state.muteOpponentIdentitiesInFlight.isEmpty else { return .none }
+        let current = state.mutedOpponentIdentities
+        let loadFailed = state.mutePreferencesLoadFailed
+        return .run { send in
+            do {
+                let loaded = try await competitionClient
+                    .loadMutedOpponentIdentities()
+                // A success after a failure clears the failure, even when
+                // nothing changed.
+                if loaded != current || loadFailed {
+                    await send(.mutePreferencesLoaded(loaded))
+                }
+            } catch {
+                await send(.mutePreferencesLoaded(nil))
+            }
+        }
     }
 
     private func reconcile(

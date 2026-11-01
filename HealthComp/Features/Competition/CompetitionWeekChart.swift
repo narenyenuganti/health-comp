@@ -72,7 +72,8 @@ struct CompetitionWeekChart: View {
 }
 
 /// The week at a glance: one bar per day in the color of whoever won it,
-/// amber for you and ink for them. Today stays dashed until it is scored.
+/// amber for you, ink for them and grey for a tie. A day with no data is
+/// striped, an upcoming day is an outline, and today stays dashed.
 struct CompetitionWeekStrip: View {
     let days: [LocalCompetitionDayPresentation]
     let currentDayOrdinal: Int?
@@ -112,29 +113,24 @@ struct CompetitionWeekStrip: View {
 
     @ViewBuilder
     private func bar(_ day: LocalCompetitionDayPresentation) -> some View {
-        if day.ordinal == currentDayOrdinal {
+        switch competitionDayOutcome(day, currentDayOrdinal: currentDayOrdinal) {
+        case .today:
             SlantedBar()
                 .stroke(
                     leaderColor(day),
                     style: StrokeStyle(lineWidth: 1.5, dash: [3, 2])
                 )
-        } else {
-            SlantedBar().fill(winnerColor(day))
+        case .upcoming:
+            SlantedBar().stroke(Theme.outline, lineWidth: 1)
+        case .noData:
+            HatchBar()
+        case .won:
+            SlantedBar().fill(Theme.youFill)
+        case .lost:
+            SlantedBar().fill(Theme.ink)
+        case .tied:
+            SlantedBar().fill(Theme.tertiary)
         }
-    }
-
-    private func winnerColor(_ day: LocalCompetitionDayPresentation) -> Color {
-        guard let owner = day.ownerAcceptedPoints,
-              let opponent = day.opponentRevealedPoints
-        else {
-            return day.ownerLatestAvailability == .notYetOccurred
-                ? Theme.track
-                : Theme.faint
-        }
-        let margin = competitionDisplayedMargin(userPoints: owner, opponentPoints: opponent)
-        if margin > 0 { return Theme.youFill }
-        if margin < 0 { return Theme.ink }
-        return Theme.outline
     }
 
     private func leaderColor(_ day: LocalCompetitionDayPresentation) -> Color {
@@ -148,9 +144,12 @@ struct CompetitionWeekStrip: View {
     }
 }
 
-/// Move, Exercise and Stand, plus the opponent's single bar. Accessibility
-/// sizes show named rows instead of bars, so the legend steps aside.
+/// Your bar (Move, Exercise and Stand or Roll when the days carry a ring
+/// split), the other person's single bar, and the stripe for no data.
+/// Accessibility sizes show named rows instead of bars, so the legend steps
+/// aside.
 struct CompetitionRingLegend: View {
+    let days: [LocalCompetitionDayPresentation]
     let opponentName: String
 
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -159,25 +158,56 @@ struct CompetitionRingLegend: View {
         if !dynamicTypeSize.isAccessibilitySize {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 12) { rings }
-                opponent
+                HStack(spacing: 12) {
+                    swatch(Theme.ink, opponentName.uppercased())
+                    if showsNoData {
+                        HStack(spacing: 5) {
+                            HatchBar().frame(width: 10, height: 10)
+                            Text("NO DATA").font(.themeLabel).tracking(1.1)
+                        }
+                    }
+                }
             }
             .foregroundStyle(Theme.secondary)
             .accessibilityElement(children: .ignore)
-            .accessibilityLabel(
-                "Move, Exercise and Stand are your rings. The single bar is \(opponentName)."
-            )
+            .accessibilityLabel(accessibilityText)
         }
+    }
+
+    private var showsRings: Bool {
+        days.contains { ringSegments($0).count == 3 }
+    }
+
+    private var standTitle: String {
+        competitionStandTitle(days)
+    }
+
+    private var showsNoData: Bool {
+        days.contains {
+            $0.ownerLatestAvailability != .notYetOccurred
+                && ($0.ownerAcceptedPoints == nil || $0.opponentRevealedPoints == nil)
+        }
+    }
+
+    private var accessibilityText: String {
+        [
+            showsRings
+                ? "Move, Exercise and \(standTitle.capitalized) are your rings."
+                : "The left bar is yours.",
+            "The single bar is \(opponentName).",
+            showsNoData ? "Striped bars mean no data." : nil,
+        ].compactMap { $0 }.joined(separator: " ")
     }
 
     @ViewBuilder
     private var rings: some View {
-        swatch(Theme.move, "MOVE")
-        swatch(Theme.exercise, "EXERCISE")
-        swatch(Theme.stand, "STAND")
-    }
-
-    private var opponent: some View {
-        swatch(Theme.ink, opponentName.uppercased())
+        if showsRings {
+            swatch(Theme.move, "MOVE")
+            swatch(Theme.exercise, "EXERCISE")
+            swatch(Theme.stand, standTitle)
+        } else {
+            swatch(Theme.youFill, "YOU")
+        }
     }
 
     private func swatch(_ color: Color, _ title: String) -> some View {
@@ -188,6 +218,11 @@ struct CompetitionRingLegend: View {
     }
 }
 
+/// "ROLL" when any day's accepted snapshot counts Roll hours, else "STAND".
+func competitionStandTitle(_ days: [LocalCompetitionDayPresentation]) -> String {
+    days.contains { $0.ownerAcceptedSnapshot?.standMode == .rollHours } ? "ROLL" : "STAND"
+}
+
 private struct HeadToHeadDayRow: View {
     let day: LocalCompetitionDayPresentation
     let isToday: Bool
@@ -195,20 +230,29 @@ private struct HeadToHeadDayRow: View {
     let now: Date
 
     var body: some View {
+        if ownerState == .future, !isToday {
+            HStack(spacing: 10) {
+                DayLabel(day: day, isToday: false, showsDates: showsDates, now: now)
+                Text("Upcoming")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(Theme.tertiary)
+                    .fixedSize()
+            }
+            .frame(maxWidth: .infinity)
+            .frame(minHeight: showsDates ? 38 : 30)
+        } else {
+            scoredRow
+        }
+    }
+
+    private var scoredRow: some View {
         HStack(spacing: 6) {
-            Text(chartValueText(ownerState))
-                .foregroundStyle(ownerColor)
-                .fixedSize()
-                .frame(minWidth: 36, alignment: .leading)
+            cell(chartCellText(ownerState), color: ownerColor, alignment: .leading)
             OwnerDayBar(state: ownerState, segments: ringSegments(day))
             DayLabel(day: day, isToday: isToday, showsDates: showsDates, now: now)
-            OpponentDayBar(state: opponentState)
-            Text(chartValueText(opponentState))
-                .foregroundStyle(opponentColor)
-                .fixedSize()
-                .frame(minWidth: 36, alignment: .trailing)
+            OpponentDayBar(state: opponentState, started: started)
+            cell(opponentText, color: opponentColor, alignment: .trailing)
         }
-        .font(.headline.weight(.bold).width(.condensed).monospacedDigit())
         .padding(.horizontal, isToday ? 6 : 0)
         .frame(minHeight: showsDates ? 38 : 30)
         .background(
@@ -223,6 +267,32 @@ private struct HeadToHeadDayRow: View {
 
     private var opponentState: CompetitionChartState {
         day.opponentRevealedPoints.map(CompetitionChartState.score) ?? .future
+    }
+
+    private var started: Bool {
+        day.ownerLatestAvailability != .notYetOccurred
+    }
+
+    private var opponentText: String {
+        competitionOpponentCellText(day)
+    }
+
+    // Numbers keep the score font; words step back.
+    private func cell(
+        _ text: String,
+        color: Color,
+        alignment: Alignment
+    ) -> some View {
+        let isNumber = text.first?.isNumber == true
+        return Text(text)
+            .font(
+                isNumber
+                    ? .headline.weight(.bold).width(.condensed).monospacedDigit()
+                    : .footnote.weight(.semibold)
+            )
+            .foregroundStyle(isNumber ? color : Theme.secondary)
+            .fixedSize()
+            .frame(minWidth: 36, alignment: alignment)
     }
 
     // Day winners stay bright; the other number steps back.
@@ -259,26 +329,35 @@ private struct StackedDayRow: View {
             Text(competitionDayText(day.day, now: now))
                 .font(.subheadline.monospacedDigit())
                 .foregroundStyle(Theme.secondary)
-            score("You", chartValueText(competitionOwnerChartState(day)), Theme.you)
-            score(
-                opponentName,
-                chartValueText(
-                    day.opponentRevealedPoints.map(CompetitionChartState.score)
-                        ?? .future
-                ),
-                Theme.ink
-            )
+            if ownerState == .future, !isToday {
+                Text("Upcoming")
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Theme.tertiary)
+            } else {
+                score("You", chartCellText(ownerState), Theme.you)
+                score(opponentName, competitionOpponentCellText(day), Theme.ink)
+            }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(14)
         .themePanel(cornerRadius: 14)
     }
 
+    private var ownerState: CompetitionChartState {
+        competitionOwnerChartState(day)
+    }
+
     private func score(_ name: String, _ value: String, _ color: Color) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
+        let isNumber = value.first?.isNumber == true
+        return VStack(alignment: .leading, spacing: 2) {
             Text(name).font(.subheadline.weight(.semibold)).foregroundStyle(Theme.secondary)
-            Text(value).font(.title2.weight(.heavy).width(.condensed).monospacedDigit())
-                .foregroundStyle(color)
+            Text(value)
+                .font(
+                    isNumber
+                        ? .title2.weight(.heavy).width(.condensed).monospacedDigit()
+                        : .headline
+                )
+                .foregroundStyle(isNumber ? color : Theme.secondary)
         }
     }
 }
@@ -291,7 +370,7 @@ private struct DayLabel: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Text(isToday ? "TODAY" : weekdayText(day.day))
+            Text(isToday ? "Day \(day.ordinal) · Today" : "Day \(day.ordinal) · \(weekdayText(day.day))")
                 .textCase(.uppercase)
                 .font(.themeLabel)
                 .tracking(1.0)
@@ -303,6 +382,7 @@ private struct DayLabel: View {
             }
         }
         .fixedSize()
+        .padding(.horizontal, 4)
         .frame(minWidth: 44)
     }
 }
@@ -330,7 +410,7 @@ private struct OwnerDayBar: View {
                 case .future:
                     Rectangle().fill(Theme.track).frame(height: 2)
                 case .missing, .unavailable, .unscored:
-                    Rectangle().fill(Theme.faint).frame(width: 24, height: 2)
+                    HatchBar().frame(width: 24, height: 10)
                 }
             }
             .frame(height: proxy.size.height)
@@ -341,6 +421,7 @@ private struct OwnerDayBar: View {
 
 private struct OpponentDayBar: View {
     let state: CompetitionChartState
+    let started: Bool
 
     var body: some View {
         GeometryReader { proxy in
@@ -355,6 +436,8 @@ private struct OpponentDayBar: View {
                                     * proxy.size.width
                             )
                         )
+                } else if started {
+                    HatchBar().frame(width: 24, height: 10)
                 } else {
                     Rectangle().fill(Theme.track).frame(height: 2)
                 }
@@ -404,16 +487,80 @@ func ringSegments(
     }
 }
 
-private func chartValueText(_ state: CompetitionChartState) -> String {
+/// Every closed day reads one way on the strip, in the result's day counts
+/// and in the rows.
+enum CompetitionDayOutcome: Equatable {
+    case today, upcoming, won, lost, tied, noData
+}
+
+/// A day is no data when either score is missing, or when both read 0.
+func competitionDayOutcome(
+    _ day: LocalCompetitionDayPresentation,
+    currentDayOrdinal: Int?
+) -> CompetitionDayOutcome {
+    if day.ordinal == currentDayOrdinal { return .today }
+    if day.ownerLatestAvailability == .notYetOccurred { return .upcoming }
+    guard let owner = day.ownerAcceptedPoints,
+          let opponent = day.opponentRevealedPoints,
+          owner.rounded(.toNearestOrAwayFromZero) != 0
+            || opponent.rounded(.toNearestOrAwayFromZero) != 0
+    else { return .noData }
+    let margin = competitionDisplayedMargin(userPoints: owner, opponentPoints: opponent)
+    if margin > 0 { return .won }
+    if margin < 0 { return .lost }
+    return .tied
+}
+
+/// "Day 7", "Days 5 and 7" or "Days 3, 5, and 7"; nil for none or four or more.
+func competitionDayListText(_ ordinals: Set<Int>, locale: Locale = .current) -> String? {
+    let sorted = ordinals.sorted()
+    switch sorted.count {
+    case 1: return "Day \(sorted[0])"
+    case 2, 3:
+        return "Days " + sorted.map(String.init).formatted(.list(type: .and).locale(locale))
+    default: return nil
+    }
+}
+
+/// Vertical 1 pt lines every 3 pt: the "no data" fill.
+struct HatchFill: Shape {
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        var x = rect.minX + 0.5
+        while x < rect.maxX {
+            path.move(to: CGPoint(x: x, y: rect.minY))
+            path.addLine(to: CGPoint(x: x, y: rect.maxY))
+            x += 3
+        }
+        return path
+    }
+}
+
+/// A slanted bar filled with the "no data" stripe.
+private struct HatchBar: View {
+    var body: some View {
+        HatchFill()
+            .stroke(Theme.faint, lineWidth: 1)
+            .clipShape(SlantedBar())
+    }
+}
+
+private func chartCellText(_ state: CompetitionChartState) -> String {
     switch state {
     case let .score(points), let .missingWithScore(points),
          let .unavailableWithScore(points):
         competitionPointsText(points)
-    case .future: "—"
-    case .missing: "?"
-    case .unavailable: "!"
-    case .unscored: "–"
+    case .missing, .unavailable: "No data"
+    case .unscored: "Not scored"
+    case .future: "Upcoming"
     }
+}
+
+/// Their side: the number, "No data" when they sent the day without a
+/// score, otherwise "Not synced".
+private func competitionOpponentCellText(_ day: LocalCompetitionDayPresentation) -> String {
+    day.opponentRevealedPoints.map { competitionPointsText($0) }
+        ?? (day.opponentReportedNoData ? "No data" : "Not synced")
 }
 
 /// A competition calendar day as UTC midnight, so it never shifts with the
@@ -438,6 +585,18 @@ func weekdayText(_ day: CompetitionDay, locale: Locale = .current) -> String {
     calendar.locale = locale
     let index = calendar.component(.weekday, from: date) - 1
     return calendar.shortWeekdaySymbols[index]
+}
+
+/// Full weekday for a competition calendar day, e.g. "Wednesday".
+func weekdayName(_ day: CompetitionDay, locale: Locale = .current) -> String {
+    guard let date = competitionDayDate(day) else {
+        return "\(day.month)/\(day.day)"
+    }
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = competitionDayTimeZone
+    calendar.locale = locale
+    let index = calendar.component(.weekday, from: date) - 1
+    return calendar.weekdaySymbols[index]
 }
 
 /// The day style for a competition calendar day: "Thu, Oct 29". The year

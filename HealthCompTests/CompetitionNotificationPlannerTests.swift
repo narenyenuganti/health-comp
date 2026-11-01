@@ -120,7 +120,7 @@ final class CompetitionNotificationPlannerTests: XCTestCase {
         }
         XCTAssertEqual(title(.scheduled(.finalDay)), "Last day")
         XCTAssertEqual(title(.scheduled(.finalDay)), formatter(.endsToday))
-        XCTAssertEqual(title(.scheduled(.competitionEnded)), "Tallying")
+        XCTAssertEqual(title(.scheduled(.competitionEnded)), "Final score pending")
         XCTAssertEqual(
             title(.scheduled(.competitionEnded)),
             formatter(.tallying(startedAt: .distantPast))
@@ -131,6 +131,7 @@ final class CompetitionNotificationPlannerTests: XCTestCase {
             formatter(.active(dayOrdinal: 1))
         )
         XCTAssertEqual(title(.opportunistic(.result), outcome: .loss), "Alex won")
+        XCTAssertEqual(title(.opportunistic(.result), outcome: .tie), "All square with Alex")
         XCTAssertEqual(
             title(.opportunistic(.result), outcome: .loss),
             formatter(.completed(

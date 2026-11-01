@@ -827,7 +827,28 @@ final class RemoteCompetitionClientTests: XCTestCase {
                 outcome: .loss,
                 opponentDisplayName: participantPresentation.opponentName
             ),
-            "Former competitor Won"
+            "Former competitor won"
+        )
+    }
+
+    func testRemoteTallyWaitsOnWhoeverHasMissingDays() {
+        XCTAssertEqual(
+            RemoteCompetitionProjector.remoteTallyAttention(
+                ownerMissing: [7], opponentMissing: [6, 7]
+            ),
+            .incomplete(missingOrdinals: [7], unavailableOrdinals: [])
+        )
+        XCTAssertEqual(
+            RemoteCompetitionProjector.remoteTallyAttention(
+                ownerMissing: [], opponentMissing: [7]
+            ),
+            .opponentPlanUnavailable
+        )
+        XCTAssertEqual(
+            RemoteCompetitionProjector.remoteTallyAttention(
+                ownerMissing: [], opponentMissing: []
+            ),
+            .awaitingStability
         )
     }
 
