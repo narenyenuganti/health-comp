@@ -687,6 +687,40 @@ final class MultiUserCompetitionUITests: XCTestCase {
         XCTAssertTrue(disclosure.waitForExistence(timeout: 3))
     }
 
+    func testChallengeLinkBeforeHealthNamesTheSenderAndOffersDecline() {
+        launch(.healthOnboardingClaim)
+        defer { app.terminate() }
+        let sender = app.staticTexts["competition.claim.sender"]
+        XCTAssertTrue(sender.waitForExistence(timeout: 8))
+        XCTAssertEqual(sender.label, "Naren challenged you")
+        XCTAssertTrue(
+            element("competition.claim.start").label.contains("Pacific Time")
+        )
+        XCTAssertTrue(app.buttons["competition.claim.accept"].exists)
+        XCTAssertTrue(app.buttons["competition.claim.not-now"].exists)
+        app.buttons["competition.claim.decline"].tap()
+        let confirm = app.buttons["Decline Challenge"]
+        XCTAssertTrue(confirm.waitForExistence(timeout: 3))
+        confirm.tap()
+        // Health is still next, in its own terms.
+        XCTAssertTrue(
+            app.staticTexts["Score with your rings"].waitForExistence(timeout: 5)
+        )
+        XCTAssertFalse(app.descendants(matching: .any)["competition.claim.sheet"].exists)
+
+        // Accept waits for Health, which is asked in the match's terms.
+        launch(.healthOnboardingClaim)
+        let accept = app.buttons["competition.claim.accept"]
+        XCTAssertTrue(accept.waitForExistence(timeout: 8))
+        XCTAssertEqual(app.staticTexts["competition.claim.sender"].label, "Naren challenged you")
+        accept.tap()
+        XCTAssertTrue(
+            app.staticTexts["Connect Health so your rings count"]
+                .waitForExistence(timeout: 5)
+        )
+        XCTAssertTrue(app.buttons["Connect Health"].exists)
+    }
+
     func testWelcomeIsSignInAndPrivacyPolicyOnly() {
         launch(.welcome)
         defer { app.terminate() }
@@ -1272,6 +1306,7 @@ final class MultiUserCompetitionUITests: XCTestCase {
         case welcomeChallenge = "welcome-challenge"
         case healthOnboarding = "health-onboarding"
         case healthOnboardingChallenge = "health-onboarding-challenge"
+        case healthOnboardingClaim = "health-onboarding-claim"
     }
 
     private func launch(

@@ -938,6 +938,108 @@ final class RemoteCompetitionClientTests: XCTestCase {
         await client.stop()
     }
 
+    /// A challenge link opened over the Health step: the signed-in session
+    /// answers the preview and Decline, and nothing refreshes (which reads
+    /// Health) or publishes until the competition starts, failures included.
+    func testChallengeLinkPreviewAndDeclineBeforeStartDoNotRefresh()
+        async throws
+    {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(
+            at: root,
+            withIntermediateDirectories: true
+        )
+        defer { try? FileManager.default.removeItem(at: root) }
+        let profile = AuthenticatedProfile(
+            id: UUID(
+                uuidString: "81000000-0000-4000-8000-000000000001"
+            )!,
+            displayName: "Beta Alice"
+        )
+        let paths = AuthenticatedProfileStoragePaths(
+            profileID: profile.id,
+            rootDirectory: root
+        )
+        for directory in paths.fixedDirectories {
+            try FileManager.default.createDirectory(
+                at: directory,
+                withIntermediateDirectories: true
+            )
+        }
+        let competitionID = CompetitionID(
+            UUID(
+                uuidString: "82000000-0000-4000-8000-000000000002"
+            )!
+        )
+        let preview = CompetitionInvitePreview(
+            competitionID: competitionID.rawValue,
+            state: .pending,
+            sender: AuthenticatedProfile(
+                id: UUID(
+                    uuidString: "81000000-0000-4000-8000-000000000009"
+                )!,
+                displayName: "Naren"
+            ),
+            timeZoneIdentifier: "America/Los_Angeles",
+            expiresAt: Date(timeIntervalSince1970: 1_786_867_200)
+        )
+        let probe = RemoteCompetitionClientCommandProbe()
+        var api = remoteAPI(listCompetitions: {
+            await probe.recordList()
+            return []
+        })
+        let rejectedID = CompetitionID(
+            UUID(uuidString: "82000000-0000-4000-8000-000000000003")!
+        )
+        let lapsedID = CompetitionID(
+            UUID(uuidString: "82000000-0000-4000-8000-000000000004")!
+        )
+        api.previewInvite = { _ in preview }
+        api.declineChallenge = { id in
+            await probe.recordDecline(id)
+            switch id {
+            case rejectedID.rawValue: throw CompetitionRemoteFailure.operationFailed
+            case lapsedID.rawValue: throw CompetitionRemoteFailure.inviteUnavailable
+            default: break
+            }
+        }
+        let client = CompetitionClient.remote(
+            remoteAPI: api,
+            environment: try environment()
+        )
+
+        try await client.mountAuthenticatedProfile(profile, paths)
+        let loaded = try await client.previewInvite(
+            try CompetitionInviteClaimRequest(
+                token: String(repeating: "P", count: 43)
+            )
+        )
+        let returned = await client.decline(competitionID)
+        let rejected = await client.decline(rejectedID)
+        // Cancelled or expired meanwhile: nothing left to decline.
+        let lapsed = await client.decline(lapsedID)
+
+        XCTAssertEqual(loaded, preview)
+        XCTAssertEqual(returned.dashboard.issues, [])
+        XCTAssertEqual(rejected.dashboard.issues, [.commandRejected(rejectedID)])
+        XCTAssertEqual(rejected.publicationRevision, 0)
+        XCTAssertEqual(lapsed.dashboard.issues, [])
+        let declines = await probe.declineRequests()
+        XCTAssertEqual(
+            declines,
+            [competitionID.rawValue, rejectedID.rawValue, lapsedID.rawValue]
+        )
+        let lists = await probe.listCount()
+        XCTAssertEqual(lists, 0)
+
+        var iterator = client.start().makeAsyncIterator()
+        let initial = await iterator.next()
+        XCTAssertEqual(initial?.publicationRevision, 1)
+        XCTAssertEqual(initial?.dashboard.issues, [])
+        await client.stop()
+    }
+
     func testAnonymizedOpponentIdentityRemainsVisibleInRemoteHistory()
         throws
     {
@@ -5062,6 +5164,7 @@ private actor RemoteCompetitionClientCommandProbe {
     private var creates: [CompetitionInviteCreationRequest] = []
     private var claims: [CompetitionInviteClaimRequest] = []
     private var archives: [UUID] = []
+    private var declines: [UUID] = []
     private var recipients: [UUID] = []
 
     func recordRecipientLookup(_ profileID: UUID) {
@@ -5086,6 +5189,14 @@ private actor RemoteCompetitionClientCommandProbe {
 
     func recordArchive(_ competitionID: UUID) {
         archives.append(competitionID)
+    }
+
+    func recordDecline(_ competitionID: UUID) {
+        declines.append(competitionID)
+    }
+
+    func declineRequests() -> [UUID] {
+        declines
     }
 
     func listCount() -> Int {
