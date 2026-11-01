@@ -805,6 +805,10 @@ final class CompetitionPresentationTests: XCTestCase {
                 headline: "Waiting for Hermes to sync",
                 body: "Nothing for you to do. If Hermes doesn’t sync by Wed night, the result uses what’s in."
             )),
+            (.awaitingOpponentCheck, CompetitionTallyCopy(
+                headline: "Waiting for Hermes’s last check",
+                body: "Nothing for you to do. If Hermes doesn’t open HealthComp by Wed night, the result uses what’s in."
+            )),
             (.incomplete(missingOrdinals: [7], unavailableOrdinals: []), CompetitionTallyCopy(
                 headline: "Waiting for your Day 7",
                 body: "Day 7 hasn’t synced from this iPhone. \(openAgain)"
@@ -844,6 +848,7 @@ final class CompetitionPresentationTests: XCTestCase {
             }
         }
         XCTAssertFalse(copy(.opponentPlanUnavailable).body.contains("your"))
+        XCTAssertFalse(copy(.awaitingOpponentCheck).body.contains("your"))
 
         XCTAssertEqual(
             copy(.incomplete(missingOrdinals: [7], unavailableOrdinals: []), now: deadline),

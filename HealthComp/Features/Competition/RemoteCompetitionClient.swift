@@ -2358,7 +2358,9 @@ enum RemoteCompetitionProjector {
         return CompetitionTallyPresentation(
             attention: remoteTallyAttention(
                 ownerMissing: missingDays(ownerID),
-                opponentMissing: missingDays(opponentID)
+                opponentMissing: missingDays(opponentID),
+                ownerAttestedStable: projection
+                    .remoteWindowAttestations[ownerID]?.basis == .stable
             ),
             consecutiveStableCompleteReads: 0,
             stabilityStart: nil,
@@ -2366,16 +2368,20 @@ enum RemoteCompetitionProjector {
         )
     }
 
-    /// Waits on whoever has missing day rows: you first, then them.
+    /// Waits on whoever has missing day rows: you first, then them. With
+    /// every row in, your stable check means the wait is theirs: the server
+    /// finalizes in the same transaction as the second stable check
+    /// (`attest_final_window`), so a still-tallying match hasn't got it.
     static func remoteTallyAttention(
         ownerMissing: Set<Int>,
-        opponentMissing: Set<Int>
+        opponentMissing: Set<Int>,
+        ownerAttestedStable: Bool
     ) -> CompetitionTallyAttention {
         if !ownerMissing.isEmpty {
             return .incomplete(missingOrdinals: ownerMissing, unavailableOrdinals: [])
         }
         if !opponentMissing.isEmpty { return .opponentPlanUnavailable }
-        return .awaitingStability
+        return ownerAttestedStable ? .awaitingOpponentCheck : .awaitingStability
     }
 
     static func awards(

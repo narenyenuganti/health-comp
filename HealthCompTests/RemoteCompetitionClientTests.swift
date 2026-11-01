@@ -1009,23 +1009,35 @@ final class RemoteCompetitionClientTests: XCTestCase {
     }
 
     func testRemoteTallyWaitsOnWhoeverHasMissingDays() {
-        XCTAssertEqual(
+        func attention(
+            ownerMissing: Set<Int>,
+            opponentMissing: Set<Int>,
+            ownerAttestedStable: Bool
+        ) -> CompetitionTallyAttention {
             RemoteCompetitionProjector.remoteTallyAttention(
-                ownerMissing: [7], opponentMissing: [6, 7]
-            ),
-            .incomplete(missingOrdinals: [7], unavailableOrdinals: [])
-        )
+                ownerMissing: ownerMissing,
+                opponentMissing: opponentMissing,
+                ownerAttestedStable: ownerAttestedStable
+            )
+        }
+        // You first, then their days, then their last check.
+        for stable in [false, true] {
+            XCTAssertEqual(
+                attention(ownerMissing: [7], opponentMissing: [6, 7], ownerAttestedStable: stable),
+                .incomplete(missingOrdinals: [7], unavailableOrdinals: [])
+            )
+            XCTAssertEqual(
+                attention(ownerMissing: [], opponentMissing: [7], ownerAttestedStable: stable),
+                .opponentPlanUnavailable
+            )
+        }
         XCTAssertEqual(
-            RemoteCompetitionProjector.remoteTallyAttention(
-                ownerMissing: [], opponentMissing: [7]
-            ),
-            .opponentPlanUnavailable
-        )
-        XCTAssertEqual(
-            RemoteCompetitionProjector.remoteTallyAttention(
-                ownerMissing: [], opponentMissing: []
-            ),
+            attention(ownerMissing: [], opponentMissing: [], ownerAttestedStable: false),
             .awaitingStability
+        )
+        XCTAssertEqual(
+            attention(ownerMissing: [], opponentMissing: [], ownerAttestedStable: true),
+            .awaitingOpponentCheck
         )
     }
 
