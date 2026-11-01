@@ -5,3 +5,16 @@
 SWIFT_OPTIMIZATION_LEVEL[sdk=macosx*] = -Onone
 SWIFT_COMPILATION_MODE[sdk=macosx*] = singlefile
 ARCHS[sdk=macosx*] = arm64
+
+// Simulator tests run on the arm64 runner, so skip the x86_64 Simulator slice
+// that release-style configurations build. Scoping testability to Simulator
+// builds keeps the macro plugins identical to the device builds, which then
+// reuse them instead of recompiling swift-syntax.
+ARCHS[sdk=iphonesimulator*] = arm64
+ENABLE_TESTABILITY[sdk=iphonesimulator*] = YES
+
+// Simulator builds sign ad hoc, which embeds the entitlements Keychain tests
+// need without an Apple account. Device builds cannot sign without one. The
+// macOS plugins keep the same signing in both, so device builds skip relinking.
+CODE_SIGN_IDENTITY = -
+CODE_SIGNING_ALLOWED[sdk=iphoneos*] = NO
