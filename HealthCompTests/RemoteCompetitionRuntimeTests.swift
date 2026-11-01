@@ -1550,7 +1550,9 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
             acceptsAppend: { $0.clientRevision == 1 },
             beforeList: {
                 // Let the woken outbox finish storing revision 1 before the
-                // match loads, so the run reads one consistent ledger.
+                // match loads: its journal write can otherwise conflict with
+                // the run's own appends (revision reuse is covered by
+                // testRefreshNeverReusesARevisionTheOutboxStoredAfterTheMatchLoaded).
                 while await server.appendedScoreCount() < 1 {
                     try? await Task.sleep(nanoseconds: 10_000_000)
                 }
@@ -1574,6 +1576,50 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
         XCTAssertEqual(day.pendingClientRevision, 2)
         let shown = try XCTUnwrap(project([materialization], at: harness.dayOneNoon).first?.days.first)
         XCTAssertEqual(shown.ownerAcceptedSnapshot, first)
+    }
+
+    func testRefreshNeverReusesARevisionTheOutboxStoredAfterTheMatchLoaded() async throws {
+        let harness = try ownerActivityHarness()
+        defer { try? FileManager.default.removeItem(at: harness.root) }
+        // Run 1 queues revision 1, but the upload doesn't go through.
+        let offlineRuntime = ownerRuntime(
+            harness, at: harness.dayOneNoon, snapshots: [1: try harness.snapshot(move: 420)],
+            acceptsAppend: { _ in false }
+        )
+        _ = await offlineRuntime.synchronizeAll()
+        await offlineRuntime.stop()
+
+        // Run 2: the woken outbox lands revision 1 only after the match has
+        // loaded and its changes were read, then a newer reading is scored.
+        let outbox = JSONCompetitionOutboxStore(
+            rootDirectory: harness.root.appendingPathComponent("outbox"),
+            fileProtection: JSONCompetitionEventStoreFileProtection { _, _ in }
+        )
+        let delivery = SuspendedScoreSubmissionProbe()
+        let runtime = ownerRuntime(
+            harness, at: harness.dayOneNoon.addingTimeInterval(3_600),
+            snapshots: [1: try harness.snapshot(move: 480)],
+            beforeAppend: { request in
+                if request.clientRevision == 1 { await delivery.suspendUntilReleased() }
+            },
+            afterFetchChanges: {
+                await delivery.release()
+                while (try? await outbox.entries().isEmpty) == false {
+                    try? await Task.sleep(nanoseconds: 10_000_000)
+                }
+            }
+        )
+        let run = await runtime.synchronizeAll()
+        await runtime.stop()
+
+        XCTAssertEqual(run.failures, [])
+        let leftInOutbox = try await outbox.entries()
+        XCTAssertEqual(leftInOutbox.count, 0)
+        XCTAssertEqual(
+            try run.successfulCompetitions.first?.journal.projection
+                .remoteScoreLedgers[profileID]?.visibleEntry(forActiveDayOrdinal: 1)?.clientRevision,
+            2
+        )
     }
 
     func testCancelledMatchKeepsItsLastMaterializationAndRaisesNoIssue() async throws {
@@ -3777,7 +3823,9 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
         acceptsAppend: @escaping @Sendable (CompetitionScoreRevisionRequest) -> Bool = { _ in true },
         failure: CompetitionRemoteFailure = .retryableTransport,
         offline: Bool = false,
-        beforeList: @escaping @Sendable () async -> Void = {}
+        beforeList: @escaping @Sendable () async -> Void = {},
+        beforeAppend: @escaping @Sendable (CompetitionScoreRevisionRequest) async -> Void = { _ in },
+        afterFetchChanges: @escaping @Sendable () async -> Void = {}
     ) -> RemoteCompetitionRuntime {
         let noProtection = JSONCompetitionEventStoreFileProtection { _, _ in }
         let server = harness.server
@@ -3789,9 +3837,12 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
                 return try await server.listCompetitions(for: ownerID)
             },
             fetchChanges: { cursor, pageSize in
-                try await server.fetchChanges(for: ownerID, cursor: cursor, pageSize: pageSize)
+                let page = try await server.fetchChanges(for: ownerID, cursor: cursor, pageSize: pageSize)
+                await afterFetchChanges()
+                return page
             },
             appendScoreRevision: { request in
+                await beforeAppend(request)
                 guard acceptsAppend(request) else { throw failure }
                 return try await server.appendScoreRevision(for: ownerID, request: request)
             }
@@ -4166,6 +4217,14 @@ private actor TwoClientCompetitionServer {
                 acceptedServerSequence: existing.serverSequence,
                 competitionCursor: changes.last?.serverSequence ?? 0
             )
+        }
+        // Like submit_score_revision: a participant spends each revision
+        // once, across all days.
+        guard !acceptedBySemanticID.values.contains(where: {
+            $0.participantID == profileID
+                && $0.request.clientRevision == request.clientRevision
+        }) else {
+            throw CompetitionRemoteFailure.divergentDuplicate
         }
         let acceptedCentiPoints: Int?
         if request.availabilityReason == "available" {

@@ -1054,9 +1054,15 @@ actor RemoteCompetitionRuntime {
         }
 #endif
         let evaluatedAt = now()
+        // The outbox can deliver while this sync runs, and stores each
+        // accepted row before dropping its entry. Reading the outbox and then
+        // the ledger shows every spent revision in one of the two, so a new
+        // reading never reuses one (the server rejects a reused revision).
         let existingOutboxEntries = try await outboxStore.entries()
-        let ownerLedger = materialization.journal.projection
-            .remoteScoreLedgers[profileID]
+        guard let current = try await store.load(configuration.competitionID) else {
+            throw RemoteCompetitionRuntimeFailure.storageUnavailable
+        }
+        let ownerLedger = current.projection.remoteScoreLedgers[profileID]
         var maximumClientRevision: Int64 = 0
         var acceptedByOrdinal: [Int: RemoteAcceptedScoreRow] = [:]
         if let ownerLedger {
