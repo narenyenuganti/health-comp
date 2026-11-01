@@ -1,5 +1,5 @@
 -- Challenge links, in-app challenge responses, Cancel Match and overlap rules.
--- All DDL first; this migration updates no existing rows.
+-- All DDL first; the one data fix runs at the end.
 
 alter table public.competitions
   add column closed_by_profile_id uuid references public.profiles(id),
@@ -125,8 +125,9 @@ revoke all on function private.enqueue_challenge_notification(uuid, text, uuid, 
 
 -- Claim's acceptance (018), keyed by competition so the bound recipient can
 -- accept in the app without the token. Both people's profile rows are locked
--- in id order first, the same order create uses, so overlapping creates and
--- accepts between one pair serialize without deadlocks.
+-- in id order first (no key update, so foreign key checks from a decline or
+-- cancel never wait on them), the same order create uses, so overlapping
+-- creates and accepts between one pair serialize without deadlocks.
 create function private.accept_pending_invitation(
   target_competition_id uuid,
   caller_profile_id uuid
@@ -146,7 +147,7 @@ begin
   end if;
   perform 1 from public.profiles p
   where p.id in (target_creator_profile_id, caller_profile_id)
-  order by p.id for update;
+  order by p.id for no key update;
 
   select i.id, i.competition_id, i.claimed_profile_id, i.consumed_at, i.expires_at,
     c.creator_profile_id, c.invited_profile_id, c.time_zone_identifier, c.lifecycle
@@ -299,6 +300,28 @@ begin
   return pg_catalog.jsonb_build_object('competition_id', target.id);
 end;
 $$;
+
+-- A cancelled match has no schedule. Every app version's descriptor check
+-- requires start_day and best_available_deadline to be null once cancelled
+-- and drops the whole listing otherwise, so this covers Cancel Match and the
+-- account-deletion cancel alike.
+create function private.clear_cancelled_schedule()
+returns trigger language plpgsql set search_path = ''
+as $$
+begin
+  if new.lifecycle = 'cancelled' then
+    new.start_day := null;
+    new.best_available_deadline := null;
+  end if;
+  return new;
+end;
+$$;
+revoke all on function private.clear_cancelled_schedule()
+  from public, anon, authenticated, service_role;
+create trigger clear_cancelled_schedule
+before update of lifecycle on public.competitions
+for each row when (new.lifecycle = 'cancelled')
+execute function private.clear_cancelled_schedule();
 
 -- The one cancel RPC: the creator withdraws a pending challenge (no push), or
 -- either participant cancels a scheduled match before local midnight at the
@@ -588,6 +611,8 @@ begin
     raise exception 'invalid_time_zone' using errcode = '22023';
   end if;
 
+  -- No key update: closed_by_profile_id's foreign key check (key share)
+  -- from a concurrent decline or cancel must not wait on these locks.
   -- Serialize creates and accepts between both people before checking
   -- idempotence, pending pairs, overlap and reciprocal challenges.
   select p.id into caller_profile_id from public.profiles p
@@ -597,7 +622,7 @@ begin
   end if;
   perform 1 from public.profiles p
   where p.id in (caller_profile_id, input_recipient_profile_id)
-  order by p.id for update;
+  order by p.id for no key update;
   if not exists (select 1 from public.profiles p
     where p.id = caller_profile_id and p.state = 'active') then
     raise exception 'active_profile_required' using errcode = '42501';
@@ -880,3 +905,10 @@ grant execute on function public.preview_competition_invite(bytea) to authentica
 grant execute on function public.list_challenges() to authenticated;
 grant execute on function public.get_my_challenge_link() to authenticated;
 grant execute on function public.resolve_challenge_link(text) to authenticated;
+
+-- Data, after all DDL: account-deletion cancels left their schedule behind,
+-- which made the remaining person's listing fail to decode.
+update public.competitions
+set start_day = null, best_available_deadline = null
+where lifecycle = 'cancelled'
+  and (start_day is not null or best_available_deadline is not null);

@@ -20,7 +20,7 @@ Deno.test({
         throw new Error("invitation race requires disposable local database");
       }
       const sql = postgres(databaseURL, { max: 8 });
-      const users = Array.from({ length: 3 }, () => ({
+      const users = Array.from({ length: 5 }, () => ({
         user: crypto.randomUUID(),
         profile: crypto.randomUUID(),
       }));
@@ -80,6 +80,17 @@ Deno.test({
               JSON.stringify({ sub: user, role: "authenticated" })
             },true)`;
             return (await tx`select public.claim_competition_invite(decode(${digest},'hex')) id`)[
+              0
+            ].id;
+          });
+        };
+        const cancel = async (user: string, competition: string) => {
+          return await sql.begin(async (tx) => {
+            await tx`set local role authenticated`;
+            await tx`select set_config('request.jwt.claims',${
+              JSON.stringify({ sub: user, role: "authenticated" })
+            },true)`;
+            return (await tx`select public.cancel_competition(${competition}::uuid)->>'competition_id' id`)[
               0
             ].id;
           });
@@ -144,6 +155,34 @@ Deno.test({
               and change_kind = 'participant_state_changed'`)[0].n,
           1,
         );
+
+        // Accept and cancel of one challenge never deadlock: the creator's
+        // cancel writes closed_by (a key-share check on profiles) while the
+        // recipient's accept holds both profile rows.
+        for (let round = 0; round < 20; round++) {
+          const challenge = await create(
+            crypto.randomUUID(),
+            randomBytes(32).toString("hex"),
+            users[4].profile,
+            users[3].user,
+          );
+          const outcomes = await Promise.allSettled([
+            acceptById(users[4].user, challenge),
+            cancel(users[3].user, challenge),
+          ]);
+          assertEquals(outcomes[1].status, "fulfilled");
+          assertEquals(
+            outcomes[0].status === "fulfilled" ||
+              (outcomes[0].reason instanceof postgres.PostgresError &&
+                outcomes[0].reason.message === "invite_unavailable"),
+            true,
+          );
+          assertEquals(
+            (await sql`select lifecycle from public.competitions
+              where id = ${challenge}::uuid`)[0].lifecycle,
+            "cancelled",
+          );
+        }
 
         // Reciprocal creates between a free pair serialize: exactly one wins.
         const reciprocal = await Promise.allSettled(

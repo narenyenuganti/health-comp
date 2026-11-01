@@ -336,6 +336,10 @@ select is(public.cancel_competition((select id from r where label = 'ac3')),
   'the recipient may cancel a scheduled match before Day 1');
 select is(public.list_challenges()->'closed', '[]'::jsonb, 'the person who cancelled sees no closed row');
 reset role;
+select ok((select lifecycle = 'cancelled' and start_day is null and best_available_deadline is null
+    and time_zone_identifier is not null
+  from public.competitions where id = (select id from r where label = 'ac3')),
+  'a cancelled match keeps no schedule, as every app version''s descriptor check requires');
 select results_eq($$select * from pg_temp.challenge_work((select id from r where label = 'ac3'), 'match_cancelled')$$,
   $$values ('c7100000-0000-4000-8000-000000000001'::uuid, 'c7100000-0000-4000-8000-000000000003'::uuid, 'pending'::text),
     ('c7100000-0000-4000-8000-000000000001'::uuid, 'c7100000-0000-4000-8000-000000000003'::uuid, 'pending'::text)$$,
@@ -379,6 +383,19 @@ select set_config('request.jwt.claims', '{"role":"authenticated","sub":"c7000000
 select is((select display_name from public.profiles where id = 'c7100000-0000-4000-8000-000000000009'),
   'Former competitor', 'an anonymized counterpart of a deletion cancel stays visible');
 reset role;
+
+-- The account-deletion cancel (a direct lifecycle update) drops the schedule too.
+insert into r (label, id) values ('ae1', pg_temp.challenge('c7000000-0000-4000-8000-000000000001',
+  'c7100000-0000-4000-8000-000000000004', 'd7', 'c7400000-0000-4000-8000-000000000017'));
+set local role authenticated;
+select set_config('request.jwt.claims', '{"role":"authenticated","sub":"c7000000-0000-4000-8000-000000000004"}', true);
+select lives_ok($$select public.accept_competition_challenge((select id from r where label = 'ae1'))$$,
+  'Dana accepts');
+reset role;
+update public.competitions set lifecycle = 'cancelled' where id = (select id from r where label = 'ae1');
+select ok((select start_day is null and best_available_deadline is null
+  from public.competitions where id = (select id from r where label = 'ae1')),
+  'any cancel of a scheduled match clears its schedule');
 
 -- Cancel windows: Day 1 has started, and a completed match.
 insert into r (label, id) values ('ad1', pg_temp.challenge('c7000000-0000-4000-8000-000000000001',
