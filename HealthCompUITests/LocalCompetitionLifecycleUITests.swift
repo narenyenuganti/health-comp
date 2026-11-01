@@ -62,7 +62,8 @@ final class LocalCompetitionLifecycleUITests: XCTestCase {
         let rings = app.otherElements["competition.ownerRings"]
         XCTAssertTrue(rings.waitForExistence(timeout: 3))
         XCTAssertTrue(rings.label.contains("Stand or Roll"))
-        XCTAssertTrue(rings.label.contains("pause status unknown"))
+        XCTAssertTrue(rings.label.contains("200 points"))
+        XCTAssertTrue(app.staticTexts["competition.updated"].label.hasPrefix("Updated "))
         XCTAssertFalse(app.otherElements["competition.opponentRings"].exists)
         showWeek()
         assertSevenPairedDays()
@@ -73,6 +74,13 @@ final class LocalCompetitionLifecycleUITests: XCTestCase {
 
         for _ in 0..<6 { nextCheckpoint() }
         XCTAssertTrue(waitForStatus("Last day"))
+        // Late sync: Day 7 has no Health summary yet.
+        app.buttons["Today"].tap()
+        XCTAssertTrue(
+            app.descendants(matching: .any)["competition.notSynced"]
+                .waitForExistence(timeout: 3)
+        )
+        showWeek()
         let finalDay = app.descendants(matching: .any)["competition.day.7"]
         scrollToElement(finalDay)
         XCTAssertTrue(finalDay.label.contains("You"))
@@ -306,7 +314,7 @@ final class LocalCompetitionLifecycleUITests: XCTestCase {
         capture("light-small-best-available-result")
     }
 
-    func testMoveTimeRollUsesOwnerOnlyTruthfulSystemRings() {
+    func testMoveTimeRollRingRowsUseTruthfulUnits() {
         launch(fixture: "move-time-roll", direction: "outgoing")
         XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 8))
         pendingSharingCard.tap()
@@ -315,11 +323,15 @@ final class LocalCompetitionLifecycleUITests: XCTestCase {
 
         let rings = app.otherElements["competition.ownerRings"]
         XCTAssertTrue(rings.waitForExistence(timeout: 5))
-        XCTAssertTrue(rings.label.contains("Naren activity"))
+        XCTAssertTrue(rings.label.contains("Your rings"))
         XCTAssertTrue(rings.label.contains("Move Time"))
         XCTAssertTrue(rings.label.contains("60 of 30 minutes"))
         XCTAssertTrue(rings.label.contains("Roll, 24 of 12 hours"))
         XCTAssertFalse(app.otherElements["competition.opponentRings"].exists)
+
+        app.scrollViews.firstMatch.swipeDown()
+        XCTAssertTrue(rings.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["competition.updated"].exists)
     }
 
     func testLossAndTieFixturesRenderBothResultOutcomes() {

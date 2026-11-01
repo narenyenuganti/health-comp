@@ -226,6 +226,9 @@ struct MainTabView: View {
                     issue: competitionRowIssue(id, in: publication.dashboard.issues),
                     retry: retry
                 )
+                .refreshable {
+                    await store.send(.competition(.pullToRefresh)).finish()
+                }
 
             case .completed, .archived:
                 CompetitionResultView(

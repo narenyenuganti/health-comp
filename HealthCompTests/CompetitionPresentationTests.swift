@@ -456,6 +456,10 @@ final class CompetitionPresentationTests: XCTestCase {
             ),
             (.invalidSourceData, "Activity data could not be used."),
         ]
+        XCTAssertEqual(
+            competitionOwnerAvailabilityText(.notSyncedYet, ordinal: 2),
+            "Today hasn’t synced yet"
+        )
 
         for (reason, copy) in expected {
             XCTAssertEqual(
@@ -568,43 +572,110 @@ final class CompetitionPresentationTests: XCTestCase {
             competitionOwnerAccessibilityText(observedWithoutScore),
             "synced, no score yet"
         )
+        let notSynced = presentation(.notSyncedYet, points: nil)
+        XCTAssertEqual(competitionOwnerChartState(notSynced), .unscored)
+        XCTAssertEqual(competitionOwnerAccessibilityText(notSynced), "not synced yet")
     }
 
-    func testUnknownStandAndPauseStillSupportTruthfulSystemRings() throws {
+    func testRingPanelRowsAddUpToTheAcceptedDayScore() throws {
+        let snapshot = try rings(420, 36, 9)
+        let panel = try XCTUnwrap(competitionRingPanel(
+            ringDay(accepted: snapshot, latest: snapshot, points: 279),
+            locale: Locale(identifier: "en_US")
+        ))
+        XCTAssertEqual(panel.rows.map(\.title), ["Move", "Exercise", "Stand"])
+        XCTAssertEqual(panel.rows.map(\.detail), ["420/500 kcal", "36/30 min", "9/12 hr"])
+        XCTAssertEqual(panel.rows.map(\.points), [84, 120, 75])
+        XCTAssertNil(panel.note)
+        XCTAssertFalse(panel.isPaused)
+        XCTAssertEqual(panel.footer, "1 point per 1% of each ring. Your ring values stay on this iPhone.")
+        XCTAssertEqual(
+            panel.accessibilityLabel,
+            "Your rings. Move, 420 of 500 kilocalories, 84 points. Exercise, 36 of 30 minutes, 120 points. Stand, 9 of 12 hours, 75 points."
+        )
+    }
+
+    func testRingPanelSplitsACappedDayAndSaysSo() throws {
+        let snapshot = try rings(1_100, 60, 24)
+        let panel = try XCTUnwrap(competitionRingPanel(
+            ringDay(accepted: snapshot, latest: snapshot, points: 600)
+        ))
+        let points = panel.rows.compactMap(\.points)
+        XCTAssertEqual(points.count, 3)
+        XCTAssertEqual(points.reduce(0, +), 600)
+        for part in points { XCTAssertEqual(part, part.rounded(), "\(part) is not whole") }
+        XCTAssertTrue(panel.footer.hasPrefix("Capped at 600 points a day."), panel.footer)
+    }
+
+    func testRealMatchRingPanelCapsEachRingAt200() throws {
+        let snapshot = try rings(1_500, 30, 12)
+        let accepted = ringDay(accepted: snapshot, latest: snapshot, points: 400, policy: .remoteWireV1)
+        let panel = try XCTUnwrap(competitionRingPanel(accepted))
+        XCTAssertEqual(panel.rows.map(\.points), [200, 100, 100])
+        XCTAssertEqual(
+            panel.footer,
+            "1 point per 1% of each ring, up to 200% per ring. Your ring values stay on this iPhone."
+        )
+        XCTAssertEqual(ringSegments(accepted).map(\.points), [200, 100, 100])
+
+        let unsynced = try XCTUnwrap(competitionRingPanel(
+            ringDay(accepted: nil, latest: snapshot, points: nil, policy: .remoteWireV1)
+        ))
+        XCTAssertEqual(unsynced.rows.map(\.points), [200, 100, 100])
+        XCTAssertEqual(unsynced.note, "These points haven’t synced yet.")
+    }
+
+    func testRingPanelDrawsTheAcceptedSnapshotAndNotesANewerReading() throws {
+        let accepted = try rings(420, 36, 9)
+        let latest = try rings(480, 40, 10)
+        let panel = try XCTUnwrap(competitionRingPanel(
+            ringDay(accepted: accepted, latest: latest, points: 279),
+            locale: Locale(identifier: "en_US")
+        ))
+        XCTAssertEqual(panel.rows.map(\.detail), ["420/500 kcal", "36/30 min", "9/12 hr"])
+        XCTAssertEqual(panel.note, "Points use an earlier reading. Your rings have changed since.")
+        XCTAssertTrue(panel.accessibilityLabel.hasSuffix(". Points use an earlier reading. Your rings have changed since."))
+    }
+
+    func testRingPanelMarksAScorableUnsyncedReading() throws {
+        let panel = try XCTUnwrap(competitionRingPanel(
+            ringDay(accepted: nil, latest: try rings(420, 36, 9), points: nil)
+        ))
+        XCTAssertEqual(panel.rows.map(\.points), [84, 120, 75])
+        XCTAssertEqual(panel.note, "These points haven’t synced yet.")
+    }
+
+    func testRingPanelOmitsPointsForAPausedReading() throws {
+        let paused = try makeSnapshot(
+            moveMode: .activeEnergyKilocalories,
+            standMode: .standHours,
+            pauseState: .paused
+        )
+        let panel = try XCTUnwrap(competitionRingPanel(
+            ringDay(accepted: nil, latest: paused, points: nil)
+        ))
+        XCTAssertTrue(panel.rows.allSatisfy { $0.points == nil })
+        XCTAssertTrue(panel.isPaused)
+        XCTAssertNil(panel.note)
+        XCTAssertTrue(panel.accessibilityLabel.contains("Activity tracking paused"))
+        XCTAssertFalse(panel.accessibilityLabel.contains("points"))
+    }
+
+    func testRingPanelIsNilWithoutSnapshots() {
+        XCTAssertNil(competitionRingPanel(ringDay(accepted: nil, latest: nil, points: 300)))
+    }
+
+    func testUnknownStandModeReadsStandOrRoll() throws {
         let snapshot = try makeSnapshot(
             moveMode: .activeEnergyKilocalories,
             standMode: .unknown,
             pauseState: .unknown
         )
-
-        XCTAssertTrue(activityRingSupportsSystemPresentation(snapshot))
-        let label = activityRingAccessibilityLabel(
-            snapshot,
-            ownerDisplayName: "Naren",
-            acceptedPoints: 1
-        )
-        XCTAssertTrue(label.contains("Naren activity"))
-        XCTAssertTrue(label.contains("1 accepted point"))
-        XCTAssertTrue(label.contains("Stand or Roll"))
-        XCTAssertTrue(label.contains("pause status unknown"))
-    }
-
-    func testAcceptedPointsPluralizeOnTheShownNumber() throws {
-        let snapshot = try makeSnapshot(
-            moveMode: .activeEnergyKilocalories,
-            standMode: .standHours,
-            pauseState: .running
-        )
-        func label(_ points: Double) -> String {
-            activityRingAccessibilityLabel(
-                snapshot, ownerDisplayName: "Naren", acceptedPoints: points
-            )
-        }
-        for points in [0.6, 1.4] {
-            XCTAssertTrue(label(points).contains("1 accepted point."), label(points))
-        }
-        XCTAssertTrue(label(1.6).contains("2 accepted points"), label(1.6))
-        XCTAssertTrue(label(0.4).contains("0 accepted points"), label(0.4))
+        let panel = try XCTUnwrap(competitionRingPanel(
+            ringDay(accepted: snapshot, latest: snapshot, points: 600)
+        ))
+        XCTAssertTrue(panel.accessibilityLabel.contains("Stand or Roll"))
+        XCTAssertFalse(panel.accessibilityLabel.lowercased().contains("pause"))
     }
 
     func testCompetitionDayYearFollowsTheViewersNewYearNotUTC() throws {
@@ -647,88 +718,81 @@ final class CompetitionPresentationTests: XCTestCase {
         )
     }
 
-    func testMoveTimeRollAccessibilityUsesFullTruthfulUnits() throws {
+    func testRingPanelMoveTimeRollUsesFullSpokenUnits() throws {
         let snapshot = try makeSnapshot(
             moveMode: .moveMinutes,
             standMode: .rollHours,
             pauseState: .running
         )
-
-        let label = activityRingAccessibilityLabel(
-            snapshot,
-            ownerDisplayName: "Naren",
-            acceptedPoints: 600
-        )
-
-        XCTAssertTrue(label.contains("Move Time"))
-        XCTAssertTrue(label.contains("60 of 30 minutes"))
-        XCTAssertTrue(label.contains("Exercise, 60 of 30 minutes"))
-        XCTAssertTrue(label.contains("Roll, 24 of 12 hours"))
-        XCTAssertTrue(label.contains("600 accepted points"))
+        let label = try XCTUnwrap(competitionRingPanel(
+            ringDay(accepted: snapshot, latest: snapshot, points: 600),
+            locale: Locale(identifier: "en_US")
+        )).accessibilityLabel
+        XCTAssertTrue(label.contains("Your rings"), label)
+        XCTAssertTrue(label.contains("Move Time, 60 of 30 minutes, 200 points"), label)
+        XCTAssertTrue(label.contains("Exercise, 60 of 30 minutes, 200 points"), label)
+        XCTAssertTrue(label.contains("Roll, 24 of 12 hours, 200 points"), label)
     }
 
-    func testNilAcceptedSnapshotNeverClaimsEarlierHigherEvidence() throws {
-        let day = try CompetitionDay(
-            era: 1,
-            year: 2026,
-            month: 8,
-            day: 9,
-            timeZoneIdentifier: "UTC"
-        )
-        let latest = try makeSnapshot(
+    func testFreshnessLineNamesBothSidesOnlyWhenBothExist() throws {
+        let iso = ISO8601DateFormatter()
+        let now = try XCTUnwrap(iso.date(from: "2026-10-31T16:41:00Z"))
+        let them = try XCTUnwrap(iso.date(from: "2026-10-31T06:40:00Z"))
+        func line(you: Date?, them: Date?) -> String? {
+            competitionFreshnessText(
+                LocalCompetitionPresentation(
+                    id: CompetitionID(UUID()),
+                    ownerDisplayName: "Naren",
+                    opponentDisplayName: "Hermes",
+                    lifecycle: .active(dayOrdinal: 3),
+                    acceptedConfiguration: nil,
+                    userPoints: 0,
+                    opponentPoints: 0,
+                    days: [],
+                    currentDayOrdinal: 3,
+                    lastRefresh: nil,
+                    tally: nil,
+                    terminalResult: nil,
+                    evaluatedAt: now,
+                    lastSuccessfulFullWindowRefreshAt: you,
+                    opponentUpdatedAt: them
+                ),
+                locale: Locale(identifier: "en_US"),
+                timeZone: TimeZone(identifier: "America/Los_Angeles")!
+            ).map(normalized)
+        }
+        XCTAssertEqual(line(you: now, them: them), "You: updated 9:41 AM · Hermes: updated Fri 11:40 PM")
+        XCTAssertEqual(line(you: now, them: nil), "Updated 9:41 AM")
+        XCTAssertEqual(line(you: nil, them: them), "Hermes: updated Fri 11:40 PM")
+        XCTAssertNil(line(you: nil, them: nil))
+    }
+
+    private func rings(_ move: Double, _ exercise: Double, _ stand: Double) throws -> ActivitySnapshot {
+        ActivitySnapshot(
             moveMode: .activeEnergyKilocalories,
             standMode: .standHours,
+            move: try ActivityRingReading(value: move, goal: 500),
+            exercise: try ActivityRingReading(value: exercise, goal: 30),
+            standOrRoll: try ActivityRingReading(value: stand, goal: 12),
             pauseState: .running
         )
-        let presentation = LocalCompetitionDayPresentation(
-            day: day,
+    }
+
+    private func ringDay(
+        accepted: ActivitySnapshot?,
+        latest: ActivitySnapshot?,
+        points: Double?,
+        policy: ActivityScoringPolicy = .healthKitCompatibility
+    ) -> LocalCompetitionDayPresentation {
+        LocalCompetitionDayPresentation(
+            day: try! CompetitionDay(era: 1, year: 2026, month: 8, day: 9, timeZoneIdentifier: "UTC"),
             ordinal: 1,
-            ownerAcceptedPoints: nil,
+            ownerAcceptedPoints: points,
             ownerLatestAvailability: .observed,
             opponentRevealedPoints: 200,
-            ownerAcceptedSnapshot: nil,
-            ownerLatestSnapshot: latest
-        )
-
-        let caption = activityEvidenceCaption(presentation)
-
-        XCTAssertFalse(caption.contains("earlier higher"))
-        XCTAssertTrue(caption.contains("No accepted score"))
-    }
-
-    func testDifferentAcceptedAndLatestSnapshotsUseNeutralPolicyCopy() throws {
-        let day = try CompetitionDay(
-            era: 1,
-            year: 2026,
-            month: 8,
-            day: 9,
-            timeZoneIdentifier: "UTC"
-        )
-        let accepted = try makeSnapshot(
-            moveMode: .activeEnergyKilocalories,
-            standMode: .standHours,
-            pauseState: .running
-        )
-        let latest = try makeSnapshot(
-            moveMode: .activeEnergyKilocalories,
-            standMode: .standHours,
-            pauseState: .paused
-        )
-        let presentation = LocalCompetitionDayPresentation(
-            day: day,
-            ordinal: 1,
-            ownerAcceptedPoints: 600,
-            ownerLatestAvailability: .observed,
-            opponentRevealedPoints: 600,
             ownerAcceptedSnapshot: accepted,
-            ownerLatestSnapshot: latest
-        )
-
-        let caption = activityEvidenceCaption(presentation)
-
-        XCTAssertFalse(caption.contains("higher"))
-        XCTAssertTrue(
-            caption.contains("preserves earlier source evidence under the match scoring rules")
+            ownerLatestSnapshot: latest,
+            scoringPolicy: policy
         )
     }
 

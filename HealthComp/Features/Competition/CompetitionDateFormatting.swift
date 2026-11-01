@@ -178,3 +178,19 @@ func competitionMomentText(
     return competitionDateFormatter(template, locale: locale, timeZone: timeZone)
         .string(from: date)
 }
+
+/// "9:41 AM" when `date` is on `now`'s day in `timeZone`; otherwise the moment style.
+func competitionUpdatedText(
+    _ date: Date,
+    now: Date = Date(),
+    locale: Locale = .current,
+    timeZone: TimeZone = .current
+) -> String {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = timeZone
+    guard calendar.isDate(date, inSameDayAs: now) else {
+        return competitionMomentText(date, now: now, locale: locale, timeZone: timeZone)
+    }
+    return competitionDateFormatter("jmm", locale: locale, timeZone: timeZone)
+        .string(from: date)
+}

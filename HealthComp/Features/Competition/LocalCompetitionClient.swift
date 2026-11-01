@@ -85,6 +85,8 @@ enum LocalCompetitionLifecyclePresentation: Equatable, Sendable {
 
 enum LocalCompetitionOwnerAvailability: Equatable, Sendable {
     case notYetOccurred
+    /// Today, with no score and no Health summary on this phone yet.
+    case notSyncedYet
     case observed
     case missing
     case unavailable(reason: ActivityUnavailableReason)
@@ -104,6 +106,8 @@ struct LocalCompetitionDayPresentation: Equatable, Sendable {
     /// The snapshot in the latest completed source read for this day. `nil`
     /// remains distinct from missing, unavailable, and future source states.
     let ownerLatestSnapshot: ActivitySnapshot?
+    /// How this day's snapshot turns into points; only used to split and preview them.
+    let scoringPolicy: ActivityScoringPolicy
 
     init(
         day: CompetitionDay,
@@ -112,7 +116,8 @@ struct LocalCompetitionDayPresentation: Equatable, Sendable {
         ownerLatestAvailability: LocalCompetitionOwnerAvailability,
         opponentRevealedPoints: Double?,
         ownerAcceptedSnapshot: ActivitySnapshot? = nil,
-        ownerLatestSnapshot: ActivitySnapshot? = nil
+        ownerLatestSnapshot: ActivitySnapshot? = nil,
+        scoringPolicy: ActivityScoringPolicy = .healthKitCompatibility
     ) {
         self.day = day
         self.ordinal = ordinal
@@ -121,6 +126,7 @@ struct LocalCompetitionDayPresentation: Equatable, Sendable {
         self.opponentRevealedPoints = opponentRevealedPoints
         self.ownerAcceptedSnapshot = ownerAcceptedSnapshot
         self.ownerLatestSnapshot = ownerLatestSnapshot
+        self.scoringPolicy = scoringPolicy
     }
 }
 
@@ -176,6 +182,8 @@ struct LocalCompetitionPresentation: Equatable, Identifiable, Sendable {
     /// The immutable competition environment time zone used for day labels.
     let timeZoneIdentifier: String
     let lastSuccessfulFullWindowRefreshAt: Date?
+    /// The other person's newest accepted Health read time (real matches only).
+    let opponentUpdatedAt: Date?
 
     init(
         id: CompetitionID,
@@ -193,7 +201,8 @@ struct LocalCompetitionPresentation: Equatable, Identifiable, Sendable {
         terminalResult: LocalCompetitionTerminalPresentation?,
         evaluatedAt: Date = .distantPast,
         timeZoneIdentifier: String = "UTC",
-        lastSuccessfulFullWindowRefreshAt: Date? = nil
+        lastSuccessfulFullWindowRefreshAt: Date? = nil,
+        opponentUpdatedAt: Date? = nil
     ) {
         self.id = id
         self.ownerDisplayName = ownerDisplayName
@@ -212,6 +221,7 @@ struct LocalCompetitionPresentation: Equatable, Identifiable, Sendable {
         self.timeZoneIdentifier = timeZoneIdentifier
         self.lastSuccessfulFullWindowRefreshAt =
             lastSuccessfulFullWindowRefreshAt
+        self.opponentUpdatedAt = opponentUpdatedAt
     }
 }
 
@@ -1529,6 +1539,13 @@ enum LocalCompetitionProjector {
                 schedule.calendar.day(after: day)
             )
             let isFuture = start.map { now < $0 } ?? true
+            let isToday = !isFuture && end.map { now < $0 } == true
+            let ledgerEntry = projection.scoreLedger.entry(
+                forDayOrdinal: ordinal
+            )
+            let notSynced: LocalCompetitionOwnerAvailability =
+                isToday && ledgerEntry?.acceptedScore == nil
+                    ? .notSyncedYet : .missing
             let availability: LocalCompetitionOwnerAvailability
             if isFuture {
                 availability = .notYetOccurred
@@ -1536,12 +1553,12 @@ enum LocalCompetitionProjector {
                 switch latest {
                 case .notYetOccurred: availability = .notYetOccurred
                 case .observed: availability = .observed
-                case .missing: availability = .missing
+                case .missing: availability = notSynced
                 case let .unavailable(reason):
                     availability = .unavailable(reason: reason)
                 }
             } else {
-                availability = .missing
+                availability = notSynced
             }
             let latestSnapshot: ActivitySnapshot?
             if case let .observed(snapshot) =
@@ -1550,9 +1567,6 @@ enum LocalCompetitionProjector {
             } else {
                 latestSnapshot = nil
             }
-            let ledgerEntry = projection.scoreLedger.entry(
-                forDayOrdinal: ordinal
-            )
             let opponentPoints: Double?
             if terminal != nil {
                 opponentPoints = Double(plan.days[offset].finalPoints)
