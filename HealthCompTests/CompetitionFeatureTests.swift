@@ -240,6 +240,7 @@ final class CompetitionFeatureTests: XCTestCase {
         guard case .pending(direction: .outgoing, _, _) = newPending.lifecycle else {
             return XCTFail("Rematch must append a new deterministic pending invite")
         }
+        XCTAssertEqual(newPending.rematchParentID, sourceID)
         await reducerStore.receive(
             .commandFinished(sourceID, expectedRevision: 13)
         ) {
@@ -893,30 +894,34 @@ final class CompetitionFeatureTests: XCTestCase {
     }
 
     @MainActor
-    func testChallengeAgainPrefillsTheSameAccountWithoutRematchParent() async {
+    func testChallengeAgainPrefillsSheet() async {
         let profileID = UUID(uuidString: "85000000-0000-4000-8000-000000000001")!
         let closedID = CompetitionID(UUID(uuidString: "85000000-0000-4000-8000-000000000002")!)
-        let staleParent = CompetitionID(UUID(uuidString: "85000000-0000-4000-8000-000000000003")!)
+        let anonymousID = CompetitionID(UUID(uuidString: "85000000-0000-4000-8000-000000000003")!)
+        func closed(_ id: CompetitionID, identity: String) -> LocalCompetitionPresentation {
+            LocalCompetitionPresentation(
+                id: id,
+                ownerDisplayName: "Naren",
+                opponentDisplayName: "Sam",
+                opponentIdentity: identity,
+                lifecycle: .expired(at: Date(timeIntervalSince1970: 0), direction: .outgoing),
+                acceptedConfiguration: nil,
+                userPoints: 0,
+                opponentPoints: 0,
+                days: [],
+                currentDayOrdinal: nil,
+                lastRefresh: nil,
+                tally: nil,
+                terminalResult: nil
+            )
+        }
         func publication(_ source: CompetitionPublicationSource) -> LocalCompetitionPublication {
             LocalCompetitionPublication(
                 publicationRevision: 1,
                 dashboard: LocalCompetitionDashboard(
                     competitions: [
-                        LocalCompetitionPresentation(
-                            id: closedID,
-                            ownerDisplayName: "Naren",
-                            opponentDisplayName: "Sam",
-                            opponentIdentity: RemoteCompetitionOpponentIdentity.identity(for: profileID),
-                            lifecycle: .expired(at: Date(timeIntervalSince1970: 0), direction: .outgoing),
-                            acceptedConfiguration: nil,
-                            userPoints: 0,
-                            opponentPoints: 0,
-                            days: [],
-                            currentDayOrdinal: nil,
-                            lastRefresh: nil,
-                            tally: nil,
-                            terminalResult: nil
-                        ),
+                        closed(closedID, identity: RemoteCompetitionOpponentIdentity.identity(for: profileID)),
+                        closed(anonymousID, identity: "remote-profile:v1:pending"),
                     ],
                     awards: [],
                     issues: [],
@@ -928,21 +933,25 @@ final class CompetitionFeatureTests: XCTestCase {
         let store = TestStore(
             initialState: CompetitionFeature.State(
                 publication: publication(.remoteParticipants),
-                inviteCreationStatus: .retryable,
-                inviteCreationRematchParentID: staleParent
+                inviteCreations: [.sheet: CompetitionFeature.InviteCreation(
+                    recipientID: UUID(), idempotencyKey: UUID(), status: .creating
+                )]
             )
         ) {
             CompetitionFeature()
         }
 
+        // Closing the sheet drops even a creating slot, so the next open is free.
+        await store.send(.challengeSheetDismissed) {
+            $0.inviteCreations = [:]
+        }
         // No client call is made: nothing is created until Create is tapped.
         await store.send(.challengeAgainTapped(closedID)) {
-            $0.inviteCreationStatus = .idle
-            $0.inviteCreationRematchParentID = nil
             $0.inviteRecipient = AuthenticatedProfile(id: profileID, displayName: "Sam")
             $0.inviteRecipientCode = profileID.uuidString.lowercased()
-            $0.inviteRecipientStatus = .idle
         }
+        XCTAssertEqual(store.state.challengeSheetStatus, .ready)
+        await store.send(.challengeAgainTapped(anonymousID))
 
         let fixture = TestStore(
             initialState: CompetitionFeature.State(publication: publication(.simulatedFixture))

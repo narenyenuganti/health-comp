@@ -5,8 +5,13 @@ struct CompetitionInviteView: View {
     let competition: LocalCompetitionPresentation
     let source: CompetitionPublicationSource
     let isCommandInFlight: Bool
+    /// The outgoing challenge's link, when this iPhone has asked for it.
+    let link: CompetitionFeature.InviteLinkState?
     let send: (CompetitionFeature.Action) -> Void
     @State private var showsDeclineConfirmation = false
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.locale) private var locale
+    @Environment(\.timeZone) private var timeZone
 
     var body: some View {
         ScrollView {
@@ -18,6 +23,9 @@ struct CompetitionInviteView: View {
                     opponentName: competition.opponentDisplayName
                 )
                 actionControls
+                if isRemoteOutgoing, dynamicTypeSize.isAccessibilitySize {
+                    shareControl
+                }
             }
             .frame(maxWidth: 560)
             .padding(.horizontal, 20)
@@ -25,6 +33,23 @@ struct CompetitionInviteView: View {
             .frame(maxWidth: .infinity)
         }
         .background(Theme.ground)
+        // The link stays in reach; PR 7 adds Cancel Challenge under it.
+        .safeAreaInset(edge: .bottom) {
+            if isRemoteOutgoing, !dynamicTypeSize.isAccessibilitySize {
+                shareControl
+                    .frame(maxWidth: 560)
+                    .padding(.horizontal, 20)
+                    .padding(.top, 12)
+                    .padding(.bottom, 8)
+                    .frame(maxWidth: .infinity)
+                    .background(Theme.ground)
+            }
+        }
+        .task(id: competition.id) {
+            if isRemoteOutgoing, link == nil {
+                send(.inviteLinkNeeded(competition.id))
+            }
+        }
         .navigationTitle(competition.opponentDisplayName)
         .navigationBarTitleDisplayMode(.inline)
         .alert(
@@ -55,9 +80,16 @@ struct CompetitionInviteView: View {
                 .font(.largeTitle.weight(.heavy).width(.condensed))
                 .foregroundStyle(Theme.ink)
                 .accessibilityAddTraits(.isHeader)
-            Text(directionBody)
-                .font(.body)
-                .foregroundStyle(Theme.secondary)
+            if isRemoteOutgoing {
+                Text(directionBody)
+                    .font(.body)
+                    .foregroundStyle(Theme.secondary)
+                    .accessibilityIdentifier("competition.invite.expiry")
+            } else {
+                Text(directionBody)
+                    .font(.body)
+                    .foregroundStyle(Theme.secondary)
+            }
             if let disclosure = competitionFixtureDisclosure(
                 source: source,
                 opponentDisplayName: competition.opponentDisplayName
@@ -81,15 +113,16 @@ struct CompetitionInviteView: View {
     private var actionControls: some View {
         if case let .pending(direction, _, _) = competition.lifecycle {
             if source == .remoteParticipants {
-                Label(
-                    direction == .outgoing
-                        ? "Waiting for \(competition.opponentDisplayName) to accept"
-                        : "Open the challenge link to review and accept",
-                    systemImage: "hourglass"
-                )
-                .font(.subheadline.weight(.medium))
-                .foregroundStyle(Theme.secondary)
-                .frame(maxWidth: .infinity, minHeight: 44)
+                // The outgoing title already says who you're waiting for.
+                if direction == .incoming {
+                    Label(
+                        "Open the challenge link to review and accept",
+                        systemImage: "hourglass"
+                    )
+                    .font(.subheadline.weight(.medium))
+                    .foregroundStyle(Theme.secondary)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                }
             } else {
                 switch direction {
                 case .outgoing:
@@ -169,20 +202,90 @@ struct CompetitionInviteView: View {
         return direction
     }
 
+    private var isRemoteOutgoing: Bool {
+        source == .remoteParticipants && direction == .outgoing
+    }
+
     private var directionTitle: String {
-        competitionInviteTitle(
+        if isRemoteOutgoing {
+            return "Waiting for \(competition.opponentDisplayName)"
+        }
+        return competitionInviteTitle(
             direction: direction,
             opponentDisplayName: competition.opponentDisplayName
         )
     }
 
     private var directionBody: String {
+        let name = competition.opponentDisplayName
         if direction == .incoming {
-            return "\(competition.opponentDisplayName) challenged you to compare Activity points for seven days."
+            return "\(name) challenged you to compare Activity points for seven days."
         }
-        return source == .remoteParticipants
-            ? "Only this HealthComp account can accept. The challenge expires 24 hours after it was created. Day 1 begins on the next match calendar day after they accept."
-            : "Start when you are ready. Day 1 begins on the next match calendar day."
+        guard source == .remoteParticipants else {
+            return "Start when you are ready. Day 1 begins on the next match calendar day."
+        }
+        let dayOne = "If \(name) accepts, Day 1 is the next day."
+        guard let expiresAt = competition.pendingExpiresAt else { return dayOne }
+        let moment = competitionMomentText(
+            expiresAt,
+            now: competition.evaluatedAt,
+            locale: locale,
+            timeZone: timeZone
+        )
+        return "Expires \(moment). \(dayOne)"
+    }
+
+    @ViewBuilder
+    private var shareControl: some View {
+        switch link {
+        case let .ready(shareLink, _)?:
+            ShareLink(
+                item: competitionShareMessage(
+                    senderName: competition.ownerDisplayName,
+                    link: shareLink
+                ),
+                subject: Text("Join my HealthComp match")
+            ) {
+                Label("Share Link Again", systemImage: "square.and.arrow.up")
+            }
+            .buttonStyle(PrimaryButtonStyle())
+            .accessibilityHint(
+                "Opens the system share sheet. The private link is not read aloud."
+            )
+            .accessibilityIdentifier("competition.invite.share")
+
+        case .failed?:
+            VStack(alignment: .leading, spacing: 10) {
+                Text("Couldn’t load the link. Check your connection and try again.")
+                    .font(.caption)
+                    .foregroundStyle(Theme.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button("Try Again") { send(.inviteLinkNeeded(competition.id)) }
+                    .buttonStyle(SecondaryButtonStyle())
+                    .accessibilityIdentifier("competition.invite.share-retry")
+            }
+
+        case .notOnThisPhone?:
+            // Until Cancel Challenge ships, it can only be left to expire.
+            Text("The link for this challenge isn’t on this iPhone.")
+                .font(.caption)
+                .foregroundStyle(Theme.secondary)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("competition.invite.link-missing")
+
+        case nil, .loading?:
+            Button {} label: {
+                HStack(spacing: 8) {
+                    ProgressView()
+                    Label("Share Link Again", systemImage: "square.and.arrow.up")
+                }
+            }
+            .buttonStyle(PrimaryButtonStyle())
+            .disabled(true)
+            .accessibilityValue("Loading")
+            .accessibilityIdentifier("competition.invite.share")
+        }
     }
 }
 

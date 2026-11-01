@@ -577,6 +577,183 @@ final class RemoteCompetitionClientTests: XCTestCase {
         await client.stop()
     }
 
+    func testCreatedInviteRequestIsReplayedToRestoreLink() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let profile = AuthenticatedProfile(
+            id: UUID(uuidString: "81000000-0000-4000-8000-000000000001")!,
+            displayName: "Beta Alice"
+        )
+        let paths = AuthenticatedProfileStoragePaths(profileID: profile.id, rootDirectory: root)
+        for directory in paths.fixedDirectories {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        }
+        let competitionID = UUID(uuidString: "82000000-0000-4000-8000-000000000071")!
+        let token = Data(repeating: 0x43, count: 32)
+            .base64EncodedString()
+            .replacingOccurrences(of: "+", with: "-")
+            .replacingOccurrences(of: "/", with: "_")
+            .replacingOccurrences(of: "=", with: "")
+        let invite = try CompetitionInvite(competitionID: competitionID, token: token)
+        let probe = RemoteCompetitionClientCommandProbe()
+        func makeClient() throws -> CompetitionClient {
+            CompetitionClient.remote(
+                remoteAPI: remoteAPI(
+                    listCompetitions: { [] },
+                    createInvite: { request in
+                        await probe.recordCreate(request)
+                        return invite
+                    }
+                ),
+                environment: try environment()
+            )
+        }
+        let request = try CompetitionInviteCreationRequest(
+            recipientProfileID: UUID(uuidString: "22000000-0000-4000-8000-000000000001")!,
+            timeZoneIdentifier: "America/Los_Angeles",
+            rematchParentID: nil,
+            idempotencyKey: UUID(uuidString: "83000000-0000-4000-8000-000000000071")!
+        )
+
+        let first = try makeClient()
+        try await first.mountAuthenticatedProfile(profile, paths)
+        var firstIterator = first.start().makeAsyncIterator()
+        _ = await awaitNext(&firstIterator)
+        _ = try await first.createInvite(request)
+        await first.stop()
+
+        // A relaunch: a new client on the same profile storage.
+        let relaunched = try makeClient()
+        try await relaunched.mountAuthenticatedProfile(profile, paths)
+        var relaunchedIterator = relaunched.start().makeAsyncIterator()
+        _ = await awaitNext(&relaunchedIterator)
+        let restored = try await relaunched.restoreInvite(CompetitionID(competitionID))
+
+        XCTAssertEqual(restored.invite, invite)
+        let creates = await probe.createRequests()
+        XCTAssertEqual(creates, [request, request])
+        await relaunched.stop()
+    }
+
+    func testRestoreInviteWithoutStoredRequestThrowsNotFound() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let profile = AuthenticatedProfile(
+            id: UUID(uuidString: "81000000-0000-4000-8000-000000000001")!,
+            displayName: "Beta Alice"
+        )
+        let paths = AuthenticatedProfileStoragePaths(profileID: profile.id, rootDirectory: root)
+        for directory in paths.fixedDirectories {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        }
+        let probe = RemoteCompetitionClientCommandProbe()
+        let client = CompetitionClient.remote(
+            remoteAPI: remoteAPI(
+                listCompetitions: { [] },
+                createInvite: { request in
+                    await probe.recordCreate(request)
+                    throw CompetitionRemoteFailure.operationFailed
+                }
+            ),
+            environment: try environment()
+        )
+        try await client.mountAuthenticatedProfile(profile, paths)
+        do {
+            _ = try await client.restoreInvite(CompetitionID(UUID()))
+            XCTFail("A challenge made elsewhere has no link on this iPhone")
+        } catch {
+            XCTAssertEqual(error as? CompetitionRemoteFailure, .notFound)
+        }
+        let creates = await probe.createRequests()
+        XCTAssertEqual(creates, [])
+        await client.stop()
+    }
+
+    func testInviteRequestStoreDropsEntriesAfter25Hours() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = RemoteInviteRequestStore(
+            fileURL: root.appendingPathComponent("InviteRequests.json")
+        )
+        let request = try CompetitionInviteCreationRequest(
+            recipientProfileID: UUID(uuidString: "22000000-0000-4000-8000-000000000001")!,
+            timeZoneIdentifier: "UTC",
+            rematchParentID: nil,
+            idempotencyKey: UUID(uuidString: "83000000-0000-4000-8000-000000000072")!
+        )
+        let old = CompetitionID(UUID(uuidString: "82000000-0000-4000-8000-000000000072")!)
+        let fresh = CompetitionID(UUID(uuidString: "82000000-0000-4000-8000-000000000073")!)
+        let start = Date(timeIntervalSince1970: 1_786_000_000)
+
+        await store.save(request, for: old, now: start)
+        // Saving again keeps the first time it was saved.
+        await store.save(request, for: old, now: start.addingTimeInterval(3_600))
+        let withinWindow = await store.request(for: old, now: start.addingTimeInterval(24.9 * 3_600))
+        XCTAssertEqual(withinWindow, request)
+        let expired = await store.request(for: old, now: start.addingTimeInterval(25 * 3_600))
+        XCTAssertNil(expired)
+
+        await store.save(request, for: fresh, now: start.addingTimeInterval(26 * 3_600))
+        let kept = await store.request(for: fresh, now: start.addingTimeInterval(26 * 3_600))
+        XCTAssertEqual(kept, request)
+        let dropped = await store.request(for: old, now: start)
+        XCTAssertNil(dropped, "A later save drops entries older than 25 hours")
+
+        try Data("not json".utf8).write(to: root.appendingPathComponent("InviteRequests.json"))
+        let corrupt = await store.request(for: fresh, now: start.addingTimeInterval(26 * 3_600))
+        XCTAssertNil(corrupt)
+    }
+
+    func testRemotePresentationCarriesRematchParentID() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let profile = AuthenticatedProfile(
+            id: UUID(uuidString: "81000000-0000-4000-8000-000000000001")!,
+            displayName: "Beta Alice"
+        )
+        let paths = AuthenticatedProfileStoragePaths(profileID: profile.id, rootDirectory: root)
+        for directory in paths.fixedDirectories {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        }
+        let competitionID = UUID(uuidString: "82000000-0000-4000-8000-000000000074")!
+        let parentID = UUID(uuidString: "82000000-0000-4000-8000-000000000075")!
+        let createdAt = Date(timeIntervalSince1970: 1_786_540_000)
+        let descriptor = try pendingDescriptor(
+            competitionID: competitionID,
+            profile: profile,
+            expiresAt: createdAt.addingTimeInterval(48 * 60 * 60),
+            rematchParentID: parentID
+        )
+        let page = try pendingHistoryPage(
+            descriptor: descriptor,
+            profileID: profile.id,
+            createdAt: createdAt
+        )
+        let client = CompetitionClient.remote(
+            remoteAPI: remoteAPI(
+                listCompetitions: { [descriptor] },
+                fetchChanges: { _, _ in page }
+            ),
+            environment: try environment()
+        )
+        try await client.mountAuthenticatedProfile(profile, paths)
+        var iterator = client.start().makeAsyncIterator()
+        let next = await awaitNext(&iterator)
+        let publication = try XCTUnwrap(next)
+        XCTAssertEqual(
+            publication.dashboard.competitions.map(\.rematchParentID),
+            [CompetitionID(parentID)]
+        )
+        await client.stop()
+    }
+
     func testCreateAndClaimReturnCanonicalPublicationRevisions()
         async throws
     {
@@ -3854,7 +4031,8 @@ final class RemoteCompetitionClientTests: XCTestCase {
     private func pendingDescriptor(
         competitionID: UUID,
         profile: AuthenticatedProfile,
-        expiresAt: Date
+        expiresAt: Date,
+        rematchParentID: UUID? = nil
     ) throws -> CompetitionDescriptor {
         try CompetitionDescriptor(
             competitionID: competitionID,
@@ -3865,7 +4043,7 @@ final class RemoteCompetitionClientTests: XCTestCase {
             lifecycle: .pending,
             invitationExpiresAt: expiresAt,
             bestAvailableDeadline: nil,
-            rematchParentID: nil,
+            rematchParentID: rematchParentID,
             nextServerSequence: 2,
             participants: [
                 try CompetitionParticipantDescriptor(

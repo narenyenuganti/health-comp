@@ -83,6 +83,10 @@ struct CompetitionClient: Sendable {
         CompetitionInviteClaimRequest
     ) async throws -> CompetitionInviteClaimOutcome
     var resolveInviteRecipient: @Sendable (UUID) async throws -> AuthenticatedProfile
+    /// A pending challenge's link, when this iPhone can get it back.
+    var restoreInvite: @Sendable (
+        CompetitionID
+    ) async throws -> CompetitionInviteCreationOutcome
 
     init(
         start: @escaping @Sendable () -> AsyncStream<CompetitionPublication>,
@@ -138,6 +142,11 @@ struct CompetitionClient: Sendable {
         },
         resolveInviteRecipient: @escaping @Sendable (UUID) async throws -> AuthenticatedProfile = { _ in
             throw CompetitionRemoteFailure.operationFailed
+        },
+        restoreInvite: @escaping @Sendable (
+            CompetitionID
+        ) async throws -> CompetitionInviteCreationOutcome = { _ in
+            throw CompetitionRemoteFailure.notFound
         }
     ) {
         self.start = start
@@ -163,6 +172,7 @@ struct CompetitionClient: Sendable {
         self.createInvite = createInvite
         self.claimInvite = claimInvite
         self.resolveInviteRecipient = resolveInviteRecipient
+        self.restoreInvite = restoreInvite
     }
 
     func prepareForProfileTeardown(

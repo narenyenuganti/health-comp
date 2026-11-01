@@ -5,10 +5,10 @@ struct CompetitionResultView: View {
     let competition: LocalCompetitionPresentation
     let awards: [LocalCompetitionAward]
     let source: CompetitionPublicationSource
-    let inviteCreationStatus: CompetitionFeature.InviteCreationStatus
-    let createdInviteLink: CompetitionInviteShareLink?
+    let rematch: CompetitionFeature.CompetitionRematchState
     let isCommandInFlight: Bool
     let send: (CompetitionFeature.Action) -> Void
+    let openCompetition: (CompetitionID) -> Void
     var muteButton: CompetitionMuteButton?
     var issue: CompetitionRowIssue? = nil
     var retry: (() async -> Void)? = nil
@@ -70,6 +70,11 @@ struct CompetitionResultView: View {
                     .frame(maxWidth: .infinity, minHeight: 44)
                     .accessibilityIdentifier("competition.history.preserved")
                 }
+
+                // At accessibility sizes a pinned control would cover the screen.
+                if dynamicTypeSize.isAccessibilitySize {
+                    rematchControl
+                }
             }
             .frame(maxWidth: 560)
             .padding(.horizontal, 16)
@@ -79,13 +84,21 @@ struct CompetitionResultView: View {
         .background(Theme.ground)
         // The next step stays in reach; the rest waits in the ••• menu.
         .safeAreaInset(edge: .bottom) {
-            rematchControl
-                .frame(maxWidth: 560)
-                .padding(.horizontal, 16)
-                .padding(.top, 12)
-                .padding(.bottom, 8)
-                .frame(maxWidth: .infinity)
-                .background(Theme.ground)
+            if !dynamicTypeSize.isAccessibilitySize {
+                rematchControl
+                    .frame(maxWidth: 560)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 12)
+                    .padding(.bottom, 8)
+                    .frame(maxWidth: .infinity)
+                    .background(Theme.ground)
+            }
+        }
+        .onChange(of: rematch) { oldValue, newValue in
+            guard oldValue == .sending, newValue != .sending,
+                  let text = rematchAnnouncement(newValue)
+            else { return }
+            AccessibilityNotification.Announcement(text).post()
         }
         .navigationTitle(competition.opponentDisplayName)
         .navigationBarTitleDisplayMode(.inline)
@@ -452,18 +465,231 @@ struct CompetitionResultView: View {
         .accessibilityHidden(true)
     }
 
+    private var opponentName: String { competition.opponentDisplayName }
+
     @ViewBuilder
     private var rematchControl: some View {
-        if source == .remoteParticipants {
-            remoteRematchControl
-        } else {
-            Button {
+        switch rematch {
+        case .available:
+            Button("Rematch \(opponentName)") {
                 send(.rematchTapped(competition.id))
-            } label: {
-                commandLabel("Rematch")
             }
             .buttonStyle(PrimaryButtonStyle())
-            .disabled(isCommandInFlight)
+            .accessibilityIdentifier("competition.rematch.create")
+
+        case .sending:
+            HStack(spacing: 8) {
+                ProgressView()
+                Text("Sending rematch…")
+            }
+            .foregroundStyle(Theme.secondary)
+            .frame(maxWidth: .infinity, minHeight: 54)
+            .accessibilityElement(children: .combine)
+
+        case let .sent(challengeID, expiresAt, link):
+            sentRow(challengeID: challengeID, expiresAt: expiresAt, link: link)
+
+        case let .next(child):
+            let text = nextRowText(child)
+            rematchRow(
+                title: text.title,
+                detail: text.detail,
+                hint: "Opens the match",
+                identifier: "competition.rematch.next"
+            ) {
+                openCompetition(child.id)
+            }
+
+        case let .alreadyChallenged(challenge):
+            VStack(alignment: .leading, spacing: 10) {
+                Text("You already challenged \(opponentName).")
+                    .font(.callout)
+                    .foregroundStyle(Theme.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Button("Open Challenge") { openCompetition(challenge.id) }
+                    .buttonStyle(PrimaryButtonStyle())
+                    .accessibilityIdentifier("competition.rematch.open-existing")
+            }
+
+        case let .failed(failure):
+            VStack(alignment: .leading, spacing: 10) {
+                Text(competitionInviteFailureText(failure, opponentName: opponentName))
+                    .font(.callout)
+                    .foregroundStyle(Theme.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("competition.rematch.error")
+                if failure == .connection {
+                    Button("Try Again") {
+                        send(.rematchTapped(competition.id))
+                    }
+                    .buttonStyle(PrimaryButtonStyle())
+                    .accessibilityIdentifier("competition.rematch.retry")
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func sentRow(
+        challengeID: CompetitionID,
+        expiresAt: Date?,
+        link: CompetitionFeature.InviteLinkState?
+    ) -> some View {
+        let isRemote = source == .remoteParticipants
+        let detail: String? = isRemote
+            ? "Waiting for \(opponentName)" + (expiresAt.map {
+                " · expires \(competitionMomentText($0, now: competition.evaluatedAt, locale: locale, timeZone: timeZone))"
+            } ?? "")
+            : nil
+        let row = rematchRow(
+            title: isRemote ? "Rematch sent" : "Rematch ready",
+            detail: detail,
+            hint: "Opens the challenge",
+            identifier: "competition.rematch.sent"
+        ) {
+            openCompetition(challengeID)
+        }
+        Group {
+            if isRemote, link != .notOnThisPhone {
+                let share = rematchShare(challengeID: challengeID, link: link)
+                if dynamicTypeSize.isAccessibilitySize {
+                    VStack(spacing: 10) {
+                        row
+                        share
+                    }
+                } else {
+                    HStack(spacing: 10) {
+                        row
+                        share.fixedSize()
+                    }
+                }
+            } else {
+                row
+            }
+        }
+        .task(id: challengeID) {
+            if isRemote, link == nil {
+                send(.inviteLinkNeeded(challengeID))
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func rematchShare(
+        challengeID: CompetitionID,
+        link: CompetitionFeature.InviteLinkState?
+    ) -> some View {
+        switch link {
+        case let .ready(shareLink, _)?:
+            ShareLink(
+                item: competitionShareMessage(
+                    senderName: competition.ownerDisplayName,
+                    link: shareLink
+                ),
+                subject: Text("Join my HealthComp match")
+            ) {
+                Label("Share", systemImage: "square.and.arrow.up")
+            }
+            .buttonStyle(SecondaryButtonStyle())
+            .accessibilityHint(
+                "Opens the system share sheet. The private link is not read aloud."
+            )
+            .accessibilityIdentifier("competition.rematch.share")
+
+        case .failed?:
+            Button("Try Again") { send(.inviteLinkNeeded(challengeID)) }
+                .buttonStyle(SecondaryButtonStyle())
+                .accessibilityIdentifier("competition.rematch.share-retry")
+
+        case nil, .loading?, .notOnThisPhone?:
+            Button {} label: {
+                HStack(spacing: 8) {
+                    ProgressView()
+                    Label("Share", systemImage: "square.and.arrow.up")
+                }
+            }
+            .buttonStyle(SecondaryButtonStyle())
+            .disabled(true)
+            .accessibilityValue("Loading")
+            .accessibilityIdentifier("competition.rematch.share")
+        }
+    }
+
+    private func rematchRow(
+        title: String,
+        detail: String?,
+        hint: String,
+        identifier: String,
+        open: @escaping () -> Void
+    ) -> some View {
+        Button(action: open) {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.headline.width(.condensed))
+                        .foregroundStyle(Theme.ink)
+                    if let detail {
+                        Text(detail)
+                            .font(.subheadline)
+                            .foregroundStyle(Theme.secondary)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .fixedSize(horizontal: false, vertical: true)
+                Image(systemName: "chevron.right")
+                    .font(.footnote.weight(.semibold))
+                    .foregroundStyle(Theme.tertiary)
+                    .accessibilityHidden(true)
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 10)
+            .frame(maxWidth: .infinity, minHeight: 54)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(CompetitionRowButtonStyle())
+        .themePanel(cornerRadius: 14)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(
+            [title, detail?.replacingOccurrences(of: " · ", with: ", ")]
+                .compactMap { $0 }
+                .joined(separator: ". ")
+        )
+        .accessibilityHint(hint)
+        .accessibilityAddTraits(.isButton)
+        .accessibilityIdentifier(identifier)
+    }
+
+    private func nextRowText(
+        _ child: LocalCompetitionPresentation
+    ) -> (title: String, detail: String?) {
+        if case .scheduled = child.lifecycle,
+           let schedule = child.acceptedConfiguration?.schedule {
+            return (
+                "Rematch starts \(weekdayText(schedule.startDay, locale: locale))",
+                competitionScheduleDateRangeText(
+                    schedule,
+                    now: child.evaluatedAt,
+                    locale: locale
+                )
+            )
+        }
+        return (
+            "Rematch",
+            competitionStatusText(child, style: .row, locale: locale, timeZone: timeZone).line
+        )
+    }
+
+    private func rematchAnnouncement(
+        _ state: CompetitionFeature.CompetitionRematchState
+    ) -> String? {
+        switch state {
+        case .sent:
+            source == .remoteParticipants ? "Rematch sent" : "Rematch ready"
+        case let .failed(failure):
+            competitionInviteFailureText(failure, opponentName: opponentName)
+        case .available, .sending, .next, .alreadyChallenged:
+            nil
         }
     }
 
@@ -500,79 +726,6 @@ struct CompetitionResultView: View {
 
         if let muteButton {
             muteButton
-        }
-    }
-
-    @ViewBuilder
-    private var remoteRematchControl: some View {
-        switch inviteCreationStatus {
-        case .idle:
-            Button("Create Rematch Challenge") {
-                send(.rematchTapped(competition.id))
-            }
-            .buttonStyle(PrimaryButtonStyle())
-            .accessibilityIdentifier("competition.rematch.create")
-
-        case .creating:
-            HStack(spacing: 8) {
-                ProgressView()
-                Text("Creating rematch challenge…")
-            }
-            .foregroundStyle(Theme.secondary)
-            .frame(maxWidth: .infinity, minHeight: 54)
-            .accessibilityElement(children: .combine)
-
-        case .ready:
-            if let createdInviteLink {
-                ShareLink(
-                    item: createdInviteLink.url.absoluteString,
-                    subject: Text("HealthComp rematch")
-                ) {
-                    Label(
-                        "Share Rematch Challenge",
-                        systemImage: "square.and.arrow.up"
-                    )
-                }
-                .buttonStyle(PrimaryButtonStyle())
-                .accessibilityHint(
-                    "Opens the system share sheet. The private link is not read aloud."
-                )
-                .accessibilityIdentifier("competition.rematch.share")
-            }
-
-        case .retryable:
-            Button("Try Rematch Again") {
-                send(.rematchTapped(competition.id))
-            }
-            .buttonStyle(PrimaryButtonStyle())
-            .accessibilityIdentifier("competition.rematch.retry")
-
-        case .configurationUnavailable:
-            Label(
-                "Rematch links are not configured for this build.",
-                systemImage: "exclamationmark.triangle.fill"
-            )
-            .font(.caption)
-            .foregroundStyle(Theme.secondary)
-
-        case .pendingInvitationExists:
-            Text("A challenge to this account is already waiting. It expires 24 hours after it was created.")
-                .font(.callout)
-                .foregroundStyle(Theme.secondary)
-        }
-    }
-
-    @ViewBuilder
-    private func commandLabel(_ title: String) -> some View {
-        if isCommandInFlight {
-            HStack(spacing: 8) {
-                ProgressView()
-                Text(title)
-            }
-            .frame(maxWidth: .infinity)
-        } else {
-            Text(title)
-                .frame(maxWidth: .infinity)
         }
     }
 
