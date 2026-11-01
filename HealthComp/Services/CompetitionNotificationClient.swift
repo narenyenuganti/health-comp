@@ -255,17 +255,27 @@ enum CompetitionRoute: Equatable, Sendable {
     }
 }
 
+/// A nil route (summaries, merged reminders) opens the app where it was.
 struct CompetitionImmediateNotificationRequest: Equatable, Sendable {
     let identifier: String
     let content: CompetitionNotificationContent
-    let route: CompetitionRoute
+    let route: CompetitionRoute?
 }
 
 struct CompetitionScheduledNotificationRequest: Equatable, Sendable {
     let identifier: String
     let content: CompetitionNotificationContent
     let dateComponents: DateComponents
-    let route: CompetitionRoute
+    let route: CompetitionRoute?
+}
+
+/// One Notification Center thread per match, matching the server's
+/// `thread-id`; summaries share their own thread.
+func competitionNotificationThreadIdentifier(_ route: CompetitionRoute?) -> String {
+    if case let .competition(id)? = route {
+        return "competition:" + id.rawValue.uuidString.lowercased()
+    }
+    return "competition-summary"
 }
 
 #if canImport(Dependencies) && canImport(UserNotifications)
@@ -396,13 +406,14 @@ extension CompetitionNotificationClient: DependencyKey {
 
     private static func makeContent(
         _ notification: CompetitionNotificationContent,
-        route: CompetitionRoute
+        route: CompetitionRoute?
     ) -> UNNotificationContent {
         let content = UNMutableNotificationContent()
         content.title = notification.title
         content.body = notification.body
         content.sound = .default
-        content.userInfo = route.userInfo
+        content.userInfo = route?.userInfo ?? [:]
+        content.threadIdentifier = competitionNotificationThreadIdentifier(route)
         return content
     }
 }

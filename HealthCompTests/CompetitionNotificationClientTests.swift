@@ -65,6 +65,17 @@ final class CompetitionNotificationClientTests: XCTestCase {
             )
         )
     }
+
+    func testThreadIdentifierGroupsByMatch() {
+        let id = CompetitionID(
+            UUID(uuidString: "EAD172F8-531D-4327-823D-E82A4F696070")!
+        )
+        XCTAssertEqual(
+            competitionNotificationThreadIdentifier(.competition(id)),
+            "competition:ead172f8-531d-4327-823d-e82a4f696070"
+        )
+        XCTAssertEqual(competitionNotificationThreadIdentifier(nil), "competition-summary")
+    }
 }
 
 private final class NotificationClientRecorder: @unchecked Sendable {

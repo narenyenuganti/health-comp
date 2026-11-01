@@ -594,35 +594,11 @@ final class CompetitionNotificationCoordinatorTests: XCTestCase {
         )
     }
 
-    func testPerCompetitionCASReplanPreservesGlobalEvaluationBudget()
+    func testTwoResultsInOneEvaluationCommitBothAndPostOneSummary()
         async throws {
         let recorder = NotificationOperationRecorder()
         let commits = DurableDecisionCommitRecorder()
-        let original = try resultSnapshot(revision: 15)
-        let first = try XCTUnwrap(original.competitions.first)
-        let second = CompetitionNotificationCompetitionSnapshot(
-            id: CompetitionID(
-                UUID(uuidString: "EAD172F8-531D-4327-823D-E82A4F696066")!
-            ),
-            opponentIdentity: first.opponentIdentity,
-            opponentDisplayName: first.opponentDisplayName,
-            lifecycle: first.lifecycle,
-            schedule: first.schedule,
-            ownerPoints: first.ownerPoints,
-            opponentPoints: first.opponentPoints,
-            days: first.days,
-            currentDayOrdinal: first.currentDayOrdinal,
-            latestRefresh: first.latestRefresh,
-            evaluationFreshness: first.evaluationFreshness,
-            terminalResult: first.terminalResult,
-            emissionHistory: first.emissionHistory
-        )
-        let snapshot = CompetitionNotificationPlanningSnapshot(
-            publicationRevision: original.publicationRevision,
-            evaluatedAt: original.evaluatedAt,
-            timeZoneIdentifier: original.timeZoneIdentifier,
-            competitions: [first, second]
-        )
+        let snapshot = try twoResultSnapshot()
         let coordinator = CompetitionNotificationCoordinator(
             planner: CompetitionNotificationPlanner(policy: .coordinatorFixture),
             notifications: recorder.notificationClient(
@@ -638,18 +614,99 @@ final class CompetitionNotificationCoordinatorTests: XCTestCase {
 
         await coordinator.submit(snapshot)
 
-        let batches = await commits.batches
-        let durableDecisions = batches.flatMap { $0 }
-        let emitted: [CompetitionNotificationEmissionDecision] =
-            durableDecisions.compactMap { decision in
-            guard case let .emission(emission) = decision else { return nil }
-            return emission
-        }
-        let operations = await recorder.operations
-        XCTAssertEqual(emitted.count, 1)
+        let emitted: [CompetitionNotificationEmissionDecision] = await commits.batches
+            .flatMap { $0 }
+            .compactMap { decision in
+                guard case let .emission(emission) = decision else { return nil }
+                return emission
+            }
+        XCTAssertEqual(emitted.count, 2)
         XCTAssertEqual(
-            operations.filter { $0.hasPrefix("post:") }.count,
-            1
+            Set(emitted.map(\.record.competitionID)),
+            Set(snapshot.competitions.map(\.id))
+        )
+        let posted = await recorder.posted
+        XCTAssertEqual(posted.count, 1)
+        XCTAssertEqual(posted.first?.identifier, emitted.map(\.request.identifier).min())
+        XCTAssertNil(posted.first?.route)
+    }
+
+    func testDailyMaximumAcrossMatchesPostsOnce() async throws {
+        let recorder = NotificationOperationRecorder()
+        let commits = DurableDecisionCommitRecorder()
+        let single = try multiDecisionSnapshot()
+        let first = try XCTUnwrap(single.competitions.first)
+        let snapshot = CompetitionNotificationPlanningSnapshot(
+            publicationRevision: single.publicationRevision,
+            evaluatedAt: single.evaluatedAt,
+            timeZoneIdentifier: single.timeZoneIdentifier,
+            competitions: [
+                replacingHistory(in: first, with: NotificationEmissionProjection()),
+                replacingHistory(
+                    in: first,
+                    with: NotificationEmissionProjection(),
+                    id: CompetitionID(UUID(uuidString: "EAD172F8-531D-4327-823D-E82A4F696067")!)
+                ),
+            ]
+        )
+        let coordinator = CompetitionNotificationCoordinator(
+            planner: CompetitionNotificationPlanner(policy: .multiDecisionFixture),
+            notifications: recorder.notificationClient(
+                authorization: .authorized
+            ),
+            preferences: .constant(mutedOpponentIdentities: []),
+            commitDecisions: { competition, replan in
+                let decisions = try replan(competition)
+                await commits.append(decisions)
+                return decisions.isEmpty ? .noDecision : .appended(decisions)
+            }
+        )
+
+        await coordinator.submit(snapshot)
+
+        let dailyMaximums = await commits.batches.flatMap { $0 }.filter {
+            guard case let .emission(emission) = $0 else { return false }
+            return emission.record.family == .dailyMaximum
+        }
+        XCTAssertEqual(dailyMaximums.count, 2)
+        let posted = await recorder.posted
+        XCTAssertEqual(posted.count, 1)
+        XCTAssertNil(posted.first?.route)
+    }
+
+    func testSupersededSnapshotStillPostsEveryAcceptedDecisionOnce()
+        async throws {
+        let recorder = NotificationOperationRecorder()
+        let commits = CommitOnceRecorder()
+        let box = CoordinatorBox()
+        let older = try twoResultSnapshot(revision: 15)
+        let newer = try twoResultSnapshot(revision: 16)
+        let coordinator = CompetitionNotificationCoordinator(
+            planner: CompetitionNotificationPlanner(policy: .coordinatorFixture),
+            notifications: recorder.notificationClient(
+                authorization: .authorized
+            ),
+            preferences: .constant(mutedOpponentIdentities: []),
+            commitDecisions: { competition, replan in
+                // Only the first commit appends; a newer snapshot arrives
+                // right after it, so the second match is never committed.
+                let result = try await commits.commit(competition, replan: replan)
+                if case .appended = result {
+                    await box.coordinator?.submit(newer)
+                }
+                return result
+            }
+        )
+        box.coordinator = coordinator
+
+        await coordinator.submit(older)
+
+        let posted = await recorder.posted
+        let firstID = try XCTUnwrap(older.competitions.first?.id)
+        XCTAssertEqual(posted.count, 1)
+        XCTAssertEqual(
+            posted.first?.route,
+            .competition(firstID)
         )
     }
 
@@ -726,6 +783,47 @@ final class CompetitionNotificationCoordinatorTests: XCTestCase {
         )
     }
 
+    private func twoResultSnapshot(revision: UInt64 = 15) throws
+        -> CompetitionNotificationPlanningSnapshot {
+        let original = try resultSnapshot(revision: revision)
+        let first = try XCTUnwrap(original.competitions.first)
+        return CompetitionNotificationPlanningSnapshot(
+            publicationRevision: original.publicationRevision,
+            evaluatedAt: original.evaluatedAt,
+            timeZoneIdentifier: original.timeZoneIdentifier,
+            competitions: [
+                first,
+                replacingHistory(
+                    in: first,
+                    with: first.emissionHistory,
+                    id: CompetitionID(UUID(uuidString: "EAD172F8-531D-4327-823D-E82A4F696066")!)
+                ),
+            ]
+        )
+    }
+
+    private func replacingHistory(
+        in competition: CompetitionNotificationCompetitionSnapshot,
+        with history: NotificationEmissionProjection,
+        id: CompetitionID? = nil
+    ) -> CompetitionNotificationCompetitionSnapshot {
+        CompetitionNotificationCompetitionSnapshot(
+            id: id ?? competition.id,
+            opponentIdentity: competition.opponentIdentity,
+            opponentDisplayName: competition.opponentDisplayName,
+            lifecycle: competition.lifecycle,
+            schedule: competition.schedule,
+            ownerPoints: competition.ownerPoints,
+            opponentPoints: competition.opponentPoints,
+            days: competition.days,
+            currentDayOrdinal: competition.currentDayOrdinal,
+            latestRefresh: competition.latestRefresh,
+            evaluationFreshness: competition.evaluationFreshness,
+            terminalResult: competition.terminalResult,
+            emissionHistory: history
+        )
+    }
+
     private func scheduledSnapshot() throws
         -> CompetitionNotificationPlanningSnapshot {
         let id = CompetitionID(
@@ -789,7 +887,16 @@ final class CompetitionNotificationCoordinatorTests: XCTestCase {
                 readAt: Date(timeIntervalSinceReferenceDate: 2_000_000)
             ),
             terminalResult: nil,
-            emissionHistory: NotificationEmissionProjection()
+            // An earlier opponent lead makes today's lead a real change.
+            emissionHistory: NotificationEmissionProjection(
+                recordedIDs: [
+                    try NotificationEmissionRecorded.semanticID(
+                        competitionID: id,
+                        family: .leadChange,
+                        episodeKey: .leader(dayOrdinal: 3, leader: .opponent)
+                    ),
+                ]
+            )
         )
         return CompetitionNotificationPlanningSnapshot(
             publicationRevision: 13,
@@ -937,6 +1044,10 @@ private actor NotificationCommitReturnGate {
         releaseWaiters.removeAll()
         for waiter in waiters { waiter.resume() }
     }
+}
+
+private final class CoordinatorBox: @unchecked Sendable {
+    weak var coordinator: CompetitionNotificationCoordinator?
 }
 
 private actor DurableDecisionCommitRecorder {
@@ -1091,9 +1202,15 @@ private actor NotificationAuthorizationGate {
 
 private actor NotificationOperationRecorder {
     private(set) var operations: [String] = []
+    private(set) var posted: [CompetitionImmediateNotificationRequest] = []
 
     func record(_ value: String) {
         operations.append(value)
+    }
+
+    func recordPost(_ request: CompetitionImmediateNotificationRequest) {
+        posted.append(request)
+        operations.append("post:\(request.identifier)")
     }
 
     nonisolated func notificationClient(
@@ -1106,7 +1223,7 @@ private actor NotificationOperationRecorder {
                 await self?.record("upsert:\(request.identifier)")
             },
             postNow: { [weak self] request in
-                await self?.record("post:\(request.identifier)")
+                await self?.recordPost(request)
             },
             pendingIDs: { _ in [] },
             deliveredIDs: { _ in [] },
@@ -1169,7 +1286,7 @@ private extension CompetitionNotificationPolicy {
             maximumPostsPerEvaluation: 1,
             maximumPostsPerCompetitionDay: 2,
             scheduledFireDate: { _, baseDate, _ in baseDate },
-            isCloseScore: { _, _ in false },
+            isCloseScore: { _, _, _ in false },
             isDailyMaximum: { _ in false },
             priority: { family in family == .result ? 1 : 0 },
             content: { message in
@@ -1186,7 +1303,7 @@ private extension CompetitionNotificationPolicy {
             maximumPostsPerEvaluation: 2,
             maximumPostsPerCompetitionDay: 3,
             scheduledFireDate: { _, baseDate, _ in baseDate },
-            isCloseScore: { _, _ in false },
+            isCloseScore: { _, _, _ in false },
             isDailyMaximum: { $0 == 600 },
             priority: { family in
                 switch family {
@@ -1211,7 +1328,7 @@ private extension CompetitionNotificationPolicy {
             maximumPostsPerEvaluation: 1,
             maximumPostsPerCompetitionDay: 2,
             scheduledFireDate: { _, baseDate, _ in baseDate },
-            isCloseScore: { _, _ in false },
+            isCloseScore: { _, _, _ in false },
             isDailyMaximum: { $0 == 600 },
             priority: { _ in 0 },
             content: { message in

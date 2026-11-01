@@ -43,7 +43,7 @@ enum CompetitionNotificationIdentifier {
 }
 
 enum CompetitionNotificationLifecycle: Equatable, Sendable {
-    case pending(expiresAt: Date?)
+    case pending(direction: InvitationDirection, expiresAt: Date?)
     case declined
     case expired
     case scheduled
@@ -156,6 +156,20 @@ struct CompetitionNotificationPlanningSnapshot: Equatable, Sendable {
     }
 }
 
+extension CompetitionNotificationLifecycle {
+    var isLiveDay: Bool {
+        switch self {
+        case .active, .endsToday: true
+        default: false
+        }
+    }
+}
+
+extension CompetitionNotificationPlanningSnapshot {
+    /// Matches whose current day counts today; muted ones included.
+    var liveMatchCount: Int { competitions.filter(\.lifecycle.isLiveDay).count }
+}
+
 enum CompetitionNotificationMessageFamily: Equatable, Sendable {
     case scheduled(CompetitionScheduledNotificationFamily)
     case opportunistic(NotificationEmissionFamily)
@@ -177,10 +191,15 @@ struct CompetitionNotificationMessage: Equatable, Sendable {
     let ownerPoints: Double?
     let opponentPoints: Double?
     let outcome: CompetitionOutcome?
+    var dayOrdinal: Int? = nil
+    var liveMatchCount: Int = 1
+    var expiresAt: Date? = nil
+    var invitationDirection: InvitationDirection = .outgoing
 }
 
 struct CompetitionNotificationEmissionDecision: Equatable, Sendable {
     let record: NotificationEmissionRecorded
+    let message: CompetitionNotificationMessage
     let request: CompetitionImmediateNotificationRequest
 }
 

@@ -1840,8 +1840,8 @@ enum RemoteCompetitionProjector {
         _ lifecycle: CompetitionLifecyclePresentation
     ) -> CompetitionNotificationLifecycle {
         switch lifecycle {
-        case let .pending(_, _, expiresAt):
-            .pending(expiresAt: expiresAt)
+        case let .pending(direction, _, expiresAt):
+            .pending(direction: direction, expiresAt: expiresAt)
         case .declined:
             .declined
         case .expired:

@@ -2,6 +2,7 @@ import CompetitionCore
 import Foundation
 
 struct CompetitionNotificationPolicy: Sendable {
+    /// The cap per match per evaluation; matches never compete for it.
     var maximumPostsPerEvaluation: Int
     var maximumPostsPerCompetitionDay: Int
     var scheduledFireDate: @Sendable (
@@ -11,13 +12,19 @@ struct CompetitionNotificationPolicy: Sendable {
     ) -> Date?
     var isCloseScore: @Sendable (
         _ ownerPoints: Double,
-        _ opponentPoints: Double
+        _ opponentPoints: Double,
+        _ dayOrdinal: Int
     ) -> Bool
     var isDailyMaximum: @Sendable (_ points: Double) -> Bool
     var priority: @Sendable (_ family: NotificationEmissionFamily) -> Int
     var content: @Sendable (
         _ message: CompetitionNotificationMessage
     ) -> CompetitionNotificationContent
+    var summaryContent: @Sendable (
+        _ messages: [CompetitionNotificationMessage]
+    ) -> CompetitionNotificationContent = {
+        CompetitionNotificationPolicy.liveV1SummaryContent($0)
+    }
 }
 
 extension CompetitionNotificationPolicy {
@@ -28,7 +35,9 @@ extension CompetitionNotificationPolicy {
         maximumPostsPerEvaluation: 1,
         maximumPostsPerCompetitionDay: 2,
         scheduledFireDate: { family, baseDate, timeZoneIdentifier in
-            guard family != .inviteExpiry else { return baseDate }
+            guard family != .inviteExpiry else {
+                return baseDate.addingTimeInterval(-4 * 60 * 60)
+            }
             guard let timeZone = TimeZone(identifier: timeZoneIdentifier)
             else {
                 return nil
@@ -42,10 +51,10 @@ extension CompetitionNotificationPolicy {
                 of: baseDate
             )
         },
-        isCloseScore: { ownerPoints, opponentPoints in
-            ownerPoints.isFinite
-                && opponentPoints.isFinite
-                && abs(ownerPoints - opponentPoints) <= 50
+        isCloseScore: { owner, opponent, dayOrdinal in
+            owner.isFinite && opponent.isFinite
+                && dayOrdinal >= 5 && min(owner, opponent) >= 300
+                && abs(competitionDisplayedMargin(userPoints: owner, opponentPoints: opponent)) <= 50
         },
         isDailyMaximum: { points in
             points.isFinite
@@ -65,55 +74,93 @@ extension CompetitionNotificationPolicy {
 
     static func liveV1Content(
         _ message: CompetitionNotificationMessage,
-        locale: Locale = .current
+        locale: Locale = .current,
+        timeZone: TimeZone = .current
     ) -> CompetitionNotificationContent {
-        let opponent = message.opponentDisplayName
+        let name = message.opponentDisplayName
         func content(_ title: String, _ body: String) -> CompetitionNotificationContent {
             CompetitionNotificationContent(title: title, body: body)
         }
+        func points(_ value: Double?, _ digits: Int = 0) -> String {
+            competitionPointsText(value, fractionDigits: digits, locale: locale)
+        }
+        let days = daysLeftText(message.dayOrdinal)
         switch message.family {
         case .scheduled(.inviteExpiry):
-            return content(
-                "Challenge expiring",
-                "Your challenge with \(opponent) expires soon."
-            )
+            let time = message.expiresAt.map {
+                $0.formatted(Date.FormatStyle(
+                    date: .omitted, time: .shortened, locale: locale, timeZone: timeZone
+                ))
+            }
+            switch message.invitationDirection {
+            case .outgoing:
+                return content(
+                    "\(name) hasn’t accepted yet",
+                    time.map { "Your challenge expires at \($0)." }
+                        ?? "Your challenge expires soon."
+                )
+            case .incoming:
+                return content(
+                    statusTitle(
+                        .pending(direction: .incoming, createdAt: .distantPast, expiresAt: nil),
+                        opponent: name
+                    ),
+                    time.map { "The challenge expires at \($0)." }
+                        ?? "The challenge expires soon."
+                )
+            }
         case .scheduled(.scheduledStart):
             return content(
-                statusTitle(.active(dayOrdinal: 1), opponent: opponent),
-                "Your match with \(opponent) starts today."
+                statusTitle(.active(dayOrdinal: 1), opponent: name),
+                "Your match with \(name) starts today."
             )
         case .scheduled(.finalDay):
             return content(
-                statusTitle(.endsToday, opponent: opponent),
-                "Today is the last day of your match with \(opponent)."
+                statusTitle(.endsToday, opponent: name),
+                "Today is the last day of your match with \(name)."
             )
         case .scheduled(.competitionEnded):
             return content(
-                statusTitle(.tallying(startedAt: .distantPast), opponent: opponent),
-                "HealthComp is checking the latest Activity data before finalizing your result with \(opponent)."
+                statusTitle(.tallying(startedAt: .distantPast), opponent: name),
+                "HealthComp is checking the latest Activity data before finalizing your result with \(name)."
             )
         case .opportunistic(.leadChange):
+            let own = points(message.ownerPoints)
+            let opp = points(message.opponentPoints)
+            let youLead = competitionDisplayedMargin(
+                userPoints: message.ownerPoints ?? 0,
+                opponentPoints: message.opponentPoints ?? 0
+            ) > 0
             return content(
-                "Lead change",
-                scoreCopy(
-                    prefix: "The lead changed in your match with \(opponent).",
-                    message: message,
-                    locale: locale
-                )
+                youLead ? "You took the lead" : "\(name) took the lead",
+                [
+                    youLead ? "You \(own), \(name) \(opp)." : "\(name) \(opp), you \(own).",
+                    days,
+                ].compactMap { $0 }.joined(separator: " ")
             )
         case .opportunistic(.closeScore):
+            let margin = competitionDisplayedMargin(
+                userPoints: message.ownerPoints ?? 0,
+                opponentPoints: message.opponentPoints ?? 0
+            )
+            let gap = competitionPointsAccessibilityText(abs(margin), locale: locale)
+            let standing = margin < 0 ? "You’re \(gap) behind."
+                : margin > 0 ? "You’re \(gap) ahead."
+                : "All square."
             return content(
-                "A close match",
-                scoreCopy(
-                    prefix: "Your match with \(opponent) is close.",
-                    message: message,
-                    locale: locale
-                )
+                "Neck and neck with \(name)",
+                [days, standing].compactMap { $0 }.joined(separator: " ")
             )
         case .opportunistic(.dailyMaximum):
+            let count = max(1, message.liveMatchCount)
+            let body = switch count {
+            case 1: "That’s the daily max."
+            case 2: "That’s the daily max. It counts in both your matches."
+            default: "That’s the daily max. It counts in all \(count) of your matches."
+            }
             return content(
-                "Daily maximum reached",
-                "You reached 600 points today against \(opponent)."
+                points(ActivityScore.maximumDailyPoints) + " today",
+                body
             )
         case .opportunistic(.result):
             let title = message.outcome.map {
@@ -123,21 +170,94 @@ extension CompetitionNotificationPolicy {
                         basis: .stableAcrossPostBoundaryReads,
                         completedAt: .distantPast
                     ),
-                    opponent: opponent
+                    opponent: name
                 )
             } ?? "Match complete"
-            guard message.ownerPoints != nil, message.opponentPoints != nil else {
-                return content(title, "Your match with \(opponent) is complete.")
+            guard let scores = resultScores(message, locale: locale) else {
+                return content(title, "Your match with \(name) is complete.")
             }
             return content(
                 title,
-                scoreCopy(prefix: "Final score:", message: message, locale: locale)
+                message.outcome == .loss
+                    ? "\(scores.opp) to \(scores.own)."
+                    : "\(scores.own) to \(scores.opp)."
             )
         case .opportunistic(.catchUp):
             return content(
                 "Match update",
-                "Open HealthComp for the latest on your match with \(opponent)."
+                "Open HealthComp for the latest on your match with \(name)."
             )
+        }
+    }
+
+    /// One notification for several matches: results or catch-ups from one
+    /// evaluation, or same-time 9:00 reminders.
+    static func liveV1SummaryContent(
+        _ messages: [CompetitionNotificationMessage],
+        locale: Locale = .current
+    ) -> CompetitionNotificationContent {
+        guard let first = messages.first else {
+            return CompetitionNotificationContent(title: "", body: "")
+        }
+        guard messages.count > 1 else { return liveV1Content(first, locale: locale) }
+        let names = uniqueNamesText(messages, locale: locale)
+        switch first.family {
+        case .opportunistic(.result):
+            func rank(_ outcome: CompetitionOutcome?) -> Int {
+                switch outcome {
+                case .win: 0
+                case .tie: 1
+                case .loss: 2
+                case nil: 3
+                }
+            }
+            let sorted = messages.sorted {
+                if rank($0.outcome) != rank($1.outcome) {
+                    return rank($0.outcome) < rank($1.outcome)
+                }
+                let order = $0.opponentDisplayName.localizedStandardCompare($1.opponentDisplayName)
+                if order != .orderedSame { return order == .orderedAscending }
+                return $0.competitionID.rawValue.uuidString < $1.competitionID.rawValue.uuidString
+            }
+            let sentences = sorted.map { message -> String in
+                let name = message.opponentDisplayName
+                guard let scores = resultScores(message, locale: locale) else {
+                    return "Your match with \(name) is complete."
+                }
+                return switch message.outcome {
+                case .win: "You beat \(name) \(scores.own) to \(scores.opp)."
+                case .loss: "\(name) won \(scores.opp) to \(scores.own)."
+                case .tie: "All square with \(name) at \(scores.own)."
+                case nil: "Your match with \(name) is complete."
+                }
+            }
+            return CompetitionNotificationContent(
+                title: "\(messages.count) matches finished",
+                body: sentences.joined(separator: " ")
+            )
+        case .opportunistic(.catchUp):
+            return CompetitionNotificationContent(
+                title: "Match update",
+                body: "Open HealthComp for the latest on your matches with \(names)."
+            )
+        case .scheduled(.scheduledStart):
+            return CompetitionNotificationContent(
+                title: statusTitle(.active(dayOrdinal: 1), opponent: first.opponentDisplayName),
+                body: "Your matches with \(names) start today."
+            )
+        case .scheduled(.finalDay):
+            return CompetitionNotificationContent(
+                title: statusTitle(.endsToday, opponent: first.opponentDisplayName),
+                body: "Today is the last day of your matches with \(names)."
+            )
+        case .scheduled(.competitionEnded):
+            return CompetitionNotificationContent(
+                title: statusTitle(.tallying(startedAt: .distantPast), opponent: first.opponentDisplayName),
+                body: "HealthComp is checking the latest Activity data before finalizing your results with \(names)."
+            )
+        case .scheduled(.inviteExpiry), .opportunistic(.leadChange),
+             .opportunistic(.closeScore), .opportunistic(.dailyMaximum):
+            return liveV1Content(first, locale: locale)
         }
     }
 
@@ -155,24 +275,44 @@ extension CompetitionNotificationPolicy {
         ).title
     }
 
-    /// Whole points in the user's locale; a result whose whole points would
-    /// match uses two decimals.
-    private static func scoreCopy(
-        prefix: String,
-        message: CompetitionNotificationMessage,
+    /// Final scores in the user's locale; two decimals only when whole points
+    /// would hide the winner.
+    private static func resultScores(
+        _ message: CompetitionNotificationMessage,
+        locale: Locale
+    ) -> (own: String, opp: String)? {
+        guard let own = message.ownerPoints, let opp = message.opponentPoints else {
+            return nil
+        }
+        let digits = competitionFinalFractionDigits(userPoints: own, opponentPoints: opp)
+        return (
+            competitionPointsText(own, fractionDigits: digits, locale: locale),
+            competitionPointsText(opp, fractionDigits: digits, locale: locale)
+        )
+    }
+
+    private static func daysLeftText(_ dayOrdinal: Int?) -> String? {
+        switch dayOrdinal {
+        case 7?: "Last day."
+        case 6?: "Two days left."
+        case 5?: "Three days left."
+        case 4?: "Four days left."
+        case 3?: "Five days left."
+        case 2?: "Six days left."
+        case 1?: "Seven days left."
+        default: nil
+        }
+    }
+
+    private static func uniqueNamesText(
+        _ messages: [CompetitionNotificationMessage],
         locale: Locale
     ) -> String {
-        guard let ownerPoints = message.ownerPoints,
-              let opponentPoints = message.opponentPoints
-        else {
-            return prefix
-        }
-        let digits = message.family == .opportunistic(.result)
-            ? competitionFinalFractionDigits(userPoints: ownerPoints, opponentPoints: opponentPoints)
-            : 0
-        let owner = competitionPointsText(ownerPoints, fractionDigits: digits, locale: locale)
-        let opponent = competitionPointsText(opponentPoints, fractionDigits: digits, locale: locale)
-        return "\(prefix) You \(owner), \(message.opponentDisplayName) \(opponent)."
+        let names = Set(messages.map(\.opponentDisplayName))
+            .sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+        let formatter = ListFormatter()
+        formatter.locale = locale
+        return formatter.string(from: names) ?? names.joined(separator: ", ")
     }
 }
 
@@ -204,7 +344,7 @@ struct CompetitionNotificationPlanner: Sendable {
             )
         }
 
-        var scheduled: [CompetitionScheduledNotificationRequest] = []
+        var scheduledCandidates: [ScheduledCandidate] = []
         var decisions: [CompetitionNotificationEmissionDecision] = []
         var suppressions: [NotificationEmissionRecorded] = []
         var cancellations: Set<CompetitionID> = []
@@ -231,7 +371,7 @@ struct CompetitionNotificationPlanner: Sendable {
                 continue
             }
 
-            scheduled.append(
+            scheduledCandidates.append(
                 contentsOf: try scheduledRequests(
                     for: competition,
                     snapshot: snapshot
@@ -249,31 +389,17 @@ struct CompetitionNotificationPlanner: Sendable {
             }
         }
 
+        // Each match spends its own per-evaluation cap in `opportunisticPlan`;
+        // the sort only keeps the output deterministic.
         decisions.sort {
             let left = policy.priority($0.record.family)
             let right = policy.priority($1.record.family)
             if left != right { return left > right }
             return $0.record.semanticEventID < $1.record.semanticEventID
         }
-        let globalMaximum = max(0, policy.maximumPostsPerEvaluation)
-        if decisions.count > globalMaximum {
-            for decision in decisions.dropFirst(globalMaximum) {
-                suppressions.append(
-                    try NotificationEmissionRecorded(
-                        competitionID: decision.record.competitionID,
-                        family: decision.record.family,
-                        episodeKey: decision.record.episodeKey,
-                        disposition: .suppressed(reason: .superseded),
-                        decidedAt: snapshot.evaluatedAt,
-                        basisPublicationRevision: snapshot.publicationRevision
-                    )
-                )
-            }
-            decisions = Array(decisions.prefix(globalMaximum))
-        }
 
         return CompetitionNotificationPlan(
-            desiredScheduledRequests: scheduled.sorted {
+            desiredScheduledRequests: mergedScheduledRequests(scheduledCandidates).sorted {
                 $0.identifier < $1.identifier
             },
             emissionDecisions: decisions,
@@ -283,10 +409,91 @@ struct CompetitionNotificationPlanner: Sendable {
         )
     }
 
+    /// Collapses durable, accepted emissions from one evaluation into what iOS
+    /// posts: several results (or catch-ups) become one summary, and the
+    /// daily maximum posts once, naming nobody.
+    func immediateRequests(
+        for emissions: [CompetitionNotificationEmissionDecision],
+        in snapshot: CompetitionNotificationPlanningSnapshot
+    ) -> [CompetitionImmediateNotificationRequest] {
+        let grouped: Set<NotificationEmissionFamily> = [.result, .catchUp, .dailyMaximum]
+        var requests: [CompetitionImmediateNotificationRequest] = []
+        var handled: Set<NotificationEmissionFamily> = []
+        for emission in emissions {
+            let family = emission.record.family
+            guard grouped.contains(family) else {
+                requests.append(emission.request)
+                continue
+            }
+            guard handled.insert(family).inserted else { continue }
+            let group = emissions.filter { $0.record.family == family }
+            let identifier = group.map(\.request.identifier).min()!
+            if family == .dailyMaximum {
+                var message = emission.message
+                message.liveMatchCount = max(1, snapshot.liveMatchCount)
+                requests.append(CompetitionImmediateNotificationRequest(
+                    identifier: identifier,
+                    content: policy.content(message),
+                    route: nil
+                ))
+            } else if group.count == 1 {
+                requests.append(emission.request)
+            } else {
+                requests.append(CompetitionImmediateNotificationRequest(
+                    identifier: identifier,
+                    content: policy.summaryContent(group.map(\.message)),
+                    route: nil
+                ))
+            }
+        }
+        return requests
+    }
+
+    private struct ScheduledCandidate {
+        let request: CompetitionScheduledNotificationRequest
+        let message: CompetitionNotificationMessage
+        let fireDate: Date
+    }
+
+    /// Same-time 9:00 reminders for several matches become one request.
+    private func mergedScheduledRequests(
+        _ candidates: [ScheduledCandidate]
+    ) -> [CompetitionScheduledNotificationRequest] {
+        var requests: [CompetitionScheduledNotificationRequest] = []
+        var handled: Set<Int> = []
+        for (index, candidate) in candidates.enumerated() where !handled.contains(index) {
+            guard case let .scheduled(family) = candidate.message.family,
+                  family != .inviteExpiry
+            else {
+                requests.append(candidate.request)
+                continue
+            }
+            let members = candidates.indices.filter {
+                candidates[$0].message.family == candidate.message.family
+                    && candidates[$0].fireDate == candidate.fireDate
+            }
+            handled.formUnion(members)
+            guard members.count > 1 else {
+                requests.append(candidate.request)
+                continue
+            }
+            let first = members.min {
+                candidates[$0].request.identifier < candidates[$1].request.identifier
+            }!
+            requests.append(CompetitionScheduledNotificationRequest(
+                identifier: candidates[first].request.identifier,
+                content: policy.summaryContent(members.map { candidates[$0].message }),
+                dateComponents: candidates[first].request.dateComponents,
+                route: nil
+            ))
+        }
+        return requests
+    }
+
     private func scheduledRequests(
         for competition: CompetitionNotificationCompetitionSnapshot,
         snapshot: CompetitionNotificationPlanningSnapshot
-    ) throws -> [CompetitionScheduledNotificationRequest] {
+    ) throws -> [ScheduledCandidate] {
         let bases = try scheduledBases(
             for: competition,
             publicationTimeZoneIdentifier: snapshot.timeZoneIdentifier
@@ -303,7 +510,7 @@ struct CompetitionNotificationPlanner: Sendable {
                 for: fireDate,
                 timeZoneIdentifier: timeZoneIdentifier
             )
-            let message = CompetitionNotificationMessage(
+            var message = CompetitionNotificationMessage(
                 family: .scheduled(family),
                 competitionID: competition.id,
                 opponentDisplayName: competition.opponentDisplayName,
@@ -311,14 +518,22 @@ struct CompetitionNotificationPlanner: Sendable {
                 opponentPoints: nil,
                 outcome: nil
             )
-            return CompetitionScheduledNotificationRequest(
-                identifier: CompetitionNotificationIdentifier.scheduled(
-                    competitionID: competition.id,
-                    family: family
+            if case let .pending(direction, expiresAt) = competition.lifecycle {
+                message.expiresAt = expiresAt
+                message.invitationDirection = direction
+            }
+            return ScheduledCandidate(
+                request: CompetitionScheduledNotificationRequest(
+                    identifier: CompetitionNotificationIdentifier.scheduled(
+                        competitionID: competition.id,
+                        family: family
+                    ),
+                    content: policy.content(message),
+                    dateComponents: components,
+                    route: .competition(competition.id)
                 ),
-                content: policy.content(message),
-                dateComponents: components,
-                route: .competition(competition.id)
+                message: message,
+                fireDate: fireDate
             )
         }
     }
@@ -332,7 +547,7 @@ struct CompetitionNotificationPlanner: Sendable {
         String
     )] {
         switch competition.lifecycle {
-        case let .pending(expiresAt):
+        case let .pending(_, expiresAt):
             return expiresAt.map {
                 [(.inviteExpiry, $0, publicationTimeZoneIdentifier)]
             } ?? []
@@ -412,6 +627,11 @@ struct CompetitionNotificationPlanner: Sendable {
             for: competition,
             snapshot: snapshot
         )
+        var result = OpportunityPlan(suppressions: staleSuppressions)
+        if let baseline = try leadBaselineRecord(for: competition, snapshot: snapshot),
+           !competition.emissionHistory.recordedIDs.contains(baseline.semanticEventID) {
+            result.suppressions.append(baseline)
+        }
         var candidates = try candidates(
             for: competition,
             snapshot: snapshot
@@ -419,6 +639,16 @@ struct CompetitionNotificationPlanner: Sendable {
             !competition.emissionHistory.recordedIDs.contains(
                 $0.record.semanticEventID
             )
+        }
+        // "600 today" posts once a day across matches; this match's slot goes
+        // to its next candidate.
+        if dailyMaximumRecordedInAnotherMatch(competition, snapshot: snapshot) {
+            for candidate in candidates where candidate.record.family == .dailyMaximum {
+                result.suppressions.append(
+                    try suppressed(candidate.record, reason: .superseded, snapshot: snapshot)
+                )
+            }
+            candidates.removeAll { $0.record.family == .dailyMaximum }
         }
         candidates.sort {
             let left = policy.priority($0.record.family)
@@ -428,7 +658,6 @@ struct CompetitionNotificationPlanner: Sendable {
         }
 
         let maximum = max(0, policy.maximumPostsPerEvaluation)
-        var result = OpportunityPlan(suppressions: staleSuppressions)
         for (index, candidate) in candidates.enumerated() {
             let dayBudgetExhausted: Bool
             if let dayOrdinal = candidate.record.episodeKey.dayOrdinal {
@@ -443,6 +672,7 @@ struct CompetitionNotificationPlanner: Sendable {
                 result.decisions.append(
                     CompetitionNotificationEmissionDecision(
                         record: candidate.record,
+                        message: candidate.message,
                         request: CompetitionImmediateNotificationRequest(
                             identifier: CompetitionNotificationIdentifier
                                 .opportunistic(candidate.record),
@@ -453,17 +683,10 @@ struct CompetitionNotificationPlanner: Sendable {
                 )
             } else {
                 result.suppressions.append(
-                    try NotificationEmissionRecorded(
-                        competitionID: candidate.record.competitionID,
-                        family: candidate.record.family,
-                        episodeKey: candidate.record.episodeKey,
-                        disposition: .suppressed(
-                            reason: dayBudgetExhausted
-                                ? .budgetExceeded
-                                : .superseded
-                        ),
-                        decidedAt: snapshot.evaluatedAt,
-                        basisPublicationRevision: snapshot.publicationRevision
+                    try suppressed(
+                        candidate.record,
+                        reason: dayBudgetExhausted ? .budgetExceeded : .superseded,
+                        snapshot: snapshot
                     )
                 )
             }
@@ -520,7 +743,7 @@ struct CompetitionNotificationPlanner: Sendable {
             ownerTotal += ownerPoints
             opponentTotal += opponentPoints
 
-            if policy.isCloseScore(ownerTotal, opponentTotal) {
+            if policy.isCloseScore(ownerTotal, opponentTotal, day.ordinal) {
                 try appendStaleSuppression(
                     family: .closeScore,
                     episode: .day(day.ordinal),
@@ -617,6 +840,7 @@ struct CompetitionNotificationPlanner: Sendable {
         )
         return CompetitionNotificationEmissionDecision(
             record: record,
+            message: message,
             request: CompetitionImmediateNotificationRequest(
                 identifier: record.semanticEventID,
                 content: policy.content(message),
@@ -660,7 +884,9 @@ struct CompetitionNotificationPlanner: Sendable {
                     snapshot: snapshot,
                     ownerPoints: accepted,
                     opponentPoints: day.opponentRevealedPoints,
-                    outcome: nil
+                    outcome: nil,
+                    dayOrdinal: ordinal,
+                    liveMatchCount: max(1, snapshot.liveMatchCount)
                 )
             )
         }
@@ -675,7 +901,8 @@ struct CompetitionNotificationPlanner: Sendable {
 
         if policy.isCloseScore(
             competition.ownerPoints,
-            competition.opponentPoints
+            competition.opponentPoints,
+            ordinal
         ) {
             result.append(
                 try candidate(
@@ -685,35 +912,104 @@ struct CompetitionNotificationPlanner: Sendable {
                     snapshot: snapshot,
                     ownerPoints: competition.ownerPoints,
                     opponentPoints: competition.opponentPoints,
-                    outcome: nil
+                    outcome: nil,
+                    dayOrdinal: ordinal
                 )
             )
         }
 
-        if let leader = displayedLeader(
-            competition.ownerPoints, competition.opponentPoints
-        ) {
-            if mostRecentRecordedLeader(
-                in: competition,
-                through: ordinal
-            ) != leader {
-                result.append(
-                    try candidate(
-                        family: .leadChange,
-                        episode: .leader(
-                            dayOrdinal: ordinal,
-                            leader: leader
-                        ),
-                        competition: competition,
-                        snapshot: snapshot,
-                        ownerPoints: competition.ownerPoints,
-                        opponentPoints: competition.opponentPoints,
-                        outcome: nil
-                    )
+        // A change needs an earlier leader and never fires on Day 1;
+        // `leadBaselineRecord` records the first leader silently.
+        if let leader = currentLeader(competition),
+           ordinal >= 2,
+           let previous = mostRecentRecordedLeader(in: competition, through: ordinal),
+           previous != leader {
+            result.append(
+                try candidate(
+                    family: .leadChange,
+                    episode: .leader(
+                        dayOrdinal: ordinal,
+                        leader: leader
+                    ),
+                    competition: competition,
+                    snapshot: snapshot,
+                    ownerPoints: competition.ownerPoints,
+                    opponentPoints: competition.opponentPoints,
+                    outcome: nil,
+                    dayOrdinal: ordinal
                 )
-            }
+            )
         }
         return result
+    }
+
+    private func currentLeader(
+        _ competition: CompetitionNotificationCompetitionSnapshot
+    ) -> NotificationEmissionLeader? {
+        displayedLeader(competition.ownerPoints, competition.opponentPoints)
+    }
+
+    /// The first shown leader, and any Day 1 flip, is recorded silently: it is
+    /// the baseline later changes compare against, and usually sync order.
+    private func leadBaselineRecord(
+        for competition: CompetitionNotificationCompetitionSnapshot,
+        snapshot: CompetitionNotificationPlanningSnapshot
+    ) throws -> NotificationEmissionRecorded? {
+        guard competition.lifecycle.permitsFreshScoreCopy,
+              competition.latestRefresh == .completed,
+              competition.evaluationFreshness.isFreshCompletedRefresh,
+              let ordinal = competition.currentDayOrdinal,
+              let leader = currentLeader(competition)
+        else {
+            return nil
+        }
+        let previous = mostRecentRecordedLeader(in: competition, through: ordinal)
+        guard previous != leader, previous == nil || ordinal == 1 else { return nil }
+        return try NotificationEmissionRecorded(
+            competitionID: competition.id,
+            family: .leadChange,
+            episodeKey: .leader(dayOrdinal: ordinal, leader: leader),
+            disposition: .suppressed(reason: .superseded),
+            decidedAt: snapshot.evaluatedAt,
+            basisPublicationRevision: snapshot.publicationRevision
+        )
+    }
+
+    /// Another live match already recorded today's daily maximum (emitted or
+    /// suppressed), each checked against its own current day.
+    private func dailyMaximumRecordedInAnotherMatch(
+        _ competition: CompetitionNotificationCompetitionSnapshot,
+        snapshot: CompetitionNotificationPlanningSnapshot
+    ) -> Bool {
+        snapshot.competitions.contains { other in
+            guard other.id != competition.id,
+                  other.lifecycle.isLiveDay,
+                  let day = other.currentDayOrdinal,
+                  let id = try? NotificationEmissionRecorded.semanticID(
+                      competitionID: other.id,
+                      family: .dailyMaximum,
+                      episodeKey: .day(day)
+                  )
+            else {
+                return false
+            }
+            return other.emissionHistory.recordedIDs.contains(id)
+        }
+    }
+
+    private func suppressed(
+        _ record: NotificationEmissionRecorded,
+        reason: NotificationSuppressionReason,
+        snapshot: CompetitionNotificationPlanningSnapshot
+    ) throws -> NotificationEmissionRecorded {
+        try NotificationEmissionRecorded(
+            competitionID: record.competitionID,
+            family: record.family,
+            episodeKey: record.episodeKey,
+            disposition: .suppressed(reason: reason),
+            decidedAt: snapshot.evaluatedAt,
+            basisPublicationRevision: snapshot.publicationRevision
+        )
     }
 
     /// The leader by the whole points people see; nil when they read equal,
@@ -762,7 +1058,9 @@ struct CompetitionNotificationPlanner: Sendable {
         snapshot: CompetitionNotificationPlanningSnapshot,
         ownerPoints: Double?,
         opponentPoints: Double?,
-        outcome: CompetitionOutcome?
+        outcome: CompetitionOutcome?,
+        dayOrdinal: Int? = nil,
+        liveMatchCount: Int = 1
     ) throws -> Candidate {
         let record = try NotificationEmissionRecorded(
             competitionID: competition.id,
@@ -780,7 +1078,9 @@ struct CompetitionNotificationPlanner: Sendable {
                 opponentDisplayName: competition.opponentDisplayName,
                 ownerPoints: ownerPoints,
                 opponentPoints: opponentPoints,
-                outcome: outcome
+                outcome: outcome,
+                dayOrdinal: dayOrdinal,
+                liveMatchCount: liveMatchCount
             )
         )
     }

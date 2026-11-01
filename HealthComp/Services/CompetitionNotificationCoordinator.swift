@@ -307,9 +307,10 @@ actor CompetitionNotificationCoordinator {
             grouping: plan.emissionDecisions,
             by: \.record.competitionID
         ).mapValues(\.count)
+        var accepted: [CompetitionNotificationEmissionDecision] = []
         for competition in snapshot.competitions
             where durableCompetitionIDs.contains(competition.id) {
-            guard !isSuperseded(snapshot) else { return }
+            if isSuperseded(snapshot) { break }
             let emissionBudget = emissionBudgetByCompetition[
                 competition.id,
                 default: 0
@@ -318,21 +319,31 @@ actor CompetitionNotificationCoordinator {
                 let result = try await commitDecisions(
                     competition,
                     { [planner] freshCompetition in
+                        // Siblings stay as this evaluation saw them, so the
+                        // replan makes the same cross-match calls ("600
+                        // today" once) as the plan above.
                         let freshSnapshot = CompetitionNotificationPlanningSnapshot(
                             publicationRevision: snapshot.publicationRevision,
                             evaluatedAt: snapshot.evaluatedAt,
                             timeZoneIdentifier: snapshot.timeZoneIdentifier,
-                            competitions: [freshCompetition]
+                            competitions: snapshot.competitions.filter {
+                                $0.id != freshCompetition.id
+                            } + [freshCompetition]
                         )
                         let freshPlan = try planner.plan(
                             freshSnapshot,
                             authorization: authorization,
                             mutedOpponentIdentities: muted
                         )
-                        let acceptedEmissions = freshPlan.emissionDecisions
+                        let ownEmissions = freshPlan.emissionDecisions.filter {
+                            $0.record.competitionID == freshCompetition.id
+                        }
+                        let ownSuppressions = freshPlan.suppressionRecords.filter {
+                            $0.competitionID == freshCompetition.id
+                        }
+                        let acceptedEmissions = ownEmissions
                             .prefix(emissionBudget)
-                        let budgetSuppressions = try freshPlan
-                            .emissionDecisions
+                        let budgetSuppressions = try ownEmissions
                             .dropFirst(emissionBudget)
                             .map { decision in
                                 try NotificationEmissionRecorded(
@@ -350,7 +361,7 @@ actor CompetitionNotificationCoordinator {
                             }
                         return acceptedEmissions.map {
                             .emission($0)
-                        } + freshPlan.suppressionRecords.map {
+                        } + ownSuppressions.map {
                             .suppression($0)
                         } + budgetSuppressions.map {
                             .suppression($0)
@@ -361,20 +372,24 @@ actor CompetitionNotificationCoordinator {
                     continue
                 }
                 for acceptedDecision in acceptedDecisions {
-                    guard case let .emission(emission) = acceptedDecision else {
-                        continue
-                    }
-                    do {
-                        try await notifications.postNow(emission.request)
-                    } catch {
-                        reportError("notification-post-failed-after-append")
+                    if case let .emission(emission) = acceptedDecision {
+                        accepted.append(emission)
                     }
                 }
-                guard !isSuperseded(snapshot) else { return }
+                if isSuperseded(snapshot) { break }
             } catch {
                 reportError("notification-decision-append-failed")
             }
         }
+        // Committed decisions always post, even when a newer snapshot arrived.
+        for request in planner.immediateRequests(for: accepted, in: snapshot) {
+            do {
+                try await notifications.postNow(request)
+            } catch {
+                reportError("notification-post-failed-after-append")
+            }
+        }
+        guard !isSuperseded(snapshot) else { return }
 
         let remainingPending = pendingBefore.subtracting(obsolete)
         for request in plan.desiredScheduledRequests
