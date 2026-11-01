@@ -1604,9 +1604,11 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
             },
             afterFetchChanges: {
                 await delivery.release()
-                while (try? await outbox.entries().isEmpty) == false {
+                for _ in 0..<500 {
+                    if (try? await outbox.entries().isEmpty) == true { return }
                     try? await Task.sleep(nanoseconds: 10_000_000)
                 }
+                XCTFail("The outbox never delivered revision 1")
             }
         )
         let run = await runtime.synchronizeAll()
@@ -4225,6 +4227,13 @@ private actor TwoClientCompetitionServer {
                 && $0.request.clientRevision == request.clientRevision
         }) else {
             throw CompetitionRemoteFailure.divergentDuplicate
+        }
+        // ...and refuses one below its highest (revision_regression).
+        guard !acceptedBySemanticID.values.contains(where: {
+            $0.participantID == profileID
+                && $0.request.clientRevision > request.clientRevision
+        }) else {
+            throw CompetitionRemoteFailure.staleRevision
         }
         let acceptedCentiPoints: Int?
         if request.availabilityReason == "available" {
