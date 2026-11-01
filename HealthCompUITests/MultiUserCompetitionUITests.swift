@@ -485,7 +485,8 @@ final class MultiUserCompetitionUITests: XCTestCase {
         defer { app.terminate() }
         XCTAssertTrue(app.navigationBars["Account"].waitForExistence(timeout: 8))
         let url = element("account.challenge-link.url")
-        XCTAssertTrue(url.waitForExistence(timeout: 3))
+        scrollToElement(url)
+        XCTAssertTrue(url.exists)
         XCTAssertTrue(url.label.contains("Your challenge link"))
         XCTAssertTrue(element("account.challenge-link.share").exists)
         XCTAssertFalse(
@@ -562,9 +563,11 @@ final class MultiUserCompetitionUITests: XCTestCase {
             try app.performAccessibilityAudit(for: auditTypes)
 
             launch(.account, appearanceArguments: arguments)
+            XCTAssertTrue(app.navigationBars["Account"].waitForExistence(timeout: 8))
+            // At AX5 the section starts below the fold, outside the lazy list.
             let url = element("account.challenge-link.url")
-            XCTAssertTrue(url.waitForExistence(timeout: 8))
             scrollToElement(url)
+            XCTAssertTrue(url.exists)
             attachScreenshot("account-challenge-link-\(appearance)-\(size)")
             let showCode = element("account.challenge-link.show-code")
             scrollToElement(showCode)
