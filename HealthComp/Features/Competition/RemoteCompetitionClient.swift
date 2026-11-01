@@ -667,12 +667,7 @@ private actor RemoteCompetitionClientCoordinator {
             issues.append(issue)
         }
         let reconciled = outcome.reconciled(previous: lastMaterializations)
-        lastMaterializations = Dictionary(
-            reconciled.materializations.map {
-                (CompetitionID($0.descriptor.competitionID), $0)
-            },
-            uniquingKeysWith: { first, _ in first }
-        )
+        lastMaterializations = reconciled.lastGood
         let failedIDs = reconciled.failedIDs
         if !failedIDs.isEmpty {
             issues.append(.competitionFailures(failedIDs))
@@ -1630,18 +1625,26 @@ private actor RemoteCompetitionClientCoordinator {
 extension RemoteCompetitionRuntimeOutcome {
     /// A match whose sync was only cancelled (the person left the screen
     /// mid-refresh) is not a failure: it keeps its last good materialization
-    /// and raises no issue.
+    /// and raises no issue. A failed match stays on screen with its last
+    /// presentation, so it keeps its last good materialization for a later
+    /// cancelled sync too.
     func reconciled(
         previous: [CompetitionID: RemoteCompetitionMaterialization]
-    ) -> (materializations: [RemoteCompetitionMaterialization], failedIDs: [CompetitionID]) {
+    ) -> (
+        materializations: [RemoteCompetitionMaterialization],
+        failedIDs: [CompetitionID],
+        lastGood: [CompetitionID: RemoteCompetitionMaterialization]
+    ) {
         let cancelled = failures.filter { $0.failure == .cancelled }
         let failedIDs = failures.filter { $0.failure != .cancelled }
             .map(\.competitionID)
             .sorted { $0.rawValue.uuidString < $1.rawValue.uuidString }
-        return (
-            successfulCompetitions + cancelled.compactMap { previous[$0.competitionID] },
-            failedIDs
-        )
+        let materializations = successfulCompetitions
+            + cancelled.compactMap { previous[$0.competitionID] }
+        let lastGood = previous.filter { failedIDs.contains($0.key) }.merging(
+            materializations.map { (CompetitionID($0.descriptor.competitionID), $0) }
+        ) { _, new in new }
+        return (materializations, failedIDs, lastGood)
     }
 }
 
