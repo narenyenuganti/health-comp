@@ -86,8 +86,8 @@ select set_config('request.jwt.claims', '{"role":"authenticated","sub":"c7000000
 insert into r (label, v) values ('eve-link', public.get_my_challenge_link());
 select set_config('request.jwt.claims', '{"role":"authenticated","sub":"c7000000-0000-4000-8000-000000000001"}', true);
 select is(public.resolve_challenge_link((select v->>'code' from r where label = 'maya-link')),
-  '{"id":"c7100000-0000-4000-8000-000000000002","display_name":"Maya"}'::jsonb,
-  'a challenge link resolves to exactly one id and display name');
+  '{"display_name":"Maya"}'::jsonb,
+  'a challenge link resolves to its owner''s display name only');
 select is((select count(*) from public.profiles), 1::bigint,
   'resolving a challenge link grants no profile directory');
 select throws_ok($$select public.resolve_challenge_link('AAAAAAAAAAAAAAAAAAAAAA')$$,

@@ -138,6 +138,58 @@ Deno.test("create deterministically derives one token and sends only its digest 
   assertEquals(userRpcCalled, false);
 });
 
+Deno.test("create from a challenge link sends its code, never an account id", async () => {
+  const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
+  const client = (error: { message: string } | null): InviteRpcClient => ({
+    auth: {
+      getUser: () =>
+        Promise.resolve({
+          data: { user: { id: "41000000-0000-4000-8000-000000000001" } },
+          error: null,
+        }),
+    },
+    rpc: (name, args) => {
+      calls.push({ name, args });
+      return Promise.resolve(
+        error
+          ? { data: null, error }
+          : { data: "20000000-0000-4000-8000-000000000001", error: null },
+      );
+    },
+  });
+  const body = {
+    timeZoneIdentifier: "UTC",
+    idempotencyKey: "84000000-0000-4000-8000-000000000001",
+    challengeLinkCode: "Xb3kP9qL2mN8vR4tY6wZ1a",
+  };
+  const created = await createCompetitionInviteHandler(request(body), {
+    createUserClient: () => client(null),
+    createServiceClient: () => client(null),
+    deriveToken: () => Promise.resolve(new Uint8Array(32)),
+  });
+  assertEquals(created.status, 201);
+  assertEquals(calls.length, 1);
+  assertEquals(calls[0].name, "create_competition_invite_from_link");
+  assertEquals(Object.keys(calls[0].args).sort(), [
+    "challenge_link_code",
+    "creation_idempotency_key",
+    "creator_auth_user_id",
+    "creator_time_zone_identifier",
+    "token_derivation_version",
+    "token_digest",
+  ]);
+  assertEquals(calls[0].args.challenge_link_code, "Xb3kP9qL2mN8vR4tY6wZ1a");
+
+  // A reset (or unknown) code reads like any unavailable recipient.
+  const reset = await createCompetitionInviteHandler(request(body), {
+    createUserClient: () => client(null),
+    createServiceClient: () => client({ message: "recipient_unavailable" }),
+    deriveToken: () => Promise.resolve(new Uint8Array(32)),
+  });
+  assertEquals(reset.status, 404);
+  assertEquals((await reset.json()).error.code, "recipient_unavailable");
+});
+
 Deno.test("create verifies the bearer user before calling the RPC", async () => {
   let rpcCalled = false;
   const response = await createCompetitionInviteHandler(
@@ -210,6 +262,28 @@ Deno.test("create rejects malformed JSON and invalid request fields without deri
       timeZoneIdentifier: "UTC",
       idempotencyKey: "not-a-uuid",
       recipientProfileId: "42000000-0000-4000-8000-000000000002",
+    }),
+    request({
+      timeZoneIdentifier: "UTC",
+      idempotencyKey: "84000000-0000-4000-8000-000000000001",
+      recipientProfileId: "42000000-0000-4000-8000-000000000002",
+      challengeLinkCode: "Xb3kP9qL2mN8vR4tY6wZ1a",
+    }),
+    request({
+      timeZoneIdentifier: "UTC",
+      idempotencyKey: "84000000-0000-4000-8000-000000000001",
+      challengeLinkCode: "Xb3kP9qL2mN8vR4tY6wZ1a",
+      rematchParentId: "20000000-0000-4000-8000-000000000001",
+    }),
+    request({
+      timeZoneIdentifier: "UTC",
+      idempotencyKey: "84000000-0000-4000-8000-000000000001",
+      challengeLinkCode: "short",
+    }),
+    request({
+      timeZoneIdentifier: "UTC",
+      idempotencyKey: "84000000-0000-4000-8000-000000000001",
+      challengeLinkCode: null,
     }),
     new Request("http://localhost/create-competition-invite", {
       method: "POST",
