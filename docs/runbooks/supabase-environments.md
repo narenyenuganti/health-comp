@@ -479,10 +479,21 @@ cancelled work for installations without it; score and result work is
 unchanged. 1.0.2 keeps calling the original three-argument RPC, which now
 records false, so it gets no challenge pushes it cannot show.
 
-Promote the migration before any TestFlight build that registers with the
-capability; that build's registration fails against a server without the
-four-argument RPC. Existing installations stay false until their app next
-launches and registers again.
+The app works against either server: if the four-argument RPC is missing
+(PGRST202), it retries once with the three-argument call, and a server
+without the migration has no challenge gate. The migration only needs to
+land for challenge pushes to be filtered.
+
+Edges:
+
+- Existing installations stay false until their app next launches and
+  registers again. A challenge sent after a 1.0.2 user upgrades but before
+  their first launch of the new build gets no push; it still shows in the
+  app.
+- Any build distributed from #186 up to, but not including, this change
+  registers through the three-argument call and gets no challenge pushes
+  until it updates. None had been distributed when this landed, because
+  that server work was not yet deployed.
 
 ## Finalizer and notification repair schedules
 
