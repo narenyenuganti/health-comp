@@ -269,12 +269,8 @@ struct MainTabFeature {
                 }
                 state.onboarding = PermissionOnboarding(steps: steps)
                 // A challenge link shows its challenge before Health.
-                if state.pendingClaimRoute != nil,
-                   state.claimRouteSequenceInFlight == nil,
-                   state.inviteClaimStatus == .idle {
-                    state.inviteClaimStatus = .ready
-                }
-                return .none
+                guard state.inviteClaimStatus == .idle else { return .none }
+                return startPreview(state: &state)
 
             case .onboardingContinueTapped:
                 guard let onboarding = state.onboarding,
@@ -373,15 +369,6 @@ struct MainTabFeature {
                         state.acceptsClaimOnStart = false
                     }
                     state.pendingClaimRoute = envelope
-                    // Before Health is set up nothing has started, so there is
-                    // no preview yet: the challenge shows over Health and an
-                    // Accept is sent on the first publication.
-                    if state.competition.publication == nil,
-                       state.onboarding != nil,
-                       state.claimRouteSequenceInFlight == nil {
-                        state.inviteClaimStatus = .ready
-                        return .none
-                    }
                     return startPreview(state: &state)
                 }
                 guard envelope.sequence > state.lastHandledRouteSequence
@@ -490,7 +477,15 @@ struct MainTabFeature {
                     return .none
                 case let .success(preview):
                     // Already accepted by you (the link was tapped twice):
-                    // no sheet, go to the match.
+                    // no sheet, go to the match. Before Health nothing has
+                    // started; it shows on Home once Health is set up.
+                    guard state.competition.publication != nil else {
+                        state.inviteClaimStatus = .idle
+                        return .merge(
+                            consumeClaimRoute(sequence, state: &state),
+                            advanceClaimQueue(state: &state)
+                        )
+                    }
                     state.claimRouteSequenceInFlight = sequence
                     return .send(.claimInviteResponse(
                         sequence: sequence,
@@ -996,8 +991,11 @@ struct MainTabFeature {
     }
 
     /// Asks the server who sent the pending link before showing the sheet.
+    /// The signed-in session answers before Health is set up, so the sheet
+    /// over Health names the sender too. Only a cold start, before Health
+    /// is checked, waits for the first publication.
     private func startPreview(state: inout State) -> Effect<Action> {
-        guard state.competition.publication != nil,
+        guard state.competition.publication != nil || state.onboarding != nil,
               state.claimRouteSequenceInFlight == nil,
               let envelope = state.pendingClaimRoute,
               case let .claimInvite(token) = envelope.route
