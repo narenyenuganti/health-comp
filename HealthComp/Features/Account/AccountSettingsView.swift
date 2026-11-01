@@ -7,9 +7,78 @@ struct AccountNotificationSettings {
     let authorization: CompetitionNotificationAuthorizationState?
     let isRequestInFlight: Bool
     let request: () -> Void
+    var mutedPeople: [AccountMutedPerson] = []
+    var mutesInFlight: Set<String> = []
+    var unmute: (String) -> Void = { _ in }
 
     var statusText: String {
         authorization?.permitsNotifications == true ? "On" : "Off"
+    }
+}
+
+/// A muted person Account can name.
+struct AccountMutedPerson: Equatable, Identifiable {
+    let id: String
+    let name: String
+
+    /// Names come from the person's matches; a muted identity with no match
+    /// has nothing to notify about, so it isn't listed.
+    static func list(
+        _ competitions: [LocalCompetitionPresentation],
+        muted: Set<String>
+    ) -> [AccountMutedPerson] {
+        var names: [String: String] = [:]
+        for competition in competitions
+        where muted.contains(competition.opponentIdentity)
+            && names[competition.opponentIdentity] == nil {
+            names[competition.opponentIdentity] = competition.opponentDisplayName
+        }
+        return names
+            .map { AccountMutedPerson(id: $0.key, name: $0.value) }
+            .sorted {
+                $0.name.localizedStandardCompare($1.name) == .orderedAscending
+            }
+    }
+}
+
+/// What Account → Health needs. HealthKit hides read denial, so there is no
+/// definite "On".
+struct AccountHealthSettings {
+    enum State: Equatable {
+        case off
+        case unavailable
+        case asked
+    }
+
+    let access: HealthAccessStatus
+    let isReadFailing: Bool
+    let connect: () -> Void
+
+    var state: State {
+        if isReadFailing || access == .unavailable { return .unavailable }
+        return access == .notRequested ? .off : .asked
+    }
+}
+
+/// Matches whose points stop reaching the server while signed out.
+func accountLiveMatchCount(_ competitions: [LocalCompetitionPresentation]) -> Int {
+    competitions.filter {
+        switch $0.lifecycle {
+        case .active, .endsToday, .tallying: true
+        default: false
+        }
+    }.count
+}
+
+/// Sign-out is global, so the copy says "your points", not "this iPhone".
+func accountSignOutMessage(liveMatchCount: Int) -> String {
+    switch liveMatchCount {
+    case ...0:
+        "Notifications stop until you sign back in."
+    case 1:
+        "While you’re signed out, your points stop reaching your live match and notifications stop. Sign back in before it ends to catch up."
+    default:
+        "While you’re signed out, your points stop reaching your \(liveMatchCount.formatted()) live matches and notifications stop. Sign back in before they end to catch up."
     }
 }
 
@@ -18,10 +87,14 @@ struct AccountNotificationSettings {
 struct AccountSettingsView: View {
     let store: StoreOf<AccountFeature>
     var notifications: AccountNotificationSettings?
+    var health: AccountHealthSettings?
+    var liveMatchCount = 0
     var accountCode: UUID?
 #if HEALTHCOMP_STAGING
     var refreshCompetition: (() -> Void)?
 #endif
+
+    @State private var isSignOutConfirmationPresented = false
 
     @AppStorage(AppAppearance.storageKey)
     private var appearance = AppAppearance.system
@@ -105,7 +178,7 @@ struct AccountSettingsView: View {
                 )
             }
 
-            if let message = store.message {
+            if let message = store.message, !message.isDeletionMessage {
                 Text(message.text)
                     .font(.callout)
                     .foregroundStyle(Theme.ink)
@@ -137,16 +210,22 @@ struct AccountSettingsView: View {
 
     private var settingsSection: some View {
         Section {
-            NavigationLink {
-                AccountAppearancePage()
-            } label: {
-                LabeledContent {
-                    Text(appearance.title)
+            if let health {
+                NavigationLink {
+                    AccountHealthPage(settings: health)
                 } label: {
-                    Label("Appearance", systemImage: "circle.lefthalf.filled")
+                    LabeledContent {
+                        switch health.state {
+                        case .off: Text("Off")
+                        case .unavailable: Text("Unavailable")
+                        case .asked: EmptyView()
+                        }
+                    } label: {
+                        Label("Health", systemImage: "heart")
+                    }
                 }
+                .accessibilityIdentifier("account.health")
             }
-            .accessibilityIdentifier("account.appearance")
 
             if let notifications {
                 NavigationLink {
@@ -160,6 +239,17 @@ struct AccountSettingsView: View {
                 }
                 .accessibilityIdentifier("account.notifications")
             }
+
+            NavigationLink {
+                AccountAppearancePage()
+            } label: {
+                LabeledContent {
+                    Text(appearance.title)
+                } label: {
+                    Label("Appearance", systemImage: "circle.lefthalf.filled")
+                }
+            }
+            .accessibilityIdentifier("account.appearance")
 
             NavigationLink {
                 AccountPrivacyPage()
@@ -184,7 +274,7 @@ struct AccountSettingsView: View {
     private var signOutSection: some View {
         Section {
             Button(role: .destructive) {
-                store.send(.signOutButtonTapped)
+                isSignOutConfirmationPresented = true
             } label: {
                 Text("Sign Out").foregroundStyle(Theme.ink)
             }
@@ -194,23 +284,69 @@ struct AccountSettingsView: View {
             .accessibilityValue(
                 store.isRequestInFlight ? "Signing out" : ""
             )
-        } footer: {
-            Text(
-                "Signing out removes this profile’s local match cache from this device. Completed shared history remains on the server."
-            )
-            .foregroundStyle(Theme.secondary)
+            // On the button, not the List, so it can't collide with the
+            // delete alert.
+            .alert("Sign out?", isPresented: $isSignOutConfirmationPresented) {
+                Button("Sign Out", role: .destructive) {
+                    store.send(.signOutButtonTapped)
+                }
+                .accessibilityIdentifier("account.sign-out.confirm")
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text(accountSignOutMessage(liveMatchCount: liveMatchCount))
+            }
         }
         .listRowBackground(Theme.panel)
     }
 
     private var deleteSection: some View {
         Section {
-            NavigationLink {
-                AccountDeletionPage(store: store)
+            Button(role: .destructive) {
+                store.send(.deleteAccountButtonTapped)
             } label: {
                 Text("Delete Account").foregroundStyle(Theme.ink)
             }
-            .accessibilityIdentifier("account.delete.open")
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .disabled(store.isRequestInFlight)
+            .accessibilityIdentifier("account.delete")
+            .accessibilityValue(
+                store.isDeletingAccount ? "Deleting account" : ""
+            )
+            .alert(
+                "Delete Account?",
+                isPresented: Binding(
+                    get: { store.isDeleteConfirmationPresented },
+                    set: { isPresented in
+                        if !isPresented && store.isDeleteConfirmationPresented {
+                            store.send(.deleteAccountConfirmationCancelled)
+                        }
+                    }
+                )
+            ) {
+                Button("Delete Account", role: .destructive) {
+                    store.send(.deleteAccountConfirmationAccepted)
+                }
+                .accessibilityIdentifier("account.delete.confirm")
+                if store.isBrowserDeletionAvailable {
+                    Button("Delete with Apple in Browser", role: .destructive) {
+                        store.send(.browserDeleteConfirmationAccepted)
+                    }
+                    .accessibilityIdentifier("account.delete.browser.confirm")
+                }
+                Button("Cancel", role: .cancel) {
+                    store.send(.deleteAccountConfirmationCancelled)
+                }
+            } message: {
+                Text(
+                    "You’ll confirm with Sign in with Apple. Live matches are cancelled, and finished matches stay in the other person’s history under the name Former competitor. This can’t be undone."
+                )
+            }
+            if let message = store.message, message.isDeletionMessage {
+                Text(message.text)
+                    .font(.callout)
+                    .foregroundStyle(Theme.ink)
+                    .accessibilityIdentifier("account.message")
+            }
         }
         .listRowBackground(Theme.panel)
     }
@@ -234,8 +370,62 @@ private struct AccountAppearancePage: View {
     }
 }
 
+private struct AccountHealthPage: View {
+    let settings: AccountHealthSettings
+
+    @Environment(\.openURL) private var openURL
+
+    var body: some View {
+        List {
+            Section {
+                switch settings.state {
+                case .off:
+                    LabeledContent("Health access", value: "Off")
+                    Button("Connect Health", action: settings.connect)
+                        .frame(minHeight: 44)
+                        .accessibilityIdentifier("account.health.connect")
+                case .unavailable:
+                    LabeledContent("Health access", value: "Unavailable")
+                    openSettingsButton
+                case .asked:
+                    Text("HealthComp reads Move, Exercise and Stand to score your matches.")
+                    openSettingsButton
+                }
+            } footer: {
+                Text(footer)
+                    .foregroundStyle(Theme.secondary)
+            }
+            .listRowBackground(Theme.panel)
+        }
+        .accountPageStyle(title: "Health")
+    }
+
+    private var openSettingsButton: some View {
+        Button("Open Settings") {
+            openURL(URL(string: UIApplication.openSettingsURLString)!)
+        }
+        .frame(minHeight: 44)
+        .accessibilityIdentifier("account.health.settings")
+    }
+
+    private var footer: String {
+        switch settings.state {
+        case .off:
+            "Your points can’t update until HealthComp can read your Activity rings."
+        case .unavailable:
+            "HealthComp can’t read Health on this iPhone right now, so your points can’t update."
+        case .asked:
+            "iOS doesn’t tell apps whether Health access is on. If your points aren’t updating, turn on all categories for HealthComp in Settings → Privacy & Security → Health."
+        }
+    }
+}
+
 private struct AccountNotificationsPage: View {
     let settings: AccountNotificationSettings
+
+    @Environment(\.openURL) private var openURL
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @ScaledMetric(relativeTo: .headline) private var initialSize: CGFloat = 34
 
     var body: some View {
         List {
@@ -250,10 +440,7 @@ private struct AccountNotificationsPage: View {
                         if settings.isRequestInFlight {
                             ProgressView()
                         } else {
-                            Label(
-                                "Enable Match Notifications",
-                                systemImage: "bell.badge.fill"
-                            )
+                            Text("Turn On Notifications")
                         }
                     }
                     .frame(minHeight: 44)
@@ -261,25 +448,82 @@ private struct AccountNotificationsPage: View {
                     .accessibilityIdentifier("competition.notifications.enable")
 
                 case .denied:
-                    Label(
-                        "Match notifications are disabled in Settings.",
-                        systemImage: "bell.slash.fill"
-                    )
-                    .foregroundStyle(Theme.secondary)
+                    Text("Turned off in iOS Settings")
+                        .foregroundStyle(Theme.secondary)
+                    openSettingsButton
 
-                case .authorized, .provisional, .ephemeral, nil:
+                case .authorized, .provisional, .ephemeral:
+                    openSettingsButton
+
+                case nil:
                     EmptyView()
                 }
             } footer: {
-                Text(
-                    "HealthComp only sends match moments, like lead changes and results. To mute someone, open your match with them."
-                )
-                .foregroundStyle(Theme.secondary)
+                Text(footer)
+                    .foregroundStyle(Theme.secondary)
             }
             .listRowBackground(Theme.panel)
+
+            if !settings.mutedPeople.isEmpty {
+                Section {
+                    ForEach(settings.mutedPeople) { person in
+                        mutedRow(person)
+                    }
+                } header: {
+                    SectionLabel("MUTED")
+                } footer: {
+                    Text("Muting someone silences all your matches with them.")
+                        .foregroundStyle(Theme.secondary)
+                }
+                .listRowBackground(Theme.panel)
+            }
         }
         .accountPageStyle(title: "Notifications")
     }
+
+    private var footer: String {
+        let base = "HealthComp only sends match moments, like lead changes and results. To mute someone, open your match with them."
+        return settings.authorization?.permitsNotifications == true
+            ? base + " Turn them off in iOS Settings."
+            : base
+    }
+
+    private var openSettingsButton: some View {
+        Button("Open Settings") {
+            openURL(URL(string: UIApplication.openNotificationSettingsURLString)!)
+        }
+        .frame(minHeight: 44)
+        .accessibilityIdentifier("account.notifications.settings")
+    }
+
+    private func mutedRow(_ person: AccountMutedPerson) -> some View {
+        let isAccessibilitySize = dynamicTypeSize.isAccessibilitySize
+        let layout = isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
+            : AnyLayout(HStackLayout(spacing: 12))
+        return layout {
+            HStack(spacing: 12) {
+                Text(person.name.first.map { String($0).uppercased() } ?? "")
+                    .font(.headline.width(.condensed))
+                    .foregroundStyle(Theme.ink)
+                    .frame(width: initialSize, height: initialSize)
+                    .background(Theme.control, in: Circle())
+                    .accessibilityHidden(true)
+                Text(person.name)
+                    .foregroundStyle(Theme.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Button("Unmute") { settings.unmute(person.id) }
+                .buttonStyle(.borderless)
+                .frame(minHeight: 44)
+                .disabled(settings.mutesInFlight.contains(person.id))
+                .accessibilityLabel("Unmute \(person.name)")
+                .accessibilityIdentifier("account.notifications.unmute")
+        }
+    }
+
+
 }
 
 private struct AccountPrivacyPage: View {
@@ -304,74 +548,6 @@ private struct AccountPrivacyPage: View {
             .listRowBackground(Theme.panel)
         }
         .accountPageStyle(title: "Privacy")
-    }
-}
-
-// Red means Move, so the destructive action keeps its role but stays neutral.
-private struct AccountDeletionPage: View {
-    let store: StoreOf<AccountFeature>
-
-    var body: some View {
-        List {
-            Section {
-                Button(role: .destructive) {
-                    store.send(.deleteAccountButtonTapped)
-                } label: {
-                    Text("Delete Account").foregroundStyle(Theme.ink)
-                }
-                .frame(maxWidth: .infinity, minHeight: 44)
-                .disabled(store.isRequestInFlight)
-                .accessibilityIdentifier("account.delete")
-                .accessibilityValue(
-                    store.isDeletingAccount ? "Deleting account" : ""
-                )
-                if let message = store.message {
-                    Text(message.text)
-                        .font(.callout)
-                        .foregroundStyle(Theme.ink)
-                        .accessibilityIdentifier("account.message")
-                }
-            } footer: {
-                Text(
-                    "Deletion is permanent. Live matches are cancelled, this profile’s local data is removed, and finished matches stay in the other person’s history under the name Former competitor."
-                )
-                .foregroundStyle(Theme.secondary)
-            }
-            .listRowBackground(Theme.panel)
-        }
-        .accountPageStyle(title: "Delete Account")
-        .overlay {
-            AccountProgressOverlay(store: store)
-        }
-        .alert(
-            "Delete Account?",
-            isPresented: Binding(
-                get: { store.isDeleteConfirmationPresented },
-                set: { isPresented in
-                    if !isPresented && store.isDeleteConfirmationPresented {
-                        store.send(.deleteAccountConfirmationCancelled)
-                    }
-                }
-            )
-        ) {
-            Button("Delete Account", role: .destructive) {
-                store.send(.deleteAccountConfirmationAccepted)
-            }
-            .accessibilityIdentifier("account.delete.confirm")
-            if store.isBrowserDeletionAvailable {
-                Button("Delete with Apple in Browser", role: .destructive) {
-                    store.send(.browserDeleteConfirmationAccepted)
-                }
-                .accessibilityIdentifier("account.delete.browser.confirm")
-            }
-            Button("Cancel", role: .cancel) {
-                store.send(.deleteAccountConfirmationCancelled)
-            }
-        } message: {
-            Text(
-                "You will confirm with Sign in with Apple. This permanently deletes your account and cannot be undone."
-            )
-        }
     }
 }
 

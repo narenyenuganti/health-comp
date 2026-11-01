@@ -221,7 +221,8 @@ struct AppRootView: View {
 
             case .signedOut, .settingUpProfile, .launchFailure:
                 AccountView(
-                    store: store.scope(state: \.account, action: \.account)
+                    store: store.scope(state: \.account, action: \.account),
+                    hasPendingChallenge: store.hasPendingChallenge
                 )
 
             case .authenticated:
@@ -310,22 +311,41 @@ private struct AccountSheet: View {
                 }
             }
         }
+        .task { mainStore.send(.refreshHealthAccess) }
     }
 
     private var accountSettings: AccountSettingsView {
+        let competition = mainStore.competition
+        let competitions = competition.publication?.dashboard.competitions ?? []
         let notifications = AccountNotificationSettings(
-            authorization: mainStore.competition
-                .notificationAuthorizationState,
-            isRequestInFlight: mainStore.competition
+            authorization: competition.notificationAuthorizationState,
+            isRequestInFlight: competition
                 .notificationAuthorizationRequestIsInFlight,
             request: {
                 mainStore.send(.competition(.enableNotificationsTapped))
-            }
+            },
+            mutedPeople: AccountMutedPerson.list(
+                competitions,
+                muted: competition.mutedOpponentIdentities
+            ),
+            mutesInFlight: competition.muteOpponentIdentitiesInFlight,
+            unmute: { mainStore.send(.competition(.muteTapped($0))) }
         )
+        let health = mainStore.healthAccess.map {
+            AccountHealthSettings(
+                access: $0,
+                isReadFailing: competition.publication?.dashboard.issues
+                    .contains(.authorizationUnavailable) == true,
+                connect: { mainStore.send(.connectHealthTapped) }
+            )
+        }
+        let liveMatchCount = accountLiveMatchCount(competitions)
 #if HEALTHCOMP_STAGING
         return AccountSettingsView(
             store: accountStore,
             notifications: notifications,
+            health: health,
+            liveMatchCount: liveMatchCount,
             accountCode: accountCode,
             refreshCompetition: { mainStore.send(.competition(.pullToRefresh)) }
         )
@@ -333,6 +353,8 @@ private struct AccountSheet: View {
         return AccountSettingsView(
             store: accountStore,
             notifications: notifications,
+            health: health,
+            liveMatchCount: liveMatchCount,
             accountCode: accountCode
         )
 #endif

@@ -3186,7 +3186,7 @@ final class RemoteCompetitionClientTests: XCTestCase {
                 [.remoteUnavailable, .authorizationUnavailable],
                 attributedIDs: []
             ),
-            "Activity authorization is unavailable."
+            "HealthComp can’t read Health. Check Account → Health."
         )
     }
 

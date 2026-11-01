@@ -52,6 +52,10 @@ struct AppFeature {
         var pendingTeardown: PendingTeardown?
         var authEpoch: UInt64
         var isAuthenticationMonitoring: Bool
+        /// The newest claim link that arrived before sign-in finished.
+        var pendingChallengeSequence: UInt64?
+
+        var hasPendingChallenge: Bool { pendingChallengeSequence != nil }
 
         init(
             phase: Phase = .launching,
@@ -180,6 +184,7 @@ struct AppFeature {
             stage: PendingTeardown.Stage,
             failure: AuthenticatedProfileStorageFailure
         )
+        case routeReceived(CompetitionRouteEnvelope)
         case account(AccountFeature.Action)
         case mainTab(MainTabFeature.Action)
     }
@@ -196,6 +201,7 @@ struct AppFeature {
         case authenticationOperation
         case accountDeletion
         case teardown
+        case routes
     }
 
     var body: some ReducerOf<Self> {
@@ -210,7 +216,7 @@ struct AppFeature {
                 if var pendingTeardown = state.pendingTeardown {
                     state.phase = .tearingDown
                     guard !pendingTeardown.isRunning else {
-                        return authenticationEvents()
+                        return .merge(authenticationEvents(), observeRoutes())
                     }
                     pendingTeardown.isRunning = true
                     state.pendingTeardown = pendingTeardown
@@ -219,7 +225,8 @@ struct AppFeature {
                         resumeTeardown(
                             epoch: state.authEpoch,
                             pendingTeardown: pendingTeardown
-                        )
+                        ),
+                        observeRoutes()
                     )
                 }
                 state.authEpoch &+= 1
@@ -227,13 +234,17 @@ struct AppFeature {
                 let epoch = state.authEpoch
                 return .merge(
                     restoreSession(epoch: epoch),
-                    authenticationEvents()
+                    authenticationEvents(),
+                    observeRoutes()
                 )
 
             case .stop:
                 state.isAuthenticationMonitoring = false
                 if state.pendingTeardown != nil {
-                    return .cancel(id: CancelID.authenticationEvents)
+                    return .merge(
+                        .cancel(id: CancelID.authenticationEvents),
+                        .cancel(id: CancelID.routes)
+                    )
                 }
                 let shouldStopRuntime = state.profile != nil
                     || state.mainTab != nil
@@ -241,6 +252,7 @@ struct AppFeature {
                     .cancel(id: CancelID.authenticationEvents),
                     .cancel(id: CancelID.authenticationOperation),
                     .cancel(id: CancelID.teardown),
+                    .cancel(id: CancelID.routes),
                     shouldStopRuntime
                         ? .run { _ in
                             await profileTransitionGate.run {
@@ -350,15 +362,24 @@ struct AppFeature {
                 }
                 switch response {
                 case let .success(paths) where paths.profileID == profile.id:
+                    // The phase stays settingUpProfile from the name submit
+                    // until here.
+                    let isNewAccount = state.phase == .settingUpProfile
                     state.phase = .authenticated
                     state.profileStoragePaths = paths
                     state.account = AccountFeature.State(
                         mode: .authenticated,
                         displayName: profile.displayName
                     )
-                    state.mainTab = MainTabFeature.State(
+                    var mainTab = MainTabFeature.State(
                         competition: CompetitionFeature.State(ownProfile: profile)
                     )
+                    if isNewAccount {
+                        mainTab.claimLinksBeforeAccountThrough =
+                            state.pendingChallengeSequence ?? 0
+                    }
+                    state.mainTab = mainTab
+                    state.pendingChallengeSequence = nil
                 case .failure(.profileTransitionRequiresCleanup):
                     let isUnmounted = state.profileStoragePaths == nil && state.mainTab == nil
                     becomeLaunchFailure(state: &state)
@@ -422,12 +443,14 @@ struct AppFeature {
                 guard epoch == state.authEpoch else { return .none }
                 let authoritativeReason = state.pendingTeardown?.reason
                     ?? reason
-                becomeSignedOut(
-                    state: &state,
-                    message: authoritativeReason == .sessionEnded
-                        ? .sessionEnded
-                        : nil
-                )
+                let message: AccountFeature.Message? = switch authoritativeReason {
+                case .sessionEnded: .sessionEnded
+                case .accountDeleted: .accountDeleted
+                case .userRequested, .restoredWithoutSession,
+                     .cancelledAuthentication, .profileConflict:
+                    nil
+                }
+                becomeSignedOut(state: &state, message: message)
                 return .none
 
             case let .teardownFailed(epoch, _, stage, _):
@@ -444,8 +467,25 @@ struct AppFeature {
                 state.phase = .launchFailure
                 state.mainTab = nil
                 state.account = AccountFeature.State(mode: .launchFailure)
-                state.account.message = pendingTeardown.reason == .profileConflict
-                    ? .profileRecoveryFailed : .tryAgain
+                state.account.message = Self.teardownFailureMessage(
+                    reason: pendingTeardown.reason,
+                    stage: stage
+                )
+                return .none
+
+            case let .routeReceived(envelope):
+                // Only Welcome reacts here; MainTab claims the link later.
+                guard case .claimInvite = envelope.route else { return .none }
+                switch state.phase {
+                case .launching, .signedOut, .bootstrappingProfile,
+                     .settingUpProfile, .launchFailure:
+                    state.pendingChallengeSequence = max(
+                        state.pendingChallengeSequence ?? 0,
+                        envelope.sequence
+                    )
+                case .authenticated, .tearingDown:
+                    break
+                }
                 return .none
 
             case .account(.delegate(.signInWithAppleRequested)):
@@ -626,6 +666,24 @@ struct AppFeature {
         }
     }
 
+    /// Names the step that failed, so a deleted account never reads as a
+    /// connection problem.
+    static func teardownFailureMessage(
+        reason: TeardownReason,
+        stage: PendingTeardown.Stage
+    ) -> AccountFeature.Message {
+        switch (reason, stage) {
+        case (.userRequested, .removeProfileStorage): .signOutCleanupFailed
+        case (.userRequested, .retireAuthentication): .signOutFinishFailed
+        case (.userRequested, _): .signOutFailed
+        case (.accountDeleted, _): .deletedCleanupFailed
+        case (.sessionEnded, _): .sessionEndedCleanupFailed
+        case (.profileConflict, _): .profileRecoveryFailed
+        case (.restoredWithoutSession, _), (.cancelledAuthentication, _):
+            .tryAgain
+        }
+    }
+
     private func handleAuthenticationEvent(
         _ event: AuthenticationEvent, state: inout State
     ) -> Effect<Action> {
@@ -680,6 +738,18 @@ struct AppFeature {
                 profileID: state.profile?.id
             )
         }
+    }
+
+    /// Watches links without consuming them; the hub replays pending routes
+    /// to MainTab's own stream.
+    private func observeRoutes() -> Effect<Action> {
+        .run { send in
+            for await envelope in competitionRoutingClient.routes() {
+                guard !Task.isCancelled else { return }
+                await send(.routeReceived(envelope))
+            }
+        }
+        .cancellable(id: CancelID.routes, cancelInFlight: true)
     }
 
     private func authenticationEvents() -> Effect<Action> {
