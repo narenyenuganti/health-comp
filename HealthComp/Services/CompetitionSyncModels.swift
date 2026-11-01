@@ -1460,6 +1460,7 @@ struct CompetitionInstallationRequest: Codable, Equatable, Sendable {
         case installationID = "installation_id"
         case apnsToken = "apns_token"
         case environment
+        case supportsChallenges = "supports_challenges"
     }
 
     init(from decoder: Decoder) throws {
@@ -1479,6 +1480,8 @@ struct CompetitionInstallationRequest: Codable, Equatable, Sendable {
         try container.encodeWireUUID(installationID, forKey: .installationID)
         try container.encode(apnsToken, forKey: .apnsToken)
         try container.encode(environment, forKey: .environment)
+        // Opts this install into challenge pushes; 1.0.2 omits it.
+        try container.encode(true, forKey: .supportsChallenges)
     }
 }
 
@@ -3548,9 +3551,13 @@ private enum CompetitionWireValidator {
     private static func validateInstallationRequest(_ value: Any) throws {
         let object = try exactObject(
             value,
-            keys: ["apns_token", "environment", "installation_id"]
+            keys: [
+                "apns_token", "environment", "installation_id",
+                "supports_challenges",
+            ]
         )
         guard uuid(object["installation_id"]),
+              object["supports_challenges"] as? Bool == true,
               let token = object["apns_token"] as? String,
               token.range(
                   of: "^[0-9a-f]{64,200}$",
