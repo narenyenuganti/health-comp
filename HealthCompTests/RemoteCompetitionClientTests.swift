@@ -940,7 +940,7 @@ final class RemoteCompetitionClientTests: XCTestCase {
 
     /// A challenge link opened over the Health step: the signed-in session
     /// answers the preview and Decline, and nothing refreshes (which reads
-    /// Health) or publishes until the competition starts.
+    /// Health) or publishes until the competition starts, failures included.
     func testChallengeLinkPreviewAndDeclineBeforeStartDoNotRefresh()
         async throws
     {
@@ -989,8 +989,21 @@ final class RemoteCompetitionClientTests: XCTestCase {
             await probe.recordList()
             return []
         })
+        let rejectedID = CompetitionID(
+            UUID(uuidString: "82000000-0000-4000-8000-000000000003")!
+        )
+        let lapsedID = CompetitionID(
+            UUID(uuidString: "82000000-0000-4000-8000-000000000004")!
+        )
         api.previewInvite = { _ in preview }
-        api.declineChallenge = { id in await probe.recordDecline(id) }
+        api.declineChallenge = { id in
+            await probe.recordDecline(id)
+            switch id {
+            case rejectedID.rawValue: throw CompetitionRemoteFailure.operationFailed
+            case lapsedID.rawValue: throw CompetitionRemoteFailure.inviteUnavailable
+            default: break
+            }
+        }
         let client = CompetitionClient.remote(
             remoteAPI: api,
             environment: try environment()
@@ -1003,17 +1016,27 @@ final class RemoteCompetitionClientTests: XCTestCase {
             )
         )
         let returned = await client.decline(competitionID)
+        let rejected = await client.decline(rejectedID)
+        // Cancelled or expired meanwhile: nothing left to decline.
+        let lapsed = await client.decline(lapsedID)
 
         XCTAssertEqual(loaded, preview)
         XCTAssertEqual(returned.dashboard.issues, [])
+        XCTAssertEqual(rejected.dashboard.issues, [.commandRejected(rejectedID)])
+        XCTAssertEqual(rejected.publicationRevision, 0)
+        XCTAssertEqual(lapsed.dashboard.issues, [])
         let declines = await probe.declineRequests()
-        XCTAssertEqual(declines, [competitionID.rawValue])
+        XCTAssertEqual(
+            declines,
+            [competitionID.rawValue, rejectedID.rawValue, lapsedID.rawValue]
+        )
         let lists = await probe.listCount()
         XCTAssertEqual(lists, 0)
 
         var iterator = client.start().makeAsyncIterator()
         let initial = await iterator.next()
         XCTAssertEqual(initial?.publicationRevision, 1)
+        XCTAssertEqual(initial?.dashboard.issues, [])
         await client.stop()
     }
 

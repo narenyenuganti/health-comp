@@ -889,33 +889,30 @@ private actor RemoteCompetitionClientCoordinator {
             guard terminalTeardown == nil else {
                 return terminalBlockedPublication()
             }
-            guard runtime != nil else {
-                return publication(adding: .commandRejected(id))
-            }
-            var rejected = false
+            guard runtime != nil else { return rejection(id) }
             do {
                 try await command(remoteAPI, id.rawValue)
             } catch CompetitionRemoteFailure.inviteUnavailable where inviteUnavailableIsDone {
                 // No longer pending (cancelled or expired): nothing to decline.
             } catch {
-                rejected = true
+                return rejection(id)
             }
             // A challenge link's Decline can run before Health is set up.
             // Nothing is refreshed (a refresh reads Health) or published
             // until it starts.
-            guard hasStarted else {
-                return unpublishedPublication(
-                    issues: rejected ? [.commandRejected(id)] : []
-                )
-            }
-            if rejected {
-                return publication(adding: .commandRejected(id))
-            }
+            guard hasStarted else { return unpublishedPublication(issues: []) }
             return await performReconciliation()
         }) else {
-            return publication(adding: .commandRejected(id))
+            return rejection(id)
         }
         return publication
+    }
+
+    /// A rejected command; before start it isn't published.
+    private func rejection(_ id: CompetitionID) -> CompetitionPublication {
+        hasStarted
+            ? publication(adding: .commandRejected(id))
+            : unpublishedPublication(issues: [.commandRejected(id)])
     }
 
     /// A read-only server call that needs a signed-in, running profile.
