@@ -1509,6 +1509,75 @@ final class MultiUserCompetitionUITests: XCTestCase {
         )
     }
 
+    func testStaleMatchOffersOneNudgeADay() throws {
+        launch(.sharing)
+        defer { app.terminate() }
+        XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 8))
+
+        // Jordan updated an hour ago: no nudge.
+        let jordan = sharingCard(state: "active", name: "Jordan")
+        scrollToElement(jordan)
+        jordan.tap()
+        XCTAssertTrue(app.navigationBars["Jordan"].waitForExistence(timeout: 3))
+        XCTAssertTrue(waitForStatus("Day 3 of 7"))
+        XCTAssertFalse(app.buttons["competition.nudge"].exists)
+        navigateBackToSharing()
+
+        // Riley's last update is 13 hours old.
+        let riley = sharingCard(state: "active", name: "Riley")
+        scrollToElement(riley)
+        riley.tap()
+        XCTAssertTrue(app.navigationBars["Riley"].waitForExistence(timeout: 3))
+        let nudge = app.buttons["competition.nudge"]
+        XCTAssertTrue(nudge.waitForExistence(timeout: 3))
+        XCTAssertEqual(nudge.label, "Nudge Riley")
+        let before = XCTAttachment(screenshot: app.screenshot())
+        before.name = "nudge-before"
+        before.lifetime = .keepAlways
+        add(before)
+        try app.performAccessibilityAudit(
+            for: [.dynamicType, .textClipped, .hitRegion, .sufficientElementDescription]
+        )
+
+        nudge.tap()
+        let sent = element("competition.nudge.sent")
+        XCTAssertTrue(sent.waitForExistence(timeout: 3))
+        XCTAssertTrue(sent.label.hasPrefix("Nudged at "), sent.label)
+        XCTAssertTrue(sent.label.hasSuffix(". You can nudge again tomorrow."), sent.label)
+        XCTAssertFalse(nudge.exists)
+        let after = XCTAttachment(screenshot: app.screenshot())
+        after.name = "nudge-sent"
+        after.lifetime = .keepAlways
+        add(after)
+
+        // Largest type, dark: the capsule wraps, stays tappable and unclipped.
+        launch(
+            .sharing,
+            appearanceArguments: [
+                "-AppleInterfaceStyle", "Dark",
+                "-UIPreferredContentSizeCategoryName",
+                "UICTContentSizeCategoryAccessibilityXXXL",
+                "-UIAccessibilityReduceMotionEnabled", "YES",
+            ]
+        )
+        XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 8))
+        let largeRiley = sharingCard(state: "active", name: "Riley")
+        scrollToElement(largeRiley)
+        largeRiley.tap()
+        let largeNudge = app.buttons["competition.nudge"]
+        XCTAssertTrue(largeNudge.waitForExistence(timeout: 3))
+        scrollToElement(largeNudge)
+        XCTAssertTrue(largeNudge.isHittable)
+        attachScreenshot("nudge-before-dark-ax5")
+        try app.performAccessibilityAudit(for: [.textClipped, .hitRegion])
+        largeNudge.tap()
+        let largeSent = element("competition.nudge.sent")
+        XCTAssertTrue(largeSent.waitForExistence(timeout: 3))
+        scrollToElement(largeSent)
+        attachScreenshot("nudge-sent-dark-ax5")
+        try app.performAccessibilityAudit(for: [.textClipped])
+    }
+
     func testMalformedMultiUserLabArgumentsFailClosed() {
         app.launchArguments = [
             "--multi-user-competition-test-lab",
