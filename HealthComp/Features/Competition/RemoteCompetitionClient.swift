@@ -974,6 +974,7 @@ private actor RemoteCompetitionClientCoordinator {
             try await remoteAPI.setReaction(
                 CompetitionReactionRequest(competitionID: id.rawValue, target: target, kind: kind)
             )
+            let now = await environment.context().instant.wallDate
             latestReactions.removeAll {
                 $0.competitionID == id.rawValue && $0.target == target
                     && $0.authorProfileID == profile.id
@@ -985,7 +986,7 @@ private actor RemoteCompetitionClientCoordinator {
                         target: target,
                         authorProfileID: profile.id,
                         kind: kind,
-                        updatedAt: await environment.context().instant.wallDate
+                        updatedAt: now
                     ),
                     at: 0
                 )

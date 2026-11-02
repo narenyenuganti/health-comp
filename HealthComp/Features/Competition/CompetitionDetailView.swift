@@ -380,6 +380,14 @@ struct CompetitionDetailView: View {
         }
     }
 
+    /// Day reactions close when the result lands (the server agrees).
+    private var allowsDayReactions: Bool {
+        switch competition.lifecycle {
+        case .active, .endsToday, .tallying: competitionCanReact(competition)
+        default: false
+        }
+    }
+
     /// The reaction you got on this day, and yours to send while you can.
     @ViewBuilder
     private func dayReactions(
@@ -388,11 +396,7 @@ struct CompetitionDetailView: View {
     ) -> some View {
         let name = competition.opponentDisplayName
         let received = competition.receivedReaction(.day(ordinal))
-        // Day reactions close when the result lands (the server agrees).
-        let canReact: Bool = switch competition.lifecycle {
-        case .active, .endsToday, .tallying: competitionCanReact(competition)
-        default: false
-        }
+        let canReact = allowsDayReactions
         if received != nil || canReact {
             VStack(alignment: .leading, spacing: 10) {
                 if let received {

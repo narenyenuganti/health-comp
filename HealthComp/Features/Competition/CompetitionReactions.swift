@@ -201,6 +201,7 @@ struct CompetitionReactionPicker: View {
 
     private func chip(_ kind: CompetitionReactionKind) -> some View {
         let isSelected = selection == kind
+        let hint: String = isSelected ? "Removes your reaction" : ""
         return Button { select(kind) } label: {
             Text(kind.emoji)
                 .font(.title2)
@@ -217,7 +218,7 @@ struct CompetitionReactionPicker: View {
         .disabled(isPending)
         .accessibilityLabel(kind.spokenName)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
-        .accessibilityHint(isSelected ? "Removes your reaction" : "")
+        .accessibilityHint(hint)
         .accessibilityIdentifier("competition.react.\(kind.rawValue)")
     }
 }
