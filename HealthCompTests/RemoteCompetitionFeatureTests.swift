@@ -1223,12 +1223,36 @@ final class RemoteCompetitionFeatureTests: XCTestCase {
         await store.send(.unblockTapped(sam.id)) { $0.unblocksInFlight = [sam.id] }
         await store.receive(.unblockFinished(sam.id, succeeded: false)) {
             $0.unblocksInFlight = []
-            $0.unblockFailed = true
+            $0.unblockFailed = sam.id
         }
         // The next load clears the error.
-        await store.send(.blockedPeopleRequested) { $0.unblockFailed = false }
+        await store.send(.blockedPeopleRequested) { $0.unblockFailed = nil }
         await store.receive(.blockedPeopleResponse([sam]))
         XCTAssertEqual(unblocked.value, [alex.id])
+        await store.finish()
+    }
+
+    @MainActor
+    func testUnblockDropsAListLoadThatStartedBeforeIt() async {
+        let alex = AuthenticatedProfile(id: UUID(), displayName: "Alex")
+        var client = InviteCreationRecorder(results: []).client
+        // The load read before the unblock and answers after it.
+        client.loadBlockedProfiles = {
+            try await Task.sleep(for: .seconds(30))
+            return [alex]
+        }
+        client.unblock = { _ in }
+        var initial = CompetitionFeature.State()
+        initial.blockedPeople = [alex]
+        let store = TestStore(initialState: initial) { CompetitionFeature() }
+            withDependencies: { $0.competitionClient = client }
+        await store.send(.blockedPeopleRequested)
+        await store.send(.unblockTapped(alex.id)) { $0.unblocksInFlight = [alex.id] }
+        await store.receive(.unblockFinished(alex.id, succeeded: true)) {
+            $0.unblocksInFlight = []
+            $0.blockedPeople = []
+        }
+        // No blockedPeopleResponse([alex]) arrives to bring the row back.
         await store.finish()
     }
 
@@ -1252,11 +1276,11 @@ final class RemoteCompetitionFeatureTests: XCTestCase {
         let alex = AuthenticatedProfile(id: UUID(), displayName: "Alex")
         var initial = CompetitionFeature.State()
         initial.blockedPeople = [alex]
-        initial.unblockFailed = true
+        initial.unblockFailed = alex.id
         let store = TestStore(initialState: initial) { CompetitionFeature() }
         await store.send(.stop) {
             $0.blockedPeople = nil
-            $0.unblockFailed = false
+            $0.unblockFailed = nil
         }
         await store.finish()
     }
