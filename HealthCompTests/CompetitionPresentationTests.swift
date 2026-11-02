@@ -803,11 +803,11 @@ final class CompetitionPresentationTests: XCTestCase {
         let expected: [(LocalCompetitionTallyAttention?, CompetitionTallyCopy)] = [
             (.opponentPlanUnavailable, CompetitionTallyCopy(
                 headline: "Waiting for Hermes to sync",
-                body: "Nothing for you to do. If Hermes doesn’t sync by Wed night, the result uses what’s in."
+                body: "If Hermes doesn’t sync by Wed night, the result uses what’s in."
             )),
             (.awaitingOpponentCheck, CompetitionTallyCopy(
                 headline: "Waiting for Hermes’s last check",
-                body: "Nothing for you to do. If Hermes doesn’t open HealthComp by Wed night, the result uses what’s in."
+                body: "If Hermes doesn’t open HealthComp by Wed night, the result uses what’s in."
             )),
             (.incomplete(missingOrdinals: [7], unavailableOrdinals: []), CompetitionTallyCopy(
                 headline: "Waiting for your Day 7",
@@ -864,6 +864,183 @@ final class CompetitionPresentationTests: XCTestCase {
             copy(.opponentPlanUnavailable, deadline: evening).body
         )
         XCTAssertEqual(competitionScoreTotalLabel(isProvisional: true), "Provisional total")
+    }
+
+    private func nudgePresentation(
+        lifecycle: LocalCompetitionLifecyclePresentation,
+        attention: LocalCompetitionTallyAttention? = nil,
+        deadline: Date = .distantFuture,
+        evaluatedAt: Date,
+        opponentUpdatedAt: Date?,
+        dayOneStart: Date? = nil,
+        zone: String = "UTC"
+    ) -> LocalCompetitionPresentation {
+        let schedule = dayOneStart.map { start -> CompetitionSchedule in
+            var calendar = Calendar(identifier: .gregorian)
+            calendar.timeZone = TimeZone(identifier: zone)!
+            let parts = calendar.dateComponents([.year, .month, .day], from: start)
+            return CompetitionSchedule(
+                calendar: try! CompetitionCalendar(timeZoneIdentifier: zone),
+                startDay: try! CompetitionDay(
+                    era: 1, year: parts.year!, month: parts.month!, day: parts.day!,
+                    timeZoneIdentifier: zone
+                )
+            )
+        }
+        let tally: LocalCompetitionTallyPresentation? = if case .tallying = lifecycle {
+            LocalCompetitionTallyPresentation(
+                attention: attention,
+                consecutiveStableCompleteReads: 0,
+                stabilityStart: nil,
+                bestAvailableDeadline: deadline
+            )
+        } else {
+            nil
+        }
+        return LocalCompetitionPresentation(
+            id: CompetitionID(UUID()),
+            ownerDisplayName: "Naren",
+            opponentDisplayName: "Sam",
+            lifecycle: lifecycle,
+            acceptedConfiguration: schedule.map {
+                LocalCompetitionAcceptedPresentation(schedule: $0, difficulty: .balanced)
+            },
+            userPoints: 0,
+            opponentPoints: 0,
+            days: [],
+            currentDayOrdinal: nil,
+            lastRefresh: nil,
+            tally: tally,
+            terminalResult: nil,
+            evaluatedAt: evaluatedAt,
+            timeZoneIdentifier: zone,
+            opponentUpdatedAt: opponentUpdatedAt
+        )
+    }
+
+    func testNudgeIsOfferedWhenTheResultWaitsOnTheOtherPerson() {
+        let now = Date(timeIntervalSince1970: 1_786_979_520)
+        func canNudge(
+            _ attention: LocalCompetitionTallyAttention?,
+            deadline: Date = Date(timeIntervalSince1970: 1_786_979_520 + 86_400)
+        ) -> Bool {
+            competitionCanNudge(nudgePresentation(
+                lifecycle: .tallying(startedAt: now),
+                attention: attention,
+                deadline: deadline,
+                evaluatedAt: now,
+                opponentUpdatedAt: now
+            ))
+        }
+        XCTAssertTrue(canNudge(.awaitingOpponentCheck))
+        XCTAssertTrue(canNudge(.opponentPlanUnavailable))
+        XCTAssertFalse(canNudge(.awaitingStability))
+        XCTAssertFalse(canNudge(.incomplete(missingOrdinals: [7], unavailableOrdinals: [])))
+        XCTAssertFalse(canNudge(.noRead))
+        XCTAssertFalse(canNudge(nil))
+        XCTAssertFalse(canNudge(.awaitingOpponentCheck, deadline: now))
+        XCTAssertFalse(canNudge(.awaitingOpponentCheck, deadline: now.addingTimeInterval(-1)))
+    }
+
+    func testNudgeIsOfferedWhenALiveMatchIsTwelveHoursStale() {
+        let now = Date(timeIntervalSince1970: 1_786_979_520)
+        func canNudge(
+            _ lifecycle: LocalCompetitionLifecyclePresentation = .active(dayOrdinal: 2),
+            updatedAgo: TimeInterval?,
+            dayOneAgo: TimeInterval? = nil
+        ) -> Bool {
+            competitionCanNudge(nudgePresentation(
+                lifecycle: lifecycle,
+                evaluatedAt: now,
+                opponentUpdatedAt: updatedAgo.map { now.addingTimeInterval(-$0) },
+                dayOneStart: dayOneAgo.map { now.addingTimeInterval(-$0) }
+            ))
+        }
+        XCTAssertTrue(canNudge(updatedAgo: 12 * 3_600 + 60))
+        XCTAssertFalse(canNudge(updatedAgo: 12 * 3_600))
+        XCTAssertFalse(canNudge(updatedAgo: 12 * 3_600 - 60))
+        XCTAssertTrue(canNudge(.endsToday, updatedAgo: 13 * 3_600))
+        // Never uploaded: counted from Day 1's midnight (Aug 17, 15 h 12 m ago).
+        XCTAssertTrue(canNudge(updatedAgo: nil, dayOneAgo: 13 * 3_600))
+        XCTAssertFalse(canNudge(updatedAgo: nil, dayOneAgo: nil))
+        XCTAssertFalse(canNudge(.scheduled, updatedAgo: 13 * 3_600))
+        XCTAssertFalse(
+            canNudge(.completed(outcome: .win, basis: .bestAvailable, completedAt: now), updatedAgo: 13 * 3_600)
+        )
+        // Day 1 started 2 hours ago.
+        let early = Date(timeIntervalSince1970: 1_786_924_800 + 2 * 3_600)
+        XCTAssertFalse(competitionCanNudge(nudgePresentation(
+            lifecycle: .active(dayOrdinal: 1),
+            evaluatedAt: early,
+            opponentUpdatedAt: nil,
+            dayOneStart: early
+        )))
+    }
+
+    func testNudgeConfirmationLastsUntilTheMatchDayEnds() throws {
+        let en = Locale(identifier: "en_US")
+        let utc = try XCTUnwrap(TimeZone(identifier: "UTC"))
+        let sentAt = Date(timeIntervalSince1970: 1_786_979_520)
+        func display(at now: TimeInterval) -> CompetitionNudgeDisplay? {
+            competitionNudgeDisplay(
+                .sent(sentAt),
+                competition: nudgePresentation(
+                    lifecycle: .active(dayOrdinal: 3),
+                    evaluatedAt: Date(timeIntervalSince1970: now),
+                    opponentUpdatedAt: sentAt.addingTimeInterval(-86_400),
+                    zone: "America/Los_Angeles"
+                ),
+                locale: en,
+                timeZone: utc
+            )
+        }
+        func sentText(_ display: CompetitionNudgeDisplay?) -> String? {
+            if case let .sent(text)? = display { return normalized(text) }
+            return nil
+        }
+        XCTAssertEqual(
+            sentText(display(at: 1_787_007_600)),
+            "Nudged at 3:12 PM. You can nudge again tomorrow."
+        )
+        XCTAssertEqual(
+            sentText(display(at: 1_787_032_800)),
+            "Nudged at Mon 3:12 PM. You can nudge again tomorrow."
+        )
+        XCTAssertEqual(display(at: 1_787_038_200), .button(error: nil, isSending: false))
+    }
+
+    func testNudgeFailureAndRefusalCopy() {
+        let now = Date(timeIntervalSince1970: 1_786_979_520)
+        let stale = nudgePresentation(
+            lifecycle: .active(dayOrdinal: 2),
+            evaluatedAt: now,
+            opponentUpdatedAt: now.addingTimeInterval(-13 * 3_600)
+        )
+        XCTAssertEqual(
+            competitionNudgeDisplay(.failed, competition: stale),
+            .button(error: "Couldn’t send the nudge. Try again.", isSending: false)
+        )
+        XCTAssertEqual(
+            competitionNudgeDisplay(.notNeeded(now), competition: stale),
+            .notNeeded("Sam doesn’t need a nudge right now.")
+        )
+        XCTAssertEqual(
+            competitionNudgeDisplay(.sending, competition: stale),
+            .button(error: nil, isSending: true)
+        )
+        XCTAssertEqual(competitionNudgeDisplay(nil, competition: stale), .button(error: nil, isSending: false))
+        // A refusal from yesterday no longer applies.
+        XCTAssertEqual(
+            competitionNudgeDisplay(.notNeeded(now.addingTimeInterval(-86_400)), competition: stale),
+            .button(error: nil, isSending: false)
+        )
+        // Once they update, the whole control goes, confirmation included.
+        let fresh = nudgePresentation(
+            lifecycle: .active(dayOrdinal: 2),
+            evaluatedAt: now,
+            opponentUpdatedAt: now.addingTimeInterval(-60)
+        )
+        XCTAssertNil(competitionNudgeDisplay(.sent(now), competition: fresh))
     }
 
     func testDayListTextIsSingularPluralAndCapped() {

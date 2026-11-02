@@ -226,6 +226,7 @@ jobs:
             -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testSignOutAsksFirstAndStatesTheEffect \
             -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testNotificationsPageOpensSettingsAndUnmutes \
             -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testHealthPageOpensSettings \
+            -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testStaleMatchOffersOneNudgeADay \
             -parallel-testing-enabled NO \
             -maximum-concurrent-test-simulator-destinations 1 \
             -maximum-parallel-testing-workers 1 \

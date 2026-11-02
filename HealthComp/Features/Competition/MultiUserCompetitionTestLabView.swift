@@ -178,6 +178,7 @@ private struct MultiUserCompetitionSharingTestLabView: View {
     @State private var archivedIDs: Set<CompetitionID> = []
     @State private var rematchState: CompetitionFeature.CompetitionRematchState = .available
     @State private var pastedInvitationStatus = "Not checked"
+    @State private var labNudge: CompetitionFeature.NudgeStatus?
 
     var body: some View {
         VStack(spacing: 0) {
@@ -280,7 +281,11 @@ private struct MultiUserCompetitionSharingTestLabView: View {
             case .scheduled, .active, .endsToday, .tallying:
                 CompetitionDetailView(
                     competition: competition,
-                    source: .remoteParticipants
+                    source: .remoteParticipants,
+                    nudge: CompetitionNudge(status: labNudge, send: {
+                        labNudge = .sending
+                        labNudge = .sent(MultiUserCompetitionTestLabFixtures.labNow)
+                    })
                 )
             case .completed, .archived:
                 CompetitionResultView(
@@ -716,7 +721,9 @@ private enum MultiUserCompetitionTestLabFixtures {
             days: activeDays(startDay: 14, currentDay: 2),
             currentDayOrdinal: 2,
             terminal: nil,
-            startDay: 14
+            startDay: 14,
+            // 13 h old: Riley's match offers a nudge.
+            opponentUpdatedAt: evaluatedAt.addingTimeInterval(-46_800)
         )
         let expired = presentation(
             id: expiredID,

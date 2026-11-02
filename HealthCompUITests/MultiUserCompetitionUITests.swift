@@ -1315,6 +1315,48 @@ final class MultiUserCompetitionUITests: XCTestCase {
         )
     }
 
+    func testStaleMatchOffersOneNudgeADay() throws {
+        launch(.sharing)
+        defer { app.terminate() }
+        XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 8))
+
+        // Jordan updated an hour ago: no nudge.
+        let jordan = sharingCard(state: "active", name: "Jordan")
+        scrollToElement(jordan)
+        jordan.tap()
+        XCTAssertTrue(app.navigationBars["Jordan"].waitForExistence(timeout: 3))
+        XCTAssertTrue(waitForStatus("Day 3 of 7"))
+        XCTAssertFalse(app.buttons["competition.nudge"].exists)
+        navigateBackToSharing()
+
+        // Riley's last update is 13 hours old.
+        let riley = sharingCard(state: "active", name: "Riley")
+        scrollToElement(riley)
+        riley.tap()
+        XCTAssertTrue(app.navigationBars["Riley"].waitForExistence(timeout: 3))
+        let nudge = app.buttons["competition.nudge"]
+        XCTAssertTrue(nudge.waitForExistence(timeout: 3))
+        XCTAssertEqual(nudge.label, "Nudge Riley")
+        let before = XCTAttachment(screenshot: app.screenshot())
+        before.name = "nudge-before"
+        before.lifetime = .keepAlways
+        add(before)
+        try app.performAccessibilityAudit(
+            for: [.dynamicType, .textClipped, .hitRegion, .sufficientElementDescription]
+        )
+
+        nudge.tap()
+        let sent = element("competition.nudge.sent")
+        XCTAssertTrue(sent.waitForExistence(timeout: 3))
+        XCTAssertTrue(sent.label.hasPrefix("Nudged at "), sent.label)
+        XCTAssertTrue(sent.label.hasSuffix(". You can nudge again tomorrow."), sent.label)
+        XCTAssertFalse(nudge.exists)
+        let after = XCTAttachment(screenshot: app.screenshot())
+        after.name = "nudge-sent"
+        after.lifetime = .keepAlways
+        add(after)
+    }
+
     func testMalformedMultiUserLabArgumentsFailClosed() {
         app.launchArguments = [
             "--multi-user-competition-test-lab",
