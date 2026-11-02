@@ -419,6 +419,8 @@ final class LocalCompetitionLifecycleUITests: XCTestCase {
         let rings = app.otherElements["competition.ownerRings"]
         XCTAssertTrue(rings.exists)
         XCTAssertLessThan(takes.frame.minY, rings.frame.minY)
+        // The audit and capture only see the screen, so bring the panel into view (AX5 pushes it below).
+        bringTopIntoView(takes)
         try app.performAccessibilityAudit(for: .textClipped)
         capture("\(prefix)-takes")
 
@@ -429,6 +431,7 @@ final class LocalCompetitionLifecycleUITests: XCTestCase {
         XCTAssertTrue(takes.waitForExistence(timeout: 3))
         XCTAssertTrue(takes.label.hasPrefix("Out of reach today"), takes.label)
         XCTAssertFalse(takes.label.contains("of Move"), takes.label)
+        bringTopIntoView(takes)
         try app.performAccessibilityAudit(for: .textClipped)
         capture("\(prefix)-takes-out-of-reach")
     }
@@ -736,6 +739,19 @@ final class LocalCompetitionLifecycleUITests: XCTestCase {
         scrollToElement(element)
         XCTAssertTrue(element.isHittable)
         element.tap()
+    }
+
+    /// For non-controls, where isHittable can't say whether it's on screen:
+    /// short drags on the match screen until the element's top is in its lower part.
+    private func bringTopIntoView(_ element: XCUIElement) {
+        let window = app.windows.firstMatch
+        for _ in 0..<15 where element.frame.minY > window.frame.height * 0.75 {
+            window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.95))
+                .press(
+                    forDuration: 0.05,
+                    thenDragTo: window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.87))
+                )
+        }
     }
 
     private func scrollToElement(_ element: XCUIElement) {
