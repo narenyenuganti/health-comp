@@ -11,7 +11,7 @@ struct CompetitionSharingView: View {
     var ownChallengeLink: URL? = nil
     let dismissChallenge: () -> Void
     @Binding var recipientCode: String
-    let recipient: AuthenticatedProfile?
+    let recipient: CompetitionFeature.InviteRecipient?
     let recipientStatus: CompetitionFeature.InviteRecipientStatus
     let findRecipient: () -> Void
     let createInvite: () -> Void

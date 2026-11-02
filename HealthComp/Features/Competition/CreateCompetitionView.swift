@@ -8,7 +8,7 @@ struct CreateCompetitionView: View {
     let timeZoneIdentifier: String
     let evaluatedAt: Date
     @Binding var recipientCode: String
-    let recipient: AuthenticatedProfile?
+    let recipient: CompetitionFeature.InviteRecipient?
     let recipientStatus: CompetitionFeature.InviteRecipientStatus
     let senderName: String?
     /// Your own challenge link; Share Your Link shows once it has loaded.
@@ -74,7 +74,7 @@ struct CreateCompetitionView: View {
                 announce(text)
             }
         }
-        .onChange(of: recipient?.id) { _, newValue in
+        .onChange(of: recipient) { _, newValue in
             if newValue != nil, let recipient {
                 announce("Found \(recipient.displayName)")
             }
@@ -507,28 +507,28 @@ struct ChallengeFromLinkView: View {
         case .resolving:
             ProgressView("Opening link…")
                 .frame(maxWidth: .infinity, minHeight: 200)
-        case let .ready(person):
+        case let .ready(name):
             HStack(alignment: .top, spacing: 14) {
-                Text(person.displayName.first.map { String($0).uppercased() } ?? "?")
+                Text(name.first.map { String($0).uppercased() } ?? "?")
                     .font(.title3.weight(.heavy).width(.condensed))
                     .foregroundStyle(Theme.ink)
                     .frame(width: 44, height: 44)
                     .background(Theme.control, in: Circle())
                     .accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("Challenge \(person.displayName)?")
+                    Text("Challenge \(name)?")
                         .font(.title3.weight(.heavy).width(.condensed))
                         .foregroundStyle(Theme.ink)
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityAddTraits(.isHeader)
                         .accessibilityIdentifier("competition.link.name")
-                    Text("From \(person.displayName)’s challenge link")
+                    Text("From \(name)’s challenge link")
                         .font(.subheadline)
                         .foregroundStyle(Theme.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            CompetitionRulesCard(source: .remoteParticipants, opponentName: person.displayName)
+            CompetitionRulesCard(source: .remoteParticipants, opponentName: name)
         case .ownLink:
             message("That’s your link", "Share it with someone so they can challenge you.")
         case .unavailable:
@@ -556,7 +556,7 @@ struct ChallengeFromLinkView: View {
     }
 
     private var name: String {
-        if case let .ready(person) = link.status { return person.displayName }
+        if case let .ready(name) = link.status { return name }
         return "them"
     }
 

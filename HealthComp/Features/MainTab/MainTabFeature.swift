@@ -33,7 +33,8 @@ struct MainTabFeature {
     struct ChallengeFromLink: Equatable, Sendable, Identifiable {
         enum Status: Equatable, Sendable {
             case resolving
-            case ready(AuthenticatedProfile)
+            /// The link owner's display name; Send uses the link's code.
+            case ready(displayName: String)
             case ownLink
             case unavailable
             case retryable
@@ -168,7 +169,7 @@ struct MainTabFeature {
         case dismissClaimStatus
         case challengeLinkResolved(
             sequence: UInt64,
-            Result<AuthenticatedProfile, CompetitionRemoteFailure>
+            Result<String, CompetitionRemoteFailure>
         )
         case sendChallengeFromLinkTapped
         case retryChallengeFromLinkTapped
@@ -582,11 +583,13 @@ struct MainTabFeature {
                     return .none
                 }
                 switch result {
-                case let .success(profile):
-                    state.challengeFromLink?.status = .ready(profile)
-                    // Prefill the person so a challenge or match with them
-                    // shows before Send is tapped.
-                    return .send(.competition(.challengeRecipientChosen(profile)))
+                case let .success(displayName):
+                    guard let code = state.challengeFromLink?.code else { return .none }
+                    state.challengeFromLink?.status = .ready(displayName: displayName)
+                    // The + sheet's slot sends by the link's code.
+                    return .send(.competition(.challengeRecipientChosen(
+                        .init(link: code, displayName: displayName)
+                    )))
                 case .failure(.ownChallengeLink):
                     state.challengeFromLink?.status = .ownLink
                 case .failure(.recipientUnavailable), .failure(.notFound):
@@ -837,6 +840,15 @@ struct MainTabFeature {
                     await permissionOnboardingClient.deferNotifications()
                 }
 
+            case .competition(.createInviteResponse):
+                // The link was reset, or its owner left, after it opened.
+                if case .ready? = state.challengeFromLink?.status,
+                   state.competition.inviteRecipient == nil,
+                   state.competition.inviteRecipientStatus == .notFound {
+                    state.challengeFromLink?.status = .unavailable
+                }
+                return followSentChallengeFromLink(state: &state)
+
             case .competition:
                 return followSentChallengeFromLink(state: &state)
             }
@@ -968,8 +980,8 @@ struct MainTabFeature {
         guard let link = state.challengeFromLink else { return .none }
         return .run { send in
             do {
-                let profile = try await competitionClient.resolveChallengeLink(link.code)
-                await send(.challengeLinkResolved(sequence: link.sequence, .success(profile)))
+                let displayName = try await competitionClient.resolveChallengeLink(link.code)
+                await send(.challengeLinkResolved(sequence: link.sequence, .success(displayName)))
             } catch is CancellationError {
                 return
             } catch {

@@ -810,6 +810,8 @@ final class SupabaseCompetitionRemoteAPITests: XCTestCase {
         let profile = "12000000-0000-4000-8000-0000000000a3"
         let harness = CompetitionTransportHarness(stubs: [
             .response(200, try jsonData(["code": "Xb3kP9qL2mN8vR4tY6wZ1a"])),
+            .response(200, try jsonData(["display_name": "Maya"])),
+            // A link never hands out an account id; the old shape is refused.
             .response(200, try jsonData(["id": profile, "display_name": "Maya"])),
             .failure(.server(statusCode: 400, code: "P0001", message: "own_challenge_link")),
             .response(200, try jsonData(["code": "short"])),
@@ -818,7 +820,9 @@ final class SupabaseCompetitionRemoteAPITests: XCTestCase {
         let code = try await api.loadChallengeLinkCode()
         XCTAssertEqual(code.rawValue, "Xb3kP9qL2mN8vR4tY6wZ1a")
         let maya = try await api.resolveChallengeLink(code)
-        XCTAssertEqual(maya.displayName, "Maya")
+        XCTAssertEqual(maya, "Maya")
+        let withID = await remoteFailure { _ = try await api.resolveChallengeLink(code) }
+        XCTAssertEqual(withID, .serverContractMismatch)
         let own = await remoteFailure { _ = try await api.resolveChallengeLink(code) }
         XCTAssertEqual(own, .ownChallengeLink)
         let malformed = await remoteFailure { _ = try await api.loadChallengeLinkCode() }
@@ -826,6 +830,64 @@ final class SupabaseCompetitionRemoteAPITests: XCTestCase {
         let requests = await harness.recordedRequests()
         try assertRPC(requests[0], name: "get_my_challenge_link", body: [:])
         try assertRPC(requests[1], name: "resolve_challenge_link", body: ["code": "Xb3kP9qL2mN8vR4tY6wZ1a"])
+    }
+
+    func testCreateFromChallengeLinkSendsTheCodeNotAnID() async throws {
+        let code = try XCTUnwrap(CompetitionChallengeLinkCode(rawValue: "Xb3kP9qL2mN8vR4tY6wZ1a"))
+        let request = try CompetitionInviteCreationRequest(
+            recipient: .challengeLink(code),
+            timeZoneIdentifier: "UTC",
+            rematchParentID: nil,
+            idempotencyKey: UUID(uuidString: "84000000-0000-4000-8000-000000000001")!
+        )
+        let harness = CompetitionTransportHarness(stubs: [
+            .response(201, try jsonData([
+                "competitionId": competitionID.uuidString.lowercased(),
+                "token": String(repeating: "A", count: 43),
+            ])),
+            .response(404, try errorData(code: "recipient_unavailable")),
+        ])
+        let api = makeAPI(harness)
+        _ = try await api.createInvite(request)
+        let reset = await remoteFailure { _ = try await api.createInvite(request) }
+        XCTAssertEqual(reset, .recipientUnavailable)
+        let requests = await harness.recordedRequests()
+        try assertFunction(requests[0], name: "create-competition-invite", body: [
+            "challengeLinkCode": "Xb3kP9qL2mN8vR4tY6wZ1a",
+            "timeZoneIdentifier": "UTC",
+            "rematchParentId": NSNull(),
+            "idempotencyKey": "84000000-0000-4000-8000-000000000001",
+        ])
+        // A rematch is never by link.
+        XCTAssertThrowsError(try CompetitionInviteCreationRequest(
+            recipient: .challengeLink(code),
+            timeZoneIdentifier: "UTC",
+            rematchParentID: competitionID,
+            idempotencyKey: UUID(uuidString: "84000000-0000-4000-8000-000000000002")!
+        ))
+        // A stored request decodes back to the same link recipient.
+        let decoded = try JSONDecoder().decode(
+            CompetitionInviteCreationRequest.self,
+            from: JSONEncoder().encode(request)
+        )
+        XCTAssertEqual(decoded, request)
+    }
+
+    func testResetChallengeLinkCode() async throws {
+        let harness = CompetitionTransportHarness(stubs: [
+            .response(200, try jsonData(["code": "Qm7tR2vX9pL4kN8wB3cY6z"])),
+            .response(200, try jsonData(["code": "Qm7tR2vX9pL4kN8wB3cY6z", "extra": 1])),
+            .failure(.server(statusCode: 401, code: "42501", message: "active_profile_required")),
+        ])
+        let api = makeAPI(harness)
+        let code = try await api.resetChallengeLinkCode()
+        XCTAssertEqual(code.rawValue, "Qm7tR2vX9pL4kN8wB3cY6z")
+        let extraKey = await remoteFailure { _ = try await api.resetChallengeLinkCode() }
+        XCTAssertEqual(extraKey, .serverContractMismatch)
+        let signedOut = await remoteFailure { _ = try await api.resetChallengeLinkCode() }
+        XCTAssertEqual(signedOut, .unauthenticated)
+        let requests = await harness.recordedRequests()
+        try assertRPC(requests[0], name: "reset_my_challenge_link", body: [:])
     }
 
     func testCreateClassifiesIncomingAndActiveConflicts() async throws {

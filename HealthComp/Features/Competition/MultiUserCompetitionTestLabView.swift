@@ -173,7 +173,7 @@ private struct MultiUserCompetitionSharingTestLabView: View {
     @State private var isChallengePresented = false
     @State private var challengeStatus: CompetitionFeature.ChallengeSheetStatus = .ready
     @State private var recipientCode = ""
-    @State private var recipient: AuthenticatedProfile?
+    @State private var recipient: CompetitionFeature.InviteRecipient?
     @State private var recipientStatus: CompetitionFeature.InviteRecipientStatus = .idle
     @State private var archivedIDs: Set<CompetitionID> = []
     @State private var rematchState: CompetitionFeature.CompetitionRematchState = .available
@@ -219,10 +219,10 @@ private struct MultiUserCompetitionSharingTestLabView: View {
                         challengeStatus = .ready
                         recipientCode = MultiUserCompetitionTestLabFixtures.expiredRecipientID
                             .uuidString.lowercased()
-                        recipient = AuthenticatedProfile(
+                        recipient = .init(AuthenticatedProfile(
                             id: MultiUserCompetitionTestLabFixtures.expiredRecipientID,
                             displayName: "Taylor"
-                        )
+                        ))
                         recipientStatus = .idle
                         isChallengePresented = true
                     },
@@ -328,10 +328,7 @@ private struct MultiUserCompetitionSharingTestLabView: View {
             case MultiUserCompetitionTestLabFixtures.ownLinkCode:
                 recipientStatus = .ownCode
             case MultiUserCompetitionTestLabFixtures.samLinkCode:
-                recipient = AuthenticatedProfile(
-                    id: MultiUserCompetitionTestLabFixtures.pendingID.rawValue,
-                    displayName: "Sam"
-                )
+                recipient = .init(link: linkCode, displayName: "Sam")
                 recipientStatus = .idle
             default:
                 recipientStatus = .notFound
@@ -346,7 +343,7 @@ private struct MultiUserCompetitionSharingTestLabView: View {
         case MultiUserCompetitionTestLabFixtures.ownProfileID:
             recipientStatus = .ownCode
         case MultiUserCompetitionTestLabFixtures.pendingID.rawValue:
-            recipient = AuthenticatedProfile(id: id, displayName: "Sam")
+            recipient = .init(AuthenticatedProfile(id: id, displayName: "Sam"))
             recipientStatus = .idle
         default:
             recipientStatus = .notFound
@@ -551,10 +548,7 @@ private struct MultiUserCompetitionChallengeLinkTestLabView: View {
                         code: CompetitionChallengeLinkCode(
                             rawValue: MultiUserCompetitionTestLabFixtures.samLinkCode
                         )!,
-                        status: .ready(AuthenticatedProfile(
-                            id: MultiUserCompetitionTestLabFixtures.expiredRecipientID,
-                            displayName: "Maya"
-                        ))
+                        status: .ready(displayName: "Maya")
                     ),
                     status: status,
                     send: { status = .creating },
@@ -569,6 +563,7 @@ private struct MultiUserCompetitionChallengeLinkTestLabView: View {
 
 private struct MultiUserCompetitionAccountTestLabView: View {
     @State private var openedURL: URL?
+    @State private var challengeURL = URL(string: "https://invites.ui.healthcomp.test/c/Xb3kP9qL2mN8vR4tY6wZ1a")
     @State private var muted = [
         AccountMutedPerson(id: "remote-opponent:v1:hermes", name: "Hermes"),
     ]
@@ -619,9 +614,14 @@ private struct MultiUserCompetitionAccountTestLabView: View {
                     ),
                     liveMatchCount: 2,
                     challengeLink: AccountChallengeLink(
-                        url: URL(string: "https://invites.ui.healthcomp.test/c/Xb3kP9qL2mN8vR4tY6wZ1a"),
+                        url: challengeURL,
                         failed: false,
-                        load: {}
+                        load: {},
+                        isResetting: false,
+                        resetFailed: false,
+                        reset: {
+                            challengeURL = URL(string: "https://invites.ui.healthcomp.test/c/Qm7tR2vX9pL4kN8wB3cY6z")
+                        }
                     )
                 )
             }

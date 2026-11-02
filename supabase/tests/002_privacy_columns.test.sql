@@ -25,7 +25,7 @@ select columns_are(
 
 select columns_are(
   'public', 'competition_invites',
-  array['id', 'competition_id', 'token_digest', 'claimed_profile_id', 'consumed_at', 'expires_at', 'created_at']::name[],
+  array['id', 'competition_id', 'token_digest', 'claimed_profile_id', 'consumed_at', 'expires_at', 'created_at', 'challenge_link_code']::name[],
   'competition invites expose only approved columns'
 );
 

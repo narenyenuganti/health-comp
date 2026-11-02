@@ -31,6 +31,28 @@ confirms the returned display name before creating a link. Authenticated exact-c
 resolution returns only the profile ID and display name of an active other account;
 there is no prefix search, email lookup, directory, or access to its history.
 
+## Challenge links and Reset Link
+
+Migration `20261101002400` adds Reset Link to the reusable challenge link from
+`20261101001900`. Resolving a link returns only the owner's display name. A
+challenge from a link is created by its current code, which the invite records
+(`competition_invites.challenge_link_code`, unreadable by clients); a reset code
+fails like an unknown one. By-id creation without a rematch parent, and the
+account lookup above, return the same `recipient_unavailable` to a sender whose
+only contact was a link-created challenge using a code that is no longer current,
+unless the recipient ever challenged them or the two had an accepted match
+(including one later cancelled).
+
+Accepted limits:
+
+- Reset Link does not revoke the account ID itself. Another or recreated account,
+  or anyone given the ID, can still challenge by ID while the 1.0.2 ID path
+  exists. Once 1.0.2 is retired, require an accepted match or a current-code
+  challenge for by-ID creation.
+- Link challenges created under `20261101001900` before `20261101002400` have no
+  recorded code and are not covered. If `20261101001900` is not in production
+  yet, deploy `20261101002400` together with it.
+
 ## Migration and compatibility
 
 Use a new forward migration; never change historical migrations. Existing unnamed,

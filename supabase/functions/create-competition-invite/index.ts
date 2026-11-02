@@ -57,11 +57,19 @@ export async function deriveInviteTokenV1(
   return new Uint8Array(await crypto.subtle.sign("HMAC", key, message));
 }
 
+const challengeLinkCodePattern = /^[A-Za-z0-9_-]{22}$/;
+
+// Exactly one recipient: an account id (rematches and 1.0.2's body), or a
+// challenge link's code, which the database checks is still current.
+type Recipient =
+  | { recipientProfileId: string }
+  | { challengeLinkCode: string };
+
 function parseBody(value: unknown): {
   timeZoneIdentifier: string;
   rematchParentId: string | null;
   idempotencyKey: string;
-  recipientProfileId: string;
+  recipient: Recipient;
 } | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const body = value as Record<string, unknown>;
@@ -70,6 +78,7 @@ function parseBody(value: unknown): {
     "rematchParentId",
     "idempotencyKey",
     "recipientProfileId",
+    "challengeLinkCode",
   ]);
   if (Object.keys(body).some((key) => !allowedKeys.has(key))) return null;
   if (
@@ -82,15 +91,28 @@ function parseBody(value: unknown): {
   ) {
     return null;
   }
-  if (!isUuid(body.idempotencyKey) || !isUuid(body.recipientProfileId)) {
+  if (!isUuid(body.idempotencyKey)) return null;
+  const rematchParentId = (body.rematchParentId as string | null | undefined) ??
+    null;
+  let recipient: Recipient;
+  if (body.challengeLinkCode !== undefined) {
+    // A rematch is between people who already played, so never by link.
+    if (
+      body.recipientProfileId !== undefined || rematchParentId !== null ||
+      typeof body.challengeLinkCode !== "string" ||
+      !challengeLinkCodePattern.test(body.challengeLinkCode)
+    ) return null;
+    recipient = { challengeLinkCode: body.challengeLinkCode };
+  } else if (isUuid(body.recipientProfileId)) {
+    recipient = { recipientProfileId: body.recipientProfileId };
+  } else {
     return null;
   }
   return {
     timeZoneIdentifier: body.timeZoneIdentifier,
-    rematchParentId: (body.rematchParentId as string | null | undefined) ??
-      null,
+    rematchParentId,
     idempotencyKey: body.idempotencyKey,
-    recipientProfileId: body.recipientProfileId,
+    recipient,
   };
 }
 
@@ -135,15 +157,23 @@ export async function createCompetitionInviteHandler(
   const token = base64UrlEncode(bytes);
   const tokenDigest = `\\x${await sha256Hex(bytes)}`;
   const serviceClient = injected.createServiceClient();
-  const { data, error } = await serviceClient.rpc("create_competition_invite", {
+  const shared = {
     token_digest: tokenDigest,
     creator_time_zone_identifier: body.timeZoneIdentifier,
-    rematch_parent_id: body.rematchParentId,
     creator_auth_user_id: authenticated.userId,
     creation_idempotency_key: body.idempotencyKey,
     token_derivation_version: 1,
-    recipient_profile_id: body.recipientProfileId,
-  });
+  };
+  const { data, error } = "challengeLinkCode" in body.recipient
+    ? await serviceClient.rpc("create_competition_invite_from_link", {
+      ...shared,
+      challenge_link_code: body.recipient.challengeLinkCode,
+    })
+    : await serviceClient.rpc("create_competition_invite", {
+      ...shared,
+      rematch_parent_id: body.rematchParentId,
+      recipient_profile_id: body.recipient.recipientProfileId,
+    });
 
   if (error) {
     if (error.message === "pending_invitation_exists") {
