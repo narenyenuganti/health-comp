@@ -29,7 +29,7 @@ source_policies() {
 # negative/fractional values, additional output, and false zero-count candidates.
 receipt_keys='receipt_version application_tables_checked application_tables_missing_or_unsupported application_tables_unexpected rls_flag_mismatches table_privilege_mismatches column_privilege_mismatches policy_mismatches profiles_checked profiles_invalid_shape profiles_anonymized deletion_records_checked deletion_records_invalid_shape deletion_phase_profile_mismatches deletions_prepared deletions_token_ready deletions_apple_revoked deletions_auth_delete_pending deletions_completed anonymized_profiles_without_completed_deletion deactivated_profiles_with_active_installations deactivated_profiles_with_live_notification_work deactivated_profiles_with_mute_links deactivated_profiles_with_app_attest_rows revoked_installations_with_app_attest_rows anonymized_profiles_with_nonanonymized_participants deactivated_profiles_with_unfinished_competitions deactivated_profiles_with_unconsumed_cancelled_invites completed_deletions_with_bad_completion_event_count completion_events_without_completed_deletion anonymized_profiles_in_results'
 receipt_keys+=' browser_requests_remaining deletion_client_binding_invalid'
-empty_expected='receipt_version=2,application_tables_checked=19'
+empty_expected='receipt_version=2,application_tables_checked=20'
 seed_expected="$empty_expected,profiles_checked=7,profiles_anonymized=2,deletion_records_checked=5,deletions_prepared=1,deletions_token_ready=1,deletions_apple_revoked=1,deletions_auth_delete_pending=1,deletions_completed=1,anonymized_profiles_without_completed_deletion=1,anonymized_profiles_in_results=2"
 receipt_matches() {
   awk -v keys="$receipt_keys" -v expected="$1" -v unsupported="${2:-0}" '
@@ -208,7 +208,7 @@ drop table if exists public.profiles, public.competitions, public.competition_pa
  private.competition_notification_mutes, private.competition_notification_work,
  private.account_deletions, private.app_attest_keys, private.app_attest_challenges,
  private.app_attest_submission_grants, private.apple_deletion_web_requests,
- private.challenge_links;
+ private.challenge_links, private.account_blocks;
 drop function private.current_profile_id(), private.can_view_profile(uuid), private.is_competition_participant(uuid);
 drop schema private;
 drop role healthcomp_recovery_state_inherited;
@@ -570,12 +570,12 @@ set_fixture_rls() {
     public.competition_awards public.device_installations public.support_events \
     private.account_deletions private.competition_notification_work private.app_attest_keys \
     private.app_attest_challenges private.app_attest_submission_grants private.apple_deletion_web_requests \
-    private.challenge_links; do
+    private.challenge_links private.account_blocks; do
     printf 'alter table %s %s row level security;\n' "$relation" "$action"
   done
 }
 set_fixture_rls disable | mutate unfiltered_visibility_setup
-run_receipt actual_query_full_visibility "$seed_expected,rls_flag_mismatches=18" "$operator" 'set role pg_read_all_data;'
+run_receipt actual_query_full_visibility "$seed_expected,rls_flag_mismatches=19" "$operator" 'set role pg_read_all_data;'
 set_fixture_rls enable | mutate unfiltered_visibility_restore
 run_receipt visibility_flags_restored "$seed_expected"
 
