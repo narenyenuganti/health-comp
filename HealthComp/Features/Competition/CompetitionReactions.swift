@@ -240,11 +240,7 @@ struct CompetitionReactionLine: View {
 
     private var line: some View {
         HStack(spacing: 8) {
-            // The line's label speaks the reaction; an emoji's glyph also
-            // overflows its text frame, which the clipping audit flags.
-            Text(reaction.kind.emoji)
-                .font(.title3)
-                .accessibilityHidden(true)
+            CompetitionReactionEmoji(kind: reaction.kind)
             Text(competitionReactionText(reaction, opponentName: opponentName))
                 .font(.subheadline)
                 .foregroundStyle(Theme.secondary)
@@ -254,5 +250,33 @@ struct CompetitionReactionLine: View {
         .accessibilityLabel(
             competitionReactionAccessibilityText(reaction, opponentName: opponentName)
         )
+    }
+}
+
+/// The emoji drawn as an image. The text clipping audit flags an emoji
+/// `Text` inside an accessibility container (the line, a Home card) because
+/// its glyph overflows the line box, even when it's hidden.
+private struct CompetitionReactionEmoji: View {
+    let kind: CompetitionReactionKind
+
+    @ScaledMetric(relativeTo: .title3) private var size: CGFloat = 24
+    @Environment(\.displayScale) private var displayScale
+
+    var body: some View {
+        if let image = renderedImage {
+            Image(decorative: image, scale: displayScale)
+                .resizable()
+                .scaledToFit()
+                .frame(width: size, height: size)
+                .accessibilityHidden(true)
+        }
+    }
+
+    // ponytail: rendered on every body pass (a few lines on screen); cache per kind if it ever shows in a profile.
+    @MainActor
+    private var renderedImage: CGImage? {
+        let renderer = ImageRenderer(content: Text(kind.emoji).font(.system(size: size)))
+        renderer.scale = displayScale
+        return renderer.cgImage
     }
 }
