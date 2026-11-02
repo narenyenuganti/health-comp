@@ -1264,13 +1264,8 @@ private struct CompetitionNudgeControl: View {
                 }
             }
         case let .sent(text):
-            // The title takes the full width so it wraps at the edge.
-            Label {
-                Text(text).frame(maxWidth: .infinity, alignment: .leading)
-            } icon: {
-                Image(systemName: "checkmark")
-            }
-            .font(.subheadline)
+            Label(text, systemImage: "checkmark")
+                .font(.subheadline)
                 .foregroundStyle(Theme.ink)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityElement(children: .combine)
