@@ -173,6 +173,10 @@ final class CompetitionRecapTests: XCTestCase {
         XCTAssertFalse(highlights(try match(days([3: (324, 330)]))).contains { $0[0] == "Comeback" })
         let loss = try match(days(), user: 2_268, opponent: 2_412, outcome: .loss)
         XCTAssertFalse(highlights(loss).contains { $0[0] == "Comeback" })
+        // Down 86 after Wed and the day sums agree (2,000–2,268): still a loss.
+        let consistentLoss = try match(days([4: (100, 300)]))
+        XCTAssertEqual(competitionResultOutcome(consistentLoss), .loss)
+        XCTAssertFalse(highlights(consistentLoss).contains { $0[0] == "Comeback" })
     }
 
     func testComebackSkipsWhenDaySumsDisagreeWithTheFinalScore() throws {
@@ -286,6 +290,15 @@ final class CompetitionRecapTests: XCTestCase {
                 try match(days([7: (200, 314)]), user: 2_104.30, opponent: 2_104.00), hidesName: true
             )),
             ("recap-card-tie-no-days", recap(try match([], user: 3_000, opponent: 3_000))),
+            ("recap-card-tie-7-days", recap(
+                try match(days(Dictionary(uniqueKeysWithValues: (1...7).map { ($0, (300.0, 300.0)) })))
+            )),
+            ("recap-card-former-no-days", recap(
+                try match([], user: 3_110, opponent: 3_000, name: competitionFormerCompetitorName)
+            )),
+            ("recap-card-kept-belt", recap(try match(days()), belt: .youKept(weeks: 3))),
+            ("recap-card-perfect-day", recap(try match(days([4: (600, 300)])))),
+            ("recap-card-two-perfect-days", recap(try match(days([4: (600, 300), 6: (600, 344)])))),
             ("recap-card-long-name-loss", recap(
                 try match(
                     days(), user: 2_268, opponent: 2_412,

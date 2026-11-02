@@ -376,6 +376,18 @@ final class RecapCardUITests: XCTestCase {
                 scrollToElement(app.buttons["competition.recap.share"], in: sheetScroll)
                 attachScreenshot("sheet-bottom-\(suffix)")
             }
+            // Hide name On: the switch's thumb must stay visible in dark mode.
+            let toggle = app.switches["competition.recap.name"]
+            if toggle.exists {
+                scrollToElement(toggle, in: sheetScroll)
+                tapSwitch(toggle)
+                XCTAssertEqual(toggle.value as? String, "1")
+            } else {
+                app.buttons["Hide name"].tap()
+            }
+            waitForEnabledShare()
+            attachScreenshot("sheet-hidden-\(suffix)")
+            if toggle.exists { tapSwitch(toggle) } else { app.buttons["Show Casey"].tap() }
             closeSheet()
             app.navigationBars.buttons.firstMatch.tap()
             XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 3))
