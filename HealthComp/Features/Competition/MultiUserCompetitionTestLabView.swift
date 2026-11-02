@@ -29,6 +29,13 @@ enum MultiUserCompetitionTestLabScenario:
     case healthOnboardingClaim = "health-onboarding-claim"
     /// A real account's challenge to you: Decline, Decline and Block, ••• Block.
     case incomingChallenge = "incoming-challenge"
+    /// Home and Account through the real app root: block from a challenge,
+    /// then Unblock. Nobody is blocked yet.
+    case block
+    /// The same, with two people already blocked.
+    case blockedAccount = "blocked-account"
+    /// The same, with Naren's challenge link opened in the claim sheet.
+    case blockClaim = "block-claim"
 }
 
 struct MultiUserCompetitionTestLabConfiguration: Equatable, Sendable {
@@ -153,6 +160,8 @@ struct MultiUserCompetitionTestLabRootView: View {
             MultiUserCompetitionPreHealthClaimTestLabView()
         case .incomingChallenge:
             MultiUserCompetitionIncomingChallengeTestLabView()
+        case .block, .blockedAccount, .blockClaim:
+            MultiUserCompetitionBlockTestLabView(scenario: configuration.scenario)
         }
     }
 }
@@ -412,7 +421,7 @@ private struct MultiUserCompetitionClaimTestLabView: View {
         case .sharing, .sharingCustomScheme, .coldClaim, .warmClaim,
              .signedOutClaim, .challengeLink, .account, .welcome, .welcomeChallenge,
              .healthOnboarding, .healthOnboardingChallenge, .healthOnboardingClaim,
-             .incomingChallenge:
+             .incomingChallenge, .block, .blockedAccount, .blockClaim:
             .ready
         }
         _status = State(initialValue: initialStatus)
@@ -568,6 +577,165 @@ private struct MultiUserCompetitionIncomingChallengeTestLabView: View {
         .accessibilityIdentifier("multiuser.incoming.root")
     }
 }
+
+/// Blocking through the app's own root, Home and Account reducers; only the
+/// server is a stand-in (see `MultiUserCompetitionBlockTestLabServer`).
+private struct MultiUserCompetitionBlockTestLabView: View {
+    @State private var mainStore: StoreOf<MainTabFeature>
+    @State private var accountStore: StoreOf<AccountFeature>
+
+    init(scenario: MultiUserCompetitionTestLabScenario) {
+        typealias Fixtures = MultiUserCompetitionTestLabFixtures
+        let hub = LocalCompetitionPublicationHub()
+        let server = MultiUserCompetitionBlockTestLabServer(
+            hub: hub,
+            seeded: scenario == .blockedAccount
+        )
+        var state = MainTabFeature.State()
+        state.competition.ownProfile = AuthenticatedProfile(
+            id: Fixtures.ownProfileID,
+            displayName: "Beta Alice"
+        )
+        let claims = scenario == .blockClaim
+        _mainStore = State(initialValue: Store(initialState: state) {
+            MainTabFeature()
+        } withDependencies: {
+            $0.competitionClient = CompetitionClient(
+                start: {
+                    let stream = hub.stream()
+                    server.publish()
+                    return stream
+                },
+                updates: { hub.stream() },
+                reconcileAll: { _ in server.publish() },
+                accept: { _ in server.publish() },
+                decline: { await server.close($0, block: false) },
+                archive: { _ in server.publish() },
+                rematch: { _ in server.publish() },
+                reinvite: { server.publish() },
+                waitUntil: { _ in },
+                stop: { hub.finish() },
+                block: { await server.close($0, block: true) },
+                loadBlockedProfiles: { try await server.blockedProfiles() },
+                unblock: { try await server.unblock($0) },
+                previewInvite: { _ in Fixtures.claimPreview },
+                loadChallengeLinkCode: {
+                    CompetitionChallengeLinkCode(rawValue: Fixtures.ownLinkCode)!
+                }
+            )
+            $0.competitionInviteLinkClient.makeChallengeLink = {
+                URL(string: "https://invites.ui.healthcomp.test/c/\($0.rawValue)")
+            }
+            $0.competitionRoutingClient = CompetitionRoutingClient(
+                routes: {
+                    AsyncStream {
+                        if claims {
+                            let token = CompetitionInviteClaimToken(
+                                rawValue: String(repeating: "B", count: 43)
+                            )!
+                            $0.yield(CompetitionRouteEnvelope(sequence: 1, route: .claimInvite(token)))
+                        }
+                    }
+                },
+                enqueue: { _ in },
+                consume: { _ in }
+            )
+            $0.permissionOnboardingClient = .inert
+            $0.date = .constant(Fixtures.labNow)
+        })
+        _accountStore = State(initialValue: Store(
+            initialState: AccountFeature.State(mode: .authenticated, displayName: "Beta Alice")
+        ) {
+            AccountFeature()
+        } withDependencies: {
+            $0.authenticationClient = .testValue
+        })
+    }
+
+    var body: some View {
+        AuthenticatedRootView(mainStore: mainStore, accountStore: accountStore)
+            .accessibilityIdentifier("multiuser.block.root")
+    }
+}
+
+/// Alex's block takes 2 s, so the disabled screen can be seen. Sam's first
+/// block and Naren's first claim-sheet block fail. Alexandria's first
+/// Unblock fails; every Unblock takes 1.5 s.
+private final class MultiUserCompetitionBlockTestLabServer: @unchecked Sendable {
+    typealias Fixtures = MultiUserCompetitionTestLabFixtures
+    private let hub: LocalCompetitionPublicationHub
+    private let lock = NSLock()
+    private var revision: UInt64 = 0
+    private var closed: Set<CompetitionID>
+    private var rejected: Set<CompetitionID> = []
+    private var blockCalls: [CompetitionID: Int] = [:]
+    private var unblockCalls: [UUID: Int] = [:]
+    /// Newest first.
+    private var blocked: [AuthenticatedProfile]
+
+    init(hub: LocalCompetitionPublicationHub, seeded: Bool) {
+        self.hub = hub
+        // A block declines the pending challenge, so a seeded block has none.
+        closed = seeded ? [Fixtures.blockLongNameID] : []
+        blocked = seeded
+            ? [Fixtures.blockSender(Fixtures.blockLongNameID)!, Fixtures.blockedMorgan]
+            : []
+    }
+
+    @discardableResult
+    func publish() -> LocalCompetitionPublication {
+        // The revision and its state move together, so a newer revision is
+        // always the newer state even when two publishes race.
+        let publication = lock.withLock {
+            revision += 1
+            return Fixtures.blockPublication(revision: revision, closed: closed, rejected: rejected)
+        }
+        hub.publish(publication)
+        return publication
+    }
+
+    func close(_ id: CompetitionID, block: Bool) async -> LocalCompetitionPublication {
+        let call = lock.withLock {
+            rejected.remove(id)
+            blockCalls[id, default: 0] += block ? 1 : 0
+            return blockCalls[id] ?? 0
+        }
+        if block, id == Fixtures.blockAlexID {
+            try? await Task.sleep(for: .seconds(2))
+        }
+        if block, call == 1, id == Fixtures.blockSamID || id == Fixtures.blockClaimID {
+            try? await Task.sleep(for: .seconds(1))
+            lock.withLock { _ = rejected.insert(id) }
+            return publish()
+        }
+        lock.withLock {
+            closed.insert(id)
+            if block, let sender = Fixtures.blockSender(id) {
+                blocked.removeAll { $0.id == sender.id }
+                blocked.insert(sender, at: 0)
+            }
+        }
+        return publish()
+    }
+
+    func blockedProfiles() async throws -> [AuthenticatedProfile] {
+        try await Task.sleep(for: .milliseconds(300))
+        return lock.withLock { blocked }
+    }
+
+    func unblock(_ id: UUID) async throws {
+        try await Task.sleep(for: .seconds(1.5))
+        let longName = Fixtures.blockSender(Fixtures.blockLongNameID)?.id
+        try lock.withLock {
+            unblockCalls[id, default: 0] += 1
+            if id == longName, unblockCalls[id] == 1 {
+                throw CompetitionRemoteFailure.operationFailed
+            }
+            blocked.removeAll { $0.id == id }
+        }
+    }
+}
+
 
 /// Someone's challenge link opened on this iPhone: "Challenge Maya?".
 private struct MultiUserCompetitionChallengeLinkTestLabView: View {
@@ -733,6 +901,102 @@ private enum MultiUserCompetitionTestLabFixtures {
         currentDayOrdinal: nil,
         terminal: nil
     )
+    static let blockAlexID = blockID(1)
+    static let blockSamID = blockID(2)
+    static let blockLongNameID = blockID(3)
+    static let blockPriyaID = blockID(4)
+    static let blockJordanID = blockID(5)
+    /// The claim sheet's challenge: `claimPreview` is this one.
+    static let blockClaimID = pendingID
+    static let blockedMorgan = AuthenticatedProfile(
+        id: UUID(uuidString: "c1000000-0000-4000-8000-0000000000b4")!,
+        displayName: "Morgan"
+    )
+
+    /// Who sent each incoming challenge in the block lab.
+    static func blockSender(_ id: CompetitionID) -> AuthenticatedProfile? {
+        func profile(_ suffix: String, _ name: String) -> AuthenticatedProfile {
+            AuthenticatedProfile(
+                id: UUID(uuidString: "c1000000-0000-4000-8000-0000000000\(suffix)")!,
+                displayName: name
+            )
+        }
+        switch id {
+        case blockAlexID: return profile("b1", "Alex")
+        case blockSamID: return profile("b2", "Sam")
+        case blockLongNameID: return profile("b3", "Alexandria Montgomery-Featherstonehaugh")
+        case blockClaimID: return claimPreview.sender
+        default: return nil
+        }
+    }
+
+    private static func blockID(_ n: Int) -> CompetitionID {
+        CompetitionID(UUID(uuidString: String(format: "C1000000-0000-4000-8000-%012d", n))!)
+    }
+
+    /// Four challenges to you, one from you and a live match. A closed
+    /// incoming challenge leaves Home, as `list_challenges` drops it.
+    static func blockPublication(
+        revision: UInt64,
+        closed: Set<CompetitionID>,
+        rejected: Set<CompetitionID>
+    ) -> LocalCompetitionPublication {
+        func pending(
+            _ id: CompetitionID,
+            _ name: String,
+            _ direction: InvitationDirection,
+            sentAgo hours: Double
+        ) -> LocalCompetitionPresentation {
+            presentation(
+                id: id,
+                opponentName: name,
+                lifecycle: .pending(
+                    direction: direction,
+                    createdAt: labNow.addingTimeInterval(-hours * 3_600),
+                    expiresAt: labNow.addingTimeInterval((24 - hours) * 3_600)
+                ),
+                userPoints: 0,
+                opponentPoints: 0,
+                days: [],
+                currentDayOrdinal: nil,
+                terminal: nil
+            )
+        }
+        let incoming = [
+            pending(blockAlexID, "Alex", .incoming, sentAgo: 1),
+            pending(blockSamID, "Sam", .incoming, sentAgo: 2),
+            pending(blockLongNameID, "Alexandria Montgomery-Featherstonehaugh", .incoming, sentAgo: 3),
+            pending(blockClaimID, "Naren", .incoming, sentAgo: 4),
+        ].filter { !closed.contains($0.id) }
+        let competitions = incoming + [
+            pending(blockPriyaID, "Priya", .outgoing, sentAgo: 5),
+            presentation(
+                id: blockJordanID,
+                opponentName: "Jordan",
+                lifecycle: .active(dayOrdinal: 3),
+                userPoints: 1_450,
+                opponentPoints: 1_440,
+                days: activeDays(),
+                currentDayOrdinal: 3,
+                terminal: nil
+            ),
+        ]
+        return LocalCompetitionPublication(
+            publicationRevision: revision,
+            dashboard: LocalCompetitionDashboard(
+                competitions: competitions,
+                awards: [],
+                issues: rejected
+                    .sorted { $0.rawValue.uuidString < $1.rawValue.uuidString }
+                    .map { .commandRejected($0) },
+                hiddenTerminalCompetitionCount: 0
+            ),
+            evaluatedAt: evaluatedAt,
+            timeZoneIdentifier: "America/Los_Angeles",
+            source: .remoteParticipants
+        )
+    }
+
     static let samLinkCode = "SamSamSamSamSamSamSam1"
     static let ownLinkCode = "OwnOwnOwnOwnOwnOwnOwn1"
     static let labNow = Date(timeIntervalSince1970: 1_786_867_200)
