@@ -245,15 +245,21 @@ final class WidgetUITests: XCTestCase {
     }
 
     private func removeOurWidgets() {
+        XCUIDevice.shared.press(.home)
+        sleep(1)
+        let remove = springboard.alerts.buttons["Remove"]
         for _ in 0..<4 {
             let widget = widgetElements().firstMatch
             guard widget.exists, widget.isHittable else { break }
             widget.press(forDuration: 1.3)
             guard tap([springboard.buttons["Remove Widget"]], "Remove Widget", timeout: 3, required: false)
             else { break }
-            tap([springboard.alerts.buttons["Remove"], springboard.buttons["Remove"]], "Remove", timeout: 3, required: false)
+            if remove.waitForExistence(timeout: 5) { remove.tap() }
             sleep(1)
         }
+        // Never leave an alert or edit mode in front of the next step.
+        let cancel = springboard.alerts.buttons["Cancel"]
+        if cancel.exists { cancel.tap() }
         if springboard.buttons["Done"].exists { springboard.buttons["Done"].tap() }
     }
 }
