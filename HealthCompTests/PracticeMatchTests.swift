@@ -173,6 +173,9 @@ final class PracticeMatchTests: XCTestCase {
             day = try dayBefore(day)
             days.append(day)
         }
+        // The practice week itself, so it can finish: the local engine never
+        // finalizes a week with a day of no data.
+        days += try calendar.sevenDayWindow(startingOn: calendar.day(after: today))
         let source = FixtureActivitySource(
             fixture: try ActivityFixture(
                 initialInstant: EnvironmentInstant(

@@ -5698,6 +5698,18 @@ extension RemoteCompetitionClientTests {
     ) throws -> (source: FixtureActivitySource, calendar: CompetitionCalendar, startedAt: Date) {
         let calendar = try CompetitionCalendar(timeZoneIdentifier: "America/Los_Angeles")
         let startedAt = try practiceDay(13, in: calendar).addingTimeInterval(9 * 3_600)
+        // Every practice day has rings, so the week can finish.
+        let week = try calendar.sevenDayWindow(
+            startingOn: calendar.day(containing: practiceDay(14, in: calendar))
+        )
+        let snapshot = ActivitySnapshot(
+            moveMode: .activeEnergyKilocalories,
+            standMode: .standHours,
+            move: try ActivityRingReading(value: 300, goal: 100),
+            exercise: try ActivityRingReading(value: 0, goal: 30),
+            standOrRoll: try ActivityRingReading(value: 0, goal: 12),
+            pauseState: .running
+        )
         let source = FixtureActivitySource(
             fixture: try ActivityFixture(
                 initialInstant: EnvironmentInstant(
@@ -5705,7 +5717,7 @@ extension RemoteCompetitionClientTests {
                     monotonic: MonotonicInstant(epochID: "remote-practice", nanoseconds: 1)
                 ),
                 timeZoneIdentifier: calendar.timeZoneIdentifier,
-                initialDays: [],
+                initialDays: week.map { .snapshot(day: $0, snapshot: snapshot) },
                 changes: changes
             )
         )
