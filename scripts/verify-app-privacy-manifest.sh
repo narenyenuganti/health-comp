@@ -48,5 +48,7 @@ if "$verify_bundle"; then
     [.NSHealthShareUsageDescription, .NSHealthUpdateUsageDescription]
     | all(.[]; if type == "string" then test("\\S") else false end)
   ' <<<"$info_json" >/dev/null 2>&1 || fail healthkit_usage_descriptions_missing
+  jq -e '.NSPhotoLibraryAddUsageDescription | type == "string" and test("\\S")' \
+    <<<"$info_json" >/dev/null 2>&1 || fail photo_add_usage_description_missing
 fi
 printf 'PASS: app_required_reason_manifest external_effects=0\n'

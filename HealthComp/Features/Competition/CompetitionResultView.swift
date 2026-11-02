@@ -21,6 +21,7 @@ struct CompetitionResultView: View {
     @State private var isRevealed = false
     @State private var isDeleteConfirmationPresented = false
     @State private var showsWeek = false
+    @State private var showsShare = false
 
     var body: some View {
         ScrollView {
@@ -71,6 +72,11 @@ struct CompetitionResultView: View {
                     .foregroundStyle(Theme.secondary)
                     .frame(maxWidth: .infinity, minHeight: 44)
                     .accessibilityIdentifier("competition.history.preserved")
+                }
+
+                // Real matches only. Practice (PR 12) also uses this source and adds `&& !competition.isPractice`.
+                if source == .remoteParticipants {
+                    shareResultButton
                 }
 
                 // At accessibility sizes a pinned control would cover the screen.
@@ -132,6 +138,16 @@ struct CompetitionResultView: View {
         }
         .sheet(isPresented: $showsWeek) {
             weekDrawer
+        }
+        .sheet(isPresented: $showsShare) {
+            CompetitionRecapSheet(
+                competition: competition,
+                belt: competitionRecapBelt(
+                    beltEvent,
+                    outcome: outcome,
+                    isRetired: !competitionRecapAllowsNameChoice(competition)
+                )
+            )
         }
         .onAppear {
             if reduceMotion {
@@ -436,6 +452,17 @@ struct CompetitionResultView: View {
 
     private var opponentName: String { competition.opponentDisplayName }
 
+    private var shareResultButton: some View {
+        Button {
+            showsShare = true
+        } label: {
+            Label("Share Result", systemImage: "square.and.arrow.up")
+        }
+        .buttonStyle(SecondaryButtonStyle())
+        .accessibilityHint("Opens a preview of the image to share")
+        .accessibilityIdentifier("competition.result.share")
+    }
+
     @ViewBuilder
     private var rematchControl: some View {
         switch rematch {
@@ -731,13 +758,7 @@ struct CompetitionResultView: View {
         }
     }
 
-    private var outcome: CompetitionOutcome {
-        competition.terminalResult?.outcome ?? {
-            if competition.userPoints > competition.opponentPoints { return .win }
-            if competition.userPoints < competition.opponentPoints { return .loss }
-            return .tie
-        }()
-    }
+    private var outcome: CompetitionOutcome { competitionResultOutcome(competition) }
 
     private var resultTitle: String {
         competitionResultTitle(
@@ -768,6 +789,15 @@ func competitionResultDataControl(
 ) -> CompetitionResultDataControl {
     guard isArchived else { return .archive }
     return source == .remoteParticipants ? .preservedHistory : .deleteLocalData
+}
+
+/// The decided outcome, or the shown totals before a terminal result exists.
+func competitionResultOutcome(_ competition: LocalCompetitionPresentation) -> CompetitionOutcome {
+    competition.terminalResult?.outcome ?? {
+        if competition.userPoints > competition.opponentPoints { return .win }
+        if competition.userPoints < competition.opponentPoints { return .loss }
+        return .tie
+    }()
 }
 
 func competitionResultTitle(
