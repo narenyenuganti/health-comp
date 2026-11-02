@@ -1,3 +1,4 @@
+import CompetitionCore
 import Foundation
 import SwiftUI
 
