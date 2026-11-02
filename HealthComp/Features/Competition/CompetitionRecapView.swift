@@ -266,13 +266,9 @@ struct CompetitionRecapCard: View {
                 }
             }
 
-            // With no strip or highlights the score stays under the top row
-            // instead of floating mid-card.
-            if recap.days.isEmpty && recap.highlights.isEmpty {
-                Color.clear.frame(height: 28)
-            } else {
-                Spacer(minLength: 12)
-            }
+            // With no strip or highlights this and the footer spacer centre
+            // the score, so the card doesn't end in an empty half.
+            Spacer(minLength: 12)
 
             VStack(alignment: .leading, spacing: 8) {
                 Text(recap.headline)
