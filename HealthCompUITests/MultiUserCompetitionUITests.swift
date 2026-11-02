@@ -382,6 +382,8 @@ final class MultiUserCompetitionUITests: XCTestCase {
 
         let share = app.buttons["competition.result.share"]
         scrollToElement(share)
+        // Clear of the pinned Rematch for the capture.
+        app.scrollViews.firstMatch.swipeUp()
         XCTAssertTrue(share.isHittable)
         attachScreenshot("remote-result-share")
         share.tap()
