@@ -130,7 +130,10 @@ final class LocalCompetitionLifecycleUITests: XCTestCase {
             app.staticTexts["competition.result.summary"].label.hasPrefix("Won by ")
         )
         XCTAssertTrue(app.otherElements["competition.result"].label.contains("Final score"))
-        XCTAssertTrue(app.staticTexts["Victory Over Alex"].exists)
+        XCTAssertEqual(
+            app.descendants(matching: .any)["competition.result.belt"].label,
+            "You took the belt"
+        )
         XCTAssertEqual(app.buttons["competition.rematch.create"].label, "Rematch Alex")
         XCTAssertTrue(moreMenu.exists)
         XCTAssertTrue(app.otherElements["competition.result"].label.contains("You"))
@@ -162,8 +165,22 @@ final class LocalCompetitionLifecycleUITests: XCTestCase {
         XCTAssertEqual(records.count, 1)
         XCTAssertTrue(records.firstMatch.label.contains("Alex"))
         XCTAssertTrue(records.firstMatch.label.contains("1 win"))
+        XCTAssertTrue(
+            records.firstMatch.label.contains("You hold the belt, 1 week"),
+            records.firstMatch.label
+        )
         XCTAssertEqual(sharingCards(state: "completed").count, 1)
         XCTAssertFalse(app.buttons["Awards"].exists)
+        // The record opens the person's page.
+        records.firstMatch.tap()
+        XCTAssertTrue(app.navigationBars["Alex"].waitForExistence(timeout: 3))
+        let personBelt = app.descendants(matching: .any)["competition.person.belt"]
+        XCTAssertTrue(personBelt.waitForExistence(timeout: 3))
+        XCTAssertTrue(personBelt.label.contains("You hold the belt"), personBelt.label)
+        XCTAssertEqual(sharingCards(state: "completed").count, 1)
+        capture("light-small-person")
+        app.navigationBars.buttons.firstMatch.tap()
+        XCTAssertTrue(app.navigationBars["History"].waitForExistence(timeout: 3))
         app.navigationBars.buttons.firstMatch.tap()
         XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 3))
 
@@ -381,6 +398,12 @@ final class LocalCompetitionLifecycleUITests: XCTestCase {
             XCTAssertTrue(result.exists)
             XCTAssertTrue(result.label.contains("You"))
             XCTAssertTrue(result.label.contains("Alex"))
+            let belt = app.descendants(matching: .any)["competition.result.belt"]
+            if item.fixture == "loss" {
+                XCTAssertEqual(belt.label, "Alex took the belt")
+            } else {
+                XCTAssertFalse(belt.exists)
+            }
             capture(item.evidenceName)
         }
     }

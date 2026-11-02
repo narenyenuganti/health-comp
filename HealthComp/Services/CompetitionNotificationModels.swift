@@ -195,6 +195,8 @@ struct CompetitionNotificationMessage: Equatable, Sendable {
     var liveMatchCount: Int = 1
     var expiresAt: Date? = nil
     var invitationDirection: InvitationDirection = .outgoing
+    /// Set only to a `.took` event: the result adds one belt sentence.
+    var beltTake: CompetitionBeltEvent? = nil
 }
 
 struct CompetitionNotificationEmissionDecision: Equatable, Sendable {

@@ -87,6 +87,10 @@ struct MainTabView: View {
                 showsHistory: Binding(
                     get: { store.showsHistory },
                     set: { store.send(.historyPresentationChanged($0)) }
+                ),
+                person: Binding(
+                    get: { store.historyPersonIdentity },
+                    set: { store.send(.historyPersonChanged($0)) }
                 )
             )
         ) {
@@ -145,6 +149,14 @@ struct MainTabView: View {
                     if let publication = store.competition.publication {
                         CompetitionHistoryView(publication: publication)
                             .toolbarRole(.editor)
+                    }
+                case let .person(identity):
+                    if let publication = store.competition.publication {
+                        CompetitionPersonView(
+                            publication: publication,
+                            opponentIdentity: identity
+                        )
+                        .toolbarRole(.editor)
                     }
                 case let .competition(id):
                     destination(for: id)
@@ -295,7 +307,10 @@ struct MainTabView: View {
             case .completed, .archived:
                 CompetitionResultView(
                     competition: competition,
-                    awards: publication.dashboard.awards,
+                    beltEvent: competitionBeltEvent(
+                        for: competition,
+                        in: publication.dashboard.competitions
+                    ),
                     source: publication.source,
                     rematch: store.competition.rematchState(for: competition),
                     isCommandInFlight: store.competition
