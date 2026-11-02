@@ -465,6 +465,7 @@ final class MultiUserCompetitionUITests: XCTestCase {
         let confirm = app.buttons["Decline Challenge"]
         XCTAssertTrue(confirm.waitForExistence(timeout: 3))
         XCTAssertTrue(app.buttons["Decline and Block Naren"].exists)
+        attachScreenshot("claim-decline-dialog")
         confirm.tap()
         XCTAssertTrue(
             app.staticTexts["Invitation Declined"]
@@ -614,6 +615,13 @@ final class MultiUserCompetitionUITests: XCTestCase {
             showCode.tap()
             XCTAssertTrue(element("account.challenge-link.qr").waitForExistence(timeout: 3))
             attachScreenshot("challenge-code-\(appearance)-\(size)")
+            try app.performAccessibilityAudit(for: auditTypes)
+
+            launch(.account, appearanceArguments: arguments)
+            XCTAssertTrue(app.navigationBars["Account"].waitForExistence(timeout: 8))
+            let unblock = app.buttons["Unblock Alex"]
+            scrollToElement(unblock)
+            attachScreenshot("account-blocked-\(appearance)-\(size)")
             try app.performAccessibilityAudit(for: auditTypes)
         }
         app.terminate()
@@ -921,6 +929,11 @@ final class MultiUserCompetitionUITests: XCTestCase {
         app.navigationBars["Privacy"].buttons.firstMatch.tap()
         XCTAssertTrue(app.navigationBars["Account"].waitForExistence(timeout: 3))
         let edit = app.buttons["account.settings.edit-display-name"]
+        // The lazy List drops the profile row this far below it, and
+        // scrollToElement only knows to scroll up to a row that exists.
+        for _ in 0..<6 where !edit.exists {
+            app.collectionViews.firstMatch.swipeDown(velocity: .fast)
+        }
         scrollToElement(edit)
         edit.tap()
         let field = app.textFields["account.settings.display-name"]
@@ -1022,7 +1035,10 @@ final class MultiUserCompetitionUITests: XCTestCase {
         launch(.account)
         defer { app.terminate() }
         XCTAssertTrue(app.navigationBars["Account"].waitForExistence(timeout: 8))
-        element("account.notifications").tap()
+        // BLOCKED sits above it, so the row can start below the fold.
+        let notifications = element("account.notifications")
+        scrollToElement(notifications)
+        notifications.tap()
         XCTAssertTrue(app.navigationBars["Notifications"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.staticTexts["Turned off in iOS Settings"].exists)
         let mutedHeader = app.staticTexts["MUTED"]
