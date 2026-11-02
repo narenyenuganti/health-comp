@@ -107,6 +107,8 @@ private struct SmallView: View {
 
     @ScaledMetric(relativeTo: .title) private var scoreSize: CGFloat = 28
 
+    @Environment(\.dynamicTypeSize) private var typeSize
+
     var body: some View {
         if match.state(at: date) == .scheduled {
             VStack(alignment: .leading, spacing: 6) {
@@ -154,18 +156,20 @@ private struct SmallView: View {
 
     private func row(_ label: String, _ number: String, _ color: Color, isYou: Bool) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
-            // Always a few letters of the name: the number shrinks first.
+            // Always a few letters of the name: the number shrinks first,
+            // but never truncates, so large text leaves the name less room.
             Text(label)
                 .font(.themeLabel)
                 .foregroundStyle(color)
                 .lineLimit(1)
-                .frame(minWidth: 64, alignment: .leading)
+                .fixedSize(horizontal: isYou, vertical: false)  // "You" is always whole
+                .frame(minWidth: isYou ? nil : (typeSize >= .xLarge ? 40 : 64), alignment: .leading)
                 .privacySensitive(!isYou)
             Spacer(minLength: 0)
             Text(number)
                 .font(.score(size: scoreSize))
                 .monospacedDigit()
-                .minimumScaleFactor(0.5)
+                .minimumScaleFactor(0.4)
                 .lineLimit(1)
                 .foregroundStyle(color)
                 .widgetAccentable(isYou)
