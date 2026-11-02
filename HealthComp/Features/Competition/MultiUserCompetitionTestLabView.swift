@@ -648,14 +648,16 @@ private final class MultiUserCompetitionNudgeTestLabServer: @unchecked Sendable 
             return calls[id]!
         }
         switch id {
-        case Fixtures.nudgeRileyID:
+        case Fixtures.nudgeRileyID, Fixtures.nudgeMorganID:
             // Long enough to see the button disabled while it sends.
             try await Task.sleep(for: .seconds(4))
             return Fixtures.labNow
         case Fixtures.nudgeSamID where call == 1:
             try await Task.sleep(for: .seconds(1))
             throw CompetitionRemoteFailure.operationFailed
-        case Fixtures.nudgeCaseyID:
+        case Fixtures.nudgeAveryID where call == 1:
+            throw CompetitionRemoteFailure.operationFailed
+        case Fixtures.nudgeCaseyID, Fixtures.nudgeAveryID:
             throw CompetitionRemoteFailure.forbidden
         case Fixtures.nudgeLongNameID:
             // The server's clock is already in the next match day (Mon
@@ -1026,8 +1028,14 @@ private enum MultiUserCompetitionTestLabFixtures {
                 opponentName: name,
                 lifecycle: day == 7 ? .endsToday : .active(dayOrdinal: day),
                 userPoints: 1_020,
-                opponentPoints: 990,
-                days: activeDays(startDay: startDay, currentDay: day, zone: zone),
+                // Never uploaded: no score either.
+                opponentPoints: updatedAgo == nil ? 0 : 990,
+                days: activeDays(
+                    startDay: startDay,
+                    currentDay: day,
+                    zone: zone,
+                    opponentUploaded: updatedAgo != nil
+                ),
                 currentDayOrdinal: day,
                 terminal: nil,
                 startDay: startDay,
@@ -1306,7 +1314,8 @@ private enum MultiUserCompetitionTestLabFixtures {
     private static func activeDays(
         startDay: Int = 13,
         currentDay: Int = 3,
-        zone: String = "America/Los_Angeles"
+        zone: String = "America/Los_Angeles",
+        opponentUploaded: Bool = true
     ) -> [LocalCompetitionDayPresentation] {
         let schedule = schedule(startDay: startDay, zone: zone)
         let days = try! schedule.calendar.sevenDayWindow(
@@ -1343,7 +1352,8 @@ private enum MultiUserCompetitionTestLabFixtures {
                 ownerLatestAvailability: offset < currentDay
                     ? .observed
                     : .notYetOccurred,
-                opponentRevealedPoints: offset < currentDay ? opponent[offset] : nil,
+                opponentRevealedPoints: opponentUploaded && offset < currentDay
+                    ? opponent[offset] : nil,
                 ownerAcceptedSnapshot: offset < currentDay ? snapshots[offset] : nil,
                 ownerLatestSnapshot: offset < currentDay ? snapshots[offset] : nil,
                 scoringPolicy: .remoteWireV1

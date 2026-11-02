@@ -1,8 +1,9 @@
 import XCTest
 
 /// Nudge, end to end through Home's own reducer and match screens. The
-/// `nudge` Test Lab scenario scripts each person's answer: Riley accepts
-/// after 4 s, Sam fails once then accepts, Casey is refused, the rest accept.
+/// `nudge` Test Lab scenario scripts each person's answer: Riley and Morgan
+/// accept after 4 s, Sam fails once then accepts, Avery fails once then is
+/// refused, Casey is refused, the rest accept.
 /// Now is Sun Aug 16, 1:00 AM in Los Angeles.
 final class NudgeUITests: XCTestCase {
     private var app: XCUIApplication!
@@ -119,7 +120,7 @@ final class NudgeUITests: XCTestCase {
         scrollToElement(nudge)
         nudge.tap()
         let sent = element("competition.nudge.sent")
-        XCTAssertTrue(sent.waitForExistence(timeout: 5))
+        XCTAssertTrue(sent.waitForExistence(timeout: 8))
         XCTAssertEqual(spaced(sent.label), "Nudged at 1:00 AM. You can nudge again tomorrow.")
         XCTAssertGreaterThanOrEqual(sent.frame.minY, tally.frame.maxY)
         XCTAssertTrue(tally.exists)
@@ -141,6 +142,7 @@ final class NudgeUITests: XCTestCase {
         XCTAssertTrue(quinn.label.contains("Checking the last scores"), quinn.label)
         XCTAssertTrue(quinn.label.contains("Nothing for you to do."), quinn.label)
         assertNoNudgeControl()
+        shot("none-tally-stability-light-default")
     }
 
     func testNoNudgeOnFreshScheduledOrSimulatedMatches() {
@@ -149,16 +151,19 @@ final class NudgeUITests: XCTestCase {
         open("active", "Jordan")
         XCTAssertTrue(element("competition.updated").waitForExistence(timeout: 3))
         assertNoNudgeControl()
+        shot("none-live-fresh-light-default")
         goBack()
         open("scheduled", "Priya")
         XCTAssertTrue(app.navigationBars["Priya"].exists)
         assertNoNudgeControl()
+        shot("none-scheduled-light-default")
 
         // The same stale match on the simulated fixture.
         launch(.simulated)
         open("active", "Riley")
         XCTAssertTrue(element("competition.updated").waitForExistence(timeout: 3))
         assertNoNudgeControl()
+        shot("none-simulated-light-default")
     }
 
     func testTodayIsTheMatchTimeZonesDay() {
@@ -257,10 +262,32 @@ final class NudgeUITests: XCTestCase {
         shot("tally-button-\(suffix)")
         try audit("tally-button-\(suffix)")
         nudge.tap()
-        XCTAssertTrue(sent.waitForExistence(timeout: 5))
+        XCTAssertFalse(nudge.isEnabled)
+        shot("tally-sending-\(suffix)")
+        XCTAssertTrue(sent.waitForExistence(timeout: 8))
         scrollToElement(sent)
         shot("tally-sent-\(suffix)")
         try audit("tally-sent-\(suffix)")
+
+        // Waiting for Avery to sync: the other tally copy, then a failure,
+        // then a refusal.
+        goBack()
+        open("tallying", "Avery")
+        XCTAssertTrue(nudge.waitForExistence(timeout: 3))
+        scrollToElement(nudge)
+        shot("tally-sync-button-\(suffix)")
+        try audit("tally-sync-button-\(suffix)")
+        nudge.tap()
+        XCTAssertTrue(error.waitForExistence(timeout: 5))
+        scrollToElement(error)
+        shot("tally-error-\(suffix)")
+        try audit("tally-error-\(suffix)")
+        nudge.tap()
+        XCTAssertTrue(nudge.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(error.waitForExistence(timeout: 3))
+        scrollToElement(error)
+        shot("tally-not-needed-\(suffix)")
+        try audit("tally-not-needed-\(suffix)")
 
         goBack()
         open("active", "Alexandria")

@@ -1264,8 +1264,13 @@ private struct CompetitionNudgeControl: View {
                 }
             }
         case let .sent(text):
-            Label(text, systemImage: "checkmark")
-                .font(.subheadline)
+            // The title takes the full width so it wraps at the edge.
+            Label {
+                Text(text).frame(maxWidth: .infinity, alignment: .leading)
+            } icon: {
+                Image(systemName: "checkmark")
+            }
+            .font(.subheadline)
                 .foregroundStyle(Theme.ink)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityElement(children: .combine)
@@ -1285,17 +1290,24 @@ private struct CompetitionNudgeButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
 
     func makeBody(configuration: Configuration) -> some View {
-        configuration.label
+        // A capsule while it fits one line; a long name wraps inside
+        // rounded corners instead of past a capsule's ends.
+        ViewThatFits(in: .horizontal) {
+            pill(configuration.label.lineLimit(1), in: Capsule())
+            pill(configuration.label, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        }
+        .opacity(isEnabled ? (configuration.isPressed ? 0.8 : 1) : 0.45)
+        .frame(minHeight: 44)
+        .contentShape(Rectangle())
+    }
+
+    private func pill(_ label: some View, in shape: some Shape) -> some View {
+        label
             .font(.subheadline.weight(.semibold))
             .foregroundStyle(Theme.onInk)
             .multilineTextAlignment(.leading)
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
-            // A capsule while it fits one line; a long name wraps inside
-            // rounded corners instead of past a capsule's ends.
-            .background(Theme.ink, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            .opacity(isEnabled ? (configuration.isPressed ? 0.8 : 1) : 0.45)
-            .frame(minHeight: 44)
-            .contentShape(Rectangle())
+            .background(Theme.ink, in: shape)
     }
 }
