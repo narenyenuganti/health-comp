@@ -111,26 +111,11 @@ struct CompetitionWeekStrip: View {
         .accessibilityHidden(true)
     }
 
-    @ViewBuilder
     private func bar(_ day: LocalCompetitionDayPresentation) -> some View {
-        switch competitionDayOutcome(day, currentDayOrdinal: currentDayOrdinal) {
-        case .today:
-            SlantedBar()
-                .stroke(
-                    leaderColor(day),
-                    style: StrokeStyle(lineWidth: 1.5, dash: [3, 2])
-                )
-        case .upcoming:
-            SlantedBar().stroke(Theme.outline, lineWidth: 1)
-        case .noData:
-            HatchBar()
-        case .won:
-            SlantedBar().fill(Theme.youFill)
-        case .lost:
-            SlantedBar().fill(Theme.ink)
-        case .tied:
-            SlantedBar().fill(Theme.tertiary)
-        }
+        CompetitionDayBar(
+            outcome: competitionDayOutcome(day, currentDayOrdinal: currentDayOrdinal),
+            todayColor: leaderColor(day)
+        )
     }
 
     private func leaderColor(_ day: LocalCompetitionDayPresentation) -> Color {
@@ -487,28 +472,18 @@ func ringSegments(
     }
 }
 
-/// Every closed day reads one way on the strip, in the result's day counts
-/// and in the rows.
-enum CompetitionDayOutcome: Equatable {
-    case today, upcoming, won, lost, tied, noData
-}
-
 /// A day is no data when either score is missing, or when both read 0.
 func competitionDayOutcome(
     _ day: LocalCompetitionDayPresentation,
     currentDayOrdinal: Int?
 ) -> CompetitionDayOutcome {
-    if day.ordinal == currentDayOrdinal { return .today }
-    if day.ownerLatestAvailability == .notYetOccurred { return .upcoming }
-    guard let owner = day.ownerAcceptedPoints,
-          let opponent = day.opponentRevealedPoints,
-          owner.rounded(.toNearestOrAwayFromZero) != 0
-            || opponent.rounded(.toNearestOrAwayFromZero) != 0
-    else { return .noData }
-    let margin = competitionDisplayedMargin(userPoints: owner, opponentPoints: opponent)
-    if margin > 0 { return .won }
-    if margin < 0 { return .lost }
-    return .tied
+    competitionDayOutcome(
+        ordinal: day.ordinal,
+        currentDayOrdinal: currentDayOrdinal,
+        hasOccurred: day.ownerLatestAvailability != .notYetOccurred,
+        ownerPoints: day.ownerAcceptedPoints,
+        opponentPoints: day.opponentRevealedPoints
+    )
 }
 
 /// "Day 7", "Days 5 and 7" or "Days 3, 5, and 7"; nil for none or four or more.
@@ -519,29 +494,6 @@ func competitionDayListText(_ ordinals: Set<Int>, locale: Locale = .current) -> 
     case 2, 3:
         return "Days " + sorted.map(String.init).formatted(.list(type: .and).locale(locale))
     default: return nil
-    }
-}
-
-/// Vertical 1 pt lines every 3 pt: the "no data" fill.
-struct HatchFill: Shape {
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        var x = rect.minX + 0.5
-        while x < rect.maxX {
-            path.move(to: CGPoint(x: x, y: rect.minY))
-            path.addLine(to: CGPoint(x: x, y: rect.maxY))
-            x += 3
-        }
-        return path
-    }
-}
-
-/// A slanted bar filled with the "no data" stripe.
-private struct HatchBar: View {
-    var body: some View {
-        HatchFill()
-            .stroke(Theme.faint, lineWidth: 1)
-            .clipShape(SlantedBar())
     }
 }
 

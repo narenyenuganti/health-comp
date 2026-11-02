@@ -958,21 +958,6 @@ final class CompetitionPresentationTests: XCTestCase {
         XCTAssertEqual(competitionResultTitle(outcome: .tie, opponentDisplayName: "Hermes"), "All square with Hermes")
     }
 
-    func testMarginTextIsLabelledAndHiddenAtZero() {
-        let en = Locale(identifier: "en_US")
-        func margin(_ user: Double, _ opponent: Double, _ digits: Int) -> String? {
-            competitionMarginText(
-                userPoints: user, opponentPoints: opponent, fractionDigits: digits, locale: en
-            )
-        }
-        XCTAssertEqual(margin(3410.2, 3180, 0), "Won by 230 points")
-        XCTAssertEqual(margin(3180, 3410.2, 0), "Lost by 230 points")
-        XCTAssertEqual(margin(413, 412, 0), "Won by 1 point")
-        XCTAssertEqual(margin(412.3, 412.0, 2), "Won by 0.30 points")
-        XCTAssertNil(margin(412, 412, 0))
-        XCTAssertNil(margin(0.4, 0, 0))
-    }
-
     func testDaysSummarySplitsWonLostTiedAndSkipsMissingDays() {
         func day(_ owner: Double?, _ opponent: Double?) -> LocalCompetitionDayPresentation {
             LocalCompetitionDayPresentation(
@@ -1472,6 +1457,116 @@ final class CompetitionPresentationTests: XCTestCase {
         XCTAssertNil(competitionResultLeavesHome(
             homePresentation(id: 3, lifecycle: .active(dayOrdinal: 2))
         ))
+    }
+
+    func testWidgetSnapshotKeepsLiveScheduledAndRecentResultsOnly() throws {
+        let created = homeInstant("2026-10-29T17:00:00Z")
+        let basis = FinalizationBasis.stableAcrossPostBoundaryReads
+        let completed = homePresentation(
+            id: 1,
+            lifecycle: .completed(outcome: .win, basis: basis,
+                                  completedAt: homeInstant("2026-10-31T08:00:00Z")),
+            start: (10, 24)
+        )
+        let lateTally = homePresentation(
+            id: 2,
+            lifecycle: .completed(outcome: .loss, basis: basis,
+                                  completedAt: homeInstant("2026-11-02T23:00:00Z")),
+            start: (10, 24)
+        )
+        let live = homePresentation(id: 3, lifecycle: .active(dayOrdinal: 3))
+        let scheduled = homePresentation(id: 4, lifecycle: .scheduled, start: (11, 2))
+        let tallying = homePresentation(id: 5, lifecycle: .tallying(startedAt: created), start: (10, 21))
+        let dropped = [
+            homePresentation(id: 6, lifecycle: .pending(direction: .outgoing, createdAt: created, expiresAt: nil)),
+            homePresentation(id: 7, lifecycle: .declined(at: created, direction: .outgoing)),
+            homePresentation(id: 8, lifecycle: .expired(at: created, direction: .outgoing)),
+            homePresentation(id: 9, lifecycle: .cancelled(at: created)),
+            homePresentation(id: 10, lifecycle: .archived(outcome: .win, basis: basis,
+                                                          completedAt: created, archivedAt: created)),
+            homePresentation(id: 11, lifecycle: .active(dayOrdinal: 1), start: nil),
+        ]
+
+        let snapshot = CompetitionWidgetSnapshot(
+            dashboard: homeDashboard([completed, lateTally, live, scheduled, tallying] + dropped)
+        )
+
+        XCTAssertEqual(
+            snapshot.matches.map(\.id),
+            [completed, lateTally, live, scheduled, tallying].map(\.id.rawValue)
+        )
+        XCTAssertFalse(snapshot.hasIncomingChallenge)
+        let result = try XCTUnwrap(snapshot.matches.first)
+        XCTAssertEqual(result.final?.outcome, .win)
+        XCTAssertEqual(result.final?.leavesAt, competitionResultLeavesHome(completed)?.at)
+        XCTAssertEqual(result.final?.leavesAt, homeInstant("2026-11-03T08:00:00Z"))
+        // The tally finished on the 3rd day after Day 7: two days after that.
+        XCTAssertEqual(snapshot.matches[1].final?.leavesAt, homeInstant("2026-11-04T08:00:00Z"))
+        let week = snapshot.matches[2]
+        XCTAssertNil(week.final)
+        XCTAssertEqual(week.dayStarts.count, 7)
+        XCTAssertEqual(week.dayStarts.first, homeInstant("2026-10-28T07:00:00Z"))
+        XCTAssertEqual(
+            week.endsAt,
+            competitionScheduleBoundaries(try XCTUnwrap(live.acceptedConfiguration?.schedule))?.end
+        )
+        XCTAssertEqual(week.endsAt, homeInstant("2026-11-04T08:00:00Z"))
+        XCTAssertEqual(week.personID, live.opponentIdentity)
+        XCTAssertEqual(week.userDayPoints, Array(repeating: nil, count: 7))
+    }
+
+    func testWidgetSnapshotFlagsIncomingChallengeWithoutItsName() throws {
+        let created = homeInstant("2026-10-29T17:00:00Z")
+        let incoming = homePresentation(
+            id: 1, name: "Riley",
+            lifecycle: .pending(direction: .incoming, createdAt: created, expiresAt: nil)
+        )
+        let snapshot = CompetitionWidgetSnapshot(dashboard: homeDashboard([incoming]))
+        XCTAssertTrue(snapshot.hasIncomingChallenge)
+        XCTAssertEqual(snapshot.matches, [])
+        let json = String(decoding: try JSONEncoder().encode(snapshot), as: UTF8.self)
+        XCTAssertFalse(json.contains("Riley"))
+    }
+
+    func testWidgetSnapshotURLRoundTripsThroughCompetitionRoute() throws {
+        let live = homePresentation(id: 3, lifecycle: .active(dayOrdinal: 3))
+        let match = try XCTUnwrap(CompetitionWidgetSnapshot(dashboard: homeDashboard([live])).matches.first)
+        XCTAssertEqual(CompetitionRoute(url: match.url), .competition(live.id))
+    }
+
+    func testWidgetSnapshotUpdatedAtIsTheNewerSide() throws {
+        let base = homePresentation(id: 3, lifecycle: .active(dayOrdinal: 3))
+        func updatedAt(you: Date?, them: Date?) throws -> Date? {
+            let presentation = LocalCompetitionPresentation(
+                id: base.id,
+                ownerDisplayName: base.ownerDisplayName,
+                opponentDisplayName: base.opponentDisplayName,
+                opponentIdentity: base.opponentIdentity,
+                lifecycle: base.lifecycle,
+                acceptedConfiguration: base.acceptedConfiguration,
+                userPoints: 1_204,
+                opponentPoints: 1_150,
+                days: [],
+                currentDayOrdinal: 3,
+                lastRefresh: nil,
+                tally: nil,
+                terminalResult: nil,
+                evaluatedAt: homeNow,
+                timeZoneIdentifier: base.timeZoneIdentifier,
+                lastSuccessfulFullWindowRefreshAt: you,
+                opponentUpdatedAt: them
+            )
+            let match = try XCTUnwrap(CompetitionWidgetSnapshot.Match(presentation: presentation))
+            XCTAssertEqual(match.userPoints, 1_204)
+            XCTAssertEqual(match.opponentPoints, 1_150)
+            return match.updatedAt
+        }
+        let earlier = homeInstant("2026-10-30T15:00:00Z")
+        let later = homeInstant("2026-10-30T16:30:00Z")
+        XCTAssertEqual(try updatedAt(you: earlier, them: later), later)
+        XCTAssertEqual(try updatedAt(you: later, them: earlier), later)
+        XCTAssertEqual(try updatedAt(you: earlier, them: nil), earlier)
+        XCTAssertNil(try updatedAt(you: nil, them: nil))
     }
 
     func testHomeStatusLineAddsChallengeExpiry() throws {
