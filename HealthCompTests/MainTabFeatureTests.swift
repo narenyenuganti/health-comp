@@ -331,6 +331,99 @@ final class MainTabFeatureTests: XCTestCase {
         XCTAssertEqual(store.state.onboarding, onboarding)
     }
 
+    @MainActor
+    func testBlockClaimConfirmedBlocksAndConsumesRoute() async throws {
+        let envelope = try claimEnvelope(sequence: 7)
+        let routing = MainTabRoutingRecorder()
+        let claims = MainTabClaimRecorder(
+            expectedToken: try XCTUnwrap(
+                CompetitionInviteClaimToken(rawValue: Self.claimToken)
+            ),
+            results: []
+        )
+        let permissions = PermissionOnboardingRecorder(health: .notRequested)
+        let onboarding = MainTabFeature.PermissionOnboarding(steps: [.health])
+        let store = TestStore(
+            initialState: MainTabFeature.State(onboarding: onboarding)
+        ) {
+            MainTabFeature()
+        } withDependencies: {
+            $0.competitionClient = claims.client
+            $0.competitionRoutingClient = routing.client
+            $0.permissionOnboardingClient = permissions.client
+            $0.date = .constant(MainTabClaimRecorder.now)
+        }
+
+        await store.send(.routeReceived(envelope)) {
+            $0.pendingClaimRoute = envelope
+            $0.inviteClaimStatus = .loadingPreview
+        }
+        await receivePreview(store, envelope)
+        await store.send(.blockClaimConfirmed) {
+            $0.inviteClaimStatus = .declining
+        }
+        await store.receive(
+            .declineClaimFinished(sequence: envelope.sequence, succeeded: true)
+        ) {
+            $0.pendingClaimRoute = nil
+            $0.lastHandledClaimRouteSequence = envelope.sequence
+            $0.inviteClaimPreview = nil
+            $0.inviteClaimPreviewEvaluatedAt = nil
+            $0.inviteClaimStatus = .idle
+        }
+        await store.finish()
+
+        XCTAssertEqual(
+            claims.blockedIDs,
+            [CompetitionID(MainTabClaimRecorder.preview.competitionID)]
+        )
+        XCTAssertEqual(claims.declinedIDs, [])
+        XCTAssertEqual(routing.consumedSequences, [envelope.sequence])
+    }
+
+    @MainActor
+    func testFailedBlockClaimReturnsToTheSheet() async throws {
+        let envelope = try claimEnvelope(sequence: 7)
+        let routing = MainTabRoutingRecorder()
+        let claims = MainTabClaimRecorder(
+            expectedToken: try XCTUnwrap(
+                CompetitionInviteClaimToken(rawValue: Self.claimToken)
+            ),
+            results: []
+        )
+        claims.declineSucceeds = false
+        let permissions = PermissionOnboardingRecorder(health: .notRequested)
+        let onboarding = MainTabFeature.PermissionOnboarding(steps: [.health])
+        let store = TestStore(
+            initialState: MainTabFeature.State(onboarding: onboarding)
+        ) {
+            MainTabFeature()
+        } withDependencies: {
+            $0.competitionClient = claims.client
+            $0.competitionRoutingClient = routing.client
+            $0.permissionOnboardingClient = permissions.client
+            $0.date = .constant(MainTabClaimRecorder.now)
+        }
+
+        await store.send(.routeReceived(envelope)) {
+            $0.pendingClaimRoute = envelope
+            $0.inviteClaimStatus = .loadingPreview
+        }
+        await receivePreview(store, envelope)
+        await store.send(.blockClaimConfirmed) {
+            $0.inviteClaimStatus = .declining
+        }
+        await store.receive(
+            .declineClaimFinished(sequence: envelope.sequence, succeeded: false)
+        ) {
+            $0.inviteClaimStatus = .ready
+            $0.claimDeclineFailed = true
+        }
+        await store.finish()
+        XCTAssertEqual(claims.blockedIDs.count, 1)
+        XCTAssertEqual(routing.consumedSequences, [])
+    }
+
     /// Decline, Not Now, or a link you already accepted: each opens the
     /// waiting link over the Health step.
     @MainActor
@@ -2741,6 +2834,8 @@ private final class MainTabClaimRecorder: @unchecked Sendable {
     var declineSucceeds = true
     private var declines: [CompetitionID] = []
     var declinedIDs: [CompetitionID] { lock.withLock { declines } }
+    private var blocks: [CompetitionID] = []
+    var blockedIDs: [CompetitionID] { lock.withLock { blocks } }
 
     var requestCount: Int { lock.withLock { requests } }
     var allTokensMatched: Bool { lock.withLock { matched } }
@@ -2754,6 +2849,18 @@ private final class MainTabClaimRecorder: @unchecked Sendable {
         }
         client.decline = { [weak self] id in
             self?.lock.withLock { self?.declines.append(id) }
+            return LocalCompetitionPublication(
+                publicationRevision: 0,
+                dashboard: LocalCompetitionDashboard(
+                    competitions: [],
+                    awards: [],
+                    issues: declineSucceeds ? [] : [.commandRejected(id)],
+                    hiddenTerminalCompetitionCount: 0
+                )
+            )
+        }
+        client.block = { [weak self] id in
+            self?.lock.withLock { self?.blocks.append(id) }
             return LocalCompetitionPublication(
                 publicationRevision: 0,
                 dashboard: LocalCompetitionDashboard(

@@ -443,7 +443,7 @@ func competitionInviteFailureText(
         return "Challenges aren’t available right now."
         #endif
     case .recipientGone:
-        return "\(opponentName) isn’t on HealthComp anymore."
+        return "You can’t challenge \(opponentName)."
     case .alreadyPending:
         return "You already challenged \(opponentName). It expires 24 hours after you sent it."
     case .conflict:

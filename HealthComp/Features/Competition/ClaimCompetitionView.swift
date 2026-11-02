@@ -12,6 +12,8 @@ struct ClaimCompetitionView: View {
     let notNow: () -> Void
     /// Runs after the confirmation; the sender is told.
     let decline: () -> Void
+    /// Decline and Block, when offered.
+    var block: (() -> Void)? = nil
     let retry: () -> Void
     let dismiss: () -> Void
 
@@ -96,9 +98,13 @@ struct ClaimCompetitionView: View {
             titleVisibility: .visible
         ) {
             Button("Decline Challenge", role: .destructive, action: decline)
+            if let block {
+                Button("Decline and Block \(senderName)", role: .destructive, action: block)
+                    .accessibilityIdentifier("competition.claim.decline-block")
+            }
             Button("Keep Challenge", role: .cancel) {}
         } message: {
-            Text("\(senderName) will see that you declined.")
+            Text("\(senderName) will see a decline either way. If you block them, they can’t challenge you again.")
         }
         .accessibilityIdentifier("competition.claim.sheet")
     }

@@ -106,6 +106,18 @@ struct CompetitionRemoteAPI: Sendable {
     var cancelCompetition: @Sendable (UUID) async throws -> Void = { _ in
         throw CompetitionRemoteFailure.operationFailed
     }
+    /// Declines the challenge (by competition id) and blocks its sender.
+    var blockChallenger: @Sendable (UUID) async throws -> Void = { _ in
+        throw CompetitionRemoteFailure.operationFailed
+    }
+    /// The people you blocked, newest first.
+    var listBlockedProfiles: @Sendable () async throws -> [AuthenticatedProfile] = {
+        throw CompetitionRemoteFailure.operationFailed
+    }
+    /// Takes a profile id.
+    var unblockProfile: @Sendable (UUID) async throws -> Void = { _ in
+        throw CompetitionRemoteFailure.operationFailed
+    }
     var loadChallengeLinkCode: @Sendable () async throws -> CompetitionChallengeLinkCode = {
         throw CompetitionRemoteFailure.operationFailed
     }
