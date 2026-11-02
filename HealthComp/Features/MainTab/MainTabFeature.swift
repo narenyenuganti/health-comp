@@ -164,6 +164,8 @@ struct MainTabFeature {
         case notNowClaimTapped
         /// Decline, after its confirmation: the sender is told.
         case declineClaimConfirmed
+        /// Decline and Block, after its confirmation.
+        case blockClaimConfirmed
         case declineClaimFinished(sequence: UInt64, succeeded: Bool)
         case retryClaimTapped
         case dismissClaimStatus
@@ -541,23 +543,10 @@ struct MainTabFeature {
                 )
 
             case .declineClaimConfirmed:
-                guard state.inviteClaimStatus == .ready,
-                      let preview = state.inviteClaimPreview,
-                      let sequence = state.pendingClaimRoute?.sequence
-                else {
-                    return .none
-                }
-                state.inviteClaimStatus = .declining
-                state.claimDeclineFailed = false
-                let id = CompetitionID(preview.competitionID)
-                return .run { send in
-                    let returned = await competitionClient.decline(id)
-                    await send(.declineClaimFinished(
-                        sequence: sequence,
-                        succeeded: !returned.dashboard.issues.contains(.commandRejected(id))
-                    ))
-                }
-                .cancellable(id: CancelID.inviteClaim, cancelInFlight: true)
+                return declineClaim(&state, block: false)
+
+            case .blockClaimConfirmed:
+                return declineClaim(&state, block: true)
 
             case let .declineClaimFinished(sequence, succeeded):
                 guard sequence == state.pendingClaimRoute?.sequence,
@@ -1043,6 +1032,29 @@ struct MainTabFeature {
     }
 
     /// Forgets the pending link on this iPhone.
+    /// Decline, or Decline and Block; both finish through declineClaimFinished.
+    private func declineClaim(_ state: inout State, block: Bool) -> Effect<Action> {
+        guard state.inviteClaimStatus == .ready,
+              let preview = state.inviteClaimPreview,
+              let sequence = state.pendingClaimRoute?.sequence
+        else {
+            return .none
+        }
+        state.inviteClaimStatus = .declining
+        state.claimDeclineFailed = false
+        let id = CompetitionID(preview.competitionID)
+        return .run { send in
+            let returned = block
+                ? await competitionClient.block(id)
+                : await competitionClient.decline(id)
+            await send(.declineClaimFinished(
+                sequence: sequence,
+                succeeded: !returned.dashboard.issues.contains(.commandRejected(id))
+            ))
+        }
+        .cancellable(id: CancelID.inviteClaim, cancelInFlight: true)
+    }
+
     private func consumeClaimRoute(
         _ sequence: UInt64,
         state: inout State

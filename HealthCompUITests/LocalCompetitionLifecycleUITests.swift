@@ -240,6 +240,9 @@ final class LocalCompetitionLifecycleUITests: XCTestCase {
         XCTAssertTrue(confirmation.waitForExistence(timeout: 3))
         XCTAssertTrue(app.navigationBars["Alex"].exists)
         XCTAssertTrue(confirmation.buttons["Keep Challenge"].exists)
+        // The fixture has no server, so it offers no block.
+        XCTAssertFalse(confirmation.buttons["Decline and Block Alex"].exists)
+        XCTAssertFalse(app.buttons["competition.more"].exists)
         confirmation.buttons["Decline Challenge"].tap()
         // The screen stays and says what happened.
         let closed = app.descendants(matching: .any)["competition.closed"]

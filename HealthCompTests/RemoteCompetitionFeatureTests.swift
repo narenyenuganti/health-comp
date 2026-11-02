@@ -926,6 +926,110 @@ final class RemoteCompetitionFeatureTests: XCTestCase {
     }
 
     @MainActor
+    func testBlockTappedRunsBlockCommand() async {
+        let id = CompetitionID(UUID())
+        let blocked = LockIsolated<[CompetitionID]>([])
+        var client = InviteCreationRecorder(results: []).client
+        client.block = { id in
+            blocked.withValue { $0.append(id) }
+            return .remote(revision: 0)
+        }
+        let store = TestStore(initialState: CompetitionFeature.State(
+            publication: .remote(revision: 1)
+        )) { CompetitionFeature() } withDependencies: { $0.competitionClient = client }
+        await store.send(.blockTapped(id)) { $0.commandIDsInFlight = [id] }
+        // A second tap while it runs does nothing.
+        await store.send(.blockTapped(id))
+        await store.receive(.commandFinished(id, expectedRevision: 0)) {
+            $0.commandIDsInFlight = []
+        }
+        XCTAssertEqual(blocked.value, [id])
+        await store.finish()
+    }
+
+    @MainActor
+    func testBlockedPeopleLoadKeepsListOnFailedRefresh() async {
+        let alex = AuthenticatedProfile(id: UUID(), displayName: "Alex")
+        let answers = LockIsolated<[Result<[AuthenticatedProfile], CompetitionRemoteFailure>]>([
+            .failure(.retryableTransport), .success([alex]), .failure(.retryableTransport),
+        ])
+        var client = InviteCreationRecorder(results: []).client
+        client.loadBlockedProfiles = { try answers.withValue { $0.removeFirst() }.get() }
+        let store = TestStore(initialState: CompetitionFeature.State()) { CompetitionFeature() }
+            withDependencies: { $0.competitionClient = client }
+        // A first-load failure leaves the section hidden.
+        await store.send(.blockedPeopleRequested)
+        await store.receive(.blockedPeopleResponse(nil))
+        await store.send(.blockedPeopleRequested)
+        await store.receive(.blockedPeopleResponse([alex])) { $0.blockedPeople = [alex] }
+        // A failed refresh keeps the list shown.
+        await store.send(.blockedPeopleRequested)
+        await store.receive(.blockedPeopleResponse(nil))
+        await store.finish()
+    }
+
+    @MainActor
+    func testUnblockRemovesPersonOrShowsError() async {
+        let alex = AuthenticatedProfile(id: UUID(), displayName: "Alex")
+        let sam = AuthenticatedProfile(id: UUID(), displayName: "Sam")
+        let unblocked = LockIsolated<[UUID]>([])
+        var client = InviteCreationRecorder(results: []).client
+        client.unblock = { id in
+            guard id == alex.id else { throw CompetitionRemoteFailure.retryableTransport }
+            unblocked.withValue { $0.append(id) }
+        }
+        client.loadBlockedProfiles = { [sam] }
+        var initial = CompetitionFeature.State()
+        initial.blockedPeople = [alex, sam]
+        let store = TestStore(initialState: initial) { CompetitionFeature() }
+            withDependencies: { $0.competitionClient = client }
+        await store.send(.unblockTapped(alex.id)) { $0.unblocksInFlight = [alex.id] }
+        await store.receive(.unblockFinished(alex.id, succeeded: true)) {
+            $0.unblocksInFlight = []
+            $0.blockedPeople = [sam]
+        }
+        await store.send(.unblockTapped(sam.id)) { $0.unblocksInFlight = [sam.id] }
+        await store.receive(.unblockFinished(sam.id, succeeded: false)) {
+            $0.unblocksInFlight = []
+            $0.unblockFailed = true
+        }
+        // The next load clears the error.
+        await store.send(.blockedPeopleRequested) { $0.unblockFailed = false }
+        await store.receive(.blockedPeopleResponse([sam]))
+        XCTAssertEqual(unblocked.value, [alex.id])
+        await store.finish()
+    }
+
+    @MainActor
+    func testLateUnblockResultAfterStopIsDropped() async {
+        let alex = AuthenticatedProfile(id: UUID(), displayName: "Alex")
+        var initial = CompetitionFeature.State()
+        initial.blockedPeople = [alex]
+        initial.unblocksInFlight = [alex.id]
+        let store = TestStore(initialState: initial) { CompetitionFeature() }
+        await store.send(.stop) {
+            $0.blockedPeople = nil
+            $0.unblocksInFlight = []
+        }
+        await store.send(.unblockFinished(alex.id, succeeded: false))
+        await store.finish()
+    }
+
+    @MainActor
+    func testStopClearsBlockedPeople() async {
+        let alex = AuthenticatedProfile(id: UUID(), displayName: "Alex")
+        var initial = CompetitionFeature.State()
+        initial.blockedPeople = [alex]
+        initial.unblockFailed = true
+        let store = TestStore(initialState: initial) { CompetitionFeature() }
+        await store.send(.stop) {
+            $0.blockedPeople = nil
+            $0.unblockFailed = false
+        }
+        await store.finish()
+    }
+
+    @MainActor
     func testChallengeLinkRequested() async throws {
         let code = try XCTUnwrap(CompetitionChallengeLinkCode(rawValue: "Xb3kP9qL2mN8vR4tY6wZ1a"))
         let url = try XCTUnwrap(URL(string: "https://\(Self.host)/c/Xb3kP9qL2mN8vR4tY6wZ1a"))

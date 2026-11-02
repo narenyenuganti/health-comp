@@ -464,6 +464,7 @@ final class MultiUserCompetitionUITests: XCTestCase {
         app.buttons["competition.claim.decline"].tap()
         let confirm = app.buttons["Decline Challenge"]
         XCTAssertTrue(confirm.waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["Decline and Block Naren"].exists)
         confirm.tap()
         XCTAssertTrue(
             app.staticTexts["Invitation Declined"]
@@ -596,6 +597,11 @@ final class MultiUserCompetitionUITests: XCTestCase {
             attachScreenshot("challenge-link-\(appearance)-\(size)")
             try app.performAccessibilityAudit(for: auditTypes)
 
+            launch(.incomingChallenge, appearanceArguments: arguments)
+            XCTAssertTrue(app.buttons["competition.invite.accept"].waitForExistence(timeout: 8))
+            attachScreenshot("incoming-challenge-\(appearance)-\(size)")
+            try app.performAccessibilityAudit(for: auditTypes)
+
             launch(.account, appearanceArguments: arguments)
             XCTAssertTrue(app.navigationBars["Account"].waitForExistence(timeout: 8))
             // At AX5 the section starts below the fold, outside the lazy list.
@@ -611,6 +617,105 @@ final class MultiUserCompetitionUITests: XCTestCase {
             try app.performAccessibilityAudit(for: auditTypes)
         }
         app.terminate()
+    }
+
+    func testIncomingChallengeOffersDeclineAndBlock() {
+        launch(.incomingChallenge)
+        defer { app.terminate() }
+        let decline = app.buttons["competition.invite.decline"]
+        XCTAssertTrue(decline.waitForExistence(timeout: 8))
+        decline.tap()
+        XCTAssertTrue(app.staticTexts["Decline challenge from Alex?"].waitForExistence(timeout: 3))
+        XCTAssertTrue(
+            app.staticTexts[
+                "Alex will see a decline either way. If you block them, they can’t challenge you again."
+            ].exists
+        )
+        XCTAssertTrue(app.buttons["Decline Challenge"].exists)
+        let declineAndBlock = app.buttons["Decline and Block Alex"]
+        XCTAssertTrue(declineAndBlock.exists)
+        attachScreenshot("incoming-decline-dialog")
+
+        // Keep Challenge dismisses.
+        dismissDialog(cancel: "Keep Challenge")
+        XCTAssertTrue(declineAndBlock.waitForNonExistence(timeout: 3))
+        XCTAssertTrue(decline.exists)
+
+        decline.tap()
+        XCTAssertTrue(declineAndBlock.waitForExistence(timeout: 3))
+        declineAndBlock.tap()
+        let outcome = element("multiuser.incoming.outcome")
+        XCTAssertTrue(outcome.waitForExistence(timeout: 3))
+        XCTAssertEqual(outcome.label, "Declined and blocked")
+    }
+
+    func testIncomingChallengeMoreMenuBlocksAfterConfirming() {
+        launch(.incomingChallenge)
+        defer { app.terminate() }
+        let more = app.buttons["competition.more"]
+        XCTAssertTrue(more.waitForExistence(timeout: 8))
+        XCTAssertEqual(more.label, "More")
+        more.tap()
+        let block = app.buttons["competition.invite.block"]
+        XCTAssertTrue(block.waitForExistence(timeout: 3))
+        XCTAssertEqual(block.label, "Block Alex")
+        attachScreenshot("incoming-more-menu")
+        block.tap()
+        XCTAssertTrue(app.staticTexts["Block Alex?"].waitForExistence(timeout: 3))
+        XCTAssertTrue(
+            app.staticTexts[
+                "This declines the challenge. Alex will see a decline and can’t challenge you again."
+            ].exists
+        )
+        attachScreenshot("incoming-block-confirmation")
+
+        // Cancel keeps the screen.
+        dismissDialog(cancel: "Cancel")
+        XCTAssertTrue(app.staticTexts["Block Alex?"].waitForNonExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["competition.invite.accept"].exists)
+
+        more.tap()
+        XCTAssertTrue(block.waitForExistence(timeout: 3))
+        block.tap()
+        let confirm = app.buttons.matching(
+            NSPredicate(format: "label == %@ AND identifier != %@", "Block Alex", "competition.invite.block")
+        ).firstMatch
+        XCTAssertTrue(confirm.waitForExistence(timeout: 3))
+        confirm.tap()
+        let outcome = element("multiuser.incoming.outcome")
+        XCTAssertTrue(outcome.waitForExistence(timeout: 3))
+        XCTAssertEqual(outcome.label, "Declined and blocked")
+    }
+
+    func testAccountListsBlockedPeopleAndUnblocks() {
+        launch(.account)
+        defer { app.terminate() }
+        XCTAssertTrue(app.navigationBars["Account"].waitForExistence(timeout: 8))
+        let unblock = app.buttons["Unblock Alex"]
+        scrollToElement(unblock)
+        XCTAssertTrue(unblock.exists)
+        XCTAssertEqual(unblock.identifier, "account.blocked.unblock")
+        XCTAssertTrue(app.staticTexts["BLOCKED"].exists)
+        XCTAssertTrue(app.staticTexts["Alex"].exists)
+        let footer = app.staticTexts["Blocked people can’t challenge you. They aren’t notified."]
+        scrollToElement(footer)
+        XCTAssertTrue(footer.exists)
+        attachScreenshot("account-blocked")
+        scrollToElement(unblock)
+        unblock.tap()
+        XCTAssertTrue(app.staticTexts["BLOCKED"].waitForNonExistence(timeout: 3))
+        XCTAssertFalse(footer.exists)
+    }
+
+    /// A confirmation dialog's cancel button, or a tap outside where iOS
+    /// shows it as a popover without one.
+    private func dismissDialog(cancel label: String) {
+        let button = app.buttons[label]
+        if button.exists, button.isHittable {
+            button.tap()
+        } else {
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.08)).tap()
+        }
     }
 
     private func attachScreenshot(_ name: String) {
@@ -735,6 +840,7 @@ final class MultiUserCompetitionUITests: XCTestCase {
         app.buttons["competition.claim.decline"].tap()
         let confirm = app.buttons["Decline Challenge"]
         XCTAssertTrue(confirm.waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["Decline and Block Naren"].exists)
         confirm.tap()
         // Health is still next, in its own terms.
         XCTAssertTrue(
@@ -1345,6 +1451,7 @@ final class MultiUserCompetitionUITests: XCTestCase {
         case healthOnboarding = "health-onboarding"
         case healthOnboardingChallenge = "health-onboarding-challenge"
         case healthOnboardingClaim = "health-onboarding-claim"
+        case incomingChallenge = "incoming-challenge"
     }
 
     private func launch(

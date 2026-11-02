@@ -53,6 +53,7 @@ struct MainTabView: View {
                 accept: { store.send(.acceptClaimTapped) },
                 notNow: { store.send(.notNowClaimTapped) },
                 decline: { store.send(.declineClaimConfirmed) },
+                block: { store.send(.blockClaimConfirmed) },
                 retry: { store.send(.retryClaimTapped) },
                 dismiss: { store.send(.dismissClaimStatus) }
             )
