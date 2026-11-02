@@ -54,6 +54,7 @@
 		4998D06AD6158262F8B8B73B /* RemoteCompetitionFeatureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 119AA0F1200F5722F1BC1092 /* RemoteCompetitionFeatureTests.swift */; };
 		4CBF0F250A7D5C9B2514334C /* RemoteCompetitionClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3FF5C908611B78276100C84F /* RemoteCompetitionClientTests.swift */; };
 		4F742A61BC1FC2D9F11BCD74 /* AuthenticationClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8574B621514C0849EFD32084 /* AuthenticationClientTests.swift */; };
+		5034718BA65CD8D5F4AE2F0F /* RecapCardUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A260A0BE8484CFDCCC19C011 /* RecapCardUITests.swift */; };
 		510A05F868BEFC10DAAF9862 /* HealthCompAppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6619D758FF31EC86B6996330 /* HealthCompAppDelegate.swift */; };
 		51664C1A7AF7BCBA221C519A /* CompetitionNotificationPreferencesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 185D226E47FB94EBF23B7B6F /* CompetitionNotificationPreferencesTests.swift */; };
 		51EC8DDC48A29F9C45FDE1A3 /* MultiUserCompetitionUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 72D97B24F7398742C8358DD9 /* MultiUserCompetitionUITests.swift */; };
@@ -85,6 +86,7 @@
 		7AC8B015321B80E77EEEF3AF /* AccountDeletionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 091448CE772C0EE35F3C5B74 /* AccountDeletionTests.swift */; };
 		7C25EC1CE03E50E68B736A88 /* SupabaseAuthenticationClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F0B7A0111ADA222B439C9D9 /* SupabaseAuthenticationClient.swift */; };
 		7F349991AF7E5B8AB86C1E0E /* CompetitionEnvironmentClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC6B1F694361BA182C8C239D /* CompetitionEnvironmentClientTests.swift */; };
+		81109F66782CF21B1A77F052 /* CompetitionRecapTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A1357F6B637C237208EE106 /* CompetitionRecapTests.swift */; };
 		82669C7399410C4DD256DEF9 /* loss.json in Resources */ = {isa = PBXBuildFile; fileRef = ABC64842924F0B681BDB3AC9 /* loss.json */; };
 		88BA5109421B2F24239335F0 /* HealthKitObserverDeliveryClassifierTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D283D626571C7A95260FCA0 /* HealthKitObserverDeliveryClassifierTests.swift */; };
 		892C936C24DCA7A54E32C412 /* HealthKitObserverDeliveryReceiptTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0B77B567A9CA235E3225C78 /* HealthKitObserverDeliveryReceiptTests.swift */; };
@@ -112,6 +114,7 @@
 		B6899E8344F48093351F0A2F /* CompetitionPushRegistration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6647E11CDA952495B6DD06A0 /* CompetitionPushRegistration.swift */; };
 		BB8A276F99410E904AD6CF81 /* WhatItTakesUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39AE399E36B3A5A5F3619501 /* WhatItTakesUITests.swift */; };
 		BBD9741CD776F299930705E7 /* StagingScoringResponseCaptureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5807455BF69B3050795BB69B /* StagingScoringResponseCaptureTests.swift */; };
+		BD4C2A51C3A73A0C4178E1C1 /* CompetitionRecapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3D37CEA378DC19DA488A488 /* CompetitionRecapView.swift */; };
 		BED89F3AD8EABD0DB5E3110F /* SupabaseCompetitionRealtimeClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2B6CEEA41B5ADC4158D1E6E5 /* SupabaseCompetitionRealtimeClient.swift */; };
 		BF895FEA10FA3CB631186E24 /* CompetitionCustomSchemeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A8E46DF226F0101C4902D95 /* CompetitionCustomSchemeTests.swift */; };
 		BFD3169E2EC29891C7906E0E /* CompetitionNotificationCoordinator.swift in Sources */ = {isa = PBXBuildFile; fileRef = 533B5BE105C1A335AE961478 /* CompetitionNotificationCoordinator.swift */; };
@@ -135,6 +138,7 @@
 		F080E9F86D147A223B2AD0C3 /* JSONCompetitionOutboxStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D9D6378727AB26B2A45AE28 /* JSONCompetitionOutboxStoreTests.swift */; };
 		F1927C81415BCF5009F8B628 /* SharedClientLifetimeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC1082ED31F47789C75550D1 /* SharedClientLifetimeTests.swift */; };
 		F3EAD9609CA950CEC8D1EF92 /* tie.json in Resources */ = {isa = PBXBuildFile; fileRef = 0118EA02318F4382081CC94F /* tie.json */; };
+		F4984D3354FDE00AC64A0D59 /* CompetitionReactions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 946DF4B5A3E42EC0930E315D /* CompetitionReactions.swift */; };
 		F82EC37B40E95BB1575E2265 /* MultiUserCompetitionTestLabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2AB9F656F17E85A71D01764 /* MultiUserCompetitionTestLabView.swift */; };
 		F8A2F0C658F37F8EB109E773 /* HealthKitDeliveryDiagnostic.swift in Sources */ = {isa = PBXBuildFile; fileRef = 613A2B77D4E8A26D6A05F569 /* HealthKitDeliveryDiagnostic.swift */; };
 		FB55F2BA75D48FA01A4B55F6 /* AppleWebAccountDeletionClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF7183065EBF2A1841506F8C /* AppleWebAccountDeletionClient.swift */; };
@@ -191,6 +195,7 @@
 		35062161F195329954CCC954 /* CompetitionNotificationClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionNotificationClientTests.swift; sourceTree = "<group>"; };
 		367629019F65C3FCD66B409F /* CompetitionRouting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionRouting.swift; sourceTree = "<group>"; };
 		39AE399E36B3A5A5F3619501 /* WhatItTakesUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhatItTakesUITests.swift; sourceTree = "<group>"; };
+		3A1357F6B637C237208EE106 /* CompetitionRecapTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionRecapTests.swift; sourceTree = "<group>"; };
 		3AB91D67DF671E84BB5BFFEB /* AppAttestClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppAttestClient.swift; sourceTree = "<group>"; };
 		3B8AD06B40107213226257FA /* CreateCompetitionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateCompetitionView.swift; sourceTree = "<group>"; };
 		3BE3EF97EDDB31A7DA80B856 /* CompetitionTestLabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionTestLabView.swift; sourceTree = "<group>"; };
@@ -234,6 +239,7 @@
 		8EDFD1E45E20A6E1653DC561 /* AppAttestConfigurationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppAttestConfigurationTests.swift; sourceTree = "<group>"; };
 		8F0B7A0111ADA222B439C9D9 /* SupabaseAuthenticationClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupabaseAuthenticationClient.swift; sourceTree = "<group>"; };
 		935DA75BD17C21F1EAC981CD /* SupabaseAuthKeychainStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupabaseAuthKeychainStorage.swift; sourceTree = "<group>"; };
+		946DF4B5A3E42EC0930E315D /* CompetitionReactions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionReactions.swift; sourceTree = "<group>"; };
 		954F012E75E5485B697906D6 /* CompetitionFeatureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionFeatureTests.swift; sourceTree = "<group>"; };
 		9A4C98DA12380EB04E5228ED /* NudgeUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NudgeUITests.swift; sourceTree = "<group>"; };
 		9A8E46DF226F0101C4902D95 /* CompetitionCustomSchemeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionCustomSchemeTests.swift; sourceTree = "<group>"; };
@@ -244,6 +250,7 @@
 		A050B4C0326B86FA4332142F /* CompetitionSharingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionSharingView.swift; sourceTree = "<group>"; };
 		A1330EF9B221036E2395D7B1 /* SupabaseAuthStorageLifetimeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupabaseAuthStorageLifetimeTests.swift; sourceTree = "<group>"; };
 		A1AAA11C718845811F2393C0 /* LocalCompetitionLifecycleUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalCompetitionLifecycleUITests.swift; sourceTree = "<group>"; };
+		A260A0BE8484CFDCCC19C011 /* RecapCardUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecapCardUITests.swift; sourceTree = "<group>"; };
 		A27031C9D6844A658A3C19CE /* AppFeatureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppFeatureTests.swift; sourceTree = "<group>"; };
 		A41126B8D70DE4A10376D739 /* AccountSettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountSettingsView.swift; sourceTree = "<group>"; };
 		A71009CDE26B9E5DEFE8C209 /* SupabaseConfigurationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupabaseConfigurationTests.swift; sourceTree = "<group>"; };
@@ -284,6 +291,7 @@
 		E375C25BA9F8B90CF629A5EB /* HealthCompStagingTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = HealthCompStagingTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		E38A46C1086F6393DC0FA12A /* LocalCompetitionClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalCompetitionClientTests.swift; sourceTree = "<group>"; };
 		E3A18A121BDE529295DC3BAD /* StagingAppleWebAuthenticationConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StagingAppleWebAuthenticationConfiguration.swift; sourceTree = "<group>"; };
+		E3D37CEA378DC19DA488A488 /* CompetitionRecapView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionRecapView.swift; sourceTree = "<group>"; };
 		E4EC30544C4C442E5FDC2FE1 /* CompetitionPushRegistrationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionPushRegistrationTests.swift; sourceTree = "<group>"; };
 		E8D842D51C03C651E67B1405 /* CompetitionRoutingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionRoutingTests.swift; sourceTree = "<group>"; };
 		EC90AB3B1EDF7C788EF0A48F /* AppFeature.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppFeature.swift; sourceTree = "<group>"; };
@@ -458,6 +466,7 @@
 				461F8BCB14AE6E70D8BB4DBE /* CompetitionPresentationTests.swift */,
 				E4EC30544C4C442E5FDC2FE1 /* CompetitionPushRegistrationTests.swift */,
 				AEEFCAE971C5B24E3802EA8A /* CompetitionRealtimeClientTests.swift */,
+				3A1357F6B637C237208EE106 /* CompetitionRecapTests.swift */,
 				E8D842D51C03C651E67B1405 /* CompetitionRoutingTests.swift */,
 				B9DF77F4B53514428AD771C0 /* CompetitionSyncCoordinatorTests.swift */,
 				3D3A86214F2EA7EB552733D5 /* CompetitionSyncModelsTests.swift */,
@@ -515,6 +524,8 @@
 				45B4CB5326E660812EDE995E /* CompetitionDetailView.swift */,
 				8E8BC3205F9F874134CE71BC /* CompetitionFeature.swift */,
 				F72580283C9D599F21484EB9 /* CompetitionInviteView.swift */,
+				946DF4B5A3E42EC0930E315D /* CompetitionReactions.swift */,
+				E3D37CEA378DC19DA488A488 /* CompetitionRecapView.swift */,
 				FCDBD0348C760C1907099902 /* CompetitionResultView.swift */,
 				A050B4C0326B86FA4332142F /* CompetitionSharingView.swift */,
 				3BE3EF97EDDB31A7DA80B856 /* CompetitionTestLabView.swift */,
@@ -560,6 +571,7 @@
 				A1AAA11C718845811F2393C0 /* LocalCompetitionLifecycleUITests.swift */,
 				72D97B24F7398742C8358DD9 /* MultiUserCompetitionUITests.swift */,
 				9A4C98DA12380EB04E5228ED /* NudgeUITests.swift */,
+				A260A0BE8484CFDCCC19C011 /* RecapCardUITests.swift */,
 				39AE399E36B3A5A5F3619501 /* WhatItTakesUITests.swift */,
 			);
 			path = HealthCompUITests;
@@ -748,6 +760,7 @@
 				8E965F238EEB7338E422F5C5 /* LocalCompetitionLifecycleUITests.swift in Sources */,
 				51EC8DDC48A29F9C45FDE1A3 /* MultiUserCompetitionUITests.swift in Sources */,
 				420BDF83FD49D9E754C1DB0C /* NudgeUITests.swift in Sources */,
+				5034718BA65CD8D5F4AE2F0F /* RecapCardUITests.swift in Sources */,
 				BB8A276F99410E904AD6CF81 /* WhatItTakesUITests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -793,7 +806,9 @@
 				3D7EA73CDC827C2224DFF76F /* CompetitionNotificationPreferences.swift in Sources */,
 				C9AA6BB52059E0374AD8A9D8 /* CompetitionOutboxStore.swift in Sources */,
 				B6899E8344F48093351F0A2F /* CompetitionPushRegistration.swift in Sources */,
+				F4984D3354FDE00AC64A0D59 /* CompetitionReactions.swift in Sources */,
 				2C65CC3FE6B88DE464937C63 /* CompetitionRealtimeClient.swift in Sources */,
+				BD4C2A51C3A73A0C4178E1C1 /* CompetitionRecapView.swift in Sources */,
 				6BCDDCD3FC475AEA4415087D /* CompetitionRemoteAPI.swift in Sources */,
 				41CF9795CB853B8522FC9BC6 /* CompetitionResultView.swift in Sources */,
 				DD502924E9311DD9A99C81B2 /* CompetitionRouting.swift in Sources */,
@@ -859,6 +874,7 @@
 				25CD41BFE9C5F75B7C20F205 /* CompetitionPresentationTests.swift in Sources */,
 				FC8A2EF23ABB03B443068994 /* CompetitionPushRegistrationTests.swift in Sources */,
 				0387B14516F10AD6F7D9631A /* CompetitionRealtimeClientTests.swift in Sources */,
+				81109F66782CF21B1A77F052 /* CompetitionRecapTests.swift in Sources */,
 				12640A6EFC6346166F8015CF /* CompetitionRoutingTests.swift in Sources */,
 				DC35549E42F6B1FA2A07BA25 /* CompetitionSyncCoordinatorTests.swift in Sources */,
 				6149987E19B2247AFDA3396D /* CompetitionSyncModelsTests.swift in Sources */,
