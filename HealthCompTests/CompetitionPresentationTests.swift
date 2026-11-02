@@ -1371,17 +1371,176 @@ final class CompetitionPresentationTests: XCTestCase {
             ["remote-profile:v1:andy", "remote-profile:v1:hermes"]
         )
         XCTAssertEqual(
-            competitionVictoryCountText(1, friendDisplayName: "Alex"),
-            "1 win against Alex"
-        )
-        XCTAssertEqual(
-            competitionVictoryCountText(2, friendDisplayName: "Alex"),
-            "2 wins against Alex"
-        )
-        XCTAssertEqual(
             competitionSharingIdentifier(first),
             "competition.sharing.completed.00000000-0000-0000-0000-000000000101"
         )
+    }
+
+    // MARK: Belt
+
+    private func beltWeek(
+        _ id: Int,
+        _ outcome: CompetitionOutcome,
+        start: (Int, Int),
+        name: String = "Sam",
+        identity: String = "remote-profile:v1:sam"
+    ) -> LocalCompetitionPresentation {
+        homePresentation(
+            id: id, name: name, identity: identity,
+            lifecycle: .archived(outcome: outcome, basis: .stableAcrossPostBoundaryReads,
+                                 completedAt: homeNow, archivedAt: homeNow),
+            start: start
+        )
+    }
+
+    private func beltRecord(_ weeks: [LocalCompetitionPresentation]) -> CompetitionOpponentRecord? {
+        competitionOpponentRecords(weeks).first
+    }
+
+    func testBeltGoesToTheFirstWinnerAndTiesLeaveIt() throws {
+        let outcomes: [CompetitionOutcome] = [.tie, .win, .tie, .loss, .loss, .win]
+        let starts = [(9, 1), (9, 8), (9, 15), (9, 22), (9, 29), (10, 6)]
+        let weeks = outcomes.indices.map { beltWeek($0 + 1, outcomes[$0], start: starts[$0]) }
+        let belt = try XCTUnwrap(beltRecord(weeks)).belt
+
+        XCTAssertEqual(weeks.map { belt.events[$0.id] }, [
+            .vacant,
+            .took(by: .you, fromWeeks: nil),
+            .kept(by: .you, weeks: 2),
+            .took(by: .them, fromWeeks: 2),
+            .kept(by: .them, weeks: 2),
+            .took(by: .you, fromWeeks: 2),
+        ])
+        XCTAssertEqual(belt.holder, .you)
+        XCTAssertEqual(belt.current, CompetitionBeltReign(holder: .you, weeks: 1, startID: weeks[5].id))
+        XCTAssertEqual(belt.changes, 3)
+        // On equal length the more recent reign is the longest.
+        XCTAssertEqual(belt.longest, CompetitionBeltReign(holder: .them, weeks: 2, startID: weeks[3].id))
+    }
+
+    func testBeltWithOnlyTiesHasNoHolder() throws {
+        let weeks = [beltWeek(1, .tie, start: (9, 1)), beltWeek(2, .tie, start: (9, 8))]
+        let belt = try XCTUnwrap(beltRecord(weeks)).belt
+
+        XCTAssertNil(belt.holder)
+        XCTAssertEqual(weeks.map { belt.events[$0.id] }, [.vacant, .vacant])
+        XCTAssertEqual(belt.changes, 0)
+    }
+
+    func testBeltRetiresForAFormerCompetitor() throws {
+        let weeks = [
+            beltWeek(1, .win, start: (9, 1), name: "Former competitor"),
+            beltWeek(2, .loss, start: (9, 8), name: "Former competitor"),
+            beltWeek(3, .loss, start: (9, 15), name: "Former competitor"),
+        ]
+        let belt = try XCTUnwrap(beltRecord(weeks)).belt
+
+        XCTAssertTrue(belt.isRetired)
+        XCTAssertNil(belt.holder)
+        XCTAssertEqual(belt.events.count, 3)
+        XCTAssertEqual(belt.longest, CompetitionBeltReign(holder: .them, weeks: 2, startID: weeks[1].id))
+        XCTAssertEqual(competitionBeltEvent(for: weeks[0], in: weeks), .took(by: .you, fromWeeks: nil))
+    }
+
+    func testBeltOrdersWeeksByEndThenID() throws {
+        // Weeks 3 and 4 share an end; they fold in uuid order (3, then 4).
+        let weeks = [
+            beltWeek(4, .loss, start: (9, 8)),
+            beltWeek(1, .win, start: (9, 1)),
+            beltWeek(5, .win, start: (9, 15)),
+            beltWeek(3, .win, start: (9, 8)),
+        ]
+        let closed = [
+            homePresentation(id: 6, name: "Sam", identity: "remote-profile:v1:sam",
+                             lifecycle: .cancelled(at: homeNow), start: (9, 22)),
+            homePresentation(id: 7, name: "Sam", identity: "remote-profile:v1:sam",
+                             lifecycle: .declined(at: homeNow, direction: .outgoing), start: (9, 29)),
+            homePresentation(id: 8, name: "Sam", identity: "remote-profile:v1:sam",
+                             lifecycle: .expired(at: homeNow, direction: .outgoing), start: (10, 6)),
+        ]
+        let record = try XCTUnwrap(beltRecord(weeks + closed))
+
+        XCTAssertEqual(record.belt.events[weeks[3].id], .kept(by: .you, weeks: 2))
+        XCTAssertEqual(record.belt.events[weeks[0].id], .took(by: .them, fromWeeks: 2))
+        XCTAssertEqual(record.belt.events[weeks[2].id], .took(by: .you, fromWeeks: 1))
+        XCTAssertEqual(record.belt.events.count, 4)
+        let direct = competitionBelt(weeks.reversed().map { week in
+            (
+                id: week.id,
+                end: competitionScheduleBoundaries(week.acceptedConfiguration!.schedule)?.end,
+                outcome: week.terminalResult!.outcome
+            )
+        })
+        XCTAssertEqual(record.belt, direct)
+        XCTAssertEqual(beltRecord(weeks)?.belt, direct)
+    }
+
+    func testBeltChipWaitsWhileAnEarlierMatchWithThemIsUnfinished() {
+        let earlier = homePresentation(id: 1, name: "Sam", lifecycle: .tallying(startedAt: homeNow),
+                                       start: (10, 14))
+        let next = homePresentation(id: 2, name: "Sam", lifecycle: .active(dayOrdinal: 1),
+                                    start: (10, 21))
+        let other = homePresentation(id: 3, name: "Max", lifecycle: .active(dayOrdinal: 1),
+                                     start: (10, 28))
+
+        XCTAssertTrue(competitionBeltWaitsOnAnEarlierMatch(next, in: [earlier, next, other]))
+        XCTAssertFalse(competitionBeltWaitsOnAnEarlierMatch(earlier, in: [earlier, next, other]))
+        XCTAssertFalse(competitionBeltWaitsOnAnEarlierMatch(other, in: [earlier, next, other]))
+
+        let finished = homePresentation(
+            id: 1, name: "Sam",
+            lifecycle: .completed(outcome: .win, basis: .stableAcrossPostBoundaryReads, completedAt: homeNow),
+            start: (10, 14)
+        )
+        XCTAssertFalse(competitionBeltWaitsOnAnEarlierMatch(next, in: [finished, next]))
+    }
+
+    func testBeltCopy() {
+        XCTAssertEqual(competitionBeltStandingText(.you, opponentName: "Sam"), "You hold the belt")
+        XCTAssertEqual(competitionBeltStandingText(.them, opponentName: "Sam"), "Sam holds the belt")
+        XCTAssertEqual(competitionWeeksText(1), "1 week")
+        XCTAssertEqual(competitionWeeksText(3), "3 weeks")
+
+        func banner(_ event: CompetitionBeltEvent) -> [String?]? {
+            competitionBeltResultText(event, opponentName: "Sam").map {
+                [$0.holder == .you ? "you" : "them", $0.title, $0.detail]
+            }
+        }
+        XCTAssertEqual(banner(.took(by: .you, fromWeeks: 3)), ["you", "You took the belt", "Sam held it for 3 weeks."])
+        XCTAssertEqual(banner(.took(by: .them, fromWeeks: 1)), ["them", "Sam took the belt", "You held it for 1 week."])
+        XCTAssertEqual(banner(.took(by: .you, fromWeeks: nil)), ["you", "You took the belt", nil])
+        XCTAssertEqual(banner(.took(by: .them, fromWeeks: nil)), ["them", "Sam took the belt", nil])
+        XCTAssertEqual(banner(.kept(by: .you, weeks: 4)), ["you", "You kept the belt", "4 weeks in a row."])
+        XCTAssertEqual(banner(.kept(by: .them, weeks: 3)), ["them", "Sam kept the belt", "3 weeks in a row."])
+        XCTAssertNil(banner(.kept(by: .you, weeks: 2)))
+        XCTAssertNil(banner(.vacant))
+    }
+
+    func testHomeRouteStackKeepsThePersonPageUnderHistory() {
+        let id = CompetitionID(UUID(uuidString: "00000000-0000-0000-0000-00000000000A")!)
+        var path = [id]
+        var showsHistory = true
+        var person: String? = "p"
+        let stack = CompetitionHomeRoute.stack(
+            path: Binding(get: { path }, set: { path = $0 }),
+            showsHistory: Binding(get: { showsHistory }, set: { showsHistory = $0 }),
+            person: Binding(get: { person }, set: { person = $0 })
+        )
+
+        XCTAssertEqual(stack.wrappedValue, [.history, .person("p"), .competition(id)])
+
+        stack.wrappedValue = [.history]
+        XCTAssertTrue(showsHistory)
+        XCTAssertNil(person)
+        XCTAssertEqual(path, [])
+
+        stack.wrappedValue = [.history, .person("q")]
+        XCTAssertEqual(person, "q")
+
+        stack.wrappedValue = []
+        XCTAssertFalse(showsHistory)
+        XCTAssertNil(person)
+        XCTAssertEqual(path, [])
     }
 
     // MARK: Home and History

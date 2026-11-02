@@ -175,6 +175,7 @@ private struct MultiUserCompetitionSharingTestLabView: View {
     var showsWhatItTakes = false
     @State private var path: [CompetitionID] = []
     @State private var showsHistory = false
+    @State private var historyPerson: String?
     @State private var isChallengePresented = false
     @State private var challengeStatus: CompetitionFeature.ChallengeSheetStatus = .ready
     @State private var recipientCode = ""
@@ -189,7 +190,8 @@ private struct MultiUserCompetitionSharingTestLabView: View {
             NavigationStack(
                 path: CompetitionHomeRoute.stack(
                     path: $path,
-                    showsHistory: $showsHistory
+                    showsHistory: $showsHistory,
+                    person: $historyPerson
                 )
             ) {
                 CompetitionSharingView(
@@ -246,6 +248,11 @@ private struct MultiUserCompetitionSharingTestLabView: View {
                     switch route {
                     case .history:
                         CompetitionHistoryView(publication: publication)
+                    case let .person(identity):
+                        CompetitionPersonView(
+                            publication: publication,
+                            opponentIdentity: identity
+                        )
                     case let .competition(id):
                         destination(id)
                     }
@@ -290,7 +297,10 @@ private struct MultiUserCompetitionSharingTestLabView: View {
             case .completed, .archived:
                 CompetitionResultView(
                     competition: competition,
-                    awards: publication.dashboard.awards,
+                    beltEvent: competitionBeltEvent(
+                        for: competition,
+                        in: publication.dashboard.competitions
+                    ),
                     source: .remoteParticipants,
                     rematch: rematchState,
                     isCommandInFlight: false,
@@ -673,6 +683,10 @@ private enum MultiUserCompetitionTestLabFixtures {
     static let expiredRecipientID = UUID(
         uuidString: "A1000000-0000-4000-8000-000000000008"
     )!
+    /// Jordan's finished week before the live one: Jordan holds the belt.
+    static let jordanPastID = CompetitionID(
+        UUID(uuidString: "A1000000-0000-4000-8000-000000000009")!
+    )
     static let samLinkCode = "SamSamSamSamSamSamSam1"
     static let ownLinkCode = "OwnOwnOwnOwnOwnOwnOwn1"
     static let labNow = Date(timeIntervalSince1970: 1_786_867_200)
@@ -806,8 +820,33 @@ private enum MultiUserCompetitionTestLabFixtures {
             currentDayOrdinal: nil,
             terminal: nil
         )
+        let jordanPastCompletedAt = Date(timeIntervalSince1970: 1_786_302_000)
+        let jordanPast = presentation(
+            id: jordanPastID,
+            opponentName: "Jordan",
+            lifecycle: .archived(
+                outcome: .loss,
+                basis: .stableAcrossPostBoundaryReads,
+                completedAt: jordanPastCompletedAt,
+                archivedAt: jordanPastCompletedAt.addingTimeInterval(86_400)
+            ),
+            userPoints: 3_050,
+            opponentPoints: 3_210,
+            days: [],
+            currentDayOrdinal: nil,
+            terminal: LocalCompetitionTerminalPresentation(
+                userPoints: 3_050,
+                opponentPoints: 3_210,
+                outcome: .loss,
+                basis: .stableAcrossPostBoundaryReads,
+                completedAt: jordanPastCompletedAt
+            ),
+            startDay: 1,
+            opponentIdentity: active.opponentIdentity
+        )
         let competitions = [
             scheduled, active, completed, archived, pending, secondActive, expired,
+            jordanPast,
         ]
         let awards = [
             LocalCompetitionAward(

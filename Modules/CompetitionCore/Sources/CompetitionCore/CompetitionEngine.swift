@@ -43,7 +43,8 @@ public struct CompetitionEngine: Sendable {
             seed: request.seed,
             generatorVersion: request.generatorVersion,
             difficulty: request.difficulty,
-            schedule: schedule
+            schedule: schedule,
+            baselineDailyPoints: request.baselineDailyPoints
         )
         return event(
             for: competition,

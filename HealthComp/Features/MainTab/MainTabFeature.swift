@@ -90,6 +90,8 @@ struct MainTabFeature {
         /// Accept was tapped before the competition started; the claim is
         /// sent on its first publication.
         var acceptsClaimOnStart = false
+        /// The person page open from History, by opponent identity.
+        var historyPersonIdentity: String?
         var healthAccess: HealthAccessStatus?
         var notificationPrompt: NotificationPromptPhase = .unscheduled
         /// Mirrors MainTabView's Challenge sheet.
@@ -176,6 +178,7 @@ struct MainTabFeature {
         case dismissChallengeFromLink
         case pathChanged([CompetitionID])
         case historyPresentationChanged(Bool)
+        case historyPersonChanged(String?)
         case accountPresentationChanged(Bool)
         case pendingRouteTimedOut(UInt64)
         case onboardingChecked([PermissionOnboardingStep])
@@ -392,6 +395,13 @@ struct MainTabFeature {
 
             case let .historyPresentationChanged(isPresented):
                 state.showsHistory = isPresented
+                if !isPresented {
+                    state.historyPersonIdentity = nil
+                }
+                return .none
+
+            case let .historyPersonChanged(identity):
+                state.historyPersonIdentity = identity
                 return .none
 
             case let .accountPresentationChanged(isPresented):
@@ -942,6 +952,7 @@ struct MainTabFeature {
             state.heldRouteSequence = nil
             state.lastHandledRouteSequence = envelope.sequence
             state.showsHistory = false
+            state.historyPersonIdentity = nil
             let closesAccount = state.isAccountPresented
             state.isAccountPresented = false
             state.path = [id]
@@ -1005,6 +1016,7 @@ struct MainTabFeature {
         }
         state.challengeFromLink = nil
         state.showsHistory = false
+        state.historyPersonIdentity = nil
         state.path = [id]
         return .send(.competition(.challengeSheetDismissed))
     }
