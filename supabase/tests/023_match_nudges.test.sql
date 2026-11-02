@@ -204,6 +204,19 @@ select ok(pg_temp.nudges('02') = 4 and (
     where competition_id = 'e7200000-0000-4000-8000-000000000002' and kind = 'nudge'),
   'a nudge on the next match day over 12 hours later queues new rows with the same server_seq');
 
+-- Same match day, over 12 hours later, after the sender's upload moved server_seq.
+update private.competition_notification_work
+set created_at = now() - interval '13 hours', available_at = now() - interval '13 hours'
+where competition_id = 'e7200000-0000-4000-8000-000000000003' and kind = 'nudge';
+select pg_temp.seed_revision('e7200000-0000-4000-8000-000000000003',
+  'e7100000-0000-4000-8000-000000000001', now(), 1);
+set local role authenticated;
+select pg_temp.as_profile(1);
+insert into r values ('same-day', public.nudge_competition_participant('e7200000-0000-4000-8000-000000000003'));
+reset role;
+select ok((select v ? 'nudged_at' from r where label = 'same-day') and pg_temp.nudges('03') = 2,
+  'a second nudge the same match day over 12 hours later returns nudged_at and queues nothing');
+
 -- Privacy
 set local role authenticated;
 select pg_temp.as_profile(1);
