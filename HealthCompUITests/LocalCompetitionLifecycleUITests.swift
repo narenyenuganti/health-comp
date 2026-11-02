@@ -742,16 +742,25 @@ final class LocalCompetitionLifecycleUITests: XCTestCase {
     }
 
     /// For non-controls, where isHittable can't say whether it's on screen:
-    /// short drags on the match screen until the element's top is in its lower part.
+    /// slow drags until the element's top sits just under the navigation bar.
+    /// At AX5 the lab controls fill the top half, so "on screen" must mean
+    /// below the bar, not just inside the window.
     private func bringTopIntoView(_ element: XCUIElement) {
         let window = app.windows.firstMatch
-        for _ in 0..<15 where element.frame.minY > window.frame.height * 0.75 {
-            window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.95))
+        let navigationBar = app.navigationBars.firstMatch
+        for _ in 0..<40 {
+            let top = navigationBar.frame.maxY + 8
+            let minY = element.frame.minY
+            if minY >= top, minY <= top + 60 || element.frame.maxY <= window.frame.maxY - 40 { break }
+            window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.85))
                 .press(
                     forDuration: 0.05,
-                    thenDragTo: window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.87))
+                    thenDragTo: window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: minY < top ? 0.9 : 0.8)),
+                    withVelocity: .slow,
+                    thenHoldForDuration: 0.1
                 )
         }
+        XCTAssertGreaterThanOrEqual(element.frame.minY, navigationBar.frame.maxY, "top under the bar")
     }
 
     private func scrollToElement(_ element: XCUIElement) {

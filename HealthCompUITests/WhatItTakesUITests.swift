@@ -170,8 +170,7 @@ final class WhatItTakesUITests: XCTestCase {
                                        ("Priya", "takes-out-of-reach")] {
                     open(name)
                     XCTAssertTrue(takes.waitForExistence(timeout: 3), name)
-                    bringIntoView(takes)
-                    XCTAssertTrue(app.frame.contains(takes.frame), "\(name) \(suffix): whole panel on screen")
+                    XCTAssertTrue(bringIntoView(takes), "\(name) \(suffix): panel on screen under the bar")
                     capture("\(screen)-\(suffix)")
                     try app.performAccessibilityAudit(for: [.textClipped, .contrast]) { issue in
                         // Only this feature's panel; the rest of the screen has its own audits.
@@ -185,7 +184,7 @@ final class WhatItTakesUITests: XCTestCase {
                 nextCheckpoint()
                 XCTAssertTrue(waitForStatus("Day 1 of 7"))
                 XCTAssertTrue(takes.waitForExistence(timeout: 3))
-                bringIntoView(takes)
+                XCTAssertTrue(bringIntoView(takes), "local \(suffix): panel on screen under the bar")
                 capture("takes-local-day1-\(suffix)")
             }
         }
@@ -290,15 +289,33 @@ final class WhatItTakesUITests: XCTestCase {
         app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", prefix)).firstMatch
     }
 
-    /// Short drags until the whole element is on screen (non-controls can't use isHittable).
-    private func bringIntoView(_ element: XCUIElement) {
+    /// Slow drags until the element's top sits under the navigation bar and,
+    /// when it fits, its bottom clears the home indicator. AX5 panels can be
+    /// taller than the space left, so then the top wins.
+    @discardableResult
+    private func bringIntoView(_ element: XCUIElement) -> Bool {
         let window = app.windows.firstMatch
-        for _ in 0..<20 where !window.frame.insetBy(dx: 0, dy: 40).contains(element.frame) {
-            let up = element.frame.maxY > window.frame.maxY - 40
-            window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: up ? 0.8 : 0.5))
-                .press(forDuration: 0.05,
-                       thenDragTo: window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: up ? 0.65 : 0.6)))
+        let navigationBar = app.navigationBars.firstMatch
+        func placed() -> (done: Bool, down: Bool) {
+            let top = navigationBar.frame.maxY + 8
+            let bottom = window.frame.maxY - 40
+            let frame = element.frame
+            if frame.minY < top { return (false, true) }
+            let fits = frame.height <= bottom - top
+            return (fits ? frame.maxY <= bottom : frame.minY <= top + 60, false)
         }
+        for _ in 0..<40 {
+            let state = placed()
+            if state.done { return true }
+            window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.85))
+                .press(
+                    forDuration: 0.05,
+                    thenDragTo: window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: state.down ? 0.9 : 0.8)),
+                    withVelocity: .slow,
+                    thenHoldForDuration: 0.1
+                )
+        }
+        return placed().done
     }
 
     private func scrollToElement(_ element: XCUIElement) {

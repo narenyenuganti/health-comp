@@ -908,7 +908,7 @@ private enum MultiUserCompetitionTestLabFixtures {
                   day: 3, user: 1_000, opponent: 1_049, today: 395,
                   opponentToday: 300, accepted: rings(1_020, 600, 52.5, 6)),
             // Move Time in minutes.
-            match(3, "Morgan", day: 4, user: 900, opponent: 938, today: 213.3,
+            match(3, "Morgan", day: 4, user: 900, opponent: 938, today: 640.0 / 3,
                   opponentToday: nil, accepted: rings(20, 30, 24, 8, moveMinutes: true)),
             // Level by a fraction, Move capped, and they're at today's 600.
             match(4, "Devon", day: 6, user: 1_000, opponent: 1_000.2, today: 300,
