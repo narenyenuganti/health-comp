@@ -46,6 +46,7 @@
 		3FC0C839F3D290C09C54C9D4 /* HealthKitObserverDeliveryClassifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45FD58C85D5EE740BBE2307B /* HealthKitObserverDeliveryClassifier.swift */; };
 		40513CB901AC87FFF3A78ADB /* SupabaseConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = BAD2EA144469EBA09645C0C8 /* SupabaseConfiguration.swift */; };
 		41CF9795CB853B8522FC9BC6 /* CompetitionResultView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FCDBD0348C760C1907099902 /* CompetitionResultView.swift */; };
+		420BDF83FD49D9E754C1DB0C /* NudgeUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A4C98DA12380EB04E5228ED /* NudgeUITests.swift */; };
 		4876547B798FDFBA4EEFDE75 /* HealthKitProvider.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4E1EFEB41E5D4ADC7484F272 /* HealthKitProvider.swift */; };
 		48BFD88C8A3C63F549DC829C /* SupabaseAuthStorageLifetime.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9F276F226C516C5B92D2AC93 /* SupabaseAuthStorageLifetime.swift */; };
 		493930FA0C8274F35D6A37BF /* SupabaseAppleWebDeletionTransportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F6768BD6108222519CD7CA7 /* SupabaseAppleWebDeletionTransportTests.swift */; };
@@ -236,6 +237,7 @@
 		8F0B7A0111ADA222B439C9D9 /* SupabaseAuthenticationClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupabaseAuthenticationClient.swift; sourceTree = "<group>"; };
 		935DA75BD17C21F1EAC981CD /* SupabaseAuthKeychainStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupabaseAuthKeychainStorage.swift; sourceTree = "<group>"; };
 		954F012E75E5485B697906D6 /* CompetitionFeatureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionFeatureTests.swift; sourceTree = "<group>"; };
+		9A4C98DA12380EB04E5228ED /* NudgeUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NudgeUITests.swift; sourceTree = "<group>"; };
 		9A8E46DF226F0101C4902D95 /* CompetitionCustomSchemeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionCustomSchemeTests.swift; sourceTree = "<group>"; };
 		9B370A537E958C39D00549FA /* ActivityRingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ActivityRingsView.swift; sourceTree = "<group>"; };
 		9B9BDFDDD2E2FDAB7931BA09 /* AuthenticationClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthenticationClient.swift; sourceTree = "<group>"; };
@@ -562,6 +564,7 @@
 			children = (
 				A1AAA11C718845811F2393C0 /* LocalCompetitionLifecycleUITests.swift */,
 				72D97B24F7398742C8358DD9 /* MultiUserCompetitionUITests.swift */,
+				9A4C98DA12380EB04E5228ED /* NudgeUITests.swift */,
 				39AE399E36B3A5A5F3619501 /* WhatItTakesUITests.swift */,
 				A260A0BE8484CFDCCC19C011 /* RecapCardUITests.swift */,
 			);
@@ -749,6 +752,7 @@
 			files = (
 				8E965F238EEB7338E422F5C5 /* LocalCompetitionLifecycleUITests.swift in Sources */,
 				51EC8DDC48A29F9C45FDE1A3 /* MultiUserCompetitionUITests.swift in Sources */,
+				420BDF83FD49D9E754C1DB0C /* NudgeUITests.swift in Sources */,
 				BB8A276F99410E904AD6CF81 /* WhatItTakesUITests.swift in Sources */,
 				5034718BA65CD8D5F4AE2F0F /* RecapCardUITests.swift in Sources */,
 			);

@@ -302,6 +302,13 @@ struct MainTabView: View {
                             failed: publication.dashboard.issues.contains(.commandRejected(id)),
                             cancel: { store.send(.competition(.cancelTapped(id))) }
                         )
+                        : nil,
+                    // The real-match gate: never on the simulated fixture.
+                    nudge: publication.source == .remoteParticipants
+                        ? CompetitionNudge(
+                            status: store.competition.nudges[id],
+                            send: { store.send(.competition(.nudgeTapped(id))) }
+                        )
                         : nil
                 )
 

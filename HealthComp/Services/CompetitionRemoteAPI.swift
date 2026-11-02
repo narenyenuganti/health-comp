@@ -118,6 +118,10 @@ struct CompetitionRemoteAPI: Sendable {
     var unblockProfile: @Sendable (UUID) async throws -> Void = { _ in
         throw CompetitionRemoteFailure.operationFailed
     }
+    /// Asks the other person to open HealthComp; returns the time the server accepted the nudge.
+    var nudgeCompetitionParticipant: @Sendable (UUID) async throws -> Date = { _ in
+        throw CompetitionRemoteFailure.operationFailed
+    }
     var loadChallengeLinkCode: @Sendable () async throws -> CompetitionChallengeLinkCode = {
         throw CompetitionRemoteFailure.operationFailed
     }

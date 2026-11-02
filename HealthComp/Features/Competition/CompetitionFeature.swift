@@ -90,6 +90,14 @@ struct CompetitionFeature {
         case failed(InviteCreationFailure)
     }
 
+    enum NudgeStatus: Equatable, Sendable {
+        case sending
+        case sent(Date)
+        case failed
+        /// The server said no: they updated, or the result no longer waits on them.
+        case notNeeded(Date)
+    }
+
     enum InviteCreationResponse: Equatable, Sendable {
         case success(
             link: CompetitionInviteShareLink,
@@ -130,6 +138,8 @@ struct CompetitionFeature {
         var blockedPeople: [AuthenticatedProfile]?
         var unblocksInFlight: Set<UUID> = []
         var unblockFailed = false
+        /// Per match; not persisted.
+        var nudges: [CompetitionID: NudgeStatus] = [:]
 
         init(
             publication: CompetitionPublication? = nil,
@@ -181,6 +191,12 @@ struct CompetitionFeature {
         /// Someone's challenge link resolved: prefill the + sheet's person.
         case challengeRecipientChosen(InviteRecipient)
         case cancelTapped(CompetitionID)
+        case nudgeTapped(CompetitionID)
+        case nudgeResponse(
+            CompetitionID,
+            tappedAt: Date,
+            Result<Date, CompetitionRemoteFailure>
+        )
         case challengeLinkRequested
         case challengeLinkResponse(URL?)
         /// Reset Link, after its confirmation.
@@ -236,6 +252,7 @@ struct CompetitionFeature {
         case challengeLink
         case challengeLinkReset
         case blockedPeople
+        case nudge
     }
 
     var body: some ReducerOf<Self> {
@@ -387,6 +404,38 @@ struct CompetitionFeature {
                         )
                     )
                 }
+
+            case let .nudgeTapped(id):
+                guard state.nudges[id] != .sending else { return .none }
+                state.nudges[id] = .sending
+                let tappedAt = state.publication?.dashboard.competitions
+                    .first { $0.id == id }?.evaluatedAt ?? .distantPast
+                return .run { send in
+                    let result: Result<Date, CompetitionRemoteFailure>
+                    do {
+                        result = .success(try await competitionClient.nudge(id))
+                    } catch {
+                        result = .failure(
+                            (error as? CompetitionRemoteFailure) ?? .operationFailed
+                        )
+                    }
+                    await send(.nudgeResponse(id, tappedAt: tappedAt, result))
+                }
+                // No cancelInFlight: nudges for two matches can both run.
+                .cancellable(id: CancelID.nudge)
+
+            case let .nudgeResponse(id, tappedAt, result):
+                switch result {
+                case let .success(nudgedAt):
+                    state.nudges[id] = .sent(nudgedAt)
+                case .failure(.forbidden), .failure(.notFound):
+                    state.nudges[id] = .notNeeded(tappedAt)
+                    // Not .pullToRefresh: Staging wraps that in operator capture.
+                    return reconcile(trigger: .foreground)
+                case .failure:
+                    state.nudges[id] = .failed
+                }
+                return .none
 
             // Loaded each time it's shown, so a reset on another iPhone
             // shows here too. A reset in flight answers for itself.
@@ -853,6 +902,7 @@ struct CompetitionFeature {
                 state.blockedPeople = nil
                 state.unblocksInFlight = []
                 state.unblockFailed = false
+                state.nudges = [:]
                 return .concatenate(
                     .merge(
                         .cancel(id: CancelID.publications),
@@ -861,7 +911,8 @@ struct CompetitionFeature {
                         .cancel(id: CancelID.inviteLink),
                         .cancel(id: CancelID.challengeLink),
                         .cancel(id: CancelID.challengeLinkReset),
-                        .cancel(id: CancelID.blockedPeople)
+                        .cancel(id: CancelID.blockedPeople),
+                        .cancel(id: CancelID.nudge)
                     ),
                     .run { _ in await competitionClient.stop() }
                 )
