@@ -117,6 +117,18 @@ struct HealthCompApp: App {
         } else {
             self.testLabColorScheme = nil
         }
+        // Deterministic widget captures. Use with the Test Lab only: it builds
+        // no AppFeature store, so no publish or sign-out clear replaces it.
+        if arguments.contains("--widget-sample") {
+            let url = URL(
+                string: "\(CompetitionRoute.customURLScheme)://competition/00000000-0000-0000-0000-000000000005"
+            )!
+            Task {
+                await CompetitionWidgetSnapshotClient.liveValue.write(
+                    .sample(now: Date(), url: url), []
+                )
+            }
+        }
     }
 #else
     private let store: StoreOf<AppFeature>
