@@ -135,6 +135,7 @@ struct PracticeMatchSheet: View {
             }
             .buttonStyle(PrimaryButtonStyle())
             .disabled(practice.isStarting)
+            .accessibilityLabel("Start Tomorrow")
             .accessibilityValue(practice.isStarting ? "Action in progress" : "")
             .accessibilityIdentifier("competition.practice.start")
         }

@@ -664,8 +664,8 @@
 		9F5D18D2C36062228CA2B182 /* HealthCompUITests */ = {
 			isa = PBXGroup;
 			children = (
-				FB2BD1609D5C6054896B040D /* LiveActivityUITests.swift */,
 				5A6710FBCACA682D0C66812B /* BlockChallengerUITests.swift */,
+				FB2BD1609D5C6054896B040D /* LiveActivityUITests.swift */,
 				A1AAA11C718845811F2393C0 /* LocalCompetitionLifecycleUITests.swift */,
 				72D97B24F7398742C8358DD9 /* MultiUserCompetitionUITests.swift */,
 				9A4C98DA12380EB04E5228ED /* NudgeUITests.swift */,
@@ -900,8 +900,8 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				0B50733A9DA68107D84F2BF8 /* LiveActivityUITests.swift in Sources */,
 				303844E9F398E8FD157BF912 /* BlockChallengerUITests.swift in Sources */,
+				0B50733A9DA68107D84F2BF8 /* LiveActivityUITests.swift in Sources */,
 				8E965F238EEB7338E422F5C5 /* LocalCompetitionLifecycleUITests.swift in Sources */,
 				51EC8DDC48A29F9C45FDE1A3 /* MultiUserCompetitionUITests.swift in Sources */,
 				420BDF83FD49D9E754C1DB0C /* NudgeUITests.swift in Sources */,
