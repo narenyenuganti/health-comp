@@ -902,11 +902,18 @@ final class CompetitionPresentationTests: XCTestCase {
     }
 
     func testWhatItTakesRoundsAmountsUpGroupsByLocaleAndSpeaksSingularUnits() throws {
-        let epsilon = try XCTUnwrap(competitionWhatItTakes(
+        let exact = try XCTUnwrap(competitionWhatItTakes(
             takesCompetition(user: 1_000, opponent: 1_029, accepted: try takesRings(move: (0, 600), exercise: (0, 30))),
             locale: en
         ))
-        XCTAssertEqual(epsilon.suggestion, "About 180 kcal of Move or 9 min of Exercise.")
+        XCTAssertEqual(exact.suggestion, "About 180 kcal of Move or 9 min of Exercise.")
+
+        // 7 / 100 * 100 is 7.000000000000001 in doubles; without the 1e-9 it reads 8 min.
+        let epsilon = try XCTUnwrap(competitionWhatItTakes(
+            takesCompetition(user: 1_000, opponent: 1_006, accepted: try takesRings(move: (0, 600), exercise: (0, 100))),
+            locale: en
+        ))
+        XCTAssertEqual(epsilon.suggestion, "About 50 kcal of Move or 7 min of Exercise.")
 
         let big = takesCompetition(user: 1_000, opponent: 1_123, accepted: try takesRings(move: (0, 1_000), exercise: (0, 30)))
         XCTAssertEqual(competitionWhatItTakes(big, locale: en)?.suggestion, "About 1,240 kcal of Move or 38 min of Exercise.")

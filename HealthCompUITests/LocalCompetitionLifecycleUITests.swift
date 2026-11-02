@@ -385,11 +385,27 @@ final class LocalCompetitionLifecycleUITests: XCTestCase {
         }
     }
 
-    func testLossFixtureShowsWhatItTakesAboveYourRings() {
-        launch(fixture: "loss", direction: "outgoing")
+    func testLossFixtureShowsWhatItTakesAboveYourRings() throws {
+        try assertWhatItTakesAboveYourRings(prefix: "light-small")
+    }
+
+    func testLossFixtureWhatItTakesWrapsAtDarkAccessibilitySize() throws {
+        try assertWhatItTakesAboveYourRings(
+            prefix: "dark-ax5",
+            appearanceArguments: [
+                "-AppleInterfaceStyle", "Dark",
+                "-UIPreferredContentSizeCategoryName",
+                "UICTContentSizeCategoryAccessibilityXXXL",
+            ]
+        )
+    }
+
+    private func assertWhatItTakesAboveYourRings(prefix: String, appearanceArguments: [String] = []) throws {
+        launch(fixture: "loss", direction: "outgoing", appearanceArguments: appearanceArguments)
         XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 8))
+        scrollToElement(pendingSharingCard)
         pendingSharingCard.tap()
-        app.buttons["Start with Alex"].tap()
+        tapAfterScrolling(app.buttons["Start with Alex"])
         // The first checkpoint is the Day 1 boundary: 0–0, goals of 100.
         nextCheckpoint()
         XCTAssertTrue(waitForStatus("Day 1 of 7"))
@@ -403,16 +419,18 @@ final class LocalCompetitionLifecycleUITests: XCTestCase {
         let rings = app.otherElements["competition.ownerRings"]
         XCTAssertTrue(rings.exists)
         XCTAssertLessThan(takes.frame.minY, rings.frame.minY)
-        capture("light-small-takes")
+        try app.performAccessibilityAudit(for: .textClipped)
+        capture("\(prefix)-takes")
 
         for _ in 0..<6 { nextCheckpoint() }
         XCTAssertTrue(waitForStatus("Last day"))
-        app.buttons["Today"].tap()
+        tapAfterScrolling(app.buttons["Today"])
         // Alex has six days and you have none: more than one day can cover.
         XCTAssertTrue(takes.waitForExistence(timeout: 3))
         XCTAssertTrue(takes.label.hasPrefix("Out of reach today"), takes.label)
         XCTAssertFalse(takes.label.contains("of Move"), takes.label)
-        capture("light-small-takes-out-of-reach")
+        try app.performAccessibilityAudit(for: .textClipped)
+        capture("\(prefix)-takes-out-of-reach")
     }
 
     func testDarkAccessibilitySizeRemainsNavigableAndReadable() throws {
