@@ -1009,6 +1009,30 @@ final class CompetitionPresentationTests: XCTestCase {
         XCTAssertEqual(display(at: 1_787_038_200), .button(error: nil, isSending: false))
     }
 
+    func testNudgeSentAfterMidnightOnTheServerStillShowsAsSent() throws {
+        let en = Locale(identifier: "en_US")
+        let zone = try XCTUnwrap(TimeZone(identifier: "America/Los_Angeles"))
+        // The last projection is Sat 11:50 PM in Los Angeles; the server
+        // accepted the nudge at Sun 12:01 AM.
+        let projected = Date(timeIntervalSince1970: 1_786_863_000)
+        let nudgedAt = projected.addingTimeInterval(11 * 60)
+        let display = competitionNudgeDisplay(
+            .sent(nudgedAt),
+            competition: nudgePresentation(
+                lifecycle: .active(dayOrdinal: 3),
+                evaluatedAt: projected,
+                opponentUpdatedAt: projected.addingTimeInterval(-86_400),
+                zone: "America/Los_Angeles"
+            ),
+            locale: en,
+            timeZone: zone
+        )
+        guard case let .sent(text)? = display else {
+            return XCTFail("Expected the confirmation, got \(String(describing: display))")
+        }
+        XCTAssertEqual(normalized(text), "Nudged at 12:01 AM. You can nudge again tomorrow.")
+    }
+
     func testNudgeFailureAndRefusalCopy() {
         let now = Date(timeIntervalSince1970: 1_786_979_520)
         let stale = nudgePresentation(

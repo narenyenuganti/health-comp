@@ -1202,13 +1202,16 @@ func competitionNudgeDisplay(
     guard competitionCanNudge(competition) else { return nil }
     var matchCalendar = Calendar(identifier: .gregorian)
     matchCalendar.timeZone = TimeZone(identifier: competition.timeZoneIdentifier) ?? timeZone
+    // A server time after this projection (clock skew, or a projection from
+    // before midnight) is the newest news there is: it still counts as today.
     func isToday(_ date: Date) -> Bool {
-        matchCalendar.isDate(date, inSameDayAs: competition.evaluatedAt)
+        date > competition.evaluatedAt
+            || matchCalendar.isDate(date, inSameDayAs: competition.evaluatedAt)
     }
     switch status {
     case let .sent(date)? where isToday(date):
         let time = competitionUpdatedText(
-            date, now: competition.evaluatedAt, locale: locale, timeZone: timeZone
+            date, now: max(date, competition.evaluatedAt), locale: locale, timeZone: timeZone
         )
         return .sent("Nudged at \(time). You can nudge again tomorrow.")
     case let .notNeeded(date)? where isToday(date):
@@ -1272,7 +1275,7 @@ private struct CompetitionNudgeControl: View {
     }
 }
 
-/// The compact ink capsule of the shipped "Review" mark, with a 44 pt target.
+/// The compact ink pill of the shipped "Review" mark, with a 44 pt target.
 private struct CompetitionNudgeButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
 
@@ -1283,7 +1286,9 @@ private struct CompetitionNudgeButtonStyle: ButtonStyle {
             .multilineTextAlignment(.leading)
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
-            .background(Theme.ink, in: Capsule())
+            // A capsule while it fits one line; a long name wraps inside
+            // rounded corners instead of past a capsule's ends.
+            .background(Theme.ink, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
             .opacity(isEnabled ? (configuration.isPressed ? 0.8 : 1) : 0.45)
             .frame(minHeight: 44)
             .contentShape(Rectangle())
