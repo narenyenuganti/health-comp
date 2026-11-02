@@ -326,6 +326,171 @@ final class OpponentPlanTests: XCTestCase {
         XCTAssertEqual(identities.count, OpponentDifficulty.allCases.count)
     }
 
+    func testVersionTwoScalesDailyFinalsToTheBaselinePerDifficulty() throws {
+        let bounds: [(OpponentDifficulty, ClosedRange<Int>, ClosedRange<Int>)] = [
+            (.relaxed, 180...240, 6...8),
+            (.balanced, 360...440, 7...9),
+            (.challenging, 440...520, 8...10),
+        ]
+
+        for (difficulty, pointsRange, checkpointRange) in bounds {
+            var observedFinalPoints = Set<Int>()
+            for seed in UInt64(0)..<UInt64(64) {
+                let plan = try generateV2(seed: seed, difficulty: difficulty, baseline: 400)
+                XCTAssertEqual(plan.generatorVersion, .v2)
+                for day in plan.days {
+                    XCTAssertTrue(pointsRange.contains(day.finalPoints), "\(difficulty) \(day.finalPoints)")
+                    XCTAssertTrue(checkpointRange.contains(day.checkpoints.count))
+                    observedFinalPoints.insert(day.finalPoints)
+                }
+            }
+            XCTAssertEqual(observedFinalPoints.min(), pointsRange.lowerBound)
+            XCTAssertEqual(observedFinalPoints.max(), pointsRange.upperBound)
+        }
+        XCTAssertEqual(
+            try generateV2(seed: 42, difficulty: .balanced, baseline: 400),
+            try generateV2(seed: 42, difficulty: .balanced, baseline: 400)
+        )
+        XCTAssertNotEqual(
+            try generateV2(seed: 42, difficulty: .balanced, baseline: 400).days,
+            try generateV2(seed: 42, difficulty: .balanced, baseline: 300).days
+        )
+    }
+
+    func testVersionTwoClampsToSixHundredAndRejectsMissingOrOutOfRangeBaseline() throws {
+        for seed in UInt64(0)..<UInt64(8) {
+            let plan = try generateV2(seed: seed, difficulty: .challenging, baseline: 600)
+            XCTAssertEqual(plan.days.map(\.finalPoints), Array(repeating: 600, count: 7))
+        }
+        for seed in UInt64(0)..<UInt64(8) {
+            let plan = try generateV2(seed: seed, difficulty: .relaxed, baseline: 100)
+            XCTAssertTrue(plan.days.allSatisfy { (45...60).contains($0.finalPoints) })
+        }
+        for baseline in [nil, 99, 601] as [Int?] {
+            XCTAssertThrowsError(
+                try OpponentPlanGenerator.generate(
+                    seed: 42,
+                    generatorVersion: .v2,
+                    difficulty: .balanced,
+                    schedule: schedule(),
+                    baselineDailyPoints: baseline
+                )
+            ) { error in
+                XCTAssertEqual(error as? OpponentPlanError, .invalidBaseline(baseline))
+            }
+        }
+    }
+
+    func testVersionOneRejectsBaselineAndKeepsItsGolden() throws {
+        XCTAssertThrowsError(
+            try OpponentPlanGenerator.generate(
+                seed: 42,
+                generatorVersion: .v1,
+                difficulty: .balanced,
+                schedule: schedule(),
+                baselineDailyPoints: 300
+            )
+        ) { error in
+            XCTAssertEqual(error as? OpponentPlanError, .invalidBaseline(300))
+        }
+
+        let plan = try OpponentPlanGenerator.generate(
+            seed: 42,
+            generatorVersion: .v1,
+            difficulty: .balanced,
+            schedule: schedule(),
+            baselineDailyPoints: nil
+        )
+        XCTAssertEqual(plan, try generate(seed: 42, difficulty: .balanced))
+        XCTAssertEqual(
+            plan.commitmentHex,
+            "e07fa4888f99d79a7d4107d0571b34cad2c1a0eadb7de7c6019e7896de1d09fb"
+        )
+
+        let request = OpponentPlanGenerationRequest(
+            seed: 42,
+            generatorVersion: .v1,
+            difficulty: .balanced
+        )
+        let requestObject = try XCTUnwrap(
+            JSONSerialization.jsonObject(with: JSONEncoder().encode(request)) as? [String: Any]
+        )
+        XCTAssertEqual(Set(requestObject.keys), ["seed", "generatorVersion", "difficulty"])
+    }
+
+    func testVersionTwoPlanRoundTripsThroughCodable() throws {
+        let plan = try generateV2(seed: 42, difficulty: .challenging, baseline: 350)
+
+        let decoded = try JSONDecoder().decode(OpponentPlan.self, from: JSONEncoder().encode(plan))
+
+        XCTAssertEqual(decoded, plan)
+        XCTAssertEqual(decoded.canonicalBytes, plan.canonicalBytes)
+        XCTAssertTrue(plan.contentIdentity.hasPrefix("opponent-plan:v1:g2:sha256:"))
+
+        let request = OpponentPlanGenerationRequest(
+            seed: 42,
+            generatorVersion: .v2,
+            difficulty: .challenging,
+            baselineDailyPoints: 350
+        )
+        XCTAssertEqual(
+            try JSONDecoder().decode(
+                OpponentPlanGenerationRequest.self,
+                from: JSONEncoder().encode(request)
+            ),
+            request
+        )
+    }
+
+    func testAcceptanceWithVersionTwoRequestCarriesTheScaledPlan() throws {
+        var competition = pending()
+        let acceptedAt = date(2026, 12, 31, 23, 30)
+
+        let event = try engine.accept(
+            competition,
+            at: acceptedAt,
+            timeZoneIdentifier: "America/Los_Angeles",
+            opponent: OpponentPlanGenerationRequest(
+                seed: 42,
+                generatorVersion: .v2,
+                difficulty: .relaxed,
+                baselineDailyPoints: 400
+            )
+        )
+        guard case let .invitationAccepted(configuration) = event.kind else {
+            return XCTFail("Acceptance must carry one atomic configuration")
+        }
+        XCTAssertEqual(configuration.opponentPlan.generatorVersion, .v2)
+        XCTAssertTrue(configuration.opponentPlan.days.allSatisfy { (180...240).contains($0.finalPoints) })
+        XCTAssertEqual(
+            configuration.opponentPlan,
+            try OpponentPlanGenerator.generate(
+                seed: 42,
+                generatorVersion: .v2,
+                difficulty: .relaxed,
+                schedule: configuration.schedule,
+                baselineDailyPoints: 400
+            )
+        )
+
+        try engine.apply(event, to: &competition)
+        XCTAssertEqual(competition.opponentPlan, configuration.opponentPlan)
+        XCTAssertThrowsError(
+            try engine.accept(
+                pending(),
+                at: acceptedAt,
+                timeZoneIdentifier: "America/Los_Angeles",
+                opponent: OpponentPlanGenerationRequest(
+                    seed: 42,
+                    generatorVersion: .v2,
+                    difficulty: .relaxed
+                )
+            )
+        ) { error in
+            XCTAssertEqual(error as? OpponentPlanError, .invalidBaseline(nil))
+        }
+    }
+
     func testDSTStartScheduleIsDeterministicAcrossAmbientTimeZoneAndLanguageChanges() throws {
         let explicitSchedule = try schedule(
             year: 2026,
@@ -822,6 +987,20 @@ final class OpponentPlanTests: XCTestCase {
             generatorVersion: .v1,
             difficulty: difficulty,
             schedule: schedule()
+        )
+    }
+
+    private func generateV2(
+        seed: UInt64,
+        difficulty: OpponentDifficulty,
+        baseline: Int
+    ) throws -> OpponentPlan {
+        try OpponentPlanGenerator.generate(
+            seed: seed,
+            generatorVersion: .v2,
+            difficulty: difficulty,
+            schedule: schedule(),
+            baselineDailyPoints: baseline
         )
     }
 
