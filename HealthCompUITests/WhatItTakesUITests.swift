@@ -296,26 +296,30 @@ final class WhatItTakesUITests: XCTestCase {
     private func bringIntoView(_ element: XCUIElement) -> Bool {
         let window = app.windows.firstMatch
         let navigationBar = app.navigationBars.firstMatch
-        func placed() -> (done: Bool, down: Bool) {
+        /// Points the content still has to move up (negative: down); 0 when placed.
+        func offset() -> CGFloat {
             let top = navigationBar.frame.maxY + 8
             let bottom = window.frame.maxY - 40
             let frame = element.frame
-            if frame.minY < top { return (false, true) }
-            let fits = frame.height <= bottom - top
-            return (fits ? frame.maxY <= bottom : frame.minY <= top + 60, false)
+            if frame.minY < top { return frame.minY - top - 20 }
+            if frame.height <= bottom - top { return frame.maxY > bottom ? frame.maxY - bottom + 20 : 0 }
+            return frame.minY > top + 80 ? frame.minY - top - 20 : 0
         }
-        for _ in 0..<40 {
-            let state = placed()
-            if state.done { return true }
-            window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.85))
+        for _ in 0..<20 {
+            let move = min(180, max(-180, offset()))
+            if move == 0 { return true }
+            let height = window.frame.height
+            // Low on the screen: at AX5 the local lab controls cover the top two thirds.
+            let start: CGFloat = move > 0 ? 0.92 : 0.7
+            window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: start))
                 .press(
                     forDuration: 0.05,
-                    thenDragTo: window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: state.down ? 0.9 : 0.8)),
+                    thenDragTo: window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: start - move / height)),
                     withVelocity: .slow,
-                    thenHoldForDuration: 0.1
+                    thenHoldForDuration: 0.2
                 )
         }
-        return placed().done
+        return offset() == 0
     }
 
     private func scrollToElement(_ element: XCUIElement) {
