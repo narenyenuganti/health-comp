@@ -807,6 +807,41 @@ final class MultiUserCompetitionUITests: XCTestCase {
         app.terminate()
     }
 
+    /// Each card is one VoiceOver element, so the checks read its label.
+    func testLiveActivityPreviewFitsAtAccessibilitySizes() throws {
+        let sizes: [(name: String, arguments: [String])] = [
+            ("default", []),
+            ("ax5", ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]),
+        ]
+        for appearance in ["Light", "Dark"] {
+            for size in sizes {
+                launch(.liveActivity, appearanceArguments: ["-AppleInterfaceStyle", appearance] + size.arguments)
+                let live = element("liveActivity.preview.live")
+                XCTAssertTrue(live.waitForExistence(timeout: 8))
+                let pending = element("liveActivity.preview.pending")
+                XCTAssertTrue(live.label.contains("Last day · Sam"), live.label)
+                XCTAssertTrue(live.label.contains("You 2,190 points"), live.label)
+                XCTAssertTrue(live.label.contains("Sam 2,171 points"), live.label)
+                XCTAssertTrue(live.label.contains("You lead by 19."), live.label)
+                XCTAssertTrue(pending.label.contains("Final score pending · Sam"), pending.label)
+                XCTAssertTrue(pending.label.contains("Not final yet."), pending.label)
+                XCTAssertFalse(pending.label.contains("Ends at midnight"), pending.label)
+                attachScreenshot("live-activity-preview-\(appearance)-\(size.name)")
+                var issues: [String] = []
+                // The card has a fixed 160 pt height, so one-line rows are by
+                // design; whether they really fit is checked at AX5.
+                let audit: XCUIAccessibilityAuditType = size.name == "ax5"
+                    ? XCUIAccessibilityAuditType.textClipped.union(.sufficientElementDescription)
+                    : .sufficientElementDescription
+                try app.performAccessibilityAudit(for: audit) { issue in
+                    issues.append("\(issue.compactDescription): \(issue.element?.label ?? "?") \(issue.element?.frame ?? .zero)")
+                    return true
+                }
+                XCTAssertEqual(issues, [], "\(appearance) \(size.name)")
+            }
+        }
+    }
+
     private func attachScreenshot(_ name: String) {
         let screenshot = XCTAttachment(screenshot: app.screenshot())
         screenshot.name = name
@@ -1608,6 +1643,7 @@ final class MultiUserCompetitionUITests: XCTestCase {
         case healthOnboarding = "health-onboarding"
         case healthOnboardingChallenge = "health-onboarding-challenge"
         case healthOnboardingClaim = "health-onboarding-claim"
+        case liveActivity = "live-activity"
     }
 
     private func launch(

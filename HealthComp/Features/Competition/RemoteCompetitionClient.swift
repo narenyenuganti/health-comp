@@ -25,7 +25,8 @@ extension CompetitionClient {
             observerDeliveryReceiptFactory: { paths in
                 .live(directory: paths.observerDeliveryDirectory)
             },
-            widgetSnapshots: .liveValue
+            widgetSnapshots: .liveValue,
+            liveActivities: CompetitionLiveActivities(client: .live)
         )
     }
 
@@ -49,6 +50,7 @@ extension CompetitionClient {
             .discarding
         },
         widgetSnapshots: CompetitionWidgetSnapshotClient = .noop,
+        liveActivities: CompetitionLiveActivities? = nil,
         lifecycleInvalidationObserver: @escaping @Sendable () -> Void = {}
     ) -> Self {
         let router = RemoteCompetitionPublicationRouter()
@@ -66,7 +68,8 @@ extension CompetitionClient {
             notificationPreferencesFactory: notificationPreferencesFactory,
             observerDeliveryReceiptFactory: observerDeliveryReceiptFactory,
             router: router,
-            widgetSnapshots: widgetSnapshots
+            widgetSnapshots: widgetSnapshots,
+            liveActivities: liveActivities
         )
         return Self(
             start: {
@@ -397,6 +400,7 @@ private actor RemoteCompetitionClientCoordinator {
     ) -> HealthKitObserverDeliveryReceiptClient
     private let router: RemoteCompetitionPublicationRouter
     private let widgetSnapshots: CompetitionWidgetSnapshotClient
+    private let liveActivities: CompetitionLiveActivities?
 
     private var profile: AuthenticatedProfile?
     private var runtime: RemoteCompetitionRuntime?
@@ -458,9 +462,11 @@ private actor RemoteCompetitionClientCoordinator {
             AuthenticatedProfileStoragePaths
         ) -> HealthKitObserverDeliveryReceiptClient,
         router: RemoteCompetitionPublicationRouter,
-        widgetSnapshots: CompetitionWidgetSnapshotClient
+        widgetSnapshots: CompetitionWidgetSnapshotClient,
+        liveActivities: CompetitionLiveActivities?
     ) {
         self.widgetSnapshots = widgetSnapshots
+        self.liveActivities = liveActivities
         self.remoteAPI = remoteAPI
         self.environment = environment
         self.realtimeClient = realtimeClient
@@ -810,6 +816,7 @@ private actor RemoteCompetitionClientCoordinator {
         await withOperationGate {
             guard terminalTeardown == nil else { return }
             await notificationCoordinator.reconcileLatest()
+            await liveActivities?.reconcileLatest()
         }
     }
 
@@ -1061,6 +1068,9 @@ private actor RemoteCompetitionClientCoordinator {
             }
             isStopped = true
             let stoppedTasks = await stopRuntime()
+            // Not in stopRuntime(): mount calls it, and would end the card
+            // the previous process left at every launch.
+            await liveActivities?.endAll()
             profile = nil
             hub = nil
             latestPublication = nil
@@ -1745,6 +1755,7 @@ private actor RemoteCompetitionClientCoordinator {
                 knownCompetitionIDs: knownCompetitionIDs
             )
         )
+        await liveActivities?.submit(publication, knownCompetitionIDs: knownCompetitionIDs)
         // Without discovery the full set of matches is unknown: keep the
         // last good file. Matches that didn't sync this round carry forward.
         if let knownCompetitionIDs {
