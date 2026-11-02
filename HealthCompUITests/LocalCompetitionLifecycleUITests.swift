@@ -385,6 +385,36 @@ final class LocalCompetitionLifecycleUITests: XCTestCase {
         }
     }
 
+    func testLossFixtureShowsWhatItTakesAboveYourRings() {
+        launch(fixture: "loss", direction: "outgoing")
+        XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 8))
+        pendingSharingCard.tap()
+        app.buttons["Start with Alex"].tap()
+        // The first checkpoint is the Day 1 boundary: 0–0, goals of 100.
+        nextCheckpoint()
+        XCTAssertTrue(waitForStatus("Day 1 of 7"))
+
+        let takes = app.descendants(matching: .any)["competition.takes"]
+        XCTAssertTrue(takes.waitForExistence(timeout: 3))
+        XCTAssertEqual(
+            takes.label,
+            "1 point to take the lead. About 10 kilocalories of Move or 1 minute of Exercise. Alex can still add points today."
+        )
+        let rings = app.otherElements["competition.ownerRings"]
+        XCTAssertTrue(rings.exists)
+        XCTAssertLessThan(takes.frame.minY, rings.frame.minY)
+        capture("light-small-takes")
+
+        for _ in 0..<6 { nextCheckpoint() }
+        XCTAssertTrue(waitForStatus("Last day"))
+        app.buttons["Today"].tap()
+        // Alex has six days and you have none: more than one day can cover.
+        XCTAssertTrue(takes.waitForExistence(timeout: 3))
+        XCTAssertTrue(takes.label.hasPrefix("Out of reach today"), takes.label)
+        XCTAssertFalse(takes.label.contains("of Move"), takes.label)
+        capture("light-small-takes-out-of-reach")
+    }
+
     func testDarkAccessibilitySizeRemainsNavigableAndReadable() throws {
         launch(
             fixture: "late-sync",
