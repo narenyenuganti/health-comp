@@ -130,7 +130,18 @@ struct MainTabView: View {
                         challengeAgain: challengeAgain,
                         archive: { store.send(.competition(.archiveTapped($0))) },
                         commandIDsInFlight: store.competition.commandIDsInFlight,
-                        retry: retry
+                        retry: retry,
+                        practice: publication.source == .remoteParticipants
+                            ? CompetitionPracticeStart(
+                                isStarting: store.competition.isCommandInFlight(
+                                    PracticeMatch.startCommandID
+                                ),
+                                failed: publication.dashboard.issues.contains(
+                                    .commandRejected(PracticeMatch.startCommandID)
+                                ),
+                                start: { store.send(.competition(.practiceStartTapped($0))) }
+                            )
+                            : nil
                     )
                     .refreshable {
                         await store.send(.competition(.pullToRefresh)).finish()
@@ -268,6 +279,12 @@ struct MainTabView: View {
         if let publication = store.competition.publication,
            let competition = publication.dashboard.competitions.first(
                where: { $0.id == id }
+           ),
+           competition.isPractice {
+            practiceDestination(competition, publication: publication)
+        } else if let publication = store.competition.publication,
+           let competition = publication.dashboard.competitions.first(
+               where: { $0.id == id }
            ) {
             switch competition.lifecycle {
             case .pending:
@@ -351,6 +368,48 @@ struct MainTabView: View {
                 "Match Unavailable",
                 systemImage: "exclamationmark.circle",
                 description: Text("Go back to Home to refresh this match.")
+            )
+        }
+    }
+
+    /// Practice: simulated on its match screen (the rules say so), no mute,
+    /// no Cancel Match, End Practice in the menu; its result's one action is
+    /// Challenge Someone.
+    @ViewBuilder
+    private func practiceDestination(
+        _ competition: LocalCompetitionPresentation,
+        publication: LocalCompetitionPublication
+    ) -> some View {
+        let id = competition.id
+        switch competition.lifecycle {
+        case .completed, .archived:
+            CompetitionResultView(
+                competition: competition,
+                beltEvent: nil,
+                source: .remoteParticipants,
+                rematch: .available,
+                isCommandInFlight: false,
+                send: sendCompetitionAction,
+                openCompetition: { store.send(.pathChanged(store.path + [$0])) },
+                issue: competitionRowIssue(id, in: publication.dashboard.issues),
+                retry: retry,
+                challengeSomeone: {
+                    store.send(.pathChanged([]))
+                    isChallengePresented = true
+                }
+            )
+        default:
+            CompetitionDetailView(
+                competition: competition,
+                source: .simulatedFixture,
+                issue: competitionRowIssue(id, in: publication.dashboard.issues),
+                retry: retry,
+                refresh: { [store] in
+                    await Task {
+                        await store.send(.competition(.pullToRefresh)).finish()
+                    }.value
+                },
+                endPractice: { store.send(.competition(.deleteTapped(id))) }
             )
         }
     }

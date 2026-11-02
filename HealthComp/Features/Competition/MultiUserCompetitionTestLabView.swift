@@ -36,6 +36,8 @@ enum MultiUserCompetitionTestLabScenario:
     case whatItTakes = "what-it-takes"
     /// The final-day Live Activity's views, and a button that starts a real one.
     case liveActivity = "live-activity"
+    /// The empty Home with Practice Match, run through Home's own reducer.
+    case practice
 }
 
 struct MultiUserCompetitionTestLabConfiguration: Equatable, Sendable {
@@ -165,6 +167,8 @@ struct MultiUserCompetitionTestLabRootView: View {
             MultiUserCompetitionNudgeTestLabView(source: .simulatedFixture)
         case .liveActivity:
             LiveActivityPreviewView()
+        case .practice:
+            MultiUserCompetitionPracticeTestLabView()
         }
     }
 }
@@ -439,7 +443,7 @@ private struct MultiUserCompetitionClaimTestLabView: View {
         case .sharing, .sharingCustomScheme, .coldClaim, .warmClaim,
              .signedOutClaim, .challengeLink, .account, .welcome, .welcomeChallenge,
              .healthOnboarding, .healthOnboardingChallenge, .healthOnboardingClaim,
-             .nudge, .nudgeSimulated, .whatItTakes, .liveActivity:
+             .nudge, .nudgeSimulated, .whatItTakes, .liveActivity, .practice:
             .ready
         }
         _status = State(initialValue: initialStatus)
@@ -670,6 +674,100 @@ private final class MultiUserCompetitionNudgeTestLabServer: @unchecked Sendable 
         default:
             return Fixtures.labNow
         }
+    }
+}
+
+/// Practice through the real Home, match screen and result. Start answers
+/// after 80 ms with a live practice; End Practice deletes it.
+/// `-practiceLabFinished YES` starts with a finished practice instead.
+private struct MultiUserCompetitionPracticeTestLabView: View {
+    @State private var store: StoreOf<MainTabFeature>
+
+    init() {
+        let hub = LocalCompetitionPublicationHub()
+        let server = MultiUserCompetitionPracticeTestLabServer(
+            hub: hub,
+            finished: UserDefaults.standard.bool(forKey: "practiceLabFinished")
+        )
+        _store = State(initialValue: Store(initialState: MainTabFeature.State()) {
+            MainTabFeature()
+        } withDependencies: {
+            $0.competitionClient = CompetitionClient(
+                start: {
+                    let stream = hub.stream()
+                    server.publish()
+                    return stream
+                },
+                updates: { hub.stream() },
+                reconcileAll: { _ in server.publish() },
+                accept: { _ in server.publish() },
+                decline: { _ in server.publish() },
+                archive: { _ in server.publish() },
+                rematch: { _ in server.publish() },
+                reinvite: { server.publish() },
+                delete: { server.delete($0) },
+                waitUntil: { _ in },
+                stop: { hub.finish() },
+                startPractice: { _ in await server.start() }
+            )
+            $0.competitionRoutingClient = CompetitionRoutingClient(
+                routes: { AsyncStream { _ in } },
+                enqueue: { _ in },
+                consume: { _ in }
+            )
+            $0.permissionOnboardingClient = .inert
+            $0.date = .constant(MultiUserCompetitionTestLabFixtures.labNow)
+        })
+    }
+
+    var body: some View {
+        MainTabView(store: store)
+            .accessibilityIdentifier("multiuser.practice.root")
+    }
+}
+
+private final class MultiUserCompetitionPracticeTestLabServer: @unchecked Sendable {
+    private let hub: LocalCompetitionPublicationHub
+    private let lock = NSLock()
+    private var revision: UInt64 = 0
+    private var practice: LocalCompetitionPresentation?
+
+    init(hub: LocalCompetitionPublicationHub, finished: Bool) {
+        self.hub = hub
+        practice = finished ? MultiUserCompetitionTestLabFixtures.practiceResultPresentation() : nil
+    }
+
+    @discardableResult
+    func publish() -> LocalCompetitionPublication {
+        let (next, competitions) = lock.withLock { () -> (UInt64, [LocalCompetitionPresentation]) in
+            revision += 1
+            return (revision, [practice].compactMap { $0 })
+        }
+        let publication = LocalCompetitionPublication(
+            publicationRevision: next,
+            dashboard: LocalCompetitionDashboard(
+                competitions: competitions,
+                awards: [],
+                issues: [],
+                hiddenTerminalCompetitionCount: 0
+            ),
+            evaluatedAt: MultiUserCompetitionTestLabFixtures.labNow,
+            timeZoneIdentifier: "America/Los_Angeles",
+            source: .remoteParticipants
+        )
+        hub.publish(publication)
+        return publication
+    }
+
+    func start() async -> LocalCompetitionPublication {
+        try? await Task.sleep(for: .milliseconds(80))
+        lock.withLock { practice = MultiUserCompetitionTestLabFixtures.practicePresentation() }
+        return publish()
+    }
+
+    func delete(_ id: CompetitionID) -> LocalCompetitionPublication {
+        lock.withLock { if practice?.id == id { practice = nil } }
+        return publish()
     }
 }
 
@@ -1170,6 +1268,68 @@ private enum MultiUserCompetitionTestLabFixtures {
             evaluatedAt: evaluatedAt,
             timeZoneIdentifier: "America/Los_Angeles",
             source: source
+        )
+    }
+
+    static let practiceID = CompetitionID(
+        UUID(uuidString: "A1000000-0000-4000-8000-00000000000C")!
+    )
+
+    /// Day 2 against the Pacer: 486 to 452 after Day 1, nothing yet today.
+    static func practicePresentation() -> LocalCompetitionPresentation {
+        let schedule = schedule(startDay: 15)
+        let days = try! schedule.calendar.sevenDayWindow(startingOn: schedule.startDay)
+        return presentation(
+            id: practiceID,
+            opponentName: PracticeMatch.opponentDisplayName,
+            lifecycle: .active(dayOrdinal: 2),
+            userPoints: 486,
+            opponentPoints: 452,
+            days: days.enumerated().map { offset, day in
+                LocalCompetitionDayPresentation(
+                    day: day,
+                    ordinal: offset + 1,
+                    ownerAcceptedPoints: offset == 0 ? 486 : nil,
+                    ownerLatestAvailability: offset == 0
+                        ? .observed : offset == 1 ? .notSyncedYet : .notYetOccurred,
+                    opponentRevealedPoints: offset == 0 ? 452 : offset == 1 ? 0 : nil
+                )
+            },
+            currentDayOrdinal: 2,
+            terminal: nil,
+            startDay: 15,
+            opponentIdentity: PracticeMatch.opponentIdentity
+        )
+    }
+
+    /// A practice week you won 2,692 to 2,550, still on Home.
+    static func practiceResultPresentation() -> LocalCompetitionPresentation {
+        let completedAt = labNow.addingTimeInterval(-14 * 3_600)
+        let terminal = LocalCompetitionTerminalPresentation(
+            userPoints: 2_692,
+            opponentPoints: 2_550,
+            outcome: .win,
+            basis: .stableAcrossPostBoundaryReads,
+            completedAt: completedAt
+        )
+        return presentation(
+            id: practiceID,
+            opponentName: PracticeMatch.opponentDisplayName,
+            lifecycle: .completed(
+                outcome: .win,
+                basis: .stableAcrossPostBoundaryReads,
+                completedAt: completedAt
+            ),
+            userPoints: 2_692,
+            opponentPoints: 2_550,
+            days: completedDays(
+                startDay: 8,
+                opponent: [400, 360, 320, 450, 380, 340, 300]
+            ),
+            currentDayOrdinal: nil,
+            terminal: terminal,
+            startDay: 8,
+            opponentIdentity: PracticeMatch.opponentIdentity
         )
     }
 

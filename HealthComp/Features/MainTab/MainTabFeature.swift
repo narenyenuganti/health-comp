@@ -865,7 +865,8 @@ struct MainTabFeature {
         }
     }
 
-    /// Schedules the notifications prompt once a match with a person exists.
+    /// Schedules the notifications prompt once a match with a person (not a
+    /// practice) exists.
     private func scheduleNotificationPromptIfDue(
         state: inout State
     ) -> Effect<Action> {
@@ -876,7 +877,7 @@ struct MainTabFeature {
               !state.isAccountPresented,
               state.competition.notificationAuthorizationState == .notDetermined,
               state.competition.publication?.dashboard.competitions.contains(
-                  where: { Self.hasPerson($0.lifecycle) }
+                  where: { !$0.isPractice && Self.hasPerson($0.lifecycle) }
               ) == true
         else {
             return .none
