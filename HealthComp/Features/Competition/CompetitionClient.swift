@@ -89,6 +89,12 @@ struct CompetitionClient: Sendable {
     ) async throws -> CompetitionInviteCreationOutcome
     /// Withdraws your pending challenge, or cancels a match before Day 1.
     var cancel: @Sendable (CompetitionID) async -> CompetitionPublication
+    /// Declines the pending challenge and blocks its sender.
+    var block: @Sendable (CompetitionID) async -> CompetitionPublication
+    /// The people you blocked, newest first.
+    var loadBlockedProfiles: @Sendable () async throws -> [AuthenticatedProfile]
+    /// Takes a profile id.
+    var unblock: @Sendable (UUID) async throws -> Void
     var previewInvite: @Sendable (
         CompetitionInviteClaimRequest
     ) async throws -> CompetitionInvitePreview
@@ -167,6 +173,16 @@ struct CompetitionClient: Sendable {
         cancel: @escaping @Sendable (
             CompetitionID
         ) async -> CompetitionPublication = { _ in .inert },
+        block: @escaping @Sendable (
+            CompetitionID
+        ) async -> CompetitionPublication = { _ in .inert },
+        loadBlockedProfiles: @escaping @Sendable () async throws ->
+            [AuthenticatedProfile] = {
+            throw CompetitionRemoteFailure.operationFailed
+        },
+        unblock: @escaping @Sendable (UUID) async throws -> Void = { _ in
+            throw CompetitionRemoteFailure.operationFailed
+        },
         previewInvite: @escaping @Sendable (
             CompetitionInviteClaimRequest
         ) async throws -> CompetitionInvitePreview = { _ in
@@ -217,6 +233,9 @@ struct CompetitionClient: Sendable {
         self.resolveInviteRecipient = resolveInviteRecipient
         self.restoreInvite = restoreInvite
         self.cancel = cancel
+        self.block = block
+        self.loadBlockedProfiles = loadBlockedProfiles
+        self.unblock = unblock
         self.previewInvite = previewInvite
         self.loadChallengeLinkCode = loadChallengeLinkCode
         self.resetChallengeLinkCode = resetChallengeLinkCode

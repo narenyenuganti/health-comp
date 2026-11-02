@@ -134,6 +134,11 @@ struct CompetitionFeature {
         var challengeLinkLoadFailed = false
         var challengeLinkIsResetting = false
         var challengeLinkResetFailed = false
+        /// People you blocked, newest first; nil until Account loads them.
+        var blockedPeople: [AuthenticatedProfile]?
+        var unblocksInFlight: Set<UUID> = []
+        /// The person whose last Unblock failed; the error shows in their row.
+        var unblockFailed: UUID?
         /// Per match; not persisted.
         var nudges: [CompetitionID: NudgeStatus] = [:]
 
@@ -209,6 +214,12 @@ struct CompetitionFeature {
         case inviteLinkResponse(CompetitionID, InviteLinkState)
         case acceptTapped(CompetitionID)
         case declineTapped(CompetitionID)
+        /// Decline and block the sender.
+        case blockTapped(CompetitionID)
+        case blockedPeopleRequested
+        case blockedPeopleResponse([AuthenticatedProfile]?)
+        case unblockTapped(UUID)
+        case unblockFinished(UUID, succeeded: Bool)
         case archiveTapped(CompetitionID)
         case rematchTapped(CompetitionID)
         case challengeAgainTapped(CompetitionID)
@@ -242,6 +253,7 @@ struct CompetitionFeature {
         case inviteLink
         case challengeLink
         case challengeLinkReset
+        case blockedPeople
         case nudge
     }
 
@@ -617,6 +629,60 @@ struct CompetitionFeature {
                     )
                 }
 
+            case let .blockTapped(id):
+                guard state.commandIDsInFlight.insert(id).inserted else {
+                    return .none
+                }
+                return .run { send in
+                    let returned = await competitionClient.block(id)
+                    await send(
+                        .commandFinished(
+                            id,
+                            expectedRevision: returned.publicationRevision
+                        )
+                    )
+                }
+
+            case .blockedPeopleRequested:
+                state.unblockFailed = nil
+                return .run { send in
+                    await send(.blockedPeopleResponse(
+                        try? await competitionClient.loadBlockedProfiles()
+                    ))
+                }
+                .cancellable(id: CancelID.blockedPeople, cancelInFlight: true)
+
+            case let .blockedPeopleResponse(people):
+                // A failed refresh keeps whatever was shown.
+                if let people { state.blockedPeople = people }
+                return .none
+
+            case let .unblockTapped(id):
+                guard state.unblocksInFlight.insert(id).inserted else {
+                    return .none
+                }
+                state.unblockFailed = nil
+                // A list load already running may have read before this
+                // unblock and would bring the row back, so it's dropped.
+                // Not cancellable: the server call finishes.
+                return .merge(
+                    .cancel(id: CancelID.blockedPeople),
+                    .run { send in
+                        let succeeded = (try? await competitionClient.unblock(id)) != nil
+                        await send(.unblockFinished(id, succeeded: succeeded))
+                    }
+                )
+
+            case let .unblockFinished(id, succeeded):
+                // stop clears the set, so a late result never marks the next account.
+                guard state.unblocksInFlight.remove(id) != nil else { return .none }
+                if succeeded {
+                    state.blockedPeople?.removeAll { $0.id == id }
+                } else {
+                    state.unblockFailed = id
+                }
+                return .none
+
             case let .archiveTapped(id):
                 guard state.commandIDsInFlight.insert(id).inserted else {
                     return .none
@@ -855,6 +921,9 @@ struct CompetitionFeature {
                 state.challengeLinkLoadFailed = false
                 state.challengeLinkIsResetting = false
                 state.challengeLinkResetFailed = false
+                state.blockedPeople = nil
+                state.unblocksInFlight = []
+                state.unblockFailed = nil
                 state.nudges = [:]
                 return .concatenate(
                     .merge(
@@ -864,6 +933,7 @@ struct CompetitionFeature {
                         .cancel(id: CancelID.inviteLink),
                         .cancel(id: CancelID.challengeLink),
                         .cancel(id: CancelID.challengeLinkReset),
+                        .cancel(id: CancelID.blockedPeople),
                         .cancel(id: CancelID.nudge)
                     ),
                     .run { _ in await competitionClient.stop() }
