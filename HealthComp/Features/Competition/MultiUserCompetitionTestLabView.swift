@@ -412,7 +412,7 @@ private struct MultiUserCompetitionClaimTestLabView: View {
         case .offlineClaim: .retryable
         case .sharing, .sharingCustomScheme, .coldClaim, .warmClaim,
              .signedOutClaim, .challengeLink, .account, .welcome, .welcomeChallenge,
-             .healthOnboarding, .healthOnboardingChallenge, .healthOnboardingClaim:
+             .healthOnboarding, .healthOnboardingChallenge, .healthOnboardingClaim, .whatItTakes:
             .ready
         }
         _status = State(initialValue: initialStatus)
