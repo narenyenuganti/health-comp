@@ -745,6 +745,250 @@ final class CompetitionPresentationTests: XCTestCase {
         XCTAssertNil(line(you: nil, them: nil))
     }
 
+    // MARK: What it takes
+
+    func testWhatItTakesNamesThePointsAndTheRoomiestRings() throws {
+        let takes = try XCTUnwrap(competitionWhatItTakes(
+            takesCompetition(accepted: try takesRings(move: (410, 600), exercise: (24, 30), stand: (8, 12))),
+            locale: en
+        ))
+        XCTAssertEqual(takes.headline, "39 to take the lead")
+        XCTAssertEqual(takes.points, 39)
+        XCTAssertEqual(takes.dayOrdinal, 5)
+        XCTAssertEqual(takes.suggestion, "About 240 kcal of Move or 12 min of Exercise.")
+        XCTAssertEqual(takes.detail, "About 240 kcal of Move or 12 min of Exercise. Sam can still add points today.")
+        XCTAssertEqual(
+            takes.accessibilityLabel,
+            "39 points to take the lead. About 240 kilocalories of Move or 12 minutes of Exercise. Sam can still add points today."
+        )
+    }
+
+    func testWhatItTakesIsOneWhenLevel() throws {
+        let takes = try XCTUnwrap(competitionWhatItTakes(
+            takesCompetition(user: 1_000, opponent: 1_000.2, accepted: try takesRings(move: (410, 600), exercise: (24, 30))),
+            locale: en
+        ))
+        XCTAssertEqual(takes.headline, "1 to take the lead")
+        XCTAssertEqual(takes.points, 1)
+    }
+
+    func testWhatItTakesHidesWhenYouLeadOrTheDayIsNotLive() throws {
+        let snapshot = try takesRings(move: (410, 600), exercise: (24, 30))
+        XCTAssertNil(competitionWhatItTakes(takesCompetition(user: 1_001, opponent: 1_000, accepted: snapshot)))
+        XCTAssertNil(competitionWhatItTakes(takesCompetition(
+            accepted: snapshot, lifecycle: .tallying(startedAt: Date(timeIntervalSince1970: 0))
+        )))
+        XCTAssertNil(competitionWhatItTakes(takesCompetition(accepted: snapshot, lifecycle: .scheduled)))
+        XCTAssertNil(competitionWhatItTakes(takesCompetition(accepted: snapshot, ordinal: nil)))
+        XCTAssertNotNil(competitionWhatItTakes(takesCompetition(accepted: snapshot, lifecycle: .endsToday)))
+    }
+
+    func testWhatItTakesSaysOutOfReachWhenMoveAndExerciseCantCoverTheGap() throws {
+        func takes(_ user: Double, _ opponent: Double, today: Double, _ snapshot: ActivitySnapshot) throws -> CompetitionWhatItTakes {
+            try XCTUnwrap(competitionWhatItTakes(
+                takesCompetition(user: user, opponent: opponent, today: today, accepted: snapshot, lifecycle: .endsToday, ordinal: 7),
+                locale: en
+            ))
+        }
+        let room = try takes(2_010, 2_390, today: 390, try takesRings(move: (540, 600), exercise: (60, 30), stand: (12, 12)))
+        XCTAssertEqual(room.headline, "Out of reach today")
+        XCTAssertNil(room.points)
+        XCTAssertEqual(room.dayOrdinal, 7)
+        XCTAssertEqual(room.detail, "Sam is 380 ahead and you have 110 points left in Move and Exercise today.")
+        XCTAssertEqual(room.suggestion, room.detail)
+        XCTAssertEqual(
+            room.accessibilityLabel,
+            "Out of reach today. Sam is 380 points ahead and you have 110 points left in Move and Exercise today."
+        )
+
+        let full = try takesRings(move: (1_200, 600), exercise: (60, 30), stand: (24, 12))
+        XCTAssertEqual(
+            try takes(2_010, 2_390, today: 600, full).detail,
+            "Sam is 380 ahead and you’ve reached today’s cap."
+        )
+        XCTAssertEqual(
+            try takes(2_390, 2_390, today: 600, full).detail,
+            "All square, and you’ve reached today’s cap."
+        )
+    }
+
+    func testWhatItTakesNeverSuggestsStandWhenMoveAndExerciseAreCapped() throws {
+        let snapshot = try takesRings(move: (1_200, 600), exercise: (60, 30), stand: (6, 12))
+        let behind = try XCTUnwrap(competitionWhatItTakes(
+            takesCompetition(user: 1_000, opponent: 1_038, today: 450, accepted: snapshot), locale: en
+        ))
+        XCTAssertEqual(behind.headline, "Out of reach today")
+        XCTAssertEqual(behind.detail, "Sam is 38 ahead and Move and Exercise are at the 200% cap.")
+        let level = try XCTUnwrap(competitionWhatItTakes(
+            takesCompetition(user: 1_000, opponent: 1_000, today: 450, accepted: snapshot), locale: en
+        ))
+        XCTAssertEqual(level.detail, "All square, and Move and Exercise are at the 200% cap.")
+    }
+
+    func testWhatItTakesUsesOneWholeNumberForReachAndCopy() throws {
+        let snapshot = try takesRings(move: (300, 600), exercise: (15, 30))
+        let out = try XCTUnwrap(competitionWhatItTakes(
+            takesCompetition(user: 1_000, opponent: 1_209, today: 390.4, accepted: snapshot), locale: en
+        ))
+        XCTAssertEqual(out.headline, "Out of reach today")
+        XCTAssertEqual(out.detail, "Sam is 209 ahead and you have 209 points left in Move and Exercise today.")
+        let reachable = try XCTUnwrap(competitionWhatItTakes(
+            takesCompetition(user: 1_000, opponent: 1_208, today: 390.4, accepted: snapshot), locale: en
+        ))
+        XCTAssertEqual(reachable.headline, "209 to take the lead")
+        XCTAssertEqual(
+            reachable.detail,
+            "About 900 kcal of Move and 18 min of Exercise. Sam can still add points today."
+        )
+    }
+
+    func testWhatItTakesUsesMoveTimeMinutes() throws {
+        let takes = try XCTUnwrap(competitionWhatItTakes(
+            takesCompetition(accepted: try takesRings(move: (20, 30), exercise: (24, 30), moveMinutes: true)),
+            locale: en
+        ))
+        XCTAssertEqual(takes.suggestion, "About 12 min of Move Time or 12 min of Exercise.")
+        XCTAssertTrue(takes.accessibilityLabel.contains("About 12 minutes of Move Time or 12 minutes of Exercise."))
+    }
+
+    func testWhatItTakesSkipsARingAtItsCapAndSplitsWhenNoRingCoversItAlone() throws {
+        let capped = try XCTUnwrap(competitionWhatItTakes(
+            takesCompetition(accepted: try takesRings(move: (1_200, 600), exercise: (15, 30))), locale: en
+        ))
+        XCTAssertEqual(capped.suggestion, "About 12 min of Exercise.")
+
+        let split = try XCTUnwrap(competitionWhatItTakes(
+            takesCompetition(
+                user: 1_000, opponent: 1_049, today: 445,
+                accepted: try takesRings(move: (1_020, 600), exercise: (52.5, 30), stand: (6, 12))
+            ),
+            locale: en
+        ))
+        XCTAssertEqual(split.headline, "50 to take the lead")
+        XCTAssertEqual(split.suggestion, "About 180 kcal of Move and 6 min of Exercise.")
+    }
+
+    func testWhatItTakesHasNoPerRingCapInTheLocalFixture() throws {
+        let snapshot = try takesRings(move: (1_500, 600), exercise: (24, 30), stand: (8, 12))
+        let local = try XCTUnwrap(competitionWhatItTakes(
+            takesCompetition(today: 396.7, accepted: snapshot, policy: .healthKitCompatibility), locale: en
+        ))
+        XCTAssertEqual(local.suggestion, "About 240 kcal of Move or 12 min of Exercise.")
+        let remote = try XCTUnwrap(competitionWhatItTakes(
+            takesCompetition(today: 396.7, accepted: snapshot, policy: .remoteWireV1), locale: en
+        ))
+        XCTAssertEqual(remote.suggestion, "About 12 min of Exercise.")
+    }
+
+    func testWhatItTakesNeedsAnAcceptedSnapshotThatMatchesTheLatest() throws {
+        let a = try takesRings(move: (410, 600), exercise: (24, 30))
+        let b = try takesRings(move: (450, 600), exercise: (24, 30))
+        XCTAssertNil(competitionWhatItTakes(takesCompetition(accepted: nil, latest: a)))
+        XCTAssertNil(competitionWhatItTakes(takesCompetition(accepted: nil)))
+        XCTAssertNil(competitionWhatItTakes(takesCompetition(accepted: a, latest: b)))
+        XCTAssertNotNil(competitionWhatItTakes(takesCompetition(accepted: a, latest: .some(nil))))
+    }
+
+    func testWhatItTakesDropsTheMovingTargetWhenTheyAreAtTodaysCap() throws {
+        let snapshot = try takesRings(move: (410, 600), exercise: (24, 30))
+        XCTAssertEqual(
+            competitionWhatItTakes(takesCompetition(accepted: snapshot, opponentToday: 600), locale: en)?.detail,
+            "About 240 kcal of Move or 12 min of Exercise."
+        )
+        XCTAssertEqual(
+            competitionWhatItTakes(takesCompetition(accepted: snapshot, opponentToday: nil), locale: en)?.detail,
+            "About 240 kcal of Move or 12 min of Exercise. Sam can still add points today."
+        )
+    }
+
+    func testWhatItTakesRoundsAmountsUpGroupsByLocaleAndSpeaksSingularUnits() throws {
+        let exact = try XCTUnwrap(competitionWhatItTakes(
+            takesCompetition(user: 1_000, opponent: 1_029, accepted: try takesRings(move: (0, 600), exercise: (0, 30))),
+            locale: en
+        ))
+        XCTAssertEqual(exact.suggestion, "About 180 kcal of Move or 9 min of Exercise.")
+
+        // 7 / 100 * 100 is 7.000000000000001 in doubles; without the 1e-9 it reads 8 min.
+        let epsilon = try XCTUnwrap(competitionWhatItTakes(
+            takesCompetition(user: 1_000, opponent: 1_006, accepted: try takesRings(move: (0, 600), exercise: (0, 100))),
+            locale: en
+        ))
+        XCTAssertEqual(epsilon.suggestion, "About 50 kcal of Move or 7 min of Exercise.")
+
+        let big = takesCompetition(user: 1_000, opponent: 1_123, accepted: try takesRings(move: (0, 1_000), exercise: (0, 30)))
+        XCTAssertEqual(competitionWhatItTakes(big, locale: en)?.suggestion, "About 1,240 kcal of Move or 38 min of Exercise.")
+        XCTAssertEqual(
+            competitionWhatItTakes(big, locale: Locale(identifier: "de_DE"))?.suggestion,
+            "About 1.240 kcal of Move or 38 min of Exercise."
+        )
+
+        let one = try XCTUnwrap(competitionWhatItTakes(
+            takesCompetition(user: 0, opponent: 0, accepted: try takesRings(move: (0, 100), exercise: (0, 100))),
+            locale: en
+        ))
+        XCTAssertEqual(
+            one.accessibilityLabel,
+            "1 point to take the lead. About 10 kilocalories of Move or 1 minute of Exercise. Sam can still add points today."
+        )
+    }
+
+    private var en: Locale { Locale(identifier: "en_US") }
+
+    private func takesRings(
+        move: (Double, Double),
+        exercise: (Double, Double),
+        stand: (Double, Double) = (8, 12),
+        moveMinutes: Bool = false
+    ) throws -> ActivitySnapshot {
+        ActivitySnapshot(
+            moveMode: moveMinutes ? .moveMinutes : .activeEnergyKilocalories,
+            standMode: .standHours,
+            move: try ActivityRingReading(value: move.0, goal: move.1),
+            exercise: try ActivityRingReading(value: exercise.0, goal: exercise.1),
+            standOrRoll: try ActivityRingReading(value: stand.0, goal: stand.1),
+            pauseState: .running
+        )
+    }
+
+    /// One live day against "Sam". `latest` defaults to `accepted`; pass
+    /// `.some(nil)` for no latest reading.
+    private func takesCompetition(
+        user: Double = 1_112,
+        opponent: Double = 1_150,
+        today: Double? = 215,
+        accepted: ActivitySnapshot?,
+        latest: ActivitySnapshot?? = .none,
+        policy: ActivityScoringPolicy = .remoteWireV1,
+        lifecycle: LocalCompetitionLifecyclePresentation = .active(dayOrdinal: 5),
+        ordinal: Int? = 5,
+        opponentToday: Double? = 248
+    ) -> LocalCompetitionPresentation {
+        let day = LocalCompetitionDayPresentation(
+            day: try! CompetitionDay(era: 1, year: 2026, month: 8, day: 9, timeZoneIdentifier: "UTC"),
+            ordinal: ordinal ?? 5,
+            ownerAcceptedPoints: today,
+            ownerLatestAvailability: .observed,
+            opponentRevealedPoints: opponentToday,
+            ownerAcceptedSnapshot: accepted,
+            ownerLatestSnapshot: latest ?? accepted,
+            scoringPolicy: policy
+        )
+        return LocalCompetitionPresentation(
+            id: CompetitionID(UUID()),
+            ownerDisplayName: "Naren",
+            opponentDisplayName: "Sam",
+            lifecycle: lifecycle,
+            acceptedConfiguration: nil,
+            userPoints: user,
+            opponentPoints: opponent,
+            days: [day],
+            currentDayOrdinal: ordinal,
+            lastRefresh: nil,
+            tally: nil,
+            terminalResult: nil
+        )
+    }
+
     private func rings(_ move: Double, _ exercise: Double, _ stand: Double) throws -> ActivitySnapshot {
         ActivitySnapshot(
             moveMode: .activeEnergyKilocalories,
@@ -1112,17 +1356,176 @@ final class CompetitionPresentationTests: XCTestCase {
             ["remote-profile:v1:andy", "remote-profile:v1:hermes"]
         )
         XCTAssertEqual(
-            competitionVictoryCountText(1, friendDisplayName: "Alex"),
-            "1 win against Alex"
-        )
-        XCTAssertEqual(
-            competitionVictoryCountText(2, friendDisplayName: "Alex"),
-            "2 wins against Alex"
-        )
-        XCTAssertEqual(
             competitionSharingIdentifier(first),
             "competition.sharing.completed.00000000-0000-0000-0000-000000000101"
         )
+    }
+
+    // MARK: Belt
+
+    private func beltWeek(
+        _ id: Int,
+        _ outcome: CompetitionOutcome,
+        start: (Int, Int),
+        name: String = "Sam",
+        identity: String = "remote-profile:v1:sam"
+    ) -> LocalCompetitionPresentation {
+        homePresentation(
+            id: id, name: name, identity: identity,
+            lifecycle: .archived(outcome: outcome, basis: .stableAcrossPostBoundaryReads,
+                                 completedAt: homeNow, archivedAt: homeNow),
+            start: start
+        )
+    }
+
+    private func beltRecord(_ weeks: [LocalCompetitionPresentation]) -> CompetitionOpponentRecord? {
+        competitionOpponentRecords(weeks).first
+    }
+
+    func testBeltGoesToTheFirstWinnerAndTiesLeaveIt() throws {
+        let outcomes: [CompetitionOutcome] = [.tie, .win, .tie, .loss, .loss, .win]
+        let starts = [(9, 1), (9, 8), (9, 15), (9, 22), (9, 29), (10, 6)]
+        let weeks = outcomes.indices.map { beltWeek($0 + 1, outcomes[$0], start: starts[$0]) }
+        let belt = try XCTUnwrap(beltRecord(weeks)).belt
+
+        XCTAssertEqual(weeks.map { belt.events[$0.id] }, [
+            .vacant,
+            .took(by: .you, fromWeeks: nil),
+            .kept(by: .you, weeks: 2),
+            .took(by: .them, fromWeeks: 2),
+            .kept(by: .them, weeks: 2),
+            .took(by: .you, fromWeeks: 2),
+        ])
+        XCTAssertEqual(belt.holder, .you)
+        XCTAssertEqual(belt.current, CompetitionBeltReign(holder: .you, weeks: 1, startID: weeks[5].id))
+        XCTAssertEqual(belt.changes, 3)
+        // On equal length the more recent reign is the longest.
+        XCTAssertEqual(belt.longest, CompetitionBeltReign(holder: .them, weeks: 2, startID: weeks[3].id))
+    }
+
+    func testBeltWithOnlyTiesHasNoHolder() throws {
+        let weeks = [beltWeek(1, .tie, start: (9, 1)), beltWeek(2, .tie, start: (9, 8))]
+        let belt = try XCTUnwrap(beltRecord(weeks)).belt
+
+        XCTAssertNil(belt.holder)
+        XCTAssertEqual(weeks.map { belt.events[$0.id] }, [.vacant, .vacant])
+        XCTAssertEqual(belt.changes, 0)
+    }
+
+    func testBeltRetiresForAFormerCompetitor() throws {
+        let weeks = [
+            beltWeek(1, .win, start: (9, 1), name: "Former competitor"),
+            beltWeek(2, .loss, start: (9, 8), name: "Former competitor"),
+            beltWeek(3, .loss, start: (9, 15), name: "Former competitor"),
+        ]
+        let belt = try XCTUnwrap(beltRecord(weeks)).belt
+
+        XCTAssertTrue(belt.isRetired)
+        XCTAssertNil(belt.holder)
+        XCTAssertEqual(belt.events.count, 3)
+        XCTAssertEqual(belt.longest, CompetitionBeltReign(holder: .them, weeks: 2, startID: weeks[1].id))
+        XCTAssertEqual(competitionBeltEvent(for: weeks[0], in: weeks), .took(by: .you, fromWeeks: nil))
+    }
+
+    func testBeltOrdersWeeksByEndThenID() throws {
+        // Weeks 3 and 4 share an end; they fold in uuid order (3, then 4).
+        let weeks = [
+            beltWeek(4, .loss, start: (9, 8)),
+            beltWeek(1, .win, start: (9, 1)),
+            beltWeek(5, .win, start: (9, 15)),
+            beltWeek(3, .win, start: (9, 8)),
+        ]
+        let closed = [
+            homePresentation(id: 6, name: "Sam", identity: "remote-profile:v1:sam",
+                             lifecycle: .cancelled(at: homeNow), start: (9, 22)),
+            homePresentation(id: 7, name: "Sam", identity: "remote-profile:v1:sam",
+                             lifecycle: .declined(at: homeNow, direction: .outgoing), start: (9, 29)),
+            homePresentation(id: 8, name: "Sam", identity: "remote-profile:v1:sam",
+                             lifecycle: .expired(at: homeNow, direction: .outgoing), start: (10, 6)),
+        ]
+        let record = try XCTUnwrap(beltRecord(weeks + closed))
+
+        XCTAssertEqual(record.belt.events[weeks[3].id], .kept(by: .you, weeks: 2))
+        XCTAssertEqual(record.belt.events[weeks[0].id], .took(by: .them, fromWeeks: 2))
+        XCTAssertEqual(record.belt.events[weeks[2].id], .took(by: .you, fromWeeks: 1))
+        XCTAssertEqual(record.belt.events.count, 4)
+        let direct = competitionBelt(weeks.reversed().map { week in
+            (
+                id: week.id,
+                end: competitionScheduleBoundaries(week.acceptedConfiguration!.schedule)?.end,
+                outcome: week.terminalResult!.outcome
+            )
+        })
+        XCTAssertEqual(record.belt, direct)
+        XCTAssertEqual(beltRecord(weeks)?.belt, direct)
+    }
+
+    func testBeltChipWaitsWhileAnEarlierMatchWithThemIsUnfinished() {
+        let earlier = homePresentation(id: 1, name: "Sam", lifecycle: .tallying(startedAt: homeNow),
+                                       start: (10, 14))
+        let next = homePresentation(id: 2, name: "Sam", lifecycle: .active(dayOrdinal: 1),
+                                    start: (10, 21))
+        let other = homePresentation(id: 3, name: "Max", lifecycle: .active(dayOrdinal: 1),
+                                     start: (10, 28))
+
+        XCTAssertTrue(competitionBeltWaitsOnAnEarlierMatch(next, in: [earlier, next, other]))
+        XCTAssertFalse(competitionBeltWaitsOnAnEarlierMatch(earlier, in: [earlier, next, other]))
+        XCTAssertFalse(competitionBeltWaitsOnAnEarlierMatch(other, in: [earlier, next, other]))
+
+        let finished = homePresentation(
+            id: 1, name: "Sam",
+            lifecycle: .completed(outcome: .win, basis: .stableAcrossPostBoundaryReads, completedAt: homeNow),
+            start: (10, 14)
+        )
+        XCTAssertFalse(competitionBeltWaitsOnAnEarlierMatch(next, in: [finished, next]))
+    }
+
+    func testBeltCopy() {
+        XCTAssertEqual(competitionBeltStandingText(.you, opponentName: "Sam"), "You hold the belt")
+        XCTAssertEqual(competitionBeltStandingText(.them, opponentName: "Sam"), "Sam holds the belt")
+        XCTAssertEqual(competitionWeeksText(1), "1 week")
+        XCTAssertEqual(competitionWeeksText(3), "3 weeks")
+
+        func banner(_ event: CompetitionBeltEvent) -> [String?]? {
+            competitionBeltResultText(event, opponentName: "Sam").map {
+                [$0.holder == .you ? "you" : "them", $0.title, $0.detail]
+            }
+        }
+        XCTAssertEqual(banner(.took(by: .you, fromWeeks: 3)), ["you", "You took the belt", "Sam held it for 3 weeks."])
+        XCTAssertEqual(banner(.took(by: .them, fromWeeks: 1)), ["them", "Sam took the belt", "You held it for 1 week."])
+        XCTAssertEqual(banner(.took(by: .you, fromWeeks: nil)), ["you", "You took the belt", nil])
+        XCTAssertEqual(banner(.took(by: .them, fromWeeks: nil)), ["them", "Sam took the belt", nil])
+        XCTAssertEqual(banner(.kept(by: .you, weeks: 4)), ["you", "You kept the belt", "4 weeks in a row."])
+        XCTAssertEqual(banner(.kept(by: .them, weeks: 3)), ["them", "Sam kept the belt", "3 weeks in a row."])
+        XCTAssertNil(banner(.kept(by: .you, weeks: 2)))
+        XCTAssertNil(banner(.vacant))
+    }
+
+    func testHomeRouteStackKeepsThePersonPageUnderHistory() {
+        let id = CompetitionID(UUID(uuidString: "00000000-0000-0000-0000-00000000000A")!)
+        var path = [id]
+        var showsHistory = true
+        var person: String? = "p"
+        let stack = CompetitionHomeRoute.stack(
+            path: Binding(get: { path }, set: { path = $0 }),
+            showsHistory: Binding(get: { showsHistory }, set: { showsHistory = $0 }),
+            person: Binding(get: { person }, set: { person = $0 })
+        )
+
+        XCTAssertEqual(stack.wrappedValue, [.history, .person("p"), .competition(id)])
+
+        stack.wrappedValue = [.history]
+        XCTAssertTrue(showsHistory)
+        XCTAssertNil(person)
+        XCTAssertEqual(path, [])
+
+        stack.wrappedValue = [.history, .person("q")]
+        XCTAssertEqual(person, "q")
+
+        stack.wrappedValue = []
+        XCTAssertFalse(showsHistory)
+        XCTAssertNil(person)
+        XCTAssertEqual(path, [])
     }
 
     // MARK: Home and History

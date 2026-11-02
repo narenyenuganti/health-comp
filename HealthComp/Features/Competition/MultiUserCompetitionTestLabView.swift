@@ -27,6 +27,9 @@ enum MultiUserCompetitionTestLabScenario:
     /// A challenge link opened before Health is set up, through the real
     /// Home flow.
     case healthOnboardingClaim = "health-onboarding-claim"
+    /// Live matches where you're behind, level or ahead: the Today page's
+    /// what-it-takes panel in each state.
+    case whatItTakes = "what-it-takes"
 }
 
 struct MultiUserCompetitionTestLabConfiguration: Equatable, Sendable {
@@ -119,9 +122,10 @@ struct MultiUserCompetitionTestLabRootView: View {
     @ViewBuilder
     private var scenarioView: some View {
         switch configuration.scenario {
-        case .sharing, .sharingCustomScheme:
+        case .sharing, .sharingCustomScheme, .whatItTakes:
             MultiUserCompetitionSharingTestLabView(
-                usesCustomScheme: configuration.scenario == .sharingCustomScheme
+                usesCustomScheme: configuration.scenario == .sharingCustomScheme,
+                showsWhatItTakes: configuration.scenario == .whatItTakes
             )
         case .coldClaim, .warmClaim, .signedOutClaim,
              .unavailableClaim, .offlineClaim:
@@ -168,8 +172,10 @@ struct MultiUserCompetitionTestLabConfigurationErrorView: View {
 
 private struct MultiUserCompetitionSharingTestLabView: View {
     let usesCustomScheme: Bool
+    var showsWhatItTakes = false
     @State private var path: [CompetitionID] = []
     @State private var showsHistory = false
+    @State private var historyPerson: String?
     @State private var isChallengePresented = false
     @State private var challengeStatus: CompetitionFeature.ChallengeSheetStatus = .ready
     @State private var recipientCode = ""
@@ -184,7 +190,8 @@ private struct MultiUserCompetitionSharingTestLabView: View {
             NavigationStack(
                 path: CompetitionHomeRoute.stack(
                     path: $path,
-                    showsHistory: $showsHistory
+                    showsHistory: $showsHistory,
+                    person: $historyPerson
                 )
             ) {
                 CompetitionSharingView(
@@ -241,6 +248,11 @@ private struct MultiUserCompetitionSharingTestLabView: View {
                     switch route {
                     case .history:
                         CompetitionHistoryView(publication: publication)
+                    case let .person(identity):
+                        CompetitionPersonView(
+                            publication: publication,
+                            opponentIdentity: identity
+                        )
                     case let .competition(id):
                         destination(id)
                     }
@@ -285,7 +297,10 @@ private struct MultiUserCompetitionSharingTestLabView: View {
             case .completed, .archived:
                 CompetitionResultView(
                     competition: competition,
-                    awards: publication.dashboard.awards,
+                    beltEvent: competitionBeltEvent(
+                        for: competition,
+                        in: publication.dashboard.competitions
+                    ),
                     source: .remoteParticipants,
                     rematch: rematchState,
                     isCommandInFlight: false,
@@ -316,9 +331,9 @@ private struct MultiUserCompetitionSharingTestLabView: View {
     }
 
     private var publication: LocalCompetitionPublication {
-        MultiUserCompetitionTestLabFixtures.publication(
-            archivedIDs: archivedIDs
-        )
+        showsWhatItTakes
+            ? MultiUserCompetitionTestLabFixtures.whatItTakesPublication()
+            : MultiUserCompetitionTestLabFixtures.publication(archivedIDs: archivedIDs)
     }
 
     private func findRecipient() {
@@ -407,7 +422,7 @@ private struct MultiUserCompetitionClaimTestLabView: View {
         case .offlineClaim: .retryable
         case .sharing, .sharingCustomScheme, .coldClaim, .warmClaim,
              .signedOutClaim, .challengeLink, .account, .welcome, .welcomeChallenge,
-             .healthOnboarding, .healthOnboardingChallenge, .healthOnboardingClaim:
+             .healthOnboarding, .healthOnboardingChallenge, .healthOnboardingClaim, .whatItTakes:
             .ready
         }
         _status = State(initialValue: initialStatus)
@@ -668,6 +683,10 @@ private enum MultiUserCompetitionTestLabFixtures {
     static let expiredRecipientID = UUID(
         uuidString: "A1000000-0000-4000-8000-000000000008"
     )!
+    /// Jordan's finished week before the live one: Jordan holds the belt.
+    static let jordanPastID = CompetitionID(
+        UUID(uuidString: "A1000000-0000-4000-8000-000000000009")!
+    )
     static let samLinkCode = "SamSamSamSamSamSamSam1"
     static let ownLinkCode = "OwnOwnOwnOwnOwnOwnOwn1"
     static let labNow = Date(timeIntervalSince1970: 1_786_867_200)
@@ -801,8 +820,33 @@ private enum MultiUserCompetitionTestLabFixtures {
             currentDayOrdinal: nil,
             terminal: nil
         )
+        let jordanPastCompletedAt = Date(timeIntervalSince1970: 1_786_302_000)
+        let jordanPast = presentation(
+            id: jordanPastID,
+            opponentName: "Jordan",
+            lifecycle: .archived(
+                outcome: .loss,
+                basis: .stableAcrossPostBoundaryReads,
+                completedAt: jordanPastCompletedAt,
+                archivedAt: jordanPastCompletedAt.addingTimeInterval(86_400)
+            ),
+            userPoints: 3_050,
+            opponentPoints: 3_210,
+            days: [],
+            currentDayOrdinal: nil,
+            terminal: LocalCompetitionTerminalPresentation(
+                userPoints: 3_050,
+                opponentPoints: 3_210,
+                outcome: .loss,
+                basis: .stableAcrossPostBoundaryReads,
+                completedAt: jordanPastCompletedAt
+            ),
+            startDay: 1,
+            opponentIdentity: active.opponentIdentity
+        )
         let competitions = [
             scheduled, active, completed, archived, pending, secondActive, expired,
+            jordanPast,
         ]
         let awards = [
             LocalCompetitionAward(
@@ -819,6 +863,121 @@ private enum MultiUserCompetitionTestLabFixtures {
                 competitions: competitions,
                 awards: awards,
                 issues: [.competitionFailures([secondActiveID])],
+                hiddenTerminalCompetitionCount: 0
+            ),
+            evaluatedAt: evaluatedAt,
+            timeZoneIdentifier: "America/Los_Angeles",
+            source: .remoteParticipants
+        )
+    }
+
+    /// One live match per what-it-takes state, all under real-match scoring
+    /// (200% per ring). The Today day is the lab clock's day, Aug 16.
+    static func whatItTakesPublication() -> LocalCompetitionPublication {
+        func rings(
+            _ move: Double, _ moveGoal: Double, _ exercise: Double, _ stand: Double,
+            exerciseGoal: Double = 30, moveMinutes: Bool = false
+        ) -> ActivitySnapshot {
+            ActivitySnapshot(
+                moveMode: moveMinutes ? .moveMinutes : .activeEnergyKilocalories,
+                standMode: .standHours,
+                move: try! ActivityRingReading(value: move, goal: moveGoal),
+                exercise: try! ActivityRingReading(value: exercise, goal: exerciseGoal),
+                standOrRoll: try! ActivityRingReading(value: stand, goal: 12),
+                pauseState: .running
+            )
+        }
+        func match(
+            _ byte: UInt8,
+            _ name: String,
+            day: Int,
+            user: Double,
+            opponent: Double,
+            today: Double?,
+            opponentToday: Double?,
+            accepted: ActivitySnapshot?,
+            latest: ActivitySnapshot?? = .none
+        ) -> LocalCompetitionPresentation {
+            let latest = latest ?? accepted
+            let startDay = 16 - (day - 1)
+            let schedule = schedule(startDay: startDay)
+            let window = try! schedule.calendar.sevenDayWindow(startingOn: schedule.startDay)
+            // Earlier days share the rest of each total evenly.
+            let earlier = Double(max(1, day - 1))
+            let days = window.enumerated().map { offset, competitionDay in
+                let ordinal = offset + 1
+                let isToday = ordinal == day
+                return LocalCompetitionDayPresentation(
+                    day: competitionDay,
+                    ordinal: ordinal,
+                    ownerAcceptedPoints: isToday ? today
+                        : ordinal < day ? (user - (today ?? 0)) / earlier : nil,
+                    ownerLatestAvailability: isToday
+                        ? (accepted == nil && latest == nil ? .notSyncedYet : .observed)
+                        : ordinal < day ? .observed : .notYetOccurred,
+                    opponentRevealedPoints: isToday ? opponentToday
+                        : ordinal < day ? (opponent - (opponentToday ?? 0)) / earlier : nil,
+                    ownerAcceptedSnapshot: isToday ? accepted : nil,
+                    ownerLatestSnapshot: isToday ? latest : nil,
+                    scoringPolicy: .remoteWireV1
+                )
+            }
+            return presentation(
+                id: CompetitionID(UUID(uuidString: String(
+                    format: "A2000000-0000-4000-8000-0000000000%02X", byte
+                ))!),
+                opponentName: name,
+                lifecycle: day == 7 ? .endsToday : .active(dayOrdinal: day),
+                userPoints: user,
+                opponentPoints: opponent,
+                days: days,
+                currentDayOrdinal: day,
+                terminal: nil,
+                startDay: startDay,
+                refreshedAt: evaluatedAt.addingTimeInterval(-600),
+                opponentUpdatedAt: evaluatedAt.addingTimeInterval(-900)
+            )
+        }
+        let competitions = [
+            // The approved mockup: 39 to take the lead, either ring alone.
+            match(1, "Sam", day: 5, user: 1_112, opponent: 1_150, today: 215,
+                  opponentToday: 248, accepted: rings(410, 600, 24, 8)),
+            // Neither ring covers 50 alone, so it splits; a 64-character name.
+            match(2, "Bartholomew Alexander Christopherson-Montgomery of Westminster",
+                  day: 3, user: 1_000, opponent: 1_049, today: 395,
+                  opponentToday: 300, accepted: rings(1_020, 600, 52.5, 6)),
+            // Move Time in minutes.
+            match(3, "Morgan", day: 4, user: 900, opponent: 938, today: 640.0 / 3,
+                  opponentToday: nil, accepted: rings(20, 30, 24, 8, moveMinutes: true)),
+            // Level by a fraction, Move capped, and they're at today's 600.
+            match(4, "Devon", day: 6, user: 1_000, opponent: 1_000.2, today: 300,
+                  opponentToday: 600, accepted: rings(1_200, 600, 15, 6)),
+            // Last day, out of reach with room left in Move.
+            match(5, "Priya", day: 7, user: 2_010, opponent: 2_390, today: 390,
+                  opponentToday: 400, accepted: rings(540, 600, 60, 12)),
+            // Level, but you've already scored today's 600.
+            match(6, "Quinn", day: 6, user: 2_390, opponent: 2_390, today: 600,
+                  opponentToday: 420, accepted: rings(1_200, 600, 60, 24)),
+            // Behind, but your rings moved since the accepted reading: no panel.
+            match(7, "Harper", day: 5, user: 1_000, opponent: 1_100, today: 215,
+                  opponentToday: 300, accepted: rings(410, 600, 24, 8),
+                  latest: rings(500, 600, 24, 8)),
+            // Behind, and today's reading hasn't synced yet: no panel.
+            match(8, "Avery", day: 2, user: 400, opponent: 700, today: nil,
+                  opponentToday: 300, accepted: nil, latest: rings(300, 600, 10, 4)),
+            // You lead: no panel.
+            match(9, "Jordan", day: 3, user: 1_450, opponent: 1_440, today: 430,
+                  opponentToday: 450, accepted: rings(900, 500, 45, 12)),
+            // Behind with points left today, but Move and Exercise are at 200%.
+            match(10, "Riley", day: 5, user: 1_000, opponent: 1_020, today: 450,
+                  opponentToday: 300, accepted: rings(1_200, 600, 60, 6)),
+        ]
+        return LocalCompetitionPublication(
+            publicationRevision: 1,
+            dashboard: LocalCompetitionDashboard(
+                competitions: competitions,
+                awards: [],
+                issues: [],
                 hiddenTerminalCompetitionCount: 0
             ),
             evaluatedAt: evaluatedAt,

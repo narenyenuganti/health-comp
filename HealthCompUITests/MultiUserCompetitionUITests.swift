@@ -261,7 +261,8 @@ final class MultiUserCompetitionUITests: XCTestCase {
         completed.tap()
         XCTAssertTrue(app.navigationBars["Former competitor"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.staticTexts["You beat Former competitor"].exists)
-        XCTAssertTrue(app.staticTexts["Victory Over Former competitor"].exists)
+        // A retired pair's past weeks keep their banner.
+        XCTAssertEqual(element("competition.result.belt").label, "You took the belt")
         XCTAssertTrue(
             app.otherElements["competition.result"].label
                 .contains("Former competitor")
@@ -294,6 +295,101 @@ final class MultiUserCompetitionUITests: XCTestCase {
         )
         XCTAssertFalse(moreMenu.exists)
         XCTAssertFalse(app.buttons["Delete Local Data"].exists)
+    }
+
+    func testBeltShowsOnHomeHistoryAndThePersonPage() throws {
+        launch(.sharing)
+        XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 8))
+
+        let jordan = sharingCard(state: "active", name: "Jordan")
+        scrollToElement(jordan)
+        XCTAssertTrue(jordan.label.contains("Jordan holds the belt"), jordan.label)
+        attachScreenshot("belt-home")
+        let riley = sharingCard(state: "active", name: "Riley")
+        scrollToElement(riley)
+        XCTAssertFalse(riley.label.contains("belt"), riley.label)
+
+        openHistory()
+        let jordanRecord = record(named: "Jordan")
+        scrollToElement(jordanRecord)
+        XCTAssertTrue(
+            jordanRecord.label.contains("Jordan holds the belt, 1 week"),
+            jordanRecord.label
+        )
+        let morganRecord = record(named: "Morgan")
+        scrollToElement(morganRecord)
+        XCTAssertFalse(morganRecord.label.contains("belt"), morganRecord.label)
+        attachScreenshot("belt-history")
+
+        scrollToElement(jordanRecord)
+        jordanRecord.tap()
+        XCTAssertTrue(app.navigationBars["Jordan"].waitForExistence(timeout: 3))
+        let belt = element("competition.person.belt")
+        XCTAssertTrue(belt.waitForExistence(timeout: 3))
+        XCTAssertTrue(belt.label.hasPrefix("Jordan holds the belt"), belt.label)
+        attachScreenshot("belt-person")
+
+        let pastWeek = element("competition.sharing.archived.a1000000-0000-4000-8000-000000000009")
+        scrollToElement(pastWeek)
+        pastWeek.tap()
+        let banner = element("competition.result.belt")
+        XCTAssertTrue(banner.waitForExistence(timeout: 3))
+        XCTAssertEqual(banner.label, "Jordan took the belt")
+        attachScreenshot("belt-result")
+
+        app.navigationBars.buttons.firstMatch.tap()
+        XCTAssertTrue(app.navigationBars["Jordan"].waitForExistence(timeout: 3))
+        app.navigationBars.buttons.firstMatch.tap()
+        XCTAssertTrue(app.navigationBars["History"].waitForExistence(timeout: 3))
+        let retired = record(named: "Former competitor")
+        scrollToElement(retired)
+        retired.tap()
+        XCTAssertTrue(app.navigationBars["Former competitor"].waitForExistence(timeout: 3))
+        XCTAssertTrue(
+            element("competition.person.belt").label.contains("The belt is retired")
+        )
+        attachScreenshot("belt-person-retired")
+
+        launch(
+            .sharing,
+            appearanceArguments: [
+                "-AppleInterfaceStyle", "Dark",
+                "-UIPreferredContentSizeCategoryName",
+                "UICTContentSizeCategoryAccessibilityXXXL",
+                "-UIAccessibilityReduceMotionEnabled", "YES",
+            ]
+        )
+        XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 8))
+        openHistory()
+        let largeRecord = record(named: "Jordan")
+        scrollToElement(largeRecord)
+        largeRecord.tap()
+        XCTAssertTrue(app.navigationBars["Jordan"].waitForExistence(timeout: 3))
+        XCTAssertTrue(element("competition.person.belt").waitForExistence(timeout: 3))
+        attachScreenshot("belt-person-dark-ax5")
+        // No .dynamicType audit: the reused rows swap layouts with ViewThatFits.
+        try app.performAccessibilityAudit(
+            for: XCUIAccessibilityAuditType.textClipped
+                .union(.hitRegion)
+                .union(.sufficientElementDescription)
+        )
+    }
+
+    private func openHistory() {
+        let history = app.buttons["competition.history.open"]
+        scrollToElement(history)
+        history.tap()
+        XCTAssertTrue(app.navigationBars["History"].waitForExistence(timeout: 3))
+    }
+
+    private func record(named name: String) -> XCUIElement {
+        app.descendants(matching: .any).matching(
+            NSPredicate(
+                format: "identifier BEGINSWITH %@ AND label CONTAINS %@",
+                "competition.record.",
+                name
+            )
+        ).firstMatch
     }
 
     func testHomeGroupsLiveMatchesByEndTimeAndShowsMatchIssues() {

@@ -378,6 +378,10 @@ Do not expose APNs tokens or their hashes while diagnosing delivery.
 `score_update` and `result` work resolves as `discarded` without APNs; the app
 posts match notifications.
 
+`nudge` work is one row per recipient installation per sender per match day
+(`nudge_day`); a muted pair resolves `suppressed`, a finished match
+`discarded`. The support query needs no change.
+
 ### Support events
 
 ~~~sql

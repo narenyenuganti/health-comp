@@ -3,7 +3,7 @@ import SwiftUI
 
 struct CompetitionResultView: View {
     let competition: LocalCompetitionPresentation
-    let awards: [LocalCompetitionAward]
+    let beltEvent: CompetitionBeltEvent?
     let source: CompetitionPublicationSource
     let rematch: CompetitionFeature.CompetitionRematchState
     let isCommandInFlight: Bool
@@ -41,6 +41,13 @@ struct CompetitionResultView: View {
                 }
                 .opacity(isRevealed ? 1 : 0)
 
+                if let text = beltEvent.flatMap({
+                    competitionBeltResultText($0, opponentName: opponentName)
+                }) {
+                    beltBanner(text)
+                        .opacity(isRevealed ? 1 : 0)
+                }
+
                 if isBestAvailableResult {
                     Label(
                         "Finalized from the best available accepted Activity data after the reconciliation deadline.",
@@ -53,11 +60,6 @@ struct CompetitionResultView: View {
 
                 if !competition.days.isEmpty {
                     weekCard
-                }
-
-                if !visibleAwards.isEmpty {
-                    awardPresentation
-                        .opacity(isRevealed ? 1 : 0)
                 }
 
                 if dataControl == .preservedHistory {
@@ -409,60 +411,27 @@ struct CompetitionResultView: View {
         }
     }
 
-    // One line under each award; History keeps the full record.
-    private var awardPresentation: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            SectionLabel("AWARDS")
-
-            VStack(spacing: 0) {
-                ForEach(Array(visibleAwards.enumerated()), id: \.element.id) {
-                    index,
-                    award in
-                    if index > 0 {
-                        Rectangle()
-                            .fill(Theme.hairline)
-                            .frame(height: 1)
-                            .padding(.leading, 76)
-                    }
-                    HStack(spacing: 14) {
-                        awardBadge
-
-                        VStack(alignment: .leading, spacing: 3) {
-                            Text("Victory Over \(award.friendDisplayName)")
-                                .font(.headline)
-                                .foregroundStyle(Theme.ink)
-                            Text(awardDetail(award))
-                                .font(.caption)
-                                .foregroundStyle(Theme.secondary)
-                        }
-                        Spacer(minLength: 0)
-                    }
-                    .padding(14)
-                    .frame(minHeight: 76)
-                    .accessibilityElement(children: .combine)
-                }
+    // The belt replaces the awards list: what this week did to it.
+    private func beltBanner(
+        _ text: (holder: CompetitionBeltHolder, title: String, detail: String?)
+    ) -> some View {
+        VStack(spacing: 6) {
+            CompetitionBeltMark(holder: text.holder, width: 44)
+            Text(text.title)
+                .font(.title3.weight(.heavy).width(.condensed))
+                .foregroundStyle(text.holder == .you ? Theme.you : Theme.ink)
+            if let detail = text.detail {
+                Text(detail)
+                    .font(.subheadline)
+                    .foregroundStyle(Theme.secondary)
             }
-            .themePanel(cornerRadius: 18)
         }
-    }
-
-    private func awardDetail(_ award: LocalCompetitionAward) -> String {
-        competitionVictoryCountText(
-            awards.filter { $0.opponentIdentity == award.opponentIdentity }.count,
-            friendDisplayName: award.friendDisplayName
-        )
-    }
-
-    // A victory is yours, so its badge is amber.
-    private var awardBadge: some View {
-        ZStack {
-            Circle().fill(Theme.youFill)
-            Image(systemName: "trophy.fill")
-                .foregroundStyle(Theme.onYouFill)
-        }
-        .font(.title3.weight(.bold))
-        .frame(width: 48, height: 48)
-        .accessibilityHidden(true)
+        .multilineTextAlignment(.center)
+        .frame(maxWidth: .infinity)
+        .padding(16)
+        .themePanel()
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("competition.result.belt")
     }
 
     private var opponentName: String { competition.opponentDisplayName }
@@ -760,11 +729,6 @@ struct CompetitionResultView: View {
         if let muteButton {
             muteButton
         }
-    }
-
-    private var visibleAwards: [LocalCompetitionAward] {
-        let matching = awards.filter { $0.competitionID == competition.id }
-        return matching
     }
 
     private var outcome: CompetitionOutcome {

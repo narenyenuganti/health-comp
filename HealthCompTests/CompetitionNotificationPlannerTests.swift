@@ -751,7 +751,9 @@ final class CompetitionNotificationPlannerTests: XCTestCase {
         name: String,
         owner: Double,
         opponent: Double,
-        outcome: CompetitionOutcome
+        outcome: CompetitionOutcome,
+        startDate: Date = Date(timeIntervalSinceReferenceDate: 1_036_800),
+        recorded: [(NotificationEmissionFamily, NotificationEpisodeKey)] = []
     ) throws -> CompetitionNotificationCompetitionSnapshot {
         try competitionSnapshot(
             id: competitionID("EAD172F8-531D-4327-823D-E82A4F6962" + suffix),
@@ -760,7 +762,9 @@ final class CompetitionNotificationPlannerTests: XCTestCase {
             opponentPoints: opponent,
             opponentDisplayName: name,
             opponentIdentity: "local-opponent:v1:" + name,
-            terminalResult: .init(ownerPoints: owner, opponentPoints: opponent, outcome: outcome)
+            startDate: startDate,
+            terminalResult: .init(ownerPoints: owner, opponentPoints: opponent, outcome: outcome),
+            recorded: recorded
         )
     }
 
@@ -812,12 +816,94 @@ final class CompetitionNotificationPlannerTests: XCTestCase {
         XCTAssertEqual(requests[0].content.title, "2 matches finished")
         XCTAssertEqual(
             requests[0].content.body,
-            "You beat Priya 3,410 to 3,180. Jordan won 3,302 to 3,117."
+            "You beat Priya 3,410 to 3,180. You took the belt. Jordan won 3,302 to 3,117. Jordan took the belt."
         )
         XCTAssertNil(requests[0].route)
 
         let alone = planner.immediateRequests(for: [decisions[0]], in: evaluation)
         XCTAssertEqual(alone, [decisions[0].request])
+    }
+
+    // MARK: Belt sentence
+
+    /// The body of the single result notification this evaluation emits.
+    private func resultBody(_ competitions: [CompetitionNotificationCompetitionSnapshot]) throws -> String? {
+        let policy = enUSPolicy()
+        let evaluation = snapshot(competitions)
+        let decisions = try plan(evaluation, policy: policy).emissionDecisions
+        XCTAssertEqual(decisions.filter { $0.record.family == .result }.count, 1)
+        return CompetitionNotificationPlanner(policy: policy)
+            .immediateRequests(for: decisions, in: evaluation).first?.content.body
+    }
+
+    /// A finished week with the same person a week earlier, already notified.
+    private func earlierWeek(
+        name: String = "Sam",
+        outcome: CompetitionOutcome
+    ) throws -> CompetitionNotificationCompetitionSnapshot {
+        try finishedMatch(
+            "10", name: name, owner: 2_000, opponent: 2_100, outcome: outcome,
+            startDate: Date(timeIntervalSinceReferenceDate: 1_036_800 - 7 * 86_400),
+            recorded: [(.result, .result)]
+        )
+    }
+
+    func testResultNotificationSaysYouTookTheBeltFromThem() throws {
+        XCTAssertEqual(
+            try resultBody([
+                earlierWeek(outcome: .loss),
+                finishedMatch("11", name: "Sam", owner: 4_200, opponent: 3_900, outcome: .win),
+            ]),
+            "4,200 to 3,900. You took the belt from Sam."
+        )
+    }
+
+    func testResultNotificationSaysTheyTookTheBelt() throws {
+        XCTAssertEqual(
+            try resultBody([
+                earlierWeek(outcome: .win),
+                finishedMatch("11", name: "Sam", owner: 3_117, opponent: 3_302, outcome: .loss),
+            ]),
+            "3,302 to 3,117. Sam took the belt."
+        )
+    }
+
+    func testResultNotificationSaysYouTookTheBeltOnAFirstWin() throws {
+        XCTAssertEqual(
+            try resultBody([
+                finishedMatch("11", name: "Sam", owner: 4_200, opponent: 3_900, outcome: .win),
+            ]),
+            "4,200 to 3,900. You took the belt."
+        )
+    }
+
+    func testResultNotificationOmitsTheBeltWhenKeptTiedOrRetired() throws {
+        XCTAssertEqual(
+            try resultBody([
+                earlierWeek(outcome: .win),
+                finishedMatch("11", name: "Sam", owner: 4_200, opponent: 3_900, outcome: .win),
+            ]),
+            "4,200 to 3,900."
+        )
+        XCTAssertEqual(
+            try resultBody([
+                earlierWeek(outcome: .win),
+                finishedMatch("11", name: "Sam", owner: 1_500, opponent: 1_500, outcome: .tie),
+            ]),
+            "1,500 to 1,500."
+        )
+        XCTAssertEqual(
+            try resultBody([
+                finishedMatch("11", name: "Sam", owner: 1_500, opponent: 1_500, outcome: .tie),
+            ]),
+            "1,500 to 1,500."
+        )
+        XCTAssertEqual(
+            try resultBody([
+                finishedMatch("11", name: "Former competitor", owner: 4_200, opponent: 3_900, outcome: .win),
+            ]),
+            "4,200 to 3,900."
+        )
     }
 
     func testDailyMaximumIsNotRepeatedByALaterMatchTheSameDay() throws {
