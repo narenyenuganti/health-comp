@@ -349,6 +349,7 @@ struct CompetitionWidgetEmptyText: Equatable, Sendable {
         [title, line].compactMap { $0 }.joined(separator: ". ")
     }
 
+    /// For a locked phone, when the title names someone.
     var redactedAccessibilityLabel: String {
         "HealthComp, \(compact.last ?? title)."
     }

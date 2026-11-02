@@ -29,7 +29,8 @@ struct CompetitionMatchWidgetView: View {
                 EmptyStateView(text: text)
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel(
-                        redacted ? text.redactedAccessibilityLabel : text.accessibilityLabel
+                        redacted && text.namesSomeone
+                            ? text.redactedAccessibilityLabel : text.accessibilityLabel
                     )
                     .accessibilityIdentifier("widget.empty")
             }
