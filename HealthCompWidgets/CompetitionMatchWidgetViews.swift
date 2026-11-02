@@ -69,6 +69,9 @@ private struct WidgetBackground: ViewModifier {
 private struct StatusLabel: View {
     let text: String
     var namesSomeone = false
+    /// Shrinks a little before truncating, so "FINAL SCORE PENDING" and
+    /// "DAY 1 IS WEDNESDAY" fit the small widget.
+    var shrinks = true
 
     var body: some View {
         Text(text)
@@ -77,6 +80,8 @@ private struct StatusLabel: View {
             .textCase(.uppercase)
             .foregroundStyle(Theme.secondary)
             .lineLimit(1)
+            .minimumScaleFactor(shrinks ? 0.5 : 1)
+            .allowsTightening(true)
             .privacySensitive(namesSomeone)
     }
 }
@@ -135,6 +140,7 @@ private struct SmallView: View {
                     .font(.caption2)
                     .foregroundStyle(Theme.tertiary)
                     .lineLimit(1)
+                    .minimumScaleFactor(0.7)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -158,6 +164,7 @@ private struct SmallView: View {
                 .foregroundStyle(color)
                 .widgetAccentable(isYou)
                 .privacySensitive()
+                .layoutPriority(1)  // a long name truncates, never the number
         }
     }
 }
@@ -170,45 +177,74 @@ private struct MediumView: View {
 
     @ScaledMetric(relativeTo: .largeTitle) private var scoreSize: CGFloat = 40
 
+    @Environment(\.dynamicTypeSize) private var typeSize
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                StatusLabel(text: match.mediumHeader(at: date), namesSomeone: true)
-                Spacer(minLength: 0)
-                if let updated = match.updatedLine(at: date) {
-                    Text(updated)
-                        .font(.caption2)
-                        .foregroundStyle(Theme.tertiary)
-                        .lineLimit(1)
-                }
-            }
+            header
             Spacer(minLength: 0)
             if match.state(at: date) == .scheduled {
                 strip
             } else {
-                // At large sizes the strip goes first, then the Today lines.
-                ViewThatFits {
-                    scores(showsStrip: true, showsToday: true)
-                    scores(showsStrip: false, showsToday: true)
-                    scores(showsStrip: false, showsToday: false)
+                // Large text drops the Today lines. The strip adds no height:
+                // it goes only when the numbers leave it no room.
+                ViewThatFits(in: .vertical) {
+                    scores(showsToday: true)
+                    scores(showsToday: false)
                 }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
-    private func scores(showsStrip: Bool, showsToday: Bool) -> some View {
+    /// "SAM · DAY 5 OF 7" and the Updated time: one row, or two at large
+    /// text sizes so neither truncates to nothing.
+    @ViewBuilder
+    private var header: some View {
+        // A long name truncates; the status after it stays whole.
+        let title = HStack(alignment: .firstTextBaseline, spacing: 0) {
+            StatusLabel(text: match.name, namesSomeone: true, shrinks: false)
+            StatusLabel(text: " · \(match.mediumStatus(at: date))", shrinks: false)
+                .layoutPriority(1)
+        }
+        let updated = match.updatedLine(at: date).map { line in
+            Text(line)
+                .font(.caption2)
+                .foregroundStyle(Theme.tertiary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+        }
+        if typeSize >= .xLarge {
+            VStack(alignment: .leading, spacing: 2) {
+                title
+                updated
+            }
+        } else {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                title
+                Spacer(minLength: 0)
+                updated.layoutPriority(1)
+            }
+        }
+    }
+
+    private func scores(showsToday: Bool) -> some View {
         let today = match.todayLines(at: date)
         let isFinal = if case .final = match.state(at: date) { true } else { false }
         return HStack(alignment: .bottom, spacing: 12) {
             side("YOU", match.userPointsText(), showsToday ? today.user : nil, Theme.you, isYou: true)
             VStack(spacing: 6) {
-                if showsStrip { strip }
+                ViewThatFits(in: .horizontal) {
+                    strip.frame(minWidth: 60, idealWidth: 60, maxWidth: .infinity)
+                    Color.clear.frame(width: 0, height: 0)
+                }
                 if isFinal {
                     Text(match.leadLine(at: date) ?? "Tied")
                         .font(.caption)
                         .foregroundStyle(Theme.secondary)
-                        .lineLimit(1)
+                        .multilineTextAlignment(.center)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.8)
                         .privacySensitive()
                 }
             }
@@ -225,11 +261,14 @@ private struct MediumView: View {
         _ caption: String, _ number: String, _ today: String?, _ color: Color, isYou: Bool
     ) -> some View {
         VStack(alignment: isYou ? .leading : .trailing, spacing: 2) {
+            // Capped near the number's width, so a long name truncates
+            // instead of pushing out the strip and the Today lines.
             Text(caption)
                 .font(.themeLabel)
                 .tracking(1.2)
                 .foregroundStyle(Theme.secondary)
                 .lineLimit(1)
+                .frame(maxWidth: scoreSize * 2.5, alignment: isYou ? .leading : .trailing)
                 .privacySensitive(!isYou)
             Text(number)
                 .font(.score(size: scoreSize))
@@ -331,6 +370,10 @@ private struct EmptyStateView: View {
                     Text(line)
                         .font(index == 0 ? .headline : .body)
                         .lineLimit(2)
+                        .minimumScaleFactor(0.8)
+                        // Without this the stack held "Open the app to see
+                        // your matches." to one truncated line.
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
             .privacySensitive(text.namesSomeone)
@@ -340,6 +383,7 @@ private struct EmptyStateView: View {
                 Text(text.title)
                     .font(.title3.weight(.heavy).width(.condensed))
                     .foregroundStyle(Theme.ink)
+                    .minimumScaleFactor(0.6)  // "HealthComp" can't wrap
                     .privacySensitive(text.namesSomeone)
                 if let line = text.line {
                     Text(line)
