@@ -226,8 +226,11 @@ final class BlockChallengerUITests: XCTestCase {
         scrollToElement(longUnblock)
         longUnblock.tap()
         // Saving: VoiceOver hears it, and a second tap does nothing.
-        XCTAssertTrue(waitFor(longUnblock, "value == 'Unblocking'", timeout: 1))
+        let saw = waitFor(longUnblock, "value == 'Unblocking'", timeout: 1)
         shot("account-unblocking")
+        add(XCTAttachment(string: app.cells.containing(.button, identifier: "account.blocked.unblock").firstMatch.debugDescription))
+        XCTAssertTrue(element("account.blocked.error").waitForExistence(timeout: 5), "the tap reached Unblock")
+        XCTAssertTrue(saw)
         longUnblock.tap()
         XCTAssertEqual(morganUnblock.value as? String ?? "", "")
         let error = element("account.blocked.error")
@@ -485,11 +488,24 @@ final class BlockChallengerUITests: XCTestCase {
     }
 
     /// Layout and labelling audits. Contrast is left to the existing matrix.
+    /// A row cut off by the screen edge reads as clipped text, so only
+    /// elements fully on screen count; skipped ones are attached.
     private func audit(_ name: String) throws {
-        try XCTContext.runActivity(named: "audit \(name)") { _ in
+        try XCTContext.runActivity(named: "audit \(name)") { activity in
+            let screen = app.windows.firstMatch.frame
+            var skipped: [String] = []
             try app.performAccessibilityAudit(
                 for: [.textClipped, .hitRegion, .sufficientElementDescription]
-            )
+            ) { issue in
+                guard let element = issue.element, !screen.contains(element.frame) else {
+                    return false
+                }
+                skipped.append("\(issue.compactDescription): \(element.debugDescription)")
+                return true
+            }
+            if !skipped.isEmpty {
+                activity.add(XCTAttachment(string: skipped.joined(separator: "\n\n")))
+            }
         }
     }
 

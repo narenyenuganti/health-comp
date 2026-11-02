@@ -359,6 +359,8 @@ struct AccountSettingsView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
+                // Like the profile row: VoiceOver reads the name once, never the initial.
+                .accessibilityElement(children: .combine)
                 Button { blocked.unblock(person.id) } label: {
                     Text("Unblock").frame(minHeight: 44).contentShape(Rectangle())
                 }
