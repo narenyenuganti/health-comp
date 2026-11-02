@@ -1031,7 +1031,6 @@ struct MainTabFeature {
         .cancellable(id: CancelID.inviteClaim, cancelInFlight: true)
     }
 
-    /// Forgets the pending link on this iPhone.
     /// Decline, or Decline and Block; both finish through declineClaimFinished.
     private func declineClaim(_ state: inout State, block: Bool) -> Effect<Action> {
         guard state.inviteClaimStatus == .ready,
@@ -1055,6 +1054,7 @@ struct MainTabFeature {
         .cancellable(id: CancelID.inviteClaim, cancelInFlight: true)
     }
 
+    /// Forgets the pending link on this iPhone.
     private func consumeClaimRoute(
         _ sequence: UInt64,
         state: inout State
