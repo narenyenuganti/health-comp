@@ -268,9 +268,11 @@ struct AccountSettingsView: View {
                     } else {
                         HStack(spacing: 8) { buttons }
                     }
-                    Button("Reset Link") { isResetLinkConfirmationPresented = true }
+                    // The 44 pt frame sits inside the label so the hit area gets it too.
+                    Button { isResetLinkConfirmationPresented = true } label: {
+                        Text("Reset Link").frame(minHeight: 44).contentShape(Rectangle())
+                    }
                         .buttonStyle(.borderless)
-                        .frame(minHeight: 44)
                         .disabled(isResetting)
                         .accessibilityValue(isResetting ? "Resetting" : "")
                         .accessibilityIdentifier("account.challenge-link.reset")
@@ -356,12 +358,13 @@ struct AccountSettingsView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            Button("Unblock") { blocked.unblock(person.id) }
-                .buttonStyle(.borderless)
-                .frame(minHeight: 44)
-                .disabled(blocked.unblocking.contains(person.id))
-                .accessibilityLabel("Unblock \(person.displayName)")
-                .accessibilityIdentifier("account.blocked.unblock")
+            Button { blocked.unblock(person.id) } label: {
+                Text("Unblock").frame(minHeight: 44).contentShape(Rectangle())
+            }
+            .buttonStyle(.borderless)
+            .disabled(blocked.unblocking.contains(person.id))
+            .accessibilityLabel("Unblock \(person.displayName)")
+            .accessibilityIdentifier("account.blocked.unblock")
         }
     }
 
