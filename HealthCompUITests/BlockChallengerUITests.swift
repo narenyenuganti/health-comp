@@ -358,7 +358,8 @@ final class BlockChallengerUITests: XCTestCase {
                 app.buttons["Decline and Block Naren"].tap()
                 let claimError = element("competition.claim.decline-error")
                 XCTAssertTrue(claimError.waitForExistence(timeout: 5))
-                scrollToElement(claimError)
+                // No scroll here: at AX5 a drag can start on Accept and accept.
+                XCTAssertEqual(claimError.label, "Couldn’t decline. Check your connection and try again.")
                 shot("claim-decline-error-\(suffix)")
             }
         }
