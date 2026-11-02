@@ -76,8 +76,8 @@ func accountLiveMatchCount(_ competitions: [LocalCompetitionPresentation]) -> In
     competitions.filter {
         guard !$0.isPractice else { return false }
         switch $0.lifecycle {
-        case .active, .endsToday, .tallying: true
-        default: false
+        case .active, .endsToday, .tallying: return true
+        default: return false
         }
     }.count
 }

@@ -492,7 +492,12 @@ final class MultiUserCompetitionUITests: XCTestCase {
         let card = sharingCard(state: "active", name: "Pacer")
         XCTAssertTrue(card.waitForExistence(timeout: 5))
         XCTAssertTrue(card.label.contains("Practice · Day 2 of 7"), card.label)
-        XCTAssertFalse(element("competition.practice.sheet").exists)
+        // Success closes the sheet.
+        expectation(
+            for: NSPredicate(format: "exists == false"),
+            evaluatedWith: element("competition.practice.sheet")
+        )
+        waitForExpectations(timeout: 5)
         let challenge = app.buttons["competition.practice.challenge"]
         scrollToElement(challenge)
         XCTAssertTrue(challenge.exists)

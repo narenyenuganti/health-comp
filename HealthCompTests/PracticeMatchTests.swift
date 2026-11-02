@@ -180,7 +180,9 @@ final class PracticeMatchTests: XCTestCase {
                     monotonic: MonotonicInstant(epochID: "practice-match", nanoseconds: 1)
                 ),
                 timeZoneIdentifier: "UTC",
-                initialDays: try days.map { .snapshot(day: $0, snapshot: try snapshot(dailyPoints)) },
+                initialDays: try days.map { day -> FixtureActivityValue in
+                    .snapshot(day: day, snapshot: try snapshot(dailyPoints))
+                },
                 changes: []
             )
         )
@@ -231,8 +233,9 @@ final class PracticeMatchTests: XCTestCase {
         let window = try CompetitionActivityWindow(calendar: calendar, startDay: start)
         return try ActivityWindowRead(
             window: window,
-            days: zip(window.days, points).map { day, value in
-                try value.map { .snapshot(day: day, snapshot: try snapshot($0)) } ?? .missing(day: day)
+            days: zip(window.days, points).map { day, value -> ActivityDayReadResult in
+                guard let value else { return .missing(day: day) }
+                return .snapshot(day: day, snapshot: try snapshot(value))
             }
         )
     }
