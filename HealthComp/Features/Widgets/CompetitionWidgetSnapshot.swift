@@ -260,8 +260,11 @@ extension CompetitionWidgetSnapshot.Match {
         }
         let you = userPointsText(locale: locale)
         let them = opponentPointsText(locale: locale)
+        // "Sam · Final score pending" rarely fits: "Sam · Pending" keeps the
+        // match from reading as live.
+        let short = state(at: date) == .finalPending ? ["\(name) · Pending"] : []
         return [
-            ["\(name) · \(status(at: date, compact: true, locale: locale))", name],
+            ["\(name) · \(status(at: date, compact: true, locale: locale))"] + short + [name],
             ["You \(you) · \(name) \(them)", "You \(you) · \(them)"],
         ] + [updatedLine(at: date, locale: locale, timeZone: timeZone).map { [$0] }].compactMap { $0 }
     }

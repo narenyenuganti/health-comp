@@ -19,10 +19,12 @@ final class WidgetUITests: XCTestCase {
         format: "identifier IN %@", ["widget.match", "widget.empty"]
     )
     private var changedTextSize = false
+    private var tinted = false
 
     override func tearDownWithError() throws {
         XCUIDevice.shared.appearance = .light
         if changedTextSize { setLargestText(false) }
+        if tinted { setHomeScreenStyle(tinted: false) }
         removeOurWidgets()
     }
 
@@ -112,7 +114,8 @@ final class WidgetUITests: XCTestCase {
         let samLive = homeStates.first { $0.scenario == "several" }!
         assertWidgets(samLive, count: 1)
 
-        pickPerson("Riley", expectingList: ["Alex", "Casey", "Riley", "Sam"], absent: ["Former competitor"])
+        pickPerson("Riley", expectingList: ["Ending soonest", "Alex", "Casey", "Riley", "Sam"],
+                   absent: ["Former competitor"])
         assertWidgets(Expectation(
             scenario: "several",
             label: "Riley, Final score pending. You 2,190 points. Riley 2,171 points. You lead by 19."
@@ -150,6 +153,52 @@ final class WidgetUITests: XCTestCase {
         launch(scenario: "several")
         XCUIDevice.shared.press(.home)
         assertWidgets(samLive, count: 1)
+
+        // "Ending soonest" undoes the pick: with Sam gone, Alex shows.
+        launch(scenario: "samGone")
+        XCUIDevice.shared.press(.home)
+        pickPerson("Ending soonest", expectingList: nil, absent: [])
+        assertWidgets(Expectation(
+            scenario: "samGone", label: "Alex, Day 2 of 7. You 480 points. Alex 455 points. You lead by 25."
+        ), count: 1)
+    }
+
+    /// The iOS 18 tinted Home Screen keeps your number as the accent. A
+    /// capture for review: tint can't be read through accessibility.
+    func testTintedHomeScreen() throws {
+        launch(scenario: "live")
+        XCUIDevice.shared.press(.home)
+        removeOurWidgets()
+        addWidget(sizeSwipes: 1)  // medium
+        addWidget(sizeSwipes: 0)  // small
+        setHomeScreenStyle(tinted: true)
+        assertWidgets(homeStates[0], count: 2)
+        sleep(2)
+        shot("home-tinted-light-default")
+        XCUIDevice.shared.appearance = .dark
+        sleep(3)
+        shot("home-tinted-dark-default")
+        XCUIDevice.shared.appearance = .light
+    }
+
+    /// Edit → Customize → Tinted, or back to the default style.
+    private func setHomeScreenStyle(tinted on: Bool) {
+        tinted = true  // set first, so tearDown resets the shared simulator
+        XCUIDevice.shared.press(.home)
+        enterEditMode()
+        tap([springboard.buttons["Edit"]], "Edit")
+        tap([springboard.buttons["Customize"]], "Customize")
+        sleep(2)
+        shot(on ? "customize-before-tint" : "customize-before-default")
+        let names = on ? ["Tinted"] : ["Default", "Automatic", "Light"]
+        tap(names.flatMap { [springboard.buttons[$0], springboard.staticTexts[$0]] }, names[0])
+        sleep(2)
+        XCUIDevice.shared.press(.home)  // closes the sheet
+        sleep(1)
+        if springboard.buttons["Done"].exists { springboard.buttons["Done"].tap() }
+        XCUIDevice.shared.press(.home)
+        sleep(2)
+        tinted = on
     }
 
     /// The Lock Screen circle and rectangle in each kind of state.
@@ -278,7 +327,8 @@ final class WidgetUITests: XCTestCase {
         tap([springboard.buttons["Edit Widget"]], "Edit Widget")
         sleep(2)
         // The value side of the Person row reads "Person" (or the picked name).
-        let current = ["Person", "Choose", "Alex", "Casey", "Riley", "Sam"].map { springboard.buttons[$0] }
+        let current = ["Ending soonest", "Person", "Choose", "Alex", "Casey", "Riley", "Sam"]
+            .map { springboard.buttons[$0] }
         tap(current, "Person value")
         let person = { (label: String) in
             self.springboard.descendants(matching: .any)
@@ -292,7 +342,7 @@ final class WidgetUITests: XCTestCase {
                 XCTAssertTrue(element.exists, "Person list lacks \(label)")
                 return element.frame.minY
             }
-            XCTAssertEqual(tops, tops.sorted(), "Person list isn't sorted by name")
+            XCTAssertEqual(tops, tops.sorted(), "Person list isn't in order")
             for label in absent {
                 XCTAssertFalse(person(label).exists, "Person list offers \(label)")
             }
@@ -369,27 +419,29 @@ final class WidgetUITests: XCTestCase {
         XCUIDevice.shared.appearance = .light
         sleep(3)
 
-        // Edit Widget offers the people in the snapshot and nobody else.
+        // Edit Widget offers the snapshot's person (Sam) and Ending soonest.
         let widget = widgetElements().firstMatch
         widget.press(forDuration: 1.3)
         tap([springboard.buttons["Edit Widget"]], "Edit Widget")
         sleep(2)
         shot("edit-widget")
-        // The value side of the Person row reads "Person" until someone is picked.
-        tap([springboard.buttons["Person"], springboard.buttons["Choose"]], "Person value")
+        // The value side of the Person row reads "Ending soonest" until someone is picked.
+        tap(["Ending soonest", "Person", "Choose"].map { springboard.buttons[$0] }, "Person value")
         let sam = springboard.descendants(matching: .any)
             .matching(NSPredicate(format: "label == 'Sam'")).firstMatch
         XCTAssertTrue(sam.waitForExistence(timeout: 5), springboard.debugDescription)
         shot("edit-widget-people")
         sam.tap()
         sleep(1)
-        // Back on the Home Screen, the picked widget still shows Sam's match.
+        // Back on the Home Screen, both widgets still show Sam's match: a
+        // pick that didn't take would show "No match with this person".
         XCUIDevice.shared.press(.home)
         sleep(2)
         if springboard.buttons["Done"].exists { springboard.buttons["Done"].tap() }
-        XCTAssertTrue(widgetElements().firstMatch.waitForExistence(timeout: 10))
+        assertOnScreen(widgetPredicate, count: 2, name: "picked", expected: sampleLabel,
+                       file: #filePath, line: #line)
 
-        // A tap opens the app.
+        // A tap opens the app (launch only: the test app doesn't route links).
         app.terminate()
         widgetElements().firstMatch.tap()
         XCTAssertTrue(app.wait(for: .runningForeground, timeout: 10))
@@ -504,8 +556,14 @@ final class WidgetUITests: XCTestCase {
     }
 
     private func widgetElements() -> XCUIElementQuery {
-        springboard.descendants(matching: .any)
-            .matching(NSPredicate(format: "label BEGINSWITH %@", sampleLabel))
+        springboard.descendants(matching: .any).matching(widgetPredicate)
+    }
+
+    /// The sample's label on any day, so a run across UTC midnight still matches.
+    private var widgetPredicate: NSPredicate {
+        let pattern = NSRegularExpression.escapedPattern(for: sampleLabel)
+            .replacingOccurrences(of: "Day 5", with: "Day \\d")
+        return NSPredicate(format: "label MATCHES %@", "^" + pattern + ".*")
     }
 
     private func shot(_ name: String) {

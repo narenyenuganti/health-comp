@@ -56,7 +56,13 @@ private struct WidgetBackground: ViewModifier {
     func body(content: Content) -> some View {
         switch family {
         case .accessoryCircular:
-            content.containerBackground(for: .widget) { AccessoryWidgetBackground() }
+            // The Lock Screen drops an accessory widget's container
+            // background, so the disc goes in the body.
+            ZStack {
+                AccessoryWidgetBackground()
+                content
+            }
+            .containerBackground(for: .widget) { Color.clear }
         case .accessoryRectangular:
             content.containerBackground(for: .widget) { Color.clear }
         default:
@@ -105,12 +111,12 @@ private struct SmallView: View {
         if match.state(at: date) == .scheduled {
             VStack(alignment: .leading, spacing: 6) {
                 StatusLabel(text: match.status(at: date))
+                Spacer(minLength: 0)
                 Text(match.name)
                     .font(.title3.weight(.heavy).width(.condensed))
                     .foregroundStyle(Theme.ink)
                     .lineLimit(2)
                     .privacySensitive()
-                Spacer(minLength: 0)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         } else {
@@ -148,12 +154,12 @@ private struct SmallView: View {
 
     private func row(_ label: String, _ number: String, _ color: Color, isYou: Bool) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
+            // Always a few letters of the name: the number shrinks first.
             Text(label)
                 .font(.themeLabel)
-                .tracking(1.2)
-                .textCase(.uppercase)
                 .foregroundStyle(color)
                 .lineLimit(1)
+                .frame(minWidth: 64, alignment: .leading)
                 .privacySensitive(!isYou)
             Spacer(minLength: 0)
             Text(number)
@@ -164,7 +170,7 @@ private struct SmallView: View {
                 .foregroundStyle(color)
                 .widgetAccentable(isYou)
                 .privacySensitive()
-                .layoutPriority(1)  // a long name truncates, never the number
+                .layoutPriority(1)  // fills what the name leaves, shrinking to fit
         }
     }
 }
@@ -184,7 +190,12 @@ private struct MediumView: View {
             header
             Spacer(minLength: 0)
             if match.state(at: date) == .scheduled {
-                strip
+                HStack(spacing: 12) {
+                    caption("YOU", isYou: true)
+                    strip
+                    caption(match.name.uppercased(), isYou: false)
+                }
+                Spacer(minLength: 0)
             } else {
                 // Large text drops the Today lines. The strip adds no height:
                 // it goes only when the numbers leave it no room.
@@ -261,15 +272,7 @@ private struct MediumView: View {
         _ caption: String, _ number: String, _ today: String?, _ color: Color, isYou: Bool
     ) -> some View {
         VStack(alignment: isYou ? .leading : .trailing, spacing: 2) {
-            // Capped near the number's width, so a long name truncates
-            // instead of pushing out the strip and the Today lines.
-            Text(caption)
-                .font(.themeLabel)
-                .tracking(1.2)
-                .foregroundStyle(Theme.secondary)
-                .lineLimit(1)
-                .frame(maxWidth: scoreSize * 2.5, alignment: isYou ? .leading : .trailing)
-                .privacySensitive(!isYou)
+            self.caption(caption, isYou: isYou)
             Text(number)
                 .font(.score(size: scoreSize))
                 .monospacedDigit()
@@ -286,6 +289,18 @@ private struct MediumView: View {
                     .privacySensitive()
             }
         }
+    }
+
+    /// Capped near the number's width, so a long name truncates instead of
+    /// pushing out the strip and the Today lines.
+    private func caption(_ text: String, isYou: Bool) -> some View {
+        Text(text)
+            .font(.themeLabel)
+            .tracking(1.2)
+            .foregroundStyle(Theme.secondary)
+            .lineLimit(1)
+            .frame(maxWidth: scoreSize * 2.5, alignment: isYou ? .leading : .trailing)
+            .privacySensitive(!isYou)
     }
 
     private var strip: some View {

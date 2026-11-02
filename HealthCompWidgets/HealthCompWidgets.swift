@@ -34,9 +34,13 @@ struct CompetitionPersonEntity: AppEntity {
     static var typeDisplayRepresentation: TypeDisplayRepresentation = "Person"
     static var defaultQuery = CompetitionPersonQuery()
 
-    /// The snapshot's `personID`.
+    /// The snapshot's `personID`, or `soonestID`.
     let id: String
     let name: String
+
+    /// "Ending soonest": nobody picked. Listed first, so a pick can be undone.
+    static let soonestID = "soonest"
+    static let soonest = CompetitionPersonEntity(id: soonestID, name: "Ending soonest")
 
     var displayRepresentation: DisplayRepresentation {
         DisplayRepresentation(title: "\(name)")
@@ -49,16 +53,19 @@ struct CompetitionPersonQuery: EntityQuery {
     func entities(for identifiers: [String]) async throws -> [CompetitionPersonEntity] {
         let snapshot = CompetitionWidgetSnapshot.load(from: CompetitionWidgetSnapshot.fileURL())
         return identifiers.map {
-            CompetitionPersonEntity(id: $0, name: snapshot?.name(for: $0) ?? "The other person")
+            $0 == CompetitionPersonEntity.soonestID ? .soonest
+                : CompetitionPersonEntity(id: $0, name: snapshot?.name(for: $0) ?? "The other person")
         }
     }
 
     func suggestedEntities() async throws -> [CompetitionPersonEntity] {
         let snapshot = CompetitionWidgetSnapshot.load(from: CompetitionWidgetSnapshot.fileURL())
-        return (snapshot?.suggestedPeople() ?? []).map {
+        return [.soonest] + (snapshot?.suggestedPeople() ?? []).map {
             CompetitionPersonEntity(id: $0.id, name: $0.name)
         }
     }
+
+    func defaultResult() async -> CompetitionPersonEntity? { .soonest }
 }
 
 struct CompetitionWidgetIntent: WidgetConfigurationIntent {
@@ -69,6 +76,11 @@ struct CompetitionWidgetIntent: WidgetConfigurationIntent {
 
     @Parameter(title: "Person")
     var person: CompetitionPersonEntity?
+
+    /// Nil for "Ending soonest".
+    var personID: String? {
+        person.flatMap { $0.id == CompetitionPersonEntity.soonestID ? nil : $0.id }
+    }
 }
 
 // MARK: Timeline
@@ -99,7 +111,7 @@ struct CompetitionWidgetProvider: AppIntentTimelineProvider {
         return CompetitionWidgetEntry(
             date: Date(),
             snapshot: CompetitionWidgetSnapshot.load(from: CompetitionWidgetSnapshot.fileURL()),
-            personID: configuration.person?.id
+            personID: configuration.personID
         )
     }
 
@@ -110,7 +122,7 @@ struct CompetitionWidgetProvider: AppIntentTimelineProvider {
         let snapshot = CompetitionWidgetSnapshot.load(from: CompetitionWidgetSnapshot.fileURL())
         let boundaries = snapshot?.timelineDates(after: now) ?? []
         let entries = ([now] + boundaries).map {
-            CompetitionWidgetEntry(date: $0, snapshot: snapshot, personID: configuration.person?.id)
+            CompetitionWidgetEntry(date: $0, snapshot: snapshot, personID: configuration.personID)
         }
         return Timeline(entries: entries, policy: boundaries.isEmpty ? .never : .atEnd)
     }
