@@ -890,6 +890,31 @@ final class SupabaseCompetitionRemoteAPITests: XCTestCase {
         try assertRPC(requests[0], name: "reset_my_challenge_link", body: [:])
     }
 
+    func testNudgeSendsCompetitionIDAndDecodesNudgedAt() async throws {
+        let id = UUID(uuidString: "84000000-0000-4000-8000-0000000000b1")!
+        let harness = CompetitionTransportHarness(stubs: [
+            .response(200, try jsonData(["nudged_at": "2026-11-09T16:12:00.123456+00:00"])),
+            .response(200, try jsonData(["nudged_at": "2026-11-09T16:12:00.123456+00:00", "extra": 1])),
+            .failure(.server(statusCode: 400, code: "P0001", message: "nudge_not_allowed")),
+            .failure(.server(statusCode: 400, code: "P0002", message: "competition_not_found")),
+        ])
+        let api = makeAPI(harness)
+        let nudgedAt = try await api.nudgeCompetitionParticipant(id)
+        XCTAssertEqual(nudgedAt.timeIntervalSince1970, 1_794_240_720.123456, accuracy: 0.001)
+        let extraKey = await remoteFailure { _ = try await api.nudgeCompetitionParticipant(id) }
+        XCTAssertEqual(extraKey, .serverContractMismatch)
+        let refused = await remoteFailure { _ = try await api.nudgeCompetitionParticipant(id) }
+        XCTAssertEqual(refused, .forbidden)
+        let notFound = await remoteFailure { _ = try await api.nudgeCompetitionParticipant(id) }
+        XCTAssertEqual(notFound, .notFound)
+        let requests = await harness.recordedRequests()
+        try assertRPC(
+            requests[0],
+            name: "nudge_competition_participant",
+            body: ["competition_id": id.uuidString.lowercased()]
+        )
+    }
+
     func testCreateClassifiesIncomingAndActiveConflicts() async throws {
         let request = try CompetitionInviteCreationRequest(
             recipientProfileID: UUID(uuidString: "12000000-0000-4000-8000-0000000000a4")!,

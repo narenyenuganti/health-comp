@@ -228,6 +228,8 @@ jobs:
             -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testHealthPageOpensSettings \
             -only-testing:HealthCompUITests/WhatItTakesUITests/testWhatItTakesPanelForEveryRemoteState \
             -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testBeltShowsOnHomeHistoryAndThePersonPage \
+            -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testStaleMatchOffersOneNudgeADay \
+            -only-testing:HealthCompUITests/NudgeUITests/testFailedNudgeRetriesAndARefusalExplains \
             -parallel-testing-enabled NO \
             -maximum-concurrent-test-simulator-destinations 1 \
             -maximum-parallel-testing-workers 1 \
