@@ -419,10 +419,11 @@ final class LocalCompetitionLifecycleUITests: XCTestCase {
         let rings = app.otherElements["competition.ownerRings"]
         XCTAssertTrue(rings.exists)
         XCTAssertLessThan(takes.frame.minY, rings.frame.minY)
-        // The audit and capture only see the screen, so bring the panel into view (AX5 pushes it below).
+        // The capture only sees the screen, so bring the panel into view (AX5 pushes it below).
         XCTAssertTrue(bringTopIntoView(takes), "panel under the bar")
-        try app.performAccessibilityAudit(for: .textClipped)
+        // Capture first: the audit scrolls the page while it inspects it.
         capture("\(prefix)-takes")
+        try app.performAccessibilityAudit(for: .textClipped)
 
         for _ in 0..<6 { nextCheckpoint() }
         XCTAssertTrue(waitForStatus("Last day"))
@@ -432,8 +433,9 @@ final class LocalCompetitionLifecycleUITests: XCTestCase {
         XCTAssertTrue(takes.label.hasPrefix("Out of reach today"), takes.label)
         XCTAssertFalse(takes.label.contains("of Move"), takes.label)
         XCTAssertTrue(bringTopIntoView(takes), "panel under the bar")
-        try app.performAccessibilityAudit(for: .textClipped)
+        // Capture first: the audit scrolls the page while it inspects it.
         capture("\(prefix)-takes-out-of-reach")
+        try app.performAccessibilityAudit(for: .textClipped)
     }
 
     func testDarkAccessibilitySizeRemainsNavigableAndReadable() throws {
