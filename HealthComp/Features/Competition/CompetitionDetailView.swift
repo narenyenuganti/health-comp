@@ -11,6 +11,8 @@ struct CompetitionDetailView: View {
     var refresh: (@Sendable () async -> Void)?
     /// Real scheduled matches only: Cancel Match in the ••• menu.
     var cancelMatch: CompetitionCancelMatch? = nil
+    /// Real matches only: one nudge a day when the other person's score is stale.
+    var nudge: CompetitionNudge? = nil
 
     @Environment(\.locale) private var locale
     @Environment(\.timeZone) private var timeZone
@@ -51,6 +53,7 @@ struct CompetitionDetailView: View {
                     )
                     leadStatement
                     freshnessLine
+                    liveNudge
                     if cancelMatch?.failed == true {
                         Text("Couldn’t cancel the match. It may have already started.")
                             .font(.callout)
@@ -194,21 +197,48 @@ struct CompetitionDetailView: View {
                 locale: locale,
                 timeZone: timeZone
             )
-            VStack(alignment: .leading, spacing: 4) {
-                Text(copy.headline)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(Theme.ink)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text(copy.body)
-                    .font(.subheadline)
-                    .foregroundStyle(Theme.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(copy.headline)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Theme.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(copy.body)
+                        .font(.subheadline)
+                        .foregroundStyle(Theme.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("competition.tally")
+                nudgeControl
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(16)
             .themePanel(cornerRadius: 16)
-            .accessibilityElement(children: .combine)
-            .accessibilityIdentifier("competition.tally")
+        }
+    }
+
+    /// Under the freshness line while the match is live; the tally panel has its own.
+    @ViewBuilder
+    private var liveNudge: some View {
+        switch competition.lifecycle {
+        case .active, .endsToday: nudgeControl
+        default: EmptyView()
+        }
+    }
+
+    @ViewBuilder
+    private var nudgeControl: some View {
+        if let nudge,
+           let display = competitionNudgeDisplay(
+               nudge.status, competition: competition, locale: locale, timeZone: timeZone
+           ) {
+            CompetitionNudgeControl(
+                display: display,
+                name: competition.opponentDisplayName,
+                send: nudge.send
+            )
         }
     }
 
@@ -936,12 +966,12 @@ func competitionTallyCopy(
     case .opponentPlanUnavailable:
         return CompetitionTallyCopy(
             headline: "Waiting for \(name) to sync",
-            body: "Nothing for you to do. If \(name) doesn’t sync by \(deadline), the result uses what’s in."
+            body: "If \(name) doesn’t sync by \(deadline), the result uses what’s in."
         )
     case .awaitingOpponentCheck:
         return CompetitionTallyCopy(
             headline: "Waiting for \(name)’s last check",
-            body: "Nothing for you to do. If \(name) doesn’t open HealthComp by \(deadline), the result uses what’s in."
+            body: "If \(name) doesn’t open HealthComp by \(deadline), the result uses what’s in."
         )
     case let .incomplete(missing, unavailable) where unavailable.isEmpty:
         let days = competitionDayListText(missing, locale: locale)
@@ -1126,4 +1156,153 @@ struct CompetitionCancelMatch {
     let isInFlight: Bool
     let failed: Bool
     let cancel: () -> Void
+}
+
+struct CompetitionNudge {
+    let status: CompetitionFeature.NudgeStatus?
+    let send: () -> Void
+}
+
+// MARK: Nudge
+
+/// The server uses the same value.
+let competitionNudgeStaleInterval: TimeInterval = 12 * 60 * 60
+
+/// Lifecycle and time only; the real-match gate is the caller's.
+func competitionCanNudge(_ competition: LocalCompetitionPresentation) -> Bool {
+    let now = competition.evaluatedAt
+    switch competition.lifecycle {
+    case .tallying:
+        guard let tally = competition.tally, now < tally.bestAvailableDeadline else {
+            return false
+        }
+        switch tally.attention {
+        case .awaitingOpponentCheck?, .opponentPlanUnavailable?: return true
+        default: return false
+        }
+    case .active, .endsToday:
+        guard let since = competition.opponentUpdatedAt ?? competition.acceptedConfiguration
+            .flatMap({ try? $0.schedule.calendar.startOfDay($0.schedule.startDay) })
+        else { return false }
+        return now.timeIntervalSince(since) > competitionNudgeStaleInterval
+    default:
+        return false
+    }
+}
+
+enum CompetitionNudgeDisplay: Equatable {
+    case button(error: String?, isSending: Bool)
+    case sent(String)
+    case notNeeded(String)
+}
+
+/// Nil when there's nothing to show. A sent or refused nudge holds until the
+/// match day (in the match's time zone) ends.
+func competitionNudgeDisplay(
+    _ status: CompetitionFeature.NudgeStatus?,
+    competition: LocalCompetitionPresentation,
+    locale: Locale = .current,
+    timeZone: TimeZone = .current
+) -> CompetitionNudgeDisplay? {
+    guard competitionCanNudge(competition) else { return nil }
+    var matchCalendar = Calendar(identifier: .gregorian)
+    matchCalendar.timeZone = TimeZone(identifier: competition.timeZoneIdentifier) ?? timeZone
+    // A server time after this projection (clock skew, or a projection from
+    // before midnight) is the newest news there is: it still counts as today.
+    func isToday(_ date: Date) -> Bool {
+        date > competition.evaluatedAt
+            || matchCalendar.isDate(date, inSameDayAs: competition.evaluatedAt)
+    }
+    switch status {
+    case let .sent(date)? where isToday(date):
+        let time = competitionUpdatedText(
+            date, now: max(date, competition.evaluatedAt), locale: locale, timeZone: timeZone
+        )
+        return .sent("Nudged at \(time). You can nudge again tomorrow.")
+    case let .notNeeded(date)? where isToday(date):
+        return .notNeeded("\(competition.opponentDisplayName) doesn’t need a nudge right now.")
+    case .sending?:
+        return .button(error: nil, isSending: true)
+    case .failed?:
+        return .button(error: "Couldn’t send the nudge. Try again.", isSending: false)
+    default:
+        return .button(error: nil, isSending: false)
+    }
+}
+
+private struct CompetitionNudgeControl: View {
+    let display: CompetitionNudgeDisplay
+    let name: String
+    let send: () -> Void
+
+    var body: some View {
+        content
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .onChange(of: display) { old, new in
+                if case .button(_, isSending: true) = old, case let .sent(text) = new {
+                    AccessibilityNotification.Announcement(text).post()
+                }
+            }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        switch display {
+        case let .button(error, isSending):
+            VStack(alignment: .leading, spacing: 4) {
+                Button("Nudge \(name)", action: send)
+                    .buttonStyle(CompetitionNudgeButtonStyle())
+                    .disabled(isSending)
+                    .accessibilityHint("Sends \(name) a notification to open HealthComp.")
+                    .accessibilityIdentifier("competition.nudge")
+                if let error {
+                    Text(error)
+                        .font(.subheadline)
+                        .foregroundStyle(Theme.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("competition.nudge.error")
+                }
+            }
+        case let .sent(text):
+            Label(text, systemImage: "checkmark")
+                .font(.subheadline)
+                .foregroundStyle(Theme.ink)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("competition.nudge.sent")
+        case let .notNeeded(text):
+            Text(text)
+                .font(.subheadline)
+                .foregroundStyle(Theme.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("competition.nudge.error")
+        }
+    }
+}
+
+/// The compact ink pill of the shipped "Review" mark, with a 44 pt target.
+private struct CompetitionNudgeButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        // A capsule while it fits one line; a long name wraps inside
+        // rounded corners instead of past a capsule's ends.
+        ViewThatFits(in: .horizontal) {
+            pill(configuration.label.lineLimit(1), in: Capsule())
+            pill(configuration.label, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        }
+        .opacity(isEnabled ? (configuration.isPressed ? 0.8 : 1) : 0.45)
+        .frame(minHeight: 44)
+        .contentShape(Rectangle())
+    }
+
+    private func pill(_ label: some View, in shape: some Shape) -> some View {
+        label
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(Theme.onInk)
+            .multilineTextAlignment(.leading)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(Theme.ink, in: shape)
+    }
 }

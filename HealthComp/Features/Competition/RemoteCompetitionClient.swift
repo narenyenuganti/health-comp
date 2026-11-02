@@ -152,6 +152,11 @@ extension CompetitionClient {
             },
             resolveChallengeLink: { code in
                 try await coordinator.remote { try await $0.resolveChallengeLink(code) }
+            },
+            nudge: { id in
+                try await coordinator.remote {
+                    try await $0.nudgeCompetitionParticipant(id.rawValue)
+                }
             }
         )
     }
