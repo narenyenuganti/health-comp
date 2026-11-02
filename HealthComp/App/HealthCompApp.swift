@@ -267,7 +267,7 @@ private struct AppProgressView: View {
 }
 
 // Account lives behind the Home avatar, so there is no two-item tab bar.
-private struct AuthenticatedRootView: View {
+struct AuthenticatedRootView: View {
     let mainStore: StoreOf<MainTabFeature>
     let accountStore: StoreOf<AccountFeature>
 

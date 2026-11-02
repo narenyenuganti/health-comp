@@ -295,6 +295,7 @@ enum LocalCompetitionClientIssue: Error, Equatable, Sendable {
 
 struct LocalCompetitionDashboard: Equatable, Sendable {
     let competitions: [LocalCompetitionPresentation]
+    // ponytail: no UI reads awards since the belt; delete with its ~25 test constructors in a refactor PR
     let awards: [LocalCompetitionAward]
     let issues: [LocalCompetitionClientIssue]
     let hiddenTerminalCompetitionCount: Int

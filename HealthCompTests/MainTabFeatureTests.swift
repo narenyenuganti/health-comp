@@ -1528,13 +1528,13 @@ final class MainTabFeatureTests: XCTestCase {
         let id = competitionID("81000000-0000-0000-0000-00000000000A")
         let routing = MainTabRoutingRecorder()
         let visible = publication(revision: 1, visibleID: id)
-        let store = TestStore(
-            initialState: MainTabFeature.State(
-                competition: CompetitionFeature.State(publication: visible),
-                showsHistory: true,
-                isAccountPresented: true
-            )
-        ) {
+        var initial = MainTabFeature.State(
+            competition: CompetitionFeature.State(publication: visible),
+            showsHistory: true,
+            isAccountPresented: true
+        )
+        initial.historyPersonIdentity = "remote-profile:v1:x"
+        let store = TestStore(initialState: initial) {
             MainTabFeature()
         } withDependencies: {
             $0.competitionRoutingClient = routing.client
@@ -1544,6 +1544,7 @@ final class MainTabFeatureTests: XCTestCase {
             .routeReceived(CompetitionRouteEnvelope(sequence: 3, route: .competition(id)))
         ) {
             $0.showsHistory = false
+            $0.historyPersonIdentity = nil
             $0.isAccountPresented = false
             $0.path = [id]
             $0.lastHandledRouteSequence = 3
@@ -1564,8 +1565,12 @@ final class MainTabFeatureTests: XCTestCase {
         await store.send(.accountPresentationChanged(true)) {
             $0.isAccountPresented = true
         }
+        await store.send(.historyPersonChanged("p")) {
+            $0.historyPersonIdentity = "p"
+        }
         await store.send(.historyPresentationChanged(false)) {
             $0.showsHistory = false
+            $0.historyPersonIdentity = nil
         }
         await store.send(.accountPresentationChanged(false)) {
             $0.isAccountPresented = false

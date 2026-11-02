@@ -925,6 +925,107 @@ final class RemoteCompetitionFeatureTests: XCTestCase {
         await store.finish()
     }
 
+    private static func nudgeState(_ id: CompetitionID, evaluatedAt: Date) -> CompetitionFeature.State {
+        CompetitionFeature.State(publication: .remote(revision: 1, competitions: [
+            CompetitionPresentation(
+                id: id, ownerDisplayName: "Sender", opponentDisplayName: recipient.displayName,
+                lifecycle: .active(dayOrdinal: 2),
+                acceptedConfiguration: nil, userPoints: 0, opponentPoints: 0, days: [],
+                currentDayOrdinal: 2, lastRefresh: nil, tally: nil, terminalResult: nil,
+                evaluatedAt: evaluatedAt
+            ),
+        ]))
+    }
+
+    @MainActor
+    func testNudgeTappedSendsOnceAndShowsWhenItWasSent() async {
+        let id = CompetitionID(UUID())
+        let now = Date(timeIntervalSince1970: 1_786_979_520)
+        let nudgedAt = now.addingTimeInterval(2)
+        let sent = LockIsolated<[CompetitionID]>([])
+        let gate = AsyncStream<Void>.makeStream()
+        var client = InviteCreationRecorder(results: []).client
+        client.nudge = { id in
+            sent.withValue { $0.append(id) }
+            for await _ in gate.stream { break }
+            return nudgedAt
+        }
+        let store = TestStore(initialState: Self.nudgeState(id, evaluatedAt: now)) {
+            CompetitionFeature()
+        } withDependencies: { $0.competitionClient = client }
+        await store.send(.nudgeTapped(id)) { $0.nudges[id] = .sending }
+        // A second tap while sending sends nothing.
+        await store.send(.nudgeTapped(id))
+        gate.continuation.yield()
+        await store.receive(.nudgeResponse(id, tappedAt: now, .success(nudgedAt))) {
+            $0.nudges[id] = .sent(nudgedAt)
+        }
+        XCTAssertEqual(sent.value, [id])
+        await store.finish()
+    }
+
+    @MainActor
+    func testNudgeRefusedByServerShowsNotNeededAndRefreshes() async {
+        for failure in [CompetitionRemoteFailure.forbidden, .notFound] {
+            let id = CompetitionID(UUID())
+            let now = Date(timeIntervalSince1970: 1_786_979_520)
+            let recorder = InviteCreationRecorder(results: [])
+            var client = recorder.client
+            client.nudge = { _ in throw failure }
+            let store = TestStore(initialState: Self.nudgeState(id, evaluatedAt: now)) {
+                CompetitionFeature()
+            } withDependencies: { $0.competitionClient = client }
+            await store.send(.nudgeTapped(id)) { $0.nudges[id] = .sending }
+            await store.receive(.nudgeResponse(id, tappedAt: now, .failure(failure))) {
+                $0.nudges[id] = .notNeeded(now)
+            }
+            await store.finish()
+            XCTAssertEqual(recorder.reconcileTriggers, [.foreground], "\(failure)")
+        }
+    }
+
+    @MainActor
+    func testNudgeConnectionFailureKeepsTheButton() async {
+        let id = CompetitionID(UUID())
+        let now = Date(timeIntervalSince1970: 1_786_979_520)
+        let recorder = InviteCreationRecorder(results: [])
+        var client = recorder.client
+        client.nudge = { _ in throw CompetitionRemoteFailure.retryableTransport }
+        let store = TestStore(initialState: Self.nudgeState(id, evaluatedAt: now)) {
+            CompetitionFeature()
+        } withDependencies: { $0.competitionClient = client }
+        await store.send(.nudgeTapped(id)) { $0.nudges[id] = .sending }
+        await store.receive(.nudgeResponse(id, tappedAt: now, .failure(.retryableTransport))) {
+            $0.nudges[id] = .failed
+        }
+        await store.finish()
+        XCTAssertEqual(recorder.reconcileTriggers, [])
+    }
+
+    @MainActor
+    func testStopClearsAndCancelsNudges() async {
+        let id = CompetitionID(UUID())
+        let now = Date(timeIntervalSince1970: 1_786_979_520)
+        let started = AsyncStream<Void>.makeStream()
+        let gate = AsyncStream<Void>.makeStream()
+        var client = InviteCreationRecorder(results: []).client
+        client.nudge = { _ in
+            started.continuation.yield()
+            for await _ in gate.stream { break }
+            return now
+        }
+        let store = TestStore(initialState: Self.nudgeState(id, evaluatedAt: now)) {
+            CompetitionFeature()
+        } withDependencies: { $0.competitionClient = client }
+        await store.send(.nudgeTapped(id)) { $0.nudges[id] = .sending }
+        for await _ in started.stream { break }
+        await store.send(.stop) { $0.nudges = [:] }
+        // The suspended request finishing after sign-out changes nothing.
+        gate.continuation.yield()
+        await store.finish()
+        XCTAssertEqual(store.state.nudges, [:])
+    }
+
     @MainActor
     func testBlockTappedRunsBlockCommand() async {
         let id = CompetitionID(UUID())
@@ -989,12 +1090,36 @@ final class RemoteCompetitionFeatureTests: XCTestCase {
         await store.send(.unblockTapped(sam.id)) { $0.unblocksInFlight = [sam.id] }
         await store.receive(.unblockFinished(sam.id, succeeded: false)) {
             $0.unblocksInFlight = []
-            $0.unblockFailed = true
+            $0.unblockFailed = sam.id
         }
         // The next load clears the error.
-        await store.send(.blockedPeopleRequested) { $0.unblockFailed = false }
+        await store.send(.blockedPeopleRequested) { $0.unblockFailed = nil }
         await store.receive(.blockedPeopleResponse([sam]))
         XCTAssertEqual(unblocked.value, [alex.id])
+        await store.finish()
+    }
+
+    @MainActor
+    func testUnblockDropsAListLoadThatStartedBeforeIt() async {
+        let alex = AuthenticatedProfile(id: UUID(), displayName: "Alex")
+        var client = InviteCreationRecorder(results: []).client
+        // The load read before the unblock and answers after it.
+        client.loadBlockedProfiles = {
+            try await Task.sleep(for: .seconds(30))
+            return [alex]
+        }
+        client.unblock = { _ in }
+        var initial = CompetitionFeature.State()
+        initial.blockedPeople = [alex]
+        let store = TestStore(initialState: initial) { CompetitionFeature() }
+            withDependencies: { $0.competitionClient = client }
+        await store.send(.blockedPeopleRequested)
+        await store.send(.unblockTapped(alex.id)) { $0.unblocksInFlight = [alex.id] }
+        await store.receive(.unblockFinished(alex.id, succeeded: true)) {
+            $0.unblocksInFlight = []
+            $0.blockedPeople = []
+        }
+        // No blockedPeopleResponse([alex]) arrives to bring the row back.
         await store.finish()
     }
 
@@ -1018,11 +1143,11 @@ final class RemoteCompetitionFeatureTests: XCTestCase {
         let alex = AuthenticatedProfile(id: UUID(), displayName: "Alex")
         var initial = CompetitionFeature.State()
         initial.blockedPeople = [alex]
-        initial.unblockFailed = true
+        initial.unblockFailed = alex.id
         let store = TestStore(initialState: initial) { CompetitionFeature() }
         await store.send(.stop) {
             $0.blockedPeople = nil
-            $0.unblockFailed = false
+            $0.unblockFailed = nil
         }
         await store.finish()
     }

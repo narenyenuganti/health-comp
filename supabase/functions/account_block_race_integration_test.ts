@@ -139,6 +139,33 @@ Deno.test({
       );
       const after = await Promise.allSettled([create()]);
       assertEquals(failure(after[0])?.message, "recipient_unavailable");
+
+      // A block waiting on the locks while Naren's deletion starts: the
+      // deletion purges his blocks, so the block must not add one back.
+      const deleter = await sql.reserve();
+      try {
+        await deleter`begin`;
+        await deleter`update public.profiles set state = 'deleting'
+          where id = ${naren.profile}::uuid`;
+        const late = block(seed);
+        for (let n = 0; n < 100; n++) {
+          const [{ waiting }] = await sql`select count(*)::int waiting
+            from pg_catalog.pg_stat_activity
+            where wait_event_type = 'Lock' and query like '%block_challenger%'`;
+          if (waiting > 0) break;
+          await new Promise((resolve) => setTimeout(resolve, 20));
+        }
+        await deleter`commit`;
+        const settled = await Promise.allSettled([late]);
+        assertEquals(failure(settled[0])?.message, "active_profile_required");
+      } finally {
+        deleter.release();
+      }
+      assertEquals(
+        (await sql`select count(*)::int n from private.account_blocks
+          where blocker_profile_id = ${naren.profile}::uuid`)[0].n,
+        0,
+      );
     } finally {
       await sql.end();
     }

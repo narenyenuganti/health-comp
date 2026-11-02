@@ -104,6 +104,8 @@ struct CompetitionClient: Sendable {
     var resolveChallengeLink: @Sendable (
         CompetitionChallengeLinkCode
     ) async throws -> String
+    /// Asks the other person to open HealthComp; returns when the server accepted it.
+    var nudge: @Sendable (CompetitionID) async throws -> Date
 
     init(
         start: @escaping @Sendable () -> AsyncStream<CompetitionPublication>,
@@ -195,6 +197,9 @@ struct CompetitionClient: Sendable {
             CompetitionChallengeLinkCode
         ) async throws -> String = { _ in
             throw CompetitionRemoteFailure.operationFailed
+        },
+        nudge: @escaping @Sendable (CompetitionID) async throws -> Date = { _ in
+            throw CompetitionRemoteFailure.operationFailed
         }
     ) {
         self.start = start
@@ -229,6 +234,7 @@ struct CompetitionClient: Sendable {
         self.loadChallengeLinkCode = loadChallengeLinkCode
         self.resetChallengeLinkCode = resetChallengeLinkCode
         self.resolveChallengeLink = resolveChallengeLink
+        self.nudge = nudge
     }
 
     func prepareForProfileTeardown(
