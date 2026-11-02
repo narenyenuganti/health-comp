@@ -495,6 +495,48 @@ Edges:
   until it updates. None had been distributed when this landed, because
   that server work was not yet deployed.
 
+### Nudges
+
+Migration `20261101002500` adds `public.nudge_competition_participant(uuid)`,
+the `nudge` work kind and a nullable `competition_notification_work.nudge_day`.
+An accepted participant can ask the other person to open HealthComp when the
+match is live (Day 1 to Day 7 in the match time zone) and the other person's
+newest upload, or Day 1's start, is over 12 hours old, or after Day 7 when the
+result waits on the other person's stable check (no result yet, before
+`best_available_deadline`). Anything else is `nudge_not_allowed`; a
+non-participant gets `competition_not_found`.
+
+- One nudge per sender, per match, per match day (`nudge_day`), and at least
+  12 hours after the sender's previous one. A repeat queues nothing.
+- Every success returns `{"nudged_at": <now>}`: a first send, a repeat, a
+  recipient who muted the sender (rows stored `suppressed`) and a recipient
+  with no active installation (no rows). The answer never says whether the
+  recipient has a device or a mute.
+- The push is generic: "Score update needed" / "Open HealthComp to update
+  your match.", routed to the match. The lease discards nudge work once the
+  match has left `scheduled`/`active`/`ends_today`/`tallying` or the sender's
+  account is no longer active, and suppresses it if the pair was muted after
+  queuing.
+
+Deploy order is load-bearing: **deploy `send-competition-notification` (which
+accepts `nudge`) before applying `20261101002500`**, in Staging and then in
+production. A function without `nudge` rejects the whole lease batch with a
+502, which leaves rows leased and delays challenge pushes too. Never roll the
+function back to a version without `nudge`.
+
+To turn nudges off, do not redeploy an older function. Ship a forward
+migration that runs
+`revoke execute on function public.nudge_competition_participant(uuid) from authenticated`
+and
+`update private.competition_notification_work set state = 'discarded', completed_at = now(), updated_at = now() where kind = 'nudge' and state = 'pending'`.
+Leased rows finish normally. Apps then get a permission refusal and show
+that no nudge is needed.
+
+The app build with the Nudge control needs `20261101002500` in production
+before it reaches TestFlight; without the RPC the control only ever answers
+that no nudge is needed. Nudges reach 1.0.2 and every later install: they
+use the existing generic alert path and route to the match.
+
 ## Finalizer and notification repair schedules
 
 These schedules are hosted environment state, not proof supplied by source.
