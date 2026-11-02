@@ -375,6 +375,104 @@ final class MultiUserCompetitionUITests: XCTestCase {
         )
     }
 
+    func testShareResultPreviewsTheImageAndRemembersHideName() throws {
+        launch(.sharing)
+        XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 8))
+        openCaseyResult()
+
+        let share = app.buttons["competition.result.share"]
+        scrollToElement(share)
+        // Clear of the pinned Rematch for the capture.
+        app.scrollViews.firstMatch.swipeUp()
+        XCTAssertTrue(share.isHittable)
+        attachScreenshot("remote-result-share")
+        share.tap()
+
+        let card = element("competition.recap.card")
+        XCTAssertTrue(card.waitForExistence(timeout: 5))
+        // Normalizes a choice left over from an earlier run.
+        app.buttons["Show Casey"].tap()
+        let shown = "Casey won. Aug 13 to 19, 2026. You 2,692 points. Casey 2,800 points. Lost by 108 points, won 1 day, lost 6. Best day: Sunday, 512 points. Casey took the belt."
+        XCTAssertEqual(card.label, shown)
+        let imageShare = app.buttons["competition.recap.share"]
+        let enabled = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "isEnabled == true"),
+            object: imageShare
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 5), .completed)
+        attachScreenshot("remote-recap-sheet")
+
+        app.buttons["Hide name"].tap()
+        let hidden = shown
+            .replacingOccurrences(of: "Casey won.", with: "They won.")
+            .replacingOccurrences(of: "Casey 2,800 points", with: "Them 2,800 points")
+            .replacingOccurrences(of: "Casey took the belt.", with: "They took the belt.")
+        XCTAssertEqual(card.label, hidden)
+        XCTAssertFalse(card.label.contains("Casey"))
+        attachScreenshot("remote-recap-sheet-hidden")
+
+        // The choice is remembered on this iPhone.
+        app.buttons["Close"].tap()
+        XCTAssertTrue(card.waitForNonExistence(timeout: 3))
+        scrollToElement(share)
+        share.tap()
+        XCTAssertTrue(card.waitForExistence(timeout: 5))
+        XCTAssertTrue(card.label.hasPrefix("They won."), card.label)
+        app.buttons["Show Casey"].tap()
+        app.buttons["Close"].tap()
+        XCTAssertTrue(card.waitForNonExistence(timeout: 3))
+
+        // A deleted account's name is always hidden, with no choice.
+        navigateBackToSharing()
+        let former = sharingCard(state: "completed", name: "Former competitor")
+        scrollToElement(former)
+        former.tap()
+        XCTAssertTrue(app.navigationBars["Former competitor"].waitForExistence(timeout: 3))
+        scrollToElement(share)
+        share.tap()
+        XCTAssertTrue(card.waitForExistence(timeout: 5))
+        XCTAssertEqual(
+            card.label,
+            "Match won. Aug 13 to 19, 2026. You 3,520 points. Them 3,410 points. Won by 110 points."
+        )
+        XCTAssertFalse(element("competition.recap.name").exists)
+        app.buttons["Close"].tap()
+
+        launch(
+            .sharing,
+            appearanceArguments: [
+                "-AppleInterfaceStyle", "Dark",
+                "-UIPreferredContentSizeCategoryName",
+                "UICTContentSizeCategoryAccessibilityXXXL",
+                "-UIAccessibilityReduceMotionEnabled", "YES",
+            ]
+        )
+        XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 8))
+        openCaseyResult()
+        // The lab banner sits behind the sheet, so check it first.
+        assertRemoteRenderedConfiguration("Appearance: Dark; Dynamic Type: accessibility5")
+        let largeShare = app.buttons["competition.result.share"]
+        scrollToElement(largeShare)
+        largeShare.tap()
+        XCTAssertTrue(element("competition.recap.card").waitForExistence(timeout: 5))
+        XCTAssertTrue(app.switches["competition.recap.name"].exists)
+        try app.performAccessibilityAudit(
+            for: XCUIAccessibilityAuditType.textClipped
+                .union(.hitRegion)
+                .union(.sufficientElementDescription)
+        )
+        attachScreenshot("remote-recap-Dark-accessibility5")
+        app.buttons["Close"].tap()
+    }
+
+    private func openCaseyResult() {
+        let casey = sharingCard(state: "completed", name: "Casey")
+        scrollToElement(casey)
+        revealRemoteElementFully(casey)
+        casey.tap()
+        XCTAssertTrue(app.navigationBars["Casey"].waitForExistence(timeout: 3))
+    }
+
     private func openHistory() {
         let history = app.buttons["competition.history.open"]
         scrollToElement(history)
