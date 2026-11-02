@@ -705,8 +705,9 @@ private struct CompetitionSharingRow: View {
                     .font(.headline)
                     .foregroundStyle(Theme.ink)
             }
+            // Without a name, the status line is the row's title.
             Text(statusText)
-                .font(.subheadline.weight(.medium))
+                .font(showsName ? .subheadline.weight(.medium) : .headline)
                 .foregroundStyle(statusColor)
             if let caption {
                 Text(caption)
@@ -732,9 +733,8 @@ private struct CompetitionSharingRow: View {
 
     // Your wins read in your color; everything else stays neutral.
     private var statusColor: Color {
-        sharingOutcome(competition.lifecycle) == .win
-            ? Theme.you
-            : Theme.secondary
+        if sharingOutcome(competition.lifecycle) == .win { return Theme.you }
+        return showsName ? Theme.secondary : Theme.ink
     }
 
     private var trailingScore: some View {
@@ -1311,6 +1311,14 @@ struct CompetitionPersonView: View {
             : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: 8))
     }
 
+    // At accessibility sizes the mark sits above the title, so it doesn't
+    // float beside a wrapped title or squeeze it.
+    private var titleLayout: AnyLayout {
+        dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
+            : AnyLayout(HStackLayout(spacing: 10))
+    }
+
     private func header(_ record: CompetitionOpponentRecord, weekCount: Int) -> some View {
         rowLayout {
             competitionRecordText(record)
@@ -1336,7 +1344,7 @@ struct CompetitionPersonView: View {
         let belt = record.belt
         let name = record.opponentDisplayName
         return VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 10) {
+            titleLayout {
                 if let holder = belt.holder {
                     CompetitionBeltMark(holder: holder, width: 44)
                 }
