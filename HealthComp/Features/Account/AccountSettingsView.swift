@@ -352,16 +352,13 @@ struct AccountSettingsView: View {
                             .foregroundStyle(Theme.ink)
                             .frame(width: blockedInitialSize, height: blockedInitialSize)
                             .background(Theme.control, in: Circle())
+                            .accessibilityHidden(true)
                     }
                     Text(person.displayName)
                         .foregroundStyle(Theme.ink)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
-                // VoiceOver reads the name once, never the initial.
-                .accessibilityElement(children: .ignore)
-                .accessibilityLabel(person.displayName)
-                .accessibilityAddTraits(.isStaticText)
                 Button { blocked.unblock(person.id) } label: {
                     Text("Unblock").frame(minHeight: 44).contentShape(Rectangle())
                 }

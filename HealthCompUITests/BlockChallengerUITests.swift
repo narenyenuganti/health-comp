@@ -79,6 +79,7 @@ final class BlockChallengerUITests: XCTestCase {
         // The initial is decoration; VoiceOver reads the name once.
         let row = app.cells.containing(.button, identifier: "account.blocked.unblock").firstMatch
         XCTAssertTrue(row.staticTexts["Alex"].exists)
+        add(XCTAttachment(string: row.debugDescription))
         XCTAssertEqual(row.staticTexts.matching(NSPredicate(format: "label == %@", "A")).count, 0)
         let footer = app.staticTexts[Self.footer]
         scrollToElement(footer)
@@ -509,7 +510,9 @@ final class BlockChallengerUITests: XCTestCase {
             let end = surface.coordinate(
                 withNormalizedOffset: CGVector(dx: 0.5, dy: movesTowardEarlierContent ? 0.55 : 0.45)
             )
-            start.press(forDuration: 0.05, thenDragTo: end)
+            // Hold before releasing: no momentum, so the next tap lands on
+            // the control instead of stopping a scroll.
+            start.press(forDuration: 0.05, thenDragTo: end, withVelocity: .slow, thenHoldForDuration: 0.2)
         }
         XCTAssertTrue(element.exists, "\(element)")
         XCTAssertTrue(element.isHittable, "\(element)")
