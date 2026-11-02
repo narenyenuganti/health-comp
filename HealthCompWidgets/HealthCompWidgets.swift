@@ -8,6 +8,7 @@ import WidgetKit
 struct HealthCompWidgetBundle: WidgetBundle {
     var body: some Widget {
         CompetitionMatchWidget()
+        MatchLiveActivityWidget()
     }
 }
 

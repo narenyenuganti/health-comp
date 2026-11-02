@@ -46,6 +46,7 @@ targets:
         NSHealthShareUsageDescription: "HealthComp reads your Activity data to score matches with friends."
         # Upload validation requires both purpose keys; authorization remains read-only.
         NSHealthUpdateUsageDescription: "HealthComp uses read-only Health access for Activity matches and does not save or change Health data."
+        NSSupportsLiveActivities: true
         SUPABASE_URL: "$(SUPABASE_URL)"
         SUPABASE_PUBLISHABLE_KEY: "$(SUPABASE_PUBLISHABLE_KEY)"
         HEALTHCOMP_APNS_ENVIRONMENT: "$(HEALTHCOMP_APNS_ENVIRONMENT)"
@@ -73,8 +74,8 @@ targets:
         product: Supabase
       - target: HealthCompWidgets
 
-  # Reads the app's snapshot file only: no network, HealthKit, TCA or
-  # CompetitionCore. Shared sources must stay extension-safe.
+  # Reads the app's snapshot file and Live Activity content only: no
+  # network, HealthKit, TCA or CompetitionCore. Shared sources must stay extension-safe.
   HealthCompWidgets:
     type: app-extension
     platform: iOS
@@ -83,6 +84,8 @@ targets:
       - path: HealthComp/Features/Widgets/CompetitionWidgetSnapshot.swift
       - path: HealthComp/Features/Competition/CompetitionDayBar.swift
       - path: HealthComp/Features/Competition/CompetitionDateFormatting.swift
+      - path: HealthComp/Features/Competition/CompetitionLeadText.swift
+      - path: HealthComp/LiveActivity
       - path: HealthComp/App/Theme.swift
     info:
       path: HealthCompWidgets/Info.plist

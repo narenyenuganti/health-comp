@@ -27,6 +27,8 @@ enum MultiUserCompetitionTestLabScenario:
     /// A challenge link opened before Health is set up, through the real
     /// Home flow.
     case healthOnboardingClaim = "health-onboarding-claim"
+    /// The final-day Live Activity's views, and a button that starts a real one.
+    case liveActivity = "live-activity"
 }
 
 struct MultiUserCompetitionTestLabConfiguration: Equatable, Sendable {
@@ -149,6 +151,8 @@ struct MultiUserCompetitionTestLabRootView: View {
             )
         case .healthOnboardingClaim:
             MultiUserCompetitionPreHealthClaimTestLabView()
+        case .liveActivity:
+            LiveActivityPreviewView()
         }
     }
 }
@@ -417,7 +421,8 @@ private struct MultiUserCompetitionClaimTestLabView: View {
         case .offlineClaim: .retryable
         case .sharing, .sharingCustomScheme, .coldClaim, .warmClaim,
              .signedOutClaim, .challengeLink, .account, .welcome, .welcomeChallenge,
-             .healthOnboarding, .healthOnboardingChallenge, .healthOnboardingClaim:
+             .healthOnboarding, .healthOnboardingChallenge, .healthOnboardingClaim,
+             .liveActivity:
             .ready
         }
         _status = State(initialValue: initialStatus)
@@ -992,6 +997,89 @@ private enum MultiUserCompetitionTestLabFixtures {
                 scoringPolicy: .remoteWireV1
             )
         }
+    }
+}
+
+/// The Lock Screen card live and pending, at the card's 160 pt height, and
+/// the expanded Dynamic Island on black.
+private struct LiveActivityPreviewView: View {
+    private let client = CompetitionLiveActivityClient.live
+    private let attributes: MatchActivityAttributes
+    private let live: MatchActivityAttributes.ContentState
+
+    init() {
+        // `-liveActivityPreviewSecondsLeft 60` lets a UI test watch the card go stale.
+        let secondsLeft = UserDefaults.standard.double(forKey: "liveActivityPreviewSecondsLeft")
+        let id = CompetitionID(UUID(uuidString: "00000000-0000-4000-8000-0000000000A7")!)
+        attributes = MatchActivityAttributes(
+            matchID: id.rawValue.uuidString.lowercased(),
+            endsAt: Date().addingTimeInterval(secondsLeft > 0 ? secondsLeft : (5 * 60 + 45) * 60),
+            url: CompetitionRoute.competition(id).url!
+        )
+        live = MatchActivityAttributes.ContentState(
+            phase: .live,
+            title: "Last day",
+            timing: "Ends at midnight",
+            opponentName: "Sam",
+            userPoints: 2_190,
+            opponentPoints: 2_171,
+            freshness: "You: updated 5:40 PM · Sam: updated 6:02 PM"
+        )
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                lockScreenCard(live, identifier: "liveActivity.preview.live")
+                lockScreenCard(live.resolved(isStale: true), identifier: "liveActivity.preview.pending")
+                expandedIsland
+                Button("Start Live Activity") {
+                    Task { await start() }
+                }
+                .buttonStyle(SecondaryButtonStyle())
+                .accessibilityIdentifier("liveActivity.preview.start")
+            }
+            .padding(16)
+        }
+        .background(Theme.panel)
+        // A sample left by an earlier run never stays on the Lock Screen.
+        .task { await endSamples() }
+    }
+
+    private func lockScreenCard(
+        _ state: MatchActivityAttributes.ContentState,
+        identifier: String
+    ) -> some View {
+        MatchActivityLockScreenView(attributes: attributes, state: state)
+            .accessibilityIdentifier(identifier)
+            .frame(maxWidth: .infinity)
+            .frame(height: 160)
+            .background(Theme.ground, in: RoundedRectangle(cornerRadius: 20))
+    }
+
+    private var expandedIsland: some View {
+        VStack(spacing: 8) {
+            MatchActivityIslandHeader(attributes: attributes, state: live)
+            HStack(alignment: .bottom) {
+                MatchActivityScoreColumn(side: .you, state: live, size: 34)
+                MatchActivityScoreColumn(side: .them, state: live, size: 34)
+            }
+            MatchActivityBottomRows(state: live)
+        }
+        .padding(20)
+        .background(.black, in: RoundedRectangle(cornerRadius: 40))
+        .environment(\.colorScheme, .dark)
+    }
+
+    private func endSamples() async {
+        for activity in await client.current() where activity.matchID == attributes.matchID {
+            await client.end(activity.matchID)
+        }
+    }
+
+    private func start() async {
+        await endSamples()
+        _ = await client.start(attributes, live, attributes.endsAt)
     }
 }
 
