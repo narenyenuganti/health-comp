@@ -360,7 +360,11 @@ struct AccountSettingsView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 Button { blocked.unblock(person.id) } label: {
-                    Text("Unblock").frame(minHeight: 44).contentShape(Rectangle())
+                    // The ink tint doesn't dim when disabled, so saving shows here.
+                    Text("Unblock")
+                        .foregroundStyle(isUnblocking ? Theme.secondary : Theme.ink)
+                        .frame(minHeight: 44)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.borderless)
                 .disabled(isUnblocking)
