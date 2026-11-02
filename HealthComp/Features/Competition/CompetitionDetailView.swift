@@ -1170,8 +1170,6 @@ let competitionNudgeStaleInterval: TimeInterval = 12 * 60 * 60
 
 /// Lifecycle and time only; the real-match gate is the caller's.
 func competitionCanNudge(_ competition: LocalCompetitionPresentation) -> Bool {
-    // A deleted account never updates again, and the server refuses it.
-    guard competition.opponentDisplayName != competitionFormerCompetitorName else { return false }
     let now = competition.evaluatedAt
     switch competition.lifecycle {
     case .tallying:
