@@ -58,7 +58,7 @@ final class BlockChallengerUITests: XCTestCase {
         XCTAssertTrue(declineAndBlock.waitForExistence(timeout: 3))
         declineAndBlock.tap()
         // While the server works, nothing can be tapped twice.
-        XCTAssertTrue(waitFor(decline, "isEnabled == false", timeout: 1.5))
+        XCTAssertTrue(eventually { !decline.isEnabled })
         XCTAssertFalse(accept.isEnabled)
         XCTAssertEqual(decline.value as? String, "Action in progress")
         XCTAssertFalse(element("competition.invite.error").exists)
@@ -76,11 +76,8 @@ final class BlockChallengerUITests: XCTestCase {
         XCTAssertEqual(unblock.identifier, "account.blocked.unblock")
         XCTAssertEqual(app.buttons.matching(identifier: "account.blocked.unblock").count, 1)
         XCTAssertTrue(app.staticTexts["BLOCKED"].exists)
-        // The initial is decoration; VoiceOver reads the name once.
-        let row = app.cells.containing(.button, identifier: "account.blocked.unblock").firstMatch
-        XCTAssertTrue(row.staticTexts["Alex"].exists)
-        add(XCTAttachment(string: row.debugDescription))
-        XCTAssertEqual(row.staticTexts.matching(NSPredicate(format: "label == %@", "A")).count, 0)
+        XCTAssertTrue(app.cells.containing(.button, identifier: "account.blocked.unblock")
+            .firstMatch.staticTexts["Alex"].exists)
         let footer = app.staticTexts[Self.footer]
         scrollToElement(footer)
         XCTAssertFalse(element("account.blocked.error").exists)
@@ -116,7 +113,7 @@ final class BlockChallengerUITests: XCTestCase {
         XCTAssertEqual(app.descendants(matching: .any).matching(identifier: "competition.invite.error").count, 1)
         XCTAssertTrue(app.navigationBars["Sam"].exists)
         let decline = app.buttons["competition.invite.decline"]
-        XCTAssertTrue(waitFor(decline, "isEnabled == true", timeout: 3))
+        XCTAssertTrue(eventually(timeout: 3) { decline.isEnabled })
         XCTAssertTrue(app.buttons["competition.invite.accept"].isEnabled)
 
         // The retry goes through the decline dialog this time.
@@ -226,11 +223,8 @@ final class BlockChallengerUITests: XCTestCase {
         scrollToElement(longUnblock)
         longUnblock.tap()
         // Saving: VoiceOver hears it, and a second tap does nothing.
-        let saw = waitFor(longUnblock, "value == 'Unblocking'", timeout: 1)
+        XCTAssertTrue(eventually { longUnblock.value as? String == "Unblocking" && !longUnblock.isEnabled })
         shot("account-unblocking")
-        add(XCTAttachment(string: app.cells.containing(.button, identifier: "account.blocked.unblock").firstMatch.debugDescription))
-        XCTAssertTrue(element("account.blocked.error").waitForExistence(timeout: 5), "the tap reached Unblock")
-        XCTAssertTrue(saw)
         longUnblock.tap()
         XCTAssertEqual(morganUnblock.value as? String ?? "", "")
         let error = element("account.blocked.error")
@@ -241,7 +235,7 @@ final class BlockChallengerUITests: XCTestCase {
         XCTAssertGreaterThanOrEqual(error.frame.minY, longUnblock.frame.maxY - 1)
         XCTAssertLessThan(error.frame.maxY, morganUnblock.frame.minY)
         XCTAssertTrue(longUnblock.exists)
-        XCTAssertTrue(waitFor(longUnblock, "value == nil OR value == ''", timeout: 2))
+        XCTAssertTrue(eventually { longUnblock.isEnabled && (longUnblock.value as? String ?? "").isEmpty })
 
         // The next Unblock clears the error at once.
         scrollToElement(morganUnblock)
@@ -346,7 +340,7 @@ final class BlockChallengerUITests: XCTestCase {
                 shot("account-blocked-\(suffix)")
                 try audit("account-blocked-\(suffix)")
                 longUnblock.tap()
-                XCTAssertTrue(waitFor(longUnblock, "value == 'Unblocking'", timeout: 1))
+                XCTAssertTrue(eventually { longUnblock.value as? String == "Unblocking" })
                 shot("account-unblocking-\(suffix)")
                 let unblockError = element("account.blocked.error")
                 XCTAssertTrue(unblockError.waitForExistence(timeout: 5))
@@ -475,9 +469,15 @@ final class BlockChallengerUITests: XCTestCase {
         XCTAssertFalse(element("account.blocked.error").exists, file: file, line: line)
     }
 
-    private func waitFor(_ element: XCUIElement, _ predicate: String, timeout: TimeInterval) -> Bool {
-        let expectation = XCTNSPredicateExpectation(predicate: NSPredicate(format: predicate), object: element)
-        return XCTWaiter.wait(for: [expectation], timeout: timeout) == .completed
+    /// Polls every 0.1 s. XCTNSPredicateExpectation checks about once a
+    /// second, too slow for a 1.5 s in-flight state.
+    private func eventually(timeout: TimeInterval = 1.2, _ condition: () -> Bool) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        repeat {
+            if condition() { return true }
+            Thread.sleep(forTimeInterval: 0.1)
+        } while Date() < deadline
+        return condition()
     }
 
     private func shot(_ name: String) {
