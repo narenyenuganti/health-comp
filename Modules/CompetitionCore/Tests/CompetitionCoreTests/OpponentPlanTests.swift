@@ -327,13 +327,19 @@ final class OpponentPlanTests: XCTestCase {
     }
 
     func testVersionTwoScalesDailyFinalsToTheBaselinePerDifficulty() throws {
-        let bounds: [(OpponentDifficulty, ClosedRange<Int>, ClosedRange<Int>)] = [
-            (.relaxed, 180...240, 6...8),
-            (.balanced, 360...440, 7...9),
-            (.challenging, 440...520, 8...10),
+        // v1's curves: relaxed builds late, balanced is linear, challenging builds early.
+        let lateBuild: (Int, Int) -> Int = { final, p in final * p * p / 100_000_000 }
+        let linear: (Int, Int) -> Int = { final, p in final * p / 10_000 }
+        let earlyBuild: (Int, Int) -> Int = { final, p in
+            final * (2 * p * 10_000 - p * p) / 100_000_000
+        }
+        let bounds: [(OpponentDifficulty, ClosedRange<Int>, ClosedRange<Int>, (Int, Int) -> Int)] = [
+            (.relaxed, 180...240, 6...8, lateBuild),
+            (.balanced, 360...440, 7...9, linear),
+            (.challenging, 440...520, 8...10, earlyBuild),
         ]
 
-        for (difficulty, pointsRange, checkpointRange) in bounds {
+        for (difficulty, pointsRange, checkpointRange, curve) in bounds {
             var observedFinalPoints = Set<Int>()
             for seed in UInt64(0)..<UInt64(64) {
                 let plan = try generateV2(seed: seed, difficulty: difficulty, baseline: 400)
@@ -341,6 +347,13 @@ final class OpponentPlanTests: XCTestCase {
                 for day in plan.days {
                     XCTAssertTrue(pointsRange.contains(day.finalPoints), "\(difficulty) \(day.finalPoints)")
                     XCTAssertTrue(checkpointRange.contains(day.checkpoints.count))
+                    for checkpoint in day.checkpoints {
+                        XCTAssertEqual(
+                            checkpoint.cumulativePoints,
+                            curve(day.finalPoints, checkpoint.progressBasisPoints),
+                            "\(difficulty) curve"
+                        )
+                    }
                     observedFinalPoints.insert(day.finalPoints)
                 }
             }
