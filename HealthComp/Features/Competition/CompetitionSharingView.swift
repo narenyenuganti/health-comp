@@ -225,8 +225,7 @@ struct CompetitionSharingView: View {
     }
 
     /// Matches drawn on Home carry their own problem line, so the banner
-    /// leaves them out.
-    /// A failed practice start shows on its sheet, not the banner.
+    /// leaves them out. A failed practice start shows on its sheet.
     private func attributedIDs(_ layout: CompetitionHomeLayout) -> Set<CompetitionID> {
         Set(layout.allItems.map(\.id) + [PracticeMatch.startCommandID])
     }
