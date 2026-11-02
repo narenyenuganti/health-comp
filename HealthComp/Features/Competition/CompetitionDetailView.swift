@@ -501,6 +501,8 @@ struct CompetitionDrawerCloseButton: View {
         Button(action: action) {
             Image(systemName: "xmark")
                 .font(.footnote.weight(.bold))
+                // Past xxxLarge the glyph outgrows its 30 pt circle.
+                .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
                 .foregroundStyle(Theme.secondary)
                 .frame(width: 30, height: 30)
                 .background(Theme.control, in: Circle())

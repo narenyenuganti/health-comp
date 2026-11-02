@@ -1,4 +1,5 @@
 import CompetitionCore
+import LinkPresentation
 import UIKit
 import XCTest
 @testable import HealthComp
@@ -284,6 +285,14 @@ final class CompetitionRecapTests: XCTestCase {
             ("recap-card-photo-finish", recap(
                 try match(days([7: (200, 314)]), user: 2_104.30, opponent: 2_104.00), hidesName: true
             )),
+            ("recap-card-tie-no-days", recap(try match([], user: 3_000, opponent: 3_000))),
+            ("recap-card-long-name-loss", recap(
+                try match(
+                    days(), user: 2_268, opponent: 2_412,
+                    name: "Maximiliana Alexandrovna Featherstonehaugh-Montgomery Wellington"
+                ),
+                belt: .theyKept(weeks: 4)
+            )),
         ]
         for (name, card) in cards {
             guard let image = competitionRecapImage(card) else { continue }
@@ -293,6 +302,24 @@ final class CompetitionRecapTests: XCTestCase {
             add(attachment)
         }
         #endif
+    }
+
+    @MainActor
+    func testShareItemHandsOverThePNGTitledWithTheHeadline() throws {
+        let card = recap(try match(days()), belt: .youTook)
+        let image = try XCTUnwrap(competitionRecapImage(card))
+        let png = try XCTUnwrap(image.pngData())
+        let item = CompetitionRecapShareItem(png: png, image: image, title: card.headline)
+        let controller = UIActivityViewController(activityItems: [item], applicationActivities: nil)
+        XCTAssertEqual(
+            item.activityViewController(controller, itemForActivityType: .saveToCameraRoll) as? Data,
+            png
+        )
+        XCTAssertEqual(
+            item.activityViewController(controller, dataTypeIdentifierForActivityType: .message),
+            "public.png"
+        )
+        XCTAssertEqual(item.activityViewControllerLinkMetadata(controller)?.title, "Match won")
     }
 
     func testResultOutcomeUsesTerminalThenShownTotals() throws {

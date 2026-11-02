@@ -1,5 +1,5 @@
 import CompetitionCore
-import CoreTransferable
+import LinkPresentation
 import SwiftUI
 import UIKit
 import UniformTypeIdentifiers
@@ -266,7 +266,13 @@ struct CompetitionRecapCard: View {
                 }
             }
 
-            Spacer(minLength: 12)
+            // With no strip or highlights the score stays under the top row
+            // instead of floating mid-card.
+            if recap.days.isEmpty && recap.highlights.isEmpty {
+                Color.clear.frame(height: 28)
+            } else {
+                Spacer(minLength: 12)
+            }
 
             VStack(alignment: .leading, spacing: 8) {
                 Text(recap.headline)
@@ -303,7 +309,8 @@ struct CompetitionRecapCard: View {
                             Text(highlight.value)
                                 .font(.system(size: 17, weight: .semibold))
                                 .foregroundStyle(Theme.ink)
-                                .lineLimit(2)
+                                // One line, as in the mockup: shrink before wrapping.
+                                .lineLimit(1)
                                 .minimumScaleFactor(0.7)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -317,27 +324,54 @@ struct CompetitionRecapCard: View {
                 if recap.beltText != nil {
                     Rectangle().fill(Theme.hairline).frame(height: 1)
                 }
-                HStack(alignment: .center, spacing: 8) {
-                    if let belt = recap.belt, let text = recap.beltText {
-                        if belt.isYours {
-                            CompetitionBeltMark(holder: .you, width: 22)
-                        }
-                        Text(text)
-                            .font(.system(size: 15, weight: .semibold))
-                            .foregroundStyle(Theme.ink)
-                            .lineLimit(1)
-                            .minimumScaleFactor(0.6)
+                // A belt line too long for the footer row gets a row of its own.
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .center, spacing: 8) {
+                        beltLine(fits: true)
+                        Spacer(minLength: 8)
+                        domain
                     }
-                    Spacer(minLength: 8)
-                    Text("healthcomp.app")
-                        .font(.system(size: 12))
-                        .foregroundStyle(Theme.secondary)
+                    VStack(alignment: .leading, spacing: 6) {
+                        beltLine(fits: false)
+                        domain.frame(maxWidth: .infinity, alignment: .trailing)
+                    }
                 }
             }
         }
         .padding(28)
         .frame(width: Self.size.width, height: Self.size.height, alignment: .topLeading)
         .background(Theme.ground)
+    }
+
+    private var domain: some View {
+        Text("healthcomp.app")
+            .font(.system(size: 12))
+            .foregroundStyle(Theme.secondary)
+            .fixedSize()
+    }
+
+    /// Whole, or on its own row with the name truncated: "took the belt" /
+    /// "kept the belt · n weeks" is never cut.
+    @ViewBuilder
+    private func beltLine(fits: Bool) -> some View {
+        if let belt = recap.belt, let text = recap.beltText {
+            let verb = text.range(of: " took the belt") ?? text.range(of: " kept the belt")
+            HStack(spacing: 8) {
+                if belt.isYours {
+                    CompetitionBeltMark(holder: .you, width: 22)
+                }
+                HStack(spacing: 0) {
+                    if fits || verb == nil {
+                        Text(text).lineLimit(1).fixedSize(horizontal: fits, vertical: false)
+                    } else if let verb {
+                        Text(text[..<verb.lowerBound]).lineLimit(1)
+                        Text(text[verb.lowerBound...]).fixedSize()
+                    }
+                }
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(Theme.ink)
+            }
+        }
     }
 
     private func side(
@@ -383,13 +417,56 @@ struct CompetitionRecapCard: View {
 
 // MARK: Image
 
-/// What the share sheet receives: PNG bytes, so size and type are known.
-struct CompetitionRecapPNG: Transferable {
-    let data: Data
+/// What the share sheet receives: PNG bytes, so size and type are known,
+/// titled with the card's headline.
+final class CompetitionRecapShareItem: NSObject, UIActivityItemSource {
+    let png: Data
+    let image: UIImage
+    let title: String
 
-    static var transferRepresentation: some TransferRepresentation {
-        DataRepresentation(exportedContentType: .png) { $0.data }
+    init(png: Data, image: UIImage, title: String) {
+        self.png = png
+        self.image = image
+        self.title = title
     }
+
+    func activityViewControllerPlaceholderItem(_: UIActivityViewController) -> Any { image }
+
+    func activityViewController(
+        _: UIActivityViewController,
+        itemForActivityType _: UIActivity.ActivityType?
+    ) -> Any? { png }
+
+    func activityViewController(
+        _: UIActivityViewController,
+        dataTypeIdentifierForActivityType _: UIActivity.ActivityType?
+    ) -> String { UTType.png.identifier }
+
+    func activityViewControllerLinkMetadata(_: UIActivityViewController) -> LPLinkMetadata? {
+        let metadata = LPLinkMetadata()
+        metadata.title = title
+        metadata.imageProvider = NSItemProvider(object: image)
+        return metadata
+    }
+}
+
+/// Presents the system share sheet over whatever is on screen. A ShareLink in
+/// this sheet dismissed the sheet too once an action such as Save Image finished.
+@MainActor
+func competitionPresentShareSheet(_ item: CompetitionRecapShareItem) {
+    guard var top = UIApplication.shared.connectedScenes
+        .compactMap({ $0 as? UIWindowScene })
+        .flatMap(\.windows)
+        .first(where: \.isKeyWindow)?
+        .rootViewController
+    else { return }
+    while let presented = top.presentedViewController, !presented.isBeingDismissed {
+        top = presented
+    }
+    top.present(
+        UIActivityViewController(activityItems: [item], applicationActivities: nil),
+        animated: true
+    )
 }
 
 /// 1080×1350 px, always light.
@@ -417,8 +494,8 @@ struct CompetitionRecapSheet: View {
     let belt: CompetitionRecapBelt?
 
     @AppStorage("healthcomp.recapHidesName") private var hidesName = false
-    @State private var png: CompetitionRecapPNG?
-    @State private var previewImage: Image?
+    @State private var png: Data?
+    @State private var uiImage: UIImage?
     @State private var renderFailed = false
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.locale) private var locale
@@ -444,8 +521,8 @@ struct CompetitionRecapSheet: View {
         }
         .task(id: recap) {
             let image = competitionRecapImage(recap)
-            png = image?.pngData().map(CompetitionRecapPNG.init)
-            previewImage = image.map(Image.init(uiImage:))
+            png = image?.pngData()
+            uiImage = image
             renderFailed = png == nil
         }
     }
@@ -453,8 +530,8 @@ struct CompetitionRecapSheet: View {
     private func preview(_ recap: CompetitionRecap) -> some View {
         let shape = RoundedRectangle(cornerRadius: 20, style: .continuous)
         return Group {
-            if let previewImage {
-                previewImage
+            if let uiImage {
+                Image(uiImage: uiImage)
                     .resizable()
                     .scaledToFit()
             } else {
@@ -494,11 +571,12 @@ struct CompetitionRecapSheet: View {
 
     @ViewBuilder
     private func share(_ recap: CompetitionRecap) -> some View {
-        if let png, let previewImage {
-            ShareLink(
-                item: png,
-                preview: SharePreview(recap.headline, image: previewImage)
-            ) {
+        if let png, let uiImage {
+            Button {
+                competitionPresentShareSheet(
+                    CompetitionRecapShareItem(png: png, image: uiImage, title: recap.headline)
+                )
+            } label: {
                 Label("Share", systemImage: "square.and.arrow.up")
             }
             .buttonStyle(PrimaryButtonStyle())

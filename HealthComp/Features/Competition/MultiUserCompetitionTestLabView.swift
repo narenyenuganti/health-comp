@@ -686,6 +686,11 @@ private enum MultiUserCompetitionTestLabFixtures {
     static let caseyID = CompetitionID(
         UUID(uuidString: "A1000000-0000-4000-8000-00000000000A")!
     )
+    /// An archived win decided at 2 decimals against the longest allowed name.
+    static let longNameID = CompetitionID(
+        UUID(uuidString: "A1000000-0000-4000-8000-00000000000D")!
+    )
+    static let longName = "Maximiliana Alexandrovna Featherstonehaugh-Montgomery Wellington"
     static let samLinkCode = "SamSamSamSamSamSamSam1"
     static let ownLinkCode = "OwnOwnOwnOwnOwnOwnOwn1"
     static let labNow = Date(timeIntervalSince1970: 1_786_867_200)
@@ -865,9 +870,38 @@ private enum MultiUserCompetitionTestLabFixtures {
             currentDayOrdinal: nil,
             terminal: caseyTerminal
         )
+        // The week before Casey's: you trailed by 90 after Saturday and won by 0.30.
+        let longNameCompletedAt = completedAt.addingTimeInterval(-604_800)
+        let longNameTerminal = LocalCompetitionTerminalPresentation(
+            userPoints: 2_104.30,
+            opponentPoints: 2_104,
+            outcome: .win,
+            basis: .stableAcrossPostBoundaryReads,
+            completedAt: longNameCompletedAt
+        )
+        let longNamed = presentation(
+            id: longNameID,
+            opponentName: longName,
+            lifecycle: .archived(
+                outcome: .win,
+                basis: .stableAcrossPostBoundaryReads,
+                completedAt: longNameCompletedAt,
+                archivedAt: longNameCompletedAt.addingTimeInterval(86_400)
+            ),
+            userPoints: 2_104.30,
+            opponentPoints: 2_104,
+            days: completedDays(
+                startDay: 6,
+                owner: [300, 300, 300, 330.3, 290, 290, 294],
+                opponent: [330, 330, 330, 300, 300, 260, 254]
+            ),
+            currentDayOrdinal: nil,
+            terminal: longNameTerminal,
+            startDay: 6
+        )
         let competitions = [
             scheduled, active, completed, archived, pending, secondActive, expired,
-            jordanPast, casey,
+            jordanPast, casey, longNamed,
         ]
         let awards = [
             LocalCompetitionAward(
@@ -976,12 +1010,14 @@ private enum MultiUserCompetitionTestLabFixtures {
         )
     }
 
-    /// All seven days scored: you won Sunday (512) only and lost by 108.
-    private static func completedDays() -> [LocalCompetitionDayPresentation] {
-        let schedule = schedule()
+    /// All seven days scored. By default you won Sunday (512) only and lost by 108.
+    private static func completedDays(
+        startDay: Int = 13,
+        owner: [Double] = [420, 380, 300, 512, 400, 350, 330],
+        opponent: [Double] = [450, 400, 360, 380, 420, 390, 400]
+    ) -> [LocalCompetitionDayPresentation] {
+        let schedule = schedule(startDay: startDay)
         let days = try! schedule.calendar.sevenDayWindow(startingOn: schedule.startDay)
-        let owner: [Double] = [420, 380, 300, 512, 400, 350, 330]
-        let opponent: [Double] = [450, 400, 360, 380, 420, 390, 400]
         return days.enumerated().map { offset, day in
             LocalCompetitionDayPresentation(
                 day: day,
