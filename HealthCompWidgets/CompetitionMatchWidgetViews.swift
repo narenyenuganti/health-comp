@@ -162,6 +162,7 @@ private struct SmallView: View {
                 .font(.themeLabel)
                 .foregroundStyle(color)
                 .lineLimit(1)
+                .fixedSize(horizontal: isYou, vertical: false)  // "You" is always whole
                 .frame(minWidth: isYou ? nil : (typeSize >= .xLarge ? 40 : 64), alignment: .leading)
                 .privacySensitive(!isYou)
             Spacer(minLength: 0)
