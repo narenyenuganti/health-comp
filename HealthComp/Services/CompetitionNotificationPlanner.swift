@@ -277,8 +277,6 @@ extension CompetitionNotificationPolicy {
         ).title
     }
 
-    /// Final scores in the user's locale; two decimals only when whole points
-    /// would hide the winner.
     /// "You took the belt from Sam." on a take; nil otherwise.
     private static func beltSentence(_ message: CompetitionNotificationMessage) -> String? {
         switch message.beltTake {
@@ -289,6 +287,8 @@ extension CompetitionNotificationPolicy {
         }
     }
 
+    /// Final scores in the user's locale; two decimals only when whole points
+    /// would hide the winner.
     private static func resultScores(
         _ message: CompetitionNotificationMessage,
         locale: Locale
