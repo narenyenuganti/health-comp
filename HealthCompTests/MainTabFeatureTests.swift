@@ -2794,3 +2794,78 @@ private final class MainTabClaimRecorder: @unchecked Sendable {
         return client
     }
 }
+
+// MARK: - Practice match
+
+extension MainTabFeatureTests {
+    @MainActor
+    func testNotificationPromptWaitsForARealMatchNotAPractice() async {
+        let clock = TestClock()
+        let permissions = PermissionOnboardingRecorder()
+        let store = TestStore(
+            initialState: MainTabFeature.State(
+                competition: CompetitionFeature.State(
+                    notificationAuthorizationState: .notDetermined
+                )
+            )
+        ) {
+            MainTabFeature()
+        } withDependencies: {
+            $0.continuousClock = clock
+            $0.permissionOnboardingClient = permissions.client
+        }
+        let practice = LocalCompetitionPresentation(
+            id: competitionID("81000000-0000-0000-0000-000000000051"),
+            ownerDisplayName: "Naren",
+            opponentDisplayName: PracticeMatch.opponentDisplayName,
+            opponentIdentity: PracticeMatch.opponentIdentity,
+            lifecycle: .active(dayOrdinal: 2),
+            acceptedConfiguration: nil,
+            userPoints: 0,
+            opponentPoints: 0,
+            days: [],
+            currentDayOrdinal: nil,
+            lastRefresh: nil,
+            tally: nil,
+            terminalResult: nil
+        )
+        func publication(
+            _ revision: UInt64,
+            _ competitions: [LocalCompetitionPresentation]
+        ) -> LocalCompetitionPublication {
+            LocalCompetitionPublication(
+                publicationRevision: revision,
+                dashboard: LocalCompetitionDashboard(
+                    competitions: competitions,
+                    awards: [],
+                    issues: [],
+                    hiddenTerminalCompetitionCount: 0
+                )
+            )
+        }
+
+        let practiceOnly = publication(1, [practice])
+        await store.send(.competition(.publication(practiceOnly))) {
+            $0.competition.publication = practiceOnly
+        }
+        XCTAssertEqual(store.state.notificationPrompt, .unscheduled)
+
+        let real = self.publication(
+            revision: 2,
+            visibleID: competitionID("81000000-0000-0000-0000-000000000052")
+        )
+        let withReal = publication(2, [practice] + real.dashboard.competitions)
+        await store.send(.competition(.publication(withReal))) {
+            $0.competition.publication = withReal
+            $0.notificationPrompt = .scheduled
+        }
+        await clock.advance(by: .milliseconds(600))
+        await store.receive(.notificationPromptReady) {
+            $0.notificationPrompt = .presented
+        }
+        await store.send(.notificationPromptNotNowTapped) {
+            $0.notificationPrompt = .finished
+        }
+        await store.finish()
+    }
+}

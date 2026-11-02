@@ -2548,3 +2548,142 @@ private struct FinalScoreProbeOwner: View {
         .frame(maxWidth: .infinity)
     }
 }
+
+// MARK: - Practice match
+
+extension CompetitionPresentationTests {
+    private func practicePresentation(
+        id: Int,
+        lifecycle: LocalCompetitionLifecyclePresentation,
+        start: (month: Int, day: Int)? = (10, 28)
+    ) -> LocalCompetitionPresentation {
+        homePresentation(
+            id: id,
+            name: PracticeMatch.opponentDisplayName,
+            identity: PracticeMatch.opponentIdentity,
+            lifecycle: lifecycle,
+            start: start
+        )
+    }
+
+    func testPracticeStatusIsLabeledOnCardsRowsButNotNotifications() throws {
+        let en = Locale(identifier: "en_US")
+        let la = try XCTUnwrap(TimeZone(identifier: "America/Los_Angeles"))
+        let won = LocalCompetitionLifecyclePresentation.completed(
+            outcome: .win, basis: .stableAcrossPostBoundaryReads, completedAt: homeNow
+        )
+        let cases: [(LocalCompetitionLifecyclePresentation, (Int, Int))] = [
+            (.scheduled, (11, 1)),
+            (.active(dayOrdinal: 3), (10, 28)),
+            (.tallying(startedAt: homeNow), (10, 21)),
+            (won, (10, 21)),
+        ]
+        for (lifecycle, start) in cases {
+            let practice = practicePresentation(id: 1, lifecycle: lifecycle, start: start)
+            let real = homePresentation(id: 2, lifecycle: lifecycle, start: start)
+            for style in [CompetitionStatusStyle.card, .row] {
+                let practiceText = competitionStatusText(practice, style: style, locale: en, timeZone: la)
+                let realText = competitionStatusText(real, style: style, locale: en, timeZone: la)
+                XCTAssertEqual(practiceText.title, "Practice · \(realText.title)")
+                XCTAssertEqual(practiceText.timing, realText.timing)
+            }
+            XCTAssertEqual(
+                competitionStatusText(practice, style: .notification, locale: en, timeZone: la),
+                competitionStatusText(
+                    homePresentation(id: 2, name: "Pacer", lifecycle: lifecycle, start: start),
+                    style: .notification, locale: en, timeZone: la
+                )
+            )
+        }
+        let result = practicePresentation(id: 3, lifecycle: won, start: (10, 21))
+        XCTAssertTrue(
+            competitionHomeStatusLine(result, locale: en, timeZone: la).hasPrefix("Practice · "),
+            competitionHomeStatusLine(result, locale: en, timeZone: la)
+        )
+    }
+
+    func testHistoryWeeksAndRecordsLeavePracticeOut() {
+        let won = LocalCompetitionLifecyclePresentation.completed(
+            outcome: .win, basis: .stableAcrossPostBoundaryReads, completedAt: homeNow
+        )
+        let practice = practicePresentation(id: 1, lifecycle: won, start: (10, 14))
+        let real = homePresentation(id: 2, lifecycle: won, start: (10, 21))
+
+        XCTAssertEqual(competitionHistoryWeeks([practice, real]).map(\.id), [real.id])
+        XCTAssertEqual(
+            competitionOpponentRecords([practice, real]).map(\.opponentIdentity),
+            [real.opponentIdentity]
+        )
+        XCTAssertEqual(competitionOpponentRecords([practice]), [])
+        XCTAssertNil(competitionBeltEvent(for: practice, in: [practice, real]))
+    }
+
+    func testAccountLiveMatchCountLeavesPracticeOut() {
+        XCTAssertEqual(
+            accountLiveMatchCount([
+                practicePresentation(id: 1, lifecycle: .active(dayOrdinal: 3)),
+                homePresentation(id: 2, lifecycle: .active(dayOrdinal: 3)),
+            ]),
+            1
+        )
+    }
+
+    func testMuteIdentityIsNilForPractice() {
+        let practice = practicePresentation(id: 1, lifecycle: .active(dayOrdinal: 3))
+        let real = homePresentation(id: 2, lifecycle: .active(dayOrdinal: 3))
+        XCTAssertNil(competitionMuteIdentity(practice, authorization: .authorized))
+        XCTAssertEqual(competitionMuteIdentity(real, authorization: .authorized), real.opponentIdentity)
+    }
+
+    func testHomeLayoutMakesAPracticeTheHeroOnlyWhenAlone() {
+        let livePractice = practicePresentation(id: 1, lifecycle: .active(dayOrdinal: 3))
+        let scheduledPractice = practicePresentation(id: 2, lifecycle: .scheduled, start: (10, 31))
+        let realScheduled = homePresentation(id: 3, name: "Andy", lifecycle: .scheduled, start: (11, 2))
+        let realLive = homePresentation(id: 4, lifecycle: .active(dayOrdinal: 3))
+        func layout(_ competitions: [LocalCompetitionPresentation]) -> CompetitionHomeLayout {
+            competitionHomeLayout(homeDashboard(competitions), now: homeNow)
+        }
+
+        XCTAssertEqual(layout([livePractice]).hero?.id, livePractice.id)
+        XCTAssertEqual(layout([scheduledPractice]).hero?.id, scheduledPractice.id)
+
+        let beside = layout([livePractice, realScheduled])
+        XCTAssertEqual(beside.hero?.id, realScheduled.id)
+        XCTAssertEqual(beside.live.map(\.id), [livePractice.id])
+        XCTAssertEqual(beside.upNext, [])
+
+        // The practice starts sooner, but the real match leads.
+        let bothScheduled = layout([scheduledPractice, realScheduled])
+        XCTAssertEqual(bothScheduled.hero?.id, realScheduled.id)
+        XCTAssertEqual(bothScheduled.upNext.map(\.id), [scheduledPractice.id])
+
+        let bothLive = layout([livePractice, realLive])
+        XCTAssertNil(bothLive.hero)
+        XCTAssertEqual(Set(bothLive.live.map(\.id)), [livePractice.id, realLive.id])
+
+        let realLiveFirst = layout([realLive, scheduledPractice])
+        XCTAssertEqual(realLiveFirst.hero?.id, realLive.id)
+        XCTAssertEqual(realLiveFirst.upNext.map(\.id), [scheduledPractice.id])
+    }
+
+    func testPracticeIsLeftOutOfWidgetsAndLiveActivities() throws {
+        let practice = practicePresentation(id: 1, lifecycle: .endsToday, start: (10, 24))
+        let real = homePresentation(id: 2, lifecycle: .endsToday, start: (10, 24))
+        XCTAssertNil(CompetitionWidgetSnapshot.Match(presentation: practice))
+        XCTAssertNotNil(CompetitionWidgetSnapshot.Match(presentation: real))
+        // 6 PM on the last day: a real match's card would start.
+        func steps(_ p: LocalCompetitionPresentation) -> [CompetitionLiveActivityStep] {
+            CompetitionLiveActivityPlanner.steps(
+                presentations: [p],
+                source: .remoteParticipants,
+                knownCompetitionIDs: [p.id],
+                current: [],
+                started: [],
+                isAllowed: true,
+                now: homeNow.addingTimeInterval(8 * 3_600)
+            )
+        }
+        XCTAssertEqual(steps(practice), [])
+        XCTAssertEqual(steps(real).count, 1)
+    }
+}
