@@ -184,19 +184,23 @@ final class WidgetUITests: XCTestCase {
     /// Edit → Customize → Tinted, or back to the default style.
     private func setHomeScreenStyle(tinted on: Bool) {
         tinted = true  // set first, so tearDown resets the shared simulator
-        XCUIDevice.shared.press(.home)
+        // Pressing Home jumps to the first page, and the widgets may be on
+        // another one, so stay on this page while tinting.
+        if !on { XCUIDevice.shared.press(.home) }
         enterEditMode()
         tap([springboard.buttons["Edit"]], "Edit")
         tap([springboard.buttons["Customize"]], "Customize")
         sleep(2)
         shot(on ? "customize-before-tint" : "customize-before-default")
-        let names = on ? ["Tinted"] : ["Default", "Automatic", "Light"]
+        // The lane simulators start on Light.
+        let names = on ? ["Tinted"] : ["Light", "Default", "Automatic"]
         tap(names.flatMap { [springboard.buttons[$0], springboard.staticTexts[$0]] }, names[0])
         sleep(2)
-        XCUIDevice.shared.press(.home)  // closes the sheet
+        // Wallpaper above the sheet closes it, then Done leaves edit mode.
+        springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.72)).tap()
         sleep(1)
-        if springboard.buttons["Done"].exists { springboard.buttons["Done"].tap() }
-        XCUIDevice.shared.press(.home)
+        let done = springboard.buttons["Done"]
+        if done.exists && done.isHittable { done.tap() } else { XCUIDevice.shared.press(.home) }
         sleep(2)
         tinted = on
     }
