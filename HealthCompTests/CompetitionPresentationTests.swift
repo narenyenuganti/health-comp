@@ -1117,7 +1117,8 @@ final class CompetitionPresentationTests: XCTestCase {
         evaluatedAt: Date,
         opponentUpdatedAt: Date?,
         dayOneStart: Date? = nil,
-        zone: String = "UTC"
+        zone: String = "UTC",
+        opponentName: String = "Sam"
     ) -> LocalCompetitionPresentation {
         let schedule = dayOneStart.map { start -> CompetitionSchedule in
             var calendar = Calendar(identifier: .gregorian)
@@ -1144,7 +1145,7 @@ final class CompetitionPresentationTests: XCTestCase {
         return LocalCompetitionPresentation(
             id: CompetitionID(UUID()),
             ownerDisplayName: "Naren",
-            opponentDisplayName: "Sam",
+            opponentDisplayName: opponentName,
             lifecycle: lifecycle,
             acceptedConfiguration: schedule.map {
                 LocalCompetitionAcceptedPresentation(schedule: $0, difficulty: .balanced)
@@ -1184,6 +1185,23 @@ final class CompetitionPresentationTests: XCTestCase {
         XCTAssertFalse(canNudge(nil))
         XCTAssertFalse(canNudge(.awaitingOpponentCheck, deadline: now))
         XCTAssertFalse(canNudge(.awaitingOpponentCheck, deadline: now.addingTimeInterval(-1)))
+    }
+
+    func testNoNudgeForADeletedAccount() {
+        let now = Date(timeIntervalSince1970: 1_786_979_520)
+        XCTAssertFalse(competitionCanNudge(nudgePresentation(
+            lifecycle: .tallying(startedAt: now),
+            attention: .awaitingOpponentCheck,
+            evaluatedAt: now,
+            opponentUpdatedAt: now,
+            opponentName: "Former competitor"
+        )))
+        XCTAssertFalse(competitionCanNudge(nudgePresentation(
+            lifecycle: .active(dayOrdinal: 2),
+            evaluatedAt: now,
+            opponentUpdatedAt: now.addingTimeInterval(-13 * 3_600),
+            opponentName: "Former competitor"
+        )))
     }
 
     func testNudgeIsOfferedWhenALiveMatchIsTwelveHoursStale() {
