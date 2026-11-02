@@ -6,7 +6,7 @@ export LC_ALL=C
 script_dir=$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 repo=$(CDPATH='' cd -- "$script_dir/.." && pwd)
 image='public.ecr.aws/supabase/postgres@sha256:99b1729aeb0bac314445024fc149fbd39306170b61dd50800ccf180327ab3459'
-manifest_hash='735f0c11a5c52e4e7811ae85feab31b588896ac533c1fd9478e9367b0991dc93'
+manifest_hash='b3d8e0cba6644308af01568afe133faf813b2880da459bd92ba1ec948d709bf0'
 checks=/opt/healthcomp-recovery-checks
 fail() { printf 'migrated_snapshot_test: %s\n' "$1" >&2; exit 1; }
 mode=snapshot
@@ -28,7 +28,7 @@ else fail docker_engine_28_required; fi
 pinned_id=$(docker image inspect "$image" --format '{{.Id}}' 2>/dev/null) || fail pinned_image_not_local
 [[ $pinned_id == sha256:* ]] || fail pinned_image_id
 mapfile -t migrations < <(cd "$repo" && printf '%s\n' supabase/migrations/*.sql)
-[[ ${#migrations[@]} == 28 ]] || fail migration_count
+[[ ${#migrations[@]} == 29 ]] || fail migration_count
 actual_hash=$(cd "$repo" && shasum -a 256 "${migrations[@]}" | shasum -a 256 | awk '{print $1}')
 [[ $actual_hash == "$manifest_hash" ]] || fail migration_manifest
 source_migrations=("${migrations[@]}")

@@ -2,7 +2,8 @@
 -- No Auth/Vault objects, live tokens, migration execution, or product triggers.
 -- Source column types: migrations 00100, 00450, 00650, 00700, 00750, 00800,
 -- the September 6 client-binding/web-request forward migrations, the
--- November 1 challenge-link migration, and the November 2 account-blocks migration.
+-- November 1 challenge-link migration, and the November 2 account-blocks and
+-- reactions migrations.
 -- CHECK/FK/NOT NULL constraints are intentionally absent so corruption is testable.
 -- Real migrated-schema compatibility is a separate CI invocation of the operator.
 \if :build_schema
@@ -44,6 +45,7 @@ create table private.app_attest_challenges (id uuid, profile_id uuid, installati
 create table private.app_attest_submission_grants (id uuid, profile_id uuid, installation_id uuid);
 create table private.challenge_links (profile_id uuid, code text);
 create table private.account_blocks (blocker_profile_id uuid, blocked_profile_id uuid);
+create table private.competition_reactions (competition_id uuid, author_profile_id uuid, reaction text);
 
 -- Policy expressions are copied at runtime from immutable migration 00200,
 -- never from the operator oracle. These signature-only fixture helpers MUST NOT
@@ -87,6 +89,8 @@ alter table private.challenge_links enable row level security;
 alter table private.challenge_links force row level security;
 alter table private.account_blocks enable row level security;
 alter table private.account_blocks force row level security;
+alter table private.competition_reactions enable row level security;
+alter table private.competition_reactions force row level security;
 revoke all on all tables in schema public, private from public, anon, authenticated, service_role;
 grant select (id, display_name) on public.profiles to authenticated;
 grant select on public.competitions, public.competition_participants,
@@ -102,7 +106,7 @@ truncate public.profiles, public.competitions, public.competition_participants,
   private.competition_notification_mutes, private.competition_notification_work,
   private.account_deletions, private.app_attest_keys, private.app_attest_challenges,
   private.app_attest_submission_grants, private.apple_deletion_web_requests,
-  private.challenge_links, private.account_blocks;
+  private.challenge_links, private.account_blocks, private.competition_reactions;
 insert into public.profiles
 select md5('profile-' || n)::uuid,
   case when n in (4, 5) then null else md5('auth-' || n)::uuid end,

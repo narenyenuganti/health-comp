@@ -220,7 +220,7 @@ jobs:
             exit 1
           fi
           bash scripts/test-recovery-state-acceptance.sh --check-empty-receipt <"$state_output"
-          echo "State schema compatibility passed: exact v2 empty receipt, 20 application tables."
+          echo "State schema compatibility passed: exact v2 empty receipt, 21 application tables."
 
           deno test \
             --config supabase/functions/deno.json \

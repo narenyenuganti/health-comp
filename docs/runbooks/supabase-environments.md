@@ -537,6 +537,44 @@ before it reaches TestFlight; without the RPC the control only ever answers
 that no nudge is needed. Nudges reach 1.0.2 and every later install: they
 use the existing generic alert path and route to the match.
 
+### Reactions
+
+Migration `20261102002700` adds `private.competition_reactions` (RLS on and
+forced, no client grants), `public.set_competition_reaction(uuid, integer,
+text)`, `public.list_competition_reactions()`, the `reaction` work kind and
+`device_installations.supports_reactions` (default false). Each accepted
+participant keeps at most one preset (`clap`, `fire`, `huffing`, `salute`) on
+each of the other person's started days while the match is live or tallying,
+and one on the result once it exists. A null reaction removes it. Every
+refusal, including a non-participant or an unknown match, is
+`reaction_not_allowed`.
+
+- Reactions never enter `competition_change_log`: every installed app's feed
+  rejects change kinds it doesn't know. A real change sends the existing
+  `competition_changed` wakeup to both accepted, active participants, so every
+  build just reconciles; repeating the same reaction does nothing.
+- A five-argument `register_current_device_installation` sets
+  `supports_reactions`. The four-argument call now delegates with false, and
+  the three-argument call still delegates to it, so 1.0.2 and pre-reaction
+  builds record false/false. New builds fall back 5 → 4 → 3 on PGRST202.
+- The push is generic ("New reaction", no body, no name), routed to the match,
+  at most one per match and recipient per rolling hour. The work row's
+  identity also keeps a reaction silent when the match has no new change-log
+  row since the last reaction push. A muted sender's rows are stored
+  `suppressed`.
+- The install filter applies at enqueue only; the lease is unchanged. A row
+  already pending when an install re-registers without the flag still sends.
+  The per-iPhone Reactions switch arrives with `muted_push_kinds`, which the
+  lease suppresses at send time.
+
+Deploy order is load-bearing: **deploy `send-competition-notification` (which
+accepts `reaction`) before applying `20261102002700`**, in Staging and then in
+production, and never roll the function back to a version without
+`reaction`. To turn reactions off, redeploy the function with `reaction`
+mapped to no payload (rows resolve `discarded`), or ship a forward migration
+that makes `set_competition_reaction` raise. The app build that shows
+reactions needs the migration in production before it reaches TestFlight.
+
 ## Finalizer and notification repair schedules
 
 These schedules are hosted environment state, not proof supplied by source.
