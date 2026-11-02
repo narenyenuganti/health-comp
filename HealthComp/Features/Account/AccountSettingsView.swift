@@ -12,6 +12,15 @@ struct AccountChallengeLink {
     let reset: () -> Void
 }
 
+/// The people you blocked, for Account. Hidden until a non-empty list loads.
+struct AccountBlockedPeople {
+    let people: [AuthenticatedProfile]?
+    let unblocking: Set<UUID>
+    let unblockFailed: Bool
+    let load: () -> Void
+    let unblock: (UUID) -> Void
+}
+
 /// What Account → Notifications needs from the competition. Hosts without
 /// competition state pass nil, which hides the row.
 struct AccountNotificationSettings {
@@ -101,6 +110,7 @@ struct AccountSettingsView: View {
     var health: AccountHealthSettings?
     var liveMatchCount = 0
     var challengeLink: AccountChallengeLink?
+    var blockedPeople: AccountBlockedPeople?
 #if HEALTHCOMP_STAGING
     var refreshCompetition: (() -> Void)?
 #endif
@@ -112,12 +122,16 @@ struct AccountSettingsView: View {
     private var appearance = AppAppearance.system
     @State private var showsChallengeCode = false
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @ScaledMetric(relativeTo: .headline) private var blockedInitialSize: CGFloat = 34
 
     var body: some View {
         List {
             profileSection
             if challengeLink != nil {
                 challengeLinkSection
+            }
+            if let blocked = blockedPeople, let people = blocked.people, !people.isEmpty {
+                blockedSection(blocked, people)
             }
             settingsSection
             signOutSection
@@ -127,6 +141,7 @@ struct AccountSettingsView: View {
         .task {
             store.send(.appeared)
             challengeLink?.load()
+            blockedPeople?.load()
         }
         .sheet(isPresented: $showsChallengeCode) {
             if let url = challengeLink?.url {
@@ -253,9 +268,11 @@ struct AccountSettingsView: View {
                     } else {
                         HStack(spacing: 8) { buttons }
                     }
-                    Button("Reset Link") { isResetLinkConfirmationPresented = true }
+                    // The 44 pt frame sits inside the label so the hit area gets it too.
+                    Button { isResetLinkConfirmationPresented = true } label: {
+                        Text("Reset Link").frame(minHeight: 44).contentShape(Rectangle())
+                    }
                         .buttonStyle(.borderless)
-                        .frame(minHeight: 44)
                         .disabled(isResetting)
                         .accessibilityValue(isResetting ? "Resetting" : "")
                         .accessibilityIdentifier("account.challenge-link.reset")
@@ -297,6 +314,58 @@ struct AccountSettingsView: View {
             SectionLabel("YOUR CHALLENGE LINK")
         }
         .listRowBackground(Theme.panel)
+    }
+
+    private func blockedSection(
+        _ blocked: AccountBlockedPeople,
+        _ people: [AuthenticatedProfile]
+    ) -> some View {
+        Section {
+            ForEach(people, id: \.id) { blockedRow($0, blocked) }
+            if blocked.unblockFailed {
+                Text("Couldn’t unblock. Check your connection and try again.")
+                    .font(.callout)
+                    .foregroundStyle(Theme.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("account.blocked.error")
+            }
+        } header: {
+            SectionLabel("BLOCKED")
+        } footer: {
+            Text("Blocked people can’t challenge you. They aren’t notified.")
+                .foregroundStyle(Theme.secondary)
+        }
+        .listRowBackground(Theme.panel)
+    }
+
+    private func blockedRow(
+        _ person: AuthenticatedProfile,
+        _ blocked: AccountBlockedPeople
+    ) -> some View {
+        let layout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
+            : AnyLayout(HStackLayout(spacing: 12))
+        return layout {
+            HStack(spacing: 12) {
+                Text(person.displayName.first.map { String($0).uppercased() } ?? "")
+                    .font(.headline.width(.condensed))
+                    .foregroundStyle(Theme.ink)
+                    .frame(width: blockedInitialSize, height: blockedInitialSize)
+                    .background(Theme.control, in: Circle())
+                    .accessibilityHidden(true)
+                Text(person.displayName)
+                    .foregroundStyle(Theme.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Button { blocked.unblock(person.id) } label: {
+                Text("Unblock").frame(minHeight: 44).contentShape(Rectangle())
+            }
+            .buttonStyle(.borderless)
+            .disabled(blocked.unblocking.contains(person.id))
+            .accessibilityLabel("Unblock \(person.displayName)")
+            .accessibilityIdentifier("account.blocked.unblock")
+        }
     }
 
     /// The URL without its scheme: "healthcomp.app/c/Xb3k…".

@@ -2140,7 +2140,7 @@ final class CompetitionPresentationTests: XCTestCase {
         )
         XCTAssertEqual(
             competitionInviteFailureText(.recipientGone, opponentName: "Hermes"),
-            "Hermes isn’t on HealthComp anymore."
+            "You can’t challenge Hermes."
         )
         XCTAssertEqual(
             competitionInviteFailureText(.alreadyPending, opponentName: "Hermes"),

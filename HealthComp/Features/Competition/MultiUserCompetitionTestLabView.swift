@@ -30,6 +30,8 @@ enum MultiUserCompetitionTestLabScenario:
     /// Live matches where you're behind, level or ahead: the Today page's
     /// what-it-takes panel in each state.
     case whatItTakes = "what-it-takes"
+    /// A real account's challenge to you: Decline, Decline and Block, ••• Block.
+    case incomingChallenge = "incoming-challenge"
 }
 
 struct MultiUserCompetitionTestLabConfiguration: Equatable, Sendable {
@@ -153,6 +155,8 @@ struct MultiUserCompetitionTestLabRootView: View {
             )
         case .healthOnboardingClaim:
             MultiUserCompetitionPreHealthClaimTestLabView()
+        case .incomingChallenge:
+            MultiUserCompetitionIncomingChallengeTestLabView()
         }
     }
 }
@@ -422,7 +426,8 @@ private struct MultiUserCompetitionClaimTestLabView: View {
         case .offlineClaim: .retryable
         case .sharing, .sharingCustomScheme, .coldClaim, .warmClaim,
              .signedOutClaim, .challengeLink, .account, .welcome, .welcomeChallenge,
-             .healthOnboarding, .healthOnboardingChallenge, .healthOnboardingClaim, .whatItTakes:
+             .healthOnboarding, .healthOnboardingChallenge, .healthOnboardingClaim, .whatItTakes,
+             .incomingChallenge:
             .ready
         }
         _status = State(initialValue: initialStatus)
@@ -442,6 +447,7 @@ private struct MultiUserCompetitionClaimTestLabView: View {
                     accept: accept,
                     notNow: { outcome = .notNow },
                     decline: { outcome = .declined },
+                    block: { outcome = .declined },
                     retry: { status = .ready },
                     dismiss: { outcome = .dismissed }
                 )
@@ -549,6 +555,35 @@ private struct MultiUserCompetitionPreHealthClaimTestLabView: View {
     }
 }
 
+/// Alex's challenge to you, as a real account: the outcome stands in for the server.
+private struct MultiUserCompetitionIncomingChallengeTestLabView: View {
+    @State private var outcome: String?
+
+    var body: some View {
+        NavigationStack {
+            if let outcome {
+                Text(outcome)
+                    .accessibilityIdentifier("multiuser.incoming.outcome")
+            } else {
+                CompetitionInviteView(
+                    competition: MultiUserCompetitionTestLabFixtures.incomingChallenge,
+                    source: .remoteParticipants,
+                    isCommandInFlight: false,
+                    link: nil,
+                    send: { action in
+                        switch action {
+                        case .declineTapped: outcome = "Declined"
+                        case .blockTapped: outcome = "Declined and blocked"
+                        default: break
+                        }
+                    }
+                )
+            }
+        }
+        .accessibilityIdentifier("multiuser.incoming.root")
+    }
+}
+
 /// Someone's challenge link opened on this iPhone: "Challenge Maya?".
 private struct MultiUserCompetitionChallengeLinkTestLabView: View {
     @State private var status: CompetitionFeature.ChallengeSheetStatus = .ready
@@ -581,6 +616,12 @@ private struct MultiUserCompetitionAccountTestLabView: View {
     @State private var challengeURL = URL(string: "https://invites.ui.healthcomp.test/c/Xb3kP9qL2mN8vR4tY6wZ1a")
     @State private var muted = [
         AccountMutedPerson(id: "remote-opponent:v1:hermes", name: "Hermes"),
+    ]
+    @State private var blocked = [
+        AuthenticatedProfile(
+            id: UUID(uuidString: "a1000000-0000-4000-8000-0000000000b1")!,
+            displayName: "Alex"
+        ),
     ]
     let store: StoreOf<AccountFeature>
     let hasPendingChallenge: Bool
@@ -637,6 +678,13 @@ private struct MultiUserCompetitionAccountTestLabView: View {
                         reset: {
                             challengeURL = URL(string: "https://invites.ui.healthcomp.test/c/Qm7tR2vX9pL4kN8wB3cY6z")
                         }
+                    ),
+                    blockedPeople: AccountBlockedPeople(
+                        people: blocked,
+                        unblocking: [],
+                        unblockFailed: false,
+                        load: {},
+                        unblock: { id in blocked.removeAll { $0.id == id } }
                     )
                 )
             }
@@ -686,6 +734,23 @@ private enum MultiUserCompetitionTestLabFixtures {
     /// Jordan's finished week before the live one: Jordan holds the belt.
     static let jordanPastID = CompetitionID(
         UUID(uuidString: "A1000000-0000-4000-8000-000000000009")!
+    )
+    static let incomingID = CompetitionID(
+        UUID(uuidString: "A1000000-0000-4000-8000-00000000000B")!
+    )
+    static let incomingChallenge = presentation(
+        id: incomingID,
+        opponentName: "Alex",
+        lifecycle: .pending(
+            direction: .incoming,
+            createdAt: labNow,
+            expiresAt: labNow.addingTimeInterval(20 * 60 * 60)
+        ),
+        userPoints: 0,
+        opponentPoints: 0,
+        days: [],
+        currentDayOrdinal: nil,
+        terminal: nil
     )
     static let samLinkCode = "SamSamSamSamSamSamSam1"
     static let ownLinkCode = "OwnOwnOwnOwnOwnOwnOwn1"

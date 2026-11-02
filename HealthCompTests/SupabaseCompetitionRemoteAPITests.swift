@@ -806,6 +806,64 @@ final class SupabaseCompetitionRemoteAPITests: XCTestCase {
         XCTAssertEqual(cancelFailure, .forbidden)
     }
 
+    func testBlockChallengerSendsCompetitionIDAndValidatesEcho() async throws {
+        let id = UUID(uuidString: "13000000-0000-4000-8000-00000000000b")!
+        let harness = CompetitionTransportHarness(stubs: [
+            .response(200, try jsonData(["competition_id": id.uuidString.lowercased()])),
+            .response(200, try jsonData(["competition_id": "13000000-0000-4000-8000-000000000008"])),
+            .failure(.server(statusCode: 400, code: "P0001", message: "invite_unavailable")),
+        ])
+        let api = makeAPI(harness)
+        try await api.blockChallenger(id)
+        let mismatch = await remoteFailure { try await api.blockChallenger(id) }
+        XCTAssertEqual(mismatch, .serverContractMismatch)
+        let refused = await remoteFailure { try await api.blockChallenger(id) }
+        XCTAssertEqual(refused, .inviteUnavailable)
+        let requests = await harness.recordedRequests()
+        try assertRPC(requests[0], name: "block_challenger", body: ["competition_id": id.uuidString.lowercased()])
+    }
+
+    func testListBlockedProfilesDecodesExactKeysAndSkipsUnreadableRows() async throws {
+        let alex = "12000000-0000-4000-8000-0000000000b1"
+        let rows: [[String: Any]] = [
+            ["id": alex, "display_name": "Alex"],
+            ["id": "NOT-A-UUID", "display_name": "Sam"],
+            ["id": "12000000-0000-4000-8000-0000000000b2", "display_name": "Sam", "extra": 1],
+        ]
+        let tooMany = Array(repeating: ["id": alex, "display_name": "Alex"], count: 201)
+        let harness = CompetitionTransportHarness(stubs: [
+            .response(200, try jsonData(["blocked": rows])),
+            .response(200, try jsonData(["blocked": [], "extra": 1])),
+            .response(200, try jsonData(["blocked": tooMany])),
+        ])
+        let api = makeAPI(harness)
+        let people = try await api.listBlockedProfiles()
+        XCTAssertEqual(people, [AuthenticatedProfile(id: UUID(uuidString: alex)!, displayName: "Alex")])
+        let extraKey = await remoteFailure { _ = try await api.listBlockedProfiles() }
+        XCTAssertEqual(extraKey, .serverContractMismatch)
+        let overCap = await remoteFailure { _ = try await api.listBlockedProfiles() }
+        XCTAssertEqual(overCap, .serverContractMismatch)
+        let requests = await harness.recordedRequests()
+        try assertRPC(requests[0], name: "list_blocked_profiles", body: [:])
+    }
+
+    func testUnblockProfileSendsIDAndValidatesEcho() async throws {
+        let id = UUID(uuidString: "12000000-0000-4000-8000-0000000000b1")!
+        let harness = CompetitionTransportHarness(stubs: [
+            .response(200, try jsonData(["profile_id": id.uuidString.lowercased()])),
+            .response(200, try jsonData(["profile_id": "12000000-0000-4000-8000-0000000000b2"])),
+            .response(200, try jsonData(["profile_id": id.uuidString.lowercased(), "extra": 1])),
+        ])
+        let api = makeAPI(harness)
+        try await api.unblockProfile(id)
+        let other = await remoteFailure { try await api.unblockProfile(id) }
+        XCTAssertEqual(other, .serverContractMismatch)
+        let extra = await remoteFailure { try await api.unblockProfile(id) }
+        XCTAssertEqual(extra, .serverContractMismatch)
+        let requests = await harness.recordedRequests()
+        try assertRPC(requests[0], name: "unblock_profile", body: ["profile_id": id.uuidString.lowercased()])
+    }
+
     func testChallengeLinkCodeAndResolve() async throws {
         let profile = "12000000-0000-4000-8000-0000000000a3"
         let harness = CompetitionTransportHarness(stubs: [
