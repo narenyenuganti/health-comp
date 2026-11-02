@@ -457,6 +457,7 @@ struct CompetitionMoreLabel: View {
 struct CompetitionDrawer<Content: View>: View {
     let title: String
     var subtitle: String?
+    var detents: Set<PresentationDetent> = [.medium, .large]
     @ViewBuilder let content: Content
 
     @Environment(\.dismiss) private var dismiss
@@ -487,7 +488,7 @@ struct CompetitionDrawer<Content: View>: View {
         }
         .scrollBounceBehavior(.basedOnSize)
         .background(Theme.ground)
-        .presentationDetents([.medium, .large])
+        .presentationDetents(detents)
         .presentationDragIndicator(.visible)
         .presentationBackground(Theme.ground)
     }

@@ -682,6 +682,10 @@ private enum MultiUserCompetitionTestLabFixtures {
     static let jordanPastID = CompetitionID(
         UUID(uuidString: "A1000000-0000-4000-8000-000000000009")!
     )
+    /// A finished week with a real name, for Share Result's Show/Hide name.
+    static let caseyID = CompetitionID(
+        UUID(uuidString: "A1000000-0000-4000-8000-00000000000A")!
+    )
     static let samLinkCode = "SamSamSamSamSamSamSam1"
     static let ownLinkCode = "OwnOwnOwnOwnOwnOwnOwn1"
     static let labNow = Date(timeIntervalSince1970: 1_786_867_200)
@@ -839,9 +843,31 @@ private enum MultiUserCompetitionTestLabFixtures {
             startDay: 1,
             opponentIdentity: active.opponentIdentity
         )
+        // Same week as Former competitor; Casey won only Sunday.
+        let caseyTerminal = LocalCompetitionTerminalPresentation(
+            userPoints: 2_692,
+            opponentPoints: 2_800,
+            outcome: .loss,
+            basis: .stableAcrossPostBoundaryReads,
+            completedAt: completedAt
+        )
+        let casey = presentation(
+            id: caseyID,
+            opponentName: "Casey",
+            lifecycle: .completed(
+                outcome: .loss,
+                basis: .stableAcrossPostBoundaryReads,
+                completedAt: completedAt
+            ),
+            userPoints: 2_692,
+            opponentPoints: 2_800,
+            days: completedDays(),
+            currentDayOrdinal: nil,
+            terminal: caseyTerminal
+        )
         let competitions = [
             scheduled, active, completed, archived, pending, secondActive, expired,
-            jordanPast,
+            jordanPast, casey,
         ]
         let awards = [
             LocalCompetitionAward(
@@ -948,6 +974,24 @@ private enum MultiUserCompetitionTestLabFixtures {
                 timeZoneIdentifier: calendar.timeZoneIdentifier
             )
         )
+    }
+
+    /// All seven days scored: you won Sunday (512) only and lost by 108.
+    private static func completedDays() -> [LocalCompetitionDayPresentation] {
+        let schedule = schedule()
+        let days = try! schedule.calendar.sevenDayWindow(startingOn: schedule.startDay)
+        let owner: [Double] = [420, 380, 300, 512, 400, 350, 330]
+        let opponent: [Double] = [450, 400, 360, 380, 420, 390, 400]
+        return days.enumerated().map { offset, day in
+            LocalCompetitionDayPresentation(
+                day: day,
+                ordinal: offset + 1,
+                ownerAcceptedPoints: owner[offset],
+                ownerLatestAvailability: .observed,
+                opponentRevealedPoints: opponent[offset],
+                scoringPolicy: .remoteWireV1
+            )
+        }
     }
 
     private static func activeDays(
