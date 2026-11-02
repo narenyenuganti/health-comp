@@ -512,7 +512,10 @@ final class BlockChallengerUITests: XCTestCase {
             ) { issue in
                 guard let element = issue.element else { return false }
                 let frame = element.frame
-                if screen.contains(frame), region.intersects(frame) { return false }
+                if screen.contains(frame), region.intersects(frame) {
+                    activity.add(XCTAttachment(string: "\(issue.compactDescription): \(element.debugDescription)"))
+                    return false
+                }
                 skipped.append("\(issue.compactDescription): \(element.debugDescription)")
                 return true
             }
