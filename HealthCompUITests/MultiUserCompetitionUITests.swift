@@ -1269,8 +1269,12 @@ final class MultiUserCompetitionUITests: XCTestCase {
                 attachGeometry()
                 return
             }
-            let offset = (elementFrame.midY - viewport.midY) / viewport.height
-            let distance = min(0.35, max(0.08, abs(offset)))
+            // Drag by the distance to centre, in the drag's own units. A
+            // fixed 8% minimum (about 44pt after touch slop) could step back
+            // and forth across a window narrower than that, e.g. a 584pt card
+            // in a 627pt viewport; touch slop keeps each move short of centre.
+            let offset = (elementFrame.midY - viewport.midY) / scrollView.frame.height
+            let distance = min(0.35, max(0.03, abs(offset)))
             let startY = offset > 0 ? 0.7 : 0.3
             let endY = startY + (offset > 0 ? -distance : distance)
             let start = scrollView.coordinate(
