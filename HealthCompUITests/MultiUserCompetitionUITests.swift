@@ -1355,6 +1355,33 @@ final class MultiUserCompetitionUITests: XCTestCase {
         after.name = "nudge-sent"
         after.lifetime = .keepAlways
         add(after)
+
+        // Largest type, dark: the capsule wraps, stays tappable and unclipped.
+        launch(
+            .sharing,
+            appearanceArguments: [
+                "-AppleInterfaceStyle", "Dark",
+                "-UIPreferredContentSizeCategoryName",
+                "UICTContentSizeCategoryAccessibilityXXXL",
+                "-UIAccessibilityReduceMotionEnabled", "YES",
+            ]
+        )
+        XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 8))
+        let largeRiley = sharingCard(state: "active", name: "Riley")
+        scrollToElement(largeRiley)
+        largeRiley.tap()
+        let largeNudge = app.buttons["competition.nudge"]
+        XCTAssertTrue(largeNudge.waitForExistence(timeout: 3))
+        scrollToElement(largeNudge)
+        XCTAssertTrue(largeNudge.isHittable)
+        attachScreenshot("nudge-before-dark-ax5")
+        try app.performAccessibilityAudit(for: [.textClipped, .hitRegion])
+        largeNudge.tap()
+        let largeSent = element("competition.nudge.sent")
+        XCTAssertTrue(largeSent.waitForExistence(timeout: 3))
+        scrollToElement(largeSent)
+        attachScreenshot("nudge-sent-dark-ax5")
+        try app.performAccessibilityAudit(for: [.textClipped])
     }
 
     func testMalformedMultiUserLabArgumentsFailClosed() {
