@@ -373,6 +373,26 @@ enum SupabaseCompetitionRemoteAPI {
                     throw CompetitionRemoteFailure.serverContractMismatch
                 }
             },
+            nudgeCompetitionParticipant: { id in
+                try validateUUID(id)
+                let response = try await send(
+                    .rpc(
+                        name: "nudge_competition_participant",
+                        parameters: try encode(ArchiveCompetitionParameters(competitionID: id))
+                    ),
+                    transport: transport
+                )
+                // Exactly `{nudged_at}`.
+                guard let object = try? JSONSerialization.jsonObject(with: response.data)
+                    as? [String: Any],
+                      Set(object.keys) == ["nudged_at"],
+                      let raw = object["nudged_at"] as? String,
+                      let nudgedAt = try? CompetitionWireCodec.date(raw)
+                else {
+                    throw CompetitionRemoteFailure.serverContractMismatch
+                }
+                return nudgedAt
+            },
             loadChallengeLinkCode: {
                 try await challengeLinkCode("get_my_challenge_link", transport)
             },
@@ -653,6 +673,7 @@ enum SupabaseCompetitionRemoteAPI {
         if !identifiers.isDisjoint(with: [
             "forbidden",
             "cancel_not_allowed",
+            "nudge_not_allowed",
             "rematch_not_allowed",
             "installation_unavailable",
             "opponent_unavailable",

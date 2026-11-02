@@ -261,7 +261,8 @@ final class MultiUserCompetitionUITests: XCTestCase {
         completed.tap()
         XCTAssertTrue(app.navigationBars["Former competitor"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.staticTexts["You beat Former competitor"].exists)
-        XCTAssertTrue(app.staticTexts["Victory Over Former competitor"].exists)
+        // A retired pair's past weeks keep their banner.
+        XCTAssertEqual(element("competition.result.belt").label, "You took the belt")
         XCTAssertTrue(
             app.otherElements["competition.result"].label
                 .contains("Former competitor")
@@ -294,6 +295,101 @@ final class MultiUserCompetitionUITests: XCTestCase {
         )
         XCTAssertFalse(moreMenu.exists)
         XCTAssertFalse(app.buttons["Delete Local Data"].exists)
+    }
+
+    func testBeltShowsOnHomeHistoryAndThePersonPage() throws {
+        launch(.sharing)
+        XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 8))
+
+        let jordan = sharingCard(state: "active", name: "Jordan")
+        scrollToElement(jordan)
+        XCTAssertTrue(jordan.label.contains("Jordan holds the belt"), jordan.label)
+        attachScreenshot("belt-home")
+        let riley = sharingCard(state: "active", name: "Riley")
+        scrollToElement(riley)
+        XCTAssertFalse(riley.label.contains("belt"), riley.label)
+
+        openHistory()
+        let jordanRecord = record(named: "Jordan")
+        scrollToElement(jordanRecord)
+        XCTAssertTrue(
+            jordanRecord.label.contains("Jordan holds the belt, 1 week"),
+            jordanRecord.label
+        )
+        let morganRecord = record(named: "Morgan")
+        scrollToElement(morganRecord)
+        XCTAssertFalse(morganRecord.label.contains("belt"), morganRecord.label)
+        attachScreenshot("belt-history")
+
+        scrollToElement(jordanRecord)
+        jordanRecord.tap()
+        XCTAssertTrue(app.navigationBars["Jordan"].waitForExistence(timeout: 3))
+        let belt = element("competition.person.belt")
+        XCTAssertTrue(belt.waitForExistence(timeout: 3))
+        XCTAssertTrue(belt.label.hasPrefix("Jordan holds the belt"), belt.label)
+        attachScreenshot("belt-person")
+
+        let pastWeek = element("competition.sharing.archived.a1000000-0000-4000-8000-000000000009")
+        scrollToElement(pastWeek)
+        pastWeek.tap()
+        let banner = element("competition.result.belt")
+        XCTAssertTrue(banner.waitForExistence(timeout: 3))
+        XCTAssertEqual(banner.label, "Jordan took the belt")
+        attachScreenshot("belt-result")
+
+        app.navigationBars.buttons.firstMatch.tap()
+        XCTAssertTrue(app.navigationBars["Jordan"].waitForExistence(timeout: 3))
+        app.navigationBars.buttons.firstMatch.tap()
+        XCTAssertTrue(app.navigationBars["History"].waitForExistence(timeout: 3))
+        let retired = record(named: "Former competitor")
+        scrollToElement(retired)
+        retired.tap()
+        XCTAssertTrue(app.navigationBars["Former competitor"].waitForExistence(timeout: 3))
+        XCTAssertTrue(
+            element("competition.person.belt").label.contains("The belt is retired")
+        )
+        attachScreenshot("belt-person-retired")
+
+        launch(
+            .sharing,
+            appearanceArguments: [
+                "-AppleInterfaceStyle", "Dark",
+                "-UIPreferredContentSizeCategoryName",
+                "UICTContentSizeCategoryAccessibilityXXXL",
+                "-UIAccessibilityReduceMotionEnabled", "YES",
+            ]
+        )
+        XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 8))
+        openHistory()
+        let largeRecord = record(named: "Jordan")
+        scrollToElement(largeRecord)
+        largeRecord.tap()
+        XCTAssertTrue(app.navigationBars["Jordan"].waitForExistence(timeout: 3))
+        XCTAssertTrue(element("competition.person.belt").waitForExistence(timeout: 3))
+        attachScreenshot("belt-person-dark-ax5")
+        // No .dynamicType audit: the reused rows swap layouts with ViewThatFits.
+        try app.performAccessibilityAudit(
+            for: XCUIAccessibilityAuditType.textClipped
+                .union(.hitRegion)
+                .union(.sufficientElementDescription)
+        )
+    }
+
+    private func openHistory() {
+        let history = app.buttons["competition.history.open"]
+        scrollToElement(history)
+        history.tap()
+        XCTAssertTrue(app.navigationBars["History"].waitForExistence(timeout: 3))
+    }
+
+    private func record(named name: String) -> XCUIElement {
+        app.descendants(matching: .any).matching(
+            NSPredicate(
+                format: "identifier BEGINSWITH %@ AND label CONTAINS %@",
+                "competition.record.",
+                name
+            )
+        ).firstMatch
     }
 
     func testHomeGroupsLiveMatchesByEndTimeAndShowsMatchIssues() {
@@ -1435,6 +1531,75 @@ final class MultiUserCompetitionUITests: XCTestCase {
             width: frame.width,
             height: max(0, frame.maxY - top - 2)
         )
+    }
+
+    func testStaleMatchOffersOneNudgeADay() throws {
+        launch(.sharing)
+        defer { app.terminate() }
+        XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 8))
+
+        // Jordan updated an hour ago: no nudge.
+        let jordan = sharingCard(state: "active", name: "Jordan")
+        scrollToElement(jordan)
+        jordan.tap()
+        XCTAssertTrue(app.navigationBars["Jordan"].waitForExistence(timeout: 3))
+        XCTAssertTrue(waitForStatus("Day 3 of 7"))
+        XCTAssertFalse(app.buttons["competition.nudge"].exists)
+        navigateBackToSharing()
+
+        // Riley's last update is 13 hours old.
+        let riley = sharingCard(state: "active", name: "Riley")
+        scrollToElement(riley)
+        riley.tap()
+        XCTAssertTrue(app.navigationBars["Riley"].waitForExistence(timeout: 3))
+        let nudge = app.buttons["competition.nudge"]
+        XCTAssertTrue(nudge.waitForExistence(timeout: 3))
+        XCTAssertEqual(nudge.label, "Nudge Riley")
+        let before = XCTAttachment(screenshot: app.screenshot())
+        before.name = "nudge-before"
+        before.lifetime = .keepAlways
+        add(before)
+        try app.performAccessibilityAudit(
+            for: [.dynamicType, .textClipped, .hitRegion, .sufficientElementDescription]
+        )
+
+        nudge.tap()
+        let sent = element("competition.nudge.sent")
+        XCTAssertTrue(sent.waitForExistence(timeout: 3))
+        XCTAssertTrue(sent.label.hasPrefix("Nudged at "), sent.label)
+        XCTAssertTrue(sent.label.hasSuffix(". You can nudge again tomorrow."), sent.label)
+        XCTAssertFalse(nudge.exists)
+        let after = XCTAttachment(screenshot: app.screenshot())
+        after.name = "nudge-sent"
+        after.lifetime = .keepAlways
+        add(after)
+
+        // Largest type, dark: the capsule wraps, stays tappable and unclipped.
+        launch(
+            .sharing,
+            appearanceArguments: [
+                "-AppleInterfaceStyle", "Dark",
+                "-UIPreferredContentSizeCategoryName",
+                "UICTContentSizeCategoryAccessibilityXXXL",
+                "-UIAccessibilityReduceMotionEnabled", "YES",
+            ]
+        )
+        XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 8))
+        let largeRiley = sharingCard(state: "active", name: "Riley")
+        scrollToElement(largeRiley)
+        largeRiley.tap()
+        let largeNudge = app.buttons["competition.nudge"]
+        XCTAssertTrue(largeNudge.waitForExistence(timeout: 3))
+        scrollToElement(largeNudge)
+        XCTAssertTrue(largeNudge.isHittable)
+        attachScreenshot("nudge-before-dark-ax5")
+        try app.performAccessibilityAudit(for: [.textClipped, .hitRegion])
+        largeNudge.tap()
+        let largeSent = element("competition.nudge.sent")
+        XCTAssertTrue(largeSent.waitForExistence(timeout: 3))
+        scrollToElement(largeSent)
+        attachScreenshot("nudge-sent-dark-ax5")
+        try app.performAccessibilityAudit(for: [.textClipped])
     }
 
     func testMalformedMultiUserLabArgumentsFailClosed() {
