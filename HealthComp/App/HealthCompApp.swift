@@ -129,6 +129,19 @@ struct HealthCompApp: App {
                 )
             }
         }
+        // Every widget state for the UI tests; an unknown name clears the file.
+        if let scenario = zip(arguments, arguments.dropFirst())
+            .first(where: { $0.0 == "--widget-scenario" })?.1
+        {
+            Task {
+                let client = CompetitionWidgetSnapshotClient.liveValue
+                if let snapshot = CompetitionWidgetSnapshot.testLab(scenario, now: Date()) {
+                    await client.write(snapshot, [])
+                } else {
+                    try? await client.clear()
+                }
+            }
+        }
     }
 #else
     private let store: StoreOf<AppFeature>
