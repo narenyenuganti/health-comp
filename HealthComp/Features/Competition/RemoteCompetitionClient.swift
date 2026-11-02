@@ -141,6 +141,15 @@ extension CompetitionClient {
             cancel: { id in
                 await coordinator.respond(id) { try await $0.cancelCompetition($1) }
             },
+            block: { id in
+                await coordinator.respond(id) { try await $0.blockChallenger($1) }
+            },
+            loadBlockedProfiles: {
+                try await coordinator.remote { try await $0.listBlockedProfiles() }
+            },
+            unblock: { profileID in
+                try await coordinator.remote { try await $0.unblockProfile(profileID) }
+            },
             previewInvite: { request in
                 try await coordinator.remote { try await $0.previewInvite(request) }
             },

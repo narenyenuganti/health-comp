@@ -35,6 +35,7 @@
 		2A9876CAEA46503A11C1A8EA /* SupabaseConfigurationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A71009CDE26B9E5DEFE8C209 /* SupabaseConfigurationTests.swift */; };
 		2C65CC3FE6B88DE464937C63 /* CompetitionRealtimeClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08AF91992EAFD7DD2DD29C21 /* CompetitionRealtimeClient.swift */; };
 		2C8D65A4CCDE772479738364 /* JSONCompetitionEventStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 44597F797F2AC9BA7029B1DF /* JSONCompetitionEventStore.swift */; };
+		303844E9F398E8FD157BF912 /* BlockChallengerUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A6710FBCACA682D0C66812B /* BlockChallengerUITests.swift */; };
 		306D88343452CE12051ED31D /* CompetitionTestLabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3BE3EF97EDDB31A7DA80B856 /* CompetitionTestLabView.swift */; };
 		326B43DCD5E31D60D7D8ECC5 /* JSONCompetitionEventStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD0C12E55F3C163C315598D5 /* JSONCompetitionEventStoreTests.swift */; };
 		34375EA0795DBFCC09E7D120 /* ComposableArchitecture in Frameworks */ = {isa = PBXBuildFile; productRef = C19E50C9B46A4490A6CFAAEE /* ComposableArchitecture */; };
@@ -248,6 +249,7 @@
 		533B5BE105C1A335AE961478 /* CompetitionNotificationCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionNotificationCoordinator.swift; sourceTree = "<group>"; };
 		56A0E571C32EF5F1137939B1 /* win.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = win.json; sourceTree = "<group>"; };
 		5807455BF69B3050795BB69B /* StagingScoringResponseCaptureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StagingScoringResponseCaptureTests.swift; sourceTree = "<group>"; };
+		5A6710FBCACA682D0C66812B /* BlockChallengerUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlockChallengerUITests.swift; sourceTree = "<group>"; };
 		612908337833B2EAE7FD7D41 /* HealthCompUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = HealthCompUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		613A2B77D4E8A26D6A05F569 /* HealthKitDeliveryDiagnostic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthKitDeliveryDiagnostic.swift; sourceTree = "<group>"; };
 		616B7E5CE526F649E00317C3 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
@@ -614,6 +616,7 @@
 		9F5D18D2C36062228CA2B182 /* HealthCompUITests */ = {
 			isa = PBXGroup;
 			children = (
+				5A6710FBCACA682D0C66812B /* BlockChallengerUITests.swift */,
 				A1AAA11C718845811F2393C0 /* LocalCompetitionLifecycleUITests.swift */,
 				72D97B24F7398742C8358DD9 /* MultiUserCompetitionUITests.swift */,
 				9A4C98DA12380EB04E5228ED /* NudgeUITests.swift */,
@@ -843,6 +846,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				303844E9F398E8FD157BF912 /* BlockChallengerUITests.swift in Sources */,
 				8E965F238EEB7338E422F5C5 /* LocalCompetitionLifecycleUITests.swift in Sources */,
 				51EC8DDC48A29F9C45FDE1A3 /* MultiUserCompetitionUITests.swift in Sources */,
 				420BDF83FD49D9E754C1DB0C /* NudgeUITests.swift in Sources */,
