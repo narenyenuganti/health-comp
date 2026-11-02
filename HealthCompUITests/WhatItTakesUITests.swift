@@ -1,7 +1,7 @@
 import XCTest
 
 /// The Today page's what-it-takes panel (spec §9.3, PR 3): every state the
-/// local and remote Test Labs can reach, plus the light/dark × default/AX5
+/// local and remote Test Labs can reach, plus the light/dark × default/XS/AX5
 /// screenshot matrix.
 final class WhatItTakesUITests: XCTestCase {
     private var app: XCUIApplication!
@@ -39,6 +39,8 @@ final class WhatItTakesUITests: XCTestCase {
             ("Priya", "Last day",
              "Out of reach today. Priya is 380 points ahead and you have 110 points left in Move and Exercise today."),
             ("Quinn", "Day 6 of 7", "Out of reach today. All square, and you’ve reached today’s cap."),
+            ("Riley", "Day 5 of 7",
+             "Out of reach today. Riley is 20 points ahead and Move and Exercise are at the 200% cap."),
         ]
         for match in shown {
             open(match.name)
@@ -158,6 +160,7 @@ final class WhatItTakesUITests: XCTestCase {
     func testWhatItTakesScreenshotMatrix() throws {
         for appearance in ["Light", "Dark"] {
             for (size, category) in [("default", "UICTContentSizeCategoryL"),
+                                     ("xs", "UICTContentSizeCategoryXS"),
                                      ("ax5", "UICTContentSizeCategoryAccessibilityXXXL")] {
                 let suffix = "\(appearance.lowercased())-\(size)"
                 let arguments = ["-AppleInterfaceStyle", appearance,
@@ -167,15 +170,13 @@ final class WhatItTakesUITests: XCTestCase {
                 for (name, screen) in [("Sam", "takes-reachable"),
                                        ("Bartholomew", "takes-split-long-name"),
                                        ("Morgan", "takes-move-time"),
-                                       ("Priya", "takes-out-of-reach")] {
+                                       ("Devon", "takes-level-one-ring"),
+                                       ("Priya", "takes-out-of-reach"),
+                                       ("Quinn", "takes-level-at-cap"),
+                                       ("Riley", "takes-rings-capped")] {
                     open(name)
                     XCTAssertTrue(takes.waitForExistence(timeout: 3), name)
-                    XCTAssertTrue(bringIntoView(takes), "\(name) \(suffix): panel on screen under the bar")
-                    capture("\(screen)-\(suffix)")
-                    try app.performAccessibilityAudit(for: [.textClipped, .contrast]) { issue in
-                        // Only this feature's panel; the rest of the screen has its own audits.
-                        issue.element?.identifier != "competition.takes"
-                    }
+                    try captureWholePanel("\(screen)-\(suffix)")
                     goHome()
                 }
 
@@ -184,9 +185,31 @@ final class WhatItTakesUITests: XCTestCase {
                 nextCheckpoint()
                 XCTAssertTrue(waitForStatus("Day 1 of 7"))
                 XCTAssertTrue(takes.waitForExistence(timeout: 3))
-                XCTAssertTrue(bringIntoView(takes), "local \(suffix): panel on screen under the bar")
-                capture("takes-local-day1-\(suffix)")
+                try captureWholePanel("takes-local-day1-\(suffix)")
+
+                for _ in 0..<6 { nextCheckpoint() }
+                XCTAssertTrue(waitForStatus("Last day"))
+                if !app.buttons["Today"].isSelected { app.buttons["Today"].tap() }
+                XCTAssertTrue(takes.waitForExistence(timeout: 3))
+                XCTAssertTrue(takes.label.hasPrefix("Out of reach today"), takes.label)
+                try captureWholePanel("takes-local-last-day-\(suffix)")
             }
+        }
+    }
+
+    /// Captures the panel with its top under the bar, plus a second capture of
+    /// its bottom when it's taller than the screen (AX5), then audits it.
+    private func captureWholePanel(_ name: String) throws {
+        XCTAssertTrue(bringIntoView(takes), "\(name): panel on screen under the bar")
+        capture(name)
+        if takes.frame.maxY > app.windows.firstMatch.frame.maxY - 40 {
+            XCTAssertTrue(bringIntoView(takes, bottom: true), "\(name): panel bottom on screen")
+            capture("\(name)-bottom")
+        }
+        // Capture first: the audit scrolls the page while it inspects it.
+        try app.performAccessibilityAudit(for: [.textClipped, .contrast]) { issue in
+            // Only this feature's panel; the rest of the screen has its own audits.
+            issue.element?.identifier != "competition.takes"
         }
     }
 
@@ -291,9 +314,10 @@ final class WhatItTakesUITests: XCTestCase {
 
     /// Slow drags until the element's top sits under the navigation bar and,
     /// when it fits, its bottom clears the home indicator. AX5 panels can be
-    /// taller than the space left, so then the top wins.
+    /// taller than the space left, so then the top wins, unless `bottom`
+    /// asks for the bottom edge instead.
     @discardableResult
-    private func bringIntoView(_ element: XCUIElement) -> Bool {
+    private func bringIntoView(_ element: XCUIElement, bottom showsBottom: Bool = false) -> Bool {
         let window = app.windows.firstMatch
         let navigationBar = app.navigationBars.firstMatch
         /// Points the content still has to move up (negative: down); 0 when placed.
@@ -301,6 +325,7 @@ final class WhatItTakesUITests: XCTestCase {
             let top = navigationBar.frame.maxY + 8
             let bottom = window.frame.maxY - 40
             let frame = element.frame
+            if showsBottom { return frame.maxY > bottom ? frame.maxY - bottom + 20 : 0 }
             if frame.minY < top { return frame.minY - top - 20 }
             // Room to spare, or the two edges can trade places step after step.
             if frame.height <= bottom - top - 60 { return frame.maxY > bottom ? frame.maxY - bottom + 20 : 0 }

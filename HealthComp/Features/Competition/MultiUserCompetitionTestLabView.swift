@@ -968,6 +968,9 @@ private enum MultiUserCompetitionTestLabFixtures {
             // You lead: no panel.
             match(9, "Jordan", day: 3, user: 1_450, opponent: 1_440, today: 430,
                   opponentToday: 450, accepted: rings(900, 500, 45, 12)),
+            // Behind with points left today, but Move and Exercise are at 200%.
+            match(10, "Riley", day: 5, user: 1_000, opponent: 1_020, today: 450,
+                  opponentToday: 300, accepted: rings(1_200, 600, 60, 6)),
         ]
         return LocalCompetitionPublication(
             publicationRevision: 1,
