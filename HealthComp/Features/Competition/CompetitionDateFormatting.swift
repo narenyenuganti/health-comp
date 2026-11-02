@@ -61,6 +61,58 @@ func competitionFinalFractionDigits(userPoints: Double, opponentPoints: Double) 
     } ?? 4
 }
 
+/// "Won by 230 points" or "Lost by 1 point", from the margin as shown. Nil
+/// when the shown totals are equal.
+func competitionMarginText(
+    userPoints: Double,
+    opponentPoints: Double,
+    fractionDigits: Int,
+    locale: Locale = .current
+) -> String? {
+    let margin = competitionDisplayedMargin(
+        userPoints: userPoints,
+        opponentPoints: opponentPoints,
+        fractionDigits: fractionDigits
+    )
+    guard margin != 0 else { return nil }
+    return (margin > 0 ? "Won by " : "Lost by ")
+        + competitionPointsAccessibilityText(
+            abs(margin), fractionDigits: fractionDigits, locale: locale
+        )
+}
+
+/// "You lead by 12.", "Hermes leads by 382." or "All square.", from the
+/// numbers as shown. `competitionLeadText` is the styled version.
+func competitionLeadSentence(
+    userPoints: Double,
+    opponentPoints: Double,
+    opponentDisplayName: String,
+    fractionDigits: Int = 0,
+    locale: Locale = .current
+) -> String {
+    let margin = competitionDisplayedMargin(
+        userPoints: userPoints, opponentPoints: opponentPoints, fractionDigits: fractionDigits
+    )
+    guard margin != 0 else { return "All square." }
+    let points = competitionPointsText(abs(margin), fractionDigits: fractionDigits, locale: locale)
+    return margin > 0 ? "You lead by \(points)." : "\(opponentDisplayName) leads by \(points)."
+}
+
+/// "+54", "−54" (U+2212) or "0", from the margin as shown.
+func competitionSignedMarginText(
+    userPoints: Double,
+    opponentPoints: Double,
+    fractionDigits: Int = 0,
+    locale: Locale = .current
+) -> String {
+    let margin = competitionDisplayedMargin(
+        userPoints: userPoints, opponentPoints: opponentPoints, fractionDigits: fractionDigits
+    )
+    guard margin != 0 else { return "0" }
+    let points = competitionPointsText(abs(margin), fractionDigits: fractionDigits, locale: locale)
+    return (margin > 0 ? "+" : "\u{2212}") + points
+}
+
 /// Whole parts that add up to the whole total: the remainder goes to the
 /// largest raw part (the first one on ties).
 func competitionRoundedParts(_ parts: [Double], total: Double) -> [Double] {
@@ -68,6 +120,35 @@ func competitionRoundedParts(_ parts: [Double], total: Double) -> [Double] {
     guard let largest = parts.indices.max(by: { parts[$0] < parts[$1] }) else { return rounded }
     rounded[largest] += total.rounded(.toNearestOrAwayFromZero) - rounded.reduce(0, +)
     return rounded
+}
+
+// MARK: Days
+
+/// Every closed day reads one way on the strip, in the result's day counts
+/// and in the rows.
+enum CompetitionDayOutcome: Equatable {
+    case today, upcoming, won, lost, tied, noData
+}
+
+/// A day is no data when either score is missing, or when both read 0.
+func competitionDayOutcome(
+    ordinal: Int,
+    currentDayOrdinal: Int?,
+    hasOccurred: Bool,
+    ownerPoints: Double?,
+    opponentPoints: Double?
+) -> CompetitionDayOutcome {
+    if ordinal == currentDayOrdinal { return .today }
+    if !hasOccurred { return .upcoming }
+    guard let owner = ownerPoints,
+          let opponent = opponentPoints,
+          owner.rounded(.toNearestOrAwayFromZero) != 0
+            || opponent.rounded(.toNearestOrAwayFromZero) != 0
+    else { return .noData }
+    let margin = competitionDisplayedMargin(userPoints: owner, opponentPoints: opponent)
+    if margin > 0 { return .won }
+    if margin < 0 { return .lost }
+    return .tied
 }
 
 // MARK: Dates
