@@ -429,6 +429,8 @@ final class MultiUserCompetitionUITests: XCTestCase {
         former.tap()
         XCTAssertTrue(app.navigationBars["Former competitor"].waitForExistence(timeout: 3))
         scrollToElement(share)
+        // The reaction panel pushes Share Result under the pinned Rematch.
+        app.scrollViews.firstMatch.swipeUp()
         share.tap()
         XCTAssertTrue(card.waitForExistence(timeout: 5))
         XCTAssertEqual(

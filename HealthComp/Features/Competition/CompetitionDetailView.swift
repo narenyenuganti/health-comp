@@ -408,6 +408,8 @@ struct CompetitionDetailView: View {
                 }
                 if canReact {
                     SectionLabel("REACT TO \(name.uppercased(with: locale))’S DAY")
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                     control.picker(.day(ordinal), in: competition)
                     Text("\(name) sees your reaction on this day.")
                         .font(.caption)

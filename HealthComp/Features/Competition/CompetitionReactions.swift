@@ -240,8 +240,11 @@ struct CompetitionReactionLine: View {
 
     private var line: some View {
         HStack(spacing: 8) {
+            // The line's label speaks the reaction; an emoji's glyph also
+            // overflows its text frame, which the clipping audit flags.
             Text(reaction.kind.emoji)
                 .font(.title3)
+                .accessibilityHidden(true)
             Text(competitionReactionText(reaction, opponentName: opponentName))
                 .font(.subheadline)
                 .foregroundStyle(Theme.secondary)
