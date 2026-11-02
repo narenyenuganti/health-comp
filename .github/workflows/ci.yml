@@ -226,6 +226,7 @@ jobs:
             -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testSignOutAsksFirstAndStatesTheEffect \
             -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testNotificationsPageOpensSettingsAndUnmutes \
             -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testHealthPageOpensSettings \
+            -only-testing:HealthCompUITests/WhatItTakesUITests/testWhatItTakesPanelForEveryRemoteState \
             -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testBeltShowsOnHomeHistoryAndThePersonPage \
             -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testShareResultPreviewsTheImageAndRemembersHideName \
             -only-testing:HealthCompUITests/RecapCardUITests/testShareOpensTheSystemSheetWithSaveImage \
