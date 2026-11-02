@@ -408,6 +408,59 @@ final class LocalCompetitionLifecycleUITests: XCTestCase {
         }
     }
 
+    func testLossFixtureShowsWhatItTakesAboveYourRings() throws {
+        try assertWhatItTakesAboveYourRings(prefix: "light-small")
+    }
+
+    func testLossFixtureWhatItTakesWrapsAtDarkAccessibilitySize() throws {
+        try assertWhatItTakesAboveYourRings(
+            prefix: "dark-ax5",
+            appearanceArguments: [
+                "-AppleInterfaceStyle", "Dark",
+                "-UIPreferredContentSizeCategoryName",
+                "UICTContentSizeCategoryAccessibilityXXXL",
+            ]
+        )
+    }
+
+    private func assertWhatItTakesAboveYourRings(prefix: String, appearanceArguments: [String] = []) throws {
+        launch(fixture: "loss", direction: "outgoing", appearanceArguments: appearanceArguments)
+        XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 8))
+        scrollToElement(pendingSharingCard)
+        pendingSharingCard.tap()
+        tapAfterScrolling(app.buttons["Start with Alex"])
+        // The first checkpoint is the Day 1 boundary: 0–0, goals of 100.
+        nextCheckpoint()
+        XCTAssertTrue(waitForStatus("Day 1 of 7"))
+
+        let takes = app.descendants(matching: .any)["competition.takes"]
+        XCTAssertTrue(takes.waitForExistence(timeout: 3))
+        XCTAssertEqual(
+            takes.label,
+            "1 point to take the lead. About 10 kilocalories of Move or 1 minute of Exercise. Alex can still add points today."
+        )
+        let rings = app.otherElements["competition.ownerRings"]
+        XCTAssertTrue(rings.exists)
+        XCTAssertLessThan(takes.frame.minY, rings.frame.minY)
+        // The capture only sees the screen, so bring the panel into view (AX5 pushes it below).
+        XCTAssertTrue(bringTopIntoView(takes), "panel under the bar")
+        // Capture first: the audit scrolls the page while it inspects it.
+        capture("\(prefix)-takes")
+        try app.performAccessibilityAudit(for: .textClipped)
+
+        for _ in 0..<6 { nextCheckpoint() }
+        XCTAssertTrue(waitForStatus("Last day"))
+        tapAfterScrolling(app.buttons["Today"])
+        // Alex has six days and you have none: more than one day can cover.
+        XCTAssertTrue(takes.waitForExistence(timeout: 3))
+        XCTAssertTrue(takes.label.hasPrefix("Out of reach today"), takes.label)
+        XCTAssertFalse(takes.label.contains("of Move"), takes.label)
+        XCTAssertTrue(bringTopIntoView(takes), "panel under the bar")
+        // Capture first: the audit scrolls the page while it inspects it.
+        capture("\(prefix)-takes-out-of-reach")
+        try app.performAccessibilityAudit(for: .textClipped)
+    }
+
     func testDarkAccessibilitySizeRemainsNavigableAndReadable() throws {
         launch(
             fixture: "late-sync",
@@ -711,6 +764,40 @@ final class LocalCompetitionLifecycleUITests: XCTestCase {
         scrollToElement(element)
         XCTAssertTrue(element.isHittable)
         element.tap()
+    }
+
+    /// Slow drags until the element's top sits under the navigation bar and,
+    /// when it fits, its bottom clears the home indicator. AX5 panels can be
+    /// taller than the space left, so then the top wins.
+    @discardableResult
+    private func bringTopIntoView(_ element: XCUIElement) -> Bool {
+        let window = app.windows.firstMatch
+        let navigationBar = app.navigationBars.firstMatch
+        /// Points the content still has to move up (negative: down); 0 when placed.
+        func offset() -> CGFloat {
+            let top = navigationBar.frame.maxY + 8
+            let bottom = window.frame.maxY - 40
+            let frame = element.frame
+            if frame.minY < top { return frame.minY - top - 20 }
+            // Room to spare, or the two edges can trade places step after step.
+            if frame.height <= bottom - top - 60 { return frame.maxY > bottom ? frame.maxY - bottom + 20 : 0 }
+            return frame.minY > top + 80 ? frame.minY - top - 20 : 0
+        }
+        for _ in 0..<20 {
+            let move = min(180, max(-180, offset()))
+            if move == 0 { return true }
+            let height = window.frame.height
+            // Low on the screen: at AX5 the local lab controls cover the top two thirds.
+            let start: CGFloat = move > 0 ? 0.92 : 0.7
+            window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: start))
+                .press(
+                    forDuration: 0.05,
+                    thenDragTo: window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: start - move / height)),
+                    withVelocity: .slow,
+                    thenHoldForDuration: 0.2
+                )
+        }
+        return offset() == 0
     }
 
     private func scrollToElement(_ element: XCUIElement) {

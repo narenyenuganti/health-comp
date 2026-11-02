@@ -159,3 +159,160 @@ struct ActivityRingsView: View {
         }
     }
 }
+
+// MARK: What it takes
+
+/// "39 to take the lead" on a live day when you're behind or level; nil otherwise.
+struct CompetitionWhatItTakes: Equatable, Sendable {
+    /// The day these numbers describe (the presentation's currentDayOrdinal).
+    let dayOrdinal: Int
+    /// Whole points that take the lead; nil when out of reach today.
+    let points: Double?
+    /// "39 to take the lead" | "Out of reach today"
+    let headline: String
+    /// "About 240 kcal of Move or 12 min of Exercise." | the out-of-reach sentence
+    let suggestion: String
+    /// The suggestion, plus " Sam can still add points today." while that's true.
+    let detail: String
+    let accessibilityLabel: String
+}
+
+/// The points that take the lead, as one or two of your own rings (Move and
+/// Exercise only; Stand is never suggested). Needs today's accepted snapshot
+/// to match the latest, so it never asks for activity you've already done.
+func competitionWhatItTakes(
+    _ competition: LocalCompetitionPresentation,
+    locale: Locale = .current
+) -> CompetitionWhatItTakes? {
+    switch competition.lifecycle {
+    case .active, .endsToday: break
+    default: return nil
+    }
+    guard let ordinal = competition.currentDayOrdinal,
+          let day = competition.days.first(where: { $0.ordinal == ordinal }),
+          let snapshot = day.ownerAcceptedSnapshot,
+          let today = day.ownerAcceptedPoints,
+          day.ownerLatestSnapshot == nil || day.ownerLatestSnapshot == snapshot
+    else { return nil }
+    let margin = competitionDisplayedMargin(
+        userPoints: competition.userPoints, opponentPoints: competition.opponentPoints
+    )
+    guard margin <= 0 else { return nil }
+    let need = 1 - margin
+    let left = max(0, ActivityScore.maximumDailyPoints - today)
+    let cap = day.scoringPolicy.perRingCap
+    let shares = competitionRingShares(snapshot, perRingCap: cap)
+
+    struct Ring {
+        let title: String
+        let unit: String
+        let spokenUnit: String
+        let goal: Double
+        let step: Double
+        let room: Double
+    }
+    func ring(_ index: Int, _ reading: ActivityRingReading, _ title: String, minutes: Bool) -> Ring {
+        let goal = reading.goal ?? 0
+        // ActivityRingReading already rejects negative and non-finite numbers.
+        let usable = reading.value != nil && goal > 0
+        let room = !usable ? 0 : cap.map { min(left, max(0, $0 - shares[index] * 100)) } ?? left
+        return Ring(
+            title: title,
+            unit: minutes ? "min" : "kcal",
+            spokenUnit: minutes ? "minutes" : "kilocalories",
+            goal: goal,
+            step: minutes ? 1 : 10,
+            room: room
+        )
+    }
+    let moveMinutes = snapshot.moveMode == .moveMinutes
+    let move = ring(0, snapshot.move, moveMinutes ? "Move Time" : "Move", minutes: moveMinutes)
+    let exercise = ring(1, snapshot.exercise, "Exercise", minutes: true)
+    let reach = min(left, move.room + exercise.room).rounded(.down)
+
+    func number(_ value: Double) -> String {
+        value.formatted(.number.precision(.fractionLength(0)).locale(locale))
+    }
+    let name = competition.opponentDisplayName
+
+    guard need <= reach else {
+        let level = margin == 0
+        let gap = competitionPointsText(-margin, locale: locale)
+        let spokenGap = competitionPointsAccessibilityText(-margin, locale: locale)
+        func sentence(_ gap: String) -> String {
+            let lead = level ? "All square, and" : "\(name) is \(gap) ahead and"
+            if reach >= 1 {
+                return "\(lead) you have \(competitionPointsAccessibilityText(reach, locale: locale)) left in Move and Exercise today."
+            }
+            return left.rounded(.down) == 0
+                ? "\(lead) you’ve reached today’s cap."
+                : "\(lead) Move and Exercise are at the 200% cap."
+        }
+        let text = sentence(gap)
+        return CompetitionWhatItTakes(
+            dayOrdinal: ordinal,
+            points: nil,
+            headline: "Out of reach today",
+            suggestion: text,
+            detail: text,
+            accessibilityLabel: "Out of reach today. \(sentence(spokenGap))"
+        )
+    }
+
+    // Rounded up, so following the suggestion always takes the lead.
+    func amount(_ ring: Ring, _ points: Double) -> Double {
+        max(ring.step, ((points / 100 * ring.goal) / ring.step - 1e-9).rounded(.up) * ring.step)
+    }
+    func part(_ ring: Ring, _ points: Double) -> (text: String, spoken: String) {
+        let value = amount(ring, points)
+        let spokenUnit = value == 1 ? String(ring.spokenUnit.dropLast()) : ring.spokenUnit
+        return (
+            "\(number(value)) \(ring.unit) of \(ring.title)",
+            "\(number(value)) \(spokenUnit) of \(ring.title)"
+        )
+    }
+    // More room first; Move first on ties.
+    let rings = (exercise.room > move.room ? [exercise, move] : [move, exercise]).filter { $0.room > 0 }
+    let singles = rings.filter { $0.room >= need }
+    let parts = singles.isEmpty
+        ? [part(rings[0], rings[0].room), part(rings[1], need - rings[0].room)]
+        : singles.map { part($0, need) }
+    let joiner = singles.isEmpty ? " and " : " or "
+    let suggestion = "About \(parts.map(\.text).joined(separator: joiner))."
+    let spokenSuggestion = "About \(parts.map(\.spoken).joined(separator: joiner))."
+    let moving = day.opponentRevealedPoints.map { $0 < ActivityScore.maximumDailyPoints } ?? true
+        ? " \(name) can still add points today."
+        : ""
+    return CompetitionWhatItTakes(
+        dayOrdinal: ordinal,
+        points: need,
+        headline: "\(competitionPointsText(need, locale: locale)) to take the lead",
+        suggestion: suggestion,
+        detail: suggestion + moving,
+        accessibilityLabel: "\(competitionPointsAccessibilityText(need, locale: locale)) to take the lead. \(spokenSuggestion)\(moving)"
+    )
+}
+
+/// The Today page's line above your rings: amber when the lead is reachable.
+struct CompetitionWhatItTakesPanel: View {
+    let takes: CompetitionWhatItTakes
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(takes.headline)
+                .font(.title3.weight(.heavy).width(.condensed))
+                .foregroundStyle(takes.points == nil ? Theme.ink : Theme.you)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(takes.detail)
+                .font(.subheadline)
+                .foregroundStyle(Theme.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(16)
+        .themePanel()
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(takes.accessibilityLabel)
+        .accessibilityIdentifier("competition.takes")
+    }
+}
