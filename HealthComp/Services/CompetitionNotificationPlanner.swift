@@ -176,11 +176,12 @@ extension CompetitionNotificationPolicy {
             guard let scores = resultScores(message, locale: locale) else {
                 return content(title, "Your match with \(name) is complete.")
             }
+            let body = message.outcome == .loss
+                ? "\(scores.opp) to \(scores.own)."
+                : "\(scores.own) to \(scores.opp)."
             return content(
                 title,
-                message.outcome == .loss
-                    ? "\(scores.opp) to \(scores.own)."
-                    : "\(scores.own) to \(scores.opp)."
+                [body, beltSentence(message)].compactMap { $0 }.joined(separator: " ")
             )
         case .opportunistic(.catchUp):
             return content(
@@ -224,12 +225,13 @@ extension CompetitionNotificationPolicy {
                 guard let scores = resultScores(message, locale: locale) else {
                     return "Your match with \(name) is complete."
                 }
-                return switch message.outcome {
+                let sentence = switch message.outcome {
                 case .win: "You beat \(name) \(scores.own) to \(scores.opp)."
                 case .loss: "\(name) won \(scores.opp) to \(scores.own)."
                 case .tie: "All square with \(name) at \(scores.own)."
                 case nil: "Your match with \(name) is complete."
                 }
+                return [sentence, beltSentence(message)].compactMap { $0 }.joined(separator: " ")
             }
             return CompetitionNotificationContent(
                 title: "\(messages.count) matches finished",
@@ -273,6 +275,16 @@ extension CompetitionNotificationPolicy {
             opponentDisplayName: opponent,
             style: .notification
         ).title
+    }
+
+    /// "You took the belt from Sam." on a take; nil otherwise.
+    private static func beltSentence(_ message: CompetitionNotificationMessage) -> String? {
+        switch message.beltTake {
+        case .took(.you, nil): "You took the belt."
+        case .took(.you, _?): "You took the belt from \(message.opponentDisplayName)."
+        case .took(.them, _): "\(message.opponentDisplayName) took the belt."
+        default: nil
+        }
     }
 
     /// Final scores in the user's locale; two decimals only when whole points
@@ -864,7 +876,8 @@ struct CompetitionNotificationPlanner: Sendable {
                     snapshot: snapshot,
                     ownerPoints: terminal.ownerPoints,
                     opponentPoints: terminal.opponentPoints,
-                    outcome: terminal.outcome
+                    outcome: terminal.outcome,
+                    beltTake: beltTake(for: competition, in: snapshot)
                 )
             )
         }
@@ -1086,7 +1099,8 @@ struct CompetitionNotificationPlanner: Sendable {
         opponentPoints: Double?,
         outcome: CompetitionOutcome?,
         dayOrdinal: Int? = nil,
-        liveMatchCount: Int = 1
+        liveMatchCount: Int = 1,
+        beltTake: CompetitionBeltEvent? = nil
     ) throws -> Candidate {
         let record = try NotificationEmissionRecorded(
             competitionID: competition.id,
@@ -1106,9 +1120,35 @@ struct CompetitionNotificationPlanner: Sendable {
                 opponentPoints: opponentPoints,
                 outcome: outcome,
                 dayOrdinal: dayOrdinal,
-                liveMatchCount: liveMatchCount
+                liveMatchCount: liveMatchCount,
+                beltTake: beltTake
             )
         )
+    }
+
+    /// The belt event of a finished match when it took the belt, from every
+    /// snapshot match with the same person (muted ones too, so muting never
+    /// shifts the history). The fold orders weeks like History does.
+    private func beltTake(
+        for competition: CompetitionNotificationCompetitionSnapshot,
+        in snapshot: CompetitionNotificationPlanningSnapshot
+    ) -> CompetitionBeltEvent? {
+        guard competition.opponentDisplayName != competitionFormerCompetitorName else { return nil }
+        let event = competitionBelt(
+            snapshot.competitions
+                .filter { $0.opponentIdentity == competition.opponentIdentity }
+                .compactMap { week in
+                    week.terminalResult.map {
+                        (
+                            id: week.id,
+                            end: week.schedule.flatMap(competitionScheduleBoundaries)?.end,
+                            outcome: $0.outcome
+                        )
+                    }
+                }
+        ).events[competition.id]
+        if case .took = event { return event }
+        return nil
     }
 }
 

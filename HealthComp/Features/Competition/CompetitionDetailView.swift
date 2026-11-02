@@ -263,7 +263,12 @@ struct CompetitionDetailView: View {
     @ViewBuilder
     private var todayActivity: some View {
         if let day = activityDay {
-            dayActivity(day, showsPullHint: true)
+            VStack(alignment: .leading, spacing: 12) {
+                if let takes = competitionWhatItTakes(competition, locale: locale) {
+                    CompetitionWhatItTakesPanel(takes: takes)
+                }
+                dayActivity(day, showsPullHint: true)
+            }
         } else {
             Label("Activity appears when Day 1 begins.", systemImage: "clock")
                 .font(.subheadline)
