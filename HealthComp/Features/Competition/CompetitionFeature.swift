@@ -140,6 +140,9 @@ struct CompetitionFeature {
         var unblockFailed = false
         /// Per match; not persisted.
         var nudges: [CompetitionID: NudgeStatus] = [:]
+        /// Reactions being saved: the kind being set, or nil while removing.
+        var pendingReactions: [CompetitionReactionKey: CompetitionReactionKind?] = [:]
+        var reactionFailures: Set<CompetitionReactionKey> = []
 
         init(
             publication: CompetitionPublication? = nil,
@@ -179,6 +182,20 @@ struct CompetitionFeature {
         func isCommandInFlight(_ id: CompetitionID) -> Bool {
             commandIDsInFlight.contains(id)
         }
+
+        /// One match's reaction state, for its match and result screens.
+        func reactionControl(
+            for id: CompetitionID,
+            send: @escaping (Action) -> Void
+        ) -> CompetitionReactionControl {
+            CompetitionReactionControl(
+                pending: Dictionary(uniqueKeysWithValues: pendingReactions
+                    .filter { $0.key.competitionID == id }
+                    .map { ($0.key.target, $0.value) }),
+                failed: Set(reactionFailures.filter { $0.competitionID == id }.map(\.target)),
+                react: { send(.reactionTapped(id, $0, $1)) }
+            )
+        }
     }
 
     enum Action: Equatable, Sendable {
@@ -197,6 +214,8 @@ struct CompetitionFeature {
             tappedAt: Date,
             Result<Date, CompetitionRemoteFailure>
         )
+        case reactionTapped(CompetitionID, CompetitionReactionTarget, CompetitionReactionKind)
+        case reactionFinished(CompetitionReactionKey, succeeded: Bool)
         case challengeLinkRequested
         case challengeLinkResponse(URL?)
         /// Reset Link, after its confirmation.
@@ -253,6 +272,7 @@ struct CompetitionFeature {
         case challengeLinkReset
         case blockedPeople
         case nudge
+        case reaction
     }
 
     var body: some ReducerOf<Self> {
@@ -423,6 +443,35 @@ struct CompetitionFeature {
                 }
                 // No cancelInFlight: nudges for two matches can both run.
                 .cancellable(id: CancelID.nudge)
+
+            case let .reactionTapped(id, target, kind):
+                let key = CompetitionReactionKey(competitionID: id, target: target)
+                guard state.pendingReactions[key] == nil,
+                      let competition = state.publication?.dashboard.competitions
+                        .first(where: { $0.id == id })
+                else { return .none }
+                // The same preset again removes it.
+                let next: CompetitionReactionKind? =
+                    competition.ownReaction(target)?.kind == kind ? nil : kind
+                // Must be .some: assigning nil would remove the key.
+                state.pendingReactions[key] = .some(next)
+                state.reactionFailures.remove(key)
+                return .run { send in
+                    do {
+                        let publication = try await competitionClient.setReaction(id, target, next)
+                        // Before finishing, so the chip never flickers back.
+                        await send(.publication(publication))
+                        await send(.reactionFinished(key, succeeded: true))
+                    } catch {
+                        await send(.reactionFinished(key, succeeded: false))
+                    }
+                }
+                .cancellable(id: CancelID.reaction)
+
+            case let .reactionFinished(key, succeeded):
+                state.pendingReactions[key] = nil
+                if !succeeded { state.reactionFailures.insert(key) }
+                return .none
 
             case let .nudgeResponse(id, tappedAt, result):
                 switch result {
@@ -903,8 +952,11 @@ struct CompetitionFeature {
                 state.unblocksInFlight = []
                 state.unblockFailed = false
                 state.nudges = [:]
+                state.pendingReactions = [:]
+                state.reactionFailures = []
                 return .concatenate(
                     .merge(
+                        .cancel(id: CancelID.reaction),
                         .cancel(id: CancelID.publications),
                         .cancel(id: CancelID.inviteRecipient),
                         .cancel(id: CancelID.inviteCreation),

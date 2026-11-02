@@ -754,6 +754,206 @@ final class RemoteCompetitionClientTests: XCTestCase {
         await client.stop()
     }
 
+    /// One real match for the reaction tests, mounted for `profile`.
+    private func reactionMatch(
+        profile: AuthenticatedProfile,
+        root: URL,
+        competitionID: UUID
+    ) throws -> (
+        paths: AuthenticatedProfileStoragePaths,
+        descriptor: CompetitionDescriptor,
+        page: CompetitionChangePage
+    ) {
+        let paths = AuthenticatedProfileStoragePaths(profileID: profile.id, rootDirectory: root)
+        for directory in paths.fixedDirectories {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        }
+        let createdAt = Date(timeIntervalSince1970: 1_786_540_000)
+        let descriptor = try pendingDescriptor(
+            competitionID: competitionID,
+            profile: profile,
+            expiresAt: createdAt.addingTimeInterval(48 * 60 * 60)
+        )
+        let page = try pendingHistoryPage(
+            descriptor: descriptor,
+            profileID: profile.id,
+            createdAt: createdAt
+        )
+        return (paths, descriptor, page)
+    }
+
+    func testReactionsAttachToTheirMatchAndSurviveAFailedFetch() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let profile = AuthenticatedProfile(
+            id: UUID(uuidString: "81000000-0000-4000-8000-000000000001")!,
+            displayName: "Beta Alice"
+        )
+        let jordan = UUID(uuidString: "81000000-0000-4000-8000-0000000000d2")!
+        let competitionID = UUID(uuidString: "82000000-0000-4000-8000-0000000000d1")!
+        let match = try reactionMatch(profile: profile, root: root, competitionID: competitionID)
+        let theirs = CompetitionReactionRecord(
+            competitionID: competitionID, target: .day(2), authorProfileID: jordan,
+            kind: .huffing, updatedAt: Date(timeIntervalSince1970: 1_786_550_000)
+        )
+        let yours = CompetitionReactionRecord(
+            competitionID: competitionID, target: .day(1), authorProfileID: profile.id,
+            kind: .fire, updatedAt: Date(timeIntervalSince1970: 1_786_540_000)
+        )
+        // Another match's reaction never lands on this one.
+        let elsewhere = CompetitionReactionRecord(
+            competitionID: UUID(uuidString: "82000000-0000-4000-8000-0000000000d9")!,
+            target: .result, authorProfileID: jordan,
+            kind: .clap, updatedAt: Date(timeIntervalSince1970: 1_786_560_000)
+        )
+        let calls = ChallengeFetchCounter()
+        var api = remoteAPI(
+            listCompetitions: { [match.descriptor] },
+            fetchChanges: { _, _ in match.page }
+        )
+        api.listReactions = {
+            guard calls.next() == 1 else { throw CompetitionRemoteFailure.retryableTransport }
+            return [elsewhere, yours, theirs]
+        }
+        let client = CompetitionClient.remote(remoteAPI: api, environment: try environment())
+        try await client.mountAuthenticatedProfile(profile, match.paths)
+        var iterator = client.start().makeAsyncIterator()
+        let firstNext = await awaitNext(&iterator)
+        let first = try XCTUnwrap(firstNext)
+        let expected = [
+            CompetitionReaction(
+                target: .day(2), kind: .huffing, isFromYou: false, updatedAt: theirs.updatedAt
+            ),
+            CompetitionReaction(
+                target: .day(1), kind: .fire, isFromYou: true, updatedAt: yours.updatedAt
+            ),
+        ]
+        XCTAssertEqual(first.dashboard.competitions.map(\.reactions), [expected])
+
+        let second = await client.reconcileAll(.foreground)
+        XCTAssertGreaterThanOrEqual(calls.count, 2)
+        XCTAssertEqual(second.dashboard.competitions.map(\.reactions), [expected])
+        await client.stop()
+    }
+
+    func testSetReactionRepublishesWithoutAFullReconcile() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let profile = AuthenticatedProfile(
+            id: UUID(uuidString: "81000000-0000-4000-8000-000000000001")!,
+            displayName: "Beta Alice"
+        )
+        let competitionID = UUID(uuidString: "82000000-0000-4000-8000-0000000000d3")!
+        let match = try reactionMatch(profile: profile, root: root, competitionID: competitionID)
+        let lists = ChallengeFetchCounter()
+        let fetches = ChallengeFetchCounter()
+        let sets = ReactionRequestRecorder()
+        var api = remoteAPI(
+            listCompetitions: {
+                _ = lists.next()
+                return [match.descriptor]
+            },
+            fetchChanges: { _, _ in
+                _ = fetches.next()
+                return match.page
+            }
+        )
+        api.listReactions = { [] }
+        api.setReaction = { sets.record($0) }
+        let client = CompetitionClient.remote(remoteAPI: api, environment: try environment())
+        try await client.mountAuthenticatedProfile(profile, match.paths)
+        var iterator = client.start().makeAsyncIterator()
+        let firstNext = await awaitNext(&iterator)
+        let first = try XCTUnwrap(firstNext)
+        let listsBefore = lists.count
+        let fetchesBefore = fetches.count
+
+        let published = try await client.setReaction(
+            CompetitionID(competitionID), .day(1), .fire
+        )
+
+        XCTAssertEqual(sets.requests, [
+            CompetitionReactionRequest(competitionID: competitionID, target: .day(1), kind: .fire),
+        ])
+        XCTAssertEqual(lists.count, listsBefore)
+        XCTAssertEqual(fetches.count, fetchesBefore)
+        XCTAssertGreaterThan(published.publicationRevision, first.publicationRevision)
+        XCTAssertEqual(
+            published.dashboard.competitions.first?.ownReaction(.day(1))?.kind,
+            .fire
+        )
+
+        let removed = try await client.setReaction(CompetitionID(competitionID), .day(1), nil)
+        XCTAssertNil(removed.dashboard.competitions.first?.ownReaction(.day(1)))
+        await client.stop()
+    }
+
+    func testProfileSwitchClearsReactions() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let first = AuthenticatedProfile(
+            id: UUID(uuidString: "81000000-0000-4000-8000-000000000011")!,
+            displayName: "Beta Alice"
+        )
+        let second = AuthenticatedProfile(
+            id: UUID(uuidString: "81000000-0000-4000-8000-000000000012")!,
+            displayName: "Beta Bob"
+        )
+        let competitionID = UUID(uuidString: "82000000-0000-4000-8000-0000000000d4")!
+        let firstMatch = try reactionMatch(
+            profile: first,
+            root: root.appendingPathComponent("first", isDirectory: true),
+            competitionID: competitionID
+        )
+        let secondMatch = try reactionMatch(
+            profile: second,
+            root: root.appendingPathComponent("second", isDirectory: true),
+            competitionID: competitionID
+        )
+        let mounted = ProfileBox(first.id)
+        let calls = ChallengeFetchCounter()
+        var api = remoteAPI(
+            listCompetitions: {
+                [mounted.value == first.id ? firstMatch.descriptor : secondMatch.descriptor]
+            },
+            fetchChanges: { _, _ in
+                mounted.value == first.id ? firstMatch.page : secondMatch.page
+            }
+        )
+        // Only the first profile's first fetch succeeds.
+        api.listReactions = {
+            guard calls.next() == 1 else { throw CompetitionRemoteFailure.retryableTransport }
+            return [CompetitionReactionRecord(
+                competitionID: competitionID, target: .day(2),
+                authorProfileID: UUID(uuidString: "81000000-0000-4000-8000-0000000000d5")!,
+                kind: .salute, updatedAt: Date(timeIntervalSince1970: 1_786_550_000)
+            )]
+        }
+        let client = CompetitionClient.remote(remoteAPI: api, environment: try environment())
+
+        try await client.mountAuthenticatedProfile(first, firstMatch.paths)
+        var firstIterator = client.start().makeAsyncIterator()
+        let firstPublication = await firstIterator.next()
+        XCTAssertEqual(firstPublication?.dashboard.competitions.first?.reactions.count, 1)
+
+        try await client.prepareForProfileTeardown(requireRemoteInstallationRemoval: false)
+        await client.stop()
+        mounted.value = second.id
+        try await client.mountAuthenticatedProfile(second, secondMatch.paths)
+        var secondIterator = client.start().makeAsyncIterator()
+        let secondPublication = await secondIterator.next()
+        XCTAssertEqual(secondPublication?.dashboard.competitions.map(\.id.rawValue), [competitionID])
+        XCTAssertEqual(secondPublication?.dashboard.competitions.first?.reactions, [])
+        XCTAssertGreaterThanOrEqual(calls.count, 2)
+        await client.stop()
+    }
+
     func testCreateAndClaimReturnCanonicalPublicationRevisions()
         async throws
     {
@@ -5514,4 +5714,21 @@ private final class ChallengeFetchCounter: @unchecked Sendable {
     private var value = 0
     var count: Int { lock.withLock { value } }
     func next() -> Int { lock.withLock { value += 1; return value } }
+}
+
+private final class ReactionRequestRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var recorded: [CompetitionReactionRequest] = []
+    var requests: [CompetitionReactionRequest] { lock.withLock { recorded } }
+    func record(_ request: CompetitionReactionRequest) { lock.withLock { recorded.append(request) } }
+}
+
+private final class ProfileBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var current: UUID
+    init(_ value: UUID) { current = value }
+    var value: UUID {
+        get { lock.withLock { current } }
+        set { lock.withLock { current = newValue } }
+    }
 }

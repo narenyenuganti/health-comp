@@ -197,6 +197,19 @@ private struct MultiUserCompetitionSharingTestLabView: View {
     @State private var rematchState: CompetitionFeature.CompetitionRematchState = .available
     @State private var pastedInvitationStatus = "Not checked"
     @State private var labNudges: [CompetitionID: CompetitionFeature.NudgeStatus] = [:]
+    @State private var ownReactions: [CompetitionReactionKey: CompetitionReactionKind] = [:]
+
+    /// Once per process, never per init: SwiftUI re-runs child inits
+    /// whenever the root re-evaluates. Launch arguments can't do this: an
+    /// argument-domain value would mask the app's own writes.
+    private static let resetReactionsSeen: Void = UserDefaults.standard
+        .removeObject(forKey: CompetitionReactionsSeen.storageKey)
+
+    init(usesCustomScheme: Bool, showsWhatItTakes: Bool = false) {
+        self.usesCustomScheme = usesCustomScheme
+        self.showsWhatItTakes = showsWhatItTakes
+        _ = Self.resetReactionsSeen
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -308,7 +321,8 @@ private struct MultiUserCompetitionSharingTestLabView: View {
                     source: .remoteParticipants,
                     nudge: CompetitionNudge(status: labNudges[id], send: {
                         labNudges[id] = .sent(MultiUserCompetitionTestLabFixtures.labNow)
-                    })
+                    }),
+                    reactions: reactionControl(id)
                 )
             case .completed, .archived:
                 CompetitionResultView(
@@ -321,7 +335,8 @@ private struct MultiUserCompetitionSharingTestLabView: View {
                     rematch: rematchState,
                     isCommandInFlight: false,
                     send: handle,
-                    openCompetition: { path.append($0) }
+                    openCompetition: { path.append($0) },
+                    reactions: reactionControl(id)
                 )
             case .pending:
                 CompetitionInviteView(
@@ -349,7 +364,18 @@ private struct MultiUserCompetitionSharingTestLabView: View {
     private var publication: LocalCompetitionPublication {
         showsWhatItTakes
             ? MultiUserCompetitionTestLabFixtures.whatItTakesPublication()
-            : MultiUserCompetitionTestLabFixtures.publication(archivedIDs: archivedIDs)
+            : MultiUserCompetitionTestLabFixtures.publication(
+                archivedIDs: archivedIDs,
+                ownReactions: ownReactions
+            )
+    }
+
+    /// Saves at once; the same preset again removes it, as on the server.
+    private func reactionControl(_ id: CompetitionID) -> CompetitionReactionControl {
+        CompetitionReactionControl(pending: [:], failed: []) { target, kind in
+            let key = CompetitionReactionKey(competitionID: id, target: target)
+            ownReactions[key] = ownReactions[key] == kind ? nil : kind
+        }
     }
 
     private func findRecipient() {
@@ -902,7 +928,8 @@ private enum MultiUserCompetitionTestLabFixtures {
     )
 
     static func publication(
-        archivedIDs: Set<CompetitionID>
+        archivedIDs: Set<CompetitionID>,
+        ownReactions: [CompetitionReactionKey: CompetitionReactionKind] = [:]
     ) -> LocalCompetitionPublication {
         let completedAt = Date(timeIntervalSince1970: 1_787_212_800)
         let scheduled = presentation(
@@ -1100,8 +1127,39 @@ private enum MultiUserCompetitionTestLabFixtures {
             terminal: longNameTerminal,
             startDay: 6
         )
+        // Reactions only on Jordan, Morgan and Former competitor: other UI
+        // tests count cards and match their labels.
+        func reactions(
+            _ id: CompetitionID,
+            received: CompetitionReaction
+        ) -> [CompetitionReaction] {
+            let own = ownReactions.filter { $0.key.competitionID == id }.map {
+                CompetitionReaction(
+                    target: $0.key.target,
+                    kind: $0.value,
+                    isFromYou: true,
+                    updatedAt: evaluatedAt
+                )
+            }
+            return ([received] + own).sorted { $0.updatedAt > $1.updatedAt }
+        }
+        var jordan = active
+        jordan.reactions = reactions(activeID, received: CompetitionReaction(
+            target: .day(2), kind: .huffing, isFromYou: false,
+            updatedAt: evaluatedAt.addingTimeInterval(-1_800)
+        ))
+        var morgan = archived
+        morgan.reactions = reactions(archivedID, received: CompetitionReaction(
+            target: .result, kind: .clap, isFromYou: false,
+            updatedAt: evaluatedAt.addingTimeInterval(-3_600)
+        ))
+        var former = completed
+        former.reactions = reactions(completedID, received: CompetitionReaction(
+            target: .result, kind: .salute, isFromYou: false,
+            updatedAt: evaluatedAt.addingTimeInterval(-7_200)
+        ))
         let competitions = [
-            scheduled, active, completed, archived, pending, secondActive, expired,
+            scheduled, jordan, former, morgan, pending, secondActive, expired,
             jordanPast, casey, longNamed,
         ]
         let awards = [

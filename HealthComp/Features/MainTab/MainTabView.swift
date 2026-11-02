@@ -309,7 +309,8 @@ struct MainTabView: View {
                             status: store.competition.nudges[id],
                             send: { store.send(.competition(.nudgeTapped(id))) }
                         )
-                        : nil
+                        : nil,
+                    reactions: reactionControl(id, source: publication.source)
                 )
 
             case .completed, .archived:
@@ -327,7 +328,8 @@ struct MainTabView: View {
                     openCompetition: { store.send(.pathChanged(store.path + [$0])) },
                     muteButton: muteButton(for: competition),
                     issue: competitionRowIssue(id, in: publication.dashboard.issues),
-                    retry: retry
+                    retry: retry,
+                    reactions: reactionControl(id, source: publication.source)
                 )
 
             case .declined, .expired, .cancelled:
@@ -358,6 +360,15 @@ struct MainTabView: View {
 
     private func sendCompetitionAction(_ action: CompetitionFeature.Action) {
         store.send(.competition(action))
+    }
+
+    /// Real matches only: never on the simulated fixture.
+    private func reactionControl(
+        _ id: CompetitionID,
+        source: CompetitionPublicationSource
+    ) -> CompetitionReactionControl? {
+        guard source == .remoteParticipants else { return nil }
+        return store.competition.reactionControl(for: id) { store.send(.competition($0)) }
     }
 
     private func muteButton(

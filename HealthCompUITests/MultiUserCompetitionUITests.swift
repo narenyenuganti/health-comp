@@ -465,6 +465,151 @@ final class MultiUserCompetitionUITests: XCTestCase {
         app.buttons["Close"].tap()
     }
 
+    func testReactionsOnHomeMatchDayDrawerAndResult() throws {
+        launch(.sharing)
+        XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 8))
+
+        let jordan = sharingCard(state: "active", name: "Jordan")
+        scrollToElement(jordan)
+        XCTAssertTrue(jordan.label.contains("Jordan reacted to your Day 2"), jordan.label)
+        attachScreenshot("reactions-home")
+        jordan.tap()
+        XCTAssertTrue(app.navigationBars["Jordan"].waitForExistence(timeout: 3))
+
+        let latest = element("competition.reaction.latest")
+        XCTAssertTrue(latest.waitForExistence(timeout: 3))
+        XCTAssertEqual(latest.label, "Huffing. Jordan reacted to your Day 2")
+        attachScreenshot("reactions-match-latest")
+        latest.tap()
+        XCTAssertTrue(app.staticTexts["Day 2"].waitForExistence(timeout: 3))
+        let received = element("competition.reaction.received")
+        XCTAssertTrue(received.waitForExistence(timeout: 3))
+        XCTAssertEqual(received.label, "Huffing. Jordan reacted to your Day 2")
+        attachScreenshot("reactions-day-2-drawer")
+        app.buttons["Close"].firstMatch.tap()
+        XCTAssertTrue(received.waitForNonExistence(timeout: 3))
+
+        showWeek()
+        let dayThree = app.descendants(matching: .any)["competition.day.3"]
+        scrollToElement(dayThree)
+        dayThree.tap()
+        let fire = app.buttons["competition.react.fire"]
+        XCTAssertTrue(fire.waitForExistence(timeout: 3))
+        XCTAssertTrue(text("REACT TO JORDAN’S DAY").exists)
+        XCTAssertTrue(text("Jordan sees your reaction on this day.").exists)
+        XCTAssertFalse(fire.isSelected)
+        fire.tap()
+        XCTAssertTrue(
+            waitForSelected(fire, true),
+            "Fire is selected after the first tap"
+        )
+        attachScreenshot("reactions-day-3-drawer")
+        try app.performAccessibilityAudit(
+            for: XCUIAccessibilityAuditType.textClipped
+                .union(.hitRegion)
+                .union(.sufficientElementDescription)
+        )
+        fire.tap()
+        XCTAssertTrue(
+            waitForSelected(fire, false),
+            "The same preset again removes it"
+        )
+        app.buttons["Close"].firstMatch.tap()
+        XCTAssertTrue(fire.waitForNonExistence(timeout: 3))
+
+        // Leaving the match marks Jordan's reaction seen.
+        navigateBackToSharing()
+        let jordanAfter = sharingCard(state: "active", name: "Jordan")
+        XCTAssertTrue(jordanAfter.waitForExistence(timeout: 3))
+        XCTAssertFalse(jordanAfter.label.contains("reacted"), jordanAfter.label)
+
+        // Morgan's archived week, from History.
+        openHistory()
+        let morganRecord = record(named: "Morgan")
+        scrollToElement(morganRecord)
+        morganRecord.tap()
+        XCTAssertTrue(app.navigationBars["Morgan"].waitForExistence(timeout: 3))
+        let morganWeek = element("competition.sharing.archived.a1000000-0000-4000-8000-000000000004")
+        scrollToElement(morganWeek)
+        morganWeek.tap()
+        let panel = element("competition.result.react")
+        XCTAssertTrue(panel.waitForExistence(timeout: 3))
+        let morganReceived = element("competition.reaction.received")
+        XCTAssertEqual(morganReceived.label, "Clap. Morgan reacted to the result")
+        let clap = app.buttons["competition.react.clap"]
+        scrollToElement(clap)
+        clap.tap()
+        XCTAssertTrue(waitForSelected(clap, true))
+        attachScreenshot("reactions-result-morgan")
+
+        // A deleted account can't be reacted to, but its reaction still shows.
+        launch(.sharing)
+        XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 8))
+        let former = sharingCard(state: "completed", name: "Former competitor")
+        scrollToElement(former)
+        XCTAssertTrue(
+            former.label.contains("Former competitor reacted to the result"),
+            former.label
+        )
+        former.tap()
+        XCTAssertTrue(app.navigationBars["Former competitor"].waitForExistence(timeout: 3))
+        let formerReceived = element("competition.reaction.received")
+        XCTAssertTrue(formerReceived.waitForExistence(timeout: 3))
+        XCTAssertEqual(formerReceived.label, "Salute. Former competitor reacted to the result")
+        XCTAssertFalse(app.buttons["competition.react.clap"].exists)
+        attachScreenshot("reactions-result-former")
+    }
+
+    func testReactionPickerFitsAtAccessibility5() throws {
+        launch(
+            .sharing,
+            appearanceArguments: [
+                "-AppleInterfaceStyle", "Light",
+                "-UIPreferredContentSizeCategoryName",
+                "UICTContentSizeCategoryAccessibilityXXXL",
+                "-UIAccessibilityReduceMotionEnabled", "YES",
+            ]
+        )
+        XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 8))
+        let jordan = sharingCard(state: "active", name: "Jordan")
+        scrollToElement(jordan)
+        jordan.tap()
+        XCTAssertTrue(app.navigationBars["Jordan"].waitForExistence(timeout: 3))
+        showWeek()
+        let dayThree = app.descendants(matching: .any)["competition.day.3"]
+        scrollToElement(dayThree)
+        dayThree.tap()
+
+        // Expand to .large, then scroll the drawer itself (not the page
+        // behind it) until the last chip is fully on screen.
+        let title = app.staticTexts["Day 3"]
+        XCTAssertTrue(title.waitForExistence(timeout: 3))
+        title.swipeUp()
+        let salute = app.buttons["competition.react.salute"]
+        for _ in 0..<6 {
+            if salute.exists, salute.isHittable, app.frame.contains(salute.frame) { break }
+            title.exists ? title.swipeUp() : app.swipeUp()
+        }
+        for kind in ["clap", "fire", "huffing", "salute"] {
+            XCTAssertTrue(app.buttons["competition.react.\(kind)"].isHittable, kind)
+        }
+        attachScreenshot("reactions-day-3-drawer-ax5")
+        // No .dynamicType audit: it flags different elements on different runs.
+        try app.performAccessibilityAudit(
+            for: XCUIAccessibilityAuditType.textClipped
+                .union(.hitRegion)
+                .union(.sufficientElementDescription)
+        )
+    }
+
+    private func waitForSelected(_ element: XCUIElement, _ isSelected: Bool) -> Bool {
+        let expectation = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "isSelected == %@", NSNumber(value: isSelected)),
+            object: element
+        )
+        return XCTWaiter.wait(for: [expectation], timeout: 3) == .completed
+    }
+
     private func openCaseyResult() {
         let casey = sharingCard(state: "completed", name: "Casey")
         scrollToElement(casey)

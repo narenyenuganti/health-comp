@@ -232,6 +232,7 @@ jobs:
             -only-testing:HealthCompUITests/RecapCardUITests/testShareOpensTheSystemSheetWithSaveImage \
             -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testStaleMatchOffersOneNudgeADay \
             -only-testing:HealthCompUITests/NudgeUITests/testFailedNudgeRetriesAndARefusalExplains \
+            -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testReactionsOnHomeMatchDayDrawerAndResult \
             -parallel-testing-enabled NO \
             -maximum-concurrent-test-simulator-destinations 1 \
             -maximum-parallel-testing-workers 1 \

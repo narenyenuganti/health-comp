@@ -2348,6 +2348,137 @@ final class CompetitionPresentationTests: XCTestCase {
             "You already challenged Hermes. It expires 24 hours after you sent it."
         )
     }
+
+    // MARK: Reactions
+
+    private static let reactionMatchID = CompetitionID(
+        UUID(uuidString: "86000000-0000-4000-8000-000000000001")!
+    )
+
+    private func reactionPresentation(
+        lifecycle: LocalCompetitionLifecyclePresentation = .active(dayOrdinal: 3),
+        opponentName: String = "Jordan",
+        opponentIdentity: String = RemoteCompetitionOpponentIdentity.identity(
+            for: UUID(uuidString: "86000000-0000-4000-8000-000000000002")!
+        ),
+        reactions: [CompetitionReaction] = []
+    ) -> LocalCompetitionPresentation {
+        var presentation = LocalCompetitionPresentation(
+            id: Self.reactionMatchID,
+            ownerDisplayName: "You",
+            opponentDisplayName: opponentName,
+            opponentIdentity: opponentIdentity,
+            lifecycle: lifecycle,
+            acceptedConfiguration: nil,
+            userPoints: 0,
+            opponentPoints: 0,
+            days: [],
+            currentDayOrdinal: nil,
+            lastRefresh: nil,
+            tally: nil,
+            terminalResult: nil
+        )
+        presentation.reactions = reactions
+        return presentation
+    }
+
+    private func reaction(
+        _ target: CompetitionReactionTarget,
+        _ kind: CompetitionReactionKind,
+        fromYou: Bool = false,
+        at seconds: TimeInterval
+    ) -> CompetitionReaction {
+        CompetitionReaction(
+            target: target, kind: kind, isFromYou: fromYou,
+            updatedAt: Date(timeIntervalSince1970: seconds)
+        )
+    }
+
+    func testReactionCopy() {
+        let jordanDay = reaction(.day(2), .huffing, at: 1)
+        XCTAssertEqual(
+            competitionReactionText(jordanDay, opponentName: "Jordan"),
+            "Jordan reacted to your Day 2"
+        )
+        XCTAssertEqual(
+            competitionReactionText(reaction(.result, .clap, at: 1), opponentName: "Morgan"),
+            "Morgan reacted to the result"
+        )
+        XCTAssertEqual(
+            competitionReactionText(reaction(.day(5), .fire, fromYou: true, at: 1), opponentName: "Jordan"),
+            "You reacted to Jordan’s Day 5"
+        )
+        XCTAssertEqual(
+            competitionReactionText(reaction(.result, .salute, fromYou: true, at: 1), opponentName: "Jordan"),
+            "You reacted to the result"
+        )
+        XCTAssertEqual(
+            competitionReactionAccessibilityText(jordanDay, opponentName: "Jordan"),
+            "Huffing. Jordan reacted to your Day 2"
+        )
+        XCTAssertEqual(
+            CompetitionReactionKind.allCases.map(\.spokenName),
+            ["Clap", "Fire", "Huffing", "Salute"]
+        )
+        XCTAssertEqual(CompetitionReactionKind.allCases.map(\.emoji), ["👏", "🔥", "😤", "🫡"])
+    }
+
+    func testUnseenReactionIsTheLatestIncomingAfterTheSeenMark() {
+        let older = reaction(.day(1), .clap, at: 100)
+        let newest = reaction(.day(2), .huffing, at: 200)
+        let yours = reaction(.day(3), .fire, fromYou: true, at: 300)
+        let match = reactionPresentation(reactions: [yours, older, newest])
+        let seen = CompetitionReactionsSeen()
+
+        XCTAssertEqual(competitionUnseenReaction(match, seen: seen), newest)
+        let marked = seen.marking(match)
+        XCTAssertEqual(marked.seenAt[Self.reactionMatchID.rawValue.uuidString.lowercased()], 200)
+        XCTAssertNil(competitionUnseenReaction(match, seen: marked))
+        // Marking an older list never moves the mark back.
+        XCTAssertEqual(marked.marking(reactionPresentation(reactions: [older])), marked)
+        // Your own reactions alone leave the marks alone.
+        XCTAssertEqual(seen.marking(reactionPresentation(reactions: [yours])), seen)
+
+        let changed = reactionPresentation(reactions: [reaction(.day(2), .fire, at: 250), older])
+        XCTAssertEqual(competitionUnseenReaction(changed, seen: marked)?.kind, .fire)
+    }
+
+    func testUnseenReactionIgnoresMatchesWithoutScores() {
+        let incoming = [reaction(.day(2), .huffing, at: 200)]
+        for lifecycle: LocalCompetitionLifecyclePresentation in [
+            .cancelled(at: Date(timeIntervalSince1970: 300)),
+            .scheduled,
+        ] {
+            XCTAssertNil(competitionUnseenReaction(
+                reactionPresentation(lifecycle: lifecycle, reactions: incoming),
+                seen: CompetitionReactionsSeen()
+            ))
+        }
+    }
+
+    func testReactionsSeenRawValueRoundTrips() {
+        let match = reactionPresentation(reactions: [reaction(.result, .salute, at: 1_786_867_200.5)])
+        let marked = CompetitionReactionsSeen().marking(match)
+        XCTAssertEqual(CompetitionReactionsSeen(rawValue: marked.rawValue), marked)
+        XCTAssertEqual(CompetitionReactionsSeen(rawValue: CompetitionReactionsSeen().rawValue), .init())
+        XCTAssertNil(CompetitionReactionsSeen(rawValue: "not json"))
+    }
+
+    func testCanReactOnlyWithARealOtherPersonAfterTheMatchStarts() {
+        let completed = LocalCompetitionLifecyclePresentation.completed(
+            outcome: .win,
+            basis: .stableAcrossPostBoundaryReads,
+            completedAt: Date(timeIntervalSince1970: 1)
+        )
+        XCTAssertFalse(competitionCanReact(reactionPresentation(lifecycle: .scheduled)))
+        XCTAssertTrue(competitionCanReact(reactionPresentation(lifecycle: .active(dayOrdinal: 1))))
+        XCTAssertTrue(competitionCanReact(reactionPresentation(lifecycle: completed)))
+        XCTAssertFalse(competitionCanReact(reactionPresentation(opponentName: "Former competitor")))
+        XCTAssertFalse(competitionCanReact(reactionPresentation(
+            opponentIdentity: LocalCompetitionIdentity.opponentIdentity
+        )))
+        XCTAssertFalse(competitionCanReact(reactionPresentation(opponentIdentity: "practice-pacer:v1")))
+    }
 }
 
 private enum FinalScoreLayoutProposal: CaseIterable {
