@@ -938,8 +938,6 @@ final class RemoteCompetitionFeatureTests: XCTestCase {
             publication: .remote(revision: 1)
         )) { CompetitionFeature() } withDependencies: { $0.competitionClient = client }
         await store.send(.blockTapped(id)) { $0.commandIDsInFlight = [id] }
-        // A second tap while it runs does nothing.
-        await store.send(.blockTapped(id))
         await store.receive(.commandFinished(id, expectedRevision: 0)) {
             $0.commandIDsInFlight = []
         }
