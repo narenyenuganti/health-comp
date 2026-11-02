@@ -434,6 +434,7 @@ Deno.test("challenge work items are leased and sent with the existing seven keys
     "challenge_received",
     "challenge_declined",
     "match_cancelled",
+    "reaction",
   ] as const;
   const items = kinds.map((kind, index) => ({
     ...item,
@@ -451,14 +452,14 @@ Deno.test("challenge work items are leased and sent with the existing seven keys
       ),
   };
   const response = await sendCompetitionNotificationHandler(
-    request('{"batchSize":3}'),
+    request('{"batchSize":4}'),
     dependencies(client, async (outbound) => {
       sentBodies.push(JSON.parse(await outbound.text()));
       return new Response(null, { status: 200 });
     }),
   );
   assertEquals(response.status, 200);
-  assertEquals(sentBodies.length, 3);
+  assertEquals(sentBodies.length, 4);
 
   const extraKey = await sendCompetitionNotificationHandler(
     request(),
@@ -482,6 +483,19 @@ Deno.test("nudge payload is generic and routes to the match", () => {
         title: "Score update needed",
         body: "Open HealthComp to update your match.",
       },
+      sound: "default",
+      "thread-id": "competition:c3000000-0000-4000-8000-000000000001",
+    },
+    "healthcomp.route.v": 1,
+    "healthcomp.route.kind": "competition",
+    "healthcomp.route.competitionID": "c3000000-0000-4000-8000-000000000001",
+  });
+});
+
+Deno.test("reaction payload is generic and routes to the match", () => {
+  assertEquals(competitionNotificationPayload({ ...item, kind: "reaction" }), {
+    aps: {
+      alert: { title: "New reaction" },
       sound: "default",
       "thread-id": "competition:c3000000-0000-4000-8000-000000000001",
     },
