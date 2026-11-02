@@ -565,6 +565,8 @@ struct CompetitionRecapSheet: View {
                 .font(.body)
                 .foregroundStyle(Theme.ink)
                 .frame(minHeight: 44)
+                // Q-notifs-5: the inherited ink tint hides the On thumb in dark mode.
+                .tint(Color(uiColor: .systemGreen))
                 .accessibilityIdentifier("competition.recap.name")
         }
     }

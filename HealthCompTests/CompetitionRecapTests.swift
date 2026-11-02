@@ -173,6 +173,10 @@ final class CompetitionRecapTests: XCTestCase {
         XCTAssertFalse(highlights(try match(days([3: (324, 330)]))).contains { $0[0] == "Comeback" })
         let loss = try match(days(), user: 2_268, opponent: 2_412, outcome: .loss)
         XCTAssertFalse(highlights(loss).contains { $0[0] == "Comeback" })
+        // Down 86 after Wed and the day sums agree (2,000–2,268): still a loss.
+        let consistentLoss = try match(days([4: (100, 300)]))
+        XCTAssertEqual(competitionResultOutcome(consistentLoss), .loss)
+        XCTAssertFalse(highlights(consistentLoss).contains { $0[0] == "Comeback" })
     }
 
     func testComebackSkipsWhenDaySumsDisagreeWithTheFinalScore() throws {

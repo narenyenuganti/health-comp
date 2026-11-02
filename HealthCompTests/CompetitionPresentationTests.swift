@@ -1495,6 +1495,15 @@ final class CompetitionPresentationTests: XCTestCase {
         XCTAssertFalse(competitionBeltWaitsOnAnEarlierMatch(next, in: [finished, next]))
     }
 
+    func testBeltEventWaitsWhileAnEarlierMatchWithThemIsUnfinished() {
+        let earlier = homePresentation(id: 1, name: "Sam", identity: "remote-profile:v1:sam",
+                                       lifecycle: .tallying(startedAt: homeNow), start: (9, 1))
+        let later = beltWeek(2, .win, start: (9, 3))
+
+        XCTAssertNil(competitionBeltEvent(for: later, in: [earlier, later]))
+        XCTAssertEqual(competitionBeltEvent(for: later, in: [later]), .took(by: .you, fromWeeks: nil))
+    }
+
     func testBeltCopy() {
         XCTAssertEqual(competitionBeltStandingText(.you, opponentName: "Sam"), "You hold the belt")
         XCTAssertEqual(competitionBeltStandingText(.them, opponentName: "Sam"), "Sam holds the belt")
