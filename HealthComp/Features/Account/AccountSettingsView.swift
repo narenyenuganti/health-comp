@@ -16,7 +16,8 @@ struct AccountChallengeLink {
 struct AccountBlockedPeople {
     let people: [AuthenticatedProfile]?
     let unblocking: Set<UUID>
-    let unblockFailed: Bool
+    /// The person whose last Unblock failed.
+    let unblockFailed: UUID?
     let load: () -> Void
     let unblock: (UUID) -> Void
 }
@@ -322,13 +323,6 @@ struct AccountSettingsView: View {
     ) -> some View {
         Section {
             ForEach(people, id: \.id) { blockedRow($0, blocked) }
-            if blocked.unblockFailed {
-                Text("Couldn’t unblock. Check your connection and try again.")
-                    .font(.callout)
-                    .foregroundStyle(Theme.ink)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityIdentifier("account.blocked.error")
-            }
         } header: {
             SectionLabel("BLOCKED")
         } footer: {
@@ -342,29 +336,50 @@ struct AccountSettingsView: View {
         _ person: AuthenticatedProfile,
         _ blocked: AccountBlockedPeople
     ) -> some View {
-        let layout = dynamicTypeSize.isAccessibilitySize
+        let isAccessibilitySize = dynamicTypeSize.isAccessibilitySize
+        let isUnblocking = blocked.unblocking.contains(person.id)
+        let layout = isAccessibilitySize
             ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
             : AnyLayout(HStackLayout(spacing: 12))
-        return layout {
-            HStack(spacing: 12) {
-                Text(person.displayName.first.map { String($0).uppercased() } ?? "")
-                    .font(.headline.width(.condensed))
-                    .foregroundStyle(Theme.ink)
-                    .frame(width: blockedInitialSize, height: blockedInitialSize)
-                    .background(Theme.control, in: Circle())
-                    .accessibilityHidden(true)
-                Text(person.displayName)
+        return VStack(alignment: .leading, spacing: 4) {
+            layout {
+                HStack(spacing: 12) {
+                    // At accessibility sizes the initial would squeeze the
+                    // name into a narrow column, so the name gets the width.
+                    if !isAccessibilitySize {
+                        Text(person.displayName.first.map { String($0).uppercased() } ?? "")
+                            .font(.headline.width(.condensed))
+                            .foregroundStyle(Theme.ink)
+                            .frame(width: blockedInitialSize, height: blockedInitialSize)
+                            .background(Theme.control, in: Circle())
+                    }
+                    Text(person.displayName)
+                        .foregroundStyle(Theme.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                // VoiceOver reads the name once, never the initial.
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(person.displayName)
+                .accessibilityAddTraits(.isStaticText)
+                Button { blocked.unblock(person.id) } label: {
+                    Text("Unblock").frame(minHeight: 44).contentShape(Rectangle())
+                }
+                .buttonStyle(.borderless)
+                .disabled(isUnblocking)
+                .accessibilityLabel("Unblock \(person.displayName)")
+                .accessibilityValue(isUnblocking ? "Unblocking" : "")
+                .accessibilityIdentifier("account.blocked.unblock")
+            }
+            // In the row it belongs to, so it shows where the tap was even
+            // when the list runs past the screen.
+            if blocked.unblockFailed == person.id {
+                Text("Couldn’t unblock. Check your connection and try again.")
+                    .font(.callout)
                     .foregroundStyle(Theme.ink)
                     .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("account.blocked.error")
             }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            Button { blocked.unblock(person.id) } label: {
-                Text("Unblock").frame(minHeight: 44).contentShape(Rectangle())
-            }
-            .buttonStyle(.borderless)
-            .disabled(blocked.unblocking.contains(person.id))
-            .accessibilityLabel("Unblock \(person.displayName)")
-            .accessibilityIdentifier("account.blocked.unblock")
         }
     }
 

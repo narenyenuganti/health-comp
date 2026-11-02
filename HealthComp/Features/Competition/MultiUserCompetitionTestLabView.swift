@@ -835,7 +835,7 @@ private struct MultiUserCompetitionAccountTestLabView: View {
                     blockedPeople: AccountBlockedPeople(
                         people: blocked,
                         unblocking: [],
-                        unblockFailed: false,
+                        unblockFailed: nil,
                         load: {},
                         unblock: { id in blocked.removeAll { $0.id == id } }
                     )

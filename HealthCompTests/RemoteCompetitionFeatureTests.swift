@@ -989,10 +989,10 @@ final class RemoteCompetitionFeatureTests: XCTestCase {
         await store.send(.unblockTapped(sam.id)) { $0.unblocksInFlight = [sam.id] }
         await store.receive(.unblockFinished(sam.id, succeeded: false)) {
             $0.unblocksInFlight = []
-            $0.unblockFailed = true
+            $0.unblockFailed = sam.id
         }
         // The next load clears the error.
-        await store.send(.blockedPeopleRequested) { $0.unblockFailed = false }
+        await store.send(.blockedPeopleRequested) { $0.unblockFailed = nil }
         await store.receive(.blockedPeopleResponse([sam]))
         XCTAssertEqual(unblocked.value, [alex.id])
         await store.finish()
@@ -1018,11 +1018,11 @@ final class RemoteCompetitionFeatureTests: XCTestCase {
         let alex = AuthenticatedProfile(id: UUID(), displayName: "Alex")
         var initial = CompetitionFeature.State()
         initial.blockedPeople = [alex]
-        initial.unblockFailed = true
+        initial.unblockFailed = alex.id
         let store = TestStore(initialState: initial) { CompetitionFeature() }
         await store.send(.stop) {
             $0.blockedPeople = nil
-            $0.unblockFailed = false
+            $0.unblockFailed = nil
         }
         await store.finish()
     }

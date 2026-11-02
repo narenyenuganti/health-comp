@@ -129,7 +129,8 @@ struct CompetitionFeature {
         /// People you blocked, newest first; nil until Account loads them.
         var blockedPeople: [AuthenticatedProfile]?
         var unblocksInFlight: Set<UUID> = []
-        var unblockFailed = false
+        /// The person whose last Unblock failed; the error shows in their row.
+        var unblockFailed: UUID?
 
         init(
             publication: CompetitionPublication? = nil,
@@ -593,7 +594,7 @@ struct CompetitionFeature {
                 }
 
             case .blockedPeopleRequested:
-                state.unblockFailed = false
+                state.unblockFailed = nil
                 return .run { send in
                     await send(.blockedPeopleResponse(
                         try? await competitionClient.loadBlockedProfiles()
@@ -610,7 +611,7 @@ struct CompetitionFeature {
                 guard state.unblocksInFlight.insert(id).inserted else {
                     return .none
                 }
-                state.unblockFailed = false
+                state.unblockFailed = nil
                 // Not cancellable: the server call finishes.
                 return .run { send in
                     let succeeded = (try? await competitionClient.unblock(id)) != nil
@@ -623,7 +624,7 @@ struct CompetitionFeature {
                 if succeeded {
                     state.blockedPeople?.removeAll { $0.id == id }
                 } else {
-                    state.unblockFailed = true
+                    state.unblockFailed = id
                 }
                 return .none
 
@@ -852,7 +853,7 @@ struct CompetitionFeature {
                 state.challengeLinkResetFailed = false
                 state.blockedPeople = nil
                 state.unblocksInFlight = []
-                state.unblockFailed = false
+                state.unblockFailed = nil
                 return .concatenate(
                     .merge(
                         .cancel(id: CancelID.publications),

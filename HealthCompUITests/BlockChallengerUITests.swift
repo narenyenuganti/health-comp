@@ -76,9 +76,10 @@ final class BlockChallengerUITests: XCTestCase {
         XCTAssertEqual(unblock.identifier, "account.blocked.unblock")
         XCTAssertEqual(app.buttons.matching(identifier: "account.blocked.unblock").count, 1)
         XCTAssertTrue(app.staticTexts["BLOCKED"].exists)
-        XCTAssertTrue(app.staticTexts["Alex"].exists)
         // The initial is decoration; VoiceOver reads the name once.
-        XCTAssertFalse(app.staticTexts["A"].exists)
+        let row = app.cells.containing(.button, identifier: "account.blocked.unblock").firstMatch
+        XCTAssertTrue(row.staticTexts["Alex"].exists)
+        XCTAssertEqual(row.staticTexts.matching(NSPredicate(format: "label == %@", "A")).count, 0)
         let footer = app.staticTexts[Self.footer]
         scrollToElement(footer)
         XCTAssertFalse(element("account.blocked.error").exists)
@@ -223,13 +224,20 @@ final class BlockChallengerUITests: XCTestCase {
 
         scrollToElement(longUnblock)
         longUnblock.tap()
-        XCTAssertTrue(waitFor(longUnblock, "isEnabled == false", timeout: 1))
-        XCTAssertTrue(morganUnblock.isEnabled)
+        // Saving: VoiceOver hears it, and a second tap does nothing.
+        XCTAssertTrue(waitFor(longUnblock, "value == 'Unblocking'", timeout: 1))
+        shot("account-unblocking")
+        longUnblock.tap()
+        XCTAssertEqual(morganUnblock.value as? String ?? "", "")
         let error = element("account.blocked.error")
         XCTAssertTrue(error.waitForExistence(timeout: 5))
         XCTAssertEqual(error.label, "Couldn’t unblock. Check your connection and try again.")
+        XCTAssertEqual(app.descendants(matching: .any).matching(identifier: "account.blocked.error").count, 1)
+        // In Alexandria's row, under her Unblock, above Morgan.
+        XCTAssertGreaterThanOrEqual(error.frame.minY, longUnblock.frame.maxY - 1)
+        XCTAssertLessThan(error.frame.maxY, morganUnblock.frame.minY)
         XCTAssertTrue(longUnblock.exists)
-        XCTAssertTrue(waitFor(longUnblock, "isEnabled == true", timeout: 2))
+        XCTAssertTrue(waitFor(longUnblock, "value == nil OR value == ''", timeout: 2))
 
         // The next Unblock clears the error at once.
         scrollToElement(morganUnblock)
@@ -334,6 +342,8 @@ final class BlockChallengerUITests: XCTestCase {
                 shot("account-blocked-\(suffix)")
                 try audit("account-blocked-\(suffix)")
                 longUnblock.tap()
+                XCTAssertTrue(waitFor(longUnblock, "value == 'Unblocking'", timeout: 1))
+                shot("account-unblocking-\(suffix)")
                 let unblockError = element("account.blocked.error")
                 XCTAssertTrue(unblockError.waitForExistence(timeout: 5))
                 scrollToElement(unblockError)
