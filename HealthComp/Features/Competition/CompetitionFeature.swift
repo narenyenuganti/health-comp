@@ -612,11 +612,16 @@ struct CompetitionFeature {
                     return .none
                 }
                 state.unblockFailed = nil
+                // A list load already running may have read before this
+                // unblock and would bring the row back, so it's dropped.
                 // Not cancellable: the server call finishes.
-                return .run { send in
-                    let succeeded = (try? await competitionClient.unblock(id)) != nil
-                    await send(.unblockFinished(id, succeeded: succeeded))
-                }
+                return .merge(
+                    .cancel(id: CancelID.blockedPeople),
+                    .run { send in
+                        let succeeded = (try? await competitionClient.unblock(id)) != nil
+                        await send(.unblockFinished(id, succeeded: succeeded))
+                    }
+                )
 
             case let .unblockFinished(id, succeeded):
                 // stop clears the set, so a late result never marks the next account.
