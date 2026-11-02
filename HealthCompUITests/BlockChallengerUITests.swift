@@ -338,7 +338,7 @@ final class BlockChallengerUITests: XCTestCase {
                 let longUnblock = app.buttons["Unblock \(Self.longName)"]
                 scrollToElement(longUnblock)
                 shot("account-blocked-\(suffix)")
-                try audit("account-blocked-\(suffix)")
+                try audit("account-blocked-\(suffix)", region: blockedSection())
                 longUnblock.tap()
                 XCTAssertTrue(eventually { longUnblock.value as? String == "Unblocking" })
                 shot("account-unblocking-\(suffix)")
@@ -346,7 +346,7 @@ final class BlockChallengerUITests: XCTestCase {
                 XCTAssertTrue(unblockError.waitForExistence(timeout: 5))
                 scrollToElement(unblockError)
                 shot("account-blocked-error-\(suffix)")
-                try audit("account-blocked-error-\(suffix)")
+                try audit("account-blocked-error-\(suffix)", region: blockedSection())
 
                 launch(.blockClaim, arguments: arguments, waitForHome: false)
                 let claimDecline = app.buttons["competition.claim.decline"]
@@ -469,6 +469,16 @@ final class BlockChallengerUITests: XCTestCase {
         XCTAssertFalse(element("account.blocked.error").exists, file: file, line: line)
     }
 
+    /// From the BLOCKED header to the footer, or to the screen's edges.
+    private func blockedSection() -> CGRect {
+        let screen = app.windows.firstMatch.frame
+        let header = app.staticTexts["BLOCKED"]
+        let footer = app.staticTexts[Self.footer]
+        let top = header.exists ? header.frame.minY : screen.minY
+        let bottom = footer.exists ? footer.frame.maxY : screen.maxY
+        return CGRect(x: screen.minX, y: top, width: screen.width, height: max(0, bottom - top))
+    }
+
     /// Polls every 0.1 s. XCTNSPredicateExpectation checks about once a
     /// second, too slow for a 1.5 s in-flight state.
     private func eventually(timeout: TimeInterval = 1.2, _ condition: () -> Bool) -> Bool {
@@ -488,18 +498,21 @@ final class BlockChallengerUITests: XCTestCase {
     }
 
     /// Layout and labelling audits. Contrast is left to the existing matrix.
-    /// A row cut off by the screen edge reads as clipped text, so only
-    /// elements fully on screen count; skipped ones are attached.
-    private func audit(_ name: String) throws {
+    /// Only elements fully on screen and inside `region` (by default the
+    /// screen) count: a row cut off by the screen edge reads as clipped
+    /// text, and Account's older sections have their own matrix. Skipped
+    /// issues are attached.
+    private func audit(_ name: String, region: CGRect? = nil) throws {
         try XCTContext.runActivity(named: "audit \(name)") { activity in
             let screen = app.windows.firstMatch.frame
+            let region = region ?? screen
             var skipped: [String] = []
             try app.performAccessibilityAudit(
                 for: [.textClipped, .hitRegion, .sufficientElementDescription]
             ) { issue in
-                guard let element = issue.element, !screen.contains(element.frame) else {
-                    return false
-                }
+                guard let element = issue.element else { return false }
+                let frame = element.frame
+                if screen.contains(frame), region.intersects(frame) { return false }
                 skipped.append("\(issue.compactDescription): \(element.debugDescription)")
                 return true
             }
