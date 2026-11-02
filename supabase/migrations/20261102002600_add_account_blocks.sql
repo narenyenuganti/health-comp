@@ -65,6 +65,11 @@ begin
   perform 1 from public.profiles p
   where p.id in (sender_profile_id, caller_profile_id)
   order by p.id for no key update;
+  -- A deletion that committed while this waited has already purged blocks.
+  if not exists (select 1 from public.profiles p
+    where p.id = caller_profile_id and p.state = 'active') then
+    raise exception 'active_profile_required' using errcode = '42501';
+  end if;
   -- After the locks, so a create that waited on them is seen as pending.
   decision_time := pg_catalog.clock_timestamp();
   insert into private.account_blocks (blocker_profile_id, blocked_profile_id)

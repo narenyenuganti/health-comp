@@ -6,7 +6,7 @@ export LC_ALL=C
 script_dir=$(CDPATH='' cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 repo=$(CDPATH='' cd -- "$script_dir/.." && pwd)
 image='public.ecr.aws/supabase/postgres@sha256:99b1729aeb0bac314445024fc149fbd39306170b61dd50800ccf180327ab3459'
-manifest_hash='735f0c11a5c52e4e7811ae85feab31b588896ac533c1fd9478e9367b0991dc93'
+manifest_hash='0f4e7d38cc3aa1e4231b744a2bb14bc18c5996c4fbf5589f2a2c85a8896f1e4c'
 checks=/opt/healthcomp-recovery-checks
 fail() { printf 'migrated_snapshot_test: %s\n' "$1" >&2; exit 1; }
 mode=snapshot
