@@ -27,6 +27,19 @@ enum MultiUserCompetitionTestLabScenario:
     /// A challenge link opened before Health is set up, through the real
     /// Home flow.
     case healthOnboardingClaim = "health-onboarding-claim"
+    /// A real account's challenge to you: Decline, Decline and Block, ••• Block.
+    case incomingChallenge = "incoming-challenge"
+    /// Home and Account through the real app root: block from a challenge,
+    /// then Unblock. Nobody is blocked yet.
+    case block
+    /// The same, with two people already blocked.
+    case blockedAccount = "blocked-account"
+    /// The same, with Naren's challenge link opened in the claim sheet.
+    case blockClaim = "block-claim"
+    /// Match screens with a nudge to send, run through Home's own reducer.
+    case nudge
+    /// The same matches published as the simulated fixture: never a nudge.
+    case nudgeSimulated = "nudge-simulated"
     /// Live matches where you're behind, level or ahead: the Today page's
     /// what-it-takes panel in each state.
     case whatItTakes = "what-it-takes"
@@ -153,6 +166,14 @@ struct MultiUserCompetitionTestLabRootView: View {
             )
         case .healthOnboardingClaim:
             MultiUserCompetitionPreHealthClaimTestLabView()
+        case .incomingChallenge:
+            MultiUserCompetitionIncomingChallengeTestLabView()
+        case .block, .blockedAccount, .blockClaim:
+            MultiUserCompetitionBlockTestLabView(scenario: configuration.scenario)
+        case .nudge:
+            MultiUserCompetitionNudgeTestLabView(source: .remoteParticipants)
+        case .nudgeSimulated:
+            MultiUserCompetitionNudgeTestLabView(source: .simulatedFixture)
         }
     }
 }
@@ -184,6 +205,7 @@ private struct MultiUserCompetitionSharingTestLabView: View {
     @State private var archivedIDs: Set<CompetitionID> = []
     @State private var rematchState: CompetitionFeature.CompetitionRematchState = .available
     @State private var pastedInvitationStatus = "Not checked"
+    @State private var labNudges: [CompetitionID: CompetitionFeature.NudgeStatus] = [:]
 
     var body: some View {
         VStack(spacing: 0) {
@@ -292,7 +314,10 @@ private struct MultiUserCompetitionSharingTestLabView: View {
             case .scheduled, .active, .endsToday, .tallying:
                 CompetitionDetailView(
                     competition: competition,
-                    source: .remoteParticipants
+                    source: .remoteParticipants,
+                    nudge: CompetitionNudge(status: labNudges[id], send: {
+                        labNudges[id] = .sent(MultiUserCompetitionTestLabFixtures.labNow)
+                    })
                 )
             case .completed, .archived:
                 CompetitionResultView(
@@ -422,7 +447,9 @@ private struct MultiUserCompetitionClaimTestLabView: View {
         case .offlineClaim: .retryable
         case .sharing, .sharingCustomScheme, .coldClaim, .warmClaim,
              .signedOutClaim, .challengeLink, .account, .welcome, .welcomeChallenge,
-             .healthOnboarding, .healthOnboardingChallenge, .healthOnboardingClaim, .whatItTakes:
+             .healthOnboarding, .healthOnboardingChallenge, .healthOnboardingClaim,
+             .incomingChallenge, .block, .blockedAccount, .blockClaim,
+             .nudge, .nudgeSimulated, .whatItTakes:
             .ready
         }
         _status = State(initialValue: initialStatus)
@@ -442,6 +469,7 @@ private struct MultiUserCompetitionClaimTestLabView: View {
                     accept: accept,
                     notNow: { outcome = .notNow },
                     decline: { outcome = .declined },
+                    block: { outcome = .declined },
                     retry: { status = .ready },
                     dismiss: { outcome = .dismissed }
                 )
@@ -549,6 +577,300 @@ private struct MultiUserCompetitionPreHealthClaimTestLabView: View {
     }
 }
 
+/// Alex's challenge to you, as a real account: the outcome stands in for the server.
+private struct MultiUserCompetitionIncomingChallengeTestLabView: View {
+    @State private var outcome: String?
+
+    var body: some View {
+        NavigationStack {
+            if let outcome {
+                Text(outcome)
+                    .accessibilityIdentifier("multiuser.incoming.outcome")
+            } else {
+                CompetitionInviteView(
+                    competition: MultiUserCompetitionTestLabFixtures.incomingChallenge,
+                    source: .remoteParticipants,
+                    isCommandInFlight: false,
+                    link: nil,
+                    send: { action in
+                        switch action {
+                        case .declineTapped: outcome = "Declined"
+                        case .blockTapped: outcome = "Declined and blocked"
+                        default: break
+                        }
+                    }
+                )
+            }
+        }
+        .accessibilityIdentifier("multiuser.incoming.root")
+    }
+}
+
+/// Blocking through the app's own root, Home and Account reducers; only the
+/// server is a stand-in (see `MultiUserCompetitionBlockTestLabServer`).
+private struct MultiUserCompetitionBlockTestLabView: View {
+    @State private var mainStore: StoreOf<MainTabFeature>
+    @State private var accountStore: StoreOf<AccountFeature>
+
+    init(scenario: MultiUserCompetitionTestLabScenario) {
+        typealias Fixtures = MultiUserCompetitionTestLabFixtures
+        let hub = LocalCompetitionPublicationHub()
+        let server = MultiUserCompetitionBlockTestLabServer(
+            hub: hub,
+            seeded: scenario == .blockedAccount
+        )
+        var state = MainTabFeature.State()
+        state.competition.ownProfile = AuthenticatedProfile(
+            id: Fixtures.ownProfileID,
+            displayName: "Beta Alice"
+        )
+        let claims = scenario == .blockClaim
+        _mainStore = State(initialValue: Store(initialState: state) {
+            MainTabFeature()
+        } withDependencies: {
+            $0.competitionClient = CompetitionClient(
+                start: {
+                    let stream = hub.stream()
+                    server.publish()
+                    return stream
+                },
+                updates: { hub.stream() },
+                reconcileAll: { _ in server.publish() },
+                accept: { _ in server.publish() },
+                decline: { await server.close($0, block: false) },
+                archive: { _ in server.publish() },
+                rematch: { _ in server.publish() },
+                reinvite: { server.publish() },
+                waitUntil: { _ in },
+                stop: { hub.finish() },
+                block: { await server.close($0, block: true) },
+                loadBlockedProfiles: { try await server.blockedProfiles() },
+                unblock: { try await server.unblock($0) },
+                previewInvite: { _ in Fixtures.claimPreview },
+                loadChallengeLinkCode: {
+                    CompetitionChallengeLinkCode(rawValue: Fixtures.ownLinkCode)!
+                }
+            )
+            $0.competitionInviteLinkClient.makeChallengeLink = {
+                URL(string: "https://invites.ui.healthcomp.test/c/\($0.rawValue)")
+            }
+            $0.competitionRoutingClient = CompetitionRoutingClient(
+                routes: {
+                    AsyncStream {
+                        if claims {
+                            let token = CompetitionInviteClaimToken(
+                                rawValue: String(repeating: "B", count: 43)
+                            )!
+                            $0.yield(CompetitionRouteEnvelope(sequence: 1, route: .claimInvite(token)))
+                        }
+                    }
+                },
+                enqueue: { _ in },
+                consume: { _ in }
+            )
+            $0.permissionOnboardingClient = .inert
+            $0.date = .constant(Fixtures.labNow)
+        })
+        _accountStore = State(initialValue: Store(
+            initialState: AccountFeature.State(mode: .authenticated, displayName: "Beta Alice")
+        ) {
+            AccountFeature()
+        } withDependencies: {
+            $0.authenticationClient = .testValue
+        })
+    }
+
+    var body: some View {
+        AuthenticatedRootView(mainStore: mainStore, accountStore: accountStore)
+            .accessibilityIdentifier("multiuser.block.root")
+    }
+}
+
+/// Alex's block takes 2 s, so the disabled screen can be seen. Sam's first
+/// block and Naren's first claim-sheet block fail. Alexandria's first
+/// Unblock fails; every Unblock takes 1.5 s.
+private final class MultiUserCompetitionBlockTestLabServer: @unchecked Sendable {
+    typealias Fixtures = MultiUserCompetitionTestLabFixtures
+    private let hub: LocalCompetitionPublicationHub
+    private let lock = NSLock()
+    private var revision: UInt64 = 0
+    private var closed: Set<CompetitionID>
+    private var rejected: Set<CompetitionID> = []
+    private var blockCalls: [CompetitionID: Int] = [:]
+    private var unblockCalls: [UUID: Int] = [:]
+    /// Newest first.
+    private var blocked: [AuthenticatedProfile]
+
+    init(hub: LocalCompetitionPublicationHub, seeded: Bool) {
+        self.hub = hub
+        // A block declines the pending challenge, so a seeded block has none.
+        closed = seeded ? [Fixtures.blockLongNameID] : []
+        blocked = seeded
+            ? [Fixtures.blockSender(Fixtures.blockLongNameID)!, Fixtures.blockedMorgan]
+            : []
+    }
+
+    @discardableResult
+    func publish() -> LocalCompetitionPublication {
+        // The revision and its state move together, so a newer revision is
+        // always the newer state even when two publishes race.
+        let publication = lock.withLock {
+            revision += 1
+            return Fixtures.blockPublication(revision: revision, closed: closed, rejected: rejected)
+        }
+        hub.publish(publication)
+        return publication
+    }
+
+    func close(_ id: CompetitionID, block: Bool) async -> LocalCompetitionPublication {
+        let call = lock.withLock {
+            rejected.remove(id)
+            blockCalls[id, default: 0] += block ? 1 : 0
+            return blockCalls[id] ?? 0
+        }
+        if block, id == Fixtures.blockAlexID {
+            try? await Task.sleep(for: .seconds(2))
+        }
+        if block, call == 1, id == Fixtures.blockSamID || id == Fixtures.blockClaimID {
+            try? await Task.sleep(for: .seconds(1))
+            lock.withLock { _ = rejected.insert(id) }
+            return publish()
+        }
+        lock.withLock {
+            closed.insert(id)
+            if block, let sender = Fixtures.blockSender(id) {
+                blocked.removeAll { $0.id == sender.id }
+                blocked.insert(sender, at: 0)
+            }
+        }
+        return publish()
+    }
+
+    func blockedProfiles() async throws -> [AuthenticatedProfile] {
+        try await Task.sleep(for: .milliseconds(300))
+        return lock.withLock { blocked }
+    }
+
+    func unblock(_ id: UUID) async throws {
+        try await Task.sleep(for: .seconds(1.5))
+        let longName = Fixtures.blockSender(Fixtures.blockLongNameID)?.id
+        try lock.withLock {
+            unblockCalls[id, default: 0] += 1
+            if id == longName, unblockCalls[id] == 1 {
+                throw CompetitionRemoteFailure.operationFailed
+            }
+            blocked.removeAll { $0.id == id }
+        }
+    }
+}
+
+/// Real matches with stale scores, through Home's own reducer and match
+/// screens. Only the server is a stand-in; each person answers a nudge
+/// differently (see `nudge(_:)`).
+private struct MultiUserCompetitionNudgeTestLabView: View {
+    @State private var store: StoreOf<MainTabFeature>
+
+    init(source: CompetitionPublicationSource) {
+        typealias Fixtures = MultiUserCompetitionTestLabFixtures
+        let hub = LocalCompetitionPublicationHub()
+        let server = MultiUserCompetitionNudgeTestLabServer(hub: hub, source: source)
+        var state = MainTabFeature.State()
+        // Sat 8:00 PM here is Sun noon in Tokyo, the match's zone: still
+        // today there, so the confirmation shows.
+        state.competition.nudges[Fixtures.nudgeKenjiID] = .sent(
+            Fixtures.labNow.addingTimeInterval(-5 * 3_600)
+        )
+        _store = State(initialValue: Store(initialState: state) {
+            MainTabFeature()
+        } withDependencies: {
+            $0.competitionClient = CompetitionClient(
+                start: {
+                    let stream = hub.stream()
+                    server.publish()
+                    return stream
+                },
+                updates: { hub.stream() },
+                reconcileAll: { _ in server.publish() },
+                accept: { _ in server.publish() },
+                decline: { _ in server.publish() },
+                archive: { _ in server.publish() },
+                rematch: { _ in server.publish() },
+                reinvite: { server.publish() },
+                waitUntil: { _ in },
+                stop: { hub.finish() },
+                nudge: { try await server.nudge($0) }
+            )
+            $0.competitionRoutingClient = CompetitionRoutingClient(
+                routes: { AsyncStream { _ in } },
+                enqueue: { _ in },
+                consume: { _ in }
+            )
+            $0.permissionOnboardingClient = .inert
+            $0.date = .constant(Fixtures.labNow)
+        })
+    }
+
+    var body: some View {
+        MainTabView(store: store)
+            .accessibilityIdentifier("multiuser.nudge.root")
+    }
+}
+
+private final class MultiUserCompetitionNudgeTestLabServer: @unchecked Sendable {
+    private let hub: LocalCompetitionPublicationHub
+    private let source: CompetitionPublicationSource
+    private let lock = NSLock()
+    private var revision: UInt64 = 0
+    private var calls: [CompetitionID: Int] = [:]
+
+    init(hub: LocalCompetitionPublicationHub, source: CompetitionPublicationSource) {
+        self.hub = hub
+        self.source = source
+    }
+
+    /// Every reconcile publishes a newer revision of the same matches.
+    @discardableResult
+    func publish() -> LocalCompetitionPublication {
+        let next = lock.withLock { () -> UInt64 in
+            revision += 1
+            return revision
+        }
+        let publication = MultiUserCompetitionTestLabFixtures.nudgePublication(
+            revision: next,
+            source: source
+        )
+        hub.publish(publication)
+        return publication
+    }
+
+    func nudge(_ id: CompetitionID) async throws -> Date {
+        typealias Fixtures = MultiUserCompetitionTestLabFixtures
+        let call = lock.withLock { () -> Int in
+            calls[id, default: 0] += 1
+            return calls[id]!
+        }
+        switch id {
+        case Fixtures.nudgeRileyID, Fixtures.nudgeMorganID:
+            // Long enough to see the button disabled while it sends.
+            try await Task.sleep(for: .seconds(4))
+            return Fixtures.labNow
+        case Fixtures.nudgeSamID where call == 1:
+            try await Task.sleep(for: .seconds(1))
+            throw CompetitionRemoteFailure.operationFailed
+        case Fixtures.nudgeAveryID where call == 1:
+            throw CompetitionRemoteFailure.operationFailed
+        case Fixtures.nudgeCaseyID, Fixtures.nudgeAveryID:
+            throw CompetitionRemoteFailure.forbidden
+        case Fixtures.nudgeLongNameID:
+            // The server's clock is already in the next match day (Mon
+            // 12:01 AM); this iPhone's last projection is older.
+            return Fixtures.labNow.addingTimeInterval(23 * 3_600 + 60)
+        default:
+            return Fixtures.labNow
+        }
+    }
+}
+
 /// Someone's challenge link opened on this iPhone: "Challenge Maya?".
 private struct MultiUserCompetitionChallengeLinkTestLabView: View {
     @State private var status: CompetitionFeature.ChallengeSheetStatus = .ready
@@ -581,6 +903,12 @@ private struct MultiUserCompetitionAccountTestLabView: View {
     @State private var challengeURL = URL(string: "https://invites.ui.healthcomp.test/c/Xb3kP9qL2mN8vR4tY6wZ1a")
     @State private var muted = [
         AccountMutedPerson(id: "remote-opponent:v1:hermes", name: "Hermes"),
+    ]
+    @State private var blocked = [
+        AuthenticatedProfile(
+            id: UUID(uuidString: "a1000000-0000-4000-8000-0000000000b1")!,
+            displayName: "Alex"
+        ),
     ]
     let store: StoreOf<AccountFeature>
     let hasPendingChallenge: Bool
@@ -637,6 +965,13 @@ private struct MultiUserCompetitionAccountTestLabView: View {
                         reset: {
                             challengeURL = URL(string: "https://invites.ui.healthcomp.test/c/Qm7tR2vX9pL4kN8wB3cY6z")
                         }
+                    ),
+                    blockedPeople: AccountBlockedPeople(
+                        people: blocked,
+                        unblocking: [],
+                        unblockFailed: nil,
+                        load: {},
+                        unblock: { id in blocked.removeAll { $0.id == id } }
                     )
                 )
             }
@@ -696,6 +1031,129 @@ private enum MultiUserCompetitionTestLabFixtures {
         UUID(uuidString: "A1000000-0000-4000-8000-00000000000D")!
     )
     static let longName = "Maximiliana Alexandrovna Featherstonehaugh-Montgomery Wellington"
+    static let nudgeJordanID = nudgeID(1)
+    static let nudgeRileyID = nudgeID(2)
+    static let nudgeSamID = nudgeID(3)
+    static let nudgeCaseyID = nudgeID(4)
+    static let nudgeMorganID = nudgeID(5)
+    static let nudgeAveryID = nudgeID(6)
+    static let nudgeQuinnID = nudgeID(7)
+    static let nudgePriyaID = nudgeID(8)
+    static let nudgeLongNameID = nudgeID(9)
+    static let nudgeKenjiID = nudgeID(10)
+    static let incomingID = CompetitionID(
+        UUID(uuidString: "A1000000-0000-4000-8000-00000000000B")!
+    )
+    static let incomingChallenge = presentation(
+        id: incomingID,
+        opponentName: "Alex",
+        lifecycle: .pending(
+            direction: .incoming,
+            createdAt: labNow,
+            expiresAt: labNow.addingTimeInterval(20 * 60 * 60)
+        ),
+        userPoints: 0,
+        opponentPoints: 0,
+        days: [],
+        currentDayOrdinal: nil,
+        terminal: nil
+    )
+    static let blockAlexID = blockID(1)
+    static let blockSamID = blockID(2)
+    static let blockLongNameID = blockID(3)
+    static let blockPriyaID = blockID(4)
+    static let blockJordanID = blockID(5)
+    /// The claim sheet's challenge: `claimPreview` is this one.
+    static let blockClaimID = pendingID
+    static let blockedMorgan = AuthenticatedProfile(
+        id: UUID(uuidString: "c1000000-0000-4000-8000-0000000000b4")!,
+        displayName: "Morgan"
+    )
+
+    /// Who sent each incoming challenge in the block lab.
+    static func blockSender(_ id: CompetitionID) -> AuthenticatedProfile? {
+        func profile(_ suffix: String, _ name: String) -> AuthenticatedProfile {
+            AuthenticatedProfile(
+                id: UUID(uuidString: "c1000000-0000-4000-8000-0000000000\(suffix)")!,
+                displayName: name
+            )
+        }
+        switch id {
+        case blockAlexID: return profile("b1", "Alex")
+        case blockSamID: return profile("b2", "Sam")
+        case blockLongNameID: return profile("b3", "Alexandria Montgomery-Featherstonehaugh")
+        case blockClaimID: return claimPreview.sender
+        default: return nil
+        }
+    }
+
+    private static func blockID(_ n: Int) -> CompetitionID {
+        CompetitionID(UUID(uuidString: String(format: "C1000000-0000-4000-8000-%012d", n))!)
+    }
+
+    /// Four challenges to you, one from you and a live match. A closed
+    /// incoming challenge leaves Home, as `list_challenges` drops it.
+    static func blockPublication(
+        revision: UInt64,
+        closed: Set<CompetitionID>,
+        rejected: Set<CompetitionID>
+    ) -> LocalCompetitionPublication {
+        func pending(
+            _ id: CompetitionID,
+            _ name: String,
+            _ direction: InvitationDirection,
+            sentAgo hours: Double
+        ) -> LocalCompetitionPresentation {
+            presentation(
+                id: id,
+                opponentName: name,
+                lifecycle: .pending(
+                    direction: direction,
+                    createdAt: labNow.addingTimeInterval(-hours * 3_600),
+                    expiresAt: labNow.addingTimeInterval((24 - hours) * 3_600)
+                ),
+                userPoints: 0,
+                opponentPoints: 0,
+                days: [],
+                currentDayOrdinal: nil,
+                terminal: nil
+            )
+        }
+        let incoming = [
+            pending(blockAlexID, "Alex", .incoming, sentAgo: 1),
+            pending(blockSamID, "Sam", .incoming, sentAgo: 2),
+            pending(blockLongNameID, "Alexandria Montgomery-Featherstonehaugh", .incoming, sentAgo: 3),
+            pending(blockClaimID, "Naren", .incoming, sentAgo: 4),
+        ].filter { !closed.contains($0.id) }
+        let competitions = incoming + [
+            pending(blockPriyaID, "Priya", .outgoing, sentAgo: 5),
+            presentation(
+                id: blockJordanID,
+                opponentName: "Jordan",
+                lifecycle: .active(dayOrdinal: 3),
+                userPoints: 1_450,
+                opponentPoints: 1_440,
+                days: activeDays(),
+                currentDayOrdinal: 3,
+                terminal: nil
+            ),
+        ]
+        return LocalCompetitionPublication(
+            publicationRevision: revision,
+            dashboard: LocalCompetitionDashboard(
+                competitions: competitions,
+                awards: [],
+                issues: rejected
+                    .sorted { $0.rawValue.uuidString < $1.rawValue.uuidString }
+                    .map { .commandRejected($0) },
+                hiddenTerminalCompetitionCount: 0
+            ),
+            evaluatedAt: evaluatedAt,
+            timeZoneIdentifier: "America/Los_Angeles",
+            source: .remoteParticipants
+        )
+    }
+
     static let samLinkCode = "SamSamSamSamSamSamSam1"
     static let ownLinkCode = "OwnOwnOwnOwnOwnOwnOwn1"
     static let labNow = Date(timeIntervalSince1970: 1_786_867_200)
@@ -744,7 +1202,9 @@ private enum MultiUserCompetitionTestLabFixtures {
             days: activeDays(startDay: 14, currentDay: 2),
             currentDayOrdinal: 2,
             terminal: nil,
-            startDay: 14
+            startDay: 14,
+            // 13 h old: Riley's match offers a nudge.
+            opponentUpdatedAt: evaluatedAt.addingTimeInterval(-46_800)
         )
         let expired = presentation(
             id: expiredID,
@@ -931,6 +1391,112 @@ private enum MultiUserCompetitionTestLabFixtures {
         )
     }
 
+    private static func nudgeID(_ n: Int) -> CompetitionID {
+        CompetitionID(UUID(uuidString: String(format: "B1000000-0000-4000-8000-%012d", n))!)
+    }
+
+    /// Ten real matches, one per nudge state. Now is Sun Aug 16, 1:00 AM
+    /// in Los Angeles (5:00 PM in Tokyo).
+    static func nudgePublication(
+        revision: UInt64,
+        source: CompetitionPublicationSource
+    ) -> LocalCompetitionPublication {
+        let hour: TimeInterval = 3_600
+        func live(
+            _ id: CompetitionID,
+            _ name: String,
+            day: Int,
+            updatedAgo: TimeInterval?,
+            zone: String = "America/Los_Angeles"
+        ) -> LocalCompetitionPresentation {
+            // Today is Aug 16 in both zones.
+            let startDay = 17 - day
+            return presentation(
+                id: id,
+                opponentName: name,
+                lifecycle: day == 7 ? .endsToday : .active(dayOrdinal: day),
+                userPoints: 1_020,
+                // Never uploaded: no score either.
+                opponentPoints: updatedAgo == nil ? 0 : 990,
+                days: activeDays(
+                    startDay: startDay,
+                    currentDay: day,
+                    zone: zone,
+                    opponentUploaded: updatedAgo != nil
+                ),
+                currentDayOrdinal: day,
+                terminal: nil,
+                startDay: startDay,
+                opponentUpdatedAt: updatedAgo.map { evaluatedAt.addingTimeInterval(-$0) },
+                zone: zone
+            )
+        }
+        func tallying(
+            _ id: CompetitionID,
+            _ name: String,
+            _ attention: LocalCompetitionTallyAttention
+        ) -> LocalCompetitionPresentation {
+            presentation(
+                id: id,
+                opponentName: name,
+                lifecycle: .tallying(startedAt: evaluatedAt.addingTimeInterval(-17 * hour)),
+                userPoints: 3_400,
+                opponentPoints: 3_345,
+                days: activeDays(startDay: 9, currentDay: 7),
+                currentDayOrdinal: nil,
+                terminal: nil,
+                startDay: 9,
+                opponentUpdatedAt: evaluatedAt.addingTimeInterval(-20 * hour),
+                tally: LocalCompetitionTallyPresentation(
+                    attention: attention,
+                    consecutiveStableCompleteReads: 0,
+                    stabilityStart: nil,
+                    bestAvailableDeadline: evaluatedAt.addingTimeInterval(31 * hour)
+                )
+            )
+        }
+        let competitions = [
+            live(nudgeJordanID, "Jordan", day: 3, updatedAgo: 1 * hour),
+            live(nudgeRileyID, "Riley", day: 2, updatedAgo: 13 * hour),
+            // Never uploaded: stale since Day 1 began.
+            live(nudgeSamID, "Sam", day: 2, updatedAgo: nil),
+            live(nudgeCaseyID, "Casey", day: 7, updatedAgo: 20 * hour),
+            tallying(nudgeMorganID, "Morgan", .awaitingOpponentCheck),
+            tallying(nudgeAveryID, "Avery", .opponentPlanUnavailable),
+            tallying(nudgeQuinnID, "Quinn", .awaitingStability),
+            presentation(
+                id: nudgePriyaID,
+                opponentName: "Priya",
+                lifecycle: .scheduled,
+                userPoints: 0,
+                opponentPoints: 0,
+                days: [],
+                currentDayOrdinal: nil,
+                terminal: nil,
+                startDay: 18
+            ),
+            live(
+                nudgeLongNameID,
+                "Alexandria Montgomery-Featherstonehaugh",
+                day: 2,
+                updatedAgo: 15 * hour
+            ),
+            live(nudgeKenjiID, "Kenji", day: 2, updatedAgo: 14 * hour, zone: "Asia/Tokyo"),
+        ]
+        return LocalCompetitionPublication(
+            publicationRevision: revision,
+            dashboard: LocalCompetitionDashboard(
+                competitions: competitions,
+                awards: [],
+                issues: [],
+                hiddenTerminalCompetitionCount: 0
+            ),
+            evaluatedAt: evaluatedAt,
+            timeZoneIdentifier: "America/Los_Angeles",
+            source: source
+        )
+    }
+
     /// One live match per what-it-takes state, all under real-match scoring
     /// (200% per ring). The Today day is the lab clock's day, Aug 16.
     static func whatItTakesPublication() -> LocalCompetitionPublication {
@@ -1077,9 +1643,11 @@ private enum MultiUserCompetitionTestLabFixtures {
         startDay: Int = 13,
         opponentIdentity: String? = nil,
         refreshedAt: Date? = nil,
-        opponentUpdatedAt: Date? = nil
+        opponentUpdatedAt: Date? = nil,
+        zone: String = "America/Los_Angeles",
+        tally: LocalCompetitionTallyPresentation? = nil
     ) -> LocalCompetitionPresentation {
-        let schedule = schedule(startDay: startDay)
+        let schedule = schedule(startDay: startDay, zone: zone)
         return LocalCompetitionPresentation(
             id: id,
             ownerDisplayName: "Beta Alice",
@@ -1103,10 +1671,10 @@ private enum MultiUserCompetitionTestLabFixtures {
                     status: .completed
                 )
             },
-            tally: nil,
+            tally: tally,
             terminalResult: terminal,
             evaluatedAt: evaluatedAt,
-            timeZoneIdentifier: "America/Los_Angeles",
+            timeZoneIdentifier: zone,
             lastSuccessfulFullWindowRefreshAt: refreshedAt,
             opponentUpdatedAt: opponentUpdatedAt
         )
@@ -1114,10 +1682,11 @@ private enum MultiUserCompetitionTestLabFixtures {
 
     private static let evaluatedAt = Date(timeIntervalSince1970: 1_786_867_200)
 
-    private static func schedule(startDay: Int = 13) -> CompetitionSchedule {
-        let calendar = try! CompetitionCalendar(
-            timeZoneIdentifier: "America/Los_Angeles"
-        )
+    private static func schedule(
+        startDay: Int = 13,
+        zone: String = "America/Los_Angeles"
+    ) -> CompetitionSchedule {
+        let calendar = try! CompetitionCalendar(timeZoneIdentifier: zone)
         return CompetitionSchedule(
             calendar: calendar,
             startDay: try! CompetitionDay(
@@ -1152,14 +1721,16 @@ private enum MultiUserCompetitionTestLabFixtures {
 
     private static func activeDays(
         startDay: Int = 13,
-        currentDay: Int = 3
+        currentDay: Int = 3,
+        zone: String = "America/Los_Angeles",
+        opponentUploaded: Bool = true
     ) -> [LocalCompetitionDayPresentation] {
-        let schedule = schedule(startDay: startDay)
+        let schedule = schedule(startDay: startDay, zone: zone)
         let days = try! schedule.calendar.sevenDayWindow(
             startingOn: schedule.startDay
         )
-        let owner: [Double?] = [500, 520, 430, nil, nil, nil, nil]
-        let opponent: [Double?] = [480, 510, 450, nil, nil, nil, nil]
+        let owner: [Double?] = [500, 520, 430, 500, 520, 430, 500]
+        let opponent: [Double?] = [480, 510, 450, 490, 505, 440, 470]
         // Rings that score exactly the owner points with no ring over 200%,
         // so a real match could produce them.
         func rings(_ move: Double, _ exercise: Double, _ stand: Double, standGoal: Double) -> ActivitySnapshot {
@@ -1176,7 +1747,10 @@ private enum MultiUserCompetitionTestLabFixtures {
             rings(1_000, 60, 12, standGoal: 12),
             rings(1_000, 60, 12, standGoal: 10),
             rings(900, 45, 12, standGoal: 12),
-            nil, nil, nil, nil,
+            rings(1_000, 60, 12, standGoal: 12),
+            rings(1_000, 60, 12, standGoal: 10),
+            rings(900, 45, 12, standGoal: 12),
+            rings(1_000, 60, 12, standGoal: 12),
         ]
         return days.enumerated().map { offset, day in
             LocalCompetitionDayPresentation(
@@ -1186,7 +1760,8 @@ private enum MultiUserCompetitionTestLabFixtures {
                 ownerLatestAvailability: offset < currentDay
                     ? .observed
                     : .notYetOccurred,
-                opponentRevealedPoints: offset < currentDay ? opponent[offset] : nil,
+                opponentRevealedPoints: opponentUploaded && offset < currentDay
+                    ? opponent[offset] : nil,
                 ownerAcceptedSnapshot: offset < currentDay ? snapshots[offset] : nil,
                 ownerLatestSnapshot: offset < currentDay ? snapshots[offset] : nil,
                 scoringPolicy: .remoteWireV1

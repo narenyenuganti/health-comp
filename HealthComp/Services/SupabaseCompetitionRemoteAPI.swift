@@ -347,6 +347,52 @@ enum SupabaseCompetitionRemoteAPI {
             cancelCompetition: { id in
                 try await sendCompetitionCommand("cancel_competition", id, transport)
             },
+            blockChallenger: { id in
+                try await sendCompetitionCommand("block_challenger", id, transport)
+            },
+            listBlockedProfiles: {
+                let response = try await sendReadOnly(
+                    .rpc(name: "list_blocked_profiles", parameters: try encode(EmptyParameters())),
+                    transport: transport
+                )
+                return try decodeBlockedProfiles(response.data)
+            },
+            unblockProfile: { profileID in
+                try validateUUID(profileID)
+                let response = try await send(
+                    .rpc(name: "unblock_profile", parameters: try encode(
+                        ["profile_id": profileID.uuidString.lowercased()]
+                    )),
+                    transport: transport
+                )
+                guard let object = try? JSONSerialization.jsonObject(with: response.data)
+                    as? [String: Any],
+                      Set(object.keys) == ["profile_id"],
+                      (object["profile_id"] as? String).flatMap(wireUUID) == profileID
+                else {
+                    throw CompetitionRemoteFailure.serverContractMismatch
+                }
+            },
+            nudgeCompetitionParticipant: { id in
+                try validateUUID(id)
+                let response = try await send(
+                    .rpc(
+                        name: "nudge_competition_participant",
+                        parameters: try encode(ArchiveCompetitionParameters(competitionID: id))
+                    ),
+                    transport: transport
+                )
+                // Exactly `{nudged_at}`.
+                guard let object = try? JSONSerialization.jsonObject(with: response.data)
+                    as? [String: Any],
+                      Set(object.keys) == ["nudged_at"],
+                      let raw = object["nudged_at"] as? String,
+                      let nudgedAt = try? CompetitionWireCodec.date(raw)
+                else {
+                    throw CompetitionRemoteFailure.serverContractMismatch
+                }
+                return nudgedAt
+            },
             loadChallengeLinkCode: {
                 try await challengeLinkCode("get_my_challenge_link", transport)
             },
@@ -627,6 +673,7 @@ enum SupabaseCompetitionRemoteAPI {
         if !identifiers.isDisjoint(with: [
             "forbidden",
             "cancel_not_allowed",
+            "nudge_not_allowed",
             "rematch_not_allowed",
             "installation_unavailable",
             "opponent_unavailable",
@@ -740,6 +787,18 @@ enum SupabaseCompetitionRemoteAPI {
             list.closed.append(.init(competitionID: id, kind: kind, other: other, closedAt: closedAt))
         }
         return list
+    }
+
+    /// Exactly `{blocked}`, at most 200 rows; an unreadable row is skipped.
+    private static func decodeBlockedProfiles(_ data: Data) throws -> [AuthenticatedProfile] {
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              Set(object.keys) == ["blocked"],
+              let rows = object["blocked"] as? [Any],
+              rows.count <= 200
+        else {
+            throw CompetitionRemoteFailure.serverContractMismatch
+        }
+        return rows.compactMap { challengeProfile($0, idKey: "id", nameKey: "display_name") }
     }
 
     private static func challengeProfile(
