@@ -302,7 +302,8 @@ final class WhatItTakesUITests: XCTestCase {
             let bottom = window.frame.maxY - 40
             let frame = element.frame
             if frame.minY < top { return frame.minY - top - 20 }
-            if frame.height <= bottom - top { return frame.maxY > bottom ? frame.maxY - bottom + 20 : 0 }
+            // Room to spare, or the two edges can trade places step after step.
+            if frame.height <= bottom - top - 60 { return frame.maxY > bottom ? frame.maxY - bottom + 20 : 0 }
             return frame.minY > top + 80 ? frame.minY - top - 20 : 0
         }
         for _ in 0..<20 {
