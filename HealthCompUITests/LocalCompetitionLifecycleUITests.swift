@@ -420,7 +420,7 @@ final class LocalCompetitionLifecycleUITests: XCTestCase {
         XCTAssertTrue(rings.exists)
         XCTAssertLessThan(takes.frame.minY, rings.frame.minY)
         // The audit and capture only see the screen, so bring the panel into view (AX5 pushes it below).
-        bringTopIntoView(takes)
+        XCTAssertTrue(bringTopIntoView(takes), "panel under the bar")
         try app.performAccessibilityAudit(for: .textClipped)
         capture("\(prefix)-takes")
 
@@ -431,7 +431,7 @@ final class LocalCompetitionLifecycleUITests: XCTestCase {
         XCTAssertTrue(takes.waitForExistence(timeout: 3))
         XCTAssertTrue(takes.label.hasPrefix("Out of reach today"), takes.label)
         XCTAssertFalse(takes.label.contains("of Move"), takes.label)
-        bringTopIntoView(takes)
+        XCTAssertTrue(bringTopIntoView(takes), "panel under the bar")
         try app.performAccessibilityAudit(for: .textClipped)
         capture("\(prefix)-takes-out-of-reach")
     }
@@ -741,26 +741,38 @@ final class LocalCompetitionLifecycleUITests: XCTestCase {
         element.tap()
     }
 
-    /// For non-controls, where isHittable can't say whether it's on screen:
-    /// slow drags until the element's top sits just under the navigation bar.
-    /// At AX5 the lab controls fill the top half, so "on screen" must mean
-    /// below the bar, not just inside the window.
-    private func bringTopIntoView(_ element: XCUIElement) {
+    /// Slow drags until the element's top sits under the navigation bar and,
+    /// when it fits, its bottom clears the home indicator. AX5 panels can be
+    /// taller than the space left, so then the top wins.
+    @discardableResult
+    private func bringTopIntoView(_ element: XCUIElement) -> Bool {
         let window = app.windows.firstMatch
         let navigationBar = app.navigationBars.firstMatch
-        for _ in 0..<40 {
+        /// Points the content still has to move up (negative: down); 0 when placed.
+        func offset() -> CGFloat {
             let top = navigationBar.frame.maxY + 8
-            let minY = element.frame.minY
-            if minY >= top, minY <= top + 60 || element.frame.maxY <= window.frame.maxY - 40 { break }
-            window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.85))
+            let bottom = window.frame.maxY - 40
+            let frame = element.frame
+            if frame.minY < top { return frame.minY - top - 20 }
+            // Room to spare, or the two edges can trade places step after step.
+            if frame.height <= bottom - top - 60 { return frame.maxY > bottom ? frame.maxY - bottom + 20 : 0 }
+            return frame.minY > top + 80 ? frame.minY - top - 20 : 0
+        }
+        for _ in 0..<20 {
+            let move = min(180, max(-180, offset()))
+            if move == 0 { return true }
+            let height = window.frame.height
+            // Low on the screen: at AX5 the local lab controls cover the top two thirds.
+            let start: CGFloat = move > 0 ? 0.92 : 0.7
+            window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: start))
                 .press(
                     forDuration: 0.05,
-                    thenDragTo: window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: minY < top ? 0.9 : 0.8)),
+                    thenDragTo: window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: start - move / height)),
                     withVelocity: .slow,
-                    thenHoldForDuration: 0.1
+                    thenHoldForDuration: 0.2
                 )
         }
-        XCTAssertGreaterThanOrEqual(element.frame.minY, navigationBar.frame.maxY, "top under the bar")
+        return offset() == 0
     }
 
     private func scrollToElement(_ element: XCUIElement) {
