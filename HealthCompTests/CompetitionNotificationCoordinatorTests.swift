@@ -797,6 +797,112 @@ final class CompetitionNotificationCoordinatorTests: XCTestCase {
         XCTAssertFalse(operations.contains { $0.hasPrefix("post:") })
     }
 
+    func testSwitchingOffLastDayRemovesItsPendingRequestOnReconcile()
+        async throws {
+        let snapshot = try scheduledSnapshot()
+        let id = try XCTUnwrap(snapshot.competitions.first?.id)
+        let finalDay = CompetitionNotificationIdentifier.scheduled(
+            competitionID: id,
+            family: .finalDay
+        )
+        func removedPending(
+            switchedOff: Set<CompetitionNotificationChoice>
+        ) async -> [[String]] {
+            let center = StatefulNotificationCenterRecorder()
+            await center.setPending([
+                finalDay,
+                CompetitionNotificationIdentifier.scheduled(
+                    competitionID: id,
+                    family: .scheduledStart
+                ),
+            ])
+            var preferences = CompetitionNotificationPreferencesClient
+                .constant(mutedOpponentIdentities: [])
+            preferences.switchedOff = { switchedOff }
+            let coordinator = CompetitionNotificationCoordinator(
+                planner: CompetitionNotificationPlanner(policy: .coordinatorFixture),
+                notifications: center.client,
+                preferences: preferences,
+                commitDecisions: { _, _ in .noDecision }
+            )
+            await coordinator.submit(snapshot)
+            return await center.snapshot.removedPending
+        }
+
+        let allOn = await removedPending(switchedOff: [])
+        XCTAssertEqual(allOn, [])
+        let lastDayOff = await removedPending(switchedOff: [.finalDay])
+        XCTAssertEqual(lastDayOff, [[finalDay]])
+    }
+
+    func testCommitReplanHonorsSwitchedOffFamilies() async throws {
+        // Lead changes outrank close scores and the cap is one, so a replan
+        // that dropped the switches would spend the slot on the lead change.
+        var policy = CompetitionNotificationPolicy.coordinatorFixture
+        policy.isCloseScore = { _, _, _ in true }
+        policy.priority = { family in
+            switch family {
+            case .leadChange: 2
+            case .closeScore: 1
+            default: 0
+            }
+        }
+        func commit(
+            switchedOff: Set<CompetitionNotificationChoice>
+        ) async throws -> (
+            decisions: [CompetitionNotificationDurableDecision],
+            operations: [String]
+        ) {
+            let recorder = NotificationOperationRecorder()
+            let commits = DurableDecisionCommitRecorder()
+            var preferences = CompetitionNotificationPreferencesClient
+                .constant(mutedOpponentIdentities: [])
+            preferences.switchedOff = { switchedOff }
+            let coordinator = CompetitionNotificationCoordinator(
+                planner: CompetitionNotificationPlanner(policy: policy),
+                notifications: recorder.notificationClient(
+                    authorization: .authorized
+                ),
+                preferences: preferences,
+                commitDecisions: { competition, replan in
+                    let decisions = try replan(competition)
+                    await commits.append(decisions)
+                    return decisions.isEmpty ? .noDecision : .appended(decisions)
+                }
+            )
+            // An earlier opponent lead makes today's owner lead a real change.
+            await coordinator.submit(try multiDecisionSnapshot())
+            return (
+                await commits.batches.flatMap { $0 },
+                await recorder.operations
+            )
+        }
+        func emittedFamilies(
+            _ decisions: [CompetitionNotificationDurableDecision]
+        ) -> [NotificationEmissionFamily] {
+            decisions.compactMap { decision in
+                guard case let .emission(emission) = decision else { return nil }
+                return emission.record.family
+            }
+        }
+
+        // Control: with every switch on, the lead change takes the slot.
+        let allOn = try await commit(switchedOff: [])
+        XCTAssertEqual(emittedFamilies(allOn.decisions), [.leadChange])
+
+        let leadOff = try await commit(switchedOff: [.leadChange])
+        XCTAssertEqual(emittedFamilies(leadOff.decisions), [.closeScore])
+        XCTAssertTrue(leadOff.decisions.contains { decision in
+            guard case let .suppression(record) = decision else { return false }
+            return record.family == .leadChange
+                && record.disposition == .suppressed(reason: .superseded)
+        })
+        XCTAssertEqual(
+            leadOff.operations.filter { $0.hasPrefix("post:") }.count,
+            1
+        )
+    }
+
     private func resultSnapshot(
         revision: UInt64 = 9,
         lifecycle: CompetitionNotificationLifecycle = .completed

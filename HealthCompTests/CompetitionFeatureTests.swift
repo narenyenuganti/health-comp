@@ -459,6 +459,26 @@ final class CompetitionFeatureTests: XCTestCase {
     }
 
     @MainActor
+    func testNotificationChoicesChangedReconcilesNotifications() async {
+        let reconciles = LockIsolated(0)
+        var client = CompetitionReducerClientRecorder().client(
+            returning: publication(revision: 1)
+        )
+        client.reconcileNotifications = {
+            reconciles.withValue { $0 += 1 }
+        }
+        let store = TestStore(initialState: CompetitionFeature.State()) {
+            CompetitionFeature()
+        } withDependencies: {
+            $0.competitionClient = client
+        }
+
+        await store.send(.notificationChoicesChanged)
+        await store.finish()
+        XCTAssertEqual(reconciles.value, 1)
+    }
+
+    @MainActor
     func testSuccessfulMuteAfterLoadFailureClearsTheLoadFailure() async {
         let identity = LocalCompetitionIdentity.opponentIdentity
         let stored = LockIsolated<Set<String>?>(nil)

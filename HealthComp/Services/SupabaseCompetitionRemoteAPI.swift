@@ -224,10 +224,11 @@ enum SupabaseCompetitionRemoteAPI {
             },
             registerInstallation: { request in
                 // Newest call first. A server without that overload answers
-                // PGRST202 (notFound), so fall back: 5 args (reactions), then
-                // 4 (challenges), then the original 3.
+                // PGRST202 (notFound), so fall back: 6 args (muted push kinds),
+                // then 5 (reactions), 4 (challenges) and the original 3.
                 let bodies = [
                     try encodeWire(request, contract: .installationRequest),
+                    try encode(ReactionInstallationParameters(request)),
                     try encode(ChallengeInstallationParameters(request)),
                     try encode(LegacyInstallationParameters(request)),
                 ]
@@ -1056,6 +1057,30 @@ private struct ChallengeInstallationParameters: Encodable {
         case apnsToken = "apns_token"
         case environment
         case supportsChallenges = "supports_challenges"
+    }
+}
+
+/// The five-argument registration body, for servers before 20261103002800.
+private struct ReactionInstallationParameters: Encodable {
+    let installationID: String
+    let apnsToken: String
+    let environment: CompetitionInstallationEnvironment
+    let supportsChallenges = true
+    let supportsReactions: Bool
+
+    init(_ request: CompetitionInstallationRequest) {
+        installationID = request.installationID.uuidString.lowercased()
+        apnsToken = request.apnsToken
+        environment = request.environment
+        supportsReactions = request.supportsReactions
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case installationID = "installation_id"
+        case apnsToken = "apns_token"
+        case environment
+        case supportsChallenges = "supports_challenges"
+        case supportsReactions = "supports_reactions"
     }
 }
 

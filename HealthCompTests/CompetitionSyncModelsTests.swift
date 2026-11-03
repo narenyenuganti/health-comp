@@ -351,6 +351,7 @@ final class CompetitionSyncModelsTests: XCTestCase {
                 "environment": "sandbox",
                 "supports_challenges": true,
                 "supports_reactions": true,
+                "muted_push_kinds": [],
             ] as NSDictionary
         )
         let withoutReactions = try CompetitionInstallationRequest(
@@ -369,8 +370,41 @@ final class CompetitionSyncModelsTests: XCTestCase {
                 "environment": "sandbox",
                 "supports_challenges": true,
                 "supports_reactions": false,
+                "muted_push_kinds": [],
             ] as NSDictionary
         )
+        let mutingNudges = try CompetitionInstallationRequest(
+            installationID: installationID,
+            apnsToken: String(repeating: "a1", count: 32),
+            environment: .sandbox,
+            mutedPushKinds: ["nudge"]
+        )
+        XCTAssertEqual(
+            try jsonObject(
+                CompetitionWireCodec.encode(mutingNudges, contract: .installationRequest)
+            ) as? NSDictionary,
+            [
+                "installation_id": installationID.uuidString.lowercased(),
+                "apns_token": String(repeating: "a1", count: 32),
+                "environment": "sandbox",
+                "supports_challenges": true,
+                "supports_reactions": true,
+                "muted_push_kinds": ["nudge"],
+            ] as NSDictionary
+        )
+        XCTAssertThrowsError(
+            try CompetitionInstallationRequest(
+                installationID: installationID,
+                apnsToken: String(repeating: "a1", count: 32),
+                environment: .sandbox,
+                mutedPushKinds: ["lead-change"]
+            )
+        ) { error in
+            XCTAssertEqual(
+                error as? CompetitionWireContractError,
+                .serverContractMismatch
+            )
+        }
 
         let installation = try CompetitionWireCodec.decode(
             CompetitionInstallation.self,

@@ -1521,16 +1521,14 @@ final class MultiUserCompetitionUITests: XCTestCase {
         notifications.tap()
         XCTAssertTrue(app.navigationBars["Notifications"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.staticTexts["Turned off in iOS Settings"].exists)
-        let mutedHeader = app.staticTexts["MUTED"]
-        XCTAssertTrue(mutedHeader.exists)
+        XCTAssertTrue(app.staticTexts["DURING A MATCH"].exists)
         // The remote suite's audit set. `.dynamicType` flags a different
         // List element on each run here (header, name, initial), so it's
         // left to the local suite's single-screen audit, as elsewhere.
-        try app.performAccessibilityAudit(
-            for: XCUIAccessibilityAuditType.textClipped
-                .union(.hitRegion)
-                .union(.sufficientElementDescription)
-        )
+        let audit = XCUIAccessibilityAuditType.textClipped
+            .union(.hitRegion)
+            .union(.sufficientElementDescription)
+        try auditNotificationsPage(audit)
 
         app.buttons["account.notifications.settings"].tap()
         XCTAssertTrue(
@@ -1538,11 +1536,103 @@ final class MultiUserCompetitionUITests: XCTestCase {
                 .waitForExistence(timeout: 3)
         )
 
+        // Six switches, all on by default, in page order.
+        let rows: [(String, String)] = [
+            ("lead-change", "Lead changes"), ("close-score", "Close scores"),
+            ("final-day", "Last day"), ("live-activity", "Live Activity"),
+            ("reaction", "Reactions"), ("nudge", "Nudges"),
+        ]
+        for (raw, label) in rows {
+            let toggle = app.switches["account.notifications.choice.\(raw)"].firstMatch
+            scrollToElement(toggle)
+            XCTAssertTrue(toggle.exists, raw)
+            XCTAssertEqual(toggle.label, label)
+        }
+        XCTAssertTrue(app.staticTexts["FROM THE OTHER PERSON"].exists)
+
+        // The fixture has Live Activities off in iOS.
+        let liveActivity = app.switches["account.notifications.choice.live-activity"].firstMatch
+        scrollToElement(liveActivity)
+        XCTAssertFalse(liveActivity.isEnabled)
+        XCTAssertTrue(app.staticTexts["Live Activities are off for HealthComp in iOS Settings."].exists)
+        let liveActivitySettings = app.buttons["account.notifications.live-activity.settings"]
+        scrollToElement(liveActivitySettings)
+        XCTAssertTrue(liveActivitySettings.isHittable)
+        liveActivitySettings.tap()
+        XCTAssertTrue(
+            app.staticTexts[UIApplication.openSettingsURLString]
+                .waitForExistence(timeout: 3)
+        )
+
+        // Flip one and back, so reruns start clean.
+        let leadChanges = app.switches["account.notifications.choice.lead-change"].firstMatch
+        scrollToElement(leadChanges)
+        let before = leadChanges.value as? String
+        flip(leadChanges)
+        XCTAssertNotEqual(leadChanges.value as? String, before)
+        attachScreenshot("notification-choices")
+        flip(leadChanges)
+        XCTAssertEqual(leadChanges.value as? String, before)
+
+        let mutedHeader = app.staticTexts["MUTED"]
+        scrollToElement(mutedHeader)
+        XCTAssertTrue(mutedHeader.exists)
+        try auditNotificationsPage(audit)
+
         let unmute = app.buttons["Unmute Hermes"]
         XCTAssertTrue(unmute.exists)
         unmute.tap()
         XCTAssertTrue(mutedHeader.waitForNonExistence(timeout: 3))
         XCTAssertFalse(app.buttons["account.notifications.unmute"].exists)
+    }
+
+    /// The switch rows report "Text clipped" with no element on iOS 18 (one
+    /// per enabled `Toggle` on screen). XCTest can't locate those, so they're
+    /// attached and skipped, as in BlockChallengerUITests; the AX5 captures in
+    /// `testNotificationChoicesCaptureLightDarkAndAX5` are checked by eye.
+    private func auditNotificationsPage(_ audit: XCUIAccessibilityAuditType) throws {
+        try XCTContext.runActivity(named: "audit notifications") { activity in
+            try app.performAccessibilityAudit(for: audit) { issue in
+                guard issue.element == nil, issue.auditType == .textClipped else { return false }
+                activity.add(XCTAttachment(string: "skipped: \(issue.detailedDescription)"))
+                return true
+            }
+        }
+    }
+
+    /// Not in CI: preview captures of Account → Notifications with one switch
+    /// off, light and dark at XS, and light at AX5 (top and bottom).
+    func testNotificationChoicesCaptureLightDarkAndAX5() {
+        let cases = [
+            ("light-xs", "Light", "UICTContentSizeCategoryXS"),
+            ("dark-xs", "Dark", "UICTContentSizeCategoryXS"),
+            ("light-default", "Light", "UICTContentSizeCategoryL"),
+            ("light-ax5", "Light", "UICTContentSizeCategoryAccessibilityXXXL"),
+        ]
+        for (name, appearance, size) in cases {
+            launch(.account, appearanceArguments: [
+                "-AppleInterfaceStyle", appearance,
+                "-UIPreferredContentSizeCategoryName", size,
+            ])
+            XCTAssertTrue(app.navigationBars["Account"].waitForExistence(timeout: 8))
+            let notifications = element("account.notifications")
+            scrollToElement(notifications)
+            notifications.tap()
+            XCTAssertTrue(app.navigationBars["Notifications"].waitForExistence(timeout: 3))
+            let closeScores = app.switches["account.notifications.choice.close-score"].firstMatch
+            scrollToElement(closeScores)
+            // An interrupted earlier run can leave it off already.
+            if closeScores.value as? String != "0" { flip(closeScores) }
+            XCTAssertEqual(closeScores.value as? String, "0")
+            attachScreenshot("notification-choices-\(name)")
+            flip(closeScores)
+            XCTAssertEqual(closeScores.value as? String, "1")
+            let nudges = app.switches["account.notifications.choice.nudge"].firstMatch
+            scrollToElement(nudges)
+            XCTAssertTrue(nudges.exists)
+            attachScreenshot("notification-choices-\(name)-bottom")
+            app.terminate()
+        }
     }
 
     func testHealthPageOpensSettings() {
@@ -2224,6 +2314,17 @@ final class MultiUserCompetitionUITests: XCTestCase {
         let item = app.buttons[title]
         XCTAssertTrue(item.waitForExistence(timeout: 3))
         item.tap()
+    }
+
+    /// A `Toggle` in a `List` exposes a row-wide switch; a tap at its center
+    /// can land on the label, so tap the inner switch or the trailing edge.
+    private func flip(_ toggle: XCUIElement) {
+        let knob = toggle.switches.firstMatch
+        if knob.exists {
+            knob.tap()
+        } else {
+            toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.93, dy: 0.5)).tap()
+        }
     }
 
     private func scrollToElement(_ element: XCUIElement) {

@@ -383,11 +383,16 @@ posts match notifications.
 `discarded`. The support query needs no change.
 
 `reaction` work is at most one row per recipient installation per match per
-hour; `suppressed` means the recipient muted the sender. None is enqueued
-for installations with `supports_reactions` false (an older build). The
-per-iPhone Reactions switch arrives later (`muted_push_kinds`, suppressed at
-lease). Reactions themselves are in `private.competition_reactions`, not the
-change log.
+hour; `suppressed` means the recipient muted the sender or switched
+Reactions off. None is enqueued for installations with `supports_reactions`
+false (an older build). Reactions themselves are in
+`private.competition_reactions`, not the change log.
+
+Lead changes, close scores, the Last day reminder and the Live Activity can be
+switched off per iPhone in Account → Notifications; the server can't see
+those. Reactions and nudges switched off show up as
+`device_installations.muted_push_kinds` and as `suppressed` work. Ask the
+person to check that page first.
 
 ### Support events
 
