@@ -47,6 +47,11 @@ enum MultiUserCompetitionTestLabScenario:
     case liveActivity = "live-activity"
     /// The empty Home with Practice Match, run through Home's own reducer.
     case practice
+    /// Five people's belts: taken, kept, tied, waiting on an earlier match,
+    /// retired, and a 64-character name, with five live cards.
+    case belt
+    /// The same history with only Sam's match live: the hero card's chip.
+    case beltHero = "belt-hero"
 }
 
 struct MultiUserCompetitionTestLabConfiguration: Equatable, Sendable {
@@ -139,11 +144,8 @@ struct MultiUserCompetitionTestLabRootView: View {
     @ViewBuilder
     private var scenarioView: some View {
         switch configuration.scenario {
-        case .sharing, .sharingCustomScheme, .whatItTakes:
-            MultiUserCompetitionSharingTestLabView(
-                usesCustomScheme: configuration.scenario == .sharingCustomScheme,
-                showsWhatItTakes: configuration.scenario == .whatItTakes
-            )
+        case .sharing, .sharingCustomScheme, .whatItTakes, .belt, .beltHero:
+            MultiUserCompetitionSharingTestLabView(scenario: configuration.scenario)
         case .coldClaim, .warmClaim, .signedOutClaim,
              .unavailableClaim, .offlineClaim:
             MultiUserCompetitionClaimTestLabView(
@@ -200,8 +202,7 @@ struct MultiUserCompetitionTestLabConfigurationErrorView: View {
 }
 
 private struct MultiUserCompetitionSharingTestLabView: View {
-    let usesCustomScheme: Bool
-    var showsWhatItTakes = false
+    let scenario: MultiUserCompetitionTestLabScenario
     @State private var path: [CompetitionID] = []
     @State private var showsHistory = false
     @State private var historyPerson: String?
@@ -363,10 +364,15 @@ private struct MultiUserCompetitionSharingTestLabView: View {
         }
     }
 
+    private var usesCustomScheme: Bool { scenario == .sharingCustomScheme }
+
     private var publication: LocalCompetitionPublication {
-        showsWhatItTakes
-            ? MultiUserCompetitionTestLabFixtures.whatItTakesPublication()
-            : MultiUserCompetitionTestLabFixtures.publication(archivedIDs: archivedIDs)
+        switch scenario {
+        case .whatItTakes: MultiUserCompetitionTestLabFixtures.whatItTakesPublication()
+        case .belt: MultiUserCompetitionTestLabFixtures.beltPublication(heroOnly: false)
+        case .beltHero: MultiUserCompetitionTestLabFixtures.beltPublication(heroOnly: true)
+        default: MultiUserCompetitionTestLabFixtures.publication(archivedIDs: archivedIDs)
+        }
     }
 
     private func findRecipient() {
@@ -1938,6 +1944,141 @@ private enum MultiUserCompetitionTestLabFixtures {
         )
     }
 
+    /// Every belt state from one history (now is Sun Aug 16, Los Angeles):
+    /// - Sam, Jul 4 to Aug 14: W L L W T W. You took it, Sam took it, Sam kept
+    ///   it, you took it back, a tie kept it and a win made 3 weeks. Live again.
+    /// - The 64-character name, Jul 25 to Aug 14: L T L, a 3-week reign. Live again.
+    /// - Riley: you won Aug 1 to 7; Aug 8 to 14 is tallying, so the live
+    ///   Aug 15 match waits for it and shows no chip.
+    /// - Morgan: two ties, so nobody holds it.
+    /// - Former competitor: a win, then the account was deleted mid-match.
+    /// `heroOnly` keeps Sam's as the one live match, so Home draws the hero card.
+    static func beltPublication(heroOnly: Bool) -> LocalCompetitionPublication {
+        func id(_ byte: UInt8) -> CompetitionID {
+            CompetitionID(UUID(uuidString: String(format: "A3000000-0000-4000-8000-0000000000%02X", byte))!)
+        }
+        func person(_ byte: UInt8) -> String {
+            "remote-profile:v1:c3000000-0000-4000-8000-0000000000" + String(format: "%02x", byte)
+        }
+        func week(
+            _ byte: UInt8,
+            _ name: String,
+            _ identity: String,
+            month: Int = 8,
+            startDay: Int,
+            _ outcome: CompetitionOutcome,
+            completed: Bool = false
+        ) -> LocalCompetitionPresentation {
+            let (user, opponent): (Double, Double) = switch outcome {
+            case .win: (3_210, 3_050)
+            case .loss: (2_980, 3_140)
+            case .tie: (3_000, 3_000)
+            }
+            let end = competitionScheduleBoundaries(schedule(startDay: startDay, month: month))!.end
+            let completedAt = end.addingTimeInterval(43_200)
+            return presentation(
+                id: id(byte),
+                opponentName: name,
+                lifecycle: completed
+                    ? .completed(
+                        outcome: outcome,
+                        basis: .stableAcrossPostBoundaryReads,
+                        completedAt: completedAt
+                    )
+                    : .archived(
+                        outcome: outcome,
+                        basis: .stableAcrossPostBoundaryReads,
+                        completedAt: completedAt,
+                        archivedAt: completedAt.addingTimeInterval(86_400)
+                    ),
+                userPoints: user,
+                opponentPoints: opponent,
+                days: [],
+                currentDayOrdinal: nil,
+                terminal: LocalCompetitionTerminalPresentation(
+                    userPoints: user,
+                    opponentPoints: opponent,
+                    outcome: outcome,
+                    basis: .stableAcrossPostBoundaryReads,
+                    completedAt: completedAt
+                ),
+                startDay: startDay,
+                month: month,
+                opponentIdentity: identity
+            )
+        }
+        func live(_ byte: UInt8, _ name: String, _ identity: String) -> LocalCompetitionPresentation {
+            presentation(
+                id: id(byte),
+                opponentName: name,
+                lifecycle: .active(dayOrdinal: 2),
+                userPoints: 1_020,
+                opponentPoints: 990,
+                days: activeDays(startDay: 15, currentDay: 2),
+                currentDayOrdinal: 2,
+                terminal: nil,
+                startDay: 15,
+                opponentIdentity: identity,
+                refreshedAt: evaluatedAt.addingTimeInterval(-600),
+                opponentUpdatedAt: evaluatedAt.addingTimeInterval(-900)
+            )
+        }
+        let sam = person(1), long = person(2), riley = person(3)
+        let morgan = person(4), former = person(5)
+        let rileyTallying = presentation(
+            id: id(0x32),
+            opponentName: "Riley",
+            lifecycle: .tallying(startedAt: evaluatedAt.addingTimeInterval(-3_600)),
+            userPoints: 3_400,
+            opponentPoints: 3_345,
+            days: activeDays(startDay: 8, currentDay: 7),
+            currentDayOrdinal: nil,
+            terminal: nil,
+            startDay: 8,
+            opponentIdentity: riley,
+            opponentUpdatedAt: evaluatedAt.addingTimeInterval(-3_600),
+            tally: LocalCompetitionTallyPresentation(
+                attention: .awaitingStability,
+                consecutiveStableCompleteReads: 0,
+                stabilityStart: nil,
+                bestAvailableDeadline: evaluatedAt.addingTimeInterval(47 * 3_600)
+            )
+        )
+        let finished = [
+            week(0x11, "Sam", sam, month: 7, startDay: 4, .win),
+            week(0x12, "Sam", sam, month: 7, startDay: 11, .loss),
+            week(0x13, "Sam", sam, month: 7, startDay: 18, .loss),
+            week(0x14, "Sam", sam, month: 7, startDay: 25, .win),
+            week(0x15, "Sam", sam, startDay: 1, .tie),
+            week(0x16, "Sam", sam, startDay: 8, .win, completed: true),
+            week(0x21, longName, long, month: 7, startDay: 25, .loss),
+            week(0x22, longName, long, startDay: 1, .tie),
+            week(0x23, longName, long, startDay: 8, .loss),
+            week(0x31, "Riley", riley, startDay: 1, .win),
+            week(0x41, "Morgan", morgan, startDay: 1, .tie),
+            week(0x42, "Morgan", morgan, startDay: 8, .tie),
+            week(0x51, competitionFormerCompetitorName, former, startDay: 8, .win),
+        ]
+        let otherLive = [
+            live(0x24, longName, long),
+            rileyTallying,
+            live(0x33, "Riley", riley),
+            live(0x52, competitionFormerCompetitorName, former),
+        ]
+        return LocalCompetitionPublication(
+            publicationRevision: 1,
+            dashboard: LocalCompetitionDashboard(
+                competitions: [live(0x17, "Sam", sam)] + (heroOnly ? [] : otherLive) + finished,
+                awards: [],
+                issues: [],
+                hiddenTerminalCompetitionCount: 0
+            ),
+            evaluatedAt: evaluatedAt,
+            timeZoneIdentifier: "America/Los_Angeles",
+            source: .remoteParticipants
+        )
+    }
+
     static func shareLink(
         byte: UInt8,
         usesCustomScheme: Bool
@@ -1967,6 +2108,7 @@ private enum MultiUserCompetitionTestLabFixtures {
         currentDayOrdinal: Int?,
         terminal: LocalCompetitionTerminalPresentation?,
         startDay: Int = 13,
+        month: Int = 8,
         opponentIdentity: String? = nil,
         refreshedAt: Date? = nil,
         opponentUpdatedAt: Date? = nil,
@@ -1974,7 +2116,7 @@ private enum MultiUserCompetitionTestLabFixtures {
         tally: LocalCompetitionTallyPresentation? = nil,
         now: Date? = nil
     ) -> LocalCompetitionPresentation {
-        let schedule = schedule(startDay: startDay, zone: zone)
+        let schedule = schedule(startDay: startDay, month: month, zone: zone)
         return LocalCompetitionPresentation(
             id: id,
             ownerDisplayName: "Beta Alice",
@@ -2054,6 +2196,7 @@ private enum MultiUserCompetitionTestLabFixtures {
 
     private static func schedule(
         startDay: Int = 13,
+        month: Int = 8,
         zone: String = "America/Los_Angeles"
     ) -> CompetitionSchedule {
         let calendar = try! CompetitionCalendar(timeZoneIdentifier: zone)
@@ -2062,7 +2205,7 @@ private enum MultiUserCompetitionTestLabFixtures {
             startDay: try! CompetitionDay(
                 era: 1,
                 year: 2026,
-                month: 8,
+                month: month,
                 day: startDay,
                 timeZoneIdentifier: calendar.timeZoneIdentifier
             )
