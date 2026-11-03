@@ -107,6 +107,17 @@ func competitionReactionAccessibilityText(
     "\(reaction.kind.spokenName). \(competitionReactionText(reaction, opponentName: opponentName))"
 }
 
+/// The week's REACTIONS list: the result first, then by day; yours first
+/// within each target.
+func competitionReactionsInWeekOrder(_ reactions: [CompetitionReaction]) -> [CompetitionReaction] {
+    reactions.sorted { lhs, rhs in
+        let left = lhs.target.dayOrdinal ?? 0
+        let right = rhs.target.dayOrdinal ?? 0
+        if left != right { return left < right }
+        return lhs.isFromYou && !rhs.isFromYou
+    }
+}
+
 /// The newest reaction you got that you haven't seen, for Home and the match
 /// screen. Nil for matches that show no scores (scheduled, cancelled).
 func competitionUnseenReaction(
@@ -191,11 +202,15 @@ struct CompetitionReactionPicker: View {
                 HStack(spacing: 10) { chip(.huffing); chip(.salute) }
             }
             if failed {
-                Text("Couldn’t send your reaction. Try again.")
-                    .font(.caption)
-                    .foregroundStyle(Theme.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityIdentifier("competition.react.error")
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .accessibilityHidden(true)
+                    Text("Couldn’t send your reaction. Try again.")
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("competition.react.error")
+                }
+                .font(.caption)
+                .foregroundStyle(Theme.ink)
             }
         }
     }
@@ -209,18 +224,50 @@ struct CompetitionReactionPicker: View {
                 .frame(width: chipSize, height: chipSize)
                 .background(Theme.control, in: Circle())
                 .overlay {
-                    if isSelected {
-                        Circle().strokeBorder(Theme.you, lineWidth: 2)
-                    }
+                    // A hairline keeps unselected chips visible on a panel.
+                    Circle().strokeBorder(
+                        isSelected ? Theme.you : Theme.hairline,
+                        lineWidth: isSelected ? 2 : 1
+                    )
                 }
                 .contentShape(Circle())
         }
-        .buttonStyle(CompetitionPressButtonStyle())
+        // A tap, never the end of a drag: in a drawer, the sheet's own drag
+        // (to resize or dismiss it) doesn't cancel a Button's touch, so
+        // scrolling from a chip sent a reaction.
+        .buttonStyle(CompetitionReactionChipStyle())
         .disabled(isPending)
         .accessibilityLabel(kind.spokenName)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
         .accessibilityHint(hint)
         .accessibilityIdentifier("competition.react.\(kind.rawValue)")
+    }
+}
+
+/// Fires on a tap only; any drag cancels it. Keeps Button's traits,
+/// disabled state and VoiceOver activation.
+private struct CompetitionReactionChipStyle: PrimitiveButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label.onTapGesture(perform: configuration.trigger)
+    }
+}
+
+/// `SectionLabel`'s look with kerning, not tracking: the text clipping
+/// audit flags tracked labels here ("REACT TO THE RESULT", a tracked ’).
+struct CompetitionReactionLabel: View {
+    let title: String
+
+    init(_ title: String) {
+        self.title = title
+    }
+
+    var body: some View {
+        Text(title)
+            .font(.themeLabel)
+            .kerning(1.2)
+            .foregroundStyle(Theme.ink)
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityAddTraits(.isHeader)
     }
 }
 
@@ -238,8 +285,15 @@ struct CompetitionReactionLine: View {
         }
     }
 
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     private var line: some View {
-        HStack(spacing: 8) {
+        // Emoji above the text at accessibility sizes: beside it, the text
+        // gets a column a word or two wide (and hyphenates) in Home rows.
+        let layout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4))
+            : AnyLayout(HStackLayout(spacing: 8))
+        return layout {
             CompetitionReactionEmoji(kind: reaction.kind)
             Text(competitionReactionText(reaction, opponentName: opponentName))
                 .font(.subheadline)

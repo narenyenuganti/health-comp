@@ -105,6 +105,7 @@ extension CompetitionWidgetSnapshot {
 
 extension CompetitionWidgetSnapshot.Match {
     init?(presentation p: CompetitionPresentation) {
+        guard !p.isPractice else { return nil }
         let final: CompetitionWidgetSnapshot.Final?
         switch p.lifecycle {
         case .scheduled, .active, .endsToday, .tallying:

@@ -1,6 +1,6 @@
 import XCTest
 
-/// Account → Notifications: six switches in two sections. `account` is the
+/// Account → Notifications: seven switches in two sections. `account` is the
 /// standalone Account fixture (iOS notifications and Live Activities off).
 /// `notification-choices` is the real app root with notifications on, the
 /// long-named challenger muted, and the real installation coordinator
@@ -12,7 +12,7 @@ final class NotificationChoicesUITests: XCTestCase {
 
     private static let rows: [(id: String, label: String)] = [
         ("lead-change", "Lead changes"), ("close-score", "Close scores"),
-        ("final-day", "Last day"), ("live-activity", "Live Activity"),
+        ("what-it-takes", "What it takes"), ("final-day", "Last day"), ("live-activity", "Live Activity"),
         ("reaction", "Reactions"), ("nudge", "Nudges"),
     ]
     private static let footer = "HealthComp only sends match moments, like lead changes and results. To mute someone, open your match with them."
@@ -32,7 +32,7 @@ final class NotificationChoicesUITests: XCTestCase {
 
     // MARK: Page
 
-    func testPageListsSixSwitchesInOrderWithLiveActivitiesOffInIOS() {
+    func testPageListsSevenSwitchesInOrderWithLiveActivitiesOffInIOS() {
         launch(.account)
         openNotificationsFromAccount()
         XCTAssertTrue(app.staticTexts["Turned off in iOS Settings"].exists)
@@ -41,9 +41,6 @@ final class NotificationChoicesUITests: XCTestCase {
             NSPredicate(format: "label CONTAINS %@", "Turn them off in iOS Settings")
         ).firstMatch.exists)
         XCTAssertTrue(app.staticTexts["DURING A MATCH"].exists)
-        // PR 14 adds it; it isn't listed yet.
-        XCTAssertFalse(app.switches["account.notifications.choice.what-it-takes"].exists)
-        XCTAssertFalse(app.staticTexts["What it takes"].exists)
 
         // Read both frames after the scroll: a scroll between rows moves both.
         var previous: XCUIElement = app.staticTexts["DURING A MATCH"]
