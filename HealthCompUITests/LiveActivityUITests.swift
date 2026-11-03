@@ -78,11 +78,11 @@ final class LiveActivityUITests: XCTestCase {
             let app = launch(sample: sample.key, arguments: ["-AppleInterfaceStyle", "Light"])
             let live = previewElement(app, "live")
             XCTAssertTrue(live.waitForExistence(timeout: 10), sample.key)
-            XCTAssertEqual(live.label, sample.live(), sample.key)
+            XCTAssertEqual(plain(live.label), sample.live(), sample.key)
             // Gone stale at midnight with no app run, or set by the app once
             // the match is tallying: the same words either way.
-            XCTAssertEqual(previewElement(app, "pending").label, sample.pending(), sample.key)
-            XCTAssertEqual(previewElement(app, "tallying").label, sample.pending(), sample.key)
+            XCTAssertEqual(plain(previewElement(app, "pending").label), sample.pending(), sample.key)
+            XCTAssertEqual(plain(previewElement(app, "tallying").label), sample.pending(), sample.key)
             for suffix in ["live", "pending", "tallying", "expanded", "compact", "minimal", "start"] {
                 XCTAssertEqual(
                     app.descendants(matching: .any).matching(identifier: "liveActivity.preview.\(suffix)").count, 1,
@@ -91,7 +91,7 @@ final class LiveActivityUITests: XCTestCase {
             }
             let expanded = previewElement(app, "expanded")
             XCTAssertTrue(expanded.label.hasPrefix("Last day, "), expanded.label)
-            XCTAssertTrue(expanded.label.contains(" left, \(sample.youLabel), \(sample.themLabel), \(sample.lead)"),
+            XCTAssertTrue(plain(expanded.label).contains(" left, \(sample.youLabel), \(sample.themLabel), \(sample.lead)"),
                           expanded.label)
             XCTAssertEqual(previewElement(app, "compact").label, "\(sample.youLabel), \(sample.themLabel)")
             XCTAssertEqual(previewElement(app, "minimal").label, sample.lead)
@@ -114,10 +114,11 @@ final class LiveActivityUITests: XCTestCase {
                                                       "UICTContentSizeCategoryAccessibilityXXXL"])
             let live = previewElement(app, "live")
             XCTAssertTrue(live.waitForExistence(timeout: 10), key)
-            XCTAssertEqual(live.label, sample.live(large: true), key)
-            XCTAssertEqual(previewElement(app, "pending").label, sample.pending(large: true), key)
-            XCTAssertEqual(previewElement(app, "tallying").label, sample.pending(large: true), key)
-            XCTAssertEqual(live.frame.height, 160, accuracy: 1)
+            XCTAssertEqual(plain(live.label), sample.live(large: true), key)
+            XCTAssertEqual(plain(previewElement(app, "pending").label), sample.pending(large: true), key)
+            XCTAssertEqual(plain(previewElement(app, "tallying").label), sample.pending(large: true), key)
+            // The card never grows past the Lock Screen's 160 pt.
+            XCTAssertLessThanOrEqual(live.frame.height, 160)
             try app.performAccessibilityAudit(for: [.textClipped, .sufficientElementDescription]) { issue in
                 // The Test Lab's own title is not this feature's.
                 !(issue.element?.identifier.hasPrefix("liveActivity.preview") ?? false)
@@ -147,7 +148,7 @@ final class LiveActivityUITests: XCTestCase {
         let sam = springboardElement("Sam 2,171 points")
         XCTAssertTrue(you.waitForExistence(timeout: 10), springboard.debugDescription)
         XCTAssertTrue(sam.exists, springboard.debugDescription)
-        XCTAssertEqual(springboardElements("You 2,190 points").count, 1, springboard.debugDescription)
+        XCTAssertEqual(springboardPlaces("You 2,190 points"), 1, springboard.debugDescription)
         shot("island-compact")
 
         // Expanded island after a long press.
@@ -162,8 +163,8 @@ final class LiveActivityUITests: XCTestCase {
         showLockScreen()
         let card = springboardElement("Last day · Sam")
         XCTAssertTrue(card.waitForExistence(timeout: 10), springboard.debugDescription)
-        XCTAssertEqual(card.label, sample("lead").live())
-        XCTAssertEqual(springboardElements("Last day · Sam").count, 1, springboard.debugDescription)
+        XCTAssertEqual(plain(card.label), sample("lead").live())
+        XCTAssertEqual(springboardPlaces("Last day · Sam, Ends at midnight, You 2,190 points, Sam 2,171 points, You lead by 19."), 1, springboard.debugDescription)
         shot("lock-live-light")
         XCUIDevice.shared.appearance = .dark
         sleep(3)
@@ -179,7 +180,7 @@ final class LiveActivityUITests: XCTestCase {
         showLockScreen()
         let pending = springboardElement("Final score pending · Sam")
         XCTAssertTrue(pending.waitForExistence(timeout: 20), springboard.debugDescription)
-        XCTAssertEqual(pending.label, sample("lead").pending())
+        XCTAssertEqual(plain(pending.label), sample("lead").pending())
         shot("lock-pending")
         XCUIDevice.shared.press(.home)  // unlocks: the simulator has no passcode
         sleep(1)
@@ -215,7 +216,7 @@ final class LiveActivityUITests: XCTestCase {
             showLockScreen()
             let card = springboardElement("Last day · \(sample.name)")
             XCTAssertTrue(card.waitForExistence(timeout: 10), "\(key)\n\(springboard.debugDescription)")
-            XCTAssertEqual(card.label, sample.live(), key)
+            XCTAssertEqual(plain(card.label), sample.live(), key)
             shot("lock-live-\(key)")
             XCUIDevice.shared.press(.home)
             sleep(2)
@@ -288,15 +289,16 @@ final class LiveActivityUITests: XCTestCase {
                 shot("island-compact-\(appearance)-\(size)")
                 you.press(forDuration: 1.2)
                 sleep(2)
-                XCTAssertTrue(springboardElement("You lead by 19.").waitForExistence(timeout: 5))
+                let expanded = springboardElement("You lead by 19.")
+                XCTAssertTrue(expanded.waitForExistence(timeout: 5), springboard.debugDescription)
                 shot("island-expanded-\(appearance)-\(size)")
-                XCUIDevice.shared.press(.home)
-                sleep(1)
+                collapseIsland(expanded)
+                XCTAssertTrue(you.waitForExistence(timeout: 5), springboard.debugDescription)
             }
             showLockScreen()
             let card = springboardElement("Last day · Sam")
             XCTAssertTrue(card.waitForExistence(timeout: 10), springboard.debugDescription)
-            XCTAssertEqual(card.label, sample("lead").live(large: size == "ax5"))
+            XCTAssertEqual(plain(card.label), sample("lead").live(large: size == "ax5"))
             for appearance in ["dark", "light"] {
                 XCUIDevice.shared.appearance = appearance == "dark" ? .dark : .light
                 sleep(3)
@@ -308,7 +310,7 @@ final class LiveActivityUITests: XCTestCase {
             showLockScreen()
             let pending = springboardElement("Final score pending · Sam")
             XCTAssertTrue(pending.waitForExistence(timeout: 20), springboard.debugDescription)
-            XCTAssertEqual(pending.label, sample("lead").pending(large: size == "ax5"))
+            XCTAssertEqual(plain(pending.label), sample("lead").pending(large: size == "ax5"))
             for appearance in ["light", "dark"] {
                 XCUIDevice.shared.appearance = appearance == "dark" ? .dark : .light
                 sleep(3)
@@ -364,6 +366,30 @@ final class LiveActivityUITests: XCTestCase {
     private func springboardElements(_ text: String) -> XCUIElementQuery {
         springboard.descendants(matching: .any)
             .matching(NSPredicate(format: "label CONTAINS %@", text))
+    }
+
+    /// How many separate places on screen show `text`. SpringBoard exposes
+    /// both a container and the text inside it, at nearly the same spot.
+    private func springboardPlaces(_ text: String) -> Int {
+        Set(springboardElements(text).allElementsBoundByIndex.map { Int($0.frame.midY / 60) }).count
+    }
+
+    /// Times use a narrow no-break space before AM/PM.
+    private func plain(_ label: String) -> String {
+        label.replacingOccurrences(of: "\u{202F}", with: " ")
+    }
+
+    /// Back to the compact island: Home can leave the expanded one open.
+    private func collapseIsland(_ expanded: XCUIElement) {
+        for _ in 0..<3 where expanded.exists {
+            XCUIDevice.shared.press(.home)
+            sleep(2)
+        }
+        if expanded.exists {
+            springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.75)).tap()
+            sleep(2)
+        }
+        XCTAssertFalse(expanded.exists, "expanded island closed")
     }
 
     private func springboardElement(_ text: String) -> XCUIElement {

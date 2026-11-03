@@ -52,19 +52,21 @@ struct MatchActivityHeader: View {
                     .frame(width: 6, height: 6)
                     .accessibilityHidden(true)
             }
+            // A long name truncates at the label size instead of shrinking
+            // the whole row; the timing always shows in full.
             Text("\(state.title) · \(state.opponentName)")
                 .foregroundStyle(Theme.ink)
             Spacer(minLength: 8)
             if showsTiming, let timing = state.timing {
                 Text(timing)
                     .foregroundStyle(Theme.secondary)
+                    .layoutPriority(1)
             }
         }
         .font(.themeLabel)
         .tracking(1.2)
         .textCase(.uppercase)
         .lineLimit(1)
-        .minimumScaleFactor(0.5)
     }
 }
 
@@ -97,15 +99,16 @@ struct MatchActivityScoreColumn: View {
         let alignment: HorizontalAlignment = side == .you ? .leading : .trailing
         VStack(alignment: alignment, spacing: 2) {
             if showsName {
+                // Truncates at the label size, like the header.
                 Text(side.name(state).uppercased(with: .current))
                     .font(.themeLabel)
                     .tracking(1.4)
             }
             Text(competitionPointsText(side.points(state)))
                 .font(.score(size: size).monospacedDigit())
+                .minimumScaleFactor(0.5)
         }
         .lineLimit(1)
-        .minimumScaleFactor(0.5)
         .foregroundStyle(side.color)
         .frame(maxWidth: .infinity, alignment: side == .you ? .leading : .trailing)
         .accessibilityElement(children: .ignore)
