@@ -1529,7 +1529,8 @@ final class MultiUserCompetitionUITests: XCTestCase {
             XCTAssertTrue(app.navigationBars["Notifications"].waitForExistence(timeout: 3))
             let closeScores = app.switches["account.notifications.choice.close-score"].firstMatch
             scrollToElement(closeScores)
-            flip(closeScores)
+            // An interrupted earlier run can leave it off already.
+            if closeScores.value as? String != "0" { flip(closeScores) }
             XCTAssertEqual(closeScores.value as? String, "0")
             attachScreenshot("notification-choices-\(name)")
             flip(closeScores)
