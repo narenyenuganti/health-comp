@@ -582,18 +582,24 @@ final class MultiUserCompetitionUITests: XCTestCase {
         scrollToElement(dayThree)
         dayThree.tap()
 
-        // Expand to .large, then scroll the drawer itself (not the page
-        // behind it, which the .large sheet covers) in short slow drags
-        // until the last chip is fully on screen; a swipe overshoots.
+        // Drag the title to the top to reach .large, then scroll the drawer
+        // itself (the scroll view holding the chips, not the page behind
+        // it) in short drags until the last chip is fully on screen.
         let title = app.staticTexts["Day 3"]
         XCTAssertTrue(title.waitForExistence(timeout: 3))
-        title.swipeUp()
+        title.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(
+            forDuration: 0.1,
+            thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.05))
+        )
         let salute = app.buttons["competition.react.salute"]
+        XCTAssertTrue(salute.waitForExistence(timeout: 3))
+        let drawer = app.scrollViews
+            .containing(.button, identifier: "competition.react.salute").firstMatch
         for _ in 0..<8 {
-            if salute.exists, salute.isHittable, app.frame.contains(salute.frame) { break }
-            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.75)).press(
+            if salute.isHittable, app.frame.contains(salute.frame) { break }
+            drawer.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7)).press(
                 forDuration: 0.05,
-                thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.6)),
+                thenDragTo: drawer.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)),
                 withVelocity: .slow,
                 thenHoldForDuration: 0.2
             )
