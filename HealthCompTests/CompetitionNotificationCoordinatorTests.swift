@@ -797,6 +797,80 @@ final class CompetitionNotificationCoordinatorTests: XCTestCase {
         XCTAssertFalse(operations.contains { $0.hasPrefix("post:") })
     }
 
+    func testSwitchingOffLastDayRemovesItsPendingRequestOnReconcile()
+        async throws {
+        let snapshot = try scheduledSnapshot()
+        let id = try XCTUnwrap(snapshot.competitions.first?.id)
+        let finalDay = CompetitionNotificationIdentifier.scheduled(
+            competitionID: id,
+            family: .finalDay
+        )
+        func removedPending(
+            switchedOff: Set<CompetitionNotificationChoice>
+        ) async -> [[String]] {
+            let center = StatefulNotificationCenterRecorder()
+            await center.setPending([
+                finalDay,
+                CompetitionNotificationIdentifier.scheduled(
+                    competitionID: id,
+                    family: .scheduledStart
+                ),
+            ])
+            var preferences = CompetitionNotificationPreferencesClient
+                .constant(mutedOpponentIdentities: [])
+            preferences.switchedOff = { switchedOff }
+            let coordinator = CompetitionNotificationCoordinator(
+                planner: CompetitionNotificationPlanner(policy: .coordinatorFixture),
+                notifications: center.client,
+                preferences: preferences,
+                commitDecisions: { _, _ in .noDecision }
+            )
+            await coordinator.submit(snapshot)
+            return await center.snapshot.removedPending
+        }
+
+        let allOn = await removedPending(switchedOff: [])
+        XCTAssertEqual(allOn, [])
+        let lastDayOff = await removedPending(switchedOff: [.finalDay])
+        XCTAssertEqual(lastDayOff, [[finalDay]])
+    }
+
+    func testCommitReplanHonorsSwitchedOffFamilies() async throws {
+        let recorder = NotificationOperationRecorder()
+        let commits = DurableDecisionCommitRecorder()
+        var preferences = CompetitionNotificationPreferencesClient
+            .constant(mutedOpponentIdentities: [])
+        preferences.switchedOff = { [.leadChange] }
+        let coordinator = CompetitionNotificationCoordinator(
+            planner: CompetitionNotificationPlanner(policy: .coordinatorFixture),
+            notifications: recorder.notificationClient(
+                authorization: .authorized
+            ),
+            preferences: preferences,
+            commitDecisions: { competition, replan in
+                let decisions = try replan(competition)
+                await commits.append(decisions)
+                return decisions.isEmpty ? .noDecision : .appended(decisions)
+            }
+        )
+
+        // An earlier opponent lead makes today's owner lead a real change.
+        await coordinator.submit(try multiDecisionSnapshot())
+
+        let decisions = await commits.batches.flatMap { $0 }
+        let operations = await recorder.operations
+        XCTAssertFalse(decisions.isEmpty)
+        XCTAssertTrue(decisions.allSatisfy {
+            if case .suppression = $0 { return true }
+            return false
+        })
+        XCTAssertTrue(decisions.contains {
+            $0.record.family == .leadChange
+                && $0.record.disposition == .suppressed(reason: .superseded)
+        })
+        XCTAssertFalse(operations.contains { $0.hasPrefix("post:") })
+    }
+
     private func resultSnapshot(
         revision: UInt64 = 9,
         lifecycle: CompetitionNotificationLifecycle = .completed

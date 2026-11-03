@@ -245,13 +245,15 @@ actor CompetitionNotificationCoordinator {
             return
         }
         guard !isSuperseded(snapshot) else { return }
+        let switchedOff = preferences.switchedOff()
 
         let plan: CompetitionNotificationPlan
         do {
             plan = try planner.plan(
                 snapshot,
                 authorization: authorization,
-                mutedOpponentIdentities: muted
+                mutedOpponentIdentities: muted,
+                switchedOff: switchedOff
             )
         } catch {
             reportError("notification-plan-failed")
@@ -339,7 +341,8 @@ actor CompetitionNotificationCoordinator {
                         let freshPlan = try planner.plan(
                             freshSnapshot,
                             authorization: authorization,
-                            mutedOpponentIdentities: muted
+                            mutedOpponentIdentities: muted,
+                            switchedOff: switchedOff
                         )
                         let ownEmissions = freshPlan.emissionDecisions.filter {
                             $0.record.competitionID == freshCompetition.id

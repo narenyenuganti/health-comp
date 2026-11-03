@@ -350,7 +350,10 @@ private struct AccountSheet: View {
                 muted: competition.mutedOpponentIdentities
             ),
             mutesInFlight: competition.muteOpponentIdentitiesInFlight,
-            unmute: { mainStore.send(.competition(.muteTapped($0))) }
+            unmute: { mainStore.send(.competition(.muteTapped($0))) },
+            choicesChanged: {
+                mainStore.send(.competition(.notificationChoicesChanged))
+            }
         )
         let health = mainStore.healthAccess.map {
             AccountHealthSettings(

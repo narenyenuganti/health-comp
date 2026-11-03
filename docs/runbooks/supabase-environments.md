@@ -587,6 +587,29 @@ mapped to no payload (rows resolve `discarded`), or ship a forward migration
 that makes `set_competition_reaction` raise. The app build that shows
 reactions needs the migration in production before it reaches TestFlight.
 
+### Notification choices
+
+Migration `20261103002800` adds `device_installations.muted_push_kinds`
+(`text[]`, default `'{}'`, only `nudge` and `reaction`), a six-argument
+`register_current_device_installation` that sets it, and a new
+`lease_competition_notification_work` body (2500's, with one more mute
+condition).
+
+- Account → Notifications has a switch per kind. Reactions and Nudges are
+  server pushes, so the app sends the ones switched off with registration.
+  The lease resolves that work `suppressed`, like a mute, including rows that
+  were already pending when the switch turned off.
+- The five-argument call now delegates with `'{}'`; the four- and
+  three-argument calls still delegate down the chain. Builds without the
+  switch therefore keep getting every kind. New builds fall back
+  6 → 5 → 4 → 3 on PGRST202.
+- The other switches (lead changes, close scores, the Last day reminder, the
+  Live Activity) act only on the iPhone; the server never sees them.
+
+The migration must be in production before any build containing the switches
+reaches TestFlight. Without it the app registers through the five-argument
+call and the server keeps sending switched-off reactions and nudges.
+
 ## Finalizer and notification repair schedules
 
 These schedules are hosted environment state, not proof supplied by source.

@@ -184,7 +184,27 @@ enum CompetitionNotificationMessageFamily: Equatable, Sendable {
     }
 }
 
-struct CompetitionNotificationMessage: Equatable, Sendable {
+extension CompetitionNotificationMessageFamily {
+    /// The switch that silences this family; nil means always on. Exhaustive on
+    /// purpose: a new family must choose.
+    var choice: CompetitionNotificationChoice? {
+        switch self {
+        case .opportunistic(.leadChange): .leadChange
+        case .opportunistic(.closeScore): .closeScore
+        case .scheduled(.finalDay): .finalDay
+        case .opportunistic(.result), .opportunistic(.catchUp),
+             .opportunistic(.dailyMaximum), .scheduled(.inviteExpiry),
+             .scheduled(.scheduledStart), .scheduled(.competitionEnded):
+            nil
+        }
+    }
+
+    func isOff(in switchedOff: Set<CompetitionNotificationChoice>) -> Bool {
+        choice.map(switchedOff.contains) ?? false
+    }
+}
+
+struct CompetitionNotificationMessage:Equatable, Sendable {
     let family: CompetitionNotificationMessageFamily
     let competitionID: CompetitionID
     let opponentDisplayName: String

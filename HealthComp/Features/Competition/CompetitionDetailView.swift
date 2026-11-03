@@ -13,6 +13,8 @@ struct CompetitionDetailView: View {
     var cancelMatch: CompetitionCancelMatch? = nil
     /// Real matches only: one nudge a day when the other person's score is stale.
     var nudge: CompetitionNudge? = nil
+    /// Real matches only: reactions on the other person's days.
+    var reactions: CompetitionReactionControl? = nil
 
     @Environment(\.locale) private var locale
     @Environment(\.timeZone) private var timeZone
@@ -20,6 +22,8 @@ struct CompetitionDetailView: View {
     @State private var page: Page = .today
     @State private var drawer: Drawer? = nil
     @State private var showsCancelConfirmation = false
+    @AppStorage(CompetitionReactionsSeen.storageKey)
+    private var reactionsSeen = CompetitionReactionsSeen()
 
     /// Today's numbers or the whole week; the scoreboard stays above both.
     private enum Page: Hashable {
@@ -63,6 +67,8 @@ struct CompetitionDetailView: View {
                     }
                 }
 
+                latestReaction
+
                 tallyPanel
 
                 if competitionShouldShowScores(competition.lifecycle) {
@@ -85,6 +91,8 @@ struct CompetitionDetailView: View {
             .padding(.bottom, 24)
         }
         .refreshable(refresh)
+        // Back or pop, not a drawer: the line stays while you're here.
+        .onDisappear { reactionsSeen = reactionsSeen.marking(competition) }
         .background(Theme.ground)
         .navigationTitle(competition.opponentDisplayName)
         .navigationBarTitleDisplayMode(.inline)
@@ -184,6 +192,32 @@ struct CompetitionDetailView: View {
             opponentDisplayName: competition.opponentDisplayName,
             locale: locale
         ) + Text(scoresAreProvisional ? " Not final yet." : "")
+    }
+
+    /// The newest day reaction you haven't seen; it opens that day.
+    @ViewBuilder
+    private var latestReaction: some View {
+        if reactions != nil,
+           let unseen = competitionUnseenReaction(competition, seen: reactionsSeen),
+           let day = unseen.target.dayOrdinal {
+            Button { drawer = .day(day) } label: {
+                CompetitionReactionLine(
+                    reaction: unseen,
+                    opponentName: competition.opponentDisplayName
+                )
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(CompetitionRowButtonStyle())
+            .accessibilityLabel(
+                competitionReactionAccessibilityText(
+                    unseen,
+                    opponentName: competition.opponentDisplayName
+                )
+            )
+            .accessibilityHint("Opens Day \(day)")
+            .accessibilityIdentifier("competition.reaction.latest")
+        }
     }
 
     // Who or what the result waits on, and whether you need to act.
@@ -338,8 +372,56 @@ struct CompetitionDetailView: View {
                     now: competition.evaluatedAt,
                     opponentName: competition.opponentDisplayName
                 )
+                if let reactions {
+                    dayReactions(ordinal, control: reactions)
+                }
                 dayActivity(day, showsPullHint: false)
             }
+        }
+    }
+
+    /// Day reactions close when the result lands (the server agrees).
+    private var allowsDayReactions: Bool {
+        switch competition.lifecycle {
+        case .active, .endsToday, .tallying: competitionCanReact(competition)
+        default: false
+        }
+    }
+
+    /// The reaction you got on this day, and yours to send while you can.
+    @ViewBuilder
+    private func dayReactions(
+        _ ordinal: Int,
+        control: CompetitionReactionControl
+    ) -> some View {
+        let name = competition.opponentDisplayName
+        let received = competition.receivedReaction(.day(ordinal))
+        let canReact = allowsDayReactions
+        if received != nil || canReact {
+            VStack(alignment: .leading, spacing: 10) {
+                if let received {
+                    CompetitionReactionLine(
+                        reaction: received,
+                        opponentName: name,
+                        id: "competition.reaction.received"
+                    )
+                }
+                if canReact {
+                    // SectionLabel's look with kerning, not tracking: the
+                    // clipping audit flags a tracked ’.
+                    Text("REACT TO \(name.uppercased(with: locale))’S DAY")
+                        .font(.themeLabel)
+                        .kerning(1.2)
+                        .foregroundStyle(Theme.ink)
+                        .accessibilityAddTraits(.isHeader)
+                    control.picker(.day(ordinal), in: competition)
+                    Text("\(name) sees your reaction on this day.")
+                        .font(.caption)
+                        .foregroundStyle(Theme.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 

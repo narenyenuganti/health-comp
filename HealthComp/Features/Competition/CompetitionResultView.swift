@@ -12,6 +12,8 @@ struct CompetitionResultView: View {
     var muteButton: CompetitionMuteButton?
     var issue: CompetitionRowIssue? = nil
     var retry: (() async -> Void)? = nil
+    /// Real matches only: a reaction to the result.
+    var reactions: CompetitionReactionControl? = nil
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -22,6 +24,8 @@ struct CompetitionResultView: View {
     @State private var isDeleteConfirmationPresented = false
     @State private var showsWeek = false
     @State private var showsShare = false
+    @AppStorage(CompetitionReactionsSeen.storageKey)
+    private var reactionsSeen = CompetitionReactionsSeen()
 
     var body: some View {
         ScrollView {
@@ -46,6 +50,11 @@ struct CompetitionResultView: View {
                     competitionBeltResultText($0, opponentName: opponentName)
                 }) {
                     beltBanner(text)
+                        .opacity(isRevealed ? 1 : 0)
+                }
+
+                if let reactions {
+                    reactionPanel(reactions)
                         .opacity(isRevealed ? 1 : 0)
                 }
 
@@ -149,6 +158,7 @@ struct CompetitionResultView: View {
                 )
             )
         }
+        .onDisappear { reactionsSeen = reactionsSeen.marking(competition) }
         .onAppear {
             if reduceMotion {
                 isRevealed = true
@@ -345,7 +355,60 @@ struct CompetitionResultView: View {
             if let ringTotals {
                 ringTotalsSection(ringTotals)
             }
+            if !competition.reactions.isEmpty {
+                reactionsSection
+            }
         }
+    }
+
+    /// React to the result, and the reaction you got on it.
+    @ViewBuilder
+    private func reactionPanel(_ control: CompetitionReactionControl) -> some View {
+        let canReact = competitionCanReact(competition)
+        let received = competition.receivedReaction(.result)
+        if canReact || received != nil {
+            VStack(alignment: .leading, spacing: 10) {
+                if canReact {
+                    SectionLabel("REACT TO THE RESULT")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    control.picker(.result, in: competition)
+                }
+                if let received {
+                    CompetitionReactionLine(
+                        reaction: received,
+                        opponentName: opponentName,
+                        id: "competition.reaction.received"
+                    )
+                }
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .themePanel()
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("competition.result.react")
+        }
+    }
+
+    /// Everyone's reactions this week: the result first, then by day; yours
+    /// first within each.
+    private var reactionsSection: some View {
+        let ordered = competition.reactions.sorted { lhs, rhs in
+            let left = lhs.target.dayOrdinal ?? 0
+            let right = rhs.target.dayOrdinal ?? 0
+            if left != right { return left < right }
+            return lhs.isFromYou && !rhs.isFromYou
+        }
+        return VStack(alignment: .leading, spacing: 12) {
+            SectionLabel("REACTIONS")
+            VStack(alignment: .leading, spacing: 8) {
+                ForEach(Array(ordered.enumerated()), id: \.offset) { _, reaction in
+                    CompetitionReactionLine(reaction: reaction, opponentName: opponentName)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("competition.reactions")
     }
 
     /// Your week by ring. Shown only when every scored day has a ring split,

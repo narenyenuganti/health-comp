@@ -178,7 +178,10 @@ struct CompetitionLiveActivityClient: Sendable {
                 await activity.end(nil, dismissalPolicy: .immediate)
             }
         },
-        isAllowed: { ActivityAuthorizationInfo().areActivitiesEnabled },
+        isAllowed: {
+            ActivityAuthorizationInfo().areActivitiesEnabled
+                && !CompetitionNotificationChoice.switchedOff().contains(.liveActivity)
+        },
         startedMatchIDs: {
             UserDefaults.standard.stringArray(forKey: CompetitionLiveActivityPreference.startedKey) ?? []
         },
