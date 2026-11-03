@@ -1885,8 +1885,8 @@ private struct LiveActivityPreviewView: View {
         VStack(spacing: 8) {
             MatchActivityIslandHeader(attributes: attributes, state: live)
             HStack(alignment: .bottom) {
-                MatchActivityScoreColumn(side: .you, state: live, size: 34)
-                MatchActivityScoreColumn(side: .them, state: live, size: 34)
+                MatchActivityScoreColumn(side: .you, state: live, size: matchActivityIslandScoreSize)
+                MatchActivityScoreColumn(side: .them, state: live, size: matchActivityIslandScoreSize)
             }
             MatchActivityIslandBottom(state: live)
         }

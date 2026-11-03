@@ -19,13 +19,13 @@ struct MatchLiveActivityWidget: Widget {
             // Dark in every region, so amber stays you on black.
             return DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
-                    MatchActivityScoreColumn(side: .you, state: state, size: 34)
+                    MatchActivityScoreColumn(side: .you, state: state, size: matchActivityIslandScoreSize)
                         .dynamicIsland(verticalPlacement: .belowIfTooWide)
                         .padding(.horizontal, 8)
                         .matchActivityIsland()
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    MatchActivityScoreColumn(side: .them, state: state, size: 34)
+                    MatchActivityScoreColumn(side: .them, state: state, size: matchActivityIslandScoreSize)
                         .dynamicIsland(verticalPlacement: .belowIfTooWide)
                         .padding(.horizontal, 8)
                         .matchActivityIsland()
