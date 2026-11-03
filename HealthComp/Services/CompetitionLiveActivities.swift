@@ -77,6 +77,7 @@ enum CompetitionLiveActivityPlanner {
         guard isAllowed, source == .remoteParticipants else {
             return current.map { .end(matchID: $0.matchID, forgetStart: true) }
         }
+        let presentations = presentations.filter { !$0.isPractice }
         let byID = Dictionary(
             presentations.map { ($0.id.rawValue.uuidString.lowercased(), $0) }
         ) { first, _ in first }

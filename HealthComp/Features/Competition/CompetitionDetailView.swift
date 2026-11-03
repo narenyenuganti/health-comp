@@ -15,6 +15,8 @@ struct CompetitionDetailView: View {
     var nudge: CompetitionNudge? = nil
     /// Real matches only: reactions on the other person's days.
     var reactions: CompetitionReactionControl? = nil
+    /// Practice only: End Practice in the ••• menu.
+    var endPractice: (() -> Void)? = nil
 
     @Environment(\.locale) private var locale
     @Environment(\.timeZone) private var timeZone
@@ -24,6 +26,7 @@ struct CompetitionDetailView: View {
     @State private var showsCancelConfirmation = false
     @AppStorage(CompetitionReactionsSeen.storageKey)
     private var reactionsSeen = CompetitionReactionsSeen()
+    @State private var showsEndPracticeConfirmation = false
 
     /// Today's numbers or the whole week; the scoreboard stays above both.
     private enum Page: Hashable {
@@ -124,6 +127,14 @@ struct CompetitionDetailView: View {
                         .disabled(cancelMatch.isInFlight)
                         .accessibilityIdentifier("competition.match.cancel")
                     }
+                    if endPractice != nil {
+                        Button(role: .destructive) {
+                            showsEndPracticeConfirmation = true
+                        } label: {
+                            Label("End Practice", systemImage: "xmark.circle")
+                        }
+                        .accessibilityIdentifier("competition.practice.end")
+                    }
                 } label: {
                     CompetitionMoreLabel()
                 }
@@ -139,6 +150,16 @@ struct CompetitionDetailView: View {
             Button("Keep Match", role: .cancel) {}
         } message: {
             Text("It hasn’t started yet. \(competition.opponentDisplayName) will be told.")
+        }
+        .confirmationDialog(
+            "End this practice match?",
+            isPresented: $showsEndPracticeConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("End Practice", role: .destructive) { endPractice?() }
+            Button("Keep Going", role: .cancel) {}
+        } message: {
+            Text("It’s removed from this iPhone.")
         }
         .sheet(item: $drawer) { item in
             switch item {
@@ -639,6 +660,7 @@ func competitionMuteIdentity(
     authorization: CompetitionNotificationAuthorizationState?
 ) -> String? {
     guard authorization?.permitsNotifications == true,
+          !competition.isPractice,
           !competition.opponentIdentity.hasSuffix(":pending")
     else {
         return nil

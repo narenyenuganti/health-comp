@@ -624,6 +624,98 @@ final class MultiUserCompetitionUITests: XCTestCase {
         return XCTWaiter.wait(for: [expectation], timeout: 3) == .completed
     }
 
+    func testPracticeMatchStartsFromEmptyHomeAndEndsFromTheMenu() throws {
+        let audit = XCUIAccessibilityAuditType.textClipped
+            .union(.hitRegion)
+            .union(.sufficientElementDescription)
+        launch(.practice)
+        XCTAssertTrue(app.staticTexts["No matches yet"].waitForExistence(timeout: 8))
+        XCTAssertTrue(
+            app.staticTexts["Challenge someone to a 7-day match, or warm up against a pacer."].exists
+        )
+        attachScreenshot("practice-empty-home")
+        app.buttons["competition.practice.open"].tap()
+
+        XCTAssertTrue(element("competition.practice.sheet").waitForExistence(timeout: 3))
+        let balanced = app.buttons["competition.practice.pace.balanced"]
+        XCTAssertTrue(balanced.isSelected)
+        XCTAssertFalse(element("competition.practice.error").exists)
+        attachScreenshot("practice-sheet")
+        try app.performAccessibilityAudit(for: audit)
+        let challenging = app.buttons["competition.practice.pace.challenging"]
+        challenging.tap()
+        XCTAssertTrue(challenging.isSelected)
+        XCTAssertFalse(balanced.isSelected)
+        app.buttons["competition.practice.start"].tap()
+
+        let card = sharingCard(state: "active", name: "Pacer")
+        XCTAssertTrue(card.waitForExistence(timeout: 5))
+        XCTAssertTrue(card.label.contains("Practice · Day 2 of 7"), card.label)
+        // Success closes the sheet.
+        expectation(
+            for: NSPredicate(format: "exists == false"),
+            evaluatedWith: element("competition.practice.sheet")
+        )
+        waitForExpectations(timeout: 5)
+        let challenge = app.buttons["competition.practice.challenge"]
+        scrollToElement(challenge)
+        XCTAssertTrue(challenge.exists)
+        attachScreenshot("practice-home")
+        try app.performAccessibilityAudit(for: audit)
+
+        scrollToElement(card)
+        card.tap()
+        XCTAssertTrue(app.navigationBars["Pacer"].waitForExistence(timeout: 3))
+        attachScreenshot("practice-match")
+        XCTAssertTrue(moreMenu.waitForExistence(timeout: 3))
+        moreMenu.tap()
+        let end = app.buttons["competition.practice.end"]
+        XCTAssertTrue(end.waitForExistence(timeout: 3))
+        attachScreenshot("practice-menu")
+        end.tap()
+        let confirmation = app.sheets["End this practice match?"]
+        XCTAssertTrue(confirmation.waitForExistence(timeout: 3))
+        attachScreenshot("practice-end-confirmation")
+        confirmation.buttons["End Practice"].tap()
+
+        XCTAssertTrue(app.staticTexts["No matches yet"].waitForExistence(timeout: 5))
+        XCTAssertFalse(card.exists)
+
+        // A finished practice: Practice · Final, and Challenge Someone in place of Rematch.
+        launch(.practice, appearanceArguments: ["-practiceLabFinished", "YES"])
+        let result = sharingCard(state: "completed", name: "Pacer")
+        XCTAssertTrue(result.waitForExistence(timeout: 8))
+        XCTAssertTrue(result.label.contains("Practice · "), result.label)
+        result.tap()
+        let kicker = app.staticTexts.matching(
+            NSPredicate(format: "label BEGINSWITH[c] %@", "Practice · Final · ")
+        ).firstMatch
+        XCTAssertTrue(kicker.waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["competition.practice.challenge"].exists)
+        XCTAssertFalse(moreMenu.exists)
+        XCTAssertFalse(app.buttons["competition.result.share"].exists)
+        attachScreenshot("practice-result")
+
+        launch(
+            .practice,
+            appearanceArguments: [
+                "-AppleInterfaceStyle", "Dark",
+                "-UIPreferredContentSizeCategoryName",
+                "UICTContentSizeCategoryAccessibilityXXXL",
+            ]
+        )
+        XCTAssertTrue(app.staticTexts["No matches yet"].waitForExistence(timeout: 8))
+        let open = app.buttons["competition.practice.open"]
+        scrollToElement(open)
+        open.tap()
+        XCTAssertTrue(element("competition.practice.sheet").waitForExistence(timeout: 3))
+        let start = app.buttons["competition.practice.start"]
+        scrollToElement(start)
+        XCTAssertTrue(start.isHittable)
+        attachScreenshot("practice-sheet-dark-ax5")
+        try app.performAccessibilityAudit(for: audit)
+    }
+
     private func openCaseyResult() {
         let casey = sharingCard(state: "completed", name: "Casey")
         scrollToElement(casey)
@@ -1936,6 +2028,7 @@ final class MultiUserCompetitionUITests: XCTestCase {
         case healthOnboardingClaim = "health-onboarding-claim"
         case incomingChallenge = "incoming-challenge"
         case liveActivity = "live-activity"
+        case practice
     }
 
     private func launch(

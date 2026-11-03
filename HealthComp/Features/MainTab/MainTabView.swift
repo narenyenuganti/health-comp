@@ -10,6 +10,7 @@ struct MainTabView: View {
 
     @Environment(\.scenePhase) private var scenePhase
     @State private var isChallengePresented = false
+    @State private var isPracticePresented = false
 
     var body: some View {
         Group {
@@ -32,8 +33,8 @@ struct MainTabView: View {
             store.send(.scenePhaseChanged(Self.sceneState(newValue)))
         }
         // Keeps the notifications prompt from presenting under the
-        // Challenge sheet, where SwiftUI would drop it.
-        .onChange(of: isChallengePresented) { _, isOpen in
+        // Challenge or practice sheet, where SwiftUI would drop it.
+        .onChange(of: isChallengePresented || isPracticePresented) { _, isOpen in
             store.send(.challengeSheetVisibilityChanged(isOpen))
         }
         .onReceive(
@@ -131,7 +132,9 @@ struct MainTabView: View {
                         challengeAgain: challengeAgain,
                         archive: { store.send(.competition(.archiveTapped($0))) },
                         commandIDsInFlight: store.competition.commandIDsInFlight,
-                        retry: retry
+                        retry: retry,
+                        practice: practiceStart(publication),
+                        isPracticePresented: $isPracticePresented
                     )
                     .refreshable {
                         await store.send(.competition(.pullToRefresh)).finish()
@@ -144,6 +147,14 @@ struct MainTabView: View {
                 }
             }
             .toolbar { homeToolbar }
+            // Outside Home's `.refreshable`, which a sheet presented from
+            // inside it inherits: a drag down would refresh, not close.
+            .sheet(isPresented: $isPracticePresented) {
+                if let publication = store.competition.publication,
+                   let practice = practiceStart(publication) {
+                    PracticeMatchSheet(practice: practice)
+                }
+            }
             .navigationDestination(for: CompetitionHomeRoute.self) { route in
                 switch route {
                 case .history:
@@ -269,6 +280,12 @@ struct MainTabView: View {
         if let publication = store.competition.publication,
            let competition = publication.dashboard.competitions.first(
                where: { $0.id == id }
+           ),
+           competition.isPractice {
+            practiceDestination(competition, publication: publication)
+        } else if let publication = store.competition.publication,
+           let competition = publication.dashboard.competitions.first(
+               where: { $0.id == id }
            ) {
             switch competition.lifecycle {
             case .pending:
@@ -356,6 +373,61 @@ struct MainTabView: View {
                 description: Text("Go back to Home to refresh this match.")
             )
         }
+    }
+
+    /// Practice: simulated on its match screen (the rules say so), no mute,
+    /// no Cancel Match, End Practice in the menu; its result's one action is
+    /// Challenge Someone.
+    @ViewBuilder
+    private func practiceDestination(
+        _ competition: LocalCompetitionPresentation,
+        publication: LocalCompetitionPublication
+    ) -> some View {
+        let id = competition.id
+        switch competition.lifecycle {
+        case .completed, .archived:
+            CompetitionResultView(
+                competition: competition,
+                beltEvent: nil,
+                source: .remoteParticipants,
+                rematch: .available,
+                isCommandInFlight: false,
+                send: sendCompetitionAction,
+                openCompetition: { store.send(.pathChanged(store.path + [$0])) },
+                issue: competitionRowIssue(id, in: publication.dashboard.issues),
+                retry: retry,
+                challengeSomeone: {
+                    store.send(.pathChanged([]))
+                    isChallengePresented = true
+                }
+            )
+        default:
+            CompetitionDetailView(
+                competition: competition,
+                source: .simulatedFixture,
+                issue: competitionRowIssue(id, in: publication.dashboard.issues),
+                retry: retry,
+                refresh: { [store] in
+                    await Task {
+                        await store.send(.competition(.pullToRefresh)).finish()
+                    }.value
+                },
+                endPractice: { store.send(.competition(.deleteTapped(id))) }
+            )
+        }
+    }
+
+    private func practiceStart(
+        _ publication: LocalCompetitionPublication
+    ) -> CompetitionPracticeStart? {
+        guard publication.source == .remoteParticipants else { return nil }
+        return CompetitionPracticeStart(
+            isStarting: store.competition.isCommandInFlight(PracticeMatch.startCommandID),
+            failed: publication.dashboard.issues.contains(
+                .commandRejected(PracticeMatch.startCommandID)
+            ),
+            start: { store.send(.competition(.practiceStartTapped($0))) }
+        )
     }
 
     private func sendCompetitionAction(_ action: CompetitionFeature.Action) {

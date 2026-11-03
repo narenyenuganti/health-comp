@@ -113,6 +113,9 @@ struct CompetitionClient: Sendable {
         CompetitionReactionTarget,
         CompetitionReactionKind?
     ) async throws -> CompetitionPublication
+    /// Starts a practice match on this iPhone; a failure is
+    /// `commandRejected(PracticeMatch.startCommandID)`.
+    var startPractice: @Sendable (OpponentDifficulty) async -> CompetitionPublication
 
     init(
         start: @escaping @Sendable () -> AsyncStream<CompetitionPublication>,
@@ -214,7 +217,10 @@ struct CompetitionClient: Sendable {
             CompetitionReactionKind?
         ) async throws -> CompetitionPublication = { _, _, _ in
             throw CompetitionRemoteFailure.operationFailed
-        }
+        },
+        startPractice: @escaping @Sendable (
+            OpponentDifficulty
+        ) async -> CompetitionPublication = { _ in .inert }
     ) {
         self.start = start
         self.updates = updates
@@ -250,6 +256,7 @@ struct CompetitionClient: Sendable {
         self.resolveChallengeLink = resolveChallengeLink
         self.nudge = nudge
         self.setReaction = setReaction
+        self.startPractice = startPractice
     }
 
     func prepareForProfileTeardown(

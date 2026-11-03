@@ -92,7 +92,7 @@ extension CompetitionClient {
             archive: { id in await coordinator.archive(id) },
             rematch: { id in await coordinator.unsupported(id) },
             reinvite: { await coordinator.unsupported(nil) },
-            delete: { id in await coordinator.unsupported(id) },
+            delete: { id in await coordinator.endPractice(id) },
             reconcileNotifications: {
                 await coordinator.reconcileNotifications()
             },
@@ -172,7 +172,8 @@ extension CompetitionClient {
             },
             setReaction: { id, target, kind in
                 try await coordinator.setReaction(id, target, kind)
-            }
+            },
+            startPractice: { await coordinator.startPractice($0) }
         )
     }
 }
@@ -459,6 +460,11 @@ private actor RemoteCompetitionClientCoordinator {
     private var runtimeGeneration: UInt64 = 0
     private var operationIsInProgress = false
     private var operationWaiters: [OperationWaiter] = []
+    /// The practice match: a local runtime that only reads (never
+    /// `handle`/`handleAll`), so the remote runtime keeps signal ownership.
+    private var practiceRuntime: LocalCompetitionRuntime?
+    private var practiceJournals: [LoadedCompetitionJournal] = []
+    private var practiceIssues: [CompetitionClientIssue] = []
 
     init(
         remoteAPI: CompetitionRemoteAPI,
@@ -569,6 +575,14 @@ private actor RemoteCompetitionClientCoordinator {
                 )
                 self.runtime = runtime
                 self.lastMaterializations = [:]
+                self.practiceRuntime = LocalCompetitionRuntime(
+                    environment: environment,
+                    store: JSONCompetitionEventStore(
+                        rootDirectory: paths.practiceEventsDirectory
+                    )
+                )
+                self.practiceJournals = []
+                self.practiceIssues = []
                 let preferences = notificationPreferencesFactory(paths)
                 self.notificationPreferences = preferences
                 self.observerDeliveryReceipts =
@@ -795,6 +809,7 @@ private actor RemoteCompetitionClientCoordinator {
         }
         await installationCoordinator?.reconcile()
         let outcome = await runtime.synchronizeAll()
+        await refreshPractice(.reconciliationProbe)
         if let challenges = try? await remoteAPI.listChallenges() {
             latestChallenges = challenges
         }
@@ -886,6 +901,84 @@ private actor RemoteCompetitionClientCoordinator {
             await notificationCoordinator.reconcileLatest()
             return state
         }
+    }
+
+    // MARK: Practice
+
+    /// Reads Health for the practice match and deletes a finished one once
+    /// its result leaves Home. No network.
+    private func refreshPractice(_ trigger: ActivityRefreshTrigger) async {
+        guard let practiceRuntime else { return }
+        let outcome = await practiceRuntime.reconcileAll(trigger: trigger)
+        practiceJournals = await practiceRuntime.loadAll().successfulJournals
+        let now = await environment.context().instant.wallDate
+        let expired = PracticeMatch.expiredResults(journals: practiceJournals, now: now)
+        for id in expired {
+            try? await practiceRuntime.delete(competitionID: id)
+        }
+        if !expired.isEmpty {
+            practiceJournals = await practiceRuntime.loadAll().successfulJournals
+        }
+        let failedIDs = outcome.failures.map(\.competitionID)
+            .filter { !expired.contains($0) }
+            .sorted { $0.rawValue.uuidString < $1.rawValue.uuidString }
+        practiceIssues = failedIDs.isEmpty ? [] : [.competitionFailures(failedIDs)]
+    }
+
+    func startPractice(_ difficulty: OpponentDifficulty) async -> CompetitionPublication {
+        await withOperationGate {
+            guard terminalTeardown == nil else {
+                return terminalBlockedPublication()
+            }
+            guard hasStarted, let practiceRuntime,
+                  (try? await PracticeMatch.start(
+                      difficulty,
+                      runtime: practiceRuntime,
+                      environment: environment
+                  )) != nil
+            else {
+                return publication(adding: .commandRejected(PracticeMatch.startCommandID))
+            }
+            await refreshPractice(.reconciliationProbe)
+            return await republishLastInputs()
+        }
+    }
+
+    /// End Practice. Real matches can't be deleted, as before.
+    func endPractice(_ id: CompetitionID) async -> CompetitionPublication {
+        await withOperationGate {
+            guard terminalTeardown == nil else {
+                return terminalBlockedPublication()
+            }
+            guard let practiceRuntime,
+                  practiceJournals.contains(where: { $0.projection.competition.id == id }),
+                  (try? await practiceRuntime.delete(competitionID: id)) != nil
+            else {
+                return publication(adding: .commandRejected(id))
+            }
+            practiceJournals = await practiceRuntime.loadAll().successfulJournals
+            // A stale failure for this id would keep the deleted practice on Home.
+            practiceIssues = practiceIssues.compactMap { issue in
+                guard case .competitionFailures(let ids) = issue else { return issue }
+                let rest = ids.filter { $0 != id }
+                return rest.isEmpty ? nil : .competitionFailures(rest)
+            }
+            return await republishLastInputs()
+        }
+    }
+
+    /// The last server inputs again, with fresh practice; a full
+    /// reconciliation when nothing was published yet.
+    private func republishLastInputs() async -> CompetitionPublication {
+        guard let profile, let inputs = lastPublishInputs else {
+            return await performReconciliation()
+        }
+        return await publish(
+            materializations: inputs.materializations,
+            profile: profile,
+            issues: inputs.issues,
+            knownCompetitionIDs: inputs.knownCompetitionIDs
+        )
     }
 
     func unsupported(_ id: CompetitionID?) async -> CompetitionPublication {
@@ -1492,6 +1585,9 @@ private actor RemoteCompetitionClientCoordinator {
         await runtime?.stop()
         runtime = nil
         lastMaterializations = [:]
+        practiceRuntime = nil
+        practiceJournals = []
+        practiceIssues = []
         return stoppedTasks
     }
 
@@ -1789,9 +1885,16 @@ private actor RemoteCompetitionClientCoordinator {
                 materializations: materializations,
                 profile: profile,
                 context: context,
-                issues: issues,
+                issues: Self.deduplicated(issues + practiceIssues),
                 challenges: latestChallenges,
                 reactions: latestReactions
+            ).addingPractice(
+                LocalCompetitionProjector.practicePresentations(
+                    journals: practiceJournals,
+                    context: context,
+                    configuration: .live,
+                    ownerDisplayName: profile.displayName
+                )
             ).keepingFailedCompetitions(
                 from: latestPublication?.dashboard,
                 now: context.instant.wallDate
@@ -1800,10 +1903,20 @@ private actor RemoteCompetitionClientCoordinator {
             timeZoneIdentifier: context.timeZoneIdentifier
         )
         lastPublishInputs = (materializations, issues, knownCompetitionIDs)
+        // A floor, so a wake the runtime asks for "now" can't spin.
+        let practiceWake = await practiceRuntime?.nextWake(
+            in: practiceJournals,
+            context: context
+        ).map { max($0, context.instant.wallDate.addingTimeInterval(60)) }
         scheduleBoundaryRepublish(
-            at: publication.dashboard.nextHomeBoundary(
-                after: context.instant.wallDate
-            )
+            at: [
+                publication.dashboard.nextHomeBoundary(after: context.instant.wallDate),
+                practiceWake,
+                PracticeMatch.nextPacerReveal(
+                    journals: practiceJournals,
+                    now: context.instant.wallDate
+                ),
+            ].compactMap { $0 }.min()
         )
         let materializedIDs = Set(materializations.map {
             CompetitionID($0.descriptor.competitionID)
@@ -1856,17 +1969,14 @@ private actor RemoteCompetitionClientCoordinator {
             guard generation == runtimeGeneration,
                   terminalTeardown == nil,
                   !isStopped,
-                  let profile,
-                  let inputs = lastPublishInputs
+                  profile != nil,
+                  lastPublishInputs != nil
             else {
                 return
             }
-            _ = await publish(
-                materializations: inputs.materializations,
-                profile: profile,
-                issues: inputs.issues,
-                knownCompetitionIDs: inputs.knownCompetitionIDs
-            )
+            // Also a pacer checkpoint: one local read, at most every 5 min.
+            await refreshPractice(.dayBoundary)
+            _ = await republishLastInputs()
         }
     }
 
