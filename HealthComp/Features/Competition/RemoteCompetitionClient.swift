@@ -946,6 +946,12 @@ private actor RemoteCompetitionClientCoordinator {
                 return publication(adding: .commandRejected(id))
             }
             practiceJournals = await practiceRuntime.loadAll().successfulJournals
+            // A stale failure for this id would keep the deleted practice on Home.
+            practiceIssues = practiceIssues.compactMap { issue in
+                guard case .competitionFailures(let ids) = issue else { return issue }
+                let rest = ids.filter { $0 != id }
+                return rest.isEmpty ? nil : .competitionFailures(rest)
+            }
             return await republishLastInputs()
         }
     }

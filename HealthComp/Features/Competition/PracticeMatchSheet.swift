@@ -69,9 +69,12 @@ struct PracticeMatchSheet: View {
             }
         }
         .background(Theme.ground)
-        .presentationDetents([.medium, .large])
-        // At AX sizes the rows overflow the medium height: a drag scrolls
-        // them, and the grabber still resizes.
+        // At AX sizes medium shows only the title, so the sheet opens full
+        // height there.
+        .presentationDetents(
+            dynamicTypeSize.isAccessibilitySize ? [.large] : [.medium, .large]
+        )
+        // A drag on the rows scrolls them; the grabber still resizes or closes.
         .presentationContentInteraction(.scrolls)
         .presentationDragIndicator(.visible)
         .presentationBackground(Theme.ground)

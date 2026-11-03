@@ -5736,26 +5736,56 @@ extension RemoteCompetitionClientTests {
     func testPracticePublishesBesideRemoteMatchesWithoutServerCalls() async throws {
         let (profile, paths) = try widgetTestProfile()
         let fixture = try practiceSource()
+        let realID = UUID(uuidString: "82000000-0000-4000-8000-0000000000A1")!
+        let createdAt = Date(timeIntervalSince1970: 1_786_540_000)
+        let descriptor = try pendingDescriptor(
+            competitionID: realID,
+            profile: profile,
+            expiresAt: createdAt.addingTimeInterval(48 * 60 * 60)
+        )
+        let page = try pendingHistoryPage(
+            descriptor: descriptor,
+            profileID: profile.id,
+            createdAt: createdAt
+        )
         let probe = RemoteCompetitionClientProbe()
+        let fetches = ChallengeFetchCounter()
         let spy = WidgetSnapshotSpy()
         let client = CompetitionClient.remote(
-            remoteAPI: remoteAPI(listCompetitions: {
-                await probe.recordList()
-                return []
-            }),
+            remoteAPI: remoteAPI(
+                listCompetitions: {
+                    await probe.recordList()
+                    return [descriptor]
+                },
+                fetchChanges: { _, _ in
+                    _ = fetches.next()
+                    return page
+                }
+            ),
             environment: .accelerated(source: fixture.source),
             widgetSnapshots: spy.client
         )
         try await client.mountAuthenticatedProfile(profile, paths)
         var iterator = client.start().makeAsyncIterator()
-        _ = await iterator.next()
+        let first = await awaitNext(&iterator)
+        let real = try XCTUnwrap(
+            first?.dashboard.competitions.first(where: { $0.id == CompetitionID(realID) })
+        )
+        XCTAssertFalse(real.isPractice)
         let listsBefore = await probe.listCount()
+        let fetchesBefore = fetches.count
 
         let publication = await client.startPractice(.balanced)
 
         let listsAfter = await probe.listCount()
         XCTAssertEqual(listsAfter, listsBefore)
+        XCTAssertEqual(fetches.count, fetchesBefore)
         XCTAssertEqual(publication.source, .remoteParticipants)
+        // The real match sits beside the practice, unchanged.
+        XCTAssertEqual(
+            publication.dashboard.competitions.filter { !$0.isPractice },
+            [real]
+        )
         let practice = publication.dashboard.competitions.filter(\.isPractice)
         XCTAssertEqual(practice.count, 1)
         XCTAssertEqual(practice.first?.opponentDisplayName, "Pacer")

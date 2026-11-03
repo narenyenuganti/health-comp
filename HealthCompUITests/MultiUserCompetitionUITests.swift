@@ -508,7 +508,8 @@ final class MultiUserCompetitionUITests: XCTestCase {
         card.tap()
         XCTAssertTrue(app.navigationBars["Pacer"].waitForExistence(timeout: 3))
         attachScreenshot("practice-match")
-        app.buttons["competition.more"].tap()
+        XCTAssertTrue(moreMenu.waitForExistence(timeout: 3))
+        moreMenu.tap()
         let end = app.buttons["competition.practice.end"]
         XCTAssertTrue(end.waitForExistence(timeout: 3))
         attachScreenshot("practice-menu")
@@ -532,7 +533,7 @@ final class MultiUserCompetitionUITests: XCTestCase {
         ).firstMatch
         XCTAssertTrue(kicker.waitForExistence(timeout: 3))
         XCTAssertTrue(app.buttons["competition.practice.challenge"].exists)
-        XCTAssertFalse(app.buttons["competition.more"].exists)
+        XCTAssertFalse(moreMenu.exists)
         XCTAssertFalse(app.buttons["competition.result.share"].exists)
         attachScreenshot("practice-result")
 

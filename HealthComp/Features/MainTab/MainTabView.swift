@@ -33,8 +33,8 @@ struct MainTabView: View {
             store.send(.scenePhaseChanged(Self.sceneState(newValue)))
         }
         // Keeps the notifications prompt from presenting under the
-        // Challenge sheet, where SwiftUI would drop it.
-        .onChange(of: isChallengePresented) { _, isOpen in
+        // Challenge or practice sheet, where SwiftUI would drop it.
+        .onChange(of: isChallengePresented || isPracticePresented) { _, isOpen in
             store.send(.challengeSheetVisibilityChanged(isOpen))
         }
         .onReceive(

@@ -94,7 +94,7 @@ struct MainTabFeature {
         var historyPersonIdentity: String?
         var healthAccess: HealthAccessStatus?
         var notificationPrompt: NotificationPromptPhase = .unscheduled
-        /// Mirrors MainTabView's Challenge sheet.
+        /// Mirrors MainTabView's Challenge and practice sheets.
         var isChallengeSheetOpen = false
         /// Claim links up to this sequence arrived before this account
         /// existed, so they can't be for it.

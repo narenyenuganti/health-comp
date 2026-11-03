@@ -994,10 +994,11 @@ private final class MultiUserCompetitionPracticeTestLabServer: @unchecked Sendab
         let otherIDs: Set<CompetitionID> = switch setup {
         case .afterRecords: [Fixtures.archivedID]
         case .withLiveMatch: [Fixtures.activeID]
-        case .withScheduledMatch: [Fixtures.scheduledID]
         default: []
         }
-        others = real.filter { otherIDs.contains($0.id) }
+        others = setup == .withScheduledMatch
+            ? [Fixtures.scheduledTomorrowPresentation()]
+            : real.filter { otherIDs.contains($0.id) }
         practice = switch setup {
         case .empty, .startsScheduled, .afterRecords, .challengeArrives: nil
         case .scheduled: Fixtures.practiceScheduledPresentation()
@@ -1735,7 +1736,7 @@ private enum MultiUserCompetitionTestLabFixtures {
         )
     }
 
-    /// Tomorrow's practice, Sun Aug 16 to Sat Aug 22, as Start Tomorrow makes it.
+    /// Tomorrow's practice, Mon Aug 17 to Sun Aug 23, as Start Tomorrow makes it.
     static func practiceScheduledPresentation() -> LocalCompetitionPresentation {
         presentation(
             id: practiceID,
@@ -1746,8 +1747,23 @@ private enum MultiUserCompetitionTestLabFixtures {
             days: [],
             currentDayOrdinal: nil,
             terminal: nil,
-            startDay: 16,
+            startDay: 17,
             opponentIdentity: PracticeMatch.opponentIdentity
+        )
+    }
+
+    /// Priya's match starting tomorrow, Mon Aug 17 (labNow is Sun Aug 16).
+    static func scheduledTomorrowPresentation() -> LocalCompetitionPresentation {
+        presentation(
+            id: scheduledID,
+            opponentName: "Priya",
+            lifecycle: .scheduled,
+            userPoints: 0,
+            opponentPoints: 0,
+            days: [],
+            currentDayOrdinal: nil,
+            terminal: nil,
+            startDay: 17
         )
     }
 

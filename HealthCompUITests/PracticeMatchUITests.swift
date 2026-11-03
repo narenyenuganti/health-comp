@@ -81,7 +81,7 @@ final class PracticeMatchUITests: XCTestCase {
         XCTAssertTrue(card.waitForExistence(timeout: 5))
         XCTAssertEqual(all("competition.sharing.scheduled.\(Self.practiceUUID)").count, 1)
         // VoiceOver reads the row line; the card shows "Practice · Scheduled".
-        XCTAssertEqual(card.label, "Pacer. Practice · Starts Sun, Aug 16")
+        XCTAssertEqual(card.label, "Pacer. Practice · Starts Mon, Aug 17")
         XCTAssertFalse(text("No matches yet").exists)
         XCTAssertFalse(app.buttons["competition.practice.open"].exists)
         XCTAssertFalse(app.buttons["competition.create.empty"].exists)
@@ -264,7 +264,7 @@ final class PracticeMatchUITests: XCTestCase {
             XCTAssertTrue(text(outcome.title).waitForExistence(timeout: 3), outcome.title)
             XCTAssertTrue(text("Practice · Final · Aug 8\u{2009}–\u{2009}14").exists)
             XCTAssertFalse(anyText(containing: "simulated").exists)
-            XCTAssertFalse(app.buttons["competition.more"].exists)
+            XCTAssertFalse(element("competition.more").exists)
             XCTAssertFalse(app.buttons["competition.result.share"].exists)
             XCTAssertFalse(app.buttons["competition.rematch.create"].exists)
             XCTAssertFalse(element("competition.result.belt").exists)
@@ -415,7 +415,7 @@ final class PracticeMatchUITests: XCTestCase {
         app.buttons["competition.practice.start"].tap()
         let card = sharingCard(state: "scheduled")
         XCTAssertTrue(card.waitForExistence(timeout: 5))
-        XCTAssertEqual(card.label, "Pacer. Practice · Starts Sun, Aug 16 PDT")
+        XCTAssertEqual(card.label, "Pacer. Practice · Starts Mon, Aug 17 PDT")
     }
 
     // MARK: Screenshot matrix (not in CI)
@@ -435,6 +435,10 @@ final class PracticeMatchUITests: XCTestCase {
             attachScreenshot("empty-home-\(suffix)")
             let open = app.buttons["competition.practice.open"]
             scrollToElement(open)
+            if ax {
+                scrollToElement(app.buttons["competition.create.empty"])
+                attachScreenshot("empty-home-bottom-\(suffix)")
+            }
             open.tap()
             XCTAssertTrue(element("competition.practice.sheet").waitForExistence(timeout: 3))
             sleep(1)
@@ -498,6 +502,18 @@ final class PracticeMatchUITests: XCTestCase {
             XCTAssertTrue(sharingCard(state: "active").waitForExistence(timeout: 8))
             attachScreenshot("home-with-real-\(suffix)")
 
+            launchLab(setup: "with-live-match", arguments: config.arguments)
+            XCTAssertTrue(anyText(containing: "LIVE · 2").waitForExistence(timeout: 8))
+            attachScreenshot("home-with-live-\(suffix)")
+
+            launchLab(setup: "after-records", arguments: config.arguments)
+            XCTAssertTrue(text("Nothing live right now").waitForExistence(timeout: 8))
+            attachScreenshot("home-after-records-\(suffix)")
+
+            launchLab(setup: "challenge-arrives", arguments: config.arguments)
+            XCTAssertTrue(sharingCard(name: "Sam").waitForExistence(timeout: 12))
+            attachScreenshot("home-challenge-arrived-\(suffix)")
+
             for outcome in ["won", "lost", "tied"] {
                 launchLab(setup: outcome, arguments: config.arguments)
                 let row = sharingCard(state: "completed")
@@ -559,7 +575,8 @@ final class PracticeMatchUITests: XCTestCase {
     }
 
     private func openMenu() {
-        let more = app.buttons["competition.more"]
+        // iOS 18 exposes Menu's identified wrapper, not its nested button, as hittable.
+        let more = element("competition.more")
         XCTAssertTrue(more.waitForExistence(timeout: 3))
         more.tap()
         XCTAssertTrue(app.buttons["How scoring works"].waitForExistence(timeout: 3))
