@@ -464,7 +464,7 @@ private struct MultiUserCompetitionClaimTestLabView: View {
              .healthOnboarding, .healthOnboardingChallenge, .healthOnboardingClaim,
              .incomingChallenge, .block, .blockedAccount, .blockClaim,
              .nudge, .nudgeSimulated, .whatItTakes,
-             .liveActivity, .practice:
+             .liveActivity, .practice, .belt, .beltHero:
             .ready
         }
         _status = State(initialValue: initialStatus)
