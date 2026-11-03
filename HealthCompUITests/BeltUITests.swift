@@ -82,7 +82,11 @@ final class BeltUITests: XCTestCase {
         XCTAssertTrue(hero.label.hasSuffix(". You hold the belt"), hero.label)
         // The hero says LIVE on the card; there is no "LIVE · n" section.
         XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "LIVE · ")).firstMatch.exists)
-        XCTAssertEqual(labels(containing: "belt").count, 1)
+        // Only the hero card speaks of the belt (the button and its combined
+        // label can both carry it).
+        let beltLabels = labels(containing: "belt").allElementsBoundByIndex.map(\.label)
+        XCTAssertFalse(beltLabels.isEmpty)
+        XCTAssertEqual(Set(beltLabels), [hero.label])
     }
 
     // MARK: History
@@ -269,6 +273,9 @@ final class BeltUITests: XCTestCase {
         scrollToElement(long)
         XCTAssertTrue(long.isHittable)
         try audit()
+        let former = card("active", 0x52)
+        scrollToElement(former)
+        try audit()
 
         openPerson(0x23, title: Self.longName)
         try audit()
@@ -310,6 +317,8 @@ final class BeltUITests: XCTestCase {
             shot("home-long-name", suffix)
             showAtTop(card("tallying", 0x32))
             shot("home-waiting", suffix)
+            showAtTop(card("active", 0x52))
+            shot("home-former", suffix)
 
             openHistory()
             shot("history", suffix)
@@ -385,8 +394,14 @@ final class BeltUITests: XCTestCase {
         ) { issue in
             // Name the element, so a failure says what clipped.
             let element = issue.element
-            issues.append("\(issue.compactDescription): \(element?.identifier ?? "") \"\(element?.label ?? "")\"")
+            issues.append("\(issue.compactDescription): \(element?.identifier ?? "") \"\(element?.label ?? "")\" \(element?.frame ?? .zero)")
             return true
+        }
+        if !issues.isEmpty {
+            let attachment = XCTAttachment(screenshot: app.screenshot())
+            attachment.name = "audit-failure"
+            attachment.lifetime = .keepAlways
+            add(attachment)
         }
         XCTAssertEqual(issues, [], file: file, line: line)
     }

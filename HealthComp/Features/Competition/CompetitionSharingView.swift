@@ -900,8 +900,14 @@ private struct CompetitionBeltChip: View {
         }
         .padding(.horizontal, 9)
         .padding(.vertical, 4)
-        .background(Theme.ground, in: Capsule())
-        .overlay(Capsule().strokeBorder(Theme.hairline))
+        // A capsule at one line; a rounded rectangle once the text wraps, so
+        // the outline never crosses the letters at large sizes.
+        .background(Theme.ground, in: chipShape)
+        .overlay(chipShape.strokeBorder(Theme.hairline))
+    }
+
+    private var chipShape: RoundedRectangle {
+        RoundedRectangle(cornerRadius: 12, style: .continuous)
     }
 }
 
