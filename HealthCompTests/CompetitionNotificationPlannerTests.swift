@@ -41,6 +41,11 @@ final class CompetitionNotificationPlannerTests: XCTestCase {
         )
         XCTAssertEqual(calendar.component(.hour, from: start), 9)
         XCTAssertEqual(calendar.component(.minute, from: start), 0)
+        let takes = try XCTUnwrap(
+            policy.scheduledFireDate(.whatItTakes, base, timeZoneIdentifier)
+        )
+        XCTAssertEqual(calendar.component(.hour, from: takes), 19)
+        XCTAssertEqual(calendar.component(.minute, from: takes), 0)
         XCTAssertTrue(policy.isCloseScore(1_000, 1_050, 5))
         XCTAssertFalse(policy.isCloseScore(1_000, 1_051, 5))
         XCTAssertFalse(policy.isCloseScore(1_000, 1_050, 4))
@@ -730,7 +735,8 @@ final class CompetitionNotificationPlannerTests: XCTestCase {
         today: Double = 300,
         lifecycle: CompetitionNotificationLifecycle? = nil,
         recorded: [(NotificationEmissionFamily, NotificationEpisodeKey)] = [],
-        days: [CompetitionNotificationDaySnapshot]? = nil
+        days: [CompetitionNotificationDaySnapshot]? = nil,
+        whatItTakes: CompetitionWhatItTakes? = nil
     ) throws -> CompetitionNotificationCompetitionSnapshot {
         try competitionSnapshot(
             id: competitionID("EAD172F8-531D-4327-823D-E82A4F6961" + suffix),
@@ -742,7 +748,8 @@ final class CompetitionNotificationPlannerTests: XCTestCase {
             opponentPoints: opponent,
             currentDayOwnerPoints: today,
             recorded: recorded,
-            days: days
+            days: days,
+            whatItTakes: whatItTakes
         )
     }
 
@@ -1303,6 +1310,39 @@ final class CompetitionNotificationPlannerTests: XCTestCase {
             ])),
             "Last day · Today is the last day of your matches with Priya."
         )
+
+        // The zone is named only when its midnight offset differs from the phone's.
+        func reminder(zone: String, dayEnd: String) -> String {
+            var built = self.message(.scheduled(.whatItTakes), nil, nil)
+            built.whatItTakes = takes(dayOrdinal: 5, points: 39)
+            built.dayOrdinal = 5
+            built.matchTimeZoneIdentifier = zone
+            built.matchDayEnd = ISO8601DateFormatter().date(from: dayEnd)
+            return line(CompetitionNotificationPolicy.liveV1Content(built, locale: enUS, timeZone: la))
+        }
+        let takesLine = "39 to take the lead from Alex · About 240 kcal of Move or 12 min of Exercise."
+        XCTAssertEqual(
+            reminder(zone: "America/Los_Angeles", dayEnd: "2027-01-16T08:00:00Z"),
+            takesLine + " Day 5 ends at midnight."
+        )
+        XCTAssertEqual(
+            reminder(zone: "America/New_York", dayEnd: "2027-01-16T05:00:00Z"),
+            takesLine + " Day 5 ends at midnight EST."
+        )
+        XCTAssertEqual(
+            reminder(zone: "America/New_York", dayEnd: "2027-07-16T04:00:00Z"),
+            takesLine + " Day 5 ends at midnight EDT."
+        )
+        var noTakes = message(.scheduled(.whatItTakes), nil, nil)
+        XCTAssertEqual(
+            line(CompetitionNotificationPolicy.liveV1Content(noTakes, locale: enUS, timeZone: la)),
+            "Match update · Open HealthComp for the latest on your match with Alex."
+        )
+        noTakes.whatItTakes = takes(dayOrdinal: 5, points: nil)
+        XCTAssertEqual(
+            CompetitionNotificationPolicy.liveV1Content(noTakes, locale: enUS, timeZone: la).title,
+            "Match update"
+        )
     }
 
     private func normalized(_ text: String) -> String {
@@ -1322,6 +1362,7 @@ final class CompetitionNotificationPlannerTests: XCTestCase {
             (.scheduled(.scheduledStart), nil),
             (.scheduled(.finalDay), .finalDay),
             (.scheduled(.competitionEnded), nil),
+            (.scheduled(.whatItTakes), .whatItTakes),
         ]
         XCTAssertEqual(
             families.count,
@@ -1497,6 +1538,108 @@ final class CompetitionNotificationPlannerTests: XCTestCase {
         })
     }
 
+    // MARK: - PR 14: what it takes reminder
+
+    /// Noon (or another hour) on match day `day`; the fixture starts on a UTC midnight.
+    private func matchTime(day: Int, hour: Double = 12) -> Date {
+        Date(timeIntervalSinceReferenceDate: 1_036_800 + Double(day - 1) * 86_400 + hour * 3_600)
+    }
+
+    private func takes(dayOrdinal: Int, points: Double?) -> CompetitionWhatItTakes {
+        let suggestion = "About 240 kcal of Move or 12 min of Exercise."
+        return CompetitionWhatItTakes(
+            dayOrdinal: dayOrdinal,
+            points: points,
+            headline: points.map { "\(Int($0)) to take the lead" } ?? "Out of reach today",
+            suggestion: suggestion,
+            detail: suggestion,
+            accessibilityLabel: suggestion
+        )
+    }
+
+    private func takesRequests(_ plan: CompetitionNotificationPlan) -> [CompetitionScheduledNotificationRequest] {
+        plan.desiredScheduledRequests.filter { $0.identifier.hasSuffix(":what-it-takes") }
+    }
+
+    func testWhatItTakesReminderFiresAtSevenInTheMatchZoneWhenEnabled() throws {
+        let match = try liveMatch("01", day: 5, owner: 1_112, opponent: 1_150,
+                                  whatItTakes: takes(dayOrdinal: 5, points: 39))
+        let requests = takesRequests(try plan(
+            snapshot([match], evaluatedAt: matchTime(day: 5)), policy: enUSPolicy()
+        ))
+        XCTAssertEqual(requests.map(\.identifier), [
+            CompetitionNotificationIdentifier.scheduled(competitionID: match.id, family: .whatItTakes),
+        ])
+        let request = try XCTUnwrap(requests.first)
+        XCTAssertEqual(request.route, .competition(match.id))
+        XCTAssertEqual(request.dateComponents.timeZone?.identifier, "UTC")
+        XCTAssertEqual(request.dateComponents.date, matchTime(day: 5, hour: 19))
+        XCTAssertEqual(request.content.title, "39 to take the lead from Alex")
+        // The zone suffix depends on the phone's zone; testLiveV1CopyForEveryFamily pins it.
+        XCTAssertTrue(request.content.body.hasPrefix(
+            "About 240 kcal of Move or 12 min of Exercise. Day 5 ends at midnight"
+        ), request.content.body)
+    }
+
+    func testWhatItTakesReminderUsesTheValuesDayNotTheLifecycleDay() throws {
+        let lagging = try liveMatch("01", day: 5, owner: 1_112, opponent: 1_150,
+                                    lifecycle: .active(dayOrdinal: 4),
+                                    whatItTakes: takes(dayOrdinal: 5, points: 39))
+        let requests = takesRequests(try plan(snapshot([lagging], evaluatedAt: matchTime(day: 5))))
+        XCTAssertEqual(requests.map(\.dateComponents.date), [matchTime(day: 5, hour: 19)])
+
+        let mismatched = try liveMatch("01", day: 5, owner: 1_112, opponent: 1_150,
+                                       lifecycle: .active(dayOrdinal: 4),
+                                       whatItTakes: takes(dayOrdinal: 4, points: 39))
+        XCTAssertEqual(takesRequests(try plan(snapshot([mismatched], evaluatedAt: matchTime(day: 5)))), [])
+    }
+
+    func testWhatItTakesReminderIsSkippedWhenOffOutOfReachLeadingMutedOrPastSeven() throws {
+        let noon = matchTime(day: 5)
+        func match(
+            _ value: CompetitionWhatItTakes?,
+            lifecycle: CompetitionNotificationLifecycle? = nil
+        ) throws -> CompetitionNotificationCompetitionSnapshot {
+            try liveMatch("01", day: 5, owner: 1_112, opponent: 1_150,
+                          lifecycle: lifecycle, whatItTakes: value)
+        }
+        let reachable = takes(dayOrdinal: 5, points: 39)
+        XCTAssertEqual(takesRequests(try plan(snapshot([match(reachable)], evaluatedAt: noon))).count, 1)
+
+        XCTAssertEqual(takesRequests(try plan(
+            snapshot([match(reachable)], evaluatedAt: noon), switchedOff: [.whatItTakes]
+        )), [], "switched off")
+        XCTAssertEqual(takesRequests(try plan(snapshot([match(nil)], evaluatedAt: noon))), [],
+                       "leading or a stale reading")
+        XCTAssertEqual(takesRequests(try plan(
+            snapshot([match(takes(dayOrdinal: 5, points: nil))], evaluatedAt: noon)
+        )), [], "out of reach")
+        XCTAssertEqual(takesRequests(try plan(
+            snapshot([match(reachable)], evaluatedAt: noon), muted: [opponentIdentity]
+        )), [], "muted")
+        XCTAssertEqual(takesRequests(try plan(
+            snapshot([match(reachable)], evaluatedAt: matchTime(day: 5, hour: 19).addingTimeInterval(1))
+        )), [], "past 7 PM")
+        XCTAssertEqual(takesRequests(try plan(
+            snapshot([match(reachable, lifecycle: .tallying)], evaluatedAt: noon)
+        )), [], "tallying")
+    }
+
+    func testWhatItTakesReminderKeepsOnlyTheSmallestGapAcrossMatches() throws {
+        let far = try liveMatch("01", day: 5, owner: 1_000, opponent: 1_119,
+                                whatItTakes: takes(dayOrdinal: 5, points: 120))
+        let near = try liveMatch("02", day: 5, owner: 1_112, opponent: 1_150,
+                                 whatItTakes: takes(dayOrdinal: 5, points: 39))
+        let requests = takesRequests(try plan(
+            snapshot([far, near], evaluatedAt: matchTime(day: 5)), policy: enUSPolicy()
+        ))
+        XCTAssertEqual(requests.map(\.identifier), [
+            CompetitionNotificationIdentifier.scheduled(competitionID: near.id, family: .whatItTakes),
+        ])
+        XCTAssertEqual(requests.first?.route, .competition(near.id))
+        XCTAssertEqual(requests.first?.content.title, "39 to take the lead from Alex")
+    }
+
     private let opponentIdentity = "local-opponent:v1:default"
     private let fixedDate = Date(timeIntervalSinceReferenceDate: 1_000_000)
 
@@ -1549,7 +1692,8 @@ final class CompetitionNotificationPlannerTests: XCTestCase {
         startDate: Date = Date(timeIntervalSinceReferenceDate: 1_036_800),
         terminalResult: CompetitionNotificationTerminalSnapshot? = nil,
         recorded: [(NotificationEmissionFamily, NotificationEpisodeKey)] = [],
-        days: [CompetitionNotificationDaySnapshot]? = nil
+        days: [CompetitionNotificationDaySnapshot]? = nil,
+        whatItTakes: CompetitionWhatItTakes? = nil
     ) throws -> CompetitionNotificationCompetitionSnapshot {
         let calendar = try CompetitionCalendar(timeZoneIdentifier: "UTC")
         let startDay = try calendar.day(containing: startDate)
@@ -1585,7 +1729,8 @@ final class CompetitionNotificationPlannerTests: XCTestCase {
                         episodeKey: episode
                     )
                 })
-            )
+            ),
+            whatItTakes: whatItTakes
         )
     }
 

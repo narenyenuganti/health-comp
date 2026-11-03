@@ -1,4 +1,5 @@
 import CompetitionCore
+import ComposableArchitecture
 import Foundation
 import XCTest
 @testable import HealthComp
@@ -869,6 +870,93 @@ final class CompetitionNotificationCoordinatorTests: XCTestCase {
                 && $0.record.disposition == .suppressed(reason: .superseded)
         })
         XCTAssertFalse(operations.contains { $0.hasPrefix("post:") })
+    }
+
+    func testWhatItTakesReminderIsRemovedOnceYouLeadOrTheSwitchIsOff()
+        async throws {
+        let id = CompetitionID(
+            UUID(uuidString: "EAD172F8-531D-4327-823D-E82A4F696070")!
+        )
+        let reminder = CompetitionNotificationIdentifier.scheduled(
+            competitionID: id,
+            family: .whatItTakes
+        )
+        let calendar = try CompetitionCalendar(timeZoneIdentifier: "UTC")
+        // A UTC midnight; Day 1 noon is evaluatedAt.
+        let startDay = try calendar.day(
+            containing: Date(timeIntervalSinceReferenceDate: 1_987_200)
+        )
+        let takes = CompetitionWhatItTakes(
+            dayOrdinal: 1,
+            points: 39,
+            headline: "39 to take the lead",
+            suggestion: "About 12 min of Exercise.",
+            detail: "About 12 min of Exercise.",
+            accessibilityLabel: "39 points to take the lead. About 12 minutes of Exercise."
+        )
+        func snapshot(
+            _ revision: UInt64,
+            _ value: CompetitionWhatItTakes?
+        ) -> CompetitionNotificationPlanningSnapshot {
+            CompetitionNotificationPlanningSnapshot(
+                publicationRevision: revision,
+                evaluatedAt: Date(timeIntervalSinceReferenceDate: 2_030_400),
+                timeZoneIdentifier: "UTC",
+                competitions: [
+                    CompetitionNotificationCompetitionSnapshot(
+                        id: id,
+                        opponentIdentity: "local-opponent:v1:default",
+                        opponentDisplayName: "Alex",
+                        lifecycle: .active(dayOrdinal: 1),
+                        schedule: CompetitionSchedule(calendar: calendar, startDay: startDay),
+                        ownerPoints: 0,
+                        opponentPoints: 38,
+                        days: [],
+                        currentDayOrdinal: 1,
+                        latestRefresh: .completed,
+                        evaluationFreshness: .notFresh,
+                        terminalResult: nil,
+                        emissionHistory: NotificationEmissionProjection(),
+                        evaluatedAt: Date(timeIntervalSinceReferenceDate: 2_030_400),
+                        whatItTakes: value
+                    ),
+                ]
+            )
+        }
+        // The fixture fires at midnight, which is already past at noon.
+        var policy = CompetitionNotificationPolicy.coordinatorFixture
+        policy.scheduledFireDate = { family, base, _ in
+            family == .whatItTakes ? base.addingTimeInterval(19 * 3_600) : base
+        }
+        let switchedOff = LockIsolated<Set<CompetitionNotificationChoice>>([])
+        var preferences = CompetitionNotificationPreferencesClient
+            .constant(mutedOpponentIdentities: [])
+        preferences.switchedOff = { switchedOff.value }
+        let center = StatefulNotificationCenterRecorder()
+        let coordinator = CompetitionNotificationCoordinator(
+            planner: CompetitionNotificationPlanner(policy: policy),
+            notifications: center.client,
+            preferences: preferences,
+            commitDecisions: { _, _ in .noDecision }
+        )
+
+        await coordinator.submit(snapshot(1, takes))
+        let first = await center.snapshot
+        XCTAssertTrue(first.upserts.map(\.identifier).contains(reminder))
+        XCTAssertFalse(first.removedPending.flatMap { $0 }.contains(reminder))
+
+        await coordinator.submit(snapshot(2, nil))
+        let second = await center.snapshot
+        XCTAssertTrue(second.removedPending.flatMap { $0 }.contains(reminder))
+
+        switchedOff.setValue([.whatItTakes])
+        await coordinator.submit(snapshot(3, takes))
+        let third = await center.snapshot
+        XCTAssertEqual(
+            third.upserts.filter { $0.identifier == reminder }.count,
+            1,
+            "only revision 1 upserted it"
+        )
     }
 
     private func resultSnapshot(

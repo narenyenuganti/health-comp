@@ -516,7 +516,8 @@ private extension CompetitionNotificationCompetitionSnapshot {
             terminalResult: terminalResult,
             emissionHistory: history,
             evaluatedAt: evaluatedAt,
-            timeZoneIdentifier: timeZoneIdentifier
+            timeZoneIdentifier: timeZoneIdentifier,
+            whatItTakes: whatItTakes
         )
     }
 }

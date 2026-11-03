@@ -1368,7 +1368,8 @@ enum LocalCompetitionProjector {
             },
             emissionHistory: loaded.projection.notificationEmissions,
             evaluatedAt: context.instant.wallDate,
-            timeZoneIdentifier: context.timeZoneIdentifier
+            timeZoneIdentifier: context.timeZoneIdentifier,
+            whatItTakes: competitionWhatItTakes(projected)
         )
     }
 

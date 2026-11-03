@@ -2129,7 +2129,8 @@ enum RemoteCompetitionProjector {
             emissionHistory: materialization.journal.projection
                 .notificationEmissions,
             evaluatedAt: context.instant.wallDate,
-            timeZoneIdentifier: projected.timeZoneIdentifier
+            timeZoneIdentifier: projected.timeZoneIdentifier,
+            whatItTakes: competitionWhatItTakes(projected)
         )
     }
 
@@ -2200,7 +2201,10 @@ enum RemoteCompetitionProjector {
             emissionHistory: projection.notificationEmissions,
             evaluatedAt: baseline.evaluatedAt,
             timeZoneIdentifier: schedule?.calendar.timeZoneIdentifier
-                ?? baseline.timeZoneIdentifier
+                ?? baseline.timeZoneIdentifier,
+            // No owner activity here; currentDayOrdinal comes from the same
+            // evaluatedAt, so the reminder's day check still holds.
+            whatItTakes: baseline.whatItTakes
         )
     }
 

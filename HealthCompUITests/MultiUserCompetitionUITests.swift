@@ -1444,10 +1444,10 @@ final class MultiUserCompetitionUITests: XCTestCase {
                 .waitForExistence(timeout: 3)
         )
 
-        // Six switches, all on by default, in page order.
+        // Seven switches, all on by default, in page order.
         let rows: [(String, String)] = [
             ("lead-change", "Lead changes"), ("close-score", "Close scores"),
-            ("final-day", "Last day"), ("live-activity", "Live Activity"),
+            ("what-it-takes", "What it takes"), ("final-day", "Last day"), ("live-activity", "Live Activity"),
             ("reaction", "Reactions"), ("nudge", "Nudges"),
         ]
         for (raw, label) in rows {
