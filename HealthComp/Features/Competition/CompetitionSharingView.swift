@@ -27,8 +27,10 @@ struct CompetitionSharingView: View {
     let retry: () async -> Void
     /// Real-match Home only: Practice Match on the first-time empty state.
     var practice: CompetitionPracticeStart? = nil
+    /// The pace sheet, presented by the host above `.refreshable`, so a
+    /// downward drag closes it instead of refreshing Home.
+    var isPracticePresented: Binding<Bool> = .constant(false)
 
-    @State private var isPracticePresented = false
     // ponytail: in-memory, a dismissed row returns after relaunch within its 24 h; persist per profile if that annoys
     @State private var dismissedChallengeIDs: Set<CompetitionID> = []
 
@@ -178,14 +180,9 @@ struct CompetitionSharingView: View {
                 }
             )
         }
-        .sheet(isPresented: $isPracticePresented) {
-            if let practice {
-                PracticeMatchSheet(practice: practice)
-            }
-        }
         .onChange(of: practice?.isStarting) { wasStarting, isStarting in
             if wasStarting == true, isStarting == false, practice?.failed == false {
-                isPracticePresented = false
+                isPracticePresented.wrappedValue = false
             }
         }
     }
@@ -422,7 +419,7 @@ struct CompetitionSharingView: View {
 
             if offersPractice {
                 Button("Practice Match") {
-                    isPracticePresented = true
+                    isPracticePresented.wrappedValue = true
                 }
                 .buttonStyle(SecondaryButtonStyle())
                 .accessibilityHint("Opens a practice match against a pacer")

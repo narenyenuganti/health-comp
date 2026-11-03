@@ -70,6 +70,9 @@ struct PracticeMatchSheet: View {
         }
         .background(Theme.ground)
         .presentationDetents([.medium, .large])
+        // At AX sizes the rows overflow the medium height: a drag scrolls
+        // them, and the grabber still resizes.
+        .presentationContentInteraction(.scrolls)
         .presentationDragIndicator(.visible)
         .presentationBackground(Theme.ground)
         .accessibilityElement(children: .contain)
@@ -99,6 +102,8 @@ struct PracticeMatchSheet: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
                     .font(.title3)
+                    // At AX sizes a full-size mark would split "Challenging".
+                    .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
                     .foregroundStyle(isSelected ? Theme.ink : Theme.tertiary)
                     .accessibilityHidden(true)
             }
