@@ -269,13 +269,13 @@ final class BeltUITests: XCTestCase {
 
     func testBeltScreensPassTheAuditAtAccessibility5() throws {
         launchLab(Self.darkAX5)
-        let long = card("active", 0x24)
-        scrollToElement(long)
-        XCTAssertTrue(long.isHittable)
-        try audit()
-        let former = card("active", 0x52)
-        scrollToElement(former)
-        try audit()
+        // Every Home card, each brought to the top before its audit.
+        for (state, byte) in [("active", UInt8(0x17)), ("active", 0x24), ("tallying", 0x32), ("active", 0x33), ("active", 0x52)] {
+            let card = card(state, byte)
+            showAtTop(card)
+            XCTAssertTrue(card.isHittable)
+            try audit()
+        }
 
         openPerson(0x23, title: Self.longName)
         try audit()
