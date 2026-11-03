@@ -22,15 +22,18 @@ select ok(coalesce((
     and p.proargtypes = '2950 25 25 16 16 1009'::oidvector
 ), false), 'the six-argument registration is a narrow authenticated definer RPC');
 
--- Ana sends. Ben switched Nudges off, Cal switched nothing off, Dee muted Ana.
+-- Ana sends. Ben switched Nudges off, Cal switched nothing off, Dee muted Ana,
+-- Eve switched Reactions off.
 insert into auth.users (id) values
   ('e9000000-0000-4000-8000-000000000001'), ('e9000000-0000-4000-8000-000000000002'),
-  ('e9000000-0000-4000-8000-000000000003'), ('e9000000-0000-4000-8000-000000000004');
+  ('e9000000-0000-4000-8000-000000000003'), ('e9000000-0000-4000-8000-000000000004'),
+  ('e9000000-0000-4000-8000-000000000005');
 insert into public.profiles (id, auth_user_id, display_name, state) values
   ('e9100000-0000-4000-8000-000000000001', 'e9000000-0000-4000-8000-000000000001', 'Ana', 'active'),
   ('e9100000-0000-4000-8000-000000000002', 'e9000000-0000-4000-8000-000000000002', 'Ben', 'active'),
   ('e9100000-0000-4000-8000-000000000003', 'e9000000-0000-4000-8000-000000000003', 'Cal', 'active'),
-  ('e9100000-0000-4000-8000-000000000004', 'e9000000-0000-4000-8000-000000000004', 'Dee', 'active');
+  ('e9100000-0000-4000-8000-000000000004', 'e9000000-0000-4000-8000-000000000004', 'Dee', 'active'),
+  ('e9100000-0000-4000-8000-000000000005', 'e9000000-0000-4000-8000-000000000005', 'Eve', 'active');
 insert into private.competition_notification_mutes (profile_id, opponent_profile_id)
 values ('e9100000-0000-4000-8000-000000000004', 'e9100000-0000-4000-8000-000000000001');
 
@@ -65,6 +68,10 @@ select set_config('request.jwt.claims', '{"role":"authenticated","sub":"e9000000
 select lives_ok($$select public.register_current_device_installation(
     'e9300000-0000-4000-8000-000000000004', repeat('b4', 32), 'sandbox', true, true)$$,
   'Dee registers through the previous call');
+select set_config('request.jwt.claims', '{"role":"authenticated","sub":"e9000000-0000-4000-8000-000000000005"}', true);
+select lives_ok($$select public.register_current_device_installation(
+    'e9300000-0000-4000-8000-000000000005', repeat('b5', 32), 'sandbox', true, true,
+    array['reaction'])$$, 'Eve registers with Reactions switched off');
 reset role;
 
 select is(pg_temp.muted_kinds('e9300000-0000-4000-8000-000000000002'), array['nudge'],
@@ -98,6 +105,7 @@ $$;
 select pg_temp.match('02', 'e9100000-0000-4000-8000-000000000002');
 select pg_temp.match('03', 'e9100000-0000-4000-8000-000000000003');
 select pg_temp.match('04', 'e9100000-0000-4000-8000-000000000004');
+select pg_temp.match('05', 'e9100000-0000-4000-8000-000000000005');
 set constraints all immediate;
 
 create function pg_temp.work(suffix text, work_kind text) returns void language sql as $$
@@ -117,6 +125,7 @@ select pg_temp.work('02', kind) from unnest(array[
   'nudge', 'reaction', 'score_update', 'result', 'challenge_declined']) kind;
 select pg_temp.work('03', kind) from unnest(array['nudge', 'reaction']) kind;
 select pg_temp.work('04', kind) from unnest(array['nudge', 'reaction']) kind;
+select pg_temp.work('05', kind) from unnest(array['nudge', 'reaction', 'score_update']) kind;
 
 set local role service_role;
 select set_config('request.jwt.claims', '{"role":"service_role"}', true);
@@ -139,6 +148,12 @@ select is(pg_temp.state('03', 'nudge'), 'leased', 'a nudge to an installation wi
 select is(pg_temp.state('03', 'reaction'), 'leased', 'a reaction to an installation with nothing off is leased');
 select is(pg_temp.state('04', 'nudge'), 'suppressed', 'a muted sender still suppresses nudges');
 select is(pg_temp.state('04', 'reaction'), 'suppressed', 'a muted sender still suppresses reactions');
+select is(pg_temp.state('05', 'reaction'), 'suppressed',
+  'a reaction to an installation that switched Reactions off is suppressed');
+select is(pg_temp.state('05', 'nudge'), 'leased',
+  'a nudge to an installation that switched only Reactions off is leased');
+select is(pg_temp.state('05', 'score_update'), 'leased',
+  'score updates still lease when Reactions are off');
 
 -- Registering through the previous call clears an earlier switch.
 set local role authenticated;

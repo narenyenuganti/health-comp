@@ -700,6 +700,9 @@ private struct AccountNotificationsPage: View {
                         openURL(URL(string: UIApplication.openSettingsURLString)!)
                     }
                     .frame(minHeight: 44)
+                    // The status section has its own Open Settings; VoiceOver
+                    // tells them apart.
+                    .accessibilityLabel("Open Settings for Live Activities")
                     .accessibilityIdentifier("account.notifications.live-activity.settings")
                 }
             }
@@ -735,9 +738,14 @@ private struct AccountNotificationsPage: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            Button("Unmute") { settings.unmute(person.id) }
+            // The frame sits inside the label so the tap area, not just the
+            // layout, stays 44pt at the smallest text sizes.
+            Button { settings.unmute(person.id) } label: {
+                Text("Unmute")
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(Rectangle())
+            }
                 .buttonStyle(.borderless)
-                .frame(minHeight: 44)
                 .disabled(settings.mutesInFlight.contains(person.id))
                 .accessibilityLabel("Unmute \(person.name)")
                 .accessibilityIdentifier("account.notifications.unmute")

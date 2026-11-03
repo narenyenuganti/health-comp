@@ -210,7 +210,7 @@ extension CompetitionNotificationMessageFamily {
     }
 }
 
-struct CompetitionNotificationMessage:Equatable, Sendable {
+struct CompetitionNotificationMessage: Equatable, Sendable {
     let family: CompetitionNotificationMessageFamily
     let competitionID: CompetitionID
     let opponentDisplayName: String
