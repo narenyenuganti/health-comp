@@ -407,13 +407,7 @@ struct CompetitionDetailView: View {
                     )
                 }
                 if canReact {
-                    // SectionLabel's look with kerning, not tracking: the
-                    // clipping audit flags a tracked ’.
-                    Text("REACT TO \(name.uppercased(with: locale))’S DAY")
-                        .font(.themeLabel)
-                        .kerning(1.2)
-                        .foregroundStyle(Theme.ink)
-                        .accessibilityAddTraits(.isHeader)
+                    CompetitionReactionLabel("REACT TO \(name.uppercased(with: locale))’S DAY")
                     control.picker(.day(ordinal), in: competition)
                     Text("\(name) sees your reaction on this day.")
                         .font(.caption)

@@ -369,7 +369,7 @@ struct CompetitionResultView: View {
         if canReact || received != nil {
             VStack(alignment: .leading, spacing: 10) {
                 if canReact {
-                    SectionLabel("REACT TO THE RESULT")
+                    CompetitionReactionLabel("REACT TO THE RESULT")
                         .frame(maxWidth: .infinity, alignment: .leading)
                     control.picker(.result, in: competition)
                 }

@@ -215,12 +215,42 @@ struct CompetitionReactionPicker: View {
                 }
                 .contentShape(Circle())
         }
-        .buttonStyle(CompetitionPressButtonStyle())
+        // A tap, never the end of a drag: in a drawer, the sheet's own drag
+        // (to resize or dismiss it) doesn't cancel a Button's touch, so
+        // scrolling from a chip sent a reaction.
+        .buttonStyle(CompetitionReactionChipStyle())
         .disabled(isPending)
         .accessibilityLabel(kind.spokenName)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
         .accessibilityHint(hint)
         .accessibilityIdentifier("competition.react.\(kind.rawValue)")
+    }
+}
+
+/// Fires on a tap only; any drag cancels it. Keeps Button's traits,
+/// disabled state and VoiceOver activation.
+private struct CompetitionReactionChipStyle: PrimitiveButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label.onTapGesture(perform: configuration.trigger)
+    }
+}
+
+/// `SectionLabel`'s look with kerning, not tracking: the text clipping
+/// audit flags tracked labels here ("REACT TO THE RESULT", a tracked ’).
+struct CompetitionReactionLabel: View {
+    let title: String
+
+    init(_ title: String) {
+        self.title = title
+    }
+
+    var body: some View {
+        Text(title)
+            .font(.themeLabel)
+            .kerning(1.2)
+            .foregroundStyle(Theme.ink)
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityAddTraits(.isHeader)
     }
 }
 
@@ -238,8 +268,15 @@ struct CompetitionReactionLine: View {
         }
     }
 
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     private var line: some View {
-        HStack(spacing: 8) {
+        // Emoji above the text at accessibility sizes: beside it, the text
+        // gets a column a word or two wide (and hyphenates) in Home rows.
+        let layout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4))
+            : AnyLayout(HStackLayout(spacing: 8))
+        return layout {
             CompetitionReactionEmoji(kind: reaction.kind)
             Text(competitionReactionText(reaction, opponentName: opponentName))
                 .font(.subheadline)
