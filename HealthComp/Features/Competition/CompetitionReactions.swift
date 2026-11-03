@@ -202,14 +202,15 @@ struct CompetitionReactionPicker: View {
                 HStack(spacing: 10) { chip(.huffing); chip(.salute) }
             }
             if failed {
-                let error = "Couldn’t send your reaction. Try again."
-                Label(error, systemImage: "exclamationmark.triangle.fill")
-                    .font(.caption)
-                    .foregroundStyle(Theme.ink)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel(error)
-                    .accessibilityIdentifier("competition.react.error")
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .accessibilityHidden(true)
+                    Text("Couldn’t send your reaction. Try again.")
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("competition.react.error")
+                }
+                .font(.caption)
+                .foregroundStyle(Theme.ink)
             }
         }
     }
