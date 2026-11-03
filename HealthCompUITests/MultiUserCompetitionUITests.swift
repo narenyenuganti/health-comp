@@ -583,20 +583,25 @@ final class MultiUserCompetitionUITests: XCTestCase {
         dayThree.tap()
 
         // Expand to .large, then scroll the drawer itself (not the page
-        // behind it) until the last chip is fully on screen.
+        // behind it, which the .large sheet covers) in short slow drags
+        // until the last chip is fully on screen; a swipe overshoots.
         let title = app.staticTexts["Day 3"]
         XCTAssertTrue(title.waitForExistence(timeout: 3))
         title.swipeUp()
         let salute = app.buttons["competition.react.salute"]
-        for _ in 0..<6 {
+        for _ in 0..<8 {
             if salute.exists, salute.isHittable, app.frame.contains(salute.frame) { break }
-            // Once the title scrolls away, swipe the sheet, which covers the page.
-            title.isHittable ? title.swipeUp() : app.swipeUp()
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.75)).press(
+                forDuration: 0.05,
+                thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.6)),
+                withVelocity: .slow,
+                thenHoldForDuration: 0.2
+            )
         }
+        attachScreenshot("reactions-day-3-drawer-ax5")
         for kind in ["clap", "fire", "huffing", "salute"] {
             XCTAssertTrue(app.buttons["competition.react.\(kind)"].isHittable, kind)
         }
-        attachScreenshot("reactions-day-3-drawer-ax5")
         // No .dynamicType audit: it flags different elements on different runs.
         try app.performAccessibilityAudit(
             for: XCUIAccessibilityAuditType.textClipped
