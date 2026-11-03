@@ -82,15 +82,11 @@ final class BeltUITests: XCTestCase {
         XCTAssertTrue(hero.label.hasSuffix(". You hold the belt"), hero.label)
         // The hero says LIVE on the card; there is no "LIVE · n" section.
         XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "LIVE · ")).firstMatch.exists)
-        // Only the hero card speaks of the belt (the button and its combined
-        // label can both carry it).
-        let beltElements = labels(containing: "belt").allElementsBoundByIndex
-        XCTAssertFalse(beltElements.isEmpty)
-        XCTAssertEqual(
-            Set(beltElements.map(\.label)),
-            [hero.label],
-            beltElements.map { "\($0.elementType.rawValue) \($0.identifier) \($0.frame)" }.joined(separator: "; ")
-        )
+        // Only the hero card speaks of the belt: its button, and the chip's
+        // text that XCUITest also sees inside it.
+        let outside = labels(containing: "belt").allElementsBoundByIndex
+            .filter { !hero.frame.contains($0.frame) }
+        XCTAssertEqual(outside.map(\.label), [])
     }
 
     // MARK: History
