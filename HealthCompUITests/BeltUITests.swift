@@ -80,7 +80,8 @@ final class BeltUITests: XCTestCase {
         XCTAssertTrue(hero.waitForExistence(timeout: 3))
         XCTAssertTrue(hero.label.hasPrefix("Sam. Day 2 of 7"), hero.label)
         XCTAssertTrue(hero.label.hasSuffix(". You hold the belt"), hero.label)
-        XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "LIVE")).firstMatch.exists)
+        // The hero says LIVE on the card; there is no "LIVE · n" section.
+        XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "LIVE · ")).firstMatch.exists)
         XCTAssertEqual(labels(containing: "belt").count, 1)
     }
 
@@ -374,13 +375,20 @@ final class BeltUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 8))
     }
 
-    private func audit() throws {
+    private func audit(file: StaticString = #filePath, line: UInt = #line) throws {
         // No .dynamicType audit: the reused rows swap layouts with ViewThatFits.
+        var issues: [String] = []
         try app.performAccessibilityAudit(
             for: XCUIAccessibilityAuditType.textClipped
                 .union(.hitRegion)
                 .union(.sufficientElementDescription)
-        )
+        ) { issue in
+            // Name the element, so a failure says what clipped.
+            let element = issue.element
+            issues.append("\(issue.compactDescription): \(element?.identifier ?? "") \"\(element?.label ?? "")\"")
+            return true
+        }
+        XCTAssertEqual(issues, [], file: file, line: line)
     }
 
     private static func uuid(_ byte: UInt8) -> String {
