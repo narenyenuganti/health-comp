@@ -670,9 +670,9 @@ private struct HeroScoreboard: View {
         VStack(alignment: trailing ? .trailing : .leading, spacing: 2) {
             Text(name.uppercased(with: .current))
                 .font(.themeLabel)
-                // No tracking once stacked: a wrapped name's last letter
-                // spacing reads as clipped text at accessibility sizes.
-                .tracking(isStacked ? 0 : 1.4)
+                .tracking(1.4)
+                // Wraps at its full height, so a long name is never clipped.
+                .fixedSize(horizontal: false, vertical: true)
             Text(competitionPointsText(points))
                 .font(.score(size: scoreSize).monospacedDigit())
         }
