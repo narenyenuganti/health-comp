@@ -1590,7 +1590,8 @@ private enum MultiUserCompetitionTestLabFixtures {
         refreshedAt: Date? = nil,
         opponentUpdatedAt: Date? = nil,
         zone: String = "America/Los_Angeles",
-        tally: LocalCompetitionTallyPresentation? = nil
+        tally: LocalCompetitionTallyPresentation? = nil,
+        now: Date? = nil
     ) -> LocalCompetitionPresentation {
         let schedule = schedule(startDay: startDay, zone: zone)
         return LocalCompetitionPresentation(
@@ -1618,7 +1619,7 @@ private enum MultiUserCompetitionTestLabFixtures {
             },
             tally: tally,
             terminalResult: terminal,
-            evaluatedAt: evaluatedAt,
+            evaluatedAt: now ?? evaluatedAt,
             timeZoneIdentifier: zone,
             lastSuccessfulFullWindowRefreshAt: refreshedAt,
             opponentUpdatedAt: opponentUpdatedAt
@@ -1626,6 +1627,49 @@ private enum MultiUserCompetitionTestLabFixtures {
     }
 
     private static let evaluatedAt = Date(timeIntervalSince1970: 1_786_867_200)
+
+    /// The final-day Live Activity's samples (`-liveActivityPreviewSample`):
+    /// Day 7 is Sun Aug 16, and it's 6:05 PM in Los Angeles. Each sample is
+    /// the same match on the last day and, after midnight, tallying.
+    static func liveActivitySample(
+        _ name: String
+    ) -> (live: LocalCompetitionPresentation, tallying: LocalCompetitionPresentation) {
+        let now = Date(timeIntervalSince1970: 1_786_928_700)
+        let you = now.addingTimeInterval(-25 * 60)  // 5:40 PM
+        let them = now.addingTimeInterval(-3 * 60)  // 6:02 PM
+        let losAngeles = "America/Los_Angeles"
+        let sample: (name: String, user: Double, opponent: Double, zone: String, you: Date?, them: Date?) =
+            switch name {
+            case "behind": ("Sam", 2_166, 2_171.2, losAngeles, you, them)
+            // Level as shown, and neither side has an Updated time.
+            case "square": ("Sam", 2_190.4, 2_190.2, losAngeles, nil, nil)
+            // An account deleted mid-match, with only your Updated time.
+            case "former": ("Former competitor", 1_980, 2_015, losAngeles, you, nil)
+            // A 64-character name, the most points a week allows, a New York
+            // match seen from Los Angeles, and only their Updated time.
+            case "long": ("Bartholomew Alexander Christopherson-Montgomery of Westminster",
+                          4_180, 4_195, "America/New_York", nil, them)
+            default: ("Sam", 2_190.4, 2_171.2, losAngeles, you, them)
+            }
+        func make(_ lifecycle: LocalCompetitionLifecyclePresentation) -> LocalCompetitionPresentation {
+            presentation(
+                id: CompetitionID(UUID(uuidString: "00000000-0000-4000-8000-0000000000A7")!),
+                opponentName: sample.name,
+                lifecycle: lifecycle,
+                userPoints: sample.user,
+                opponentPoints: sample.opponent,
+                days: [],
+                currentDayOrdinal: 7,
+                terminal: nil,
+                startDay: 10,
+                refreshedAt: sample.you,
+                opponentUpdatedAt: sample.them,
+                zone: sample.zone,
+                now: now
+            )
+        }
+        return (make(.endsToday), make(.tallying(startedAt: now)))
+    }
 
     private static func schedule(
         startDay: Int = 13,
@@ -1695,31 +1739,31 @@ private enum MultiUserCompetitionTestLabFixtures {
     }
 }
 
-/// The Lock Screen card live and pending, at the card's 160 pt height, and
-/// the expanded Dynamic Island on black.
+/// The Lock Screen card live, gone stale at midnight, and tallying, at the
+/// card's 160 pt height; then the Dynamic Island's expanded, compact and
+/// minimal looks on black. The cards come from the planner, so they use the
+/// app's real words.
 private struct LiveActivityPreviewView: View {
     private let client = CompetitionLiveActivityClient.live
     private let attributes: MatchActivityAttributes
     private let live: MatchActivityAttributes.ContentState
+    private let tallying: MatchActivityAttributes.ContentState
 
     init() {
+        let defaults = UserDefaults.standard
+        // `-liveActivityPreviewSample behind|square|former|long` picks the match.
+        let sample = MultiUserCompetitionTestLabFixtures.liveActivitySample(
+            defaults.string(forKey: "liveActivityPreviewSample") ?? "lead"
+        )
+        let locale = Locale(identifier: "en_US")
+        let timeZone = TimeZone(identifier: "America/Los_Angeles")!
+        live = CompetitionLiveActivityPlanner.content(sample.live, locale: locale, timeZone: timeZone)!
+        tallying = CompetitionLiveActivityPlanner.content(sample.tallying, locale: locale, timeZone: timeZone)!
         // `-liveActivityPreviewSecondsLeft 60` lets a UI test watch the card go stale.
-        let secondsLeft = UserDefaults.standard.double(forKey: "liveActivityPreviewSecondsLeft")
-        let id = CompetitionID(UUID(uuidString: "00000000-0000-4000-8000-0000000000A7")!)
-        attributes = MatchActivityAttributes(
-            matchID: id.rawValue.uuidString.lowercased(),
-            endsAt: Date().addingTimeInterval(secondsLeft > 0 ? secondsLeft : (5 * 60 + 45) * 60),
-            url: CompetitionRoute.competition(id).url!
-        )
-        live = MatchActivityAttributes.ContentState(
-            phase: .live,
-            title: "Last day",
-            timing: "Ends at midnight",
-            opponentName: "Sam",
-            userPoints: 2_190,
-            opponentPoints: 2_171,
-            freshness: "You: updated 5:40 PM · Sam: updated 6:02 PM"
-        )
+        let secondsLeft = defaults.double(forKey: "liveActivityPreviewSecondsLeft")
+        var attributes = CompetitionLiveActivityPlanner.attributes(sample.live)!
+        attributes.endsAt = Date().addingTimeInterval(secondsLeft > 0 ? secondsLeft : (5 * 60 + 45) * 60)
+        self.attributes = attributes
     }
 
     var body: some View {
@@ -1727,7 +1771,12 @@ private struct LiveActivityPreviewView: View {
             VStack(alignment: .leading, spacing: 16) {
                 lockScreenCard(live, identifier: "liveActivity.preview.live")
                 lockScreenCard(live.resolved(isStale: true), identifier: "liveActivity.preview.pending")
+                lockScreenCard(tallying, identifier: "liveActivity.preview.tallying")
                 expandedIsland
+                HStack(spacing: 16) {
+                    compactIsland
+                    minimalIsland
+                }
                 Button("Start Live Activity") {
                     Task { await start() }
                 }
@@ -1764,6 +1813,30 @@ private struct LiveActivityPreviewView: View {
         .padding(20)
         .background(.black, in: RoundedRectangle(cornerRadius: 40))
         .environment(\.colorScheme, .dark)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("liveActivity.preview.expanded")
+    }
+
+    private var compactIsland: some View {
+        HStack {
+            MatchActivityCompactScore(side: .you, state: live)
+            Spacer(minLength: 60)
+            MatchActivityCompactScore(side: .them, state: live)
+        }
+        .padding(.horizontal, 16)
+        .frame(height: 37)
+        .background(.black, in: Capsule())
+        .environment(\.colorScheme, .dark)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("liveActivity.preview.compact")
+    }
+
+    private var minimalIsland: some View {
+        MatchActivityMinimalLead(state: live)
+            .frame(width: 37, height: 37)
+            .background(.black, in: Circle())
+            .environment(\.colorScheme, .dark)
+            .accessibilityIdentifier("liveActivity.preview.minimal")
     }
 
     private func endSamples() async {
