@@ -1048,23 +1048,6 @@ private enum MultiUserCompetitionTestLabFixtures {
     static let jordanPastID = CompetitionID(
         UUID(uuidString: "A1000000-0000-4000-8000-000000000009")!
     )
-    static let incomingID = CompetitionID(
-        UUID(uuidString: "A1000000-0000-4000-8000-00000000000B")!
-    )
-    static let incomingChallenge = presentation(
-        id: incomingID,
-        opponentName: "Alex",
-        lifecycle: .pending(
-            direction: .incoming,
-            createdAt: labNow,
-            expiresAt: labNow.addingTimeInterval(20 * 60 * 60)
-        ),
-        userPoints: 0,
-        opponentPoints: 0,
-        days: [],
-        currentDayOrdinal: nil,
-        terminal: nil
-    )
     /// A finished week with a real name, for Share Result's Show/Hide name.
     static let caseyID = CompetitionID(
         UUID(uuidString: "A1000000-0000-4000-8000-00000000000A")!
@@ -1084,6 +1067,23 @@ private enum MultiUserCompetitionTestLabFixtures {
     static let nudgePriyaID = nudgeID(8)
     static let nudgeLongNameID = nudgeID(9)
     static let nudgeKenjiID = nudgeID(10)
+    static let incomingID = CompetitionID(
+        UUID(uuidString: "A1000000-0000-4000-8000-00000000000B")!
+    )
+    static let incomingChallenge = presentation(
+        id: incomingID,
+        opponentName: "Alex",
+        lifecycle: .pending(
+            direction: .incoming,
+            createdAt: labNow,
+            expiresAt: labNow.addingTimeInterval(20 * 60 * 60)
+        ),
+        userPoints: 0,
+        opponentPoints: 0,
+        days: [],
+        currentDayOrdinal: nil,
+        terminal: nil
+    )
     static let blockAlexID = blockID(1)
     static let blockSamID = blockID(2)
     static let blockLongNameID = blockID(3)
