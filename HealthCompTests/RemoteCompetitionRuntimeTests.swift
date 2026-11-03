@@ -1760,6 +1760,48 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
         XCTAssertTrue(competition.days.allSatisfy { $0.scoringPolicy == .remoteWireV1 })
     }
 
+    func testNotificationSnapshotCarriesWhatItTakesFromOwnerActivity() async throws {
+        let harness = try ownerActivityHarness()
+        defer { try? FileManager.default.removeItem(at: harness.root) }
+        // Both score 255 on Day 1: level, so 1 takes the lead.
+        try await harness.append(for: harness.creatorID, ordinal: 1, revision: 1, at: harness.dayOneNoon)
+        try await harness.append(for: profileID, ordinal: 1, revision: 1, at: harness.dayOneNoon)
+        let outcome = await ownerRuntime(harness, at: harness.dayOneNoon, snapshots: nil)
+            .synchronizeAll()
+        XCTAssertEqual(outcome.failures, [])
+        var materialization = try XCTUnwrap(outcome.successfulCompetitions.first)
+        let snapshot = try harness.snapshot(move: 420)
+        materialization.ownerActivity = RemoteOwnerActivity(
+            checkedAt: harness.dayOneNoon,
+            checkFailure: nil,
+            readAt: harness.dayOneNoon,
+            days: [.init(ordinal: 1, latestSnapshot: snapshot, acceptedSnapshot: snapshot, acceptedClientRevision: 1)]
+        )
+
+        let notification = try XCTUnwrap(RemoteCompetitionProjector.notificationCompetition(
+            from: materialization,
+            profile: AuthenticatedProfile(id: profileID, displayName: "Beta Bob"),
+            context: CompetitionEnvironmentContext(
+                instant: EnvironmentInstant(
+                    wallDate: harness.dayOneNoon,
+                    monotonic: MonotonicInstant(epochID: "projector", nanoseconds: 1)
+                ),
+                timeZoneIdentifier: "America/Los_Angeles"
+            )
+        ))
+        let takes = try XCTUnwrap(notification.whatItTakes)
+        XCTAssertEqual(takes.points, 1)
+        XCTAssertEqual(takes.dayOrdinal, 1)
+
+        let reloaded = RemoteCompetitionProjector.notificationCompetition(
+            reloading: materialization.journal,
+            profileID: profileID,
+            baseline: notification
+        )
+        XCTAssertEqual(reloaded.whatItTakes, takes)
+        XCTAssertEqual(reloaded.currentDayOrdinal, takes.dayOrdinal)
+    }
+
     func testProjectorDropsAcceptedSnapshotWhenTheRowMovedOn() async throws {
         let harness = try ownerActivityHarness()
         defer { try? FileManager.default.removeItem(at: harness.root) }

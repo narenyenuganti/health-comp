@@ -183,6 +183,7 @@ enum RemoteCompetitionOpponentIdentity {
 enum CompetitionNotificationChoice: String, CaseIterable, Sendable {
     case leadChange = "lead-change"
     case closeScore = "close-score"
+    case whatItTakes = "what-it-takes"
     case finalDay = "final-day"
     case liveActivity = "live-activity"
     case reaction // raw value = server work kind (20261102002700)
@@ -192,6 +193,7 @@ enum CompetitionNotificationChoice: String, CaseIterable, Sendable {
         switch self {
         case .leadChange: "Lead changes"
         case .closeScore: "Close scores"
+        case .whatItTakes: "What it takes"
         case .finalDay: "Last day"
         case .liveActivity: "Live Activity"
         case .reaction: "Reactions"

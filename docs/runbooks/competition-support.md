@@ -388,9 +388,9 @@ Reactions off. None is enqueued for installations with `supports_reactions`
 false (an older build). Reactions themselves are in
 `private.competition_reactions`, not the change log.
 
-Lead changes, close scores, the Last day reminder and the Live Activity can be
-switched off per iPhone in Account → Notifications; the server can't see
-those. Reactions and nudges switched off show up as
+Lead changes, close scores, What it takes (the 7 PM reminder), the Last day
+reminder and the Live Activity can be switched off per iPhone in Account →
+Notifications; the server can't see those. Reactions and nudges switched off show up as
 `device_installations.muted_push_kinds` and as `suppressed` work. Ask the
 person to check that page first.
 

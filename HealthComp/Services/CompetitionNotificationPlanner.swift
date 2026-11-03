@@ -45,7 +45,7 @@ extension CompetitionNotificationPolicy {
             var calendar = Calendar(identifier: .gregorian)
             calendar.timeZone = timeZone
             return calendar.date(
-                bySettingHour: 9,
+                bySettingHour: family == .whatItTakes ? 19 : 9,
                 minute: 0,
                 second: 0,
                 of: baseDate
@@ -123,6 +123,27 @@ extension CompetitionNotificationPolicy {
             return content(
                 statusTitle(.tallying(startedAt: .distantPast), opponent: name),
                 "HealthComp is checking the latest Activity data before finalizing your result with \(name)."
+            )
+        case .scheduled(.whatItTakes):
+            guard let takes = message.whatItTakes, let need = takes.points else {
+                return content(
+                    "Match update",
+                    "Open HealthComp for the latest on your match with \(name)."
+                )
+            }
+            // The match zone's abbreviation at that midnight, when it differs
+            // from the phone's, as the status line does.
+            let zone: String = {
+                guard let end = message.matchDayEnd,
+                      let id = message.matchTimeZoneIdentifier,
+                      let matchZone = TimeZone(identifier: id),
+                      matchZone.secondsFromGMT(for: end) != timeZone.secondsFromGMT(for: end)
+                else { return "" }
+                return " " + (matchZone.abbreviation(for: end) ?? id)
+            }()
+            return content(
+                "\(points(need)) to take the lead from \(name)",
+                "\(takes.suggestion) Day \(takes.dayOrdinal) ends at midnight\(zone)."
             )
         case .opportunistic(.leadChange):
             let own = points(message.ownerPoints)
@@ -257,7 +278,7 @@ extension CompetitionNotificationPolicy {
                 title: statusTitle(.tallying(startedAt: .distantPast), opponent: first.opponentDisplayName),
                 body: "HealthComp is checking the latest Activity data before finalizing your results with \(names)."
             )
-        case .scheduled(.inviteExpiry), .opportunistic(.leadChange),
+        case .scheduled(.inviteExpiry), .scheduled(.whatItTakes), .opportunistic(.leadChange),
              .opportunistic(.closeScore), .opportunistic(.dailyMaximum):
             return liveV1Content(first, locale: locale)
         }
@@ -487,6 +508,18 @@ struct CompetitionNotificationPlanner: Sendable {
                     && candidates[$0].fireDate == candidate.fireDate
             }
             handled.formUnion(members)
+            if family == .whatItTakes {
+                // One evening reminder: the smallest gap, keeping its route.
+                // ponytail: grouped by fire instant, so matches in different
+                // zones can each post one; group by evening if that bites.
+                func key(_ index: Int) -> (Double, String) {
+                    (candidates[index].message.whatItTakes?.points ?? .infinity,
+                     candidates[index].request.identifier)
+                }
+                let pick = members.min { key($0) < key($1) }!
+                requests.append(candidates[pick].request)
+                continue
+            }
             guard members.count > 1 else {
                 requests.append(candidate.request)
                 continue
@@ -536,6 +569,15 @@ struct CompetitionNotificationPlanner: Sendable {
                 message.expiresAt = expiresAt
                 message.invitationDirection = direction
             }
+            if family == .whatItTakes, let takes = competition.whatItTakes {
+                message.whatItTakes = takes
+                message.dayOrdinal = takes.dayOrdinal
+                message.matchTimeZoneIdentifier = timeZoneIdentifier
+                // Base is that day's midnight in the match zone.
+                message.matchDayEnd = try competition.schedule.map {
+                    try $0.calendar.startOfDay($0.calendar.day(after: $0.calendar.day(containing: baseDate)))
+                }
+            }
             return ScheduledCandidate(
                 request: CompetitionScheduledNotificationRequest(
                     identifier: CompetitionNotificationIdentifier.scheduled(
@@ -578,6 +620,19 @@ struct CompetitionNotificationPlanner: Sendable {
             let start = try calendar.startOfDay(schedule.startDay)
             let final = try calendar.startOfDay(finalDay)
             let end = try calendar.startOfDay(endDay)
+            // The reminder's day comes from the value, not the lifecycle, so
+            // the trigger, N and "Day d" describe the same clock day.
+            // ponytail: content as of the last plan; a 6:45 PM BGAppRefresh
+            // re-plan is the upgrade if stale numbers bite.
+            // ponytail: a pending reminder can outlive a server cancellation
+            // until the next reconcile; a generic cancellation push is the upgrade.
+            var takes: [(CompetitionScheduledNotificationFamily, Date, String)] = []
+            if competition.lifecycle.isLiveDay,
+               let value = competition.whatItTakes, value.points != nil,
+               value.dayOrdinal == competition.currentDayOrdinal,
+               days.indices.contains(value.dayOrdinal - 1) {
+                takes = [(.whatItTakes, try calendar.startOfDay(days[value.dayOrdinal - 1]), timeZone)]
+            }
             switch competition.lifecycle {
             case .scheduled:
                 return [
@@ -586,14 +641,15 @@ struct CompetitionNotificationPlanner: Sendable {
                     (.competitionEnded, end, timeZone),
                 ]
             case let .active(dayOrdinal):
-                return dayOrdinal < 7
+                return (dayOrdinal < 7
                     ? [
                         (.finalDay, final, timeZone),
                         (.competitionEnded, end, timeZone),
                     ]
-                    : [(.competitionEnded, end, timeZone)]
+                    : [(.competitionEnded, end, timeZone)]) + takes
             case .endsToday, .tallying:
-                return [(.competitionEnded, end, timeZone)]
+                // `takes` is empty while tallying.
+                return [(.competitionEnded, end, timeZone)] + takes
             default:
                 return []
             }
