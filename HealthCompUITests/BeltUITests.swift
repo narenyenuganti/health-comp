@@ -500,9 +500,16 @@ final class BeltUITests: XCTestCase {
 
     private func scrollToElement(_ element: XCUIElement) {
         for _ in 0..<30 {
-            if element.exists, element.isHittable, app.frame.contains(element.frame) { return }
             let scrollView = app.scrollViews.firstMatch
             let surface: XCUIElement = scrollView.exists ? scrollView : app
+            // A card taller than the screen (AX5) never fits: its top on
+            // screen is enough.
+            if element.exists, element.isHittable,
+               app.frame.contains(element.frame)
+                || (element.frame.height > surface.frame.height / 2
+                    && surface.frame.contains(CGPoint(x: element.frame.midX, y: element.frame.minY + 1))) {
+                return
+            }
             let movesTowardEarlierContent = element.exists
                 && element.frame != .zero
                 && element.frame.midY < surface.frame.midY
