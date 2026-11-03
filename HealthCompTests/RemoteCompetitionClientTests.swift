@@ -5688,3 +5688,290 @@ private final class ChallengeFetchCounter: @unchecked Sendable {
     var count: Int { lock.withLock { value } }
     func next() -> Int { lock.withLock { value += 1; return value } }
 }
+
+// MARK: - Practice match
+
+extension RemoteCompetitionClientTests {
+    /// Thu Aug 13 2026, 9 AM in Los Angeles; a practice started now runs Aug 14–20.
+    private func practiceSource(
+        changes: [FixtureActivityChange] = []
+    ) throws -> (source: FixtureActivitySource, calendar: CompetitionCalendar, startedAt: Date) {
+        let calendar = try CompetitionCalendar(timeZoneIdentifier: "America/Los_Angeles")
+        let startedAt = try practiceDay(13, in: calendar).addingTimeInterval(9 * 3_600)
+        // Every practice day has rings, so the week can finish.
+        let week = try calendar.sevenDayWindow(
+            startingOn: calendar.day(containing: practiceDay(14, in: calendar))
+        )
+        let snapshot = ActivitySnapshot(
+            moveMode: .activeEnergyKilocalories,
+            standMode: .standHours,
+            move: try ActivityRingReading(value: 300, goal: 100),
+            exercise: try ActivityRingReading(value: 0, goal: 30),
+            standOrRoll: try ActivityRingReading(value: 0, goal: 12),
+            pauseState: .running
+        )
+        let source = FixtureActivitySource(
+            fixture: try ActivityFixture(
+                initialInstant: EnvironmentInstant(
+                    wallDate: startedAt,
+                    monotonic: MonotonicInstant(epochID: "remote-practice", nanoseconds: 1)
+                ),
+                timeZoneIdentifier: calendar.timeZoneIdentifier,
+                initialDays: week.map { .snapshot(day: $0, snapshot: snapshot) },
+                changes: changes
+            )
+        )
+        return (source, calendar, startedAt)
+    }
+
+    private func practiceDay(_ day: Int, in calendar: CompetitionCalendar) throws -> Date {
+        try calendar.startOfDay(
+            CompetitionDay(
+                era: 1, year: 2026, month: 8, day: day,
+                timeZoneIdentifier: calendar.timeZoneIdentifier
+            )
+        )
+    }
+
+    func testPracticePublishesBesideRemoteMatchesWithoutServerCalls() async throws {
+        let (profile, paths) = try widgetTestProfile()
+        let fixture = try practiceSource()
+        let realID = UUID(uuidString: "82000000-0000-4000-8000-0000000000A1")!
+        let createdAt = Date(timeIntervalSince1970: 1_786_540_000)
+        let descriptor = try pendingDescriptor(
+            competitionID: realID,
+            profile: profile,
+            expiresAt: createdAt.addingTimeInterval(48 * 60 * 60)
+        )
+        let page = try pendingHistoryPage(
+            descriptor: descriptor,
+            profileID: profile.id,
+            createdAt: createdAt
+        )
+        let probe = RemoteCompetitionClientProbe()
+        let fetches = ChallengeFetchCounter()
+        let spy = WidgetSnapshotSpy()
+        let client = CompetitionClient.remote(
+            remoteAPI: remoteAPI(
+                listCompetitions: {
+                    await probe.recordList()
+                    return [descriptor]
+                },
+                fetchChanges: { _, _ in
+                    _ = fetches.next()
+                    return page
+                }
+            ),
+            environment: .accelerated(source: fixture.source),
+            widgetSnapshots: spy.client
+        )
+        try await client.mountAuthenticatedProfile(profile, paths)
+        var iterator = client.start().makeAsyncIterator()
+        let first = await awaitNext(&iterator)
+        let real = try XCTUnwrap(
+            first?.dashboard.competitions.first(where: { $0.id == CompetitionID(realID) })
+        )
+        XCTAssertFalse(real.isPractice)
+        let listsBefore = await probe.listCount()
+        let fetchesBefore = fetches.count
+
+        let publication = await client.startPractice(.balanced)
+
+        let listsAfter = await probe.listCount()
+        XCTAssertEqual(listsAfter, listsBefore)
+        XCTAssertEqual(fetches.count, fetchesBefore)
+        XCTAssertEqual(publication.source, .remoteParticipants)
+        // The real match sits beside the practice, unchanged.
+        XCTAssertEqual(
+            publication.dashboard.competitions.filter { !$0.isPractice },
+            [real]
+        )
+        let practice = publication.dashboard.competitions.filter(\.isPractice)
+        XCTAssertEqual(practice.count, 1)
+        XCTAssertEqual(practice.first?.opponentDisplayName, "Pacer")
+        XCTAssertEqual(practice.first?.ownerDisplayName, "Beta Alice")
+        XCTAssertEqual(practice.first?.lifecycle, .scheduled)
+        XCTAssertEqual(publication.dashboard.awards, [])
+        XCTAssertEqual(publication.dashboard.issues, [])
+        XCTAssertEqual(spy.writes.last?.snapshot.matches, [])
+
+        // One at a time.
+        let again = await client.startPractice(.relaxed)
+        XCTAssertTrue(again.dashboard.issues.contains(.commandRejected(PracticeMatch.startCommandID)))
+        XCTAssertEqual(again.dashboard.competitions.filter(\.isPractice).map(\.id), practice.map(\.id))
+        await client.stop()
+    }
+
+    func testPracticeRefreshesOnReconcileAndAdvancesAtDayBoundary() async throws {
+        let (profile, paths) = try widgetTestProfile()
+        let fixture = try practiceSource()
+        let client = CompetitionClient.remote(
+            remoteAPI: remoteAPI(listCompetitions: { [] }),
+            environment: .accelerated(source: fixture.source)
+        )
+        try await client.mountAuthenticatedProfile(profile, paths)
+        var iterator = client.start().makeAsyncIterator()
+        _ = await iterator.next()
+        _ = await client.startPractice(.balanced)
+
+        // Midnight starts Day 1 with no tap: the boundary republish refreshes practice.
+        try await fixture.source.advance(to: practiceDay(14, in: fixture.calendar))
+        await waitForBoundedAsyncCondition("Day 1 at the boundary") {
+            for await publication in client.updates() {
+                if publication.dashboard.competitions.contains(where: {
+                    $0.isPractice && $0.lifecycle == .active(dayOrdinal: 1)
+                }) { return }
+            }
+        }
+
+        let noon = try practiceDay(14, in: fixture.calendar).addingTimeInterval(12 * 3_600)
+        try await fixture.source.advance(to: noon)
+        let reconciled = await client.reconcileAll(.pullToRefresh)
+        let practice = try XCTUnwrap(reconciled.dashboard.competitions.first(where: \.isPractice))
+        XCTAssertEqual(practice.lastRefresh?.attemptedAt, noon)
+        await client.stop()
+    }
+
+    func testEndPracticeDeletesOnlyPracticeAndOtherDeletesStayRejected() async throws {
+        let (profile, paths) = try widgetTestProfile()
+        let fixture = try practiceSource()
+        let client = CompetitionClient.remote(
+            remoteAPI: remoteAPI(listCompetitions: { [] }),
+            environment: .accelerated(source: fixture.source)
+        )
+        try await client.mountAuthenticatedProfile(profile, paths)
+        var iterator = client.start().makeAsyncIterator()
+        _ = await iterator.next()
+        let started = await client.startPractice(.balanced)
+        let id = try XCTUnwrap(started.dashboard.competitions.first(where: \.isPractice)?.id)
+
+        let ended = await client.delete(id)
+        XCTAssertFalse(ended.dashboard.competitions.contains(where: \.isPractice))
+        XCTAssertFalse(ended.dashboard.issues.contains(.commandRejected(id)))
+
+        let other = CompetitionID(UUID())
+        let rejected = await client.delete(other)
+        XCTAssertTrue(rejected.dashboard.issues.contains(.commandRejected(other)))
+
+        // Nothing is underway any more.
+        let restarted = await client.startPractice(.relaxed)
+        let next = try XCTUnwrap(restarted.dashboard.competitions.first(where: \.isPractice))
+        XCTAssertNotEqual(next.id, id)
+        await client.stop()
+    }
+
+    func testEndPracticeAfterTeardownIsTerminalBlocked() async throws {
+        let (profile, paths) = try widgetTestProfile()
+        let fixture = try practiceSource()
+        let client = CompetitionClient.remote(
+            remoteAPI: remoteAPI(listCompetitions: { [] }),
+            environment: .accelerated(source: fixture.source)
+        )
+        try await client.mountAuthenticatedProfile(profile, paths)
+        var iterator = client.start().makeAsyncIterator()
+        _ = await iterator.next()
+        let started = await client.startPractice(.balanced)
+        let id = try XCTUnwrap(started.dashboard.competitions.first(where: \.isPractice)?.id)
+
+        try await client.prepareForProfileTeardown(requireRemoteInstallationRemoval: false)
+        let ended = await client.delete(id)
+        let restarted = await client.startPractice(.balanced)
+
+        XCTAssertEqual(ended.publicationRevision, restarted.publicationRevision)
+        XCTAssertFalse(ended.dashboard.issues.contains(.commandRejected(id)))
+        XCTAssertFalse(
+            restarted.dashboard.issues.contains(.commandRejected(PracticeMatch.startCommandID))
+        )
+        await client.stop()
+    }
+
+    func testFinishedPracticeIsDeletedWhenItLeavesHome() async throws {
+        let (profile, paths) = try widgetTestProfile()
+        let fixture = try practiceSource()
+        let client = CompetitionClient.remote(
+            remoteAPI: remoteAPI(listCompetitions: { [] }),
+            environment: .accelerated(source: fixture.source)
+        )
+        try await client.mountAuthenticatedProfile(profile, paths)
+        var iterator = client.start().makeAsyncIterator()
+        _ = await iterator.next()
+        _ = await client.startPractice(.balanced)
+
+        // The week ends Aug 21; best available after 24 h of tallying.
+        let end = try practiceDay(21, in: fixture.calendar)
+        try await fixture.source.advance(to: end.addingTimeInterval(1))
+        _ = await client.reconcileAll(.pullToRefresh)
+        try await fixture.source.advance(to: end.addingTimeInterval(24 * 3_600 + 2))
+        let finished = await client.reconcileAll(.pullToRefresh)
+        let practice = try XCTUnwrap(finished.dashboard.competitions.first(where: \.isPractice))
+        guard case .completed = practice.lifecycle else {
+            return XCTFail("Not completed: \(practice.lifecycle)")
+        }
+        let leaves = try XCTUnwrap(competitionResultLeavesHome(practice)?.at)
+
+        try await fixture.source.advance(to: leaves)
+        let gone = await client.reconcileAll(.pullToRefresh)
+        XCTAssertFalse(gone.dashboard.competitions.contains(where: \.isPractice))
+        await client.stop()
+        let journals = await LocalCompetitionRuntime(
+            environment: .accelerated(source: fixture.source),
+            store: JSONCompetitionEventStore(rootDirectory: paths.practiceEventsDirectory)
+        ).loadAll().successfulJournals
+        XCTAssertEqual(journals, [])
+    }
+
+    func testPracticeNeverReachesTheNotificationSnapshot() async throws {
+        let (profile, paths) = try widgetTestProfile()
+        let fixture = try practiceSource()
+        let notifications = RemoteCompetitionNotificationProbe()
+        let client = CompetitionClient.remote(
+            remoteAPI: remoteAPI(listCompetitions: { [] }),
+            environment: .accelerated(source: fixture.source),
+            notificationClient: notifications.client
+        )
+        try await client.mountAuthenticatedProfile(profile, paths)
+        var iterator = client.start().makeAsyncIterator()
+        _ = await iterator.next()
+        _ = await client.startPractice(.balanced)
+        try await fixture.source.advance(
+            to: practiceDay(20, in: fixture.calendar).addingTimeInterval(9 * 3_600)
+        )
+        _ = await client.reconcileAll(.pullToRefresh)
+        await client.reconcileNotifications()
+
+        let pending = await notifications.pendingIdentifiers()
+        XCTAssertEqual(pending, [])
+        await client.stop()
+    }
+
+    func testPracticeDoesNotTakeSignalOwnership() async throws {
+        let (profile, paths) = try widgetTestProfile()
+        let signalDate = try practiceSource().startedAt.addingTimeInterval(60)
+        let fixture = try practiceSource(changes: [
+            try FixtureActivityChange(
+                at: signalDate,
+                updates: [],
+                triggers: [.observerWakeupBackground]
+            ),
+        ])
+        let client = CompetitionClient.remote(
+            remoteAPI: remoteAPI(listCompetitions: { [] }),
+            environment: .accelerated(source: fixture.source)
+        )
+        try await client.mountAuthenticatedProfile(profile, paths)
+        var iterator = client.start().makeAsyncIterator()
+        _ = await iterator.next()
+        let started = await client.startPractice(.balanced)
+        XCTAssertTrue(started.dashboard.competitions.contains(where: \.isPractice))
+        let subscribers = await fixture.source.signalSubscriberCount()
+        XCTAssertEqual(subscribers, 1)
+
+        try await fixture.source.advance(to: signalDate)
+        await waitForBoundedAsyncCondition("remote completes the observer signal") {
+            await fixture.source.waitUntilSignalCompletionCount("fixture-signal-1", minimum: 1)
+        }
+        let completions = await fixture.source.signalCompletionCount("fixture-signal-1")
+        XCTAssertEqual(completions, 1)
+        await client.stop()
+    }
+}

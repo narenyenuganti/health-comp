@@ -60,6 +60,7 @@ final class AuthenticatedProfileStorageTests: XCTestCase {
                 "Installations",
                 "AppAttest",
                 "BackgroundDelivery",
+                "PracticeEvents",
             ]
         )
         for url in [paths.rootDirectory] + paths.fixedDirectories {

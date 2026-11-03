@@ -12,6 +12,8 @@ struct CompetitionResultView: View {
     var muteButton: CompetitionMuteButton?
     var issue: CompetitionRowIssue? = nil
     var retry: (() async -> Void)? = nil
+    /// Practice only: the pinned action in place of Rematch.
+    var challengeSomeone: (() -> Void)? = nil
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -74,8 +76,8 @@ struct CompetitionResultView: View {
                     .accessibilityIdentifier("competition.history.preserved")
                 }
 
-                // Real matches only. Practice (PR 12) also uses this source and adds `&& !competition.isPractice`.
-                if source == .remoteParticipants {
+                // Real matches only; practice also renders as remote.
+                if source == .remoteParticipants, !competition.isPractice {
                     shareResultButton
                 }
 
@@ -190,7 +192,7 @@ struct CompetitionResultView: View {
     }
 
     private var resultKicker: String {
-        ["Final", weekRangeText, isMuted ? "Muted" : nil]
+        [competition.isPractice ? "Practice" : nil, "Final", weekRangeText, isMuted ? "Muted" : nil]
             .compactMap { $0 }
             .joined(separator: " · ")
     }
@@ -465,6 +467,19 @@ struct CompetitionResultView: View {
 
     @ViewBuilder
     private var rematchControl: some View {
+        if competition.isPractice {
+            if let challengeSomeone {
+                Button("Challenge Someone", action: challengeSomeone)
+                    .buttonStyle(PrimaryButtonStyle())
+                    .accessibilityIdentifier("competition.practice.challenge")
+            }
+        } else {
+            rematchStateControl
+        }
+    }
+
+    @ViewBuilder
+    private var rematchStateControl: some View {
         switch rematch {
         case .available:
             Button("Rematch \(opponentName)") {
@@ -727,7 +742,7 @@ struct CompetitionResultView: View {
     }
 
     private var hasMenuActions: Bool {
-        dataControl != .preservedHistory || muteButton != nil
+        !competition.isPractice && (dataControl != .preservedHistory || muteButton != nil)
     }
 
     @ViewBuilder
