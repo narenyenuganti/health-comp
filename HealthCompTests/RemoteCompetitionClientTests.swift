@@ -375,6 +375,98 @@ final class RemoteCompetitionClientTests: XCTestCase {
         await client.stop()
     }
 
+    private func widgetTestProfile() throws -> (AuthenticatedProfile, AuthenticatedProfileStoragePaths) {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let profile = AuthenticatedProfile(
+            id: UUID(uuidString: "81000000-0000-4000-8000-000000000001")!,
+            displayName: "Beta Alice"
+        )
+        let paths = AuthenticatedProfileStoragePaths(profileID: profile.id, rootDirectory: root)
+        for directory in paths.fixedDirectories {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        }
+        return (profile, paths)
+    }
+
+    private func waitForWidgetWrite(_ spy: WidgetSnapshotSpy) async throws {
+        for _ in 0..<200 where spy.writes.isEmpty {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+    }
+
+    func testCanonicalPublishWritesTheWidgetSnapshot() async throws {
+        let (profile, paths) = try widgetTestProfile()
+        let spy = WidgetSnapshotSpy()
+        let client = CompetitionClient.remote(
+            remoteAPI: remoteAPI(listCompetitions: { [] }),
+            environment: try environment(),
+            widgetSnapshots: spy.client
+        )
+
+        try await client.mountAuthenticatedProfile(profile, paths)
+        var iterator = client.start().makeAsyncIterator()
+        _ = await iterator.next()
+        try await waitForWidgetWrite(spy)
+
+        XCTAssertEqual(spy.writes.count, 1)
+        XCTAssertEqual(spy.writes.first?.snapshot.matches, [])
+        XCTAssertEqual(spy.writes.first?.carryForward, [])
+        await client.stop()
+        _ = await client.reconcileAll(.pullToRefresh)
+        XCTAssertEqual(spy.writes.count, 1)
+    }
+
+    func testColdMountCarriesForwardAMatchWhoseSyncFailedOrWasCancelled() async throws {
+        let (profile, paths) = try widgetTestProfile()
+        let failedID = UUID(uuidString: "82000000-0000-4000-8000-0000000000F1")!
+        let cancelledID = UUID(uuidString: "82000000-0000-4000-8000-0000000000F2")!
+        let expiresAt = Date(timeIntervalSince1970: 1_786_540_000 + 48 * 60 * 60)
+        let descriptors = try [failedID, cancelledID].map {
+            try pendingDescriptor(competitionID: $0, profile: profile, expiresAt: expiresAt)
+        }
+        let spy = WidgetSnapshotSpy()
+        let client = CompetitionClient.remote(
+            remoteAPI: remoteAPI(
+                listCompetitions: { descriptors },
+                fetchChanges: { cursor, _ in
+                    if cursor.competitionID == cancelledID { throw CancellationError() }
+                    throw CompetitionRemoteFailure.operationFailed
+                }
+            ),
+            environment: try environment(),
+            widgetSnapshots: spy.client
+        )
+
+        try await client.mountAuthenticatedProfile(profile, paths)
+        var iterator = client.start().makeAsyncIterator()
+        _ = await iterator.next()
+        try await waitForWidgetWrite(spy)
+
+        XCTAssertEqual(spy.writes.first?.carryForward, [failedID, cancelledID])
+        XCTAssertEqual(spy.writes.first?.snapshot.matches, [])
+        await client.stop()
+    }
+
+    func testDiscoveryFailureDoesNotWriteTheWidgetSnapshot() async throws {
+        let (profile, paths) = try widgetTestProfile()
+        let spy = WidgetSnapshotSpy()
+        let client = CompetitionClient.remote(
+            remoteAPI: remoteAPI(listCompetitions: { throw CompetitionRemoteFailure.operationFailed }),
+            environment: try environment(),
+            widgetSnapshots: spy.client
+        )
+
+        try await client.mountAuthenticatedProfile(profile, paths)
+        var iterator = client.start().makeAsyncIterator()
+        _ = await iterator.next()
+        _ = await client.reconcileAll(.pullToRefresh)
+
+        XCTAssertEqual(spy.writes.count, 0)
+        await client.stop()
+    }
+
     func testStartRequestsHealthAuthorizationAndPublishesFailure()
         async throws
     {
@@ -4837,6 +4929,24 @@ private final class RemoteLockedFlag: @unchecked Sendable {
 
     func setTrue() {
         lock.withLock { storedValue = true }
+    }
+}
+
+private final class WidgetSnapshotSpy: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: [(snapshot: CompetitionWidgetSnapshot, carryForward: Set<UUID>)] = []
+
+    var writes: [(snapshot: CompetitionWidgetSnapshot, carryForward: Set<UUID>)] {
+        lock.withLock { stored }
+    }
+
+    var client: CompetitionWidgetSnapshotClient {
+        CompetitionWidgetSnapshotClient(
+            write: { snapshot, carryForward in
+                self.lock.withLock { self.stored.append((snapshot, carryForward)) }
+            },
+            clear: {}
+        )
     }
 }
 

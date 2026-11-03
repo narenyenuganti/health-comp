@@ -874,26 +874,6 @@ func competitionResultTitle(
     }
 }
 
-/// "Won by 230 points" or "Lost by 1 point", from the margin as shown. Nil
-/// when the shown totals are equal.
-func competitionMarginText(
-    userPoints: Double,
-    opponentPoints: Double,
-    fractionDigits: Int,
-    locale: Locale = .current
-) -> String? {
-    let margin = competitionDisplayedMargin(
-        userPoints: userPoints,
-        opponentPoints: opponentPoints,
-        fractionDigits: fractionDigits
-    )
-    guard margin != 0 else { return nil }
-    return (margin > 0 ? "Won by " : "Lost by ")
-        + competitionPointsAccessibilityText(
-            abs(margin), fractionDigits: fractionDigits, locale: locale
-        )
-}
-
 /// "won 2 days, lost 4, tied 1": only days with both scores, never a 0–0
 /// day. Nil when no day counts.
 func competitionDaysSummaryText(_ days: [LocalCompetitionDayPresentation]) -> String? {

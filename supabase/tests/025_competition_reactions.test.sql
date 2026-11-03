@@ -214,6 +214,35 @@ reset role;
 select is(pg_temp.reaction_work('01'), 1::bigint,
   'a second reaction within the hour queues no push');
 
+-- The hour, not the work identity, is what keeps it silent: Ben's rename adds
+-- a change-log row, so the next reaction lands at a new server_seq.
+update public.profiles set display_name = 'Benjamin', updated_at = now()
+where id = 'f8100000-0000-4000-8000-000000000002';
+set local role authenticated;
+select pg_temp.as_profile(1);
+select public.set_competition_reaction('f8200000-0000-4000-8000-000000000001', 3, 'fire');
+reset role;
+select is(pg_temp.reaction_work('01'), 1::bigint,
+  'a reaction at a new change within the hour still queues no push');
+update private.competition_notification_work set created_at = created_at - interval '61 minutes'
+where competition_id = 'f8200000-0000-4000-8000-000000000001' and kind = 'reaction';
+set local role authenticated;
+select pg_temp.as_profile(1);
+select public.set_competition_reaction('f8200000-0000-4000-8000-000000000001', 3, 'clap');
+reset role;
+select is((
+    select array_agg(array[w.state, (w.server_seq = (select max(l.server_seq)
+      from public.competition_change_log l where l.competition_id = w.competition_id))::text]
+      order by w.created_at)
+    from private.competition_notification_work w
+    where w.competition_id = 'f8200000-0000-4000-8000-000000000001' and w.kind = 'reaction'),
+  array[array['pending', 'false'], array['pending', 'true']],
+  'once the last reaction push is over an hour old, the next one queues at the new change');
+-- Drop the aged row so the lease check below sees one reaction item.
+delete from private.competition_notification_work
+where competition_id = 'f8200000-0000-4000-8000-000000000001' and kind = 'reaction'
+  and created_at < statement_timestamp() - interval '1 hour';
+
 -- Refusals
 set local role authenticated;
 select pg_temp.as_profile(3);
