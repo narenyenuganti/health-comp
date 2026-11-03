@@ -700,6 +700,9 @@ private struct AccountNotificationsPage: View {
                         openURL(URL(string: UIApplication.openSettingsURLString)!)
                     }
                     .frame(minHeight: 44)
+                    // The status section has its own Open Settings; VoiceOver
+                    // tells them apart.
+                    .accessibilityLabel("Open Settings for Live Activities")
                     .accessibilityIdentifier("account.notifications.live-activity.settings")
                 }
             }

@@ -72,7 +72,7 @@ final class NotificationChoicesUITests: XCTestCase {
                 XCTAssertGreaterThan(caption.frame.minY, toggle.frame.maxY - 1)
                 let settings = app.buttons["account.notifications.live-activity.settings"]
                 scrollToElement(settings)
-                XCTAssertEqual(settings.label, "Open Settings")
+                XCTAssertEqual(settings.label, "Open Settings for Live Activities")
                 XCTAssertGreaterThanOrEqual(settings.frame.height, 43.5)
                 XCTAssertGreaterThan(settings.frame.minY, caption.frame.minY)
             }
@@ -222,6 +222,8 @@ final class NotificationChoicesUITests: XCTestCase {
     /// top and bottom, from both fixtures. Close scores is off in each.
     func testNotificationChoicesScreenshotMatrix() throws {
         let configs: [(String, String, String)] = [
+            ("light-xs", "Light", "UICTContentSizeCategoryXS"),
+            ("dark-xs", "Dark", "UICTContentSizeCategoryXS"),
             ("light-default", "Light", "UICTContentSizeCategoryL"),
             ("dark-default", "Dark", "UICTContentSizeCategoryL"),
             ("light-ax5", "Light", "UICTContentSizeCategoryAccessibilityXXXL"),

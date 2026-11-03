@@ -836,39 +836,71 @@ final class CompetitionNotificationCoordinatorTests: XCTestCase {
     }
 
     func testCommitReplanHonorsSwitchedOffFamilies() async throws {
-        let recorder = NotificationOperationRecorder()
-        let commits = DurableDecisionCommitRecorder()
-        var preferences = CompetitionNotificationPreferencesClient
-            .constant(mutedOpponentIdentities: [])
-        preferences.switchedOff = { [.leadChange] }
-        let coordinator = CompetitionNotificationCoordinator(
-            planner: CompetitionNotificationPlanner(policy: .coordinatorFixture),
-            notifications: recorder.notificationClient(
-                authorization: .authorized
-            ),
-            preferences: preferences,
-            commitDecisions: { competition, replan in
-                let decisions = try replan(competition)
-                await commits.append(decisions)
-                return decisions.isEmpty ? .noDecision : .appended(decisions)
+        // Lead changes outrank close scores and the cap is one, so a replan
+        // that dropped the switches would spend the slot on the lead change.
+        var policy = CompetitionNotificationPolicy.coordinatorFixture
+        policy.isCloseScore = { _, _, _ in true }
+        policy.priority = { family in
+            switch family {
+            case .leadChange: 2
+            case .closeScore: 1
+            default: 0
             }
+        }
+        func commit(
+            switchedOff: Set<CompetitionNotificationChoice>
+        ) async throws -> (
+            decisions: [CompetitionNotificationDurableDecision],
+            operations: [String]
+        ) {
+            let recorder = NotificationOperationRecorder()
+            let commits = DurableDecisionCommitRecorder()
+            var preferences = CompetitionNotificationPreferencesClient
+                .constant(mutedOpponentIdentities: [])
+            preferences.switchedOff = { switchedOff }
+            let coordinator = CompetitionNotificationCoordinator(
+                planner: CompetitionNotificationPlanner(policy: policy),
+                notifications: recorder.notificationClient(
+                    authorization: .authorized
+                ),
+                preferences: preferences,
+                commitDecisions: { competition, replan in
+                    let decisions = try replan(competition)
+                    await commits.append(decisions)
+                    return decisions.isEmpty ? .noDecision : .appended(decisions)
+                }
+            )
+            // An earlier opponent lead makes today's owner lead a real change.
+            await coordinator.submit(try multiDecisionSnapshot())
+            return (
+                await commits.batches.flatMap { $0 },
+                await recorder.operations
+            )
+        }
+        func emittedFamilies(
+            _ decisions: [CompetitionNotificationDurableDecision]
+        ) -> [NotificationEmissionFamily] {
+            decisions.compactMap { decision in
+                guard case let .emission(emission) = decision else { return nil }
+                return emission.record.family
+            }
+        }
+
+        // Control: with every switch on, the lead change takes the slot.
+        let allOn = try await commit(switchedOff: [])
+        XCTAssertEqual(emittedFamilies(allOn.decisions), [.leadChange])
+
+        let leadOff = try await commit(switchedOff: [.leadChange])
+        XCTAssertEqual(emittedFamilies(leadOff.decisions), [.closeScore])
+        XCTAssertTrue(leadOff.decisions.contains { decision in
+            guard case let .suppression(record) = decision else { return false }
+            return record.family == .leadChange
+                && record.disposition == .suppressed(reason: .superseded)
+        })
+        XCTAssertEqual(
+            leadOff.operations.filter { $0.hasPrefix("post:") }.count,
+            1
         )
-
-        // An earlier opponent lead makes today's owner lead a real change.
-        await coordinator.submit(try multiDecisionSnapshot())
-
-        let decisions = await commits.batches.flatMap { $0 }
-        let operations = await recorder.operations
-        XCTAssertFalse(decisions.isEmpty)
-        XCTAssertTrue(decisions.allSatisfy {
-            if case .suppression = $0 { return true }
-            return false
-        })
-        XCTAssertTrue(decisions.contains {
-            $0.record.family == .leadChange
-                && $0.record.disposition == .suppressed(reason: .superseded)
-        })
-        XCTAssertFalse(operations.contains { $0.hasPrefix("post:") })
     }
 
     private func resultSnapshot(
