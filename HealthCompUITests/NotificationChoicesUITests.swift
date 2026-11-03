@@ -45,7 +45,8 @@ final class NotificationChoicesUITests: XCTestCase {
         XCTAssertFalse(app.switches["account.notifications.choice.what-it-takes"].exists)
         XCTAssertFalse(app.staticTexts["What it takes"].exists)
 
-        var lastY = app.staticTexts["DURING A MATCH"].frame.minY
+        // Read both frames after the scroll: a scroll between rows moves both.
+        var previous: XCUIElement = app.staticTexts["DURING A MATCH"]
         for row in Self.rows {
             if row.id == "reaction" {
                 let header = app.staticTexts["FROM THE OTHER PERSON"]
@@ -60,12 +61,10 @@ final class NotificationChoicesUITests: XCTestCase {
             )
             XCTAssertGreaterThanOrEqual(toggle.frame.height, 43.5, row.id)
             XCTAssertEqual(toggle.isEnabled, row.id != "live-activity", row.id)
-            if row.id == "lead-change" || row.id == "reaction" {
-                lastY = toggle.frame.minY
-            } else {
-                XCTAssertGreaterThan(toggle.frame.minY, lastY, "\(row.id) is out of order")
-                lastY = toggle.frame.minY
-            }
+            if row.id == "reaction" { previous = app.staticTexts["FROM THE OTHER PERSON"] }
+            XCTAssertTrue(previous.exists, row.id)
+            XCTAssertGreaterThan(toggle.frame.minY, previous.frame.minY, "\(row.id) is out of order")
+            previous = toggle
             if row.id == "live-activity" {
                 // iOS-off: caption and Open Settings directly under the row.
                 let caption = liveActivityCaption()
