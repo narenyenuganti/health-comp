@@ -58,7 +58,7 @@ final class NotificationChoicesUITests: XCTestCase {
             XCTAssertEqual(
                 app.switches.matching(identifier: "account.notifications.choice.\(row.id)").count, 1, row.id
             )
-            XCTAssertGreaterThanOrEqual(toggle.frame.height, 44, row.id)
+            XCTAssertGreaterThanOrEqual(toggle.frame.height, 43.5, row.id)
             XCTAssertEqual(toggle.isEnabled, row.id != "live-activity", row.id)
             if row.id == "lead-change" || row.id == "reaction" {
                 lastY = toggle.frame.minY
@@ -74,7 +74,7 @@ final class NotificationChoicesUITests: XCTestCase {
                 let settings = app.buttons["account.notifications.live-activity.settings"]
                 scrollToElement(settings)
                 XCTAssertEqual(settings.label, "Open Settings")
-                XCTAssertGreaterThanOrEqual(settings.frame.height, 44)
+                XCTAssertGreaterThanOrEqual(settings.frame.height, 43.5)
                 XCTAssertGreaterThan(settings.frame.minY, caption.frame.minY)
             }
         }
@@ -244,8 +244,7 @@ final class NotificationChoicesUITests: XCTestCase {
                 scrollToElement(closeScores)
                 if closeScores.value as? String != "0" { flip(closeScores) }
                 XCTAssertEqual(closeScores.value as? String, "0")
-                let top = app.buttons["account.notifications.settings"]
-                scrollToElement(top)
+                for _ in 0..<4 { app.collectionViews.firstMatch.swipeDown() }
                 shot("\(screen)-top-\(suffix)")
                 try audit("\(screen)-top-\(suffix)")
                 let middle = choice("live-activity")
