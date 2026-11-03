@@ -668,11 +668,12 @@ private struct HeroScoreboard: View {
         trailing: Bool
     ) -> some View {
         VStack(alignment: trailing ? .trailing : .leading, spacing: 2) {
-            Text(name.uppercased(with: .current))
+            // Uppercase in the drawing only, like the belt chip: the text
+            // itself stays as written for VoiceOver and the clipped-text audit.
+            Text(name)
                 .font(.themeLabel)
                 .tracking(1.4)
-                // Wraps at its full height, so a long name is never clipped.
-                .fixedSize(horizontal: false, vertical: true)
+                .textCase(.uppercase)
             Text(competitionPointsText(points))
                 .font(.score(size: scoreSize).monospacedDigit())
         }
