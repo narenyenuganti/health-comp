@@ -382,6 +382,13 @@ posts match notifications.
 (`nudge_day`); a muted pair resolves `suppressed`, a finished match
 `discarded`. The support query needs no change.
 
+`reaction` work is at most one row per recipient installation per match per
+hour; `suppressed` means the recipient muted the sender. None is enqueued
+for installations with `supports_reactions` false (an older build). The
+per-iPhone Reactions switch arrives later (`muted_push_kinds`, suppressed at
+lease). Reactions themselves are in `private.competition_reactions`, not the
+change log.
+
 ### Support events
 
 ~~~sql
@@ -597,6 +604,7 @@ permission to bypass a deadline, forge an attestation, or alter a result.
 | Force reconciliation or upload for a participant | Unsupported. Only that authenticated participant owns submission. | Diagnose connectivity/session state and ask the app to retry. |
 | Change a score, result, winner, award, or server sequence | Forbidden by the append-only and immutable contracts. | Open an engineering/security incident; preserve the evidence. |
 | Delete a participant to clean up a case | Forbidden. Account deletion follows its own durable, Apple-bound flow. | Use the account-deletion runbook. |
+| Add, remove or disclose a block | Unsupported. Blocks are private to the blocker (`private.account_blocks`) and never shown to the blocked person. | The person unblocks in Account → BLOCKED. Do not read or edit the table. |
 
 ## Escalation conditions
 

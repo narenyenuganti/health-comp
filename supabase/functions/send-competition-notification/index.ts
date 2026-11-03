@@ -26,6 +26,7 @@ const workKinds = [
   "challenge_declined",
   "match_cancelled",
   "nudge",
+  "reaction",
 ] as const;
 
 interface NotificationWorkItem {
@@ -281,6 +282,7 @@ const genericAlerts: Partial<
     title: "Score update needed",
     body: "Open HealthComp to update your match.",
   },
+  reaction: { title: "New reaction" },
 };
 
 export function competitionNotificationPayload(

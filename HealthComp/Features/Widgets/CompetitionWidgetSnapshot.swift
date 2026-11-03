@@ -193,8 +193,13 @@ extension CompetitionWidgetSnapshot.Match {
 
     /// The medium header: "Sam · Day 5 of 7", "Sam · Final".
     func mediumHeader(at date: Date, locale: Locale = .current) -> String {
-        if case .final = state(at: date) { return "\(name) · Final" }
-        return "\(name) · \(status(at: date, locale: locale))"
+        "\(name) · \(mediumStatus(at: date, locale: locale))"
+    }
+
+    /// The header after the name, kept whole when a long name truncates.
+    func mediumStatus(at date: Date, locale: Locale = .current) -> String {
+        if case .final = state(at: date) { return "Final" }
+        return status(at: date, locale: locale)
     }
 
     /// "You lead by 54." while live, "Won by 114 points" for a result, nil
@@ -250,12 +255,16 @@ extension CompetitionWidgetSnapshot.Match {
         timeZone: TimeZone = .current
     ) -> [[String]] {
         if state(at: date) == .scheduled {
-            return [[name], [status(at: date, locale: locale)]]
+            // "Day 1 is Wednesday" doesn't fit the rectangle: "Day 1 is Wed".
+            return [[name], [status(at: date, locale: locale), "Day 1 is \(weekday("EEE", locale: locale))"]]
         }
         let you = userPointsText(locale: locale)
         let them = opponentPointsText(locale: locale)
+        // "Sam · Final score pending" rarely fits: "Sam · Pending" keeps the
+        // match from reading as live.
+        let short = state(at: date) == .finalPending ? ["\(name) · Pending"] : []
         return [
-            ["\(name) · \(status(at: date, compact: true, locale: locale))", name],
+            ["\(name) · \(status(at: date, compact: true, locale: locale))"] + short + [name],
             ["You \(you) · \(name) \(them)", "You \(you) · \(them)"],
         ] + [updatedLine(at: date, locale: locale, timeZone: timeZone).map { [$0] }].compactMap { $0 }
     }

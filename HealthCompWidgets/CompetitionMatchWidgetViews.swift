@@ -56,7 +56,13 @@ private struct WidgetBackground: ViewModifier {
     func body(content: Content) -> some View {
         switch family {
         case .accessoryCircular:
-            content.containerBackground(for: .widget) { AccessoryWidgetBackground() }
+            // The Lock Screen drops an accessory widget's container
+            // background, so the disc goes in the body.
+            ZStack {
+                AccessoryWidgetBackground()
+                content
+            }
+            .containerBackground(for: .widget) { Color.clear }
         case .accessoryRectangular:
             content.containerBackground(for: .widget) { Color.clear }
         default:
@@ -69,6 +75,9 @@ private struct WidgetBackground: ViewModifier {
 private struct StatusLabel: View {
     let text: String
     var namesSomeone = false
+    /// Shrinks a little before truncating, so "FINAL SCORE PENDING" and
+    /// "DAY 1 IS WEDNESDAY" fit the small widget.
+    var shrinks = true
 
     var body: some View {
         Text(text)
@@ -77,6 +86,8 @@ private struct StatusLabel: View {
             .textCase(.uppercase)
             .foregroundStyle(Theme.secondary)
             .lineLimit(1)
+            .minimumScaleFactor(shrinks ? 0.5 : 1)
+            .allowsTightening(true)
             .privacySensitive(namesSomeone)
     }
 }
@@ -96,16 +107,18 @@ private struct SmallView: View {
 
     @ScaledMetric(relativeTo: .title) private var scoreSize: CGFloat = 28
 
+    @Environment(\.dynamicTypeSize) private var typeSize
+
     var body: some View {
         if match.state(at: date) == .scheduled {
             VStack(alignment: .leading, spacing: 6) {
                 StatusLabel(text: match.status(at: date))
+                Spacer(minLength: 0)
                 Text(match.name)
                     .font(.title3.weight(.heavy).width(.condensed))
                     .foregroundStyle(Theme.ink)
                     .lineLimit(2)
                     .privacySensitive()
-                Spacer(minLength: 0)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         } else {
@@ -135,6 +148,7 @@ private struct SmallView: View {
                     .font(.caption2)
                     .foregroundStyle(Theme.tertiary)
                     .lineLimit(1)
+                    .minimumScaleFactor(0.7)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -142,22 +156,25 @@ private struct SmallView: View {
 
     private func row(_ label: String, _ number: String, _ color: Color, isYou: Bool) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
+            // Always a few letters of the name: the number shrinks first,
+            // but never truncates, so large text leaves the name less room.
             Text(label)
                 .font(.themeLabel)
-                .tracking(1.2)
-                .textCase(.uppercase)
                 .foregroundStyle(color)
                 .lineLimit(1)
+                .fixedSize(horizontal: isYou, vertical: false)  // "You" is always whole
+                .frame(minWidth: isYou ? nil : (typeSize >= .xLarge ? 40 : 64), alignment: .leading)
                 .privacySensitive(!isYou)
             Spacer(minLength: 0)
             Text(number)
                 .font(.score(size: scoreSize))
                 .monospacedDigit()
-                .minimumScaleFactor(0.5)
+                .minimumScaleFactor(0.4)
                 .lineLimit(1)
                 .foregroundStyle(color)
                 .widgetAccentable(isYou)
                 .privacySensitive()
+                .layoutPriority(1)  // fills what the name leaves, shrinking to fit
         }
     }
 }
@@ -170,45 +187,79 @@ private struct MediumView: View {
 
     @ScaledMetric(relativeTo: .largeTitle) private var scoreSize: CGFloat = 40
 
+    @Environment(\.dynamicTypeSize) private var typeSize
+
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                StatusLabel(text: match.mediumHeader(at: date), namesSomeone: true)
-                Spacer(minLength: 0)
-                if let updated = match.updatedLine(at: date) {
-                    Text(updated)
-                        .font(.caption2)
-                        .foregroundStyle(Theme.tertiary)
-                        .lineLimit(1)
-                }
-            }
+            header
             Spacer(minLength: 0)
             if match.state(at: date) == .scheduled {
-                strip
+                HStack(spacing: 12) {
+                    caption("YOU", isYou: true)
+                    strip
+                    caption(match.name.uppercased(), isYou: false)
+                }
+                Spacer(minLength: 0)
             } else {
-                // At large sizes the strip goes first, then the Today lines.
-                ViewThatFits {
-                    scores(showsStrip: true, showsToday: true)
-                    scores(showsStrip: false, showsToday: true)
-                    scores(showsStrip: false, showsToday: false)
+                // Large text drops the Today lines. The strip adds no height:
+                // it goes only when the numbers leave it no room.
+                ViewThatFits(in: .vertical) {
+                    scores(showsToday: true)
+                    scores(showsToday: false)
                 }
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
-    private func scores(showsStrip: Bool, showsToday: Bool) -> some View {
+    /// "SAM · DAY 5 OF 7" and the Updated time: one row, or two at large
+    /// text sizes so neither truncates to nothing.
+    @ViewBuilder
+    private var header: some View {
+        // A long name truncates; the status after it stays whole.
+        let title = HStack(alignment: .firstTextBaseline, spacing: 0) {
+            StatusLabel(text: match.name, namesSomeone: true, shrinks: false)
+            StatusLabel(text: " · \(match.mediumStatus(at: date))", shrinks: false)
+                .layoutPriority(1)
+        }
+        let updated = match.updatedLine(at: date).map { line in
+            Text(line)
+                .font(.caption2)
+                .foregroundStyle(Theme.tertiary)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
+        }
+        if typeSize >= .xLarge {
+            VStack(alignment: .leading, spacing: 2) {
+                title
+                updated
+            }
+        } else {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                title
+                Spacer(minLength: 0)
+                updated.layoutPriority(1)
+            }
+        }
+    }
+
+    private func scores(showsToday: Bool) -> some View {
         let today = match.todayLines(at: date)
         let isFinal = if case .final = match.state(at: date) { true } else { false }
         return HStack(alignment: .bottom, spacing: 12) {
             side("YOU", match.userPointsText(), showsToday ? today.user : nil, Theme.you, isYou: true)
             VStack(spacing: 6) {
-                if showsStrip { strip }
+                ViewThatFits(in: .horizontal) {
+                    strip.frame(minWidth: 60, idealWidth: 60, maxWidth: .infinity)
+                    Color.clear.frame(width: 0, height: 0)
+                }
                 if isFinal {
                     Text(match.leadLine(at: date) ?? "Tied")
                         .font(.caption)
                         .foregroundStyle(Theme.secondary)
-                        .lineLimit(1)
+                        .multilineTextAlignment(.center)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.8)
                         .privacySensitive()
                 }
             }
@@ -225,12 +276,7 @@ private struct MediumView: View {
         _ caption: String, _ number: String, _ today: String?, _ color: Color, isYou: Bool
     ) -> some View {
         VStack(alignment: isYou ? .leading : .trailing, spacing: 2) {
-            Text(caption)
-                .font(.themeLabel)
-                .tracking(1.2)
-                .foregroundStyle(Theme.secondary)
-                .lineLimit(1)
-                .privacySensitive(!isYou)
+            self.caption(caption, isYou: isYou)
             Text(number)
                 .font(.score(size: scoreSize))
                 .monospacedDigit()
@@ -247,6 +293,18 @@ private struct MediumView: View {
                     .privacySensitive()
             }
         }
+    }
+
+    /// Capped near the number's width, so a long name truncates instead of
+    /// pushing out the strip and the Today lines.
+    private func caption(_ text: String, isYou: Bool) -> some View {
+        Text(text)
+            .font(.themeLabel)
+            .tracking(1.2)
+            .foregroundStyle(Theme.secondary)
+            .lineLimit(1)
+            .frame(maxWidth: scoreSize * 2.5, alignment: isYou ? .leading : .trailing)
+            .privacySensitive(!isYou)
     }
 
     private var strip: some View {
@@ -331,6 +389,10 @@ private struct EmptyStateView: View {
                     Text(line)
                         .font(index == 0 ? .headline : .body)
                         .lineLimit(2)
+                        .minimumScaleFactor(0.8)
+                        // Without this the stack held "Open the app to see
+                        // your matches." to one truncated line.
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
             .privacySensitive(text.namesSomeone)
@@ -340,6 +402,7 @@ private struct EmptyStateView: View {
                 Text(text.title)
                     .font(.title3.weight(.heavy).width(.condensed))
                     .foregroundStyle(Theme.ink)
+                    .minimumScaleFactor(0.6)  // "HealthComp" can't wrap
                     .privacySensitive(text.namesSomeone)
                 if let line = text.line {
                     Text(line)

@@ -129,6 +129,19 @@ struct HealthCompApp: App {
                 )
             }
         }
+        // Every widget state for the UI tests; an unknown name clears the file.
+        if let scenario = zip(arguments, arguments.dropFirst())
+            .first(where: { $0.0 == "--widget-scenario" })?.1
+        {
+            Task {
+                let client = CompetitionWidgetSnapshotClient.liveValue
+                if let snapshot = CompetitionWidgetSnapshot.testLab(scenario, now: Date()) {
+                    await client.write(snapshot, [])
+                } else {
+                    try? await client.clear()
+                }
+            }
+        }
     }
 #else
     private let store: StoreOf<AppFeature>
@@ -279,7 +292,7 @@ private struct AppProgressView: View {
 }
 
 // Account lives behind the Home avatar, so there is no two-item tab bar.
-private struct AuthenticatedRootView: View {
+struct AuthenticatedRootView: View {
     let mainStore: StoreOf<MainTabFeature>
     let accountStore: StoreOf<AccountFeature>
 
@@ -359,6 +372,15 @@ private struct AccountSheet: View {
                 reset: { mainStore.send(.competition(.challengeLinkResetConfirmed)) }
             )
             : nil
+        let blockedPeople = mainStore.competition.publication?.source == .remoteParticipants
+            ? AccountBlockedPeople(
+                people: competition.blockedPeople,
+                unblocking: competition.unblocksInFlight,
+                unblockFailed: competition.unblockFailed,
+                load: { mainStore.send(.competition(.blockedPeopleRequested)) },
+                unblock: { mainStore.send(.competition(.unblockTapped($0))) }
+            )
+            : nil
 #if HEALTHCOMP_STAGING
         return AccountSettingsView(
             store: accountStore,
@@ -366,6 +388,7 @@ private struct AccountSheet: View {
             health: health,
             liveMatchCount: liveMatchCount,
             challengeLink: challengeLink,
+            blockedPeople: blockedPeople,
             refreshCompetition: { mainStore.send(.competition(.pullToRefresh)) }
         )
 #else
@@ -374,7 +397,8 @@ private struct AccountSheet: View {
             notifications: notifications,
             health: health,
             liveMatchCount: liveMatchCount,
-            challengeLink: challengeLink
+            challengeLink: challengeLink,
+            blockedPeople: blockedPeople
         )
 #endif
     }

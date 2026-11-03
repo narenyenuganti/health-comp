@@ -207,14 +207,23 @@ final class CompetitionWidgetSnapshotTests: XCTestCase {
 
         XCTAssertEqual(week.mediumHeader(at: nov1Noon, locale: en), "Sam · Day 5 of 7")
         XCTAssertEqual(win.mediumHeader(at: resultDate, locale: en), "Sam · Final")
+        XCTAssertEqual(win.mediumStatus(at: resultDate, locale: en), "Final")
+        XCTAssertEqual(week.mediumStatus(at: nov1Noon, locale: en), "Day 5 of 7")
         XCTAssertEqual(week.mediumHeader(at: beforeDay1, locale: en), "Sam · Day 1 is Wednesday")
 
-        XCTAssertEqual(week.rectangularLines(at: beforeDay1, locale: en, timeZone: la), [["Sam"], ["Day 1 is Wednesday"]])
+        XCTAssertEqual(
+            week.rectangularLines(at: beforeDay1, locale: en, timeZone: la),
+            [["Sam"], ["Day 1 is Wednesday", "Day 1 is Wed"]]
+        )
         XCTAssertEqual(
             week.rectangularLines(at: nov1Noon, locale: en, timeZone: la).map { $0.map { normalized($0)! } },
             [["Sam · Day 5", "Sam"], ["You 1,204 · Sam 1,150", "You 1,204 · 1,150"], ["Updated 9:30 AM"]]
         )
         XCTAssertEqual(win.rectangularLines(at: resultDate, locale: en, timeZone: la).first, ["Sam · Final", "Sam"])
+        XCTAssertEqual(
+            week.rectangularLines(at: at("2026-11-04T20:00:00Z"), locale: en, timeZone: la).first,
+            ["Sam · Final score pending", "Sam · Pending", "Sam"]
+        )
 
         XCTAssertEqual(normalized(week.updatedLine(at: nov1Noon, locale: en, timeZone: la)), "Updated 9:30 AM")
         let earlier = match(5, updatedAt: at("2026-10-28T04:30:00Z"))

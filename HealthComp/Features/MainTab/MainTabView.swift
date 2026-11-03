@@ -53,6 +53,7 @@ struct MainTabView: View {
                 accept: { store.send(.acceptClaimTapped) },
                 notNow: { store.send(.notNowClaimTapped) },
                 decline: { store.send(.declineClaimConfirmed) },
+                block: { store.send(.blockClaimConfirmed) },
                 retry: { store.send(.retryClaimTapped) },
                 dismiss: { store.send(.dismissClaimStatus) }
             )
@@ -300,6 +301,13 @@ struct MainTabView: View {
                             isInFlight: store.competition.isCommandInFlight(id),
                             failed: publication.dashboard.issues.contains(.commandRejected(id)),
                             cancel: { store.send(.competition(.cancelTapped(id))) }
+                        )
+                        : nil,
+                    // The real-match gate: never on the simulated fixture.
+                    nudge: publication.source == .remoteParticipants
+                        ? CompetitionNudge(
+                            status: store.competition.nudges[id],
+                            send: { store.send(.competition(.nudgeTapped(id))) }
                         )
                         : nil
                 )
