@@ -268,6 +268,8 @@ final class BeltUITests: XCTestCase {
     // MARK: Accessibility 5
 
     func testBeltScreensPassTheAuditAtAccessibility5() throws {
+        // Report every screen's issues, not only the first.
+        continueAfterFailure = true
         launchLab(Self.darkAX5)
         // Every Home card, each brought to the top before its audit.
         for (state, byte) in [("active", UInt8(0x17)), ("active", 0x24), ("tallying", 0x32), ("active", 0x33), ("active", 0x52)] {
