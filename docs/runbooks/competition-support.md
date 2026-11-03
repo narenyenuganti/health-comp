@@ -382,6 +382,13 @@ posts match notifications.
 (`nudge_day`); a muted pair resolves `suppressed`, a finished match
 `discarded`. The support query needs no change.
 
+`reaction` work is at most one row per recipient installation per match per
+hour; `suppressed` means the recipient muted the sender. None is enqueued
+for installations with `supports_reactions` false (an older build). The
+per-iPhone Reactions switch arrives later (`muted_push_kinds`, suppressed at
+lease). Reactions themselves are in `private.competition_reactions`, not the
+change log.
+
 ### Support events
 
 ~~~sql

@@ -19,35 +19,35 @@ struct MatchLiveActivityWidget: Widget {
             // Dark in every region, so amber stays you on black.
             return DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
-                    MatchActivityScoreColumn(side: .you, state: state, size: 34)
+                    MatchActivityScoreColumn(side: .you, state: state, size: matchActivityIslandScoreSize)
                         .dynamicIsland(verticalPlacement: .belowIfTooWide)
                         .padding(.horizontal, 8)
-                        .environment(\.colorScheme, .dark)
+                        .matchActivityIsland()
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    MatchActivityScoreColumn(side: .them, state: state, size: 34)
+                    MatchActivityScoreColumn(side: .them, state: state, size: matchActivityIslandScoreSize)
                         .dynamicIsland(verticalPlacement: .belowIfTooWide)
                         .padding(.horizontal, 8)
-                        .environment(\.colorScheme, .dark)
+                        .matchActivityIsland()
                 }
                 DynamicIslandExpandedRegion(.center) {
                     MatchActivityIslandHeader(attributes: context.attributes, state: state)
-                        .environment(\.colorScheme, .dark)
+                        .matchActivityIsland()
                 }
                 DynamicIslandExpandedRegion(.bottom) {
-                    MatchActivityBottomRows(state: state)
+                    MatchActivityIslandBottom(state: state)
                         .padding(.horizontal, 8)
-                        .environment(\.colorScheme, .dark)
+                        .matchActivityIsland()
                 }
             } compactLeading: {
                 MatchActivityCompactScore(side: .you, state: state)
-                    .environment(\.colorScheme, .dark)
+                    .matchActivityIsland()
             } compactTrailing: {
                 MatchActivityCompactScore(side: .them, state: state)
-                    .environment(\.colorScheme, .dark)
+                    .matchActivityIsland()
             } minimal: {
                 MatchActivityMinimalLead(state: state)
-                    .environment(\.colorScheme, .dark)
+                    .matchActivityIsland()
             }
             .widgetURL(context.attributes.url)
         }
