@@ -74,7 +74,10 @@
         last updated each daily score. These are derived
         fitness values, not raw HealthKit samples or workout records. A private invitation
         link grants its recipient a chance to join; share it only with your intended
-        competitor, not in a public issue or support message.</p>
+        competitor, not in a public issue or support message. Either person can share an
+        image of a finished match's result from the app. It shows both final scores, the
+        week, which days each person won and up to two highlights, and the person sharing
+        can hide the other person's name.</p>
 
       <p>Supabase provides the configured authentication and competition backend. Apple
         provides sign-in, notification delivery, and app-integrity services. Notification
@@ -110,7 +113,9 @@
       <h2>Controls, deletion, and retained history</h2>
       <p>You can change HealthComp's Health access and notification permissions through
         Apple's system controls. Withdrawing access stops the corresponding future access;
-        it does not itself delete previously synchronized competition records.</p>
+        it does not itself delete previously synchronized competition records. If you
+        choose Save Image for a result image, iOS asks for add-only Photos access, which
+        you can change in Apple's system controls.</p>
 
       <p>You can block someone from a challenge they sent you. Blocks are stored with your
         account, aren’t shown to the blocked person, and are removed when either account
