@@ -107,6 +107,17 @@ func competitionReactionAccessibilityText(
     "\(reaction.kind.spokenName). \(competitionReactionText(reaction, opponentName: opponentName))"
 }
 
+/// The week's REACTIONS list: the result first, then by day; yours first
+/// within each target.
+func competitionReactionsInWeekOrder(_ reactions: [CompetitionReaction]) -> [CompetitionReaction] {
+    reactions.sorted { lhs, rhs in
+        let left = lhs.target.dayOrdinal ?? 0
+        let right = rhs.target.dayOrdinal ?? 0
+        if left != right { return left < right }
+        return lhs.isFromYou && !rhs.isFromYou
+    }
+}
+
 /// The newest reaction you got that you haven't seen, for Home and the match
 /// screen. Nil for matches that show no scores (scheduled, cancelled).
 func competitionUnseenReaction(
@@ -191,10 +202,13 @@ struct CompetitionReactionPicker: View {
                 HStack(spacing: 10) { chip(.huffing); chip(.salute) }
             }
             if failed {
-                Text("Couldn’t send your reaction. Try again.")
+                let error = "Couldn’t send your reaction. Try again."
+                Label(error, systemImage: "exclamationmark.triangle.fill")
                     .font(.caption)
-                    .foregroundStyle(Theme.secondary)
+                    .foregroundStyle(Theme.ink)
                     .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(error)
                     .accessibilityIdentifier("competition.react.error")
             }
         }
@@ -209,9 +223,11 @@ struct CompetitionReactionPicker: View {
                 .frame(width: chipSize, height: chipSize)
                 .background(Theme.control, in: Circle())
                 .overlay {
-                    if isSelected {
-                        Circle().strokeBorder(Theme.you, lineWidth: 2)
-                    }
+                    // A hairline keeps unselected chips visible on a panel.
+                    Circle().strokeBorder(
+                        isSelected ? Theme.you : Theme.hairline,
+                        lineWidth: isSelected ? 2 : 1
+                    )
                 }
                 .contentShape(Circle())
         }

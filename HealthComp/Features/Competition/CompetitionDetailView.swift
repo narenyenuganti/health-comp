@@ -201,11 +201,18 @@ struct CompetitionDetailView: View {
            let unseen = competitionUnseenReaction(competition, seen: reactionsSeen),
            let day = unseen.target.dayOrdinal {
             Button { drawer = .day(day) } label: {
-                CompetitionReactionLine(
-                    reaction: unseen,
-                    opponentName: competition.opponentDisplayName
-                )
-                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                HStack(spacing: 8) {
+                    CompetitionReactionLine(
+                        reaction: unseen,
+                        opponentName: competition.opponentDisplayName
+                    )
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    Image(systemName: "chevron.right")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(Theme.tertiary)
+                        .accessibilityHidden(true)
+                }
+                .frame(minHeight: 44)
                 .contentShape(Rectangle())
             }
             .buttonStyle(CompetitionRowButtonStyle())

@@ -574,6 +574,9 @@ final class SupabaseCompetitionRemoteAPITests: XCTestCase {
             .response(200, try jsonData([
                 "competition_id": match, "day_ordinal": 2, "reaction": "clap",
             ])),
+            .response(200, try jsonData([
+                "competition_id": match, "day_ordinal": NSNull(), "reaction": 5,
+            ])),
             .failure(.server(statusCode: 400, code: "P0001", message: "reaction_not_allowed")),
         ])
         let api = makeAPI(harness)
@@ -602,6 +605,10 @@ final class SupabaseCompetitionRemoteAPITests: XCTestCase {
             try await api.setReaction(.init(competitionID: matchID, target: .day(2), kind: .fire))
         }
         XCTAssertEqual(divergent, .serverContractMismatch)
+        let mistypedRemoval = await remoteFailure {
+            try await api.setReaction(.init(competitionID: matchID, target: .result, kind: nil))
+        }
+        XCTAssertEqual(mistypedRemoval, .serverContractMismatch)
         let refused = await remoteFailure {
             try await api.setReaction(.init(competitionID: matchID, target: .day(2), kind: .fire))
         }

@@ -2560,6 +2560,17 @@ final class CompetitionPresentationTests: XCTestCase {
         }
     }
 
+    func testWeekReactionsListResultFirstThenByDayYoursFirst() {
+        let theirDay2 = reaction(.day(2), .huffing, at: 1)
+        let yourDay2 = reaction(.day(2), .fire, fromYou: true, at: 2)
+        let theirDay5 = reaction(.day(5), .clap, at: 3)
+        let theirResult = reaction(.result, .salute, at: 4)
+        XCTAssertEqual(
+            competitionReactionsInWeekOrder([theirDay5, theirDay2, theirResult, yourDay2]),
+            [theirResult, yourDay2, theirDay2, theirDay5]
+        )
+    }
+
     func testReactionsSeenRawValueRoundTrips() {
         let match = reactionPresentation(reactions: [reaction(.result, .salute, at: 1_786_867_200.5)])
         let marked = CompetitionReactionsSeen().marking(match)

@@ -389,15 +389,9 @@ struct CompetitionResultView: View {
         }
     }
 
-    /// Everyone's reactions this week: the result first, then by day; yours
-    /// first within each.
+    /// Everyone's reactions this week, in week order.
     private var reactionsSection: some View {
-        let ordered = competition.reactions.sorted { lhs, rhs in
-            let left = lhs.target.dayOrdinal ?? 0
-            let right = rhs.target.dayOrdinal ?? 0
-            if left != right { return left < right }
-            return lhs.isFromYou && !rhs.isFromYou
-        }
+        let ordered = competitionReactionsInWeekOrder(competition.reactions)
         return VStack(alignment: .leading, spacing: 12) {
             SectionLabel("REACTIONS")
             VStack(alignment: .leading, spacing: 8) {

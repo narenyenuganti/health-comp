@@ -682,6 +682,22 @@ private struct CompetitionSharingRow: View {
     @Environment(\.timeZone) private var timeZone
 
     var body: some View {
+        // The reaction line sits under the row, so it never decides
+        // whether the score fits beside the name.
+        VStack(alignment: .leading, spacing: 10) {
+            rowContent
+            if let reaction {
+                CompetitionReactionLine(
+                    reaction: reaction,
+                    opponentName: competition.opponentDisplayName
+                )
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, minHeight: 76, alignment: .leading)
+    }
+
+    private var rowContent: some View {
         ViewThatFits(in: .horizontal) {
             HStack(spacing: 14) {
                 badge
@@ -714,8 +730,6 @@ private struct CompetitionSharingRow: View {
                 }
             }
         }
-        .padding(16)
-        .frame(maxWidth: .infinity, minHeight: 76, alignment: .leading)
     }
 
     @ViewBuilder
@@ -747,12 +761,6 @@ private struct CompetitionSharingRow: View {
                 Text(caption)
                     .font(.caption)
                     .foregroundStyle(Theme.secondary)
-            }
-            if let reaction {
-                CompetitionReactionLine(
-                    reaction: reaction,
-                    opponentName: competition.opponentDisplayName
-                )
             }
             if let disclosure = competitionFixtureDisclosure(
                 source: source,
