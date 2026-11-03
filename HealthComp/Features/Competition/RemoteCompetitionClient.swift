@@ -170,6 +170,9 @@ extension CompetitionClient {
                     try await $0.nudgeCompetitionParticipant(id.rawValue)
                 }
             },
+            setReaction: { id, target, kind in
+                try await coordinator.setReaction(id, target, kind)
+            },
             startPractice: { await coordinator.startPractice($0) }
         )
     }
@@ -449,6 +452,8 @@ private actor RemoteCompetitionClientCoordinator {
     private var lastMaterializations: [CompetitionID: RemoteCompetitionMaterialization] = [:]
     /// The last challenge list; kept when a refresh can't load it.
     private var latestChallenges = CompetitionChallengeList.empty
+    /// The last reaction list; kept when a refresh can't load it.
+    private var latestReactions: [CompetitionReactionRecord] = []
     private var hasStarted = false
     private var isStopped = false
     private var healthAuthorizationIssue: CompetitionClientIssue?
@@ -532,6 +537,7 @@ private actor RemoteCompetitionClientCoordinator {
                 self.publicationRevision = 0
                 self.latestPublication = nil
                 self.latestChallenges = .empty
+                self.latestReactions = []
                 self.hasStarted = false
                 self.isStopped = false
                 let installationStore = CompetitionInstallationStateStore(
@@ -644,6 +650,7 @@ private actor RemoteCompetitionClientCoordinator {
                     hub = nil
                     latestPublication = nil
                     latestChallenges = .empty
+                    latestReactions = []
                     publicationRevision = 0
                     hasStarted = false
                     isStopped = true
@@ -729,6 +736,7 @@ private actor RemoteCompetitionClientCoordinator {
             hub = nil
             latestPublication = nil
             latestChallenges = .empty
+            latestReactions = []
             publicationRevision = 0
             hasStarted = false
             isStopped = true
@@ -804,6 +812,9 @@ private actor RemoteCompetitionClientCoordinator {
         await refreshPractice(.reconciliationProbe)
         if let challenges = try? await remoteAPI.listChallenges() {
             latestChallenges = challenges
+        }
+        if let reactions = try? await remoteAPI.listReactions() {
+            latestReactions = reactions
         }
         for failure in outcome.failures {
             failure.failure.recordRefreshDiagnostic()
@@ -1051,6 +1062,50 @@ private actor RemoteCompetitionClientCoordinator {
         }
     }
 
+    /// Saves your reaction, then republishes the last inputs with it (no
+    /// network beyond the RPC). The realtime wakeup that follows reconciles
+    /// and replaces this row with the server's.
+    func setReaction(
+        _ id: CompetitionID,
+        _ target: CompetitionReactionTarget,
+        _ kind: CompetitionReactionKind?
+    ) async throws -> CompetitionPublication {
+        try await withCancellableOperationGate {
+            guard terminalTeardown == nil else {
+                throw EnvironmentSignalOwnershipError.activeOwnerNotRetired
+            }
+            guard runtime != nil, let profile, let inputs = lastPublishInputs else {
+                throw CompetitionRemoteFailure.unauthenticated
+            }
+            try await remoteAPI.setReaction(
+                CompetitionReactionRequest(competitionID: id.rawValue, target: target, kind: kind)
+            )
+            let now = await environment.context().instant.wallDate
+            latestReactions.removeAll {
+                $0.competitionID == id.rawValue && $0.target == target
+                    && $0.authorProfileID == profile.id
+            }
+            if let kind {
+                latestReactions.insert(
+                    CompetitionReactionRecord(
+                        competitionID: id.rawValue,
+                        target: target,
+                        authorProfileID: profile.id,
+                        kind: kind,
+                        updatedAt: now
+                    ),
+                    at: 0
+                )
+            }
+            return await publish(
+                materializations: inputs.materializations,
+                profile: profile,
+                issues: inputs.issues,
+                knownCompetitionIDs: inputs.knownCompetitionIDs
+            )
+        }
+    }
+
     private func publication(
         adding issue: CompetitionClientIssue
     ) -> CompetitionPublication {
@@ -1177,6 +1232,7 @@ private actor RemoteCompetitionClientCoordinator {
             hub = nil
             latestPublication = nil
             latestChallenges = .empty
+            latestReactions = []
             publicationRevision = 0
             hasStarted = false
             router.finishCurrent()
@@ -1508,6 +1564,7 @@ private actor RemoteCompetitionClientCoordinator {
         boundaryTask = nil
         lastPublishInputs = nil
         latestChallenges = .empty
+        latestReactions = []
         if stoppedTasks.realtime != nil {
             await realtimeClient.stop()
         }
@@ -1829,7 +1886,8 @@ private actor RemoteCompetitionClientCoordinator {
                 profile: profile,
                 context: context,
                 issues: Self.deduplicated(issues + practiceIssues),
-                challenges: latestChallenges
+                challenges: latestChallenges,
+                reactions: latestReactions
             ).addingPractice(
                 LocalCompetitionProjector.practicePresentations(
                     journals: practiceJournals,
@@ -2013,15 +2071,28 @@ enum RemoteCompetitionProjector {
         profile: AuthenticatedProfile,
         context: CompetitionEnvironmentContext,
         issues: [CompetitionClientIssue],
-        challenges: CompetitionChallengeList = .empty
+        challenges: CompetitionChallengeList = .empty,
+        reactions: [CompetitionReactionRecord] = []
     ) -> CompetitionDashboard {
-        let materialized = materializations.compactMap {
-            presentation(
-                from: $0,
+        let reactionsByMatch = Dictionary(grouping: reactions, by: \.competitionID)
+        let materialized = materializations.compactMap { materialization in
+            var item = presentation(
+                from: materialization,
                 profile: profile,
                 context: context,
                 closesLapsedChallenges: true
             )
+            item?.reactions = (reactionsByMatch[materialization.descriptor.competitionID] ?? [])
+                .map {
+                    CompetitionReaction(
+                        target: $0.target,
+                        kind: $0.kind,
+                        isFromYou: $0.authorProfileID == profile.id,
+                        updatedAt: $0.updatedAt
+                    )
+                }
+                .sorted { $0.updatedAt > $1.updatedAt }
+            return item
         }
         let all = (materialized + challengePresentations(
             challenges,

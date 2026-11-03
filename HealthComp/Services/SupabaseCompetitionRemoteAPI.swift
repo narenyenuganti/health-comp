@@ -223,31 +223,27 @@ enum SupabaseCompetitionRemoteAPI {
                 return page
             },
             registerInstallation: { request in
-                let response: CompetitionRemoteTransportResponse
-                do {
-                    response = try await send(
-                        .rpc(
-                            name: "register_current_device_installation",
-                            parameters: try encodeWire(
-                                request,
-                                contract: .installationRequest
-                            )
-                        ),
-                        transport: transport
-                    )
-                } catch CompetitionRemoteFailure.notFound {
-                    // A server without the capability-aware RPC (PGRST202)
-                    // has no challenge gate either; register the old way.
-                    response = try await send(
-                        .rpc(
-                            name: "register_current_device_installation",
-                            parameters: try encode(
-                                LegacyInstallationParameters(request)
-                            )
-                        ),
-                        transport: transport
-                    )
+                // Newest call first. A server without that overload answers
+                // PGRST202 (notFound), so fall back: 5 args (reactions), then
+                // 4 (challenges), then the original 3.
+                let bodies = [
+                    try encodeWire(request, contract: .installationRequest),
+                    try encode(ChallengeInstallationParameters(request)),
+                    try encode(LegacyInstallationParameters(request)),
+                ]
+                var response: CompetitionRemoteTransportResponse?
+                for (index, body) in bodies.enumerated() {
+                    do {
+                        response = try await send(
+                            .rpc(name: "register_current_device_installation", parameters: body),
+                            transport: transport
+                        )
+                        break
+                    } catch CompetitionRemoteFailure.notFound where index < bodies.count - 1 {
+                        continue
+                    }
                 }
+                guard let response else { throw CompetitionRemoteFailure.operationFailed }
                 return try decode(
                     CompetitionInstallation.self,
                     response.data,
@@ -326,6 +322,34 @@ enum SupabaseCompetitionRemoteAPI {
                     transport: transport
                 )
                 return try decodeChallengeList(response.data)
+            },
+            listReactions: {
+                let response = try await sendReadOnly(
+                    .rpc(name: "list_competition_reactions", parameters: try encode(EmptyParameters())),
+                    transport: transport
+                )
+                return try decodeReactionList(response.data)
+            },
+            setReaction: { request in
+                try validateUUID(request.competitionID)
+                let response = try await send(
+                    .rpc(name: "set_competition_reaction", parameters: try encode(
+                        SetReactionParameters(request)
+                    )),
+                    transport: transport
+                )
+                // Exactly the three keys, echoing the request.
+                guard let object = try? JSONSerialization.jsonObject(with: response.data)
+                    as? [String: Any],
+                      Set(object.keys) == ["competition_id", "day_ordinal", "reaction"],
+                      (object["competition_id"] as? String).flatMap(wireUUID) == request.competitionID,
+                      reactionDayOrdinal(object["day_ordinal"]) == .some(request.target.dayOrdinal),
+                      object["reaction"] is NSNull
+                        ? request.kind == nil
+                        : (object["reaction"] as? String).map { $0 == request.kind?.rawValue } == true
+                else {
+                    throw CompetitionRemoteFailure.serverContractMismatch
+                }
             },
             previewInvite: { request in
                 let response = try await send(
@@ -674,6 +698,7 @@ enum SupabaseCompetitionRemoteAPI {
             "forbidden",
             "cancel_not_allowed",
             "nudge_not_allowed",
+            "reaction_not_allowed",
             "rematch_not_allowed",
             "installation_unavailable",
             "opponent_unavailable",
@@ -787,6 +812,48 @@ enum SupabaseCompetitionRemoteAPI {
             list.closed.append(.init(competitionID: id, kind: kind, other: other, closedAt: closedAt))
         }
         return list
+    }
+
+    /// Exactly `{reactions}`, at most 2000 rows; an unreadable row is skipped.
+    private static func decodeReactionList(_ data: Data) throws -> [CompetitionReactionRecord] {
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              Set(object.keys) == ["reactions"],
+              let rows = object["reactions"] as? [Any],
+              rows.count <= 2_000
+        else {
+            throw CompetitionRemoteFailure.serverContractMismatch
+        }
+        return rows.compactMap { value in
+            guard let row = value as? [String: Any],
+                  Set(row.keys) == ["competition_id", "day_ordinal", "author_profile_id", "reaction", "updated_at"],
+                  let id = (row["competition_id"] as? String).flatMap(wireUUID),
+                  let author = (row["author_profile_id"] as? String).flatMap(wireUUID),
+                  let ordinal = reactionDayOrdinal(row["day_ordinal"]),
+                  let kind = (row["reaction"] as? String).flatMap(CompetitionReactionKind.init(rawValue:)),
+                  let updatedAt = (row["updated_at"] as? String).flatMap({ try? CompetitionWireCodec.date($0) })
+            else {
+                return nil
+            }
+            return CompetitionReactionRecord(
+                competitionID: id,
+                target: ordinal.map(CompetitionReactionTarget.day) ?? .result,
+                authorProfileID: author,
+                kind: kind,
+                updatedAt: updatedAt
+            )
+        }
+    }
+
+    /// `.some(nil)` for JSON null (the result), `.some(n)` for a day 1...7,
+    /// nil for anything else.
+    private static func reactionDayOrdinal(_ value: Any?) -> Int?? {
+        if value is NSNull { return .some(nil) }
+        guard let number = value as? NSNumber,
+              CFGetTypeID(number) != CFBooleanGetTypeID(),
+              let ordinal = Int(exactly: number.doubleValue),
+              (1...7).contains(ordinal)
+        else { return nil }
+        return .some(ordinal)
     }
 
     /// Exactly `{blocked}`, at most 200 rows; an unreadable row is skipped.
@@ -968,6 +1035,55 @@ private struct LegacyInstallationParameters: Encodable {
         case installationID = "installation_id"
         case apnsToken = "apns_token"
         case environment
+    }
+}
+
+/// The four-argument registration body, for servers before 20261102002700.
+private struct ChallengeInstallationParameters: Encodable {
+    let installationID: String
+    let apnsToken: String
+    let environment: CompetitionInstallationEnvironment
+    let supportsChallenges = true
+
+    init(_ request: CompetitionInstallationRequest) {
+        installationID = request.installationID.uuidString.lowercased()
+        apnsToken = request.apnsToken
+        environment = request.environment
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case installationID = "installation_id"
+        case apnsToken = "apns_token"
+        case environment
+        case supportsChallenges = "supports_challenges"
+    }
+}
+
+/// `{competition_id, day_ordinal, reaction}` with explicit JSON nulls.
+private struct SetReactionParameters: Encodable {
+    let request: CompetitionReactionRequest
+
+    init(_ request: CompetitionReactionRequest) { self.request = request }
+
+    private enum CodingKeys: String, CodingKey {
+        case competitionID = "competition_id"
+        case dayOrdinal = "day_ordinal"
+        case reaction
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.container(keyedBy: CodingKeys.self)
+        try container.encode(request.competitionID.uuidString.lowercased(), forKey: .competitionID)
+        if let ordinal = request.target.dayOrdinal {
+            try container.encode(ordinal, forKey: .dayOrdinal)
+        } else {
+            try container.encodeNil(forKey: .dayOrdinal)
+        }
+        if let kind = request.kind {
+            try container.encode(kind.rawValue, forKey: .reaction)
+        } else {
+            try container.encodeNil(forKey: .reaction)
+        }
     }
 }
 

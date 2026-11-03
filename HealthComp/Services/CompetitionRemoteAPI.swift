@@ -92,6 +92,14 @@ struct CompetitionRemoteAPI: Sendable {
     var listChallenges: @Sendable () async throws -> CompetitionChallengeList = {
         throw CompetitionRemoteFailure.operationFailed
     }
+    /// Both people's reactions in your matches, newest first.
+    var listReactions: @Sendable () async throws -> [CompetitionReactionRecord] = {
+        throw CompetitionRemoteFailure.operationFailed
+    }
+    /// A nil kind removes your reaction on that target.
+    var setReaction: @Sendable (CompetitionReactionRequest) async throws -> Void = { _ in
+        throw CompetitionRemoteFailure.operationFailed
+    }
     var previewInvite: @Sendable (
         CompetitionInviteClaimRequest
     ) async throws -> CompetitionInvitePreview = { _ in
@@ -173,6 +181,20 @@ struct CompetitionChallengeList: Equatable, Sendable {
     var closed: [Closed]
 
     static let empty = Self(incoming: [], closed: [])
+}
+
+struct CompetitionReactionRecord: Equatable, Sendable {
+    let competitionID: UUID
+    let target: CompetitionReactionTarget
+    let authorProfileID: UUID
+    let kind: CompetitionReactionKind
+    let updatedAt: Date
+}
+
+struct CompetitionReactionRequest: Equatable, Sendable {
+    let competitionID: UUID
+    let target: CompetitionReactionTarget
+    let kind: CompetitionReactionKind?
 }
 
 enum CompetitionRemoteTransportRequest: Equatable, Sendable {

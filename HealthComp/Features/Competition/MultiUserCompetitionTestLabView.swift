@@ -43,6 +43,10 @@ enum MultiUserCompetitionTestLabScenario:
     /// Live matches where you're behind, level or ahead: the Today page's
     /// what-it-takes panel in each state.
     case whatItTakes = "what-it-takes"
+    /// Real matches with reactions, run through Home's own reducer.
+    case reactions
+    /// The same matches published as the simulated fixture: never a reaction.
+    case reactionsSimulated = "reactions-simulated"
     /// The final-day Live Activity's views, and a button that starts a real one.
     case liveActivity = "live-activity"
     /// The empty Home with Practice Match, run through Home's own reducer.
@@ -178,6 +182,10 @@ struct MultiUserCompetitionTestLabRootView: View {
             MultiUserCompetitionNudgeTestLabView(source: .remoteParticipants)
         case .nudgeSimulated:
             MultiUserCompetitionNudgeTestLabView(source: .simulatedFixture)
+        case .reactions:
+            MultiUserCompetitionReactionsTestLabView(source: .remoteParticipants)
+        case .reactionsSimulated:
+            MultiUserCompetitionReactionsTestLabView(source: .simulatedFixture)
         case .liveActivity:
             LiveActivityPreviewView()
         case .practice:
@@ -214,6 +222,19 @@ private struct MultiUserCompetitionSharingTestLabView: View {
     @State private var rematchState: CompetitionFeature.CompetitionRematchState = .available
     @State private var pastedInvitationStatus = "Not checked"
     @State private var labNudges: [CompetitionID: CompetitionFeature.NudgeStatus] = [:]
+    @State private var ownReactions: [CompetitionReactionKey: CompetitionReactionKind] = [:]
+
+    /// Once per process, never per init: SwiftUI re-runs child inits
+    /// whenever the root re-evaluates. Launch arguments can't do this: an
+    /// argument-domain value would mask the app's own writes.
+    private static let resetReactionsSeen: Void = UserDefaults.standard
+        .removeObject(forKey: CompetitionReactionsSeen.storageKey)
+
+    init(usesCustomScheme: Bool, showsWhatItTakes: Bool = false) {
+        self.usesCustomScheme = usesCustomScheme
+        self.showsWhatItTakes = showsWhatItTakes
+        _ = Self.resetReactionsSeen
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -325,7 +346,8 @@ private struct MultiUserCompetitionSharingTestLabView: View {
                     source: .remoteParticipants,
                     nudge: CompetitionNudge(status: labNudges[id], send: {
                         labNudges[id] = .sent(MultiUserCompetitionTestLabFixtures.labNow)
-                    })
+                    }),
+                    reactions: reactionControl(id)
                 )
             case .completed, .archived:
                 CompetitionResultView(
@@ -338,7 +360,8 @@ private struct MultiUserCompetitionSharingTestLabView: View {
                     rematch: rematchState,
                     isCommandInFlight: false,
                     send: handle,
-                    openCompetition: { path.append($0) }
+                    openCompetition: { path.append($0) },
+                    reactions: reactionControl(id)
                 )
             case .pending:
                 CompetitionInviteView(
@@ -366,7 +389,18 @@ private struct MultiUserCompetitionSharingTestLabView: View {
     private var publication: LocalCompetitionPublication {
         showsWhatItTakes
             ? MultiUserCompetitionTestLabFixtures.whatItTakesPublication()
-            : MultiUserCompetitionTestLabFixtures.publication(archivedIDs: archivedIDs)
+            : MultiUserCompetitionTestLabFixtures.publication(
+                archivedIDs: archivedIDs,
+                ownReactions: ownReactions
+            )
+    }
+
+    /// Saves at once; the same preset again removes it, as on the server.
+    private func reactionControl(_ id: CompetitionID) -> CompetitionReactionControl {
+        CompetitionReactionControl(pending: [:], failed: []) { target, kind in
+            let key = CompetitionReactionKey(competitionID: id, target: target)
+            ownReactions[key] = ownReactions[key] == kind ? nil : kind
+        }
     }
 
     private func findRecipient() {
@@ -457,7 +491,7 @@ private struct MultiUserCompetitionClaimTestLabView: View {
              .signedOutClaim, .challengeLink, .account, .welcome, .welcomeChallenge,
              .healthOnboarding, .healthOnboardingChallenge, .healthOnboardingClaim,
              .incomingChallenge, .block, .blockedAccount, .blockClaim,
-             .nudge, .nudgeSimulated, .whatItTakes,
+             .nudge, .nudgeSimulated, .whatItTakes, .reactions, .reactionsSimulated,
              .liveActivity, .practice:
             .ready
         }
@@ -880,6 +914,132 @@ private final class MultiUserCompetitionNudgeTestLabServer: @unchecked Sendable 
     }
 }
 
+/// Real matches with reactions, through Home's own reducer and screens.
+/// Only the server is a stand-in: Jordan's saves take 3 s, Sam's first save
+/// fails, Quinn's first save is refused, and a pull to refresh on Home brings
+/// a new reaction from Jordan on Day 3.
+private struct MultiUserCompetitionReactionsTestLabView: View {
+    @State private var store: StoreOf<MainTabFeature>
+
+    /// Once per process, as in the sharing lab: the marks persist otherwise.
+    private static let resetReactionsSeen: Void = UserDefaults.standard
+        .removeObject(forKey: CompetitionReactionsSeen.storageKey)
+
+    init(source: CompetitionPublicationSource) {
+        _ = Self.resetReactionsSeen
+        typealias Fixtures = MultiUserCompetitionTestLabFixtures
+        let hub = LocalCompetitionPublicationHub()
+        let server = MultiUserCompetitionReactionsTestLabServer(hub: hub, source: source)
+        _store = State(initialValue: Store(initialState: MainTabFeature.State()) {
+            MainTabFeature()
+        } withDependencies: {
+            $0.competitionClient = CompetitionClient(
+                start: {
+                    let stream = hub.stream()
+                    server.publish()
+                    return stream
+                },
+                updates: { hub.stream() },
+                reconcileAll: { trigger in
+                    if trigger == .pullToRefresh { server.jordanReactsAgain() }
+                    return server.publish()
+                },
+                accept: { _ in server.publish() },
+                decline: { _ in server.publish() },
+                archive: { _ in server.publish() },
+                rematch: { _ in server.publish() },
+                reinvite: { server.publish() },
+                waitUntil: { _ in },
+                stop: { hub.finish() },
+                setReaction: { try await server.setReaction($0, $1, $2) }
+            )
+            $0.competitionRoutingClient = CompetitionRoutingClient(
+                routes: { AsyncStream { _ in } },
+                enqueue: { _ in },
+                consume: { _ in }
+            )
+            $0.permissionOnboardingClient = .inert
+            $0.date = .constant(Fixtures.labNow)
+        })
+    }
+
+    var body: some View {
+        MainTabView(store: store)
+            .accessibilityIdentifier("multiuser.reactions.root")
+    }
+}
+
+private final class MultiUserCompetitionReactionsTestLabServer: @unchecked Sendable {
+    private let hub: LocalCompetitionPublicationHub
+    private let source: CompetitionPublicationSource
+    private let lock = NSLock()
+    private var revision: UInt64 = 0
+    private var calls: [CompetitionID: Int] = [:]
+    /// Yours: 😤 on Riley's Day 3, sent while that match was live.
+    private var own: [CompetitionReactionKey: CompetitionReactionKind] = [
+        CompetitionReactionKey(
+            competitionID: MultiUserCompetitionTestLabFixtures.reactionRileyID,
+            target: .day(3)
+        ): .huffing,
+    ]
+    private var jordanReactedAgain = false
+
+    init(hub: LocalCompetitionPublicationHub, source: CompetitionPublicationSource) {
+        self.hub = hub
+        self.source = source
+    }
+
+    @discardableResult
+    func publish() -> LocalCompetitionPublication {
+        let (next, own, again) = lock.withLock {
+            () -> (UInt64, [CompetitionReactionKey: CompetitionReactionKind], Bool) in
+            revision += 1
+            return (revision, self.own, jordanReactedAgain)
+        }
+        let publication = MultiUserCompetitionTestLabFixtures.reactionsPublication(
+            revision: next,
+            source: source,
+            ownReactions: own,
+            jordanReactedAgain: again
+        )
+        hub.publish(publication)
+        return publication
+    }
+
+    func jordanReactsAgain() {
+        lock.withLock { jordanReactedAgain = true }
+    }
+
+    func setReaction(
+        _ id: CompetitionID,
+        _ target: CompetitionReactionTarget,
+        _ kind: CompetitionReactionKind?
+    ) async throws -> LocalCompetitionPublication {
+        typealias Fixtures = MultiUserCompetitionTestLabFixtures
+        let call = lock.withLock { () -> Int in
+            calls[id, default: 0] += 1
+            return calls[id]!
+        }
+        switch id {
+        case Fixtures.reactionJordanID:
+            // Long enough to see the chips disabled while it saves.
+            try await Task.sleep(for: .seconds(3))
+        case Fixtures.reactionSamID where call == 1:
+            try await Task.sleep(for: .seconds(1))
+            throw CompetitionRemoteFailure.operationFailed
+        case Fixtures.reactionQuinnID where call == 1:
+            // The server says no (reaction_not_allowed).
+            throw CompetitionRemoteFailure.forbidden
+        default:
+            break
+        }
+        lock.withLock {
+            own[CompetitionReactionKey(competitionID: id, target: target)] = kind
+        }
+        return publish()
+    }
+}
+
 /// Practice through the real Home, match screen and result. Start answers
 /// after 80 ms with a live practice; End Practice deletes it.
 /// `-practiceLab <state>` picks what Home starts with (see
@@ -1249,6 +1409,15 @@ private enum MultiUserCompetitionTestLabFixtures {
     static let nudgePriyaID = nudgeID(8)
     static let nudgeLongNameID = nudgeID(9)
     static let nudgeKenjiID = nudgeID(10)
+    static let reactionJordanID = reactionID(1)
+    static let reactionSamID = reactionID(2)
+    static let reactionMorganID = reactionID(3)
+    static let reactionCaseyID = reactionID(4)
+    static let reactionFormerLiveID = reactionID(5)
+    static let reactionLongNameID = reactionID(6)
+    static let reactionRileyID = reactionID(7)
+    static let reactionQuinnID = reactionID(8)
+    static let reactionFormerResultID = reactionID(9)
     static let incomingID = CompetitionID(
         UUID(uuidString: "A1000000-0000-4000-8000-00000000000B")!
     )
@@ -1374,7 +1543,8 @@ private enum MultiUserCompetitionTestLabFixtures {
     )
 
     static func publication(
-        archivedIDs: Set<CompetitionID>
+        archivedIDs: Set<CompetitionID>,
+        ownReactions: [CompetitionReactionKey: CompetitionReactionKind] = [:]
     ) -> LocalCompetitionPublication {
         let completedAt = Date(timeIntervalSince1970: 1_787_212_800)
         let scheduled = presentation(
@@ -1572,8 +1742,39 @@ private enum MultiUserCompetitionTestLabFixtures {
             terminal: longNameTerminal,
             startDay: 6
         )
+        // Reactions only on Jordan, Morgan and Former competitor: other UI
+        // tests count cards and match their labels.
+        func reactions(
+            _ id: CompetitionID,
+            received: CompetitionReaction
+        ) -> [CompetitionReaction] {
+            let own = ownReactions.filter { $0.key.competitionID == id }.map {
+                CompetitionReaction(
+                    target: $0.key.target,
+                    kind: $0.value,
+                    isFromYou: true,
+                    updatedAt: evaluatedAt
+                )
+            }
+            return ([received] + own).sorted { $0.updatedAt > $1.updatedAt }
+        }
+        var jordan = active
+        jordan.reactions = reactions(activeID, received: CompetitionReaction(
+            target: .day(2), kind: .huffing, isFromYou: false,
+            updatedAt: evaluatedAt.addingTimeInterval(-1_800)
+        ))
+        var morgan = archived
+        morgan.reactions = reactions(archivedID, received: CompetitionReaction(
+            target: .result, kind: .clap, isFromYou: false,
+            updatedAt: evaluatedAt.addingTimeInterval(-3_600)
+        ))
+        var former = completed
+        former.reactions = reactions(completedID, received: CompetitionReaction(
+            target: .result, kind: .salute, isFromYou: false,
+            updatedAt: evaluatedAt.addingTimeInterval(-7_200)
+        ))
         let competitions = [
-            scheduled, active, completed, archived, pending, secondActive, expired,
+            scheduled, jordan, former, morgan, pending, secondActive, expired,
             jordanPast, casey, longNamed,
         ]
         let awards = [
@@ -1690,6 +1891,189 @@ private enum MultiUserCompetitionTestLabFixtures {
                 updatedAgo: 15 * hour
             ),
             live(nudgeKenjiID, "Kenji", day: 2, updatedAgo: 14 * hour, zone: "Asia/Tokyo"),
+        ]
+        return LocalCompetitionPublication(
+            publicationRevision: revision,
+            dashboard: LocalCompetitionDashboard(
+                competitions: competitions,
+                awards: [],
+                issues: [],
+                hiddenTerminalCompetitionCount: 0
+            ),
+            evaluatedAt: evaluatedAt,
+            timeZoneIdentifier: "America/Los_Angeles",
+            source: source
+        )
+    }
+
+    private static func reactionID(_ n: Int) -> CompetitionID {
+        CompetitionID(UUID(uuidString: String(format: "C1000000-0000-4000-8000-%012d", n))!)
+    }
+
+    /// Reactions in every state. Now is Sun Aug 16, 1:00 AM in Los Angeles.
+    /// Live: Jordan (Day 3, 😤 on your Day 2), Sam (Day 2, none), Casey
+    /// (Day 7), Former competitor (Day 4, 👏 on your Day 1), a long name
+    /// (Day 2, 🔥 on your Day 1) and Morgan tallying (🔥 on your Day 6).
+    /// Recent results: Riley (👏 on the result and 🔥 on your Day 5), Quinn
+    /// (none) and Former competitor (🫡 on the result). The simulated fixture
+    /// carries none.
+    static func reactionsPublication(
+        revision: UInt64,
+        source: CompetitionPublicationSource,
+        ownReactions: [CompetitionReactionKey: CompetitionReactionKind],
+        jordanReactedAgain: Bool
+    ) -> LocalCompetitionPublication {
+        let hour: TimeInterval = 3_600
+        func received(
+            _ target: CompetitionReactionTarget,
+            _ kind: CompetitionReactionKind,
+            ago: TimeInterval
+        ) -> CompetitionReaction {
+            CompetitionReaction(
+                target: target,
+                kind: kind,
+                isFromYou: false,
+                updatedAt: evaluatedAt.addingTimeInterval(-ago)
+            )
+        }
+        func with(
+            _ presentation: LocalCompetitionPresentation,
+            _ incoming: [CompetitionReaction]
+        ) -> LocalCompetitionPresentation {
+            var presentation = presentation
+            guard source == .remoteParticipants else { return presentation }
+            let own = ownReactions.filter { $0.key.competitionID == presentation.id }.map {
+                CompetitionReaction(
+                    target: $0.key.target,
+                    kind: $0.value,
+                    isFromYou: true,
+                    updatedAt: evaluatedAt
+                )
+            }
+            presentation.reactions = (incoming + own).sorted { $0.updatedAt > $1.updatedAt }
+            return presentation
+        }
+        func live(
+            _ id: CompetitionID,
+            _ name: String,
+            day: Int
+        ) -> LocalCompetitionPresentation {
+            // Today, Aug 16, is Day `day`.
+            let startDay = 17 - day
+            return presentation(
+                id: id,
+                opponentName: name,
+                lifecycle: day == 7 ? .endsToday : .active(dayOrdinal: day),
+                userPoints: 1_020,
+                opponentPoints: 990,
+                days: activeDays(startDay: startDay, currentDay: day),
+                currentDayOrdinal: day,
+                terminal: nil,
+                startDay: startDay,
+                opponentUpdatedAt: evaluatedAt.addingTimeInterval(-hour)
+            )
+        }
+        func finished(
+            _ id: CompetitionID,
+            _ name: String,
+            _ outcome: CompetitionOutcome,
+            owner: [Double],
+            other: [Double]
+        ) -> LocalCompetitionPresentation {
+            // The totals are the days' sums, so the summary line agrees.
+            let user = owner.reduce(0, +)
+            let opponent = other.reduce(0, +)
+            let completedAt = evaluatedAt.addingTimeInterval(-20 * hour)
+            return presentation(
+                id: id,
+                opponentName: name,
+                lifecycle: .completed(
+                    outcome: outcome,
+                    basis: .stableAcrossPostBoundaryReads,
+                    completedAt: completedAt
+                ),
+                userPoints: user,
+                opponentPoints: opponent,
+                days: completedDays(startDay: 8, owner: owner, opponent: other),
+                currentDayOrdinal: nil,
+                terminal: LocalCompetitionTerminalPresentation(
+                    userPoints: user,
+                    opponentPoints: opponent,
+                    outcome: outcome,
+                    basis: .stableAcrossPostBoundaryReads,
+                    completedAt: completedAt
+                ),
+                startDay: 8
+            )
+        }
+        let tallying = presentation(
+            id: reactionMorganID,
+            opponentName: "Morgan",
+            lifecycle: .tallying(startedAt: evaluatedAt.addingTimeInterval(-17 * hour)),
+            userPoints: 3_400,
+            opponentPoints: 3_345,
+            days: activeDays(startDay: 9, currentDay: 7),
+            currentDayOrdinal: nil,
+            terminal: nil,
+            startDay: 9,
+            opponentUpdatedAt: evaluatedAt.addingTimeInterval(-20 * hour),
+            tally: LocalCompetitionTallyPresentation(
+                attention: .awaitingStability,
+                consecutiveStableCompleteReads: 0,
+                stabilityStart: nil,
+                bestAvailableDeadline: evaluatedAt.addingTimeInterval(31 * hour)
+            )
+        )
+        let competitions = [
+            with(
+                live(reactionJordanID, "Jordan", day: 3),
+                [received(.day(2), .huffing, ago: 0.5 * hour)]
+                    + (jordanReactedAgain ? [received(.day(3), .fire, ago: 60)] : [])
+            ),
+            with(live(reactionSamID, "Sam", day: 2), []),
+            with(live(reactionCaseyID, "Casey", day: 7), []),
+            with(
+                live(reactionFormerLiveID, "Former competitor", day: 4),
+                [received(.day(1), .clap, ago: 2 * hour)]
+            ),
+            with(
+                live(reactionLongNameID, "Alexandria Montgomery-Featherstonehaugh", day: 2),
+                [received(.day(1), .fire, ago: 3 * hour)]
+            ),
+            with(tallying, [received(.day(6), .fire, ago: 4 * hour)]),
+            with(
+                finished(
+                    reactionRileyID,
+                    "Riley",
+                    .win,
+                    owner: [520, 500, 480, 510, 500, 520, 490],
+                    other: [480, 490, 500, 470, 500, 490, 480]
+                ),
+                [
+                    received(.result, .clap, ago: 5 * hour),
+                    received(.day(5), .fire, ago: 4 * 24 * hour),
+                ]
+            ),
+            with(
+                finished(
+                    reactionQuinnID,
+                    "Quinn",
+                    .tie,
+                    owner: [430, 420, 440, 430, 420, 430, 430],
+                    other: [420, 430, 430, 440, 430, 420, 430]
+                ),
+                []
+            ),
+            with(
+                finished(
+                    reactionFormerResultID,
+                    "Former competitor",
+                    .loss,
+                    owner: [420, 380, 300, 512, 400, 350, 330],
+                    other: [450, 400, 360, 380, 420, 390, 400]
+                ),
+                [received(.result, .salute, ago: 6 * hour)]
+            ),
         ]
         return LocalCompetitionPublication(
             publicationRevision: revision,

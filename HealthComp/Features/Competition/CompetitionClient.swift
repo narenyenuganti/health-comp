@@ -106,6 +106,13 @@ struct CompetitionClient: Sendable {
     ) async throws -> String
     /// Asks the other person to open HealthComp; returns when the server accepted it.
     var nudge: @Sendable (CompetitionID) async throws -> Date
+    /// Sets (or, with nil, removes) your reaction and returns the republished
+    /// dashboard.
+    var setReaction: @Sendable (
+        CompetitionID,
+        CompetitionReactionTarget,
+        CompetitionReactionKind?
+    ) async throws -> CompetitionPublication
     /// Starts a practice match on this iPhone; a failure is
     /// `commandRejected(PracticeMatch.startCommandID)`.
     var startPractice: @Sendable (OpponentDifficulty) async -> CompetitionPublication
@@ -204,6 +211,13 @@ struct CompetitionClient: Sendable {
         nudge: @escaping @Sendable (CompetitionID) async throws -> Date = { _ in
             throw CompetitionRemoteFailure.operationFailed
         },
+        setReaction: @escaping @Sendable (
+            CompetitionID,
+            CompetitionReactionTarget,
+            CompetitionReactionKind?
+        ) async throws -> CompetitionPublication = { _, _, _ in
+            throw CompetitionRemoteFailure.operationFailed
+        },
         startPractice: @escaping @Sendable (
             OpponentDifficulty
         ) async -> CompetitionPublication = { _ in .inert }
@@ -241,6 +255,7 @@ struct CompetitionClient: Sendable {
         self.resetChallengeLinkCode = resetChallengeLinkCode
         self.resolveChallengeLink = resolveChallengeLink
         self.nudge = nudge
+        self.setReaction = setReaction
         self.startPractice = startPractice
     }
 
