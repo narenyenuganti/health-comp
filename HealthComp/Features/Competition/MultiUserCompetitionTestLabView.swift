@@ -907,7 +907,6 @@ private struct MultiUserCompetitionNotificationChoicesTestLabView: View {
                     .font(.caption)
                     .accessibilityIdentifier("multiuser.notification-choices.server")
             }
-            .accessibilityIdentifier("multiuser.notification-choices.root")
     }
 }
 

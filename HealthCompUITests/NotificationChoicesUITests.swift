@@ -309,9 +309,15 @@ final class NotificationChoicesUITests: XCTestCase {
     /// `LabeledContent` reads as one element or as two texts.
     private func showsStatus(_ status: String) -> Bool {
         let row = app.descendants(matching: .any)
-            .matching(NSPredicate(format: "label == %@", "Match notifications")).firstMatch
-        guard row.waitForExistence(timeout: 3) else { return false }
-        return row.value as? String == status || app.staticTexts[status].exists
+            .matching(NSPredicate(format: "label BEGINSWITH %@", "Match notifications")).firstMatch
+        guard row.waitForExistence(timeout: 3) else {
+            add(XCTAttachment(string: app.debugDescription))
+            return false
+        }
+        let shows = row.value as? String == status || row.label.hasSuffix(status)
+            || app.staticTexts[status].exists
+        if !shows { add(XCTAttachment(string: row.debugDescription)) }
+        return shows
     }
 
     private func liveActivityCaption() -> XCUIElement {
