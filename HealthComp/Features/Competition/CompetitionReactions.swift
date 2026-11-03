@@ -263,16 +263,17 @@ private struct CompetitionReactionEmoji: View {
     let size: CGFloat
 
     var body: some View {
+        // The canvas is twice the glyph; draw it at 2× and lay out at 1×.
         Image(uiImage: Self.image(kind))
             .resizable()
-            .scaledToFit()
+            .frame(width: size * 2, height: size * 2)
             .frame(width: size, height: size)
             .accessibilityHidden(true)
     }
 
     @MainActor private static var images: [CompetitionReactionKind: UIImage] = [:]
 
-    /// Drawn once per kind at 96 pt and scaled down.
+    /// Drawn once per kind at 96 pt on a 192 pt canvas, then scaled down.
     @MainActor
     private static func image(_ kind: CompetitionReactionKind) -> UIImage {
         if let image = images[kind] { return image }
@@ -280,18 +281,12 @@ private struct CompetitionReactionEmoji: View {
             string: kind.emoji,
             attributes: [.font: UIFont.systemFont(ofSize: 96)]
         )
-        let glyph = text.boundingRect(
-            with: CGSize(width: 1_000, height: 1_000),
-            options: [.usesLineFragmentOrigin, .usesDeviceMetrics],
-            context: nil
-        )
-        // A margin, in case the reported bounds are still short.
-        let side = ceil(max(glyph.width, glyph.height) * 1.1)
+        // Twice the point size and centered by advance: a glyph that draws
+        // past its advance or its reported bounds still lands on the canvas.
+        let side: CGFloat = 192
+        let advance = text.size()
         let image = UIGraphicsImageRenderer(size: CGSize(width: side, height: side)).image { _ in
-            text.draw(at: CGPoint(
-                x: (side - glyph.width) / 2 - glyph.minX,
-                y: (side - glyph.height) / 2 - glyph.minY
-            ))
+            text.draw(at: CGPoint(x: (side - advance.width) / 2, y: (side - advance.height) / 2))
         }
         images[kind] = image
         return image
