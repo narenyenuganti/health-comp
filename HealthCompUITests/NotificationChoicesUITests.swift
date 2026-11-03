@@ -248,7 +248,10 @@ final class NotificationChoicesUITests: XCTestCase {
                 XCTAssertTrue(app.buttons["account.notifications.settings"].waitForExistence(timeout: 3))
                 shot("\(screen)-top-\(suffix)")
                 try audit("\(screen)-top-\(suffix)")
-                let middle = choice("live-activity")
+                // iOS-off: the caption and its Open Settings, under Live Activity.
+                let middle = scenario == .account
+                    ? app.buttons["account.notifications.live-activity.settings"]
+                    : choice("live-activity")
                 scrollToElement(middle)
                 shot("\(screen)-middle-\(suffix)")
                 try audit("\(screen)-middle-\(suffix)")
