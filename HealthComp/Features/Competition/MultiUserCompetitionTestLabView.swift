@@ -59,6 +59,11 @@ enum MultiUserCompetitionTestLabScenario:
     case belt
     /// The same history with only Sam's match live: the hero card's chip.
     case beltHero = "belt-hero"
+    /// The round's features together, through Home's own reducer: Sam's
+    /// match with the belt, a reaction and a nudge; Sam's last week with the
+    /// belt banner, a reaction and Share Result; Jordan tallying with a
+    /// nudge; Riley; and a practice match.
+    case featureRound = "feature-round"
 }
 
 struct MultiUserCompetitionTestLabConfiguration: Equatable, Sendable {
@@ -197,6 +202,8 @@ struct MultiUserCompetitionTestLabRootView: View {
             MultiUserCompetitionPracticeTestLabView()
         case .notificationChoices:
             MultiUserCompetitionNotificationChoicesTestLabView()
+        case .featureRound:
+            MultiUserCompetitionFeatureRoundTestLabView()
         }
     }
 }
@@ -502,7 +509,7 @@ private struct MultiUserCompetitionClaimTestLabView: View {
              .healthOnboarding, .healthOnboardingChallenge, .healthOnboardingClaim,
              .incomingChallenge, .block, .blockedAccount, .blockClaim,
              .nudge, .nudgeSimulated, .whatItTakes, .reactions, .reactionsSimulated,
-             .liveActivity, .practice, .notificationChoices, .belt, .beltHero:
+             .liveActivity, .practice, .notificationChoices, .belt, .beltHero, .featureRound:
             .ready
         }
         _status = State(initialValue: initialStatus)
@@ -1081,6 +1088,92 @@ private final class MultiUserCompetitionNudgeTestLabServer: @unchecked Sendable 
         default:
             return Fixtures.labNow
         }
+    }
+}
+
+/// The round's features on one Home, through Home's own reducer and screens.
+/// Only the server is a stand-in: every nudge and reaction is accepted at once.
+private struct MultiUserCompetitionFeatureRoundTestLabView: View {
+    @State private var store: StoreOf<MainTabFeature>
+
+    private static let resetReactionsSeen: Void = UserDefaults.standard
+        .removeObject(forKey: CompetitionReactionsSeen.storageKey)
+
+    init() {
+        _ = Self.resetReactionsSeen
+        typealias Fixtures = MultiUserCompetitionTestLabFixtures
+        let hub = LocalCompetitionPublicationHub()
+        let server = MultiUserCompetitionFeatureRoundTestLabServer(hub: hub)
+        _store = State(initialValue: Store(initialState: MainTabFeature.State()) {
+            MainTabFeature()
+        } withDependencies: {
+            $0.competitionClient = CompetitionClient(
+                start: {
+                    let stream = hub.stream()
+                    server.publish()
+                    return stream
+                },
+                updates: { hub.stream() },
+                reconcileAll: { _ in server.publish() },
+                accept: { _ in server.publish() },
+                decline: { _ in server.publish() },
+                archive: { _ in server.publish() },
+                rematch: { _ in server.publish() },
+                reinvite: { server.publish() },
+                waitUntil: { _ in },
+                stop: { hub.finish() },
+                nudge: { _ in Fixtures.labNow },
+                setReaction: { server.setReaction($0, $1, $2) }
+            )
+            $0.competitionRoutingClient = CompetitionRoutingClient(
+                routes: { AsyncStream { _ in } },
+                enqueue: { _ in },
+                consume: { _ in }
+            )
+            $0.permissionOnboardingClient = .inert
+            $0.date = .constant(Fixtures.labNow)
+        })
+    }
+
+    var body: some View {
+        MainTabView(store: store)
+            .accessibilityIdentifier("multiuser.feature-round.root")
+    }
+}
+
+private final class MultiUserCompetitionFeatureRoundTestLabServer: @unchecked Sendable {
+    private let hub: LocalCompetitionPublicationHub
+    private let lock = NSLock()
+    private var revision: UInt64 = 0
+    private var own: [CompetitionReactionKey: CompetitionReactionKind] = [:]
+
+    init(hub: LocalCompetitionPublicationHub) {
+        self.hub = hub
+    }
+
+    @discardableResult
+    func publish() -> LocalCompetitionPublication {
+        let (next, own) = lock.withLock { () -> (UInt64, [CompetitionReactionKey: CompetitionReactionKind]) in
+            revision += 1
+            return (revision, self.own)
+        }
+        let publication = MultiUserCompetitionTestLabFixtures.featureRoundPublication(
+            revision: next,
+            ownReactions: own
+        )
+        hub.publish(publication)
+        return publication
+    }
+
+    func setReaction(
+        _ id: CompetitionID,
+        _ target: CompetitionReactionTarget,
+        _ kind: CompetitionReactionKind?
+    ) -> LocalCompetitionPublication {
+        lock.withLock {
+            own[CompetitionReactionKey(competitionID: id, target: target)] = kind
+        }
+        return publish()
     }
 }
 
@@ -2618,6 +2711,122 @@ private enum MultiUserCompetitionTestLabFixtures {
             publicationRevision: 1,
             dashboard: LocalCompetitionDashboard(
                 competitions: [live(0x17, "Sam", sam)] + (heroOnly ? [] : otherLive) + finished,
+                awards: [],
+                issues: [],
+                hiddenTerminalCompetitionCount: 0
+            ),
+            evaluatedAt: evaluatedAt,
+            timeZoneIdentifier: "America/Los_Angeles",
+            source: .remoteParticipants
+        )
+    }
+
+    /// The round's features on one Home. Now is Sun Aug 16, 1:00 AM in Los
+    /// Angeles. Sam: last week won (the belt, 👏 on the result) and Day 2 live,
+    /// updated 13 hours ago, with 🔥 on your Day 1. Jordan: tallying, waiting
+    /// on Jordan's last check, 😤 on your Day 6. Riley: Day 2, fresh. And a
+    /// practice match on Day 2.
+    static func featureRoundPublication(
+        revision: UInt64,
+        ownReactions: [CompetitionReactionKey: CompetitionReactionKind]
+    ) -> LocalCompetitionPublication {
+        let hour: TimeInterval = 3_600
+        func id(_ byte: UInt8) -> CompetitionID {
+            CompetitionID(UUID(uuidString: String(format: "A4000000-0000-4000-8000-0000000000%02X", byte))!)
+        }
+        func person(_ byte: UInt8) -> String {
+            "remote-profile:v1:c4000000-0000-4000-8000-0000000000" + String(format: "%02x", byte)
+        }
+        func with(
+            _ presentation: LocalCompetitionPresentation,
+            _ incoming: [(CompetitionReactionTarget, CompetitionReactionKind, TimeInterval)]
+        ) -> LocalCompetitionPresentation {
+            var presentation = presentation
+            let received = incoming.map {
+                CompetitionReaction(
+                    target: $0.0,
+                    kind: $0.1,
+                    isFromYou: false,
+                    updatedAt: evaluatedAt.addingTimeInterval(-$0.2)
+                )
+            }
+            let own = ownReactions.filter { $0.key.competitionID == presentation.id }.map {
+                CompetitionReaction(target: $0.key.target, kind: $0.value, isFromYou: true, updatedAt: evaluatedAt)
+            }
+            presentation.reactions = (received + own).sorted { $0.updatedAt > $1.updatedAt }
+            return presentation
+        }
+        func live(
+            _ byte: UInt8,
+            _ name: String,
+            _ identity: String,
+            updatedAgo: TimeInterval
+        ) -> LocalCompetitionPresentation {
+            presentation(
+                id: id(byte),
+                opponentName: name,
+                lifecycle: .active(dayOrdinal: 2),
+                userPoints: 1_020,
+                opponentPoints: 990,
+                days: activeDays(startDay: 15, currentDay: 2),
+                currentDayOrdinal: 2,
+                terminal: nil,
+                startDay: 15,
+                opponentIdentity: identity,
+                opponentUpdatedAt: evaluatedAt.addingTimeInterval(-updatedAgo)
+            )
+        }
+        let owner: [Double] = [520, 500, 480, 510, 500, 520, 490]
+        let other: [Double] = [480, 490, 500, 470, 500, 490, 480]
+        let completedAt = evaluatedAt.addingTimeInterval(-20 * hour)
+        let samLastWeek = presentation(
+            id: id(0x11),
+            opponentName: "Sam",
+            lifecycle: .completed(outcome: .win, basis: .stableAcrossPostBoundaryReads, completedAt: completedAt),
+            userPoints: owner.reduce(0, +),
+            opponentPoints: other.reduce(0, +),
+            days: completedDays(startDay: 8, owner: owner, opponent: other),
+            currentDayOrdinal: nil,
+            terminal: LocalCompetitionTerminalPresentation(
+                userPoints: owner.reduce(0, +),
+                opponentPoints: other.reduce(0, +),
+                outcome: .win,
+                basis: .stableAcrossPostBoundaryReads,
+                completedAt: completedAt
+            ),
+            startDay: 8,
+            opponentIdentity: person(1)
+        )
+        let jordan = presentation(
+            id: id(0x21),
+            opponentName: "Jordan",
+            lifecycle: .tallying(startedAt: evaluatedAt.addingTimeInterval(-17 * hour)),
+            userPoints: 3_400,
+            opponentPoints: 3_345,
+            days: activeDays(startDay: 9, currentDay: 7),
+            currentDayOrdinal: nil,
+            terminal: nil,
+            startDay: 9,
+            opponentIdentity: person(2),
+            opponentUpdatedAt: evaluatedAt.addingTimeInterval(-20 * hour),
+            tally: LocalCompetitionTallyPresentation(
+                attention: .awaitingOpponentCheck,
+                consecutiveStableCompleteReads: 0,
+                stabilityStart: nil,
+                bestAvailableDeadline: evaluatedAt.addingTimeInterval(31 * hour)
+            )
+        )
+        let competitions = [
+            with(live(0x12, "Sam", person(1), updatedAgo: 13 * hour), [(.day(1), .fire, 2 * hour)]),
+            with(jordan, [(.day(6), .huffing, 4 * hour)]),
+            with(live(0x31, "Riley", person(3), updatedAgo: hour), []),
+            practicePresentation(),
+            with(samLastWeek, [(.result, .clap, 5 * hour)]),
+        ]
+        return LocalCompetitionPublication(
+            publicationRevision: revision,
+            dashboard: LocalCompetitionDashboard(
+                competitions: competitions,
                 awards: [],
                 issues: [],
                 hiddenTerminalCompetitionCount: 0
