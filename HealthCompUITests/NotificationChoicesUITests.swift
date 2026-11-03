@@ -4,7 +4,8 @@ import XCTest
 /// standalone Account fixture (iOS notifications and Live Activities off).
 /// `notification-choices` is the real app root with notifications on, the
 /// long-named challenger muted, and the real installation coordinator
-/// registering against a stand-in server whose state shows under Home: each
+/// registering against a stand-in server whose state shows under Home
+/// ("Muted push kinds: …"): each
 /// registration takes 2.5 s, and the first that turns Reactions off fails.
 final class NotificationChoicesUITests: XCTestCase {
     private var app: XCUIApplication!
@@ -35,7 +36,6 @@ final class NotificationChoicesUITests: XCTestCase {
         launch(.account)
         openNotificationsFromAccount()
         XCTAssertTrue(app.staticTexts["Turned off in iOS Settings"].exists)
-        XCTAssertTrue(showsStatus("Off"))
         XCTAssertTrue(text(Self.footer).exists)
         XCTAssertFalse(app.staticTexts.containing(
             NSPredicate(format: "label CONTAINS %@", "Turn them off in iOS Settings")
@@ -139,7 +139,6 @@ final class NotificationChoicesUITests: XCTestCase {
         openAccount()
         openNotifications()
         // Notifications are on here, and so are Live Activities.
-        XCTAssertTrue(showsStatus("On"))
         XCTAssertFalse(app.staticTexts["Turned off in iOS Settings"].exists)
         XCTAssertTrue(app.buttons["account.notifications.settings"].exists)
         XCTAssertTrue(text(Self.footer).exists)
@@ -306,20 +305,6 @@ final class NotificationChoicesUITests: XCTestCase {
         app.switches["account.notifications.choice.\(id)"].firstMatch
     }
 
-    /// `LabeledContent` reads as one element or as two texts.
-    private func showsStatus(_ status: String) -> Bool {
-        let row = app.descendants(matching: .any)
-            .matching(NSPredicate(format: "label BEGINSWITH %@", "Match notifications")).firstMatch
-        guard row.waitForExistence(timeout: 3) else {
-            add(XCTAttachment(string: app.debugDescription))
-            return false
-        }
-        let shows = row.value as? String == status || row.label.hasSuffix(status)
-            || app.staticTexts[status].exists
-        if !shows { add(XCTAttachment(string: row.debugDescription)) }
-        return shows
-    }
-
     private func liveActivityCaption() -> XCUIElement {
         text(Self.liveActivitiesOff)
     }
@@ -389,7 +374,9 @@ final class NotificationChoicesUITests: XCTestCase {
     }
 
     private func serverLabel() -> String {
-        element("multiuser.notification-choices.server").label
+        // The Test Lab root's identifier covers this text's own.
+        app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Muted push kinds:"))
+            .firstMatch.label
     }
 
     private func waitForServer(

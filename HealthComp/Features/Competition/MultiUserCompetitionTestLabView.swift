@@ -905,7 +905,6 @@ private struct MultiUserCompetitionNotificationChoicesTestLabView: View {
             .safeAreaInset(edge: .bottom) {
                 Text(server.summary)
                     .font(.caption)
-                    .accessibilityIdentifier("multiuser.notification-choices.server")
             }
     }
 }
