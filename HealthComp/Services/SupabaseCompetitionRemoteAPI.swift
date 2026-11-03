@@ -347,7 +347,7 @@ enum SupabaseCompetitionRemoteAPI {
                       reactionDayOrdinal(object["day_ordinal"]) == .some(request.target.dayOrdinal),
                       object["reaction"] is NSNull
                         ? request.kind == nil
-                        : (object["reaction"] as? String) == request.kind?.rawValue
+                        : (object["reaction"] as? String).map { $0 == request.kind?.rawValue } == true
                 else {
                     throw CompetitionRemoteFailure.serverContractMismatch
                 }

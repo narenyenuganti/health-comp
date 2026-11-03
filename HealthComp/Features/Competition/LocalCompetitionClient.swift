@@ -1280,6 +1280,31 @@ enum LocalCompetitionProjector {
         )
     }
 
+    /// Practice journals as matches against the Pacer. A pending journal
+    /// (an interrupted start) never shows.
+    static func practicePresentations(
+        journals: [LoadedCompetitionJournal],
+        context: CompetitionEnvironmentContext,
+        configuration: LocalCompetitionRuntimeConfiguration,
+        ownerDisplayName: String
+    ) -> [LocalCompetitionPresentation] {
+        journals.compactMap { loaded in
+            switch loaded.projection.competition.lifecycle {
+            case .scheduled, .active, .endsToday, .tallying, .completed:
+                return presentation(
+                    from: loaded,
+                    context: context,
+                    configuration: configuration,
+                    ownerDisplayName: ownerDisplayName,
+                    opponentDisplayName: PracticeMatch.opponentDisplayName,
+                    opponentIdentity: PracticeMatch.opponentIdentity
+                )
+            case .pendingInvitation, .declined, .expired, .archived:
+                return nil
+            }
+        }
+    }
+
     static func notificationSnapshot(
         publication: LocalCompetitionPublication,
         journals: [LoadedCompetitionJournal],
@@ -1400,7 +1425,10 @@ enum LocalCompetitionProjector {
     private static func presentation(
         from loaded: LoadedCompetitionJournal,
         context: CompetitionEnvironmentContext,
-        configuration: LocalCompetitionRuntimeConfiguration
+        configuration: LocalCompetitionRuntimeConfiguration,
+        ownerDisplayName: String = LocalCompetitionIdentity.ownerDisplayName,
+        opponentDisplayName: String = LocalCompetitionIdentity.opponentDisplayName,
+        opponentIdentity: String = LocalCompetitionIdentity.opponentIdentity
     ) -> LocalCompetitionPresentation {
         let projection = loaded.projection
         let competition = projection.competition
@@ -1444,9 +1472,9 @@ enum LocalCompetitionProjector {
         }
         return LocalCompetitionPresentation(
             id: competition.id,
-            ownerDisplayName: LocalCompetitionIdentity.ownerDisplayName,
-            opponentDisplayName: LocalCompetitionIdentity.opponentDisplayName,
-            opponentIdentity: LocalCompetitionIdentity.opponentIdentity,
+            ownerDisplayName: ownerDisplayName,
+            opponentDisplayName: opponentDisplayName,
+            opponentIdentity: opponentIdentity,
             lifecycle: lifecycle,
             acceptedConfiguration: acceptedConfiguration,
             userPoints: terminal?.userPoints ?? liveOwnerPoints,

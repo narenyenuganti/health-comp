@@ -25,6 +25,11 @@ struct CompetitionSharingView: View {
     let archive: (CompetitionID) -> Void
     let commandIDsInFlight: Set<CompetitionID>
     let retry: () async -> Void
+    /// Real-match Home only: Practice Match on the first-time empty state.
+    var practice: CompetitionPracticeStart? = nil
+    /// The pace sheet, presented by the host above `.refreshable`, so a
+    /// downward drag closes it instead of refreshing Home.
+    var isPracticePresented: Binding<Bool> = .constant(false)
 
     // ponytail: in-memory, a dismissed row returns after relaunch within its 24 h; persist per profile if that annoys
     @State private var dismissedChallengeIDs: Set<CompetitionID> = []
@@ -127,6 +132,17 @@ struct CompetitionSharingView: View {
                     }
                 }
 
+                // With only a practice on Home, the way to a real match stays in view.
+                if publication.source == .remoteParticipants,
+                   !layout.allItems.isEmpty,
+                   layout.allItems.allSatisfy(\.isPractice) {
+                    Button("Challenge Someone") {
+                        isChallengePresented = true
+                    }
+                    .buttonStyle(SecondaryButtonStyle())
+                    .accessibilityIdentifier("competition.practice.challenge")
+                }
+
                 if layout.isEmpty {
                     emptyState
                 }
@@ -167,6 +183,11 @@ struct CompetitionSharingView: View {
                     selectCompetition($0)
                 }
             )
+        }
+        .onChange(of: practice?.isStarting) { wasStarting, isStarting in
+            if wasStarting == true, isStarting == false, practice?.failed == false {
+                isPracticePresented.wrappedValue = false
+            }
         }
     }
 
@@ -222,12 +243,9 @@ struct CompetitionSharingView: View {
     }
 
     /// Matches drawn on Home carry their own problem line, so the banner
-    /// leaves them out.
+    /// leaves them out. A failed practice start shows on its sheet.
     private func attributedIDs(_ layout: CompetitionHomeLayout) -> Set<CompetitionID> {
-        Set(
-            ([layout.hero].compactMap { $0 } + layout.needsYou + layout.live
-                + layout.upNext + layout.recentResults).map(\.id)
-        )
+        Set(layout.allItems.map(\.id) + [PracticeMatch.startCommandID])
     }
 
     private func canChallengeAgain(_ competition: LocalCompetitionPresentation) -> Bool {
@@ -280,6 +298,16 @@ struct CompetitionSharingView: View {
 
     @ViewBuilder
     private func resultRow(_ competition: LocalCompetitionPresentation) -> some View {
+        if competition.isPractice {
+            // Nothing to archive: it's deleted when it leaves Home.
+            rowButton(competition)
+        } else {
+            archivableResultRow(competition)
+        }
+    }
+
+    @ViewBuilder
+    private func archivableResultRow(_ competition: LocalCompetitionPresentation) -> some View {
         let caption = competitionResultLeavesHome(competition).map {
             "Moves to History \(weekdayText($0.day, locale: locale))"
         }
@@ -410,6 +438,15 @@ struct CompetitionSharingView: View {
                 .buttonStyle(PrimaryButtonStyle())
                 .accessibilityIdentifier("competition.create.empty")
             }
+
+            if offersPractice {
+                Button("Practice Match") {
+                    isPracticePresented.wrappedValue = true
+                }
+                .buttonStyle(SecondaryButtonStyle())
+                .accessibilityHint("Opens a practice match against a pacer")
+                .accessibilityIdentifier("competition.practice.open")
+            }
         }
         .frame(maxWidth: .infinity)
         .padding(20)
@@ -437,8 +474,17 @@ struct CompetitionSharingView: View {
                 records.isEmpty ? "A local challenge will appear here." : nil
             }
         case .remoteParticipants:
-            records.isEmpty ? "Challenge someone to start a match." : nil
+            if offersPractice {
+                "Challenge someone to a 7-day match, or warm up against a pacer."
+            } else {
+                records.isEmpty ? "Challenge someone to start a match." : nil
+            }
         }
+    }
+
+    /// Only the first-time empty Home ("No matches yet") offers practice.
+    private var offersPractice: Bool {
+        practice != nil && publication.source == .remoteParticipants && records.isEmpty
     }
 
     private func issueBanner(_ summary: String) -> some View {
@@ -682,6 +728,22 @@ private struct CompetitionSharingRow: View {
     @Environment(\.timeZone) private var timeZone
 
     var body: some View {
+        // The reaction line sits under the row, so it never decides
+        // whether the score fits beside the name.
+        VStack(alignment: .leading, spacing: 10) {
+            rowContent
+            if let reaction {
+                CompetitionReactionLine(
+                    reaction: reaction,
+                    opponentName: competition.opponentDisplayName
+                )
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, minHeight: 76, alignment: .leading)
+    }
+
+    private var rowContent: some View {
         ViewThatFits(in: .horizontal) {
             HStack(spacing: 14) {
                 badge
@@ -714,8 +776,6 @@ private struct CompetitionSharingRow: View {
                 }
             }
         }
-        .padding(16)
-        .frame(maxWidth: .infinity, minHeight: 76, alignment: .leading)
     }
 
     @ViewBuilder
@@ -747,12 +807,6 @@ private struct CompetitionSharingRow: View {
                 Text(caption)
                     .font(.caption)
                     .foregroundStyle(Theme.secondary)
-            }
-            if let reaction {
-                CompetitionReactionLine(
-                    reaction: reaction,
-                    opponentName: competition.opponentDisplayName
-                )
             }
             if let disclosure = competitionFixtureDisclosure(
                 source: source,
@@ -1579,12 +1633,14 @@ struct CompetitionChallengeButton: View {
 }
 
 /// The hairline between grouped rows, inset past the badge.
-private struct CompetitionRowDivider: View {
+struct CompetitionRowDivider: View {
+    var inset: CGFloat = 70
+
     var body: some View {
         Rectangle()
             .fill(Theme.hairline)
             .frame(height: 1)
-            .padding(.leading, 70)
+            .padding(.leading, inset)
     }
 }
 
@@ -1731,16 +1787,18 @@ func competitionStatusText(
         locale: locale,
         timeZone: timeZone
     )
+    let title = competition.isPractice && style != .notification
+        ? "Practice · \(base.title)" : base.title
     // Only a tallying match with a deadline still ahead says when it ends.
     guard case .tallying = competition.lifecycle,
           style != .notification,
           let deadline = competition.tally?.bestAvailableDeadline,
           competition.evaluatedAt < deadline
     else {
-        return base
+        return CompetitionStatusText(title: title, timing: base.timing)
     }
     return CompetitionStatusText(
-        title: base.title,
+        title: title,
         timing: "By \(competitionDeadlineText(deadline, now: competition.evaluatedAt, locale: locale, timeZone: timeZone))"
     )
 }
@@ -1939,6 +1997,10 @@ struct CompetitionHomeLayout: Equatable {
         hero == nil && needsYou.isEmpty && live.isEmpty && upNext.isEmpty
             && recentResults.isEmpty
     }
+
+    var allItems: [LocalCompetitionPresentation] {
+        [hero].compactMap { $0 } + needsYou + live + upNext + recentResults
+    }
 }
 
 func competitionHomeLayout(
@@ -2024,9 +2086,14 @@ func competitionHomeLayout(
     ])
 
     // One live match leads as the big card; with none live, the soonest
-    // scheduled match does. Two or more live get equal cards.
+    // scheduled match does. Two or more live get equal cards. A practice
+    // leads only when no real match is live or scheduled.
     var hero: LocalCompetitionPresentation?
-    if live.count == 1 {
+    if live.contains(where: { !$0.isPractice }) {
+        if live.count == 1 { hero = live.removeFirst() }
+    } else if let index = scheduled.firstIndex(where: { !$0.isPractice }) {
+        hero = scheduled.remove(at: index)
+    } else if live.count == 1 {
         hero = live.removeFirst()
     } else if live.isEmpty, !scheduled.isEmpty {
         hero = scheduled.removeFirst()
@@ -2178,11 +2245,11 @@ struct CompetitionOpponentRecord: Equatable {
     }
 }
 
-/// Every finished week, newest first.
+/// Every finished week, newest first. Practice never counts.
 func competitionHistoryWeeks(
     _ competitions: [LocalCompetitionPresentation]
 ) -> [LocalCompetitionPresentation] {
-    competitionHomeSorted(competitions.filter { $0.terminalResult != nil }, [
+    competitionHomeSorted(competitions.filter { $0.terminalResult != nil && !$0.isPractice }, [
         competitionAscending {
             -(
                 $0.acceptedConfiguration.flatMap { competitionScheduleBoundaries($0.schedule)?.end }

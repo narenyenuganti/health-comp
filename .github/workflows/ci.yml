@@ -234,8 +234,11 @@ jobs:
             -only-testing:HealthCompUITests/WidgetUITests/testMatchWidgetShowsTheSampleScoreAndPicksAPerson \
             -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testStaleMatchOffersOneNudgeADay \
             -only-testing:HealthCompUITests/NudgeUITests/testFailedNudgeRetriesAndARefusalExplains \
-            -only-testing:HealthCompUITests/LiveActivityUITests/testPreviewShowsEveryScoreStateInTheAppsWords \
             -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testReactionsOnHomeMatchDayDrawerAndResult \
+            -only-testing:HealthCompUITests/ReactionsUITests/testDraggingTheDrawerFromAChipSendsNoReaction \
+            -only-testing:HealthCompUITests/LiveActivityUITests/testPreviewShowsEveryScoreStateInTheAppsWords \
+            -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testPracticeMatchStartsFromEmptyHomeAndEndsFromTheMenu \
+            -only-testing:HealthCompUITests/PracticeMatchUITests/testAFailedStartExplainsOnTheSheetAndAReopenedSheetStartsClean \
             -only-testing:HealthCompUITests/NotificationChoicesUITests/testSwitchesRegisterServerHeldKindsAndRetryAfterAFailure \
             -parallel-testing-enabled NO \
             -maximum-concurrent-test-simulator-destinations 1 \
