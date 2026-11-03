@@ -443,10 +443,10 @@ final class SupabaseCompetitionRemoteAPITests: XCTestCase {
     func testInstallationRegistrationFallsBackToLegacyCallOnUnmigratedServer()
         async throws
     {
+        let notFound = try jsonData(["code": "PGRST202", "message": "redacted"])
         let harness = CompetitionTransportHarness(stubs: [
-            .response(404, try jsonData([
-                "code": "PGRST202", "message": "redacted",
-            ])),
+            .response(404, notFound),
+            .response(404, notFound),
             .response(200, try jsonData([
                 "installation_id": installationID.uuidString.lowercased(),
                 "environment": "sandbox",
@@ -464,14 +464,16 @@ final class SupabaseCompetitionRemoteAPITests: XCTestCase {
 
         XCTAssertEqual(installation.state, .active)
         let requests = await harness.recordedRequests()
-        XCTAssertEqual(requests.count, 2)
+        XCTAssertEqual(requests.count, 3)
         let legacyBody: [String: Any] = [
             "installation_id": installationID.uuidString.lowercased(),
             "apns_token": String(repeating: "a1", count: 32),
             "environment": "sandbox",
         ]
-        var currentBody = legacyBody
-        currentBody["supports_challenges"] = true
+        var challengeBody = legacyBody
+        challengeBody["supports_challenges"] = true
+        var currentBody = challengeBody
+        currentBody["supports_reactions"] = true
         try assertRPC(
             requests[0],
             name: "register_current_device_installation",
@@ -480,8 +482,135 @@ final class SupabaseCompetitionRemoteAPITests: XCTestCase {
         try assertRPC(
             requests[1],
             name: "register_current_device_installation",
+            body: challengeBody
+        )
+        try assertRPC(
+            requests[2],
+            name: "register_current_device_installation",
             body: legacyBody
         )
+    }
+
+    func testInstallationRegistrationFallsBackThroughOlderCalls() async throws {
+        let notFound = try jsonData(["code": "PGRST202", "message": "redacted"])
+        let active = try jsonData([
+            "installation_id": installationID.uuidString.lowercased(),
+            "environment": "sandbox",
+            "state": "active",
+        ])
+        // A server with the four-argument call answers the first fallback;
+        // three 404s in a row surface as notFound.
+        let harness = CompetitionTransportHarness(stubs: [
+            .response(404, notFound),
+            .response(200, active),
+            .response(404, notFound),
+            .response(404, notFound),
+            .response(404, notFound),
+        ])
+        let request = try CompetitionInstallationRequest(
+            installationID: installationID,
+            apnsToken: String(repeating: "a1", count: 32),
+            environment: .sandbox
+        )
+        let api = makeAPI(harness)
+
+        let installation = try await api.registerInstallation(request)
+        XCTAssertEqual(installation.state, .active)
+        let exhausted = await remoteFailure { _ = try await api.registerInstallation(request) }
+        XCTAssertEqual(exhausted, .notFound)
+
+        let requests = await harness.recordedRequests()
+        XCTAssertEqual(requests.count, 5)
+        try assertRPC(
+            requests[1],
+            name: "register_current_device_installation",
+            body: [
+                "installation_id": installationID.uuidString.lowercased(),
+                "apns_token": String(repeating: "a1", count: 32),
+                "environment": "sandbox",
+                "supports_challenges": true,
+            ]
+        )
+    }
+
+    func testReactionsRouteThroughExactRPCs() async throws {
+        let match = "85000000-0000-4000-8000-0000000000c1"
+        let author = "85000000-0000-4000-8000-0000000000c2"
+        let rows: [[String: Any]] = [
+            [
+                "competition_id": match, "day_ordinal": 2, "author_profile_id": author,
+                "reaction": "huffing", "updated_at": "2026-11-09T16:12:00.123456+00:00",
+            ],
+            [
+                "competition_id": match, "day_ordinal": NSNull(), "author_profile_id": author,
+                "reaction": "clap", "updated_at": "2026-11-09T16:00:00+00:00",
+            ],
+            // Skipped: an unknown reaction, an uppercase id, a day out of range.
+            [
+                "competition_id": match, "day_ordinal": 1, "author_profile_id": author,
+                "reaction": "heart", "updated_at": "2026-11-09T16:00:00+00:00",
+            ],
+            [
+                "competition_id": match.uppercased(), "day_ordinal": 1,
+                "author_profile_id": author, "reaction": "fire",
+                "updated_at": "2026-11-09T16:00:00+00:00",
+            ],
+            [
+                "competition_id": match, "day_ordinal": 8, "author_profile_id": author,
+                "reaction": "fire", "updated_at": "2026-11-09T16:00:00+00:00",
+            ],
+        ]
+        let row = rows[0]
+        let echoDay: [String: Any] = ["competition_id": match, "day_ordinal": 2, "reaction": "fire"]
+        let echoRemoval: [String: Any] = [
+            "competition_id": match, "day_ordinal": NSNull(), "reaction": NSNull(),
+        ]
+        let harness = CompetitionTransportHarness(stubs: [
+            .response(200, try jsonData(["reactions": rows])),
+            .response(200, try jsonData(["reactions": [], "extra": 1])),
+            .response(200, try jsonData(["reactions": Array(repeating: row, count: 2_001)])),
+            .response(200, try jsonData(echoDay)),
+            .response(200, try jsonData(echoRemoval)),
+            .response(200, try jsonData([
+                "competition_id": match, "day_ordinal": 2, "reaction": "clap",
+            ])),
+            .failure(.server(statusCode: 400, code: "P0001", message: "reaction_not_allowed")),
+        ])
+        let api = makeAPI(harness)
+        let matchID = UUID(uuidString: match)!
+        let authorID = UUID(uuidString: author)!
+
+        let reactions = try await api.listReactions()
+        XCTAssertEqual(reactions, [
+            CompetitionReactionRecord(
+                competitionID: matchID, target: .day(2), authorProfileID: authorID,
+                kind: .huffing, updatedAt: try CompetitionWireCodec.date("2026-11-09T16:12:00.123456+00:00")
+            ),
+            CompetitionReactionRecord(
+                competitionID: matchID, target: .result, authorProfileID: authorID,
+                kind: .clap, updatedAt: try CompetitionWireCodec.date("2026-11-09T16:00:00+00:00")
+            ),
+        ])
+        let extraKey = await remoteFailure { _ = try await api.listReactions() }
+        XCTAssertEqual(extraKey, .serverContractMismatch)
+        let overCap = await remoteFailure { _ = try await api.listReactions() }
+        XCTAssertEqual(overCap, .serverContractMismatch)
+
+        try await api.setReaction(.init(competitionID: matchID, target: .day(2), kind: .fire))
+        try await api.setReaction(.init(competitionID: matchID, target: .result, kind: nil))
+        let divergent = await remoteFailure {
+            try await api.setReaction(.init(competitionID: matchID, target: .day(2), kind: .fire))
+        }
+        XCTAssertEqual(divergent, .serverContractMismatch)
+        let refused = await remoteFailure {
+            try await api.setReaction(.init(competitionID: matchID, target: .day(2), kind: .fire))
+        }
+        XCTAssertEqual(refused, .forbidden)
+
+        let requests = await harness.recordedRequests()
+        try assertRPC(requests[0], name: "list_competition_reactions", body: [:])
+        try assertRPC(requests[3], name: "set_competition_reaction", body: echoDay)
+        try assertRPC(requests[4], name: "set_competition_reaction", body: echoRemoval)
     }
 
     func testChallengeRetriesInstallationRegistrationRace() async throws {

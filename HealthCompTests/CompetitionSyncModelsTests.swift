@@ -350,6 +350,25 @@ final class CompetitionSyncModelsTests: XCTestCase {
                 "apns_token": String(repeating: "a1", count: 32),
                 "environment": "sandbox",
                 "supports_challenges": true,
+                "supports_reactions": true,
+            ] as NSDictionary
+        )
+        let withoutReactions = try CompetitionInstallationRequest(
+            installationID: installationID,
+            apnsToken: String(repeating: "a1", count: 32),
+            environment: .sandbox,
+            supportsReactions: false
+        )
+        XCTAssertEqual(
+            try jsonObject(
+                CompetitionWireCodec.encode(withoutReactions, contract: .installationRequest)
+            ) as? NSDictionary,
+            [
+                "installation_id": installationID.uuidString.lowercased(),
+                "apns_token": String(repeating: "a1", count: 32),
+                "environment": "sandbox",
+                "supports_challenges": true,
+                "supports_reactions": false,
             ] as NSDictionary
         )
 

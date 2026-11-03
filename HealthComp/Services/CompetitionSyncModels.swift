@@ -1499,11 +1499,15 @@ struct CompetitionInstallationRequest: Codable, Equatable, Sendable {
     let installationID: UUID
     let apnsToken: String
     let environment: CompetitionInstallationEnvironment
+    /// A capability flag: this build can show reactions. Always true from
+    /// new builds; older ones register through overloads that store false.
+    let supportsReactions: Bool
 
     init(
         installationID: UUID,
         apnsToken: String,
-        environment: CompetitionInstallationEnvironment
+        environment: CompetitionInstallationEnvironment,
+        supportsReactions: Bool = true
     ) throws {
         guard CompetitionWireValue.validUUID(installationID),
               apnsToken.range(
@@ -1516,6 +1520,7 @@ struct CompetitionInstallationRequest: Codable, Equatable, Sendable {
         self.installationID = installationID
         self.apnsToken = apnsToken
         self.environment = environment
+        self.supportsReactions = supportsReactions
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -1523,6 +1528,7 @@ struct CompetitionInstallationRequest: Codable, Equatable, Sendable {
         case apnsToken = "apns_token"
         case environment
         case supportsChallenges = "supports_challenges"
+        case supportsReactions = "supports_reactions"
     }
 
     init(from decoder: Decoder) throws {
@@ -1533,7 +1539,8 @@ struct CompetitionInstallationRequest: Codable, Equatable, Sendable {
             environment: try container.decode(
                 CompetitionInstallationEnvironment.self,
                 forKey: .environment
-            )
+            ),
+            supportsReactions: try container.decodeIfPresent(Bool.self, forKey: .supportsReactions) ?? true
         )
     }
 
@@ -1544,6 +1551,7 @@ struct CompetitionInstallationRequest: Codable, Equatable, Sendable {
         try container.encode(environment, forKey: .environment)
         // Opts this install into challenge pushes; 1.0.2 omits it.
         try container.encode(true, forKey: .supportsChallenges)
+        try container.encode(supportsReactions, forKey: .supportsReactions)
     }
 }
 
@@ -3622,11 +3630,12 @@ private enum CompetitionWireValidator {
             value,
             keys: [
                 "apns_token", "environment", "installation_id",
-                "supports_challenges",
+                "supports_challenges", "supports_reactions",
             ]
         )
         guard uuid(object["installation_id"]),
               boolean(object["supports_challenges"]),
+              boolean(object["supports_reactions"]),
               object["supports_challenges"] as? Bool == true,
               let token = object["apns_token"] as? String,
               token.range(
