@@ -1,6 +1,7 @@
 import CompetitionCore
 import Foundation
 import SwiftUI
+import UIKit
 
 // Reactions (spec §9.8): one preset per person per target, on the other
 // person's day or on the result. They live outside the change log and reach
@@ -204,8 +205,7 @@ struct CompetitionReactionPicker: View {
         let isSelected = selection == kind
         let hint: String = isSelected ? "Removes your reaction" : ""
         return Button { select(kind) } label: {
-            Text(kind.emoji)
-                .font(.title2)
+            CompetitionReactionEmoji(kind: kind, size: chipSize * 0.58)
                 .frame(width: chipSize, height: chipSize)
                 .background(Theme.control, in: Circle())
                 .overlay {
@@ -230,6 +230,8 @@ struct CompetitionReactionLine: View {
     let opponentName: String
     var id: String?
 
+    @ScaledMetric(relativeTo: .title3) private var emojiSize: CGFloat = 24
+
     var body: some View {
         if let id {
             line.accessibilityIdentifier(id)
@@ -240,7 +242,7 @@ struct CompetitionReactionLine: View {
 
     private var line: some View {
         HStack(spacing: 8) {
-            CompetitionReactionEmoji(kind: reaction.kind)
+            CompetitionReactionEmoji(kind: reaction.kind, size: emojiSize)
             Text(competitionReactionText(reaction, opponentName: opponentName))
                 .font(.subheadline)
                 .foregroundStyle(Theme.secondary)
@@ -253,30 +255,45 @@ struct CompetitionReactionLine: View {
     }
 }
 
-/// The emoji drawn as an image. The text clipping audit flags an emoji
-/// `Text` inside an accessibility container (the line, a Home card) because
-/// its glyph overflows the line box, even when it's hidden.
+/// The emoji drawn as an image, on a canvas sized from the glyph's real
+/// bounds. As `Text`, 🫡 draws wider than its advance and loses its right
+/// half, and the text clipping audit flags emoji glyphs overflowing the line.
 private struct CompetitionReactionEmoji: View {
     let kind: CompetitionReactionKind
-
-    @ScaledMetric(relativeTo: .title3) private var size: CGFloat = 24
-    @Environment(\.displayScale) private var displayScale
+    let size: CGFloat
 
     var body: some View {
-        if let image = renderedImage {
-            Image(decorative: image, scale: displayScale)
-                .resizable()
-                .scaledToFit()
-                .frame(width: size, height: size)
-                .accessibilityHidden(true)
-        }
+        Image(uiImage: Self.image(kind))
+            .resizable()
+            .scaledToFit()
+            .frame(width: size, height: size)
+            .accessibilityHidden(true)
     }
 
-    // ponytail: rendered on every body pass (a few lines on screen); cache per kind if it ever shows in a profile.
+    @MainActor private static var images: [CompetitionReactionKind: UIImage] = [:]
+
+    /// Drawn once per kind at 96 pt and scaled down.
     @MainActor
-    private var renderedImage: CGImage? {
-        let renderer = ImageRenderer(content: Text(kind.emoji).font(.system(size: size)))
-        renderer.scale = displayScale
-        return renderer.cgImage
+    private static func image(_ kind: CompetitionReactionKind) -> UIImage {
+        if let image = images[kind] { return image }
+        let text = NSAttributedString(
+            string: kind.emoji,
+            attributes: [.font: UIFont.systemFont(ofSize: 96)]
+        )
+        let glyph = text.boundingRect(
+            with: CGSize(width: 1_000, height: 1_000),
+            options: [.usesLineFragmentOrigin, .usesDeviceMetrics],
+            context: nil
+        )
+        // A margin, in case the reported bounds are still short.
+        let side = ceil(max(glyph.width, glyph.height) * 1.1)
+        let image = UIGraphicsImageRenderer(size: CGSize(width: side, height: side)).image { _ in
+            text.draw(at: CGPoint(
+                x: (side - glyph.width) / 2 - glyph.minX,
+                y: (side - glyph.height) / 2 - glyph.minY
+            ))
+        }
+        images[kind] = image
+        return image
     }
 }
