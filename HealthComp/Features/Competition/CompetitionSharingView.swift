@@ -671,6 +671,9 @@ private struct HeroScoreboard: View {
             Text(name.uppercased(with: .current))
                 .font(.themeLabel)
                 .tracking(1.4)
+                // The full width, so a wrapped name's tracking is measured
+                // against the room it has (the AX5 clipped-text audit).
+                .frame(maxWidth: .infinity, alignment: trailing ? .trailing : .leading)
             Text(competitionPointsText(points))
                 .font(.score(size: scoreSize).monospacedDigit())
         }

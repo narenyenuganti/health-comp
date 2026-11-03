@@ -84,9 +84,13 @@ final class BeltUITests: XCTestCase {
         XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "LIVE · ")).firstMatch.exists)
         // Only the hero card speaks of the belt (the button and its combined
         // label can both carry it).
-        let beltLabels = labels(containing: "belt").allElementsBoundByIndex.map(\.label)
-        XCTAssertFalse(beltLabels.isEmpty)
-        XCTAssertEqual(Set(beltLabels), [hero.label])
+        let beltElements = labels(containing: "belt").allElementsBoundByIndex
+        XCTAssertFalse(beltElements.isEmpty)
+        XCTAssertEqual(
+            Set(beltElements.map(\.label)),
+            [hero.label],
+            beltElements.map { "\($0.elementType.rawValue) \($0.identifier) \($0.frame)" }.joined(separator: "; ")
+        )
     }
 
     // MARK: History
