@@ -46,6 +46,7 @@ targets:
         NSHealthShareUsageDescription: "HealthComp reads your Activity data to score matches with friends."
         # Upload validation requires both purpose keys; authorization remains read-only.
         NSHealthUpdateUsageDescription: "HealthComp uses read-only Health access for Activity matches and does not save or change Health data."
+        NSPhotoLibraryAddUsageDescription: "HealthComp saves your match result image to Photos when you choose Save Image."
         NSSupportsLiveActivities: true
         SUPABASE_URL: "$(SUPABASE_URL)"
         SUPABASE_PUBLISHABLE_KEY: "$(SUPABASE_PUBLISHABLE_KEY)"

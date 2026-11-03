@@ -492,6 +492,7 @@ struct CompetitionMoreLabel: View {
 struct CompetitionDrawer<Content: View>: View {
     let title: String
     var subtitle: String?
+    var detents: Set<PresentationDetent> = [.medium, .large]
     @ViewBuilder let content: Content
 
     @Environment(\.dismiss) private var dismiss
@@ -522,7 +523,7 @@ struct CompetitionDrawer<Content: View>: View {
         }
         .scrollBounceBehavior(.basedOnSize)
         .background(Theme.ground)
-        .presentationDetents([.medium, .large])
+        .presentationDetents(detents)
         .presentationDragIndicator(.visible)
         .presentationBackground(Theme.ground)
     }
@@ -535,6 +536,8 @@ struct CompetitionDrawerCloseButton: View {
         Button(action: action) {
             Image(systemName: "xmark")
                 .font(.footnote.weight(.bold))
+                // Past xxxLarge the glyph outgrows its 30 pt circle.
+                .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
                 .foregroundStyle(Theme.secondary)
                 .frame(width: 30, height: 30)
                 .background(Theme.control, in: Circle())

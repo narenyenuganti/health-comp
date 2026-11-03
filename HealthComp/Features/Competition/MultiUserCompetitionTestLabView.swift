@@ -1027,6 +1027,15 @@ private enum MultiUserCompetitionTestLabFixtures {
     static let jordanPastID = CompetitionID(
         UUID(uuidString: "A1000000-0000-4000-8000-000000000009")!
     )
+    /// A finished week with a real name, for Share Result's Show/Hide name.
+    static let caseyID = CompetitionID(
+        UUID(uuidString: "A1000000-0000-4000-8000-00000000000A")!
+    )
+    /// An archived win decided at 2 decimals against the longest allowed name.
+    static let longNameID = CompetitionID(
+        UUID(uuidString: "A1000000-0000-4000-8000-00000000000D")!
+    )
+    static let longName = "Maximiliana Alexandrovna Featherstonehaugh-Montgomery Wellington"
     static let nudgeJordanID = nudgeID(1)
     static let nudgeRileyID = nudgeID(2)
     static let nudgeSamID = nudgeID(3)
@@ -1309,9 +1318,60 @@ private enum MultiUserCompetitionTestLabFixtures {
             startDay: 1,
             opponentIdentity: active.opponentIdentity
         )
+        // Same week as Former competitor; Casey won only Sunday.
+        let caseyTerminal = LocalCompetitionTerminalPresentation(
+            userPoints: 2_692,
+            opponentPoints: 2_800,
+            outcome: .loss,
+            basis: .stableAcrossPostBoundaryReads,
+            completedAt: completedAt
+        )
+        let casey = presentation(
+            id: caseyID,
+            opponentName: "Casey",
+            lifecycle: .completed(
+                outcome: .loss,
+                basis: .stableAcrossPostBoundaryReads,
+                completedAt: completedAt
+            ),
+            userPoints: 2_692,
+            opponentPoints: 2_800,
+            days: completedDays(),
+            currentDayOrdinal: nil,
+            terminal: caseyTerminal
+        )
+        // The week before Casey's: you trailed by 90 after Saturday and won by 0.30.
+        let longNameCompletedAt = completedAt.addingTimeInterval(-604_800)
+        let longNameTerminal = LocalCompetitionTerminalPresentation(
+            userPoints: 2_104.30,
+            opponentPoints: 2_104,
+            outcome: .win,
+            basis: .stableAcrossPostBoundaryReads,
+            completedAt: longNameCompletedAt
+        )
+        let longNamed = presentation(
+            id: longNameID,
+            opponentName: longName,
+            lifecycle: .archived(
+                outcome: .win,
+                basis: .stableAcrossPostBoundaryReads,
+                completedAt: longNameCompletedAt,
+                archivedAt: longNameCompletedAt.addingTimeInterval(86_400)
+            ),
+            userPoints: 2_104.30,
+            opponentPoints: 2_104,
+            days: completedDays(
+                startDay: 6,
+                owner: [300, 300, 300, 330.3, 290, 290, 294],
+                opponent: [330, 330, 330, 300, 300, 260, 254]
+            ),
+            currentDayOrdinal: nil,
+            terminal: longNameTerminal,
+            startDay: 6
+        )
         let competitions = [
             scheduled, active, completed, archived, pending, secondActive, expired,
-            jordanPast,
+            jordanPast, casey, longNamed,
         ]
         let awards = [
             LocalCompetitionAward(
@@ -1686,6 +1746,26 @@ private enum MultiUserCompetitionTestLabFixtures {
                 timeZoneIdentifier: calendar.timeZoneIdentifier
             )
         )
+    }
+
+    /// All seven days scored. By default you won Sunday (512) only and lost by 108.
+    private static func completedDays(
+        startDay: Int = 13,
+        owner: [Double] = [420, 380, 300, 512, 400, 350, 330],
+        opponent: [Double] = [450, 400, 360, 380, 420, 390, 400]
+    ) -> [LocalCompetitionDayPresentation] {
+        let schedule = schedule(startDay: startDay)
+        let days = try! schedule.calendar.sevenDayWindow(startingOn: schedule.startDay)
+        return days.enumerated().map { offset, day in
+            LocalCompetitionDayPresentation(
+                day: day,
+                ordinal: offset + 1,
+                ownerAcceptedPoints: owner[offset],
+                ownerLatestAvailability: .observed,
+                opponentRevealedPoints: opponent[offset],
+                scoringPolicy: .remoteWireV1
+            )
+        }
     }
 
     private static func activeDays(

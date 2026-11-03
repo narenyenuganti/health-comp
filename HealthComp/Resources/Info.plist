@@ -41,6 +41,8 @@
 	<string>HealthComp reads your Activity data to score matches with friends.</string>
 	<key>NSHealthUpdateUsageDescription</key>
 	<string>HealthComp uses read-only Health access for Activity matches and does not save or change Health data.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>HealthComp saves your match result image to Photos when you choose Save Image.</string>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
 	<key>SUPABASE_PUBLISHABLE_KEY</key>

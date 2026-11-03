@@ -577,6 +577,7 @@ func competitionDayText(
 func competitionWeekText(
     _ first: CompetitionDay,
     _ last: CompetitionDay,
+    includesYear: Bool? = nil,
     now: Date = Date(),
     locale: Locale = .current,
     timeZone: TimeZone = .current
@@ -589,7 +590,7 @@ func competitionWeekText(
     return competitionWeekText(
         firstDate,
         lastDate,
-        includesYear: last.year != competitionYear(of: now, timeZone: timeZone),
+        includesYear: includesYear ?? (last.year != competitionYear(of: now, timeZone: timeZone)),
         locale: locale,
         timeZone: competitionDayTimeZone
     )

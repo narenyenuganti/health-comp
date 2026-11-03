@@ -2294,7 +2294,10 @@ func competitionBeltEvent(
     for competition: LocalCompetitionPresentation,
     in competitions: [LocalCompetitionPresentation]
 ) -> CompetitionBeltEvent? {
-    competitionOpponentRecords(competitions)
+    // An earlier match with them still running could reorder the fold, so
+    // "took"/"kept" isn't settled yet (and a shared image can't change later).
+    guard !competitionBeltWaitsOnAnEarlierMatch(competition, in: competitions) else { return nil }
+    return competitionOpponentRecords(competitions)
         .first { $0.opponentIdentity == competition.opponentIdentity }?
         .belt.events[competition.id]
 }
