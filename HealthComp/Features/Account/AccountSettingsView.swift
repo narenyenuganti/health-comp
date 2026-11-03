@@ -1,3 +1,4 @@
+import ActivityKit
 import ComposableArchitecture
 import CoreImage.CIFilterBuiltins
 import SwiftUI
@@ -31,6 +32,10 @@ struct AccountNotificationSettings {
     var mutedPeople: [AccountMutedPerson] = []
     var mutesInFlight: Set<String> = []
     var unmute: (String) -> Void = { _ in }
+    var choicesChanged: () -> Void = {}
+    /// nil reads and observes `ActivityAuthorizationInfo`; a value overrides
+    /// it for the DEBUG fixture.
+    var liveActivitiesEnabled: Bool? = nil
 
     var statusText: String {
         authorization?.permitsNotifications == true ? "On" : "Off"
@@ -610,6 +615,11 @@ private struct AccountNotificationsPage: View {
     @Environment(\.openURL) private var openURL
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @ScaledMetric(relativeTo: .headline) private var initialSize: CGFloat = 34
+    @State private var systemLiveActivitiesEnabled = true
+
+    private var liveActivitiesEnabled: Bool {
+        settings.liveActivitiesEnabled ?? systemLiveActivitiesEnabled
+    }
 
     var body: some View {
         List {
@@ -643,10 +653,13 @@ private struct AccountNotificationsPage: View {
                     EmptyView()
                 }
             } footer: {
-                Text(footer)
+                Text("HealthComp only sends match moments, like lead changes and results. To mute someone, open your match with them.")
                     .foregroundStyle(Theme.secondary)
             }
             .listRowBackground(Theme.panel)
+
+            choiceSection("DURING A MATCH", CompetitionNotificationChoice.allCases.filter { !$0.isServerSent })
+            choiceSection("FROM THE OTHER PERSON", CompetitionNotificationChoice.allCases.filter(\.isServerSent))
 
             if !settings.mutedPeople.isEmpty {
                 Section {
@@ -663,13 +676,41 @@ private struct AccountNotificationsPage: View {
             }
         }
         .accountPageStyle(title: "Notifications")
+        .task {
+            guard settings.liveActivitiesEnabled == nil else { return }
+            let info = ActivityAuthorizationInfo()
+            systemLiveActivitiesEnabled = info.areActivitiesEnabled
+            for await enabled in info.activityEnablementUpdates {
+                systemLiveActivitiesEnabled = enabled
+            }
+        }
     }
 
-    private var footer: String {
-        let base = "HealthComp only sends match moments, like lead changes and results. To mute someone, open your match with them."
-        return settings.authorization?.permitsNotifications == true
-            ? base + " Turn them off in iOS Settings."
-            : base
+    private func choiceSection(
+        _ title: String,
+        _ choices: [CompetitionNotificationChoice]
+    ) -> some View {
+        Section {
+            ForEach(choices, id: \.self) { choice in
+                NotificationChoiceToggle(choice: choice, changed: settings.choicesChanged)
+                    .disabled(choice == .liveActivity && !liveActivitiesEnabled)
+                if choice == .liveActivity && !liveActivitiesEnabled {
+                    Text("Live Activities are off for HealthComp in iOS Settings.")
+                        .foregroundStyle(Theme.secondary)
+                    Button("Open Settings") {
+                        openURL(URL(string: UIApplication.openSettingsURLString)!)
+                    }
+                    .frame(minHeight: 44)
+                    // The status section has its own Open Settings; VoiceOver
+                    // tells them apart.
+                    .accessibilityLabel("Open Settings for Live Activities")
+                    .accessibilityIdentifier("account.notifications.live-activity.settings")
+                }
+            }
+        } header: {
+            SectionLabel(title)
+        }
+        .listRowBackground(Theme.panel)
     }
 
     private var openSettingsButton: some View {
@@ -698,9 +739,14 @@ private struct AccountNotificationsPage: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            Button("Unmute") { settings.unmute(person.id) }
+            // The frame sits inside the label so the tap area, not just the
+            // layout, stays 44pt at the smallest text sizes.
+            Button { settings.unmute(person.id) } label: {
+                Text("Unmute")
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(Rectangle())
+            }
                 .buttonStyle(.borderless)
-                .frame(minHeight: 44)
                 .disabled(settings.mutesInFlight.contains(person.id))
                 .accessibilityLabel("Unmute \(person.name)")
                 .accessibilityIdentifier("account.notifications.unmute")
@@ -708,6 +754,26 @@ private struct AccountNotificationsPage: View {
     }
 
 
+}
+
+private struct NotificationChoiceToggle: View {
+    let choice: CompetitionNotificationChoice
+    let changed: () -> Void
+    @AppStorage private var isOn: Bool
+
+    init(choice: CompetitionNotificationChoice, changed: @escaping () -> Void) {
+        self.choice = choice
+        self.changed = changed
+        _isOn = AppStorage(wrappedValue: true, choice.storageKey)
+    }
+
+    var body: some View {
+        Toggle(choice.title, isOn: $isOn)
+            // Q-notifs-5: the page's ink tint hides the thumb in dark mode.
+            .tint(Color(uiColor: .systemGreen))
+            .onChange(of: isOn) { changed() }
+            .accessibilityIdentifier("account.notifications.choice.\(choice.rawValue)")
+    }
 }
 
 private struct AccountPrivacyPage: View {

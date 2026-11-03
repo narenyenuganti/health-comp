@@ -20,7 +20,9 @@ extension CompetitionClient {
             installationEnvironment: installationEnvironment,
             appAttestServiceFactory: { DeviceCheckAppAttestClient() },
             notificationPreferencesFactory: { _ in
-                .remote(remoteAPI: remoteAPI)
+                var preferences = CompetitionNotificationPreferencesClient.remote(remoteAPI: remoteAPI)
+                preferences.switchedOff = { CompetitionNotificationChoice.switchedOff() }
+                return preferences
             },
             observerDeliveryReceiptFactory: { paths in
                 .live(directory: paths.observerDeliveryDirectory)
@@ -169,6 +171,9 @@ extension CompetitionClient {
                 try await coordinator.remote {
                     try await $0.nudgeCompetitionParticipant(id.rawValue)
                 }
+            },
+            setReaction: { id, target, kind in
+                try await coordinator.setReaction(id, target, kind)
             },
             startPractice: { await coordinator.startPractice($0) }
         )
@@ -449,6 +454,8 @@ private actor RemoteCompetitionClientCoordinator {
     private var lastMaterializations: [CompetitionID: RemoteCompetitionMaterialization] = [:]
     /// The last challenge list; kept when a refresh can't load it.
     private var latestChallenges = CompetitionChallengeList.empty
+    /// The last reaction list; kept when a refresh can't load it.
+    private var latestReactions: [CompetitionReactionRecord] = []
     private var hasStarted = false
     private var isStopped = false
     private var healthAuthorizationIssue: CompetitionClientIssue?
@@ -532,6 +539,7 @@ private actor RemoteCompetitionClientCoordinator {
                 self.publicationRevision = 0
                 self.latestPublication = nil
                 self.latestChallenges = .empty
+                self.latestReactions = []
                 self.hasStarted = false
                 self.isStopped = false
                 let installationStore = CompetitionInstallationStateStore(
@@ -600,7 +608,8 @@ private actor RemoteCompetitionClientCoordinator {
                             remoteAPI: remoteAPI,
                             registration: pushRegistrationClient,
                             store: installationStore,
-                            environment: installationEnvironment
+                            environment: installationEnvironment,
+                            mutedPushKinds: { CompetitionNotificationChoice.mutedPushKinds() }
                         )
                     self.installationCoordinator = installationCoordinator
                     try await installationCoordinator.start()
@@ -644,6 +653,7 @@ private actor RemoteCompetitionClientCoordinator {
                     hub = nil
                     latestPublication = nil
                     latestChallenges = .empty
+                    latestReactions = []
                     publicationRevision = 0
                     hasStarted = false
                     isStopped = true
@@ -729,6 +739,7 @@ private actor RemoteCompetitionClientCoordinator {
             hub = nil
             latestPublication = nil
             latestChallenges = .empty
+            latestReactions = []
             publicationRevision = 0
             hasStarted = false
             isStopped = true
@@ -805,6 +816,9 @@ private actor RemoteCompetitionClientCoordinator {
         if let challenges = try? await remoteAPI.listChallenges() {
             latestChallenges = challenges
         }
+        if let reactions = try? await remoteAPI.listReactions() {
+            latestReactions = reactions
+        }
         for failure in outcome.failures {
             failure.failure.recordRefreshDiagnostic()
         }
@@ -841,6 +855,8 @@ private actor RemoteCompetitionClientCoordinator {
             guard terminalTeardown == nil else { return }
             await notificationCoordinator.reconcileLatest()
             await liveActivities?.reconcileLatest()
+            // Re-registers only when the token or switched-off push kinds changed.
+            await installationCoordinator?.reconcile()
         }
     }
 
@@ -1051,6 +1067,50 @@ private actor RemoteCompetitionClientCoordinator {
         }
     }
 
+    /// Saves your reaction, then republishes the last inputs with it (no
+    /// network beyond the RPC). The realtime wakeup that follows reconciles
+    /// and replaces this row with the server's.
+    func setReaction(
+        _ id: CompetitionID,
+        _ target: CompetitionReactionTarget,
+        _ kind: CompetitionReactionKind?
+    ) async throws -> CompetitionPublication {
+        try await withCancellableOperationGate {
+            guard terminalTeardown == nil else {
+                throw EnvironmentSignalOwnershipError.activeOwnerNotRetired
+            }
+            guard runtime != nil, let profile, let inputs = lastPublishInputs else {
+                throw CompetitionRemoteFailure.unauthenticated
+            }
+            try await remoteAPI.setReaction(
+                CompetitionReactionRequest(competitionID: id.rawValue, target: target, kind: kind)
+            )
+            let now = await environment.context().instant.wallDate
+            latestReactions.removeAll {
+                $0.competitionID == id.rawValue && $0.target == target
+                    && $0.authorProfileID == profile.id
+            }
+            if let kind {
+                latestReactions.insert(
+                    CompetitionReactionRecord(
+                        competitionID: id.rawValue,
+                        target: target,
+                        authorProfileID: profile.id,
+                        kind: kind,
+                        updatedAt: now
+                    ),
+                    at: 0
+                )
+            }
+            return await publish(
+                materializations: inputs.materializations,
+                profile: profile,
+                issues: inputs.issues,
+                knownCompetitionIDs: inputs.knownCompetitionIDs
+            )
+        }
+    }
+
     private func publication(
         adding issue: CompetitionClientIssue
     ) -> CompetitionPublication {
@@ -1177,6 +1237,7 @@ private actor RemoteCompetitionClientCoordinator {
             hub = nil
             latestPublication = nil
             latestChallenges = .empty
+            latestReactions = []
             publicationRevision = 0
             hasStarted = false
             router.finishCurrent()
@@ -1508,6 +1569,7 @@ private actor RemoteCompetitionClientCoordinator {
         boundaryTask = nil
         lastPublishInputs = nil
         latestChallenges = .empty
+        latestReactions = []
         if stoppedTasks.realtime != nil {
             await realtimeClient.stop()
         }
@@ -1829,7 +1891,8 @@ private actor RemoteCompetitionClientCoordinator {
                 profile: profile,
                 context: context,
                 issues: Self.deduplicated(issues + practiceIssues),
-                challenges: latestChallenges
+                challenges: latestChallenges,
+                reactions: latestReactions
             ).addingPractice(
                 LocalCompetitionProjector.practicePresentations(
                     journals: practiceJournals,
@@ -2013,15 +2076,28 @@ enum RemoteCompetitionProjector {
         profile: AuthenticatedProfile,
         context: CompetitionEnvironmentContext,
         issues: [CompetitionClientIssue],
-        challenges: CompetitionChallengeList = .empty
+        challenges: CompetitionChallengeList = .empty,
+        reactions: [CompetitionReactionRecord] = []
     ) -> CompetitionDashboard {
-        let materialized = materializations.compactMap {
-            presentation(
-                from: $0,
+        let reactionsByMatch = Dictionary(grouping: reactions, by: \.competitionID)
+        let materialized = materializations.compactMap { materialization in
+            var item = presentation(
+                from: materialization,
                 profile: profile,
                 context: context,
                 closesLapsedChallenges: true
             )
+            item?.reactions = (reactionsByMatch[materialization.descriptor.competitionID] ?? [])
+                .map {
+                    CompetitionReaction(
+                        target: $0.target,
+                        kind: $0.kind,
+                        isFromYou: $0.authorProfileID == profile.id,
+                        updatedAt: $0.updatedAt
+                    )
+                }
+                .sorted { $0.updatedAt > $1.updatedAt }
+            return item
         }
         let all = (materialized + challengePresentations(
             challenges,
@@ -2163,7 +2239,8 @@ enum RemoteCompetitionProjector {
             emissionHistory: materialization.journal.projection
                 .notificationEmissions,
             evaluatedAt: context.instant.wallDate,
-            timeZoneIdentifier: projected.timeZoneIdentifier
+            timeZoneIdentifier: projected.timeZoneIdentifier,
+            whatItTakes: competitionWhatItTakes(projected)
         )
     }
 
@@ -2234,7 +2311,10 @@ enum RemoteCompetitionProjector {
             emissionHistory: projection.notificationEmissions,
             evaluatedAt: baseline.evaluatedAt,
             timeZoneIdentifier: schedule?.calendar.timeZoneIdentifier
-                ?? baseline.timeZoneIdentifier
+                ?? baseline.timeZoneIdentifier,
+            // No owner activity here; currentDayOrdinal comes from the same
+            // evaluatedAt, so the reminder's day check still holds.
+            whatItTakes: baseline.whatItTakes
         )
     }
 

@@ -429,6 +429,8 @@ final class MultiUserCompetitionUITests: XCTestCase {
         former.tap()
         XCTAssertTrue(app.navigationBars["Former competitor"].waitForExistence(timeout: 3))
         scrollToElement(share)
+        // The reaction panel pushes Share Result under the pinned Rematch.
+        app.scrollViews.firstMatch.swipeUp()
         share.tap()
         XCTAssertTrue(card.waitForExistence(timeout: 5))
         XCTAssertEqual(
@@ -463,6 +465,163 @@ final class MultiUserCompetitionUITests: XCTestCase {
         )
         attachScreenshot("remote-recap-Dark-accessibility5")
         app.buttons["Close"].tap()
+    }
+
+    func testReactionsOnHomeMatchDayDrawerAndResult() throws {
+        launch(.sharing)
+        XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 8))
+
+        let jordan = sharingCard(state: "active", name: "Jordan")
+        scrollToElement(jordan)
+        XCTAssertTrue(jordan.label.contains("Jordan reacted to your Day 2"), jordan.label)
+        attachScreenshot("reactions-home")
+        jordan.tap()
+        XCTAssertTrue(app.navigationBars["Jordan"].waitForExistence(timeout: 3))
+
+        let latest = element("competition.reaction.latest")
+        XCTAssertTrue(latest.waitForExistence(timeout: 3))
+        XCTAssertEqual(latest.label, "Huffing. Jordan reacted to your Day 2")
+        attachScreenshot("reactions-match-latest")
+        latest.tap()
+        XCTAssertTrue(app.staticTexts["Day 2"].waitForExistence(timeout: 3))
+        let received = element("competition.reaction.received")
+        XCTAssertTrue(received.waitForExistence(timeout: 3))
+        XCTAssertEqual(received.label, "Huffing. Jordan reacted to your Day 2")
+        attachScreenshot("reactions-day-2-drawer")
+        app.buttons["Close"].firstMatch.tap()
+        XCTAssertTrue(received.waitForNonExistence(timeout: 3))
+
+        showWeek()
+        let dayThree = app.descendants(matching: .any)["competition.day.3"]
+        scrollToElement(dayThree)
+        dayThree.tap()
+        let fire = app.buttons["competition.react.fire"]
+        XCTAssertTrue(fire.waitForExistence(timeout: 3))
+        XCTAssertTrue(text("REACT TO JORDAN’S DAY").exists)
+        XCTAssertTrue(text("Jordan sees your reaction on this day.").exists)
+        XCTAssertFalse(fire.isSelected)
+        fire.tap()
+        XCTAssertTrue(
+            waitForSelected(fire, true),
+            "Fire is selected after the first tap"
+        )
+        attachScreenshot("reactions-day-3-drawer")
+        try app.performAccessibilityAudit(
+            for: XCUIAccessibilityAuditType.textClipped
+                .union(.hitRegion)
+                .union(.sufficientElementDescription)
+        )
+        fire.tap()
+        XCTAssertTrue(
+            waitForSelected(fire, false),
+            "The same preset again removes it"
+        )
+        app.buttons["Close"].firstMatch.tap()
+        XCTAssertTrue(fire.waitForNonExistence(timeout: 3))
+
+        // Leaving the match marks Jordan's reaction seen.
+        navigateBackToSharing()
+        let jordanAfter = sharingCard(state: "active", name: "Jordan")
+        XCTAssertTrue(jordanAfter.waitForExistence(timeout: 3))
+        XCTAssertFalse(jordanAfter.label.contains("reacted"), jordanAfter.label)
+
+        // Morgan's archived week, from History.
+        openHistory()
+        let morganRecord = record(named: "Morgan")
+        scrollToElement(morganRecord)
+        morganRecord.tap()
+        XCTAssertTrue(app.navigationBars["Morgan"].waitForExistence(timeout: 3))
+        let morganWeek = element("competition.sharing.archived.a1000000-0000-4000-8000-000000000004")
+        scrollToElement(morganWeek)
+        morganWeek.tap()
+        let panel = element("competition.result.react")
+        XCTAssertTrue(panel.waitForExistence(timeout: 3))
+        let morganReceived = element("competition.reaction.received")
+        XCTAssertEqual(morganReceived.label, "Clap. Morgan reacted to the result")
+        let clap = app.buttons["competition.react.clap"]
+        scrollToElement(clap)
+        clap.tap()
+        XCTAssertTrue(waitForSelected(clap, true))
+        attachScreenshot("reactions-result-morgan")
+
+        // A deleted account can't be reacted to, but its reaction still shows.
+        launch(.sharing)
+        XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 8))
+        let former = sharingCard(state: "completed", name: "Former competitor")
+        scrollToElement(former)
+        XCTAssertTrue(
+            former.label.contains("Former competitor reacted to the result"),
+            former.label
+        )
+        former.tap()
+        XCTAssertTrue(app.navigationBars["Former competitor"].waitForExistence(timeout: 3))
+        let formerReceived = element("competition.reaction.received")
+        XCTAssertTrue(formerReceived.waitForExistence(timeout: 3))
+        XCTAssertEqual(formerReceived.label, "Salute. Former competitor reacted to the result")
+        XCTAssertFalse(app.buttons["competition.react.clap"].exists)
+        attachScreenshot("reactions-result-former")
+    }
+
+    func testReactionPickerFitsAtAccessibility5() throws {
+        launch(
+            .sharing,
+            appearanceArguments: [
+                "-AppleInterfaceStyle", "Light",
+                "-UIPreferredContentSizeCategoryName",
+                "UICTContentSizeCategoryAccessibilityXXXL",
+                "-UIAccessibilityReduceMotionEnabled", "YES",
+            ]
+        )
+        XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 8))
+        let jordan = sharingCard(state: "active", name: "Jordan")
+        scrollToElement(jordan)
+        jordan.tap()
+        XCTAssertTrue(app.navigationBars["Jordan"].waitForExistence(timeout: 3))
+        showWeek()
+        let dayThree = app.descendants(matching: .any)["competition.day.3"]
+        scrollToElement(dayThree)
+        dayThree.tap()
+
+        // Drag the title to the top to reach .large, then scroll the drawer
+        // itself (the scroll view holding the chips, not the page behind
+        // it) in short drags until the last chip is fully on screen.
+        let title = app.staticTexts["Day 3"]
+        XCTAssertTrue(title.waitForExistence(timeout: 3))
+        title.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(
+            forDuration: 0.1,
+            thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.05))
+        )
+        let salute = app.buttons["competition.react.salute"]
+        XCTAssertTrue(salute.waitForExistence(timeout: 3))
+        let drawer = app.scrollViews
+            .containing(.button, identifier: "competition.react.salute").firstMatch
+        for _ in 0..<8 {
+            if salute.isHittable, app.frame.contains(salute.frame) { break }
+            drawer.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7)).press(
+                forDuration: 0.05,
+                thenDragTo: drawer.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)),
+                withVelocity: .slow,
+                thenHoldForDuration: 0.2
+            )
+        }
+        attachScreenshot("reactions-day-3-drawer-ax5")
+        for kind in ["clap", "fire", "huffing", "salute"] {
+            XCTAssertTrue(app.buttons["competition.react.\(kind)"].isHittable, kind)
+        }
+        // No .dynamicType audit: it flags different elements on different runs.
+        try app.performAccessibilityAudit(
+            for: XCUIAccessibilityAuditType.textClipped
+                .union(.hitRegion)
+                .union(.sufficientElementDescription)
+        )
+    }
+
+    private func waitForSelected(_ element: XCUIElement, _ isSelected: Bool) -> Bool {
+        let expectation = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "isSelected == %@", NSNumber(value: isSelected)),
+            object: element
+        )
+        return XCTWaiter.wait(for: [expectation], timeout: 3) == .completed
     }
 
     func testPracticeMatchStartsFromEmptyHomeAndEndsFromTheMenu() throws {
@@ -1362,16 +1521,14 @@ final class MultiUserCompetitionUITests: XCTestCase {
         notifications.tap()
         XCTAssertTrue(app.navigationBars["Notifications"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.staticTexts["Turned off in iOS Settings"].exists)
-        let mutedHeader = app.staticTexts["MUTED"]
-        XCTAssertTrue(mutedHeader.exists)
+        XCTAssertTrue(app.staticTexts["DURING A MATCH"].exists)
         // The remote suite's audit set. `.dynamicType` flags a different
         // List element on each run here (header, name, initial), so it's
         // left to the local suite's single-screen audit, as elsewhere.
-        try app.performAccessibilityAudit(
-            for: XCUIAccessibilityAuditType.textClipped
-                .union(.hitRegion)
-                .union(.sufficientElementDescription)
-        )
+        let audit = XCUIAccessibilityAuditType.textClipped
+            .union(.hitRegion)
+            .union(.sufficientElementDescription)
+        try auditNotificationsPage(audit)
 
         app.buttons["account.notifications.settings"].tap()
         XCTAssertTrue(
@@ -1379,11 +1536,103 @@ final class MultiUserCompetitionUITests: XCTestCase {
                 .waitForExistence(timeout: 3)
         )
 
+        // Seven switches, all on by default, in page order.
+        let rows: [(String, String)] = [
+            ("lead-change", "Lead changes"), ("close-score", "Close scores"),
+            ("what-it-takes", "What it takes"), ("final-day", "Last day"), ("live-activity", "Live Activity"),
+            ("reaction", "Reactions"), ("nudge", "Nudges"),
+        ]
+        for (raw, label) in rows {
+            let toggle = app.switches["account.notifications.choice.\(raw)"].firstMatch
+            scrollToElement(toggle)
+            XCTAssertTrue(toggle.exists, raw)
+            XCTAssertEqual(toggle.label, label)
+        }
+        XCTAssertTrue(app.staticTexts["FROM THE OTHER PERSON"].exists)
+
+        // The fixture has Live Activities off in iOS.
+        let liveActivity = app.switches["account.notifications.choice.live-activity"].firstMatch
+        scrollToElement(liveActivity)
+        XCTAssertFalse(liveActivity.isEnabled)
+        XCTAssertTrue(app.staticTexts["Live Activities are off for HealthComp in iOS Settings."].exists)
+        let liveActivitySettings = app.buttons["account.notifications.live-activity.settings"]
+        scrollToElement(liveActivitySettings)
+        XCTAssertTrue(liveActivitySettings.isHittable)
+        liveActivitySettings.tap()
+        XCTAssertTrue(
+            app.staticTexts[UIApplication.openSettingsURLString]
+                .waitForExistence(timeout: 3)
+        )
+
+        // Flip one and back, so reruns start clean.
+        let leadChanges = app.switches["account.notifications.choice.lead-change"].firstMatch
+        scrollToElement(leadChanges)
+        let before = leadChanges.value as? String
+        flip(leadChanges)
+        XCTAssertNotEqual(leadChanges.value as? String, before)
+        attachScreenshot("notification-choices")
+        flip(leadChanges)
+        XCTAssertEqual(leadChanges.value as? String, before)
+
+        let mutedHeader = app.staticTexts["MUTED"]
+        scrollToElement(mutedHeader)
+        XCTAssertTrue(mutedHeader.exists)
+        try auditNotificationsPage(audit)
+
         let unmute = app.buttons["Unmute Hermes"]
         XCTAssertTrue(unmute.exists)
         unmute.tap()
         XCTAssertTrue(mutedHeader.waitForNonExistence(timeout: 3))
         XCTAssertFalse(app.buttons["account.notifications.unmute"].exists)
+    }
+
+    /// The switch rows report "Text clipped" with no element on iOS 18 (one
+    /// per enabled `Toggle` on screen). XCTest can't locate those, so they're
+    /// attached and skipped, as in BlockChallengerUITests; the AX5 captures in
+    /// `testNotificationChoicesCaptureLightDarkAndAX5` are checked by eye.
+    private func auditNotificationsPage(_ audit: XCUIAccessibilityAuditType) throws {
+        try XCTContext.runActivity(named: "audit notifications") { activity in
+            try app.performAccessibilityAudit(for: audit) { issue in
+                guard issue.element == nil, issue.auditType == .textClipped else { return false }
+                activity.add(XCTAttachment(string: "skipped: \(issue.detailedDescription)"))
+                return true
+            }
+        }
+    }
+
+    /// Not in CI: preview captures of Account → Notifications with one switch
+    /// off, light and dark at XS, and light at AX5 (top and bottom).
+    func testNotificationChoicesCaptureLightDarkAndAX5() {
+        let cases = [
+            ("light-xs", "Light", "UICTContentSizeCategoryXS"),
+            ("dark-xs", "Dark", "UICTContentSizeCategoryXS"),
+            ("light-default", "Light", "UICTContentSizeCategoryL"),
+            ("light-ax5", "Light", "UICTContentSizeCategoryAccessibilityXXXL"),
+        ]
+        for (name, appearance, size) in cases {
+            launch(.account, appearanceArguments: [
+                "-AppleInterfaceStyle", appearance,
+                "-UIPreferredContentSizeCategoryName", size,
+            ])
+            XCTAssertTrue(app.navigationBars["Account"].waitForExistence(timeout: 8))
+            let notifications = element("account.notifications")
+            scrollToElement(notifications)
+            notifications.tap()
+            XCTAssertTrue(app.navigationBars["Notifications"].waitForExistence(timeout: 3))
+            let closeScores = app.switches["account.notifications.choice.close-score"].firstMatch
+            scrollToElement(closeScores)
+            // An interrupted earlier run can leave it off already.
+            if closeScores.value as? String != "0" { flip(closeScores) }
+            XCTAssertEqual(closeScores.value as? String, "0")
+            attachScreenshot("notification-choices-\(name)")
+            flip(closeScores)
+            XCTAssertEqual(closeScores.value as? String, "1")
+            let nudges = app.switches["account.notifications.choice.nudge"].firstMatch
+            scrollToElement(nudges)
+            XCTAssertTrue(nudges.exists)
+            attachScreenshot("notification-choices-\(name)-bottom")
+            app.terminate()
+        }
     }
 
     func testHealthPageOpensSettings() {
@@ -1703,20 +1952,30 @@ final class MultiUserCompetitionUITests: XCTestCase {
             attachment.lifetime = .keepAlways
             add(attachment)
         }
+        // At AX5 a Recent results row with a reaction line is taller than
+        // the screen; then its top (and so its centre) must be in view.
+        func isRevealed(_ viewport: CGRect, _ frame: CGRect) -> Bool {
+            frame.height <= viewport.height
+                ? viewport.contains(frame)
+                : frame.minY >= viewport.minY && frame.midY < viewport.maxY - 22
+        }
         for iteration in 0..<6 {
             let viewport = visibleRemoteScrollFrame(scrollView)
             XCTAssertGreaterThan(viewport.height, 0)
             let elementFrame = element.frame
             geometry.append("iteration=\(iteration); viewport=\(viewport); element=\(elementFrame)")
-            if viewport.contains(elementFrame) {
+            if isRevealed(viewport, elementFrame) {
                 attachGeometry()
                 return
             }
+            let targetY = elementFrame.height <= viewport.height
+                ? elementFrame.midY
+                : elementFrame.minY + viewport.height / 2 - 16
             // Drag by the distance to centre, in the drag's own units. A
             // fixed 8% minimum (about 44pt after touch slop) could step back
             // and forth across a window narrower than that, e.g. a 584pt card
             // in a 627pt viewport; touch slop keeps each move short of centre.
-            let offset = (elementFrame.midY - viewport.midY) / scrollView.frame.height
+            let offset = (targetY - viewport.midY) / scrollView.frame.height
             let distance = min(0.35, max(0.03, abs(offset)))
             let startY = offset > 0 ? 0.7 : 0.3
             let endY = startY + (offset > 0 ? -distance : distance)
@@ -1737,7 +1996,7 @@ final class MultiUserCompetitionUITests: XCTestCase {
         geometry.append("final viewport=\(visibleRemoteScrollFrame(scrollView)); element=\(element.frame)")
         attachGeometry()
         XCTAssertTrue(
-            visibleRemoteScrollFrame(scrollView).contains(element.frame),
+            isRevealed(visibleRemoteScrollFrame(scrollView), element.frame),
             "The full element must be visible before interacting. "
                 + "viewport=\(visibleRemoteScrollFrame(scrollView)); element=\(element.frame)"
         )
@@ -2055,6 +2314,17 @@ final class MultiUserCompetitionUITests: XCTestCase {
         let item = app.buttons[title]
         XCTAssertTrue(item.waitForExistence(timeout: 3))
         item.tap()
+    }
+
+    /// A `Toggle` in a `List` exposes a row-wide switch; a tap at its center
+    /// can land on the label, so tap the inner switch or the trailing edge.
+    private func flip(_ toggle: XCUIElement) {
+        let knob = toggle.switches.firstMatch
+        if knob.exists {
+            knob.tap()
+        } else {
+            toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.93, dy: 0.5)).tap()
+        }
     }
 
     private func scrollToElement(_ element: XCUIElement) {

@@ -33,6 +33,8 @@ struct CompetitionSharingView: View {
 
     // ponytail: in-memory, a dismissed row returns after relaunch within its 24 h; persist per profile if that annoys
     @State private var dismissedChallengeIDs: Set<CompetitionID> = []
+    @AppStorage(CompetitionReactionsSeen.storageKey)
+    private var reactionsSeen = CompetitionReactionsSeen()
 
     @Environment(\.locale) private var locale
     @Environment(\.timeZone) private var timeZone
@@ -62,11 +64,12 @@ struct CompetitionSharingView: View {
                 if let hero = layout.hero {
                     let belt = beltGoingIn(for: hero, in: records)
                     VStack(alignment: .leading, spacing: 12) {
-                        competitionButton(hero, caption: beltStanding(belt, hero)) {
+                        competitionButton(hero, caption: homeCaption(beltStanding(belt, hero), hero)) {
                             CompetitionHeroCard(
                                 competition: hero,
                                 source: publication.source,
-                                belt: belt
+                                belt: belt,
+                                reaction: unseen(hero)
                             )
                         }
                         .buttonStyle(CompetitionPressButtonStyle())
@@ -82,13 +85,14 @@ struct CompetitionSharingView: View {
                                 VStack(alignment: .leading, spacing: 12) {
                                     competitionButton(
                                         competition,
-                                        caption: beltStanding(belt, competition)
+                                        caption: homeCaption(beltStanding(belt, competition), competition)
                                     ) {
                                         CompetitionHeroCard(
                                             competition: competition,
                                             source: publication.source,
                                             isCompact: true,
-                                            belt: belt
+                                            belt: belt,
+                                            reaction: unseen(competition)
                                         )
                                     }
                                     .buttonStyle(CompetitionPressButtonStyle())
@@ -221,6 +225,23 @@ struct CompetitionSharingView: View {
         }
     }
 
+    private func unseen(_ competition: LocalCompetitionPresentation) -> CompetitionReaction? {
+        competitionUnseenReaction(competition, seen: reactionsSeen)
+    }
+
+    /// VoiceOver only: the visible caption (or belt standing), then the
+    /// unseen reaction.
+    private func homeCaption(
+        _ caption: String?,
+        _ competition: LocalCompetitionPresentation
+    ) -> String? {
+        let reaction = unseen(competition).map {
+            competitionReactionAccessibilityText($0, opponentName: competition.opponentDisplayName)
+        }
+        let parts = [caption, reaction].compactMap { $0 }
+        return parts.isEmpty ? nil : parts.joined(separator: ". ")
+    }
+
     /// Matches drawn on Home carry their own problem line, so the banner
     /// leaves them out. A failed practice start shows on its sheet.
     private func attributedIDs(_ layout: CompetitionHomeLayout) -> Set<CompetitionID> {
@@ -296,11 +317,12 @@ struct CompetitionSharingView: View {
             label: "Archive. \(competition.opponentDisplayName). \(competitionHomeStatusLine(competition, locale: locale, timeZone: timeZone))",
             archive: { archive(competition.id) }
         ) {
-            competitionButton(competition, caption: caption) {
+            competitionButton(competition, caption: homeCaption(caption, competition)) {
                 CompetitionSharingRow(
                     competition: competition,
                     source: publication.source,
-                    caption: caption
+                    caption: caption,
+                    reaction: unseen(competition)
                 )
             }
             .buttonStyle(CompetitionRowButtonStyle())
@@ -485,6 +507,8 @@ private struct CompetitionHeroCard: View {
     let source: CompetitionPublicationSource
     var isCompact = false
     var belt: CompetitionBelt? = nil
+    /// An unseen reaction from the other person.
+    var reaction: CompetitionReaction? = nil
 
     @Environment(\.locale) private var locale
     @Environment(\.timeZone) private var timeZone
@@ -516,6 +540,14 @@ private struct CompetitionHeroCard: View {
                 days: competition.days,
                 currentDayOrdinal: competition.currentDayOrdinal
             )
+
+            if let reaction {
+                Divider().overlay(Theme.hairline)
+                CompetitionReactionLine(
+                    reaction: reaction,
+                    opponentName: competition.opponentDisplayName
+                )
+            }
 
             if let disclosure = competitionFixtureDisclosure(
                 source: source,
@@ -688,12 +720,30 @@ private struct CompetitionSharingRow: View {
     var showsName = true
     /// The person page marks the weeks the belt changed hands.
     var beltHolder: CompetitionBeltHolder? = nil
+    /// Recent results: an unseen reaction from the other person.
+    var reaction: CompetitionReaction? = nil
 
     @ScaledMetric(relativeTo: .headline) private var badgeSize: CGFloat = 40
     @Environment(\.locale) private var locale
     @Environment(\.timeZone) private var timeZone
 
     var body: some View {
+        // The reaction line sits under the row, so it never decides
+        // whether the score fits beside the name.
+        VStack(alignment: .leading, spacing: 10) {
+            rowContent
+            if let reaction {
+                CompetitionReactionLine(
+                    reaction: reaction,
+                    opponentName: competition.opponentDisplayName
+                )
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, minHeight: 76, alignment: .leading)
+    }
+
+    private var rowContent: some View {
         ViewThatFits(in: .horizontal) {
             HStack(spacing: 14) {
                 badge
@@ -726,8 +776,6 @@ private struct CompetitionSharingRow: View {
                 }
             }
         }
-        .padding(16)
-        .frame(maxWidth: .infinity, minHeight: 76, alignment: .leading)
     }
 
     @ViewBuilder

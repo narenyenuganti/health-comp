@@ -197,6 +197,8 @@ struct LocalCompetitionPresentation: Equatable, Identifiable, Sendable {
     let opponentUpdatedAt: Date?
     /// The finished match this challenge is a rematch of.
     var rematchParentID: CompetitionID?
+    /// Both people's reactions, newest first (real matches only).
+    var reactions: [CompetitionReaction] = []
 
     init(
         id: CompetitionID,
@@ -1391,7 +1393,8 @@ enum LocalCompetitionProjector {
             },
             emissionHistory: loaded.projection.notificationEmissions,
             evaluatedAt: context.instant.wallDate,
-            timeZoneIdentifier: context.timeZoneIdentifier
+            timeZoneIdentifier: context.timeZoneIdentifier,
+            whatItTakes: competitionWhatItTakes(projected)
         )
     }
 
