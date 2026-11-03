@@ -45,6 +45,9 @@ enum MultiUserCompetitionTestLabScenario:
     case whatItTakes = "what-it-takes"
     /// The final-day Live Activity's views, and a button that starts a real one.
     case liveActivity = "live-activity"
+    /// Account → Notifications through the real app root, with the real
+    /// installation coordinator registering against a stand-in server.
+    case notificationChoices = "notification-choices"
 }
 
 struct MultiUserCompetitionTestLabConfiguration: Equatable, Sendable {
@@ -178,6 +181,8 @@ struct MultiUserCompetitionTestLabRootView: View {
             MultiUserCompetitionNudgeTestLabView(source: .simulatedFixture)
         case .liveActivity:
             LiveActivityPreviewView()
+        case .notificationChoices:
+            MultiUserCompetitionNotificationChoicesTestLabView()
         }
     }
 }
@@ -480,7 +485,7 @@ private struct MultiUserCompetitionClaimTestLabView: View {
              .healthOnboarding, .healthOnboardingChallenge, .healthOnboardingClaim,
              .incomingChallenge, .block, .blockedAccount, .blockClaim,
              .nudge, .nudgeSimulated, .whatItTakes,
-             .liveActivity:
+             .liveActivity, .notificationChoices:
             .ready
         }
         _status = State(initialValue: initialStatus)
@@ -792,6 +797,168 @@ private final class MultiUserCompetitionBlockTestLabServer: @unchecked Sendable 
             }
             blocked.removeAll { $0.id == id }
         }
+    }
+}
+
+/// The block lab's Home and Account, with notifications allowed and the
+/// long-named challenger muted. Every switch starts on at launch. The real
+/// `CompetitionInstallationCoordinator` registers this iPhone's switched-off
+/// push kinds with `NotificationChoicesLabServer`, whose state shows under
+/// Home. A switch re-registers, and so does coming back to the app.
+private struct MultiUserCompetitionNotificationChoicesTestLabView: View {
+    @State private var mainStore: StoreOf<MainTabFeature>
+    @State private var accountStore: StoreOf<AccountFeature>
+    @State private var server: NotificationChoicesLabServer
+
+    /// Once per launch: SwiftUI may build this view more than once.
+    private static let switchesReset: Void = {
+        for choice in CompetitionNotificationChoice.allCases {
+            UserDefaults.standard.removeObject(forKey: choice.storageKey)
+        }
+    }()
+
+    init() {
+        typealias Fixtures = MultiUserCompetitionTestLabFixtures
+        _ = Self.switchesReset
+        let hub = LocalCompetitionPublicationHub()
+        let server = NotificationChoicesLabServer()
+        let directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("notification-choices-lab-\(UUID().uuidString)", isDirectory: true)
+        try? FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let installation = CompetitionInstallationCoordinator(
+            remoteAPI: server.api,
+            registration: CompetitionPushRegistrationClient(
+                register: {},
+                unregister: {},
+                latestToken: { String(repeating: "ab", count: 32) },
+                events: { AsyncStream { _ in } }
+            ),
+            store: CompetitionInstallationStateStore(
+                directory: directory,
+                fileProtection: JSONCompetitionEventStoreFileProtection { _, _ in }
+            ),
+            environment: .sandbox,
+            mutedPushKinds: { CompetitionNotificationChoice.mutedPushKinds() }
+        )
+        let revision = LockIsolated<UInt64>(0)
+        @Sendable func publish() -> LocalCompetitionPublication {
+            let publication = revision.withValue {
+                $0 += 1
+                return Fixtures.blockPublication(revision: $0, closed: [], rejected: [])
+            }
+            hub.publish(publication)
+            return publication
+        }
+        let muted = "remote-profile:v1:\(Fixtures.blockLongNameID.rawValue.uuidString.lowercased())"
+        var state = MainTabFeature.State()
+        state.competition.ownProfile = AuthenticatedProfile(
+            id: Fixtures.ownProfileID,
+            displayName: "Beta Alice"
+        )
+        _server = State(initialValue: server)
+        _mainStore = State(initialValue: Store(initialState: state) {
+            MainTabFeature()
+        } withDependencies: {
+            $0.competitionClient = CompetitionClient(
+                start: {
+                    let stream = hub.stream()
+                    _ = publish()
+                    Task { try? await installation.start() }
+                    return stream
+                },
+                updates: { hub.stream() },
+                reconcileAll: { _ in
+                    // As `performReconciliation`: a failed registration retries here.
+                    await installation.reconcile()
+                    return publish()
+                },
+                accept: { _ in publish() },
+                decline: { _ in publish() },
+                archive: { _ in publish() },
+                rematch: { _ in publish() },
+                reinvite: { publish() },
+                reconcileNotifications: { await installation.reconcile() },
+                loadMutedOpponentIdentities: { [muted] },
+                loadNotificationAuthorizationState: { .authorized },
+                waitUntil: { _ in },
+                stop: { hub.finish() }
+            )
+            $0.competitionRoutingClient = CompetitionRoutingClient(
+                routes: { AsyncStream { _ in } },
+                enqueue: { _ in },
+                consume: { _ in }
+            )
+            $0.permissionOnboardingClient = .inert
+            $0.date = .constant(Fixtures.labNow)
+        })
+        _accountStore = State(initialValue: Store(
+            initialState: AccountFeature.State(mode: .authenticated, displayName: "Beta Alice")
+        ) {
+            AccountFeature()
+        } withDependencies: {
+            $0.authenticationClient = .testValue
+        })
+    }
+
+    var body: some View {
+        AuthenticatedRootView(mainStore: mainStore, accountStore: accountStore)
+            .safeAreaInset(edge: .bottom) {
+                Text(server.summary)
+                    .font(.caption)
+                    .accessibilityIdentifier("multiuser.notification-choices.server")
+            }
+            .accessibilityIdentifier("multiuser.notification-choices.root")
+    }
+}
+
+/// What the installation row holds. Each registration takes 2.5 s, so a
+/// quick off and on lands while one is in flight. The first registration
+/// that switches Reactions off fails, as if offline.
+@MainActor @Observable
+private final class NotificationChoicesLabServer {
+    private(set) var mutedPushKinds: [String]?
+    private(set) var registrations = 0
+    private(set) var failures = 0
+
+    var summary: String {
+        let kinds = mutedPushKinds.map { $0.isEmpty ? "none" : $0.joined(separator: ", ") }
+            ?? "not registered"
+        return "Muted push kinds: \(kinds). Registrations: \(registrations). Failed: \(failures)."
+    }
+
+    func register(_ request: CompetitionInstallationRequest) async throws -> CompetitionInstallation {
+        try? await Task.sleep(for: .seconds(2.5))
+        registrations += 1
+        if request.mutedPushKinds.contains("reaction"), failures == 0 {
+            failures += 1
+            throw CompetitionRemoteFailure.operationFailed
+        }
+        mutedPushKinds = request.mutedPushKinds
+        return try CompetitionInstallation(
+            installationID: request.installationID,
+            environment: request.environment,
+            state: .active
+        )
+    }
+
+    nonisolated var api: CompetitionRemoteAPI {
+        let unused: @Sendable () throws -> Never = {
+            throw CompetitionRemoteFailure.operationFailed
+        }
+        return CompetitionRemoteAPI(
+            bootstrapProfile: { _ in try unused() },
+            updateProfile: { _ in try unused() },
+            listCompetitions: { try unused() },
+            fetchCompetition: { _ in try unused() },
+            createInvite: { _ in try unused() },
+            claimInvite: { _ in try unused() },
+            appendScoreRevision: { _ in try unused() },
+            submitAttestation: { _ in try unused() },
+            fetchChanges: { _, _ in try unused() },
+            registerInstallation: { [self] in try await self.register($0) },
+            removeInstallation: { _ in try unused() },
+            requestAccountDeletion: { try unused() }
+        )
     }
 }
 

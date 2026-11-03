@@ -532,14 +532,16 @@ actor CompetitionInstallationCoordinator {
     }
 
     private func enqueue(_ token: String) async {
-        guard Registration(token: token, mutedPushKinds: mutedPushKinds()) != registered
-        else { return }
         pendingToken = token
         guard !isDraining else { return }
         isDraining = true
         while let next = pendingToken {
             pendingToken = nil
-            await register(next)
+            // Compared here, not on arrival: while one is in flight,
+            // `registered` is still the one before it.
+            if Registration(token: next, mutedPushKinds: mutedPushKinds()) != registered {
+                await register(next)
+            }
         }
         isDraining = false
     }
