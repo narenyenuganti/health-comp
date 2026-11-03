@@ -26,6 +26,7 @@
 		143CC8DBED3C6C8014D2CA49 /* RemoteCompetitionRuntimeFailure.swift in Sources */ = {isa = PBXBuildFile; fileRef = DA25D1EA0C137C12BC7FE9A1 /* RemoteCompetitionRuntimeFailure.swift */; };
 		153576F1521F99A0DB91C2A8 /* remote-best-available-incomplete.json in Resources */ = {isa = PBXBuildFile; fileRef = 707D0C11F6133D4611BF36D7 /* remote-best-available-incomplete.json */; };
 		165F2A28D30436DC42532FEE /* AppAttestConfigurationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8EDFD1E45E20A6E1653DC561 /* AppAttestConfigurationTests.swift */; };
+		1B5FCCE1484029A378D91E34 /* ReactionsUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9CF6023F728B9C7AED6DE3B /* ReactionsUITests.swift */; };
 		1DBF19756261053C5D83FBCC /* SupabaseAuthKeychainStorage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 935DA75BD17C21F1EAC981CD /* SupabaseAuthKeychainStorage.swift */; };
 		1F1E059933150A061C760DD6 /* HealthCompApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D01015283BC66E2ECA9609D /* HealthCompApp.swift */; };
 		22078218974E42A03AB0BB92 /* LocalCompetitionClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 620B41081DED3A911320E1F0 /* LocalCompetitionClient.swift */; };
@@ -320,6 +321,7 @@
 		C4D8E971E96397AB14D983D3 /* DeviceCheckAppAttestClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceCheckAppAttestClient.swift; sourceTree = "<group>"; };
 		C552868F11DF18D3E8FB90CE /* RemoteCompetitionRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteCompetitionRuntime.swift; sourceTree = "<group>"; };
 		C80D29D0BD360D57164DC524 /* SupabaseCompetitionRemoteAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupabaseCompetitionRemoteAPI.swift; sourceTree = "<group>"; };
+		C9CF6023F728B9C7AED6DE3B /* ReactionsUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReactionsUITests.swift; sourceTree = "<group>"; };
 		CC3953ECC27C54F100565844 /* CompetitionDateFormatting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionDateFormatting.swift; sourceTree = "<group>"; };
 		CD89B1AAB2A4AC2FD5A8C159 /* AuthenticatedProfileStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthenticatedProfileStorage.swift; sourceTree = "<group>"; };
 		CF7DE04D723EFB17C6B0F55E /* HealthKitProviderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthKitProviderTests.swift; sourceTree = "<group>"; };
@@ -631,6 +633,7 @@
 				A1AAA11C718845811F2393C0 /* LocalCompetitionLifecycleUITests.swift */,
 				72D97B24F7398742C8358DD9 /* MultiUserCompetitionUITests.swift */,
 				9A4C98DA12380EB04E5228ED /* NudgeUITests.swift */,
+				C9CF6023F728B9C7AED6DE3B /* ReactionsUITests.swift */,
 				A260A0BE8484CFDCCC19C011 /* RecapCardUITests.swift */,
 				39AE399E36B3A5A5F3619501 /* WhatItTakesUITests.swift */,
 				3D899D441D791785E0E73B72 /* WidgetUITests.swift */,
@@ -862,6 +865,7 @@
 				8E965F238EEB7338E422F5C5 /* LocalCompetitionLifecycleUITests.swift in Sources */,
 				51EC8DDC48A29F9C45FDE1A3 /* MultiUserCompetitionUITests.swift in Sources */,
 				420BDF83FD49D9E754C1DB0C /* NudgeUITests.swift in Sources */,
+				1B5FCCE1484029A378D91E34 /* ReactionsUITests.swift in Sources */,
 				5034718BA65CD8D5F4AE2F0F /* RecapCardUITests.swift in Sources */,
 				BB8A276F99410E904AD6CF81 /* WhatItTakesUITests.swift in Sources */,
 				67F48B210B6A70F6BDDB5D41 /* WidgetUITests.swift in Sources */,
