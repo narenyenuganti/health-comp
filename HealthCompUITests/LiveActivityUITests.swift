@@ -44,8 +44,8 @@ final class LiveActivityUITests: XCTestCase {
 
         /// The Lock Screen card's VoiceOver label. Accessibility sizes drop
         /// the timing and the Updated line, as they do on screen.
-        func live(large: Bool = false) -> String {
-            ["Last day · \(name)", large || !timingFits ? nil : timing, youLabel, themLabel, lead, large ? nil : freshness]
+        func live(large: Bool = false, timingFits: Bool? = nil) -> String {
+            ["Last day · \(name)", large || !(timingFits ?? self.timingFits) ? nil : timing, youLabel, themLabel, lead, large ? nil : freshness]
                 .compactMap { $0 }.joined(separator: ", ")
         }
 
@@ -218,8 +218,11 @@ final class LiveActivityUITests: XCTestCase {
             showLockScreen()
             let card = springboardElement("Last day · \(sample.name)")
             XCTAssertTrue(card.waitForExistence(timeout: 10), "\(key)\n\(springboard.debugDescription)")
-            XCTAssertEqual(plain(card.label), sample.live(), key)
             shot("lock-live-\(key)")
+            // The Lock Screen card is a few points wider than the preview's,
+            // so a title that only just misses there may fit here.
+            XCTAssertTrue([sample.live(), sample.live(timingFits: true)].contains(plain(card.label)),
+                          "\(key): \(card.label)")
             XCUIDevice.shared.press(.home)
             sleep(2)
         }
