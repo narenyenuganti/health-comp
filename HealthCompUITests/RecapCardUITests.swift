@@ -462,6 +462,11 @@ final class RecapCardUITests: XCTestCase {
     private func openSheet(showing name: String? = nil) {
         let share = app.buttons["competition.result.share"]
         scrollToElement(share)
+        // The reaction panel can leave Share Result under the pinned Rematch.
+        let rematch = app.buttons["competition.rematch.create"]
+        for _ in 0..<3 where rematch.exists && share.frame.maxY > rematch.frame.minY {
+            app.scrollViews.firstMatch.swipeUp(velocity: .slow)
+        }
         share.tap()
         XCTAssertTrue(element("competition.recap.card").waitForExistence(timeout: 5))
         if let name {
