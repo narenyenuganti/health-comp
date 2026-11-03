@@ -590,7 +590,8 @@ final class MultiUserCompetitionUITests: XCTestCase {
         let salute = app.buttons["competition.react.salute"]
         for _ in 0..<6 {
             if salute.exists, salute.isHittable, app.frame.contains(salute.frame) { break }
-            title.exists ? title.swipeUp() : app.swipeUp()
+            // Once the title scrolls away, swipe the sheet, which covers the page.
+            title.isHittable ? title.swipeUp() : app.swipeUp()
         }
         for kind in ["clap", "fire", "huffing", "salute"] {
             XCTAssertTrue(app.buttons["competition.react.\(kind)"].isHittable, kind)
@@ -1723,20 +1724,30 @@ final class MultiUserCompetitionUITests: XCTestCase {
             attachment.lifetime = .keepAlways
             add(attachment)
         }
+        // At AX5 a Recent results row with a reaction line is taller than
+        // the screen; then its top (and so its centre) must be in view.
+        func isRevealed(_ viewport: CGRect, _ frame: CGRect) -> Bool {
+            frame.height <= viewport.height
+                ? viewport.contains(frame)
+                : frame.minY >= viewport.minY && frame.midY < viewport.maxY - 22
+        }
         for iteration in 0..<6 {
             let viewport = visibleRemoteScrollFrame(scrollView)
             XCTAssertGreaterThan(viewport.height, 0)
             let elementFrame = element.frame
             geometry.append("iteration=\(iteration); viewport=\(viewport); element=\(elementFrame)")
-            if viewport.contains(elementFrame) {
+            if isRevealed(viewport, elementFrame) {
                 attachGeometry()
                 return
             }
+            let targetY = elementFrame.height <= viewport.height
+                ? elementFrame.midY
+                : elementFrame.minY + viewport.height / 2 - 16
             // Drag by the distance to centre, in the drag's own units. A
             // fixed 8% minimum (about 44pt after touch slop) could step back
             // and forth across a window narrower than that, e.g. a 584pt card
             // in a 627pt viewport; touch slop keeps each move short of centre.
-            let offset = (elementFrame.midY - viewport.midY) / scrollView.frame.height
+            let offset = (targetY - viewport.midY) / scrollView.frame.height
             let distance = min(0.35, max(0.03, abs(offset)))
             let startY = offset > 0 ? 0.7 : 0.3
             let endY = startY + (offset > 0 ? -distance : distance)
@@ -1757,7 +1768,7 @@ final class MultiUserCompetitionUITests: XCTestCase {
         geometry.append("final viewport=\(visibleRemoteScrollFrame(scrollView)); element=\(element.frame)")
         attachGeometry()
         XCTAssertTrue(
-            visibleRemoteScrollFrame(scrollView).contains(element.frame),
+            isRevealed(visibleRemoteScrollFrame(scrollView), element.frame),
             "The full element must be visible before interacting. "
                 + "viewport=\(visibleRemoteScrollFrame(scrollView)); element=\(element.frame)"
         )
