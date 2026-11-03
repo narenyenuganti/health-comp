@@ -467,6 +467,69 @@ final class RemoteCompetitionClientTests: XCTestCase {
         await client.stop()
     }
 
+    private func waitForLiveActivityCheck(_ probe: LiveActivityProbe) async throws {
+        for _ in 0..<200 where probe.currentCalls == 0 {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+    }
+
+    func testPublishSubmitsToLiveActivitiesAndStopEndsThem() async throws {
+        let (profile, paths) = try widgetTestProfile()
+        let leftover = CompetitionLiveActivitySnapshot(
+            matchID: "82000000-0000-4000-8000-0000000000c1",
+            state: MatchActivityAttributes.ContentState(
+                phase: .live, title: "Last day", timing: nil, opponentName: "Sam",
+                userPoints: 10, opponentPoints: 9, freshness: nil
+            )
+        )
+        let probe = LiveActivityProbe(running: [leftover], started: [leftover.matchID])
+        // Discovery fails, so publish can't tell whether the match is gone
+        // and leaves the card: only stop() ends it.
+        let client = CompetitionClient.remote(
+            remoteAPI: remoteAPI(listCompetitions: { throw CompetitionRemoteFailure.operationFailed }),
+            environment: try environment(),
+            liveActivities: CompetitionLiveActivities(client: probe.client)
+        )
+
+        try await client.mountAuthenticatedProfile(profile, paths)
+        var iterator = client.start().makeAsyncIterator()
+        _ = await iterator.next()
+        try await waitForLiveActivityCheck(probe)
+        XCTAssertGreaterThan(probe.currentCalls, 0, "publish reached the Live Activity planner")
+        XCTAssertEqual(probe.ends, [])
+
+        await client.stop()
+        XCTAssertEqual(probe.ends, [leftover.matchID])
+        XCTAssertFalse(probe.started.contains(leftover.matchID))
+    }
+
+    func testRemountDoesNotEndLiveActivities() async throws {
+        let (profile, paths) = try widgetTestProfile()
+        let leftover = CompetitionLiveActivitySnapshot(
+            matchID: "82000000-0000-4000-8000-0000000000c2",
+            state: MatchActivityAttributes.ContentState(
+                phase: .live, title: "Last day", timing: nil, opponentName: "Sam",
+                userPoints: 10, opponentPoints: 9, freshness: nil
+            )
+        )
+        let probe = LiveActivityProbe(running: [leftover], started: [leftover.matchID])
+        let client = CompetitionClient.remote(
+            remoteAPI: remoteAPI(listCompetitions: { throw CompetitionRemoteFailure.operationFailed }),
+            environment: try environment(),
+            liveActivities: CompetitionLiveActivities(client: probe.client)
+        )
+
+        try await client.mountAuthenticatedProfile(profile, paths)
+        var iterator = client.start().makeAsyncIterator()
+        _ = await iterator.next()
+        try await client.mountAuthenticatedProfile(profile, paths)
+        var remounted = client.start().makeAsyncIterator()
+        _ = await remounted.next()
+
+        XCTAssertEqual(probe.ends, [], "a mount never ends the card the last process left")
+        await client.stop()
+    }
+
     func testStartRequestsHealthAuthorizationAndPublishesFailure()
         async throws
     {
