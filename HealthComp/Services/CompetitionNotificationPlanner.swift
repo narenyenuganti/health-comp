@@ -340,7 +340,8 @@ struct CompetitionNotificationPlanner: Sendable {
     func plan(
         _ snapshot: CompetitionNotificationPlanningSnapshot,
         authorization: CompetitionNotificationAuthorizationState,
-        mutedOpponentIdentities: Set<String>
+        mutedOpponentIdentities: Set<String>,
+        switchedOff: Set<CompetitionNotificationChoice> = []
     ) throws -> CompetitionNotificationPlan {
         guard snapshot.publicationRevision > 0 else {
             throw PlanningError.invalidPublicationRevision(
@@ -387,11 +388,12 @@ struct CompetitionNotificationPlanner: Sendable {
                 contentsOf: try scheduledRequests(
                     for: competition,
                     snapshot: snapshot
-                )
+                ).filter { !$0.message.family.isOff(in: switchedOff) }
             )
             let opportunity = try opportunisticPlan(
                 for: competition,
-                snapshot: snapshot
+                snapshot: snapshot,
+                switchedOff: switchedOff
             )
             decisions.append(contentsOf: opportunity.decisions)
             suppressions.append(contentsOf: opportunity.suppressions)
@@ -633,7 +635,8 @@ struct CompetitionNotificationPlanner: Sendable {
 
     private func opportunisticPlan(
         for competition: CompetitionNotificationCompetitionSnapshot,
-        snapshot: CompetitionNotificationPlanningSnapshot
+        snapshot: CompetitionNotificationPlanningSnapshot,
+        switchedOff: Set<CompetitionNotificationChoice>
     ) throws -> OpportunityPlan {
         let staleSuppressions = try staleSuppressionRecords(
             for: competition,
@@ -652,6 +655,17 @@ struct CompetitionNotificationPlanner: Sendable {
                 $0.record.semanticEventID
             )
         }
+        // Switched off: recorded silently, so turning it back on never posts a
+        // late one, and this match's slot goes to its next candidate.
+        // ponytail: reuse .superseded; add NotificationSuppressionReason.switchedOff
+        // in CompetitionCore if support needs to tell them apart.
+        let isOff = { CompetitionNotificationMessageFamily.opportunistic($0).isOff(in: switchedOff) }
+        for candidate in candidates where isOff(candidate.record.family) {
+            result.suppressions.append(
+                try suppressed(candidate.record, reason: .superseded, snapshot: snapshot)
+            )
+        }
+        candidates.removeAll { isOff($0.record.family) }
         // "600 today" posts once a day across matches; this match's slot goes
         // to its next candidate.
         if dailyMaximumRecordedInAnotherMatch(competition, snapshot: snapshot) {
@@ -704,7 +718,7 @@ struct CompetitionNotificationPlanner: Sendable {
             }
         }
         if result.decisions.isEmpty,
-           !staleSuppressions.isEmpty,
+           staleSuppressions.contains(where: { !isOff($0.family) }),
            maximum > 0,
            let catchUp = try catchUpDecision(
                for: competition,

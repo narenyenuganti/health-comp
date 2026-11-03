@@ -979,7 +979,8 @@ private struct MultiUserCompetitionAccountTestLabView: View {
                         isRequestInFlight: false,
                         request: {},
                         mutedPeople: muted,
-                        unmute: { id in muted.removeAll { $0.id == id } }
+                        unmute: { id in muted.removeAll { $0.id == id } },
+                        liveActivitiesEnabled: false
                     ),
                     health: AccountHealthSettings(
                         access: .requested,

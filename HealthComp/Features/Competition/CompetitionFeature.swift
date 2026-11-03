@@ -252,6 +252,7 @@ struct CompetitionFeature {
             CompetitionNotificationAuthorizationState
         )
         case enableNotificationsTapped
+        case notificationChoicesChanged
         case notificationAuthorizationRequestFinished(
             CompetitionNotificationAuthorizationState
         )
@@ -888,6 +889,13 @@ struct CompetitionFeature {
             case let .notificationAuthorizationLoaded(authorization):
                 state.notificationAuthorizationState = authorization
                 return .none
+
+            case .notificationChoicesChanged:
+                // Replans with the new switches, ends a switched-off Live
+                // Activity and re-registers the installation.
+                return .run { _ in
+                    await competitionClient.reconcileNotifications()
+                }
 
             case .enableNotificationsTapped:
                 guard state.notificationAuthorizationState

@@ -99,6 +99,9 @@ struct CompetitionNotificationPreferencesClient: Sendable {
         _ opponentIdentity: String,
         _ isMuted: Bool
     ) async throws -> Void
+    /// Families switched off on this iPhone (Account → Notifications). Empty by
+    /// default so tests and fixtures keep every family on.
+    var switchedOff: @Sendable () -> Set<CompetitionNotificationChoice> = { [] }
 
     static func live(
         fileURL: URL
@@ -172,5 +175,43 @@ enum RemoteCompetitionOpponentIdentity {
                 != "00000000-0000-0000-0000-000000000000"
         else { return nil }
         return profileID
+    }
+}
+
+/// What Account → Notifications can switch off. Results, challenges and
+/// challenge expiry have no case: they're always on. Stored per iPhone.
+enum CompetitionNotificationChoice: String, CaseIterable, Sendable {
+    case leadChange = "lead-change"
+    case closeScore = "close-score"
+    case finalDay = "final-day"
+    case liveActivity = "live-activity"
+    case reaction // raw value = server work kind (20261102002700)
+    case nudge // raw value = server work kind (20261101002500)
+
+    var title: String {
+        switch self {
+        case .leadChange: "Lead changes"
+        case .closeScore: "Close scores"
+        case .finalDay: "Last day"
+        case .liveActivity: "Live Activity"
+        case .reaction: "Reactions"
+        case .nudge: "Nudges"
+        }
+    }
+
+    /// Held back by the server, not the planner.
+    var isServerSent: Bool { self == .reaction || self == .nudge }
+
+    /// Persisted on devices: never rename a raw value.
+    var storageKey: String { "healthcomp.notifications." + rawValue }
+
+    /// A missing value means on.
+    static func switchedOff(in defaults: UserDefaults = .standard) -> Set<Self> {
+        Set(allCases.filter { defaults.object(forKey: $0.storageKey) as? Bool == false })
+    }
+
+    /// Sent with registration; sorted so equal sets encode equally.
+    static func mutedPushKinds(in defaults: UserDefaults = .standard) -> [String] {
+        switchedOff(in: defaults).filter(\.isServerSent).map(\.rawValue).sorted()
     }
 }

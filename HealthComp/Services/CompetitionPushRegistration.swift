@@ -431,11 +431,17 @@ actor CompetitionInstallationCoordinator {
     private let registration: CompetitionPushRegistrationClient
     private let store: CompetitionInstallationStateStore
     private let environment: CompetitionInstallationEnvironment
+    private let mutedPushKinds: @Sendable () -> [String]
+
+    struct Registration: Equatable {
+        let token: String
+        let mutedPushKinds: [String]
+    }
 
     private var eventTask: Task<Void, Never>?
     private var localState: CompetitionInstallationLocalState?
     private var pendingToken: String?
-    private var registeredToken: String?
+    private var registered: Registration?
     private var isDraining = false
     private var hasStarted = false
 
@@ -443,12 +449,14 @@ actor CompetitionInstallationCoordinator {
         remoteAPI: CompetitionRemoteAPI,
         registration: CompetitionPushRegistrationClient,
         store: CompetitionInstallationStateStore,
-        environment: CompetitionInstallationEnvironment
+        environment: CompetitionInstallationEnvironment,
+        mutedPushKinds: @escaping @Sendable () -> [String] = { [] }
     ) {
         self.remoteAPI = remoteAPI
         self.registration = registration
         self.store = store
         self.environment = environment
+        self.mutedPushKinds = mutedPushKinds
     }
 
     func start() async throws {
@@ -482,7 +490,7 @@ actor CompetitionInstallationCoordinator {
         task?.cancel()
         eventTask = nil
         pendingToken = nil
-        registeredToken = nil
+        registered = nil
         await task?.value
     }
 
@@ -524,7 +532,8 @@ actor CompetitionInstallationCoordinator {
     }
 
     private func enqueue(_ token: String) async {
-        guard token != registeredToken else { return }
+        guard Registration(token: token, mutedPushKinds: mutedPushKinds()) != registered
+        else { return }
         pendingToken = token
         guard !isDraining else { return }
         isDraining = true
@@ -536,11 +545,13 @@ actor CompetitionInstallationCoordinator {
     }
 
     private func register(_ token: String) async {
+        let kinds = mutedPushKinds()
         guard let state = localState,
               let request = try? CompetitionInstallationRequest(
                 installationID: state.installationID,
                 apnsToken: token,
-                environment: environment
+                environment: environment,
+                mutedPushKinds: kinds
               )
         else { return }
         do {
@@ -552,13 +563,13 @@ actor CompetitionInstallationCoordinator {
             else {
                 throw CompetitionRemoteFailure.serverContractMismatch
             }
-            registeredToken = token
+            self.registered = Registration(token: token, mutedPushKinds: kinds)
             localState = CompetitionInstallationLocalState(
                 installationID: state.installationID,
                 registrationAttempted: true
             )
         } catch {
-            registeredToken = nil
+            self.registered = nil
         }
     }
 }

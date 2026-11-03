@@ -1,3 +1,4 @@
+import ComposableArchitecture
 import Foundation
 import UIKit
 import XCTest
@@ -208,6 +209,39 @@ final class CompetitionPushRegistrationTests: XCTestCase {
         let requests = await remote.registrationRequests()
         XCTAssertEqual(requests.count, 2)
         XCTAssertEqual(requests.first, requests.last)
+        await coordinator.stopListening()
+    }
+
+    func testChangingMutedPushKindsReRegistersSameToken() async throws {
+        let root = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let token = String(repeating: "ab", count: 32)
+        let registration = PushRegistrationProbe(token: token)
+        let remote = RemoteInstallationProbe()
+        let kinds = LockIsolated<[String]>([])
+        let coordinator = CompetitionInstallationCoordinator(
+            remoteAPI: remote.api,
+            registration: registration.client,
+            store: CompetitionInstallationStateStore(
+                directory: root,
+                fileProtection: JSONCompetitionEventStoreFileProtection {
+                    _, _ in
+                }
+            ),
+            environment: .sandbox,
+            mutedPushKinds: { kinds.value }
+        )
+
+        try await coordinator.start()
+        await coordinator.reconcile()
+        let unchanged = await remote.registrationRequests()
+        XCTAssertEqual(unchanged.map(\.mutedPushKinds), [[]])
+
+        kinds.setValue(["nudge"])
+        await coordinator.reconcile()
+        let changed = await remote.registrationRequests()
+        XCTAssertEqual(changed.map(\.mutedPushKinds), [[], ["nudge"]])
+        XCTAssertEqual(Set(changed.map(\.apnsToken)), [token])
         await coordinator.stopListening()
     }
 

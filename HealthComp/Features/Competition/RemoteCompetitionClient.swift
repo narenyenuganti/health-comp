@@ -20,7 +20,9 @@ extension CompetitionClient {
             installationEnvironment: installationEnvironment,
             appAttestServiceFactory: { DeviceCheckAppAttestClient() },
             notificationPreferencesFactory: { _ in
-                .remote(remoteAPI: remoteAPI)
+                var preferences = CompetitionNotificationPreferencesClient.remote(remoteAPI: remoteAPI)
+                preferences.switchedOff = { CompetitionNotificationChoice.switchedOff() }
+                return preferences
             },
             observerDeliveryReceiptFactory: { paths in
                 .live(directory: paths.observerDeliveryDirectory)
@@ -592,7 +594,8 @@ private actor RemoteCompetitionClientCoordinator {
                             remoteAPI: remoteAPI,
                             registration: pushRegistrationClient,
                             store: installationStore,
-                            environment: installationEnvironment
+                            environment: installationEnvironment,
+                            mutedPushKinds: { CompetitionNotificationChoice.mutedPushKinds() }
                         )
                     self.installationCoordinator = installationCoordinator
                     try await installationCoordinator.start()
@@ -837,6 +840,8 @@ private actor RemoteCompetitionClientCoordinator {
             guard terminalTeardown == nil else { return }
             await notificationCoordinator.reconcileLatest()
             await liveActivities?.reconcileLatest()
+            // Re-registers only when the token or switched-off push kinds changed.
+            await installationCoordinator?.reconcile()
         }
     }
 
