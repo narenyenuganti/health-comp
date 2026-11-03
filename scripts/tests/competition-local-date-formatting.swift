@@ -63,6 +63,53 @@ struct CompetitionLocalDateFormattingChecks {
         expect(competitionRoundedParts([0.5, 0.5, 0.5], total: 1.5), [0, 1, 1])
         expect(competitionRoundedParts([], total: 0), [])
 
+        // Margins and leads (shared with the widget extension)
+        func margin(_ user: Double, _ opponent: Double, _ digits: Int) -> String? {
+            competitionMarginText(userPoints: user, opponentPoints: opponent, fractionDigits: digits, locale: us)
+        }
+        precondition(margin(3410.2, 3180, 0) == "Won by 230 points")
+        precondition(margin(3180, 3410.2, 0) == "Lost by 230 points")
+        precondition(margin(413, 412, 0) == "Won by 1 point")
+        precondition(margin(412.3, 412.0, 2) == "Won by 0.30 points")
+        precondition(margin(412, 412, 0) == nil)
+        precondition(margin(0.4, 0, 0) == nil)
+
+        func lead(_ user: Double, _ opponent: Double, locale: Locale = us) -> String {
+            competitionLeadSentence(
+                userPoints: user, opponentPoints: opponent, opponentDisplayName: "Sam", locale: locale
+            )
+        }
+        expect(lead(1204, 1150), "You lead by 54.")
+        expect(lead(1150, 1204), "Sam leads by 54.")
+        expect(lead(412.4, 411.6), "All square.")
+        expect(lead(2417, 1200, locale: de), "You lead by 1.217.")
+
+        func signed(_ user: Double, _ opponent: Double, _ digits: Int = 0) -> String {
+            competitionSignedMarginText(
+                userPoints: user, opponentPoints: opponent, fractionDigits: digits, locale: us
+            )
+        }
+        expect(signed(1204, 1150), "+54")
+        expect(signed(1150, 1204), "\u{2212}54")
+        expect(signed(412.4, 411.6), "0")
+        expect(signed(412.3, 412.1, 2), "+0.20")
+
+        func outcome(
+            _ owner: Double?, _ opponent: Double?, current: Int? = nil, occurred: Bool = true
+        ) -> CompetitionDayOutcome {
+            competitionDayOutcome(
+                ordinal: 2, currentDayOrdinal: current, hasOccurred: occurred,
+                ownerPoints: owner, opponentPoints: opponent
+            )
+        }
+        precondition(outcome(310, 300) == .won)
+        precondition(outcome(300, 310) == .lost)
+        precondition(outcome(300.4, 300.2) == .tied)
+        precondition(outcome(0, 0) == .noData)
+        precondition(outcome(310, nil) == .noData)
+        precondition(outcome(nil, nil, occurred: false) == .upcoming)
+        precondition(outcome(310, 300, current: 2) == .today)
+
         // Day
         let now = instant("2026-10-31T12:00:00Z")
         let nextYear = instant("2027-02-01T12:00:00Z")

@@ -18,5 +18,9 @@
     <true/>
     <key>com.apple.developer.healthkit.background-delivery</key>
     <true/>
+    <key>com.apple.security.application-groups</key>
+    <array>
+        <string>$(HEALTHCOMP_APP_GROUP)</string>
+    </array>
 </dict>
 </plist>

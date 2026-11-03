@@ -1442,6 +1442,115 @@ final class AppFeatureTests: XCTestCase {
         )
     }
 
+    private func widgetSnapshots(
+        _ calls: OrderedCallRecorder,
+        fails: Bool = false
+    ) -> CompetitionWidgetSnapshotClient {
+        CompetitionWidgetSnapshotClient(
+            write: { _, _ in calls.record("widget-write") },
+            clear: {
+                calls.record("widget-clear")
+                if fails { throw AuthenticatedProfileStorageFailure.cleanupFailed }
+            }
+        )
+    }
+
+    @MainActor
+    func testSignOutClearsTheWidgetSnapshotBeforeRemovingProfileStorage() async {
+        let calls = OrderedCallRecorder()
+        let storage = profileStorageFixture(for: profile, recorder: calls)
+        let store = TestStore(
+            initialState: .authenticated(profile: profile, epoch: 3)
+        ) {
+            AppFeature()
+        } withDependencies: {
+            $0.authenticationClient = .test(signOut: { calls.record("auth-sign-out") })
+            $0.authenticatedProfileStorage = storage.client
+            $0.competitionClient = .test(stop: { calls.record("runtime-stop") })
+            $0.competitionWidgetSnapshotClient = widgetSnapshots(calls)
+        }
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.account(.signOutButtonTapped))
+        await store.finish()
+        await store.skipReceivedActions(strict: false)
+
+        XCTAssertEqual(store.state.phase, .signedOut)
+        XCTAssertEqual(
+            calls.calls,
+            ["runtime-stop", "widget-clear", "storage-teardown", "auth-sign-out"]
+        )
+    }
+
+    @MainActor
+    func testRestoredWithoutSessionTeardownClearsTheWidgetSnapshot() async {
+        let calls = OrderedCallRecorder()
+        var authentication = AuthenticationClient.test()
+        authentication.finishRetirement = { calls.record("retire") }
+        let store = TestStore(initialState: AppFeature.State()) {
+            AppFeature()
+        } withDependencies: {
+            $0.authenticationClient = authentication
+            $0.competitionWidgetSnapshotClient = widgetSnapshots(calls)
+        }
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.restoreSessionResponse(epoch: 0, .success(nil)))
+        await store.finish()
+        await store.skipReceivedActions(strict: false)
+
+        XCTAssertEqual(store.state.phase, .signedOut)
+        XCTAssertEqual(calls.calls, ["widget-clear", "retire"])
+    }
+
+    @MainActor
+    func testColdLaunchWithoutSessionClearsTheWidgetSnapshot() async {
+        let calls = OrderedCallRecorder()
+        let store = TestStore(initialState: AppFeature.State()) {
+            AppFeature()
+        } withDependencies: {
+            $0.authenticationClient = .test(restoreSession: { nil })
+            $0.competitionWidgetSnapshotClient = widgetSnapshots(calls)
+        }
+
+        await store.send(.task) {
+            $0.authEpoch = 1
+            $0.isAuthenticationMonitoring = true
+        }
+        await store.receive(.restoreSessionResponse(epoch: 1, .success(nil))) {
+            $0.phase = .signedOut
+            $0.account = AccountFeature.State(mode: .signedOut)
+        }
+        await store.finish()
+        XCTAssertEqual(calls.calls, ["widget-clear"])
+    }
+
+    @MainActor
+    func testWidgetSnapshotClearFailureRetriesTheStorageStage() async {
+        let calls = OrderedCallRecorder()
+        let storage = profileStorageFixture(for: profile, recorder: calls)
+        let store = TestStore(
+            initialState: .authenticated(profile: profile, epoch: 3)
+        ) {
+            AppFeature()
+        } withDependencies: {
+            $0.authenticationClient = .test(signOut: { calls.record("auth-sign-out") })
+            $0.authenticatedProfileStorage = storage.client
+            $0.competitionClient = .test(stop: { calls.record("runtime-stop") })
+            $0.competitionWidgetSnapshotClient = widgetSnapshots(calls, fails: true)
+        }
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.account(.signOutButtonTapped))
+        await store.finish()
+        await store.skipReceivedActions(strict: false)
+
+        XCTAssertEqual(store.state.phase, .launchFailure)
+        XCTAssertEqual(store.state.pendingTeardown?.stage, .removeProfileStorage)
+        XCTAssertEqual(store.state.account.message, .signOutCleanupFailed)
+        XCTAssertEqual(calls.calls, ["runtime-stop", "widget-clear"])
+    }
+
     @MainActor
     func testSignOutConsumesARouteHeldForTheSignedOutProfile() async {
         let calls = OrderedCallRecorder()

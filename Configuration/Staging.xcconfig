@@ -5,4 +5,5 @@ APP_ATTEST_ENVIRONMENT = development
 HEALTHCOMP_APNS_ENVIRONMENT = sandbox
 HEALTHCOMP_ALLOW_CUSTOM_INVITE_SCHEME = YES
 HEALTHCOMP_INVITE_HOST = staging.healthcomp.app
+HEALTHCOMP_APP_GROUP = group.com.narenyenuganti.HealthComp.staging
 #include? "Staging.local.xcconfig"
