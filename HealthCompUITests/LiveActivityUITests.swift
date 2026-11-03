@@ -35,6 +35,8 @@ final class LiveActivityUITests: XCTestCase {
         let them: String
         let lead: String
         var timing = "Ends at midnight"
+        /// The header drops the timing rather than cut the title short.
+        var timingFits = true
         var freshness: String?
 
         var youLabel: String { "You \(you) points" }
@@ -43,7 +45,7 @@ final class LiveActivityUITests: XCTestCase {
         /// The Lock Screen card's VoiceOver label. Accessibility sizes drop
         /// the timing and the Updated line, as they do on screen.
         func live(large: Bool = false) -> String {
-            ["Last day · \(name)", large ? nil : timing, youLabel, themLabel, lead, large ? nil : freshness]
+            ["Last day · \(name)", large || !timingFits ? nil : timing, youLabel, themLabel, lead, large ? nil : freshness]
                 .compactMap { $0 }.joined(separator: ", ")
         }
 
@@ -61,9 +63,9 @@ final class LiveActivityUITests: XCTestCase {
                freshness: "You: updated 5:40 PM · Sam: updated 6:02 PM"),
         Sample(key: "square", name: "Sam", you: "2,190", them: "2,190", lead: "All square."),
         Sample(key: "former", name: "Former competitor", you: "1,980", them: "2,015",
-               lead: "Former competitor leads by 35.", freshness: "Updated 5:40 PM"),
+               lead: "Former competitor leads by 35.", timingFits: false, freshness: "Updated 5:40 PM"),
         Sample(key: "long", name: long, you: "4,180", them: "4,195", lead: "\(long) leads by 15.",
-               timing: "Ends at midnight EDT", freshness: "\(long): updated 6:02 PM"),
+               timing: "Ends at midnight EDT", timingFits: false, freshness: "\(long): updated 6:02 PM"),
     ]
 
     private func sample(_ key: String) -> Sample { samples.first { $0.key == key }! }

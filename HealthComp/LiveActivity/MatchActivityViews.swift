@@ -52,22 +52,28 @@ struct MatchActivityHeader: View {
                     .frame(width: 6, height: 6)
                     .accessibilityHidden(true)
             }
-            // A long name shrinks a little, then truncates, instead of shrinking
-            // the whole row; the timing always shows in full.
-            Text("\(state.title) · \(state.opponentName)")
-                .foregroundStyle(Theme.ink)
-                .minimumScaleFactor(0.8)
-            Spacer(minLength: 8)
-            if showsTiming, let timing = state.timing {
-                Text(timing)
-                    .foregroundStyle(Theme.secondary)
-                    .layoutPriority(1)
+            // The timing shows only when the whole title fits beside it, so
+            // "Former competitor" is never cut short for "Ends at midnight".
+            // A longer name shrinks a little, then truncates.
+            ViewThatFits(in: .horizontal) {
+                if showsTiming, let timing = state.timing {
+                    HStack(spacing: 0) {
+                        title.fixedSize()
+                        Spacer(minLength: 8)
+                        Text(timing).foregroundStyle(Theme.secondary).fixedSize()
+                    }
+                }
+                title.minimumScaleFactor(0.8)
             }
         }
         .font(.themeLabel)
         .tracking(1.2)
         .textCase(.uppercase)
         .lineLimit(1)
+    }
+
+    private var title: some View {
+        Text("\(state.title) · \(state.opponentName)").foregroundStyle(Theme.ink)
     }
 }
 
@@ -131,13 +137,17 @@ struct MatchActivityBottomRows: View {
                 .font(.footnote)
                 .foregroundStyle(Theme.ink)
                 .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
-                .minimumScaleFactor(0.5)
+                // A long name shrinks a little, then loses its middle, so the
+                // margin at the end ("leads by 15.") always shows.
+                .minimumScaleFactor(0.8)
+                .truncationMode(.middle)
             if showsFreshness, let freshness = state.freshness {
                 Text(freshness)
                     .font(.caption2)
                     .foregroundStyle(Theme.secondary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
+                    .truncationMode(.middle)  // keeps "updated 6:02 PM"
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
