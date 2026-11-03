@@ -1808,11 +1808,11 @@ private struct LiveActivityPreviewView: View {
                 MatchActivityScoreColumn(side: .you, state: live, size: 34)
                 MatchActivityScoreColumn(side: .them, state: live, size: 34)
             }
-            MatchActivityBottomRows(state: live)
+            MatchActivityIslandBottom(state: live)
         }
         .padding(20)
         .background(.black, in: RoundedRectangle(cornerRadius: 40))
-        .environment(\.colorScheme, .dark)
+        .matchActivityIsland()
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("liveActivity.preview.expanded")
     }
@@ -1826,7 +1826,7 @@ private struct LiveActivityPreviewView: View {
         .padding(.horizontal, 16)
         .frame(height: 37)
         .background(.black, in: Capsule())
-        .environment(\.colorScheme, .dark)
+        .matchActivityIsland()
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("liveActivity.preview.compact")
     }
@@ -1835,7 +1835,7 @@ private struct LiveActivityPreviewView: View {
         MatchActivityMinimalLead(state: live)
             .frame(width: 37, height: 37)
             .background(.black, in: Circle())
-            .environment(\.colorScheme, .dark)
+            .matchActivityIsland()
             .accessibilityIdentifier("liveActivity.preview.minimal")
     }
 

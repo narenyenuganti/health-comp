@@ -151,6 +151,19 @@ struct MatchActivityBottomRows: View {
     }
 }
 
+/// The expanded Dynamic Island's bottom. The island's height is fixed, so
+/// above the default text size the Updated line goes, as it does on the Lock
+/// Screen at accessibility sizes; it was cut in half at AX5.
+struct MatchActivityIslandBottom: View {
+    let state: MatchActivityAttributes.ContentState
+
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    var body: some View {
+        MatchActivityBottomRows(state: state, showsFreshness: dynamicTypeSize <= .large)
+    }
+}
+
 /// One side's score in the compact Dynamic Island.
 struct MatchActivityCompactScore: View {
     let side: MatchActivitySide
@@ -188,30 +201,41 @@ struct MatchActivityMinimalLead: View {
     }
 }
 
-/// The expanded Dynamic Island's center: "LAST DAY  5 HR, 45 MIN LEFT", which
-/// iOS counts down with no app work, styled like the Lock Screen header.
-/// Pending drops the countdown. One line, so the scores below keep their
-/// size: the island's height is fixed, and a second line here shrank them.
+/// The expanded Dynamic Island's center: "LAST DAY  5 hr, 45 min left", which
+/// iOS counts down with no app work. Pending drops the countdown. One line,
+/// so the scores below keep their size: the island's height is fixed, and a
+/// second line here shrank them.
 struct MatchActivityIslandHeader: View {
     let attributes: MatchActivityAttributes
     let state: MatchActivityAttributes.ContentState
 
     var body: some View {
-        let title = Text(state.title).foregroundStyle(Theme.ink)
+        // `textCase` skips a date's text, so only the title is uppercased.
+        let title = Text(state.title.uppercased(with: .current))
+            .tracking(1.2)
+            .foregroundStyle(Theme.ink)
+        let countdown = Text(attributes.endsAt, style: .relative) + Text(" left")
         Group {
             if state.phase == .live {
-                title + Text("  ")
-                    + (Text(attributes.endsAt, style: .relative) + Text(" left"))
-                    .foregroundStyle(Theme.secondary)
+                title + Text("  ") + countdown.foregroundStyle(Theme.secondary)
             } else {
                 title
             }
         }
         .font(.themeLabel)
-        .tracking(1.2)
-        .textCase(.uppercase)
         .multilineTextAlignment(.center)
         .lineLimit(1)
         .minimumScaleFactor(0.7)
+        .accessibilityLabel(state.phase == .live ? Text(state.title) + Text(", ") + countdown : Text(state.title))
+    }
+}
+
+extension View {
+    /// Every Dynamic Island region: dark, so amber stays you on black, and
+    /// no larger than xxxLarge, where iOS 18.5 stops growing the island's
+    /// text even at AX5. The Test Lab's island mocks use it too.
+    func matchActivityIsland() -> some View {
+        environment(\.colorScheme, .dark)
+            .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
     }
 }

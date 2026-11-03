@@ -90,7 +90,7 @@ final class LiveActivityUITests: XCTestCase {
                 )
             }
             let expanded = previewElement(app, "expanded")
-            XCTAssertTrue(expanded.label.hasPrefix("Last day  "), expanded.label)
+            XCTAssertTrue(expanded.label.hasPrefix("Last day, "), expanded.label)
             XCTAssertTrue(plain(expanded.label).contains(" left, \(sample.youLabel), \(sample.themLabel), \(sample.lead)"),
                           expanded.label)
             XCTAssertEqual(previewElement(app, "compact").label, "\(sample.youLabel), \(sample.themLabel)")
@@ -291,6 +291,9 @@ final class LiveActivityUITests: XCTestCase {
                 sleep(2)
                 let expanded = springboardElement("You lead by 19.")
                 XCTAssertTrue(expanded.waitForExistence(timeout: 5), springboard.debugDescription)
+                // The island has no room for the Updated line past the default size.
+                XCTAssertEqual(springboardElement("You: updated").exists, size == "default",
+                               springboard.debugDescription)
                 shot("island-expanded-\(appearance)-\(size)")
                 collapseIsland(expanded)
                 XCTAssertTrue(you.waitForExistence(timeout: 5), springboard.debugDescription)
