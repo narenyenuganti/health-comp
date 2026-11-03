@@ -402,7 +402,7 @@ final class BeltUITests: XCTestCase {
             // The system navigation bar truncates a long title at every
             // size; VoiceOver reads it whole and the belt panel shows it.
             if issue.auditType == .textClipped, let element,
-               app.navigationBars.firstMatch.frame.contains(element.frame) {
+               self.app.navigationBars.firstMatch.frame.contains(element.frame) {
                 return true
             }
             // Name the element, so a failure says what clipped.
