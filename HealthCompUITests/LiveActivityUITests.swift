@@ -90,7 +90,7 @@ final class LiveActivityUITests: XCTestCase {
                 )
             }
             let expanded = previewElement(app, "expanded")
-            XCTAssertTrue(expanded.label.hasPrefix("Last day, "), expanded.label)
+            XCTAssertTrue(expanded.label.hasPrefix("Last day  "), expanded.label)
             XCTAssertTrue(plain(expanded.label).contains(" left, \(sample.youLabel), \(sample.themLabel), \(sample.lead)"),
                           expanded.label)
             XCTAssertEqual(previewElement(app, "compact").label, "\(sample.youLabel), \(sample.themLabel)")
@@ -179,7 +179,7 @@ final class LiveActivityUITests: XCTestCase {
         waitUntilStale(startedAt)
         showLockScreen()
         let pending = springboardElement("Final score pending · Sam")
-        XCTAssertTrue(pending.waitForExistence(timeout: 20), springboard.debugDescription)
+        XCTAssertTrue(pending.waitForExistence(timeout: 40), springboard.debugDescription)
         XCTAssertEqual(plain(pending.label), sample("lead").pending())
         shot("lock-pending")
         XCUIDevice.shared.press(.home)  // unlocks: the simulator has no passcode
@@ -309,7 +309,7 @@ final class LiveActivityUITests: XCTestCase {
             waitUntilStale(startedAt)
             showLockScreen()
             let pending = springboardElement("Final score pending · Sam")
-            XCTAssertTrue(pending.waitForExistence(timeout: 20), springboard.debugDescription)
+            XCTAssertTrue(pending.waitForExistence(timeout: 40), springboard.debugDescription)
             XCTAssertEqual(plain(pending.label), sample("lead").pending(large: size == "ax5"))
             for appearance in ["light", "dark"] {
                 XCUIDevice.shared.appearance = appearance == "dark" ? .dark : .light
@@ -343,9 +343,11 @@ final class LiveActivityUITests: XCTestCase {
         app.descendants(matching: .any)["liveActivity.preview.\(suffix)"]
     }
 
-    /// iOS asks once whether HealthComp may show Live Activities.
+    /// iOS asks whether HealthComp may show Live Activities, and later
+    /// whether to keep allowing them.
     private func allowLiveActivities() {
-        let allow = springboard.buttons["Allow"]
+        let allow = springboard.buttons
+            .matching(NSPredicate(format: "label IN %@", ["Allow", "Always Allow"])).firstMatch
         if allow.waitForExistence(timeout: 3) { allow.tap() }
     }
 

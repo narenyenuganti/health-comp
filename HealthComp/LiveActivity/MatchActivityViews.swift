@@ -188,26 +188,29 @@ struct MatchActivityMinimalLead: View {
     }
 }
 
-/// The expanded Dynamic Island's center: "LAST DAY" and "5 hr, 45 min left",
-/// which iOS counts down with no app work. Pending drops the countdown.
+/// The expanded Dynamic Island's center: "LAST DAY  5 HR, 45 MIN LEFT", which
+/// iOS counts down with no app work, styled like the Lock Screen header.
+/// Pending drops the countdown. One line, so the scores below keep their
+/// size: the island's height is fixed, and a second line here shrank them.
 struct MatchActivityIslandHeader: View {
     let attributes: MatchActivityAttributes
     let state: MatchActivityAttributes.ContentState
 
     var body: some View {
-        VStack(spacing: 2) {
-            Text(state.title)
-                .font(.themeLabel)
-                .tracking(1.2)
-                .textCase(.uppercase)
-                .foregroundStyle(Theme.ink)
+        let title = Text(state.title).foregroundStyle(Theme.ink)
+        Group {
             if state.phase == .live {
-                (Text(attributes.endsAt, style: .relative) + Text(" left"))
-                    .font(.caption2)
+                title + Text("  ")
+                    + (Text(attributes.endsAt, style: .relative) + Text(" left"))
                     .foregroundStyle(Theme.secondary)
-                    .multilineTextAlignment(.center)
+            } else {
+                title
             }
         }
+        .font(.themeLabel)
+        .tracking(1.2)
+        .textCase(.uppercase)
+        .multilineTextAlignment(.center)
         .lineLimit(1)
         .minimumScaleFactor(0.7)
     }
