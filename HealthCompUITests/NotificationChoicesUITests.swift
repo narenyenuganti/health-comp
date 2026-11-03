@@ -244,7 +244,9 @@ final class NotificationChoicesUITests: XCTestCase {
                 scrollToElement(closeScores)
                 if closeScores.value as? String != "0" { flip(closeScores) }
                 XCTAssertEqual(closeScores.value as? String, "0")
-                for _ in 0..<4 { app.collectionViews.firstMatch.swipeDown() }
+                // A status bar tap scrolls to the top; a swipe could close the sheet.
+                app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.01)).tap()
+                XCTAssertTrue(app.buttons["account.notifications.settings"].waitForExistence(timeout: 3))
                 shot("\(screen)-top-\(suffix)")
                 try audit("\(screen)-top-\(suffix)")
                 let middle = choice("live-activity")
