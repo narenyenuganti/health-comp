@@ -136,9 +136,11 @@ final class FeatureRoundIntegrationUITests: XCTestCase {
         XCTAssertLessThanOrEqual(panel.frame.maxY, share.frame.minY)
         XCTAssertLessThanOrEqual(element("competition.result.week").frame.maxY, share.frame.minY)
         XCTAssertEqual(app.buttons.matching(identifier: "competition.result.share").count, 1)
-        let rematch = app.buttons["competition.rematch.create"]
-        XCTAssertEqual(rematch.label, "Rematch Sam")
-        XCTAssertLessThanOrEqual(share.frame.maxY, rematch.frame.minY)
+        // Sam's next match is live: the pinned action opens it.
+        XCTAssertFalse(app.buttons["competition.rematch.create"].exists)
+        let viewMatch = app.buttons["competition.rematch.view-match"]
+        XCTAssertEqual(viewMatch.label, "View Match")
+        XCTAssertLessThanOrEqual(share.frame.maxY, viewMatch.frame.minY)
 
         scrollToElement(chip("salute"))
         chip("salute").tap()
