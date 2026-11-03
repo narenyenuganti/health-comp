@@ -24,7 +24,8 @@ extension CompetitionClient {
             },
             observerDeliveryReceiptFactory: { paths in
                 .live(directory: paths.observerDeliveryDirectory)
-            }
+            },
+            widgetSnapshots: .liveValue
         )
     }
 
@@ -47,6 +48,7 @@ extension CompetitionClient {
         ) -> HealthKitObserverDeliveryReceiptClient = { _ in
             .discarding
         },
+        widgetSnapshots: CompetitionWidgetSnapshotClient = .noop,
         lifecycleInvalidationObserver: @escaping @Sendable () -> Void = {}
     ) -> Self {
         let router = RemoteCompetitionPublicationRouter()
@@ -63,7 +65,8 @@ extension CompetitionClient {
             appAttestServiceFactory: appAttestServiceFactory,
             notificationPreferencesFactory: notificationPreferencesFactory,
             observerDeliveryReceiptFactory: observerDeliveryReceiptFactory,
-            router: router
+            router: router,
+            widgetSnapshots: widgetSnapshots
         )
         return Self(
             start: {
@@ -402,6 +405,7 @@ private actor RemoteCompetitionClientCoordinator {
         AuthenticatedProfileStoragePaths
     ) -> HealthKitObserverDeliveryReceiptClient
     private let router: RemoteCompetitionPublicationRouter
+    private let widgetSnapshots: CompetitionWidgetSnapshotClient
 
     private var profile: AuthenticatedProfile?
     private var runtime: RemoteCompetitionRuntime?
@@ -462,8 +466,10 @@ private actor RemoteCompetitionClientCoordinator {
         observerDeliveryReceiptFactory: @escaping @Sendable (
             AuthenticatedProfileStoragePaths
         ) -> HealthKitObserverDeliveryReceiptClient,
-        router: RemoteCompetitionPublicationRouter
+        router: RemoteCompetitionPublicationRouter,
+        widgetSnapshots: CompetitionWidgetSnapshotClient
     ) {
+        self.widgetSnapshots = widgetSnapshots
         self.remoteAPI = remoteAPI
         self.environment = environment
         self.realtimeClient = realtimeClient
@@ -1748,6 +1754,14 @@ private actor RemoteCompetitionClientCoordinator {
                 knownCompetitionIDs: knownCompetitionIDs
             )
         )
+        // Without discovery the full set of matches is unknown: keep the
+        // last good file. Matches that didn't sync this round carry forward.
+        if let knownCompetitionIDs {
+            let unsynced = Set(knownCompetitionIDs.subtracting(materializedIDs).map(\.rawValue))
+            await widgetSnapshots.write(
+                CompetitionWidgetSnapshot(dashboard: publication.dashboard), unsynced
+            )
+        }
         return publication
     }
 

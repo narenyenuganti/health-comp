@@ -163,6 +163,13 @@ enum CompetitionRoute: Equatable, Sendable {
     /// Someone's challenge link: offers to challenge them.
     case challengeLink(CompetitionChallengeLinkCode)
 
+    /// The custom-scheme link that opens a match, for widgets. Lowercased:
+    /// `init?(url:)` rejects an uppercase uuid.
+    var url: URL? {
+        guard case let .competition(id) = self else { return nil }
+        return URL(string: "\(Self.customURLScheme)://competition/\(id.rawValue.uuidString.lowercased())")
+    }
+
     init?(url: URL) {
         self.init(
             url: url,

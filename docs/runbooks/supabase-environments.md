@@ -374,15 +374,27 @@ portal/dashboard readback; source configuration alone is not proof.
 1. Confirm the signed-in Apple account is an active member of the paid team
    that owns the App ID. Record the team ID only after reading Membership
    Details; do not infer it from an old project setting.
-2. Register the exact App ID:
-   - staging: com.narenyenuganti.HealthComp.staging
-   - production: com.narenyenuganti.HealthComp
+2. Register the exact App ID, and the explicit widget App ID beside it:
+   - staging: com.narenyenuganti.HealthComp.staging and
+     com.narenyenuganti.HealthComp.staging.widgets
+   - production: com.narenyenuganti.HealthComp and
+     com.narenyenuganti.HealthComp.widgets
 3. Enable Sign in with Apple, Push Notifications, HealthKit with background
    delivery, and App Attest for that App ID.
+   - App Groups: register the environment's group
+     (staging: group.com.narenyenuganti.HealthComp.staging; production and
+     Debug: group.com.narenyenuganti.HealthComp), then turn on App Groups with
+     that group for both the app App ID and its widget App ID. The widget App
+     ID gets nothing else. Signing fails for an App ID without the group once
+     the entitlements carry it.
 4. Do not add an Associated Domains entitlement, route, or domain until an
    invitation domain is selected. A portal capability toggle by itself is not
    signed-app or domain-association evidence.
-5. Regenerate and install the provisioning profile after capability changes.
+5. Regenerate and install the provisioning profile after capability changes,
+   and create one for the widget App ID. At archive, confirm
+   `PlugIns/HealthCompWidgets.appex` is signed with the widget profile and has
+   the app's `CFBundleShortVersionString` and `CFBundleVersion`; bump both
+   together.
 6. For native `signInWithIdToken`, enable Apple Auth in the matching Supabase
    project and register the matching bundle ID as its Client ID. Native-only
    login does not require an OAuth Services ID or OAuth client secret.
