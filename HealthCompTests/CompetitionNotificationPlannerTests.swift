@@ -1593,6 +1593,11 @@ final class CompetitionNotificationPlannerTests: XCTestCase {
                                        lifecycle: .active(dayOrdinal: 4),
                                        whatItTakes: takes(dayOrdinal: 4, points: 39))
         XCTAssertEqual(takesRequests(try plan(snapshot([mismatched], evaluatedAt: matchTime(day: 5)))), [])
+
+        // A later day's value is still in the future, so only the day check drops it.
+        let ahead = try liveMatch("01", day: 5, owner: 1_112, opponent: 1_150,
+                                  whatItTakes: takes(dayOrdinal: 6, points: 39))
+        XCTAssertEqual(takesRequests(try plan(snapshot([ahead], evaluatedAt: matchTime(day: 5)))), [])
     }
 
     func testWhatItTakesReminderIsSkippedWhenOffOutOfReachLeadingMutedOrPastSeven() throws {

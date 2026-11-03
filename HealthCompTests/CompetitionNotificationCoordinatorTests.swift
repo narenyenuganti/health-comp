@@ -972,23 +972,36 @@ final class CompetitionNotificationCoordinatorTests: XCTestCase {
             commitDecisions: { _, _ in .noDecision }
         )
 
+        func removals() async -> Int {
+            await center.snapshot.removedPending.flatMap { $0 }.filter { $0 == reminder }.count
+        }
+        func upserts() async -> Int {
+            await center.snapshot.upserts.filter { $0.identifier == reminder }.count
+        }
+
         await coordinator.submit(snapshot(1, takes))
-        let first = await center.snapshot
-        XCTAssertTrue(first.upserts.map(\.identifier).contains(reminder))
-        XCTAssertFalse(first.removedPending.flatMap { $0 }.contains(reminder))
+        let firstUpserts = await upserts()
+        let firstRemovals = await removals()
+        XCTAssertEqual(firstUpserts, 1)
+        XCTAssertEqual(firstRemovals, 0)
 
-        await coordinator.submit(snapshot(2, nil))
-        let second = await center.snapshot
-        XCTAssertTrue(second.removedPending.flatMap { $0 }.contains(reminder))
-
+        // Switch off while the reminder is pending: it is removed, not re-upserted.
         switchedOff.setValue([.whatItTakes])
+        await coordinator.submit(snapshot(2, takes))
+        let offUpserts = await upserts()
+        let offRemovals = await removals()
+        XCTAssertEqual(offUpserts, 1, "switched off")
+        XCTAssertEqual(offRemovals, 1, "switched off")
+
+        switchedOff.setValue([])
         await coordinator.submit(snapshot(3, takes))
-        let third = await center.snapshot
-        XCTAssertEqual(
-            third.upserts.filter { $0.identifier == reminder }.count,
-            1,
-            "only revision 1 upserted it"
-        )
+        let onUpserts = await upserts()
+        XCTAssertEqual(onUpserts, 2, "switched back on")
+
+        // You lead: the value goes away and the pending reminder with it.
+        await coordinator.submit(snapshot(4, nil))
+        let leadRemovals = await removals()
+        XCTAssertEqual(leadRemovals, 2, "you lead")
     }
 
     private func resultSnapshot(
