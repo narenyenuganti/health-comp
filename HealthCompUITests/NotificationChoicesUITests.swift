@@ -259,6 +259,9 @@ final class NotificationChoicesUITests: XCTestCase {
                 scrollToElement(unmute)
                 shot("\(screen)-bottom-\(suffix)")
                 try audit("\(screen)-bottom-\(suffix)")
+                // Back to the top first: at AX5 Close scores has left the list's cells.
+                app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.01)).tap()
+                XCTAssertTrue(app.buttons["account.notifications.settings"].waitForExistence(timeout: 3))
                 scrollToElement(closeScores)
                 flip(closeScores)
                 XCTAssertEqual(closeScores.value as? String, "1")
