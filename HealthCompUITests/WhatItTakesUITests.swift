@@ -281,6 +281,8 @@ final class WhatItTakesUITests: XCTestCase {
         ).firstMatch
         scrollToElement(card)
         card.tap()
+        // A tap while the scroll is still settling only stops it: tap again.
+        if !app.buttons["Week"].waitForExistence(timeout: 3), card.isHittable { card.tap() }
         XCTAssertTrue(app.buttons["Week"].waitForExistence(timeout: 3), name)
     }
 

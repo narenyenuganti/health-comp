@@ -151,7 +151,7 @@ final class FeatureRoundIntegrationUITests: XCTestCase {
         share.tap()
         let card = element("competition.recap.card")
         XCTAssertTrue(card.waitForExistence(timeout: 5))
-        XCTAssertTrue(card.label.hasSuffix("You took the belt."), card.label)
+        XCTAssertTrue(card.label.hasSuffix(". Took the belt."), card.label)
         XCTAssertFalse(card.label.contains("reacted"), card.label)
         app.buttons["Close"].tap()
         XCTAssertTrue(card.waitForNonExistence(timeout: 3))
