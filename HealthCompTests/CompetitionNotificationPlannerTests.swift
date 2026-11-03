@@ -1572,7 +1572,8 @@ final class CompetitionNotificationPlannerTests: XCTestCase {
         ])
         let request = try XCTUnwrap(requests.first)
         XCTAssertEqual(request.route, .competition(match.id))
-        XCTAssertEqual(request.dateComponents.timeZone?.identifier, "UTC")
+        XCTAssertEqual(request.dateComponents.timeZone?.secondsFromGMT(), 0)
+        XCTAssertEqual(request.dateComponents.hour, 19)
         XCTAssertEqual(request.dateComponents.date, matchTime(day: 5, hour: 19))
         XCTAssertEqual(request.content.title, "39 to take the lead from Alex")
         // The zone suffix depends on the phone's zone; testLiveV1CopyForEveryFamily pins it.
