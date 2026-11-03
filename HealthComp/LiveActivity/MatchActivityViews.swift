@@ -132,14 +132,17 @@ struct MatchActivityBottomRows: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
+        let isLarge = dynamicTypeSize.isAccessibilitySize
         VStack(alignment: .leading, spacing: 2) {
             lead
                 .font(.footnote)
                 .foregroundStyle(Theme.ink)
-                .lineLimit(dynamicTypeSize.isAccessibilitySize ? 2 : 1)
+                .lineLimit(isLarge ? 2 : 1)
                 // A long name shrinks a little, then loses its middle, so the
-                // margin at the end ("leads by 15.") always shows.
-                .minimumScaleFactor(0.8)
+                // margin at the end ("leads by 15.") always shows. At
+                // accessibility sizes the text is large enough to shrink
+                // further into its two lines, which keeps the whole sentence.
+                .minimumScaleFactor(isLarge ? 0.5 : 0.8)
                 .truncationMode(.middle)
             if showsFreshness, let freshness = state.freshness {
                 Text(freshness)
