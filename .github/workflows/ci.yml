@@ -236,6 +236,7 @@ jobs:
             -only-testing:HealthCompUITests/NudgeUITests/testFailedNudgeRetriesAndARefusalExplains \
             -only-testing:HealthCompUITests/LiveActivityUITests/testPreviewShowsEveryScoreStateInTheAppsWords \
             -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testPracticeMatchStartsFromEmptyHomeAndEndsFromTheMenu \
+            -only-testing:HealthCompUITests/PracticeMatchUITests/testAFailedStartExplainsOnTheSheetAndAReopenedSheetStartsClean \
             -parallel-testing-enabled NO \
             -maximum-concurrent-test-simulator-destinations 1 \
             -maximum-parallel-testing-workers 1 \

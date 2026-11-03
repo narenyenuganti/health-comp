@@ -95,6 +95,7 @@
 		6E7C174808973E4A4D94F96B /* PrivacyInfo.xcprivacy in Resources */ = {isa = PBXBuildFile; fileRef = 05C1BF82CA22E9CBDCA974CF /* PrivacyInfo.xcprivacy */; };
 		70101A539FF9514383C092A6 /* HealthKitObserverDeliveryReceipt.swift in Sources */ = {isa = PBXBuildFile; fileRef = A780BC141606A4C228FCF9F7 /* HealthKitObserverDeliveryReceipt.swift */; };
 		70E979BCF298681D60F5F4E4 /* SupabaseAppleWebDeletionTransport.swift in Sources */ = {isa = PBXBuildFile; fileRef = 79D3B2F2BE57087995DA8315 /* SupabaseAppleWebDeletionTransport.swift */; };
+		7234259C461A81E4E2CCD79B /* PracticeMatchUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1B0DD351BE98BC4D5092E60 /* PracticeMatchUITests.swift */; };
 		73F853265BC75C365CD2BB2B /* MainTabFeatureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3DFF07C8F1DAF91F666CE2C /* MainTabFeatureTests.swift */; };
 		75D39A881B6BCE6ACD99671C /* CompetitionCore in Frameworks */ = {isa = PBXBuildFile; productRef = 94AE5B1EA8D73C40C59A519D /* CompetitionCore */; };
 		773AF0E3CFE0D3D0017B8620 /* MatchActivityViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1CD9ED5A800E944EC8B6E60B /* MatchActivityViews.swift */; };
@@ -346,6 +347,7 @@
 		DA25D1EA0C137C12BC7FE9A1 /* RemoteCompetitionRuntimeFailure.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteCompetitionRuntimeFailure.swift; sourceTree = "<group>"; };
 		DC1082ED31F47789C75550D1 /* SharedClientLifetimeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedClientLifetimeTests.swift; sourceTree = "<group>"; };
 		DF2EB15D15A1AFC4A22883D0 /* remote-stable-win.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "remote-stable-win.json"; sourceTree = "<group>"; };
+		E1B0DD351BE98BC4D5092E60 /* PracticeMatchUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PracticeMatchUITests.swift; sourceTree = "<group>"; };
 		E253E83C464C41456132789C /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
 		E319BF38E9A52EF2BC2D9349 /* Production.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Production.xcconfig; sourceTree = "<group>"; };
 		E375C25BA9F8B90CF629A5EB /* HealthCompStagingTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = HealthCompStagingTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -669,6 +671,7 @@
 				A1AAA11C718845811F2393C0 /* LocalCompetitionLifecycleUITests.swift */,
 				72D97B24F7398742C8358DD9 /* MultiUserCompetitionUITests.swift */,
 				9A4C98DA12380EB04E5228ED /* NudgeUITests.swift */,
+				E1B0DD351BE98BC4D5092E60 /* PracticeMatchUITests.swift */,
 				A260A0BE8484CFDCCC19C011 /* RecapCardUITests.swift */,
 				39AE399E36B3A5A5F3619501 /* WhatItTakesUITests.swift */,
 				3D899D441D791785E0E73B72 /* WidgetUITests.swift */,
@@ -905,6 +908,7 @@
 				8E965F238EEB7338E422F5C5 /* LocalCompetitionLifecycleUITests.swift in Sources */,
 				51EC8DDC48A29F9C45FDE1A3 /* MultiUserCompetitionUITests.swift in Sources */,
 				420BDF83FD49D9E754C1DB0C /* NudgeUITests.swift in Sources */,
+				7234259C461A81E4E2CCD79B /* PracticeMatchUITests.swift in Sources */,
 				5034718BA65CD8D5F4AE2F0F /* RecapCardUITests.swift in Sources */,
 				BB8A276F99410E904AD6CF81 /* WhatItTakesUITests.swift in Sources */,
 				67F48B210B6A70F6BDDB5D41 /* WidgetUITests.swift in Sources */,
