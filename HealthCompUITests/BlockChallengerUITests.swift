@@ -49,12 +49,12 @@ final class BlockChallengerUITests: XCTestCase {
         decline.tap()
         assertDeclineDialog("Alex")
         dismissDialog(cancel: "Keep Challenge")
-        XCTAssertTrue(app.buttons["Decline and Block Alex"].waitForNonExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["Decline and Block Alex"].firstMatch.waitForNonExistence(timeout: 3))
         XCTAssertTrue(app.navigationBars["Alex"].exists)
         XCTAssertTrue(decline.isEnabled)
 
         decline.tap()
-        let declineAndBlock = app.buttons["Decline and Block Alex"]
+        let declineAndBlock = app.buttons["Decline and Block Alex"].firstMatch
         XCTAssertTrue(declineAndBlock.waitForExistence(timeout: 3))
         declineAndBlock.tap()
         // While the server works, nothing can be tapped twice.
@@ -119,7 +119,7 @@ final class BlockChallengerUITests: XCTestCase {
         // The retry goes through the decline dialog this time.
         scrollToElement(decline)
         decline.tap()
-        let declineAndBlock = app.buttons["Decline and Block Sam"]
+        let declineAndBlock = app.buttons["Decline and Block Sam"].firstMatch
         XCTAssertTrue(declineAndBlock.waitForExistence(timeout: 3))
         declineAndBlock.tap()
         XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 5))
@@ -134,9 +134,9 @@ final class BlockChallengerUITests: XCTestCase {
         scrollToElement(decline)
         decline.tap()
         assertDeclineDialog(Self.longName)
-        let declineOnly = app.buttons["Decline Challenge"]
+        let declineOnly = app.buttons["Decline Challenge"].firstMatch
         XCTAssertTrue(declineOnly.isHittable)
-        XCTAssertTrue(app.buttons["Decline and Block \(Self.longName)"].isHittable)
+        XCTAssertTrue(app.buttons["Decline and Block \(Self.longName)"].firstMatch.isHittable)
         declineOnly.tap()
         XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 5))
         XCTAssertTrue(cards(Self.longNameID).firstMatch.waitForNonExistence(timeout: 3))
@@ -181,7 +181,7 @@ final class BlockChallengerUITests: XCTestCase {
         XCTAssertTrue(text("Naren is told if you decline.").exists)
         decline.tap()
         assertDeclineDialog("Naren")
-        app.buttons["Decline and Block Naren"].tap()
+        app.buttons["Decline and Block Naren"].firstMatch.tap()
         let error = element("competition.claim.decline-error")
         XCTAssertTrue(error.waitForExistence(timeout: 5))
         XCTAssertEqual(error.label, "Couldn’t decline. Check your connection and try again.")
@@ -189,7 +189,7 @@ final class BlockChallengerUITests: XCTestCase {
         XCTAssertTrue(decline.isEnabled)
 
         decline.tap()
-        let declineAndBlock = app.buttons["Decline and Block Naren"]
+        let declineAndBlock = app.buttons["Decline and Block Naren"].firstMatch
         XCTAssertTrue(declineAndBlock.waitForExistence(timeout: 3))
         declineAndBlock.tap()
         // The sheet closes; Home no longer has Naren's challenge.
@@ -296,10 +296,10 @@ final class BlockChallengerUITests: XCTestCase {
                 scrollToElement(decline)
                 shot("incoming-actions-\(suffix)")
                 decline.tap()
-                XCTAssertTrue(app.buttons["Decline and Block Alex"].waitForExistence(timeout: 3))
+                XCTAssertTrue(app.buttons["Decline and Block Alex"].firstMatch.waitForExistence(timeout: 3))
                 shot("decline-dialog-\(suffix)")
                 dismissDialog(cancel: "Keep Challenge")
-                XCTAssertTrue(app.buttons["Decline and Block Alex"].waitForNonExistence(timeout: 3))
+                XCTAssertTrue(app.buttons["Decline and Block Alex"].firstMatch.waitForNonExistence(timeout: 3))
 
                 app.buttons["competition.more"].tap()
                 let block = app.buttons["competition.invite.block"]
@@ -330,7 +330,7 @@ final class BlockChallengerUITests: XCTestCase {
                 let longDecline = app.buttons["competition.invite.decline"]
                 scrollToElement(longDecline)
                 longDecline.tap()
-                XCTAssertTrue(app.buttons["Decline and Block \(Self.longName)"].waitForExistence(timeout: 3))
+                XCTAssertTrue(app.buttons["Decline and Block \(Self.longName)"].firstMatch.waitForExistence(timeout: 3))
                 shot("decline-dialog-long-name-\(suffix)")
 
                 launch(.blockedAccount, arguments: arguments)
@@ -353,9 +353,9 @@ final class BlockChallengerUITests: XCTestCase {
                 XCTAssertTrue(claimDecline.waitForExistence(timeout: 10))
                 scrollToElement(claimDecline)
                 claimDecline.tap()
-                XCTAssertTrue(app.buttons["Decline and Block Naren"].waitForExistence(timeout: 3))
+                XCTAssertTrue(app.buttons["Decline and Block Naren"].firstMatch.waitForExistence(timeout: 3))
                 shot("claim-decline-dialog-\(suffix)")
-                app.buttons["Decline and Block Naren"].tap()
+                app.buttons["Decline and Block Naren"].firstMatch.tap()
                 let claimError = element("competition.claim.decline-error")
                 XCTAssertTrue(claimError.waitForExistence(timeout: 5))
                 // No scroll here: at AX5 a drag can start on Accept and accept.
@@ -435,11 +435,12 @@ final class BlockChallengerUITests: XCTestCase {
             file: file, line: line
         )
         XCTAssertTrue(text("\(name)\(Self.declineMessage)").exists, file: file, line: line)
-        XCTAssertEqual(app.buttons.matching(NSPredicate(format: "label == %@", "Decline Challenge")).count, 1, file: file, line: line)
-        XCTAssertEqual(
-            app.buttons.matching(NSPredicate(format: "label == %@", "Decline and Block \(name)")).count,
-            1, file: file, line: line
-        )
+        for label in ["Decline Challenge", "Decline and Block \(name)"] {
+            // UIKit can expose a wrapper and inner button for the same action.
+            let actions = app.buttons.matching(NSPredicate(format: "label == %@", label))
+                .allElementsBoundByIndex.filter { $0.children(matching: .button).count == 0 }
+            XCTAssertEqual(actions.count, 1, label, file: file, line: line)
+        }
     }
 
     /// The Block confirmation's button has the menu item's label; the menu is gone by now.
@@ -455,11 +456,17 @@ final class BlockChallengerUITests: XCTestCase {
     /// A confirmation dialog's cancel button, or a tap outside where iOS
     /// shows it as a popover without one.
     private func dismissDialog(cancel label: String) {
-        let button = app.buttons[label]
+        let button = app.buttons[label].firstMatch
         if button.exists, button.isHittable {
             button.tap()
         } else {
-            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.08)).tap()
+            let popover = app.popovers.firstMatch
+            XCTAssertTrue(popover.exists)
+            XCTAssertGreaterThan(popover.frame.minX, app.frame.minX)
+            // Large-text popovers cover the old top-center dismissal point.
+            let outside = CGVector(dx: (popover.frame.minX - app.frame.minX) / 2,
+                                   dy: popover.frame.midY - app.frame.minY)
+            app.coordinate(withNormalizedOffset: .zero).withOffset(outside).tap()
         }
     }
 

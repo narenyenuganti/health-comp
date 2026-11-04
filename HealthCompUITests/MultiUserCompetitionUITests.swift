@@ -1085,7 +1085,7 @@ final class MultiUserCompetitionUITests: XCTestCase {
             ].exists
         )
         XCTAssertTrue(app.buttons["Decline Challenge"].exists)
-        let declineAndBlock = app.buttons["Decline and Block Alex"]
+        let declineAndBlock = app.buttons["Decline and Block Alex"].firstMatch
         XCTAssertTrue(declineAndBlock.exists)
         attachScreenshot("incoming-decline-dialog")
 
@@ -1163,11 +1163,17 @@ final class MultiUserCompetitionUITests: XCTestCase {
     /// A confirmation dialog's cancel button, or a tap outside where iOS
     /// shows it as a popover without one.
     private func dismissDialog(cancel label: String) {
-        let button = app.buttons[label]
+        let button = app.buttons[label].firstMatch
         if button.exists, button.isHittable {
             button.tap()
         } else {
-            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.08)).tap()
+            let popover = app.popovers.firstMatch
+            XCTAssertTrue(popover.exists)
+            XCTAssertGreaterThan(popover.frame.minX, app.frame.minX)
+            // Large-text popovers cover the old top-center dismissal point.
+            let outside = CGVector(dx: (popover.frame.minX - app.frame.minX) / 2,
+                                   dy: popover.frame.midY - app.frame.minY)
+            app.coordinate(withNormalizedOffset: .zero).withOffset(outside).tap()
         }
     }
 
@@ -1385,8 +1391,11 @@ final class MultiUserCompetitionUITests: XCTestCase {
     }
 
     func testAccountEditingAndPrivacyBoundariesRemainAccessible() {
-        launch(.account)
+        launch(.account, appearanceArguments: [
+            "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryL",
+        ])
         defer { app.terminate() }
+        assertRemoteRenderedConfiguration("Appearance: Light; Dynamic Type: large")
         XCTAssertTrue(app.navigationBars["Account"].waitForExistence(timeout: 8))
         let privacy = element("account.privacy")
         scrollToElement(privacy)
