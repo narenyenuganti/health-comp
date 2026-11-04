@@ -89,6 +89,12 @@ struct CompetitionClient: Sendable {
     ) async throws -> CompetitionInviteCreationOutcome
     /// Withdraws your pending challenge, or cancels a match before Day 1.
     var cancel: @Sendable (CompetitionID) async -> CompetitionPublication
+    /// Declines the pending challenge and blocks its sender.
+    var block: @Sendable (CompetitionID) async -> CompetitionPublication
+    /// The people you blocked, newest first.
+    var loadBlockedProfiles: @Sendable () async throws -> [AuthenticatedProfile]
+    /// Takes a profile id.
+    var unblock: @Sendable (UUID) async throws -> Void
     var previewInvite: @Sendable (
         CompetitionInviteClaimRequest
     ) async throws -> CompetitionInvitePreview
@@ -98,6 +104,18 @@ struct CompetitionClient: Sendable {
     var resolveChallengeLink: @Sendable (
         CompetitionChallengeLinkCode
     ) async throws -> String
+    /// Asks the other person to open HealthComp; returns when the server accepted it.
+    var nudge: @Sendable (CompetitionID) async throws -> Date
+    /// Sets (or, with nil, removes) your reaction and returns the republished
+    /// dashboard.
+    var setReaction: @Sendable (
+        CompetitionID,
+        CompetitionReactionTarget,
+        CompetitionReactionKind?
+    ) async throws -> CompetitionPublication
+    /// Starts a practice match on this iPhone; a failure is
+    /// `commandRejected(PracticeMatch.startCommandID)`.
+    var startPractice: @Sendable (OpponentDifficulty) async -> CompetitionPublication
 
     init(
         start: @escaping @Sendable () -> AsyncStream<CompetitionPublication>,
@@ -162,6 +180,16 @@ struct CompetitionClient: Sendable {
         cancel: @escaping @Sendable (
             CompetitionID
         ) async -> CompetitionPublication = { _ in .inert },
+        block: @escaping @Sendable (
+            CompetitionID
+        ) async -> CompetitionPublication = { _ in .inert },
+        loadBlockedProfiles: @escaping @Sendable () async throws ->
+            [AuthenticatedProfile] = {
+            throw CompetitionRemoteFailure.operationFailed
+        },
+        unblock: @escaping @Sendable (UUID) async throws -> Void = { _ in
+            throw CompetitionRemoteFailure.operationFailed
+        },
         previewInvite: @escaping @Sendable (
             CompetitionInviteClaimRequest
         ) async throws -> CompetitionInvitePreview = { _ in
@@ -179,7 +207,20 @@ struct CompetitionClient: Sendable {
             CompetitionChallengeLinkCode
         ) async throws -> String = { _ in
             throw CompetitionRemoteFailure.operationFailed
-        }
+        },
+        nudge: @escaping @Sendable (CompetitionID) async throws -> Date = { _ in
+            throw CompetitionRemoteFailure.operationFailed
+        },
+        setReaction: @escaping @Sendable (
+            CompetitionID,
+            CompetitionReactionTarget,
+            CompetitionReactionKind?
+        ) async throws -> CompetitionPublication = { _, _, _ in
+            throw CompetitionRemoteFailure.operationFailed
+        },
+        startPractice: @escaping @Sendable (
+            OpponentDifficulty
+        ) async -> CompetitionPublication = { _ in .inert }
     ) {
         self.start = start
         self.updates = updates
@@ -206,10 +247,16 @@ struct CompetitionClient: Sendable {
         self.resolveInviteRecipient = resolveInviteRecipient
         self.restoreInvite = restoreInvite
         self.cancel = cancel
+        self.block = block
+        self.loadBlockedProfiles = loadBlockedProfiles
+        self.unblock = unblock
         self.previewInvite = previewInvite
         self.loadChallengeLinkCode = loadChallengeLinkCode
         self.resetChallengeLinkCode = resetChallengeLinkCode
         self.resolveChallengeLink = resolveChallengeLink
+        self.nudge = nudge
+        self.setReaction = setReaction
+        self.startPractice = startPractice
     }
 
     func prepareForProfileTeardown(

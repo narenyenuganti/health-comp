@@ -53,6 +53,39 @@ Accepted limits:
   recorded code and are not covered. If `20261101001900` is not in production
   yet, deploy `20261101002400` together with it.
 
+## Blocking
+
+Migration `20261102002600` lets the recipient of a challenge block its sender.
+A block is keyed by account id (`private.account_blocks`, unreadable by clients)
+and is granted only through a challenge addressed to you, in any lifecycle:
+`block_challenger` takes that challenge's id, so there is no way to block, or
+probe, an arbitrary account. It declines the sender's pending, unexpired challenge
+to you exactly like Decline, with the same generic "Challenge declined" push.
+
+Every create path (by id, rematch, 1.0.2 and `/c/` link, all through
+`private.create_competition_invite_v2`) and both lookups (`resolve_challenge_link`,
+`resolve_invitation_recipient`) return the same `recipient_unavailable` as a reset
+link or a gone account. The create checks the block after the pair checks
+(pending, overlap, reciprocal), so the blocked person sees a new refusal only on a
+create that would otherwise have succeeded. A block is one-way: the blocker can
+still challenge the blocked person, and accepting a challenge is never blocked.
+The person unblocks in Account; starting deletion of either account removes its
+blocks in both directions. Any later replacement of the create or either lookup
+must copy this check.
+
+Accepted limits:
+
+- A pair who plays again can infer the block: the blocker challenged, they played,
+  and the blocked person's rematch is refused. So can a refused rematch of an old
+  result, under any copy.
+- A fresh link from the blocker also fails for the blocked person, even though
+  "Ask for a new one." invites that probe. After a plain reset, a new link works.
+- A recreated account isn't blocked.
+- An idempotent replay of a create made before the block returns its now-declined id.
+- Account lists the newest 200 blocks. Older blocks stay in force with no Unblock
+  control, and support can't remove them. A block needs a real challenge, so this
+  is not expected in practice.
+
 ## Migration and compatibility
 
 Use a new forward migration; never change historical migrations. Existing unnamed,

@@ -6,6 +6,7 @@ enum CompetitionScheduledNotificationFamily: String, CaseIterable, Sendable {
     case scheduledStart = "scheduled-start"
     case finalDay = "final-day"
     case competitionEnded = "competition-ended"
+    case whatItTakes = "what-it-takes"
 }
 
 enum CompetitionNotificationIdentifier {
@@ -96,6 +97,8 @@ struct CompetitionNotificationCompetitionSnapshot: Equatable, Sendable {
     /// consulting the physical clock.
     let evaluatedAt: Date
     let timeZoneIdentifier: String
+    /// Today's "N to take the lead" for the 7 PM reminder. Stays on the iPhone.
+    let whatItTakes: CompetitionWhatItTakes?
 
     init(
         id: CompetitionID,
@@ -112,7 +115,8 @@ struct CompetitionNotificationCompetitionSnapshot: Equatable, Sendable {
         terminalResult: CompetitionNotificationTerminalSnapshot?,
         emissionHistory: NotificationEmissionProjection,
         evaluatedAt: Date = .distantPast,
-        timeZoneIdentifier: String = "UTC"
+        timeZoneIdentifier: String = "UTC",
+        whatItTakes: CompetitionWhatItTakes? = nil
     ) {
         self.id = id
         self.opponentIdentity = opponentIdentity
@@ -129,6 +133,7 @@ struct CompetitionNotificationCompetitionSnapshot: Equatable, Sendable {
         self.emissionHistory = emissionHistory
         self.evaluatedAt = evaluatedAt
         self.timeZoneIdentifier = timeZoneIdentifier
+        self.whatItTakes = whatItTakes
     }
 }
 
@@ -184,6 +189,27 @@ enum CompetitionNotificationMessageFamily: Equatable, Sendable {
     }
 }
 
+extension CompetitionNotificationMessageFamily {
+    /// The switch that silences this family; nil means always on. Exhaustive on
+    /// purpose: a new family must choose.
+    var choice: CompetitionNotificationChoice? {
+        switch self {
+        case .opportunistic(.leadChange): .leadChange
+        case .opportunistic(.closeScore): .closeScore
+        case .scheduled(.finalDay): .finalDay
+        case .scheduled(.whatItTakes): .whatItTakes
+        case .opportunistic(.result), .opportunistic(.catchUp),
+             .opportunistic(.dailyMaximum), .scheduled(.inviteExpiry),
+             .scheduled(.scheduledStart), .scheduled(.competitionEnded):
+            nil
+        }
+    }
+
+    func isOff(in switchedOff: Set<CompetitionNotificationChoice>) -> Bool {
+        choice.map(switchedOff.contains) ?? false
+    }
+}
+
 struct CompetitionNotificationMessage: Equatable, Sendable {
     let family: CompetitionNotificationMessageFamily
     let competitionID: CompetitionID
@@ -195,6 +221,12 @@ struct CompetitionNotificationMessage: Equatable, Sendable {
     var liveMatchCount: Int = 1
     var expiresAt: Date? = nil
     var invitationDirection: InvitationDirection = .outgoing
+    /// Set only to a `.took` event: the result adds one belt sentence.
+    var beltTake: CompetitionBeltEvent? = nil
+    /// The 7 PM reminder: its numbers, the match's zone and the midnight it names.
+    var whatItTakes: CompetitionWhatItTakes? = nil
+    var matchTimeZoneIdentifier: String? = nil
+    var matchDayEnd: Date? = nil
 }
 
 struct CompetitionNotificationEmissionDecision: Equatable, Sendable {

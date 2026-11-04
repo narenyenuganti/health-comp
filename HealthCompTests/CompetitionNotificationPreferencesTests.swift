@@ -90,4 +90,50 @@ final class CompetitionNotificationPreferencesTests: XCTestCase {
         }
         XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
     }
+
+    func testNotificationChoicesAreOnUntilStoredOff() throws {
+        let suite = "choices-\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        XCTAssertEqual(CompetitionNotificationChoice.switchedOff(in: defaults), [])
+        defaults.set(false, forKey: CompetitionNotificationChoice.leadChange.storageKey)
+        XCTAssertEqual(CompetitionNotificationChoice.switchedOff(in: defaults), [.leadChange])
+        defaults.set(true, forKey: CompetitionNotificationChoice.leadChange.storageKey)
+        XCTAssertEqual(CompetitionNotificationChoice.switchedOff(in: defaults), [])
+    }
+
+    func testMutedPushKindsListsOnlySwitchedOffServerKinds() throws {
+        let suite = "choices-\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        for choice in [CompetitionNotificationChoice.nudge, .reaction, .leadChange] {
+            defaults.set(false, forKey: choice.storageKey)
+        }
+        XCTAssertEqual(CompetitionNotificationChoice.mutedPushKinds(in: defaults), ["nudge", "reaction"])
+    }
+
+    func testNotificationChoiceKeysAndTitlesNeverChange() {
+        XCTAssertEqual(
+            CompetitionNotificationChoice.allCases.map(\.storageKey),
+            [
+                "healthcomp.notifications.lead-change",
+                "healthcomp.notifications.close-score",
+                "healthcomp.notifications.what-it-takes",
+                "healthcomp.notifications.final-day",
+                "healthcomp.notifications.live-activity",
+                "healthcomp.notifications.reaction",
+                "healthcomp.notifications.nudge",
+            ]
+        )
+        XCTAssertEqual(
+            CompetitionNotificationChoice.allCases.map(\.title),
+            ["Lead changes", "Close scores", "What it takes", "Last day", "Live Activity", "Reactions", "Nudges"]
+        )
+        XCTAssertEqual(
+            CompetitionNotificationChoice.allCases.filter(\.isServerSent),
+            [.reaction, .nudge]
+        )
+    }
 }

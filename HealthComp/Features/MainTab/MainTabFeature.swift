@@ -90,9 +90,11 @@ struct MainTabFeature {
         /// Accept was tapped before the competition started; the claim is
         /// sent on its first publication.
         var acceptsClaimOnStart = false
+        /// The person page open from History, by opponent identity.
+        var historyPersonIdentity: String?
         var healthAccess: HealthAccessStatus?
         var notificationPrompt: NotificationPromptPhase = .unscheduled
-        /// Mirrors MainTabView's Challenge sheet.
+        /// Mirrors MainTabView's Challenge and practice sheets.
         var isChallengeSheetOpen = false
         /// Claim links up to this sequence arrived before this account
         /// existed, so they can't be for it.
@@ -164,6 +166,8 @@ struct MainTabFeature {
         case notNowClaimTapped
         /// Decline, after its confirmation: the sender is told.
         case declineClaimConfirmed
+        /// Decline and Block, after its confirmation.
+        case blockClaimConfirmed
         case declineClaimFinished(sequence: UInt64, succeeded: Bool)
         case retryClaimTapped
         case dismissClaimStatus
@@ -176,6 +180,7 @@ struct MainTabFeature {
         case dismissChallengeFromLink
         case pathChanged([CompetitionID])
         case historyPresentationChanged(Bool)
+        case historyPersonChanged(String?)
         case accountPresentationChanged(Bool)
         case pendingRouteTimedOut(UInt64)
         case onboardingChecked([PermissionOnboardingStep])
@@ -392,6 +397,13 @@ struct MainTabFeature {
 
             case let .historyPresentationChanged(isPresented):
                 state.showsHistory = isPresented
+                if !isPresented {
+                    state.historyPersonIdentity = nil
+                }
+                return .none
+
+            case let .historyPersonChanged(identity):
+                state.historyPersonIdentity = identity
                 return .none
 
             case let .accountPresentationChanged(isPresented):
@@ -541,23 +553,10 @@ struct MainTabFeature {
                 )
 
             case .declineClaimConfirmed:
-                guard state.inviteClaimStatus == .ready,
-                      let preview = state.inviteClaimPreview,
-                      let sequence = state.pendingClaimRoute?.sequence
-                else {
-                    return .none
-                }
-                state.inviteClaimStatus = .declining
-                state.claimDeclineFailed = false
-                let id = CompetitionID(preview.competitionID)
-                return .run { send in
-                    let returned = await competitionClient.decline(id)
-                    await send(.declineClaimFinished(
-                        sequence: sequence,
-                        succeeded: !returned.dashboard.issues.contains(.commandRejected(id))
-                    ))
-                }
-                .cancellable(id: CancelID.inviteClaim, cancelInFlight: true)
+                return declineClaim(&state, block: false)
+
+            case .blockClaimConfirmed:
+                return declineClaim(&state, block: true)
 
             case let .declineClaimFinished(sequence, succeeded):
                 guard sequence == state.pendingClaimRoute?.sequence,
@@ -855,7 +854,8 @@ struct MainTabFeature {
         }
     }
 
-    /// Schedules the notifications prompt once a match with a person exists.
+    /// Schedules the notifications prompt once a match with a person (not a
+    /// practice) exists.
     private func scheduleNotificationPromptIfDue(
         state: inout State
     ) -> Effect<Action> {
@@ -866,7 +866,7 @@ struct MainTabFeature {
               !state.isAccountPresented,
               state.competition.notificationAuthorizationState == .notDetermined,
               state.competition.publication?.dashboard.competitions.contains(
-                  where: { Self.hasPerson($0.lifecycle) }
+                  where: { !$0.isPractice && Self.hasPerson($0.lifecycle) }
               ) == true
         else {
             return .none
@@ -942,6 +942,7 @@ struct MainTabFeature {
             state.heldRouteSequence = nil
             state.lastHandledRouteSequence = envelope.sequence
             state.showsHistory = false
+            state.historyPersonIdentity = nil
             let closesAccount = state.isAccountPresented
             state.isAccountPresented = false
             state.path = [id]
@@ -1005,6 +1006,7 @@ struct MainTabFeature {
         }
         state.challengeFromLink = nil
         state.showsHistory = false
+        state.historyPersonIdentity = nil
         state.path = [id]
         return .send(.competition(.challengeSheetDismissed))
     }
@@ -1038,6 +1040,29 @@ struct MainTabFeature {
                     .failure((error as? CompetitionRemoteFailure) ?? .operationFailed)
                 ))
             }
+        }
+        .cancellable(id: CancelID.inviteClaim, cancelInFlight: true)
+    }
+
+    /// Decline, or Decline and Block; both finish through declineClaimFinished.
+    private func declineClaim(_ state: inout State, block: Bool) -> Effect<Action> {
+        guard state.inviteClaimStatus == .ready,
+              let preview = state.inviteClaimPreview,
+              let sequence = state.pendingClaimRoute?.sequence
+        else {
+            return .none
+        }
+        state.inviteClaimStatus = .declining
+        state.claimDeclineFailed = false
+        let id = CompetitionID(preview.competitionID)
+        return .run { send in
+            let returned = block
+                ? await competitionClient.block(id)
+                : await competitionClient.decline(id)
+            await send(.declineClaimFinished(
+                sequence: sequence,
+                succeeded: !returned.dashboard.issues.contains(.commandRejected(id))
+            ))
         }
         .cancellable(id: CancelID.inviteClaim, cancelInFlight: true)
     }

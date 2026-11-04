@@ -11,6 +11,12 @@ struct CompetitionDetailView: View {
     var refresh: (@Sendable () async -> Void)?
     /// Real scheduled matches only: Cancel Match in the ••• menu.
     var cancelMatch: CompetitionCancelMatch? = nil
+    /// Real matches only: one nudge a day when the other person's score is stale.
+    var nudge: CompetitionNudge? = nil
+    /// Real matches only: reactions on the other person's days.
+    var reactions: CompetitionReactionControl? = nil
+    /// Practice only: End Practice in the ••• menu.
+    var endPractice: (() -> Void)? = nil
 
     @Environment(\.locale) private var locale
     @Environment(\.timeZone) private var timeZone
@@ -18,6 +24,9 @@ struct CompetitionDetailView: View {
     @State private var page: Page = .today
     @State private var drawer: Drawer? = nil
     @State private var showsCancelConfirmation = false
+    @AppStorage(CompetitionReactionsSeen.storageKey)
+    private var reactionsSeen = CompetitionReactionsSeen()
+    @State private var showsEndPracticeConfirmation = false
 
     /// Today's numbers or the whole week; the scoreboard stays above both.
     private enum Page: Hashable {
@@ -51,6 +60,7 @@ struct CompetitionDetailView: View {
                     )
                     leadStatement
                     freshnessLine
+                    liveNudge
                     if cancelMatch?.failed == true {
                         Text("Couldn’t cancel the match. It may have already started.")
                             .font(.callout)
@@ -59,6 +69,8 @@ struct CompetitionDetailView: View {
                             .accessibilityIdentifier("competition.cancel.error")
                     }
                 }
+
+                latestReaction
 
                 tallyPanel
 
@@ -82,6 +94,8 @@ struct CompetitionDetailView: View {
             .padding(.bottom, 24)
         }
         .refreshable(refresh)
+        // Back or pop, not a drawer: the line stays while you're here.
+        .onDisappear { reactionsSeen = reactionsSeen.marking(competition) }
         .background(Theme.ground)
         .navigationTitle(competition.opponentDisplayName)
         .navigationBarTitleDisplayMode(.inline)
@@ -113,6 +127,14 @@ struct CompetitionDetailView: View {
                         .disabled(cancelMatch.isInFlight)
                         .accessibilityIdentifier("competition.match.cancel")
                     }
+                    if endPractice != nil {
+                        Button(role: .destructive) {
+                            showsEndPracticeConfirmation = true
+                        } label: {
+                            Label("End Practice", systemImage: "xmark.circle")
+                        }
+                        .accessibilityIdentifier("competition.practice.end")
+                    }
                 } label: {
                     CompetitionMoreLabel()
                 }
@@ -128,6 +150,16 @@ struct CompetitionDetailView: View {
             Button("Keep Match", role: .cancel) {}
         } message: {
             Text("It hasn’t started yet. \(competition.opponentDisplayName) will be told.")
+        }
+        .confirmationDialog(
+            "End this practice match?",
+            isPresented: $showsEndPracticeConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("End Practice", role: .destructive) { endPractice?() }
+            Button("Keep Going", role: .cancel) {}
+        } message: {
+            Text("It’s removed from this iPhone.")
         }
         .sheet(item: $drawer) { item in
             switch item {
@@ -183,6 +215,39 @@ struct CompetitionDetailView: View {
         ) + Text(scoresAreProvisional ? " Not final yet." : "")
     }
 
+    /// The newest day reaction you haven't seen; it opens that day.
+    @ViewBuilder
+    private var latestReaction: some View {
+        if reactions != nil,
+           let unseen = competitionUnseenReaction(competition, seen: reactionsSeen),
+           let day = unseen.target.dayOrdinal {
+            Button { drawer = .day(day) } label: {
+                HStack(spacing: 8) {
+                    CompetitionReactionLine(
+                        reaction: unseen,
+                        opponentName: competition.opponentDisplayName
+                    )
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    Image(systemName: "chevron.right")
+                        .font(.footnote.weight(.semibold))
+                        .foregroundStyle(Theme.tertiary)
+                        .accessibilityHidden(true)
+                }
+                .frame(minHeight: 44)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(CompetitionRowButtonStyle())
+            .accessibilityLabel(
+                competitionReactionAccessibilityText(
+                    unseen,
+                    opponentName: competition.opponentDisplayName
+                )
+            )
+            .accessibilityHint("Opens Day \(day)")
+            .accessibilityIdentifier("competition.reaction.latest")
+        }
+    }
+
     // Who or what the result waits on, and whether you need to act.
     @ViewBuilder
     private var tallyPanel: some View {
@@ -194,21 +259,48 @@ struct CompetitionDetailView: View {
                 locale: locale,
                 timeZone: timeZone
             )
-            VStack(alignment: .leading, spacing: 4) {
-                Text(copy.headline)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(Theme.ink)
-                    .fixedSize(horizontal: false, vertical: true)
-                Text(copy.body)
-                    .font(.subheadline)
-                    .foregroundStyle(Theme.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+            VStack(alignment: .leading, spacing: 12) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(copy.headline)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Theme.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Text(copy.body)
+                        .font(.subheadline)
+                        .foregroundStyle(Theme.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("competition.tally")
+                nudgeControl
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(16)
             .themePanel(cornerRadius: 16)
-            .accessibilityElement(children: .combine)
-            .accessibilityIdentifier("competition.tally")
+        }
+    }
+
+    /// Under the freshness line while the match is live; the tally panel has its own.
+    @ViewBuilder
+    private var liveNudge: some View {
+        switch competition.lifecycle {
+        case .active, .endsToday: nudgeControl
+        default: EmptyView()
+        }
+    }
+
+    @ViewBuilder
+    private var nudgeControl: some View {
+        if let nudge,
+           let display = competitionNudgeDisplay(
+               nudge.status, competition: competition, locale: locale, timeZone: timeZone
+           ) {
+            CompetitionNudgeControl(
+                display: display,
+                name: competition.opponentDisplayName,
+                send: nudge.send
+            )
         }
     }
 
@@ -233,7 +325,12 @@ struct CompetitionDetailView: View {
     @ViewBuilder
     private var todayActivity: some View {
         if let day = activityDay {
-            dayActivity(day, showsPullHint: true)
+            VStack(alignment: .leading, spacing: 12) {
+                if let takes = competitionWhatItTakes(competition, locale: locale) {
+                    CompetitionWhatItTakesPanel(takes: takes)
+                }
+                dayActivity(day, showsPullHint: true)
+            }
         } else {
             Label("Activity appears when Day 1 begins.", systemImage: "clock")
                 .font(.subheadline)
@@ -303,8 +400,50 @@ struct CompetitionDetailView: View {
                     now: competition.evaluatedAt,
                     opponentName: competition.opponentDisplayName
                 )
+                if let reactions {
+                    dayReactions(ordinal, control: reactions)
+                }
                 dayActivity(day, showsPullHint: false)
             }
+        }
+    }
+
+    /// Day reactions close when the result lands (the server agrees).
+    private var allowsDayReactions: Bool {
+        switch competition.lifecycle {
+        case .active, .endsToday, .tallying: competitionCanReact(competition)
+        default: false
+        }
+    }
+
+    /// The reaction you got on this day, and yours to send while you can.
+    @ViewBuilder
+    private func dayReactions(
+        _ ordinal: Int,
+        control: CompetitionReactionControl
+    ) -> some View {
+        let name = competition.opponentDisplayName
+        let received = competition.receivedReaction(.day(ordinal))
+        let canReact = allowsDayReactions
+        if received != nil || canReact {
+            VStack(alignment: .leading, spacing: 10) {
+                if let received {
+                    CompetitionReactionLine(
+                        reaction: received,
+                        opponentName: name,
+                        id: "competition.reaction.received"
+                    )
+                }
+                if canReact {
+                    CompetitionReactionLabel("REACT TO \(name.uppercased(with: locale))’S DAY")
+                    control.picker(.day(ordinal), in: competition)
+                    Text("\(name) sees your reaction on this day.")
+                        .font(.caption)
+                        .foregroundStyle(Theme.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
@@ -457,6 +596,7 @@ struct CompetitionMoreLabel: View {
 struct CompetitionDrawer<Content: View>: View {
     let title: String
     var subtitle: String?
+    var detents: Set<PresentationDetent> = [.medium, .large]
     @ViewBuilder let content: Content
 
     @Environment(\.dismiss) private var dismiss
@@ -487,7 +627,7 @@ struct CompetitionDrawer<Content: View>: View {
         }
         .scrollBounceBehavior(.basedOnSize)
         .background(Theme.ground)
-        .presentationDetents([.medium, .large])
+        .presentationDetents(detents)
         .presentationDragIndicator(.visible)
         .presentationBackground(Theme.ground)
     }
@@ -500,6 +640,8 @@ struct CompetitionDrawerCloseButton: View {
         Button(action: action) {
             Image(systemName: "xmark")
                 .font(.footnote.weight(.bold))
+                // Past xxxLarge the glyph outgrows its 30 pt circle.
+                .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
                 .foregroundStyle(Theme.secondary)
                 .frame(width: 30, height: 30)
                 .background(Theme.control, in: Circle())
@@ -518,6 +660,7 @@ func competitionMuteIdentity(
     authorization: CompetitionNotificationAuthorizationState?
 ) -> String? {
     guard authorization?.permitsNotifications == true,
+          !competition.isPractice,
           !competition.opponentIdentity.hasSuffix(":pending")
     else {
         return nil
@@ -931,12 +1074,12 @@ func competitionTallyCopy(
     case .opponentPlanUnavailable:
         return CompetitionTallyCopy(
             headline: "Waiting for \(name) to sync",
-            body: "Nothing for you to do. If \(name) doesn’t sync by \(deadline), the result uses what’s in."
+            body: "If \(name) doesn’t sync by \(deadline), the result uses what’s in."
         )
     case .awaitingOpponentCheck:
         return CompetitionTallyCopy(
             headline: "Waiting for \(name)’s last check",
-            body: "Nothing for you to do. If \(name) doesn’t open HealthComp by \(deadline), the result uses what’s in."
+            body: "If \(name) doesn’t open HealthComp by \(deadline), the result uses what’s in."
         )
     case let .incomplete(missing, unavailable) where unavailable.isEmpty:
         let days = competitionDayListText(missing, locale: locale)
@@ -1045,26 +1188,6 @@ func competitionScorePeriodLabel(
     return "Today"
 }
 
-/// "You lead by 12.", "Hermes leads by 382." or "All square.", from the
-/// numbers as shown. The margin is bold, amber for you and ink for them.
-@MainActor
-func competitionLeadText(
-    userPoints: Double,
-    opponentPoints: Double,
-    opponentDisplayName: String,
-    locale: Locale = .current
-) -> Text {
-    let margin = competitionDisplayedMargin(
-        userPoints: userPoints, opponentPoints: opponentPoints
-    )
-    guard margin != 0 else { return Text("All square.") }
-    let points = Text(competitionPointsText(abs(margin), locale: locale))
-        .fontWeight(.bold)
-    return margin > 0
-        ? Text("You lead by ") + points.foregroundStyle(Theme.you) + Text(".")
-        : Text("\(opponentDisplayName) leads by ") + points.foregroundStyle(Theme.ink) + Text(".")
-}
-
 enum CompetitionChartState: Equatable {
     case score(Double)
     case future
@@ -1121,4 +1244,153 @@ struct CompetitionCancelMatch {
     let isInFlight: Bool
     let failed: Bool
     let cancel: () -> Void
+}
+
+struct CompetitionNudge {
+    let status: CompetitionFeature.NudgeStatus?
+    let send: () -> Void
+}
+
+// MARK: Nudge
+
+/// The server uses the same value.
+let competitionNudgeStaleInterval: TimeInterval = 12 * 60 * 60
+
+/// Lifecycle and time only; the real-match gate is the caller's.
+func competitionCanNudge(_ competition: LocalCompetitionPresentation) -> Bool {
+    let now = competition.evaluatedAt
+    switch competition.lifecycle {
+    case .tallying:
+        guard let tally = competition.tally, now < tally.bestAvailableDeadline else {
+            return false
+        }
+        switch tally.attention {
+        case .awaitingOpponentCheck?, .opponentPlanUnavailable?: return true
+        default: return false
+        }
+    case .active, .endsToday:
+        guard let since = competition.opponentUpdatedAt ?? competition.acceptedConfiguration
+            .flatMap({ try? $0.schedule.calendar.startOfDay($0.schedule.startDay) })
+        else { return false }
+        return now.timeIntervalSince(since) > competitionNudgeStaleInterval
+    default:
+        return false
+    }
+}
+
+enum CompetitionNudgeDisplay: Equatable {
+    case button(error: String?, isSending: Bool)
+    case sent(String)
+    case notNeeded(String)
+}
+
+/// Nil when there's nothing to show. A sent or refused nudge holds until the
+/// match day (in the match's time zone) ends.
+func competitionNudgeDisplay(
+    _ status: CompetitionFeature.NudgeStatus?,
+    competition: LocalCompetitionPresentation,
+    locale: Locale = .current,
+    timeZone: TimeZone = .current
+) -> CompetitionNudgeDisplay? {
+    guard competitionCanNudge(competition) else { return nil }
+    var matchCalendar = Calendar(identifier: .gregorian)
+    matchCalendar.timeZone = TimeZone(identifier: competition.timeZoneIdentifier) ?? timeZone
+    // A server time after this projection (clock skew, or a projection from
+    // before midnight) is the newest news there is: it still counts as today.
+    func isToday(_ date: Date) -> Bool {
+        date > competition.evaluatedAt
+            || matchCalendar.isDate(date, inSameDayAs: competition.evaluatedAt)
+    }
+    switch status {
+    case let .sent(date)? where isToday(date):
+        let time = competitionUpdatedText(
+            date, now: max(date, competition.evaluatedAt), locale: locale, timeZone: timeZone
+        )
+        return .sent("Nudged at \(time). You can nudge again tomorrow.")
+    case let .notNeeded(date)? where isToday(date):
+        return .notNeeded("\(competition.opponentDisplayName) doesn’t need a nudge right now.")
+    case .sending?:
+        return .button(error: nil, isSending: true)
+    case .failed?:
+        return .button(error: "Couldn’t send the nudge. Try again.", isSending: false)
+    default:
+        return .button(error: nil, isSending: false)
+    }
+}
+
+private struct CompetitionNudgeControl: View {
+    let display: CompetitionNudgeDisplay
+    let name: String
+    let send: () -> Void
+
+    var body: some View {
+        content
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .onChange(of: display) { old, new in
+                if case .button(_, isSending: true) = old, case let .sent(text) = new {
+                    AccessibilityNotification.Announcement(text).post()
+                }
+            }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        switch display {
+        case let .button(error, isSending):
+            VStack(alignment: .leading, spacing: 4) {
+                Button("Nudge \(name)", action: send)
+                    .buttonStyle(CompetitionNudgeButtonStyle())
+                    .disabled(isSending)
+                    .accessibilityHint("Sends \(name) a notification to open HealthComp.")
+                    .accessibilityIdentifier("competition.nudge")
+                if let error {
+                    Text(error)
+                        .font(.subheadline)
+                        .foregroundStyle(Theme.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("competition.nudge.error")
+                }
+            }
+        case let .sent(text):
+            Label(text, systemImage: "checkmark")
+                .font(.subheadline)
+                .foregroundStyle(Theme.ink)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("competition.nudge.sent")
+        case let .notNeeded(text):
+            Text(text)
+                .font(.subheadline)
+                .foregroundStyle(Theme.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("competition.nudge.error")
+        }
+    }
+}
+
+/// The compact ink pill of the shipped "Review" mark, with a 44 pt target.
+private struct CompetitionNudgeButtonStyle: ButtonStyle {
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        // A capsule while it fits one line; a long name wraps inside
+        // rounded corners instead of past a capsule's ends.
+        ViewThatFits(in: .horizontal) {
+            pill(configuration.label.lineLimit(1), in: Capsule())
+            pill(configuration.label, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+        }
+        .opacity(isEnabled ? (configuration.isPressed ? 0.8 : 1) : 0.45)
+        .frame(minHeight: 44)
+        .contentShape(Rectangle())
+    }
+
+    private func pill(_ label: some View, in shape: some Shape) -> some View {
+        label
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(Theme.onInk)
+            .multilineTextAlignment(.leading)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            .background(Theme.ink, in: shape)
+    }
 }

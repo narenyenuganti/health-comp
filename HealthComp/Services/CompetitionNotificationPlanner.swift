@@ -45,7 +45,7 @@ extension CompetitionNotificationPolicy {
             var calendar = Calendar(identifier: .gregorian)
             calendar.timeZone = timeZone
             return calendar.date(
-                bySettingHour: 9,
+                bySettingHour: family == .whatItTakes ? 19 : 9,
                 minute: 0,
                 second: 0,
                 of: baseDate
@@ -124,6 +124,27 @@ extension CompetitionNotificationPolicy {
                 statusTitle(.tallying(startedAt: .distantPast), opponent: name),
                 "HealthComp is checking the latest Activity data before finalizing your result with \(name)."
             )
+        case .scheduled(.whatItTakes):
+            guard let takes = message.whatItTakes, let need = takes.points else {
+                return content(
+                    "Match update",
+                    "Open HealthComp for the latest on your match with \(name)."
+                )
+            }
+            // The match zone's abbreviation at that midnight, when it differs
+            // from the phone's, as the status line does.
+            let zone: String = {
+                guard let end = message.matchDayEnd,
+                      let id = message.matchTimeZoneIdentifier,
+                      let matchZone = TimeZone(identifier: id),
+                      matchZone.secondsFromGMT(for: end) != timeZone.secondsFromGMT(for: end)
+                else { return "" }
+                return " " + (matchZone.abbreviation(for: end) ?? id)
+            }()
+            return content(
+                "\(points(need)) to take the lead from \(name)",
+                "\(takes.suggestion) Day \(takes.dayOrdinal) ends at midnight\(zone)."
+            )
         case .opportunistic(.leadChange):
             let own = points(message.ownerPoints)
             let opp = points(message.opponentPoints)
@@ -176,11 +197,12 @@ extension CompetitionNotificationPolicy {
             guard let scores = resultScores(message, locale: locale) else {
                 return content(title, "Your match with \(name) is complete.")
             }
+            let body = message.outcome == .loss
+                ? "\(scores.opp) to \(scores.own)."
+                : "\(scores.own) to \(scores.opp)."
             return content(
                 title,
-                message.outcome == .loss
-                    ? "\(scores.opp) to \(scores.own)."
-                    : "\(scores.own) to \(scores.opp)."
+                [body, beltSentence(message)].compactMap { $0 }.joined(separator: " ")
             )
         case .opportunistic(.catchUp):
             return content(
@@ -224,12 +246,13 @@ extension CompetitionNotificationPolicy {
                 guard let scores = resultScores(message, locale: locale) else {
                     return "Your match with \(name) is complete."
                 }
-                return switch message.outcome {
+                let sentence = switch message.outcome {
                 case .win: "You beat \(name) \(scores.own) to \(scores.opp)."
                 case .loss: "\(name) won \(scores.opp) to \(scores.own)."
                 case .tie: "All square with \(name) at \(scores.own)."
                 case nil: "Your match with \(name) is complete."
                 }
+                return [sentence, beltSentence(message)].compactMap { $0 }.joined(separator: " ")
             }
             return CompetitionNotificationContent(
                 title: "\(messages.count) matches finished",
@@ -255,7 +278,7 @@ extension CompetitionNotificationPolicy {
                 title: statusTitle(.tallying(startedAt: .distantPast), opponent: first.opponentDisplayName),
                 body: "HealthComp is checking the latest Activity data before finalizing your results with \(names)."
             )
-        case .scheduled(.inviteExpiry), .opportunistic(.leadChange),
+        case .scheduled(.inviteExpiry), .scheduled(.whatItTakes), .opportunistic(.leadChange),
              .opportunistic(.closeScore), .opportunistic(.dailyMaximum):
             return liveV1Content(first, locale: locale)
         }
@@ -273,6 +296,16 @@ extension CompetitionNotificationPolicy {
             opponentDisplayName: opponent,
             style: .notification
         ).title
+    }
+
+    /// "You took the belt from Sam." on a take; nil otherwise.
+    private static func beltSentence(_ message: CompetitionNotificationMessage) -> String? {
+        switch message.beltTake {
+        case .took(.you, nil): "You took the belt."
+        case .took(.you, _?): "You took the belt from \(message.opponentDisplayName)."
+        case .took(.them, _): "\(message.opponentDisplayName) took the belt."
+        default: nil
+        }
     }
 
     /// Final scores in the user's locale; two decimals only when whole points
@@ -328,7 +361,8 @@ struct CompetitionNotificationPlanner: Sendable {
     func plan(
         _ snapshot: CompetitionNotificationPlanningSnapshot,
         authorization: CompetitionNotificationAuthorizationState,
-        mutedOpponentIdentities: Set<String>
+        mutedOpponentIdentities: Set<String>,
+        switchedOff: Set<CompetitionNotificationChoice> = []
     ) throws -> CompetitionNotificationPlan {
         guard snapshot.publicationRevision > 0 else {
             throw PlanningError.invalidPublicationRevision(
@@ -375,11 +409,12 @@ struct CompetitionNotificationPlanner: Sendable {
                 contentsOf: try scheduledRequests(
                     for: competition,
                     snapshot: snapshot
-                )
+                ).filter { !$0.message.family.isOff(in: switchedOff) }
             )
             let opportunity = try opportunisticPlan(
                 for: competition,
-                snapshot: snapshot
+                snapshot: snapshot,
+                switchedOff: switchedOff
             )
             decisions.append(contentsOf: opportunity.decisions)
             suppressions.append(contentsOf: opportunity.suppressions)
@@ -473,6 +508,18 @@ struct CompetitionNotificationPlanner: Sendable {
                     && candidates[$0].fireDate == candidate.fireDate
             }
             handled.formUnion(members)
+            if family == .whatItTakes {
+                // One evening reminder: the smallest gap, keeping its route.
+                // ponytail: grouped by fire instant, so matches in different
+                // zones can each post one; group by evening if that bites.
+                func key(_ index: Int) -> (Double, String) {
+                    (candidates[index].message.whatItTakes?.points ?? .infinity,
+                     candidates[index].request.identifier)
+                }
+                let pick = members.min { key($0) < key($1) }!
+                requests.append(candidates[pick].request)
+                continue
+            }
             guard members.count > 1 else {
                 requests.append(candidate.request)
                 continue
@@ -522,6 +569,15 @@ struct CompetitionNotificationPlanner: Sendable {
                 message.expiresAt = expiresAt
                 message.invitationDirection = direction
             }
+            if family == .whatItTakes, let takes = competition.whatItTakes {
+                message.whatItTakes = takes
+                message.dayOrdinal = takes.dayOrdinal
+                message.matchTimeZoneIdentifier = timeZoneIdentifier
+                // Base is that day's midnight in the match zone.
+                message.matchDayEnd = try competition.schedule.map {
+                    try $0.calendar.startOfDay($0.calendar.day(after: $0.calendar.day(containing: baseDate)))
+                }
+            }
             return ScheduledCandidate(
                 request: CompetitionScheduledNotificationRequest(
                     identifier: CompetitionNotificationIdentifier.scheduled(
@@ -564,6 +620,19 @@ struct CompetitionNotificationPlanner: Sendable {
             let start = try calendar.startOfDay(schedule.startDay)
             let final = try calendar.startOfDay(finalDay)
             let end = try calendar.startOfDay(endDay)
+            // The reminder's day comes from the value, not the lifecycle, so
+            // the trigger, N and "Day d" describe the same clock day.
+            // ponytail: content as of the last plan; a 6:45 PM BGAppRefresh
+            // re-plan is the upgrade if stale numbers bite.
+            // ponytail: a pending reminder can outlive a server cancellation
+            // until the next reconcile; a generic cancellation push is the upgrade.
+            var takes: [(CompetitionScheduledNotificationFamily, Date, String)] = []
+            if competition.lifecycle.isLiveDay,
+               let value = competition.whatItTakes, value.points != nil,
+               value.dayOrdinal == competition.currentDayOrdinal,
+               days.indices.contains(value.dayOrdinal - 1) {
+                takes = [(.whatItTakes, try calendar.startOfDay(days[value.dayOrdinal - 1]), timeZone)]
+            }
             switch competition.lifecycle {
             case .scheduled:
                 return [
@@ -572,14 +641,15 @@ struct CompetitionNotificationPlanner: Sendable {
                     (.competitionEnded, end, timeZone),
                 ]
             case let .active(dayOrdinal):
-                return dayOrdinal < 7
+                return (dayOrdinal < 7
                     ? [
                         (.finalDay, final, timeZone),
                         (.competitionEnded, end, timeZone),
                     ]
-                    : [(.competitionEnded, end, timeZone)]
+                    : [(.competitionEnded, end, timeZone)]) + takes
             case .endsToday, .tallying:
-                return [(.competitionEnded, end, timeZone)]
+                // `takes` is empty while tallying.
+                return [(.competitionEnded, end, timeZone)] + takes
             default:
                 return []
             }
@@ -621,7 +691,8 @@ struct CompetitionNotificationPlanner: Sendable {
 
     private func opportunisticPlan(
         for competition: CompetitionNotificationCompetitionSnapshot,
-        snapshot: CompetitionNotificationPlanningSnapshot
+        snapshot: CompetitionNotificationPlanningSnapshot,
+        switchedOff: Set<CompetitionNotificationChoice>
     ) throws -> OpportunityPlan {
         let staleSuppressions = try staleSuppressionRecords(
             for: competition,
@@ -640,6 +711,17 @@ struct CompetitionNotificationPlanner: Sendable {
                 $0.record.semanticEventID
             )
         }
+        // Switched off: recorded silently, so turning it back on never posts a
+        // late one, and this match's slot goes to its next candidate.
+        // ponytail: reuse .superseded; add NotificationSuppressionReason.switchedOff
+        // in CompetitionCore if support needs to tell them apart.
+        let isOff = { CompetitionNotificationMessageFamily.opportunistic($0).isOff(in: switchedOff) }
+        for candidate in candidates where isOff(candidate.record.family) {
+            result.suppressions.append(
+                try suppressed(candidate.record, reason: .superseded, snapshot: snapshot)
+            )
+        }
+        candidates.removeAll { isOff($0.record.family) }
         // "600 today" posts once a day across matches; this match's slot goes
         // to its next candidate.
         if dailyMaximumRecordedInAnotherMatch(competition, snapshot: snapshot) {
@@ -692,7 +774,7 @@ struct CompetitionNotificationPlanner: Sendable {
             }
         }
         if result.decisions.isEmpty,
-           !staleSuppressions.isEmpty,
+           staleSuppressions.contains(where: { !isOff($0.family) }),
            maximum > 0,
            let catchUp = try catchUpDecision(
                for: competition,
@@ -864,7 +946,8 @@ struct CompetitionNotificationPlanner: Sendable {
                     snapshot: snapshot,
                     ownerPoints: terminal.ownerPoints,
                     opponentPoints: terminal.opponentPoints,
-                    outcome: terminal.outcome
+                    outcome: terminal.outcome,
+                    beltTake: beltTake(for: competition, in: snapshot)
                 )
             )
         }
@@ -1086,7 +1169,8 @@ struct CompetitionNotificationPlanner: Sendable {
         opponentPoints: Double?,
         outcome: CompetitionOutcome?,
         dayOrdinal: Int? = nil,
-        liveMatchCount: Int = 1
+        liveMatchCount: Int = 1,
+        beltTake: CompetitionBeltEvent? = nil
     ) throws -> Candidate {
         let record = try NotificationEmissionRecorded(
             competitionID: competition.id,
@@ -1106,9 +1190,35 @@ struct CompetitionNotificationPlanner: Sendable {
                 opponentPoints: opponentPoints,
                 outcome: outcome,
                 dayOrdinal: dayOrdinal,
-                liveMatchCount: liveMatchCount
+                liveMatchCount: liveMatchCount,
+                beltTake: beltTake
             )
         )
+    }
+
+    /// The belt event of a finished match when it took the belt, from every
+    /// snapshot match with the same person (muted ones too, so muting never
+    /// shifts the history). The fold orders weeks like History does.
+    private func beltTake(
+        for competition: CompetitionNotificationCompetitionSnapshot,
+        in snapshot: CompetitionNotificationPlanningSnapshot
+    ) -> CompetitionBeltEvent? {
+        guard competition.opponentDisplayName != competitionFormerCompetitorName else { return nil }
+        let event = competitionBelt(
+            snapshot.competitions
+                .filter { $0.opponentIdentity == competition.opponentIdentity }
+                .compactMap { week in
+                    week.terminalResult.map {
+                        (
+                            id: week.id,
+                            end: week.schedule.flatMap(competitionScheduleBoundaries)?.end,
+                            outcome: $0.outcome
+                        )
+                    }
+                }
+        ).events[competition.id]
+        if case .took = event { return event }
+        return nil
     }
 }
 

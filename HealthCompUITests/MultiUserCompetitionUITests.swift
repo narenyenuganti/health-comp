@@ -261,7 +261,8 @@ final class MultiUserCompetitionUITests: XCTestCase {
         completed.tap()
         XCTAssertTrue(app.navigationBars["Former competitor"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.staticTexts["You beat Former competitor"].exists)
-        XCTAssertTrue(app.staticTexts["Victory Over Former competitor"].exists)
+        // A retired pair's past weeks keep their banner.
+        XCTAssertEqual(element("competition.result.belt").label, "You took the belt")
         XCTAssertTrue(
             app.otherElements["competition.result"].label
                 .contains("Former competitor")
@@ -294,6 +295,450 @@ final class MultiUserCompetitionUITests: XCTestCase {
         )
         XCTAssertFalse(moreMenu.exists)
         XCTAssertFalse(app.buttons["Delete Local Data"].exists)
+    }
+
+    func testBeltShowsOnHomeHistoryAndThePersonPage() throws {
+        launch(.sharing)
+        XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 8))
+
+        let jordan = sharingCard(state: "active", name: "Jordan")
+        scrollToElement(jordan)
+        XCTAssertTrue(jordan.label.contains("Jordan holds the belt"), jordan.label)
+        attachScreenshot("belt-home")
+        let riley = sharingCard(state: "active", name: "Riley")
+        scrollToElement(riley)
+        XCTAssertFalse(riley.label.contains("belt"), riley.label)
+
+        openHistory()
+        let jordanRecord = record(named: "Jordan")
+        scrollToElement(jordanRecord)
+        XCTAssertTrue(
+            jordanRecord.label.contains("Jordan holds the belt, 1 week"),
+            jordanRecord.label
+        )
+        let morganRecord = record(named: "Morgan")
+        scrollToElement(morganRecord)
+        XCTAssertFalse(morganRecord.label.contains("belt"), morganRecord.label)
+        attachScreenshot("belt-history")
+
+        scrollToElement(jordanRecord)
+        jordanRecord.tap()
+        XCTAssertTrue(app.navigationBars["Jordan"].waitForExistence(timeout: 3))
+        let belt = element("competition.person.belt")
+        XCTAssertTrue(belt.waitForExistence(timeout: 3))
+        XCTAssertTrue(belt.label.hasPrefix("Jordan holds the belt"), belt.label)
+        attachScreenshot("belt-person")
+
+        let pastWeek = element("competition.sharing.archived.a1000000-0000-4000-8000-000000000009")
+        scrollToElement(pastWeek)
+        pastWeek.tap()
+        let banner = element("competition.result.belt")
+        XCTAssertTrue(banner.waitForExistence(timeout: 3))
+        XCTAssertEqual(banner.label, "Jordan took the belt")
+        attachScreenshot("belt-result")
+
+        app.navigationBars.buttons.firstMatch.tap()
+        XCTAssertTrue(app.navigationBars["Jordan"].waitForExistence(timeout: 3))
+        app.navigationBars.buttons.firstMatch.tap()
+        XCTAssertTrue(app.navigationBars["History"].waitForExistence(timeout: 3))
+        let retired = record(named: "Former competitor")
+        scrollToElement(retired)
+        retired.tap()
+        XCTAssertTrue(app.navigationBars["Former competitor"].waitForExistence(timeout: 3))
+        XCTAssertTrue(
+            element("competition.person.belt").label.contains("The belt is retired")
+        )
+        attachScreenshot("belt-person-retired")
+
+        launch(
+            .sharing,
+            appearanceArguments: [
+                "-AppleInterfaceStyle", "Dark",
+                "-UIPreferredContentSizeCategoryName",
+                "UICTContentSizeCategoryAccessibilityXXXL",
+                "-UIAccessibilityReduceMotionEnabled", "YES",
+            ]
+        )
+        XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 8))
+        openHistory()
+        let largeRecord = record(named: "Jordan")
+        scrollToElement(largeRecord)
+        largeRecord.tap()
+        XCTAssertTrue(app.navigationBars["Jordan"].waitForExistence(timeout: 3))
+        XCTAssertTrue(element("competition.person.belt").waitForExistence(timeout: 3))
+        attachScreenshot("belt-person-dark-ax5")
+        // No .dynamicType audit: the reused rows swap layouts with ViewThatFits.
+        try app.performAccessibilityAudit(
+            for: XCUIAccessibilityAuditType.textClipped
+                .union(.hitRegion)
+                .union(.sufficientElementDescription)
+        )
+    }
+
+    func testShareResultPreviewsTheImageAndRemembersHideName() throws {
+        launch(.sharing)
+        XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 8))
+        openCaseyResult()
+
+        let share = app.buttons["competition.result.share"]
+        scrollToElement(share)
+        // Clear of the pinned Rematch for the capture.
+        app.scrollViews.firstMatch.swipeUp()
+        XCTAssertTrue(share.isHittable)
+        attachScreenshot("remote-result-share")
+        share.tap()
+
+        let card = element("competition.recap.card")
+        XCTAssertTrue(card.waitForExistence(timeout: 5))
+        // Normalizes a choice left over from an earlier run.
+        app.buttons["Show Casey"].tap()
+        let shown = "Casey won. Aug 13 to 19, 2026. You 2,692 points. Casey 2,800 points. Lost by 108 points, won 1 day, lost 6. Best day: Sunday, 512 points. Casey took the belt."
+        XCTAssertEqual(card.label, shown)
+        let imageShare = app.buttons["competition.recap.share"]
+        let enabled = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "isEnabled == true"),
+            object: imageShare
+        )
+        XCTAssertEqual(XCTWaiter.wait(for: [enabled], timeout: 5), .completed)
+        attachScreenshot("remote-recap-sheet")
+
+        app.buttons["Hide name"].tap()
+        let hidden = shown
+            .replacingOccurrences(of: "Casey won.", with: "They won.")
+            .replacingOccurrences(of: "Casey 2,800 points", with: "Them 2,800 points")
+            .replacingOccurrences(of: "Casey took the belt.", with: "They took the belt.")
+        XCTAssertEqual(card.label, hidden)
+        XCTAssertFalse(card.label.contains("Casey"))
+        attachScreenshot("remote-recap-sheet-hidden")
+
+        // The choice is remembered on this iPhone.
+        app.buttons["Close"].tap()
+        XCTAssertTrue(card.waitForNonExistence(timeout: 3))
+        scrollToElement(share)
+        share.tap()
+        XCTAssertTrue(card.waitForExistence(timeout: 5))
+        XCTAssertTrue(card.label.hasPrefix("They won."), card.label)
+        app.buttons["Show Casey"].tap()
+        app.buttons["Close"].tap()
+        XCTAssertTrue(card.waitForNonExistence(timeout: 3))
+
+        // A deleted account's name is always hidden, with no choice.
+        navigateBackToSharing()
+        let former = sharingCard(state: "completed", name: "Former competitor")
+        scrollToElement(former)
+        former.tap()
+        XCTAssertTrue(app.navigationBars["Former competitor"].waitForExistence(timeout: 3))
+        scrollToElement(share)
+        // The reaction panel pushes Share Result under the pinned Rematch.
+        app.scrollViews.firstMatch.swipeUp()
+        share.tap()
+        XCTAssertTrue(card.waitForExistence(timeout: 5))
+        XCTAssertEqual(
+            card.label,
+            "Match won. Aug 13 to 19, 2026. You 3,520 points. Them 3,410 points. Won by 110 points."
+        )
+        XCTAssertFalse(element("competition.recap.name").exists)
+        app.buttons["Close"].tap()
+
+        launch(
+            .sharing,
+            appearanceArguments: [
+                "-AppleInterfaceStyle", "Dark",
+                "-UIPreferredContentSizeCategoryName",
+                "UICTContentSizeCategoryAccessibilityXXXL",
+                "-UIAccessibilityReduceMotionEnabled", "YES",
+            ]
+        )
+        XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 8))
+        openCaseyResult()
+        // The lab banner sits behind the sheet, so check it first.
+        assertRemoteRenderedConfiguration("Appearance: Dark; Dynamic Type: accessibility5")
+        let largeShare = app.buttons["competition.result.share"]
+        scrollToElement(largeShare)
+        largeShare.tap()
+        XCTAssertTrue(element("competition.recap.card").waitForExistence(timeout: 5))
+        XCTAssertTrue(app.switches["competition.recap.name"].exists)
+        try app.performAccessibilityAudit(
+            for: XCUIAccessibilityAuditType.textClipped
+                .union(.hitRegion)
+                .union(.sufficientElementDescription)
+        )
+        attachScreenshot("remote-recap-Dark-accessibility5")
+        app.buttons["Close"].tap()
+    }
+
+    func testReactionsOnHomeMatchDayDrawerAndResult() throws {
+        launch(.sharing)
+        XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 8))
+
+        let jordan = sharingCard(state: "active", name: "Jordan")
+        scrollToElement(jordan)
+        XCTAssertTrue(jordan.label.contains("Jordan reacted to your Day 2"), jordan.label)
+        attachScreenshot("reactions-home")
+        jordan.tap()
+        XCTAssertTrue(app.navigationBars["Jordan"].waitForExistence(timeout: 3))
+
+        let latest = element("competition.reaction.latest")
+        XCTAssertTrue(latest.waitForExistence(timeout: 3))
+        XCTAssertEqual(latest.label, "Huffing. Jordan reacted to your Day 2")
+        attachScreenshot("reactions-match-latest")
+        latest.tap()
+        XCTAssertTrue(app.staticTexts["Day 2"].waitForExistence(timeout: 3))
+        let received = element("competition.reaction.received")
+        XCTAssertTrue(received.waitForExistence(timeout: 3))
+        XCTAssertEqual(received.label, "Huffing. Jordan reacted to your Day 2")
+        attachScreenshot("reactions-day-2-drawer")
+        app.buttons["Close"].firstMatch.tap()
+        XCTAssertTrue(received.waitForNonExistence(timeout: 3))
+
+        showWeek()
+        let dayThree = app.descendants(matching: .any)["competition.day.3"]
+        scrollToElement(dayThree)
+        dayThree.tap()
+        let fire = app.buttons["competition.react.fire"]
+        XCTAssertTrue(fire.waitForExistence(timeout: 3))
+        XCTAssertTrue(text("REACT TO JORDAN’S DAY").exists)
+        XCTAssertTrue(text("Jordan sees your reaction on this day.").exists)
+        XCTAssertFalse(fire.isSelected)
+        fire.tap()
+        XCTAssertTrue(
+            waitForSelected(fire, true),
+            "Fire is selected after the first tap"
+        )
+        attachScreenshot("reactions-day-3-drawer")
+        try app.performAccessibilityAudit(
+            for: XCUIAccessibilityAuditType.textClipped
+                .union(.hitRegion)
+                .union(.sufficientElementDescription)
+        )
+        fire.tap()
+        XCTAssertTrue(
+            waitForSelected(fire, false),
+            "The same preset again removes it"
+        )
+        app.buttons["Close"].firstMatch.tap()
+        XCTAssertTrue(fire.waitForNonExistence(timeout: 3))
+
+        // Leaving the match marks Jordan's reaction seen.
+        navigateBackToSharing()
+        let jordanAfter = sharingCard(state: "active", name: "Jordan")
+        XCTAssertTrue(jordanAfter.waitForExistence(timeout: 3))
+        XCTAssertFalse(jordanAfter.label.contains("reacted"), jordanAfter.label)
+
+        // Morgan's archived week, from History.
+        openHistory()
+        let morganRecord = record(named: "Morgan")
+        scrollToElement(morganRecord)
+        morganRecord.tap()
+        XCTAssertTrue(app.navigationBars["Morgan"].waitForExistence(timeout: 3))
+        let morganWeek = element("competition.sharing.archived.a1000000-0000-4000-8000-000000000004")
+        scrollToElement(morganWeek)
+        morganWeek.tap()
+        let panel = element("competition.result.react")
+        XCTAssertTrue(panel.waitForExistence(timeout: 3))
+        let morganReceived = element("competition.reaction.received")
+        XCTAssertEqual(morganReceived.label, "Clap. Morgan reacted to the result")
+        let clap = app.buttons["competition.react.clap"]
+        scrollToElement(clap)
+        clap.tap()
+        XCTAssertTrue(waitForSelected(clap, true))
+        attachScreenshot("reactions-result-morgan")
+
+        // A deleted account can't be reacted to, but its reaction still shows.
+        launch(.sharing)
+        XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 8))
+        let former = sharingCard(state: "completed", name: "Former competitor")
+        scrollToElement(former)
+        XCTAssertTrue(
+            former.label.contains("Former competitor reacted to the result"),
+            former.label
+        )
+        former.tap()
+        XCTAssertTrue(app.navigationBars["Former competitor"].waitForExistence(timeout: 3))
+        let formerReceived = element("competition.reaction.received")
+        XCTAssertTrue(formerReceived.waitForExistence(timeout: 3))
+        XCTAssertEqual(formerReceived.label, "Salute. Former competitor reacted to the result")
+        XCTAssertFalse(app.buttons["competition.react.clap"].exists)
+        attachScreenshot("reactions-result-former")
+    }
+
+    func testReactionPickerFitsAtAccessibility5() throws {
+        launch(
+            .sharing,
+            appearanceArguments: [
+                "-AppleInterfaceStyle", "Light",
+                "-UIPreferredContentSizeCategoryName",
+                "UICTContentSizeCategoryAccessibilityXXXL",
+                "-UIAccessibilityReduceMotionEnabled", "YES",
+            ]
+        )
+        XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 8))
+        let jordan = sharingCard(state: "active", name: "Jordan")
+        scrollToElement(jordan)
+        jordan.tap()
+        XCTAssertTrue(app.navigationBars["Jordan"].waitForExistence(timeout: 3))
+        showWeek()
+        let dayThree = app.descendants(matching: .any)["competition.day.3"]
+        scrollToElement(dayThree)
+        dayThree.tap()
+
+        // Drag the title to the top to reach .large, then scroll the drawer
+        // itself (the scroll view holding the chips, not the page behind
+        // it) in short drags until the last chip is fully on screen.
+        let title = app.staticTexts["Day 3"]
+        XCTAssertTrue(title.waitForExistence(timeout: 3))
+        title.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(
+            forDuration: 0.1,
+            thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.05))
+        )
+        let salute = app.buttons["competition.react.salute"]
+        XCTAssertTrue(salute.waitForExistence(timeout: 3))
+        let drawer = app.scrollViews
+            .containing(.button, identifier: "competition.react.salute").firstMatch
+        for _ in 0..<8 {
+            if salute.isHittable, app.frame.contains(salute.frame) { break }
+            drawer.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7)).press(
+                forDuration: 0.05,
+                thenDragTo: drawer.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)),
+                withVelocity: .slow,
+                thenHoldForDuration: 0.2
+            )
+        }
+        attachScreenshot("reactions-day-3-drawer-ax5")
+        for kind in ["clap", "fire", "huffing", "salute"] {
+            XCTAssertTrue(app.buttons["competition.react.\(kind)"].isHittable, kind)
+        }
+        // No .dynamicType audit: it flags different elements on different runs.
+        try app.performAccessibilityAudit(
+            for: XCUIAccessibilityAuditType.textClipped
+                .union(.hitRegion)
+                .union(.sufficientElementDescription)
+        )
+    }
+
+    private func waitForSelected(_ element: XCUIElement, _ isSelected: Bool) -> Bool {
+        let expectation = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "isSelected == %@", NSNumber(value: isSelected)),
+            object: element
+        )
+        return XCTWaiter.wait(for: [expectation], timeout: 3) == .completed
+    }
+
+    func testPracticeMatchStartsFromEmptyHomeAndEndsFromTheMenu() throws {
+        let audit = XCUIAccessibilityAuditType.textClipped
+            .union(.hitRegion)
+            .union(.sufficientElementDescription)
+        launch(.practice)
+        XCTAssertTrue(app.staticTexts["No matches yet"].waitForExistence(timeout: 8))
+        XCTAssertTrue(
+            app.staticTexts["Challenge someone to a 7-day match, or warm up against a pacer."].exists
+        )
+        attachScreenshot("practice-empty-home")
+        app.buttons["competition.practice.open"].tap()
+
+        XCTAssertTrue(element("competition.practice.sheet").waitForExistence(timeout: 3))
+        let balanced = app.buttons["competition.practice.pace.balanced"]
+        XCTAssertTrue(balanced.isSelected)
+        XCTAssertFalse(element("competition.practice.error").exists)
+        attachScreenshot("practice-sheet")
+        try app.performAccessibilityAudit(for: audit)
+        let challenging = app.buttons["competition.practice.pace.challenging"]
+        challenging.tap()
+        XCTAssertTrue(challenging.isSelected)
+        XCTAssertFalse(balanced.isSelected)
+        app.buttons["competition.practice.start"].tap()
+
+        let card = sharingCard(state: "active", name: "Pacer")
+        XCTAssertTrue(card.waitForExistence(timeout: 5))
+        XCTAssertTrue(card.label.contains("Practice · Day 2 of 7"), card.label)
+        // Success closes the sheet.
+        expectation(
+            for: NSPredicate(format: "exists == false"),
+            evaluatedWith: element("competition.practice.sheet")
+        )
+        waitForExpectations(timeout: 5)
+        let challenge = app.buttons["competition.practice.challenge"]
+        scrollToElement(challenge)
+        XCTAssertTrue(challenge.exists)
+        attachScreenshot("practice-home")
+        try app.performAccessibilityAudit(for: audit)
+
+        scrollToElement(card)
+        card.tap()
+        XCTAssertTrue(app.navigationBars["Pacer"].waitForExistence(timeout: 3))
+        attachScreenshot("practice-match")
+        XCTAssertTrue(moreMenu.waitForExistence(timeout: 3))
+        moreMenu.tap()
+        let end = app.buttons["competition.practice.end"]
+        XCTAssertTrue(end.waitForExistence(timeout: 3))
+        attachScreenshot("practice-menu")
+        end.tap()
+        let confirmation = app.sheets["End this practice match?"]
+        XCTAssertTrue(confirmation.waitForExistence(timeout: 3))
+        attachScreenshot("practice-end-confirmation")
+        confirmation.buttons["End Practice"].tap()
+
+        XCTAssertTrue(app.staticTexts["No matches yet"].waitForExistence(timeout: 5))
+        XCTAssertFalse(card.exists)
+
+        // A finished practice: Practice · Final, and Challenge Someone in place of Rematch.
+        launch(.practice, appearanceArguments: ["-practiceLabFinished", "YES"])
+        let result = sharingCard(state: "completed", name: "Pacer")
+        XCTAssertTrue(result.waitForExistence(timeout: 8))
+        XCTAssertTrue(result.label.contains("Practice · "), result.label)
+        result.tap()
+        let kicker = app.staticTexts.matching(
+            NSPredicate(format: "label BEGINSWITH[c] %@", "Practice · Final · ")
+        ).firstMatch
+        XCTAssertTrue(kicker.waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["competition.practice.challenge"].exists)
+        XCTAssertFalse(moreMenu.exists)
+        XCTAssertFalse(app.buttons["competition.result.share"].exists)
+        attachScreenshot("practice-result")
+
+        launch(
+            .practice,
+            appearanceArguments: [
+                "-AppleInterfaceStyle", "Dark",
+                "-UIPreferredContentSizeCategoryName",
+                "UICTContentSizeCategoryAccessibilityXXXL",
+            ]
+        )
+        XCTAssertTrue(app.staticTexts["No matches yet"].waitForExistence(timeout: 8))
+        let open = app.buttons["competition.practice.open"]
+        scrollToElement(open)
+        open.tap()
+        XCTAssertTrue(element("competition.practice.sheet").waitForExistence(timeout: 3))
+        let start = app.buttons["competition.practice.start"]
+        scrollToElement(start)
+        XCTAssertTrue(start.isHittable)
+        attachScreenshot("practice-sheet-dark-ax5")
+        try app.performAccessibilityAudit(for: audit)
+    }
+
+    private func openCaseyResult() {
+        let casey = sharingCard(state: "completed", name: "Casey")
+        scrollToElement(casey)
+        revealRemoteElementFully(casey)
+        casey.tap()
+        XCTAssertTrue(app.navigationBars["Casey"].waitForExistence(timeout: 3))
+    }
+
+    private func openHistory() {
+        let history = app.buttons["competition.history.open"]
+        scrollToElement(history)
+        history.tap()
+        XCTAssertTrue(app.navigationBars["History"].waitForExistence(timeout: 3))
+    }
+
+    private func record(named name: String) -> XCUIElement {
+        app.descendants(matching: .any).matching(
+            NSPredicate(
+                format: "identifier BEGINSWITH %@ AND label CONTAINS %@",
+                "competition.record.",
+                name
+            )
+        ).firstMatch
     }
 
     func testHomeGroupsLiveMatchesByEndTimeAndShowsMatchIssues() {
@@ -464,6 +909,8 @@ final class MultiUserCompetitionUITests: XCTestCase {
         app.buttons["competition.claim.decline"].tap()
         let confirm = app.buttons["Decline Challenge"]
         XCTAssertTrue(confirm.waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["Decline and Block Naren"].exists)
+        attachScreenshot("claim-decline-dialog")
         confirm.tap()
         XCTAssertTrue(
             app.staticTexts["Invitation Declined"]
@@ -596,6 +1043,11 @@ final class MultiUserCompetitionUITests: XCTestCase {
             attachScreenshot("challenge-link-\(appearance)-\(size)")
             try app.performAccessibilityAudit(for: auditTypes)
 
+            launch(.incomingChallenge, appearanceArguments: arguments)
+            XCTAssertTrue(app.buttons["competition.invite.accept"].waitForExistence(timeout: 8))
+            attachScreenshot("incoming-challenge-\(appearance)-\(size)")
+            try app.performAccessibilityAudit(for: auditTypes)
+
             launch(.account, appearanceArguments: arguments)
             XCTAssertTrue(app.navigationBars["Account"].waitForExistence(timeout: 8))
             // At AX5 the section starts below the fold, outside the lazy list.
@@ -609,8 +1061,149 @@ final class MultiUserCompetitionUITests: XCTestCase {
             XCTAssertTrue(element("account.challenge-link.qr").waitForExistence(timeout: 3))
             attachScreenshot("challenge-code-\(appearance)-\(size)")
             try app.performAccessibilityAudit(for: auditTypes)
+
+            launch(.account, appearanceArguments: arguments)
+            XCTAssertTrue(app.navigationBars["Account"].waitForExistence(timeout: 8))
+            let unblock = app.buttons["Unblock Alex"]
+            scrollToElement(unblock)
+            attachScreenshot("account-blocked-\(appearance)-\(size)")
+            try app.performAccessibilityAudit(for: auditTypes)
         }
         app.terminate()
+    }
+
+    func testIncomingChallengeOffersDeclineAndBlock() {
+        launch(.incomingChallenge)
+        defer { app.terminate() }
+        let decline = app.buttons["competition.invite.decline"]
+        XCTAssertTrue(decline.waitForExistence(timeout: 8))
+        decline.tap()
+        XCTAssertTrue(app.staticTexts["Decline challenge from Alex?"].waitForExistence(timeout: 3))
+        XCTAssertTrue(
+            app.staticTexts[
+                "Alex will see a decline either way. If you block them, they can’t challenge you again."
+            ].exists
+        )
+        XCTAssertTrue(app.buttons["Decline Challenge"].exists)
+        let declineAndBlock = app.buttons["Decline and Block Alex"]
+        XCTAssertTrue(declineAndBlock.exists)
+        attachScreenshot("incoming-decline-dialog")
+
+        // Keep Challenge dismisses.
+        dismissDialog(cancel: "Keep Challenge")
+        XCTAssertTrue(declineAndBlock.waitForNonExistence(timeout: 3))
+        XCTAssertTrue(decline.exists)
+
+        decline.tap()
+        XCTAssertTrue(declineAndBlock.waitForExistence(timeout: 3))
+        declineAndBlock.tap()
+        let outcome = element("multiuser.incoming.outcome")
+        XCTAssertTrue(outcome.waitForExistence(timeout: 3))
+        XCTAssertEqual(outcome.label, "Declined and blocked")
+    }
+
+    func testIncomingChallengeMoreMenuBlocksAfterConfirming() {
+        launch(.incomingChallenge)
+        defer { app.terminate() }
+        let more = app.buttons["competition.more"]
+        XCTAssertTrue(more.waitForExistence(timeout: 8))
+        XCTAssertEqual(more.label, "More")
+        more.tap()
+        let block = app.buttons["competition.invite.block"]
+        XCTAssertTrue(block.waitForExistence(timeout: 3))
+        XCTAssertEqual(block.label, "Block Alex")
+        attachScreenshot("incoming-more-menu")
+        block.tap()
+        XCTAssertTrue(app.staticTexts["Block Alex?"].waitForExistence(timeout: 3))
+        XCTAssertTrue(
+            app.staticTexts[
+                "This declines the challenge. Alex will see a decline and can’t challenge you again."
+            ].exists
+        )
+        attachScreenshot("incoming-block-confirmation")
+
+        // Cancel keeps the screen.
+        dismissDialog(cancel: "Cancel")
+        XCTAssertTrue(app.staticTexts["Block Alex?"].waitForNonExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["competition.invite.accept"].exists)
+
+        more.tap()
+        XCTAssertTrue(block.waitForExistence(timeout: 3))
+        block.tap()
+        let confirm = app.buttons.matching(
+            NSPredicate(format: "label == %@ AND identifier != %@", "Block Alex", "competition.invite.block")
+        ).firstMatch
+        XCTAssertTrue(confirm.waitForExistence(timeout: 3))
+        confirm.tap()
+        let outcome = element("multiuser.incoming.outcome")
+        XCTAssertTrue(outcome.waitForExistence(timeout: 3))
+        XCTAssertEqual(outcome.label, "Declined and blocked")
+    }
+
+    func testAccountListsBlockedPeopleAndUnblocks() {
+        launch(.account)
+        defer { app.terminate() }
+        XCTAssertTrue(app.navigationBars["Account"].waitForExistence(timeout: 8))
+        let unblock = app.buttons["Unblock Alex"]
+        scrollToElement(unblock)
+        XCTAssertTrue(unblock.exists)
+        XCTAssertEqual(unblock.identifier, "account.blocked.unblock")
+        XCTAssertTrue(app.staticTexts["BLOCKED"].exists)
+        XCTAssertTrue(app.staticTexts["Alex"].exists)
+        let footer = app.staticTexts["Blocked people can’t challenge you. They aren’t notified."]
+        scrollToElement(footer)
+        XCTAssertTrue(footer.exists)
+        attachScreenshot("account-blocked")
+        scrollToElement(unblock)
+        unblock.tap()
+        XCTAssertTrue(app.staticTexts["BLOCKED"].waitForNonExistence(timeout: 3))
+        XCTAssertFalse(footer.exists)
+    }
+
+    /// A confirmation dialog's cancel button, or a tap outside where iOS
+    /// shows it as a popover without one.
+    private func dismissDialog(cancel label: String) {
+        let button = app.buttons[label]
+        if button.exists, button.isHittable {
+            button.tap()
+        } else {
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.08)).tap()
+        }
+    }
+
+    /// Each card is one VoiceOver element, so the checks read its label.
+    func testLiveActivityPreviewFitsAtAccessibilitySizes() throws {
+        let sizes: [(name: String, arguments: [String])] = [
+            ("default", []),
+            ("ax5", ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]),
+        ]
+        for appearance in ["Light", "Dark"] {
+            for size in sizes {
+                launch(.liveActivity, appearanceArguments: ["-AppleInterfaceStyle", appearance] + size.arguments)
+                let live = element("liveActivity.preview.live")
+                XCTAssertTrue(live.waitForExistence(timeout: 8))
+                let pending = element("liveActivity.preview.pending")
+                XCTAssertTrue(live.label.contains("Last day · Sam"), live.label)
+                XCTAssertTrue(live.label.contains("You 2,190 points"), live.label)
+                XCTAssertTrue(live.label.contains("Sam 2,171 points"), live.label)
+                XCTAssertTrue(live.label.contains("You lead by 19."), live.label)
+                XCTAssertTrue(pending.label.contains("Final score pending · Sam"), pending.label)
+                XCTAssertTrue(pending.label.contains("Not final yet."), pending.label)
+                XCTAssertFalse(pending.label.contains("Ends at midnight"), pending.label)
+                attachScreenshot("live-activity-preview-\(appearance)-\(size.name)")
+                var issues: [String] = []
+                // The card has a fixed 160 pt height, so one-line rows are by
+                // design; whether they really fit is checked at AX5.
+                let audit: XCUIAccessibilityAuditType = size.name == "ax5"
+                    ? XCUIAccessibilityAuditType.textClipped.union(.sufficientElementDescription)
+                    : .sufficientElementDescription
+                try app.performAccessibilityAudit(for: audit) { issue in
+                    issues.append("\(issue.compactDescription): \(issue.element?.label ?? "?") \(issue.element?.frame ?? .zero)")
+                    return true
+                }
+                XCTAssertEqual(issues, [], "\(appearance) \(size.name)")
+            }
+        }
     }
 
     private func attachScreenshot(_ name: String) {
@@ -735,6 +1328,7 @@ final class MultiUserCompetitionUITests: XCTestCase {
         app.buttons["competition.claim.decline"].tap()
         let confirm = app.buttons["Decline Challenge"]
         XCTAssertTrue(confirm.waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["Decline and Block Naren"].exists)
         confirm.tap()
         // Health is still next, in its own terms.
         XCTAssertTrue(
@@ -815,6 +1409,11 @@ final class MultiUserCompetitionUITests: XCTestCase {
         app.navigationBars["Privacy"].buttons.firstMatch.tap()
         XCTAssertTrue(app.navigationBars["Account"].waitForExistence(timeout: 3))
         let edit = app.buttons["account.settings.edit-display-name"]
+        // The lazy List drops the profile row this far below it, and
+        // scrollToElement only knows to scroll up to a row that exists.
+        for _ in 0..<6 where !edit.exists {
+            app.collectionViews.firstMatch.swipeDown(velocity: .fast)
+        }
         scrollToElement(edit)
         edit.tap()
         let field = app.textFields["account.settings.display-name"]
@@ -916,19 +1515,20 @@ final class MultiUserCompetitionUITests: XCTestCase {
         launch(.account)
         defer { app.terminate() }
         XCTAssertTrue(app.navigationBars["Account"].waitForExistence(timeout: 8))
-        element("account.notifications").tap()
+        // BLOCKED sits above it, so the row can start below the fold.
+        let notifications = element("account.notifications")
+        scrollToElement(notifications)
+        notifications.tap()
         XCTAssertTrue(app.navigationBars["Notifications"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.staticTexts["Turned off in iOS Settings"].exists)
-        let mutedHeader = app.staticTexts["MUTED"]
-        XCTAssertTrue(mutedHeader.exists)
+        XCTAssertTrue(app.staticTexts["DURING A MATCH"].exists)
         // The remote suite's audit set. `.dynamicType` flags a different
         // List element on each run here (header, name, initial), so it's
         // left to the local suite's single-screen audit, as elsewhere.
-        try app.performAccessibilityAudit(
-            for: XCUIAccessibilityAuditType.textClipped
-                .union(.hitRegion)
-                .union(.sufficientElementDescription)
-        )
+        let audit = XCUIAccessibilityAuditType.textClipped
+            .union(.hitRegion)
+            .union(.sufficientElementDescription)
+        try auditNotificationsPage(audit)
 
         app.buttons["account.notifications.settings"].tap()
         XCTAssertTrue(
@@ -936,11 +1536,103 @@ final class MultiUserCompetitionUITests: XCTestCase {
                 .waitForExistence(timeout: 3)
         )
 
+        // Seven switches, all on by default, in page order.
+        let rows: [(String, String)] = [
+            ("lead-change", "Lead changes"), ("close-score", "Close scores"),
+            ("what-it-takes", "What it takes"), ("final-day", "Last day"), ("live-activity", "Live Activity"),
+            ("reaction", "Reactions"), ("nudge", "Nudges"),
+        ]
+        for (raw, label) in rows {
+            let toggle = app.switches["account.notifications.choice.\(raw)"].firstMatch
+            scrollToElement(toggle)
+            XCTAssertTrue(toggle.exists, raw)
+            XCTAssertEqual(toggle.label, label)
+        }
+        XCTAssertTrue(app.staticTexts["FROM THE OTHER PERSON"].exists)
+
+        // The fixture has Live Activities off in iOS.
+        let liveActivity = app.switches["account.notifications.choice.live-activity"].firstMatch
+        scrollToElement(liveActivity)
+        XCTAssertFalse(liveActivity.isEnabled)
+        XCTAssertTrue(app.staticTexts["Live Activities are off for HealthComp in iOS Settings."].exists)
+        let liveActivitySettings = app.buttons["account.notifications.live-activity.settings"]
+        scrollToElement(liveActivitySettings)
+        XCTAssertTrue(liveActivitySettings.isHittable)
+        liveActivitySettings.tap()
+        XCTAssertTrue(
+            app.staticTexts[UIApplication.openSettingsURLString]
+                .waitForExistence(timeout: 3)
+        )
+
+        // Flip one and back, so reruns start clean.
+        let leadChanges = app.switches["account.notifications.choice.lead-change"].firstMatch
+        scrollToElement(leadChanges)
+        let before = leadChanges.value as? String
+        flip(leadChanges)
+        XCTAssertNotEqual(leadChanges.value as? String, before)
+        attachScreenshot("notification-choices")
+        flip(leadChanges)
+        XCTAssertEqual(leadChanges.value as? String, before)
+
+        let mutedHeader = app.staticTexts["MUTED"]
+        scrollToElement(mutedHeader)
+        XCTAssertTrue(mutedHeader.exists)
+        try auditNotificationsPage(audit)
+
         let unmute = app.buttons["Unmute Hermes"]
         XCTAssertTrue(unmute.exists)
         unmute.tap()
         XCTAssertTrue(mutedHeader.waitForNonExistence(timeout: 3))
         XCTAssertFalse(app.buttons["account.notifications.unmute"].exists)
+    }
+
+    /// The switch rows report "Text clipped" with no element on iOS 18 (one
+    /// per enabled `Toggle` on screen). XCTest can't locate those, so they're
+    /// attached and skipped, as in BlockChallengerUITests; the AX5 captures in
+    /// `testNotificationChoicesCaptureLightDarkAndAX5` are checked by eye.
+    private func auditNotificationsPage(_ audit: XCUIAccessibilityAuditType) throws {
+        try XCTContext.runActivity(named: "audit notifications") { activity in
+            try app.performAccessibilityAudit(for: audit) { issue in
+                guard issue.element == nil, issue.auditType == .textClipped else { return false }
+                activity.add(XCTAttachment(string: "skipped: \(issue.detailedDescription)"))
+                return true
+            }
+        }
+    }
+
+    /// Not in CI: preview captures of Account → Notifications with one switch
+    /// off, light and dark at XS, and light at AX5 (top and bottom).
+    func testNotificationChoicesCaptureLightDarkAndAX5() {
+        let cases = [
+            ("light-xs", "Light", "UICTContentSizeCategoryXS"),
+            ("dark-xs", "Dark", "UICTContentSizeCategoryXS"),
+            ("light-default", "Light", "UICTContentSizeCategoryL"),
+            ("light-ax5", "Light", "UICTContentSizeCategoryAccessibilityXXXL"),
+        ]
+        for (name, appearance, size) in cases {
+            launch(.account, appearanceArguments: [
+                "-AppleInterfaceStyle", appearance,
+                "-UIPreferredContentSizeCategoryName", size,
+            ])
+            XCTAssertTrue(app.navigationBars["Account"].waitForExistence(timeout: 8))
+            let notifications = element("account.notifications")
+            scrollToElement(notifications)
+            notifications.tap()
+            XCTAssertTrue(app.navigationBars["Notifications"].waitForExistence(timeout: 3))
+            let closeScores = app.switches["account.notifications.choice.close-score"].firstMatch
+            scrollToElement(closeScores)
+            // An interrupted earlier run can leave it off already.
+            if closeScores.value as? String != "0" { flip(closeScores) }
+            XCTAssertEqual(closeScores.value as? String, "0")
+            attachScreenshot("notification-choices-\(name)")
+            flip(closeScores)
+            XCTAssertEqual(closeScores.value as? String, "1")
+            let nudges = app.switches["account.notifications.choice.nudge"].firstMatch
+            scrollToElement(nudges)
+            XCTAssertTrue(nudges.exists)
+            attachScreenshot("notification-choices-\(name)-bottom")
+            app.terminate()
+        }
     }
 
     func testHealthPageOpensSettings() {
@@ -1260,20 +1952,30 @@ final class MultiUserCompetitionUITests: XCTestCase {
             attachment.lifetime = .keepAlways
             add(attachment)
         }
+        // At AX5 a Recent results row with a reaction line is taller than
+        // the screen; then its top (and so its centre) must be in view.
+        func isRevealed(_ viewport: CGRect, _ frame: CGRect) -> Bool {
+            frame.height <= viewport.height
+                ? viewport.contains(frame)
+                : frame.minY >= viewport.minY && frame.midY < viewport.maxY - 22
+        }
         for iteration in 0..<6 {
             let viewport = visibleRemoteScrollFrame(scrollView)
             XCTAssertGreaterThan(viewport.height, 0)
             let elementFrame = element.frame
             geometry.append("iteration=\(iteration); viewport=\(viewport); element=\(elementFrame)")
-            if viewport.contains(elementFrame) {
+            if isRevealed(viewport, elementFrame) {
                 attachGeometry()
                 return
             }
+            let targetY = elementFrame.height <= viewport.height
+                ? elementFrame.midY
+                : elementFrame.minY + viewport.height / 2 - 16
             // Drag by the distance to centre, in the drag's own units. A
             // fixed 8% minimum (about 44pt after touch slop) could step back
             // and forth across a window narrower than that, e.g. a 584pt card
             // in a 627pt viewport; touch slop keeps each move short of centre.
-            let offset = (elementFrame.midY - viewport.midY) / scrollView.frame.height
+            let offset = (targetY - viewport.midY) / scrollView.frame.height
             let distance = min(0.35, max(0.03, abs(offset)))
             let startY = offset > 0 ? 0.7 : 0.3
             let endY = startY + (offset > 0 ? -distance : distance)
@@ -1294,7 +1996,7 @@ final class MultiUserCompetitionUITests: XCTestCase {
         geometry.append("final viewport=\(visibleRemoteScrollFrame(scrollView)); element=\(element.frame)")
         attachGeometry()
         XCTAssertTrue(
-            visibleRemoteScrollFrame(scrollView).contains(element.frame),
+            isRevealed(visibleRemoteScrollFrame(scrollView), element.frame),
             "The full element must be visible before interacting. "
                 + "viewport=\(visibleRemoteScrollFrame(scrollView)); element=\(element.frame)"
         )
@@ -1313,6 +2015,75 @@ final class MultiUserCompetitionUITests: XCTestCase {
             width: frame.width,
             height: max(0, frame.maxY - top - 2)
         )
+    }
+
+    func testStaleMatchOffersOneNudgeADay() throws {
+        launch(.sharing)
+        defer { app.terminate() }
+        XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 8))
+
+        // Jordan updated an hour ago: no nudge.
+        let jordan = sharingCard(state: "active", name: "Jordan")
+        scrollToElement(jordan)
+        jordan.tap()
+        XCTAssertTrue(app.navigationBars["Jordan"].waitForExistence(timeout: 3))
+        XCTAssertTrue(waitForStatus("Day 3 of 7"))
+        XCTAssertFalse(app.buttons["competition.nudge"].exists)
+        navigateBackToSharing()
+
+        // Riley's last update is 13 hours old.
+        let riley = sharingCard(state: "active", name: "Riley")
+        scrollToElement(riley)
+        riley.tap()
+        XCTAssertTrue(app.navigationBars["Riley"].waitForExistence(timeout: 3))
+        let nudge = app.buttons["competition.nudge"]
+        XCTAssertTrue(nudge.waitForExistence(timeout: 3))
+        XCTAssertEqual(nudge.label, "Nudge Riley")
+        let before = XCTAttachment(screenshot: app.screenshot())
+        before.name = "nudge-before"
+        before.lifetime = .keepAlways
+        add(before)
+        try app.performAccessibilityAudit(
+            for: [.dynamicType, .textClipped, .hitRegion, .sufficientElementDescription]
+        )
+
+        nudge.tap()
+        let sent = element("competition.nudge.sent")
+        XCTAssertTrue(sent.waitForExistence(timeout: 3))
+        XCTAssertTrue(sent.label.hasPrefix("Nudged at "), sent.label)
+        XCTAssertTrue(sent.label.hasSuffix(". You can nudge again tomorrow."), sent.label)
+        XCTAssertFalse(nudge.exists)
+        let after = XCTAttachment(screenshot: app.screenshot())
+        after.name = "nudge-sent"
+        after.lifetime = .keepAlways
+        add(after)
+
+        // Largest type, dark: the capsule wraps, stays tappable and unclipped.
+        launch(
+            .sharing,
+            appearanceArguments: [
+                "-AppleInterfaceStyle", "Dark",
+                "-UIPreferredContentSizeCategoryName",
+                "UICTContentSizeCategoryAccessibilityXXXL",
+                "-UIAccessibilityReduceMotionEnabled", "YES",
+            ]
+        )
+        XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 8))
+        let largeRiley = sharingCard(state: "active", name: "Riley")
+        scrollToElement(largeRiley)
+        largeRiley.tap()
+        let largeNudge = app.buttons["competition.nudge"]
+        XCTAssertTrue(largeNudge.waitForExistence(timeout: 3))
+        scrollToElement(largeNudge)
+        XCTAssertTrue(largeNudge.isHittable)
+        attachScreenshot("nudge-before-dark-ax5")
+        try app.performAccessibilityAudit(for: [.textClipped, .hitRegion])
+        largeNudge.tap()
+        let largeSent = element("competition.nudge.sent")
+        XCTAssertTrue(largeSent.waitForExistence(timeout: 3))
+        scrollToElement(largeSent)
+        attachScreenshot("nudge-sent-dark-ax5")
+        try app.performAccessibilityAudit(for: [.textClipped])
     }
 
     func testMalformedMultiUserLabArgumentsFailClosed() {
@@ -1345,6 +2116,9 @@ final class MultiUserCompetitionUITests: XCTestCase {
         case healthOnboarding = "health-onboarding"
         case healthOnboardingChallenge = "health-onboarding-challenge"
         case healthOnboardingClaim = "health-onboarding-claim"
+        case incomingChallenge = "incoming-challenge"
+        case liveActivity = "live-activity"
+        case practice
     }
 
     private func launch(
@@ -1540,6 +2314,17 @@ final class MultiUserCompetitionUITests: XCTestCase {
         let item = app.buttons[title]
         XCTAssertTrue(item.waitForExistence(timeout: 3))
         item.tap()
+    }
+
+    /// A `Toggle` in a `List` exposes a row-wide switch; a tap at its center
+    /// can land on the label, so tap the inner switch or the trailing edge.
+    private func flip(_ toggle: XCUIElement) {
+        let knob = toggle.switches.firstMatch
+        if knob.exists {
+            knob.tap()
+        } else {
+            toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.93, dy: 0.5)).tap()
+        }
     }
 
     private func scrollToElement(_ element: XCUIElement) {

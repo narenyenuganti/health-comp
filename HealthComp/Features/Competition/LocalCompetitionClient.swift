@@ -197,6 +197,8 @@ struct LocalCompetitionPresentation: Equatable, Identifiable, Sendable {
     let opponentUpdatedAt: Date?
     /// The finished match this challenge is a rematch of.
     var rematchParentID: CompetitionID?
+    /// Both people's reactions, newest first (real matches only).
+    var reactions: [CompetitionReaction] = []
 
     init(
         id: CompetitionID,
@@ -295,6 +297,7 @@ enum LocalCompetitionClientIssue: Error, Equatable, Sendable {
 
 struct LocalCompetitionDashboard: Equatable, Sendable {
     let competitions: [LocalCompetitionPresentation]
+    // ponytail: no UI reads awards since the belt; delete with its ~25 test constructors in a refactor PR
     let awards: [LocalCompetitionAward]
     let issues: [LocalCompetitionClientIssue]
     let hiddenTerminalCompetitionCount: Int
@@ -1277,6 +1280,31 @@ enum LocalCompetitionProjector {
         )
     }
 
+    /// Practice journals as matches against the Pacer. A pending journal
+    /// (an interrupted start) never shows.
+    static func practicePresentations(
+        journals: [LoadedCompetitionJournal],
+        context: CompetitionEnvironmentContext,
+        configuration: LocalCompetitionRuntimeConfiguration,
+        ownerDisplayName: String
+    ) -> [LocalCompetitionPresentation] {
+        journals.compactMap { loaded in
+            switch loaded.projection.competition.lifecycle {
+            case .scheduled, .active, .endsToday, .tallying, .completed:
+                return presentation(
+                    from: loaded,
+                    context: context,
+                    configuration: configuration,
+                    ownerDisplayName: ownerDisplayName,
+                    opponentDisplayName: PracticeMatch.opponentDisplayName,
+                    opponentIdentity: PracticeMatch.opponentIdentity
+                )
+            case .pendingInvitation, .declined, .expired, .archived:
+                return nil
+            }
+        }
+    }
+
     static func notificationSnapshot(
         publication: LocalCompetitionPublication,
         journals: [LoadedCompetitionJournal],
@@ -1365,7 +1393,8 @@ enum LocalCompetitionProjector {
             },
             emissionHistory: loaded.projection.notificationEmissions,
             evaluatedAt: context.instant.wallDate,
-            timeZoneIdentifier: context.timeZoneIdentifier
+            timeZoneIdentifier: context.timeZoneIdentifier,
+            whatItTakes: competitionWhatItTakes(projected)
         )
     }
 
@@ -1397,7 +1426,10 @@ enum LocalCompetitionProjector {
     private static func presentation(
         from loaded: LoadedCompetitionJournal,
         context: CompetitionEnvironmentContext,
-        configuration: LocalCompetitionRuntimeConfiguration
+        configuration: LocalCompetitionRuntimeConfiguration,
+        ownerDisplayName: String = LocalCompetitionIdentity.ownerDisplayName,
+        opponentDisplayName: String = LocalCompetitionIdentity.opponentDisplayName,
+        opponentIdentity: String = LocalCompetitionIdentity.opponentIdentity
     ) -> LocalCompetitionPresentation {
         let projection = loaded.projection
         let competition = projection.competition
@@ -1441,9 +1473,9 @@ enum LocalCompetitionProjector {
         }
         return LocalCompetitionPresentation(
             id: competition.id,
-            ownerDisplayName: LocalCompetitionIdentity.ownerDisplayName,
-            opponentDisplayName: LocalCompetitionIdentity.opponentDisplayName,
-            opponentIdentity: LocalCompetitionIdentity.opponentIdentity,
+            ownerDisplayName: ownerDisplayName,
+            opponentDisplayName: opponentDisplayName,
+            opponentIdentity: opponentIdentity,
             lifecycle: lifecycle,
             acceptedConfiguration: acceptedConfiguration,
             userPoints: terminal?.userPoints ?? liveOwnerPoints,

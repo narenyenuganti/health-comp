@@ -1,4 +1,5 @@
 import CompetitionCore
+import ComposableArchitecture
 import Foundation
 import XCTest
 @testable import HealthComp
@@ -795,6 +796,212 @@ final class CompetitionNotificationCoordinatorTests: XCTestCase {
         let operations = await recorder.operations
         XCTAssertEqual(batches, [[]])
         XCTAssertFalse(operations.contains { $0.hasPrefix("post:") })
+    }
+
+    func testSwitchingOffLastDayRemovesItsPendingRequestOnReconcile()
+        async throws {
+        let snapshot = try scheduledSnapshot()
+        let id = try XCTUnwrap(snapshot.competitions.first?.id)
+        let finalDay = CompetitionNotificationIdentifier.scheduled(
+            competitionID: id,
+            family: .finalDay
+        )
+        func removedPending(
+            switchedOff: Set<CompetitionNotificationChoice>
+        ) async -> [[String]] {
+            let center = StatefulNotificationCenterRecorder()
+            await center.setPending([
+                finalDay,
+                CompetitionNotificationIdentifier.scheduled(
+                    competitionID: id,
+                    family: .scheduledStart
+                ),
+            ])
+            var preferences = CompetitionNotificationPreferencesClient
+                .constant(mutedOpponentIdentities: [])
+            preferences.switchedOff = { switchedOff }
+            let coordinator = CompetitionNotificationCoordinator(
+                planner: CompetitionNotificationPlanner(policy: .coordinatorFixture),
+                notifications: center.client,
+                preferences: preferences,
+                commitDecisions: { _, _ in .noDecision }
+            )
+            await coordinator.submit(snapshot)
+            return await center.snapshot.removedPending
+        }
+
+        let allOn = await removedPending(switchedOff: [])
+        XCTAssertEqual(allOn, [])
+        let lastDayOff = await removedPending(switchedOff: [.finalDay])
+        XCTAssertEqual(lastDayOff, [[finalDay]])
+    }
+
+    func testCommitReplanHonorsSwitchedOffFamilies() async throws {
+        // Lead changes outrank close scores and the cap is one, so a replan
+        // that dropped the switches would spend the slot on the lead change.
+        var policy = CompetitionNotificationPolicy.coordinatorFixture
+        policy.isCloseScore = { _, _, _ in true }
+        policy.priority = { family in
+            switch family {
+            case .leadChange: 2
+            case .closeScore: 1
+            default: 0
+            }
+        }
+        func commit(
+            switchedOff: Set<CompetitionNotificationChoice>
+        ) async throws -> (
+            decisions: [CompetitionNotificationDurableDecision],
+            operations: [String]
+        ) {
+            let recorder = NotificationOperationRecorder()
+            let commits = DurableDecisionCommitRecorder()
+            var preferences = CompetitionNotificationPreferencesClient
+                .constant(mutedOpponentIdentities: [])
+            preferences.switchedOff = { switchedOff }
+            let coordinator = CompetitionNotificationCoordinator(
+                planner: CompetitionNotificationPlanner(policy: policy),
+                notifications: recorder.notificationClient(
+                    authorization: .authorized
+                ),
+                preferences: preferences,
+                commitDecisions: { competition, replan in
+                    let decisions = try replan(competition)
+                    await commits.append(decisions)
+                    return decisions.isEmpty ? .noDecision : .appended(decisions)
+                }
+            )
+            // An earlier opponent lead makes today's owner lead a real change.
+            await coordinator.submit(try multiDecisionSnapshot())
+            return (
+                await commits.batches.flatMap { $0 },
+                await recorder.operations
+            )
+        }
+        func emittedFamilies(
+            _ decisions: [CompetitionNotificationDurableDecision]
+        ) -> [NotificationEmissionFamily] {
+            decisions.compactMap { decision in
+                guard case let .emission(emission) = decision else { return nil }
+                return emission.record.family
+            }
+        }
+
+        // Control: with every switch on, the lead change takes the slot.
+        let allOn = try await commit(switchedOff: [])
+        XCTAssertEqual(emittedFamilies(allOn.decisions), [.leadChange])
+
+        let leadOff = try await commit(switchedOff: [.leadChange])
+        XCTAssertEqual(emittedFamilies(leadOff.decisions), [.closeScore])
+        XCTAssertTrue(leadOff.decisions.contains { decision in
+            guard case let .suppression(record) = decision else { return false }
+            return record.family == .leadChange
+                && record.disposition == .suppressed(reason: .superseded)
+        })
+        XCTAssertEqual(
+            leadOff.operations.filter { $0.hasPrefix("post:") }.count,
+            1
+        )
+    }
+
+    func testWhatItTakesReminderIsRemovedOnceYouLeadOrTheSwitchIsOff()
+        async throws {
+        let id = CompetitionID(
+            UUID(uuidString: "EAD172F8-531D-4327-823D-E82A4F696070")!
+        )
+        let reminder = CompetitionNotificationIdentifier.scheduled(
+            competitionID: id,
+            family: .whatItTakes
+        )
+        let calendar = try CompetitionCalendar(timeZoneIdentifier: "UTC")
+        // A UTC midnight; Day 1 noon is evaluatedAt.
+        let startDay = try calendar.day(
+            containing: Date(timeIntervalSinceReferenceDate: 1_987_200)
+        )
+        let takes = CompetitionWhatItTakes(
+            dayOrdinal: 1,
+            points: 39,
+            headline: "39 to take the lead",
+            suggestion: "About 12 min of Exercise.",
+            detail: "About 12 min of Exercise.",
+            accessibilityLabel: "39 points to take the lead. About 12 minutes of Exercise."
+        )
+        func snapshot(
+            _ revision: UInt64,
+            _ value: CompetitionWhatItTakes?
+        ) -> CompetitionNotificationPlanningSnapshot {
+            CompetitionNotificationPlanningSnapshot(
+                publicationRevision: revision,
+                evaluatedAt: Date(timeIntervalSinceReferenceDate: 2_030_400),
+                timeZoneIdentifier: "UTC",
+                competitions: [
+                    CompetitionNotificationCompetitionSnapshot(
+                        id: id,
+                        opponentIdentity: "local-opponent:v1:default",
+                        opponentDisplayName: "Alex",
+                        lifecycle: .active(dayOrdinal: 1),
+                        schedule: CompetitionSchedule(calendar: calendar, startDay: startDay),
+                        ownerPoints: 0,
+                        opponentPoints: 38,
+                        days: [],
+                        currentDayOrdinal: 1,
+                        latestRefresh: .completed,
+                        evaluationFreshness: .notFresh,
+                        terminalResult: nil,
+                        emissionHistory: NotificationEmissionProjection(),
+                        evaluatedAt: Date(timeIntervalSinceReferenceDate: 2_030_400),
+                        whatItTakes: value
+                    ),
+                ]
+            )
+        }
+        // The fixture fires at midnight, which is already past at noon.
+        var policy = CompetitionNotificationPolicy.coordinatorFixture
+        policy.scheduledFireDate = { family, base, _ in
+            family == .whatItTakes ? base.addingTimeInterval(19 * 3_600) : base
+        }
+        let switchedOff = LockIsolated<Set<CompetitionNotificationChoice>>([])
+        var preferences = CompetitionNotificationPreferencesClient
+            .constant(mutedOpponentIdentities: [])
+        preferences.switchedOff = { switchedOff.value }
+        let center = StatefulNotificationCenterRecorder()
+        let coordinator = CompetitionNotificationCoordinator(
+            planner: CompetitionNotificationPlanner(policy: policy),
+            notifications: center.client,
+            preferences: preferences,
+            commitDecisions: { _, _ in .noDecision }
+        )
+
+        func removals() async -> Int {
+            await center.snapshot.removedPending.flatMap { $0 }.filter { $0 == reminder }.count
+        }
+        func upserts() async -> Int {
+            await center.snapshot.upserts.filter { $0.identifier == reminder }.count
+        }
+
+        await coordinator.submit(snapshot(1, takes))
+        let firstUpserts = await upserts()
+        let firstRemovals = await removals()
+        XCTAssertEqual(firstUpserts, 1)
+        XCTAssertEqual(firstRemovals, 0)
+
+        // Switch off while the reminder is pending: it is removed, not re-upserted.
+        switchedOff.setValue([.whatItTakes])
+        await coordinator.submit(snapshot(2, takes))
+        let offUpserts = await upserts()
+        let offRemovals = await removals()
+        XCTAssertEqual(offUpserts, 1, "switched off")
+        XCTAssertEqual(offRemovals, 1, "switched off")
+
+        switchedOff.setValue([])
+        await coordinator.submit(snapshot(3, takes))
+        let onUpserts = await upserts()
+        XCTAssertEqual(onUpserts, 2, "switched back on")
+
+        // You lead: the value goes away and the pending reminder with it.
+        await coordinator.submit(snapshot(4, nil))
+        let leadRemovals = await removals()
+        XCTAssertEqual(leadRemovals, 2, "you lead")
     }
 
     private func resultSnapshot(

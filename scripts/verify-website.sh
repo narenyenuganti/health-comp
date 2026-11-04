@@ -45,7 +45,7 @@ expect /support 200 'HealthComp beta support' \
   'Naren Yenuganti' 'Do not send' 'Health screenshots'
 expect /privacy 200 'HealthComp privacy' \
   'rounded Activity percentages' 'no fixed automatic deletion schedule' \
-  'does not display advertising' 'Former competitor'
+  'does not display advertising' 'Former competitor' 'image of a finished match'
 # Without a top-level 404.html, Pages answers every unknown path with
 # index.html and 200.
 expect /no-such-page 404 'Page not found'
@@ -59,7 +59,15 @@ expect /.well-known/apple-app-site-association 200 'content-type: application/js
 expect /og.png 200 'content-type: image/png'
 expect /apple-touch-icon.png 200 'content-type: image/png'
 
+# The waitlist function rejects a bad address before it sends any email.
+if [[ "$(curl -sS -o /dev/null -w '%{http_code}' -F email=not-an-email "$base/api/waitlist")" == 400 ]]; then
+  printf 'ok   /api/waitlist\n'
+else
+  printf 'FAIL /api/waitlist: expected 400 for a bad address\n' >&2
+  failures=$((failures + 1))
+fi
+
 if ((failures)); then
-  printf '%d of 9 checks failed\n' "$failures" >&2
+  printf '%d of 10 checks failed\n' "$failures" >&2
   exit 1
 fi

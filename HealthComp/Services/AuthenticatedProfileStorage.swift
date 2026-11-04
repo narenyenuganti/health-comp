@@ -19,6 +19,8 @@ struct AuthenticatedProfileStoragePaths: Equatable, Sendable {
     let installationsDirectory: URL
     let appAttestDirectory: URL
     let observerDeliveryDirectory: URL
+    /// The practice match's journal: exact Health values, never sent.
+    let practiceEventsDirectory: URL
 
     var fixedDirectories: [URL] {
         [
@@ -29,6 +31,7 @@ struct AuthenticatedProfileStoragePaths: Equatable, Sendable {
             installationsDirectory,
             appAttestDirectory,
             observerDeliveryDirectory,
+            practiceEventsDirectory,
         ]
     }
 
@@ -65,6 +68,10 @@ struct AuthenticatedProfileStoragePaths: Equatable, Sendable {
                 "BackgroundDelivery",
                 isDirectory: true
             )
+        self.practiceEventsDirectory = rootDirectory.appendingPathComponent(
+            "PracticeEvents",
+            isDirectory: true
+        )
     }
 }
 
@@ -212,6 +219,8 @@ private actor AuthenticatedProfileStorageCoordinator {
                 .profileTransitionRequiresCleanup
         }
         activeProfileID = profileID
+        // Device-local reaction seen marks belong to this profile's matches.
+        UserDefaults.standard.removeObject(forKey: CompetitionReactionsSeen.storageKey)
         let profilesRoot = try prepareProfilesRoot()
         let root = profilesRoot.appendingPathComponent(
             profileID.uuidString.lowercased(),

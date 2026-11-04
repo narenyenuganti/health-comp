@@ -92,6 +92,14 @@ struct CompetitionRemoteAPI: Sendable {
     var listChallenges: @Sendable () async throws -> CompetitionChallengeList = {
         throw CompetitionRemoteFailure.operationFailed
     }
+    /// Both people's reactions in your matches, newest first.
+    var listReactions: @Sendable () async throws -> [CompetitionReactionRecord] = {
+        throw CompetitionRemoteFailure.operationFailed
+    }
+    /// A nil kind removes your reaction on that target.
+    var setReaction: @Sendable (CompetitionReactionRequest) async throws -> Void = { _ in
+        throw CompetitionRemoteFailure.operationFailed
+    }
     var previewInvite: @Sendable (
         CompetitionInviteClaimRequest
     ) async throws -> CompetitionInvitePreview = { _ in
@@ -104,6 +112,22 @@ struct CompetitionRemoteAPI: Sendable {
         throw CompetitionRemoteFailure.operationFailed
     }
     var cancelCompetition: @Sendable (UUID) async throws -> Void = { _ in
+        throw CompetitionRemoteFailure.operationFailed
+    }
+    /// Declines the challenge (by competition id) and blocks its sender.
+    var blockChallenger: @Sendable (UUID) async throws -> Void = { _ in
+        throw CompetitionRemoteFailure.operationFailed
+    }
+    /// The people you blocked, newest first.
+    var listBlockedProfiles: @Sendable () async throws -> [AuthenticatedProfile] = {
+        throw CompetitionRemoteFailure.operationFailed
+    }
+    /// Takes a profile id.
+    var unblockProfile: @Sendable (UUID) async throws -> Void = { _ in
+        throw CompetitionRemoteFailure.operationFailed
+    }
+    /// Asks the other person to open HealthComp; returns the time the server accepted the nudge.
+    var nudgeCompetitionParticipant: @Sendable (UUID) async throws -> Date = { _ in
         throw CompetitionRemoteFailure.operationFailed
     }
     var loadChallengeLinkCode: @Sendable () async throws -> CompetitionChallengeLinkCode = {
@@ -157,6 +181,20 @@ struct CompetitionChallengeList: Equatable, Sendable {
     var closed: [Closed]
 
     static let empty = Self(incoming: [], closed: [])
+}
+
+struct CompetitionReactionRecord: Equatable, Sendable {
+    let competitionID: UUID
+    let target: CompetitionReactionTarget
+    let authorProfileID: UUID
+    let kind: CompetitionReactionKind
+    let updatedAt: Date
+}
+
+struct CompetitionReactionRequest: Equatable, Sendable {
+    let competitionID: UUID
+    let target: CompetitionReactionTarget
+    let kind: CompetitionReactionKind?
 }
 
 enum CompetitionRemoteTransportRequest: Equatable, Sendable {

@@ -459,6 +459,26 @@ final class CompetitionFeatureTests: XCTestCase {
     }
 
     @MainActor
+    func testNotificationChoicesChangedReconcilesNotifications() async {
+        let reconciles = LockIsolated(0)
+        var client = CompetitionReducerClientRecorder().client(
+            returning: publication(revision: 1)
+        )
+        client.reconcileNotifications = {
+            reconciles.withValue { $0 += 1 }
+        }
+        let store = TestStore(initialState: CompetitionFeature.State()) {
+            CompetitionFeature()
+        } withDependencies: {
+            $0.competitionClient = client
+        }
+
+        await store.send(.notificationChoicesChanged)
+        await store.finish()
+        XCTAssertEqual(reconciles.value, 1)
+    }
+
+    @MainActor
     func testSuccessfulMuteAfterLoadFailureClearsTheLoadFailure() async {
         let identity = LocalCompetitionIdentity.opponentIdentity
         let stored = LockIsolated<Set<String>?>(nil)
@@ -1463,5 +1483,42 @@ private actor CompetitionAuthorizationRecorder {
 
     func request() {
         requestCount += 1
+    }
+}
+
+// MARK: - Practice match
+
+extension CompetitionFeatureTests {
+    @MainActor
+    func testPracticeStartTracksTheCommandUntilItsPublication() async {
+        let returned = publication(revision: 5)
+        let difficulties = LockIsolated<[OpponentDifficulty]>([])
+        var client = CompetitionReducerClientRecorder().client(returning: returned)
+        client.startPractice = { difficulty in
+            difficulties.withValue { $0.append(difficulty) }
+            return returned
+        }
+        let store = TestStore(initialState: CompetitionFeature.State()) {
+            CompetitionFeature()
+        } withDependencies: {
+            $0.competitionClient = client
+        }
+        let id = PracticeMatch.startCommandID
+
+        await store.send(.practiceStartTapped(.challenging)) {
+            $0.commandIDsInFlight.insert(id)
+        }
+        await store.receive(.commandFinished(id, expectedRevision: 5)) {
+            $0.commandExpectedPublicationRevisions[id] = 5
+        }
+        // A second tap while it waits for its publication does nothing.
+        await store.send(.practiceStartTapped(.relaxed))
+        await store.send(.publication(returned)) {
+            $0.publication = returned
+            $0.commandIDsInFlight.remove(id)
+            $0.commandExpectedPublicationRevisions[id] = nil
+        }
+        await store.finish()
+        XCTAssertEqual(difficulties.value, [.challenging])
     }
 }

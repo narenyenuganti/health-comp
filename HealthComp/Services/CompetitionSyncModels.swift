@@ -1499,23 +1499,35 @@ struct CompetitionInstallationRequest: Codable, Equatable, Sendable {
     let installationID: UUID
     let apnsToken: String
     let environment: CompetitionInstallationEnvironment
+    /// A capability flag: this build can show reactions. Always true from
+    /// new builds; older ones register through overloads that store false.
+    let supportsReactions: Bool
+    /// Server-sent kinds switched off on this iPhone (Account → Notifications).
+    let mutedPushKinds: [String]
 
     init(
         installationID: UUID,
         apnsToken: String,
-        environment: CompetitionInstallationEnvironment
+        environment: CompetitionInstallationEnvironment,
+        supportsReactions: Bool = true,
+        mutedPushKinds: [String] = []
     ) throws {
+        let serverKinds = CompetitionNotificationChoice.allCases
+            .filter(\.isServerSent).map(\.rawValue)
         guard CompetitionWireValue.validUUID(installationID),
               apnsToken.range(
                   of: "^[0-9a-f]{64,200}$",
                   options: .regularExpression
-              ) != nil
+              ) != nil,
+              mutedPushKinds.allSatisfy(serverKinds.contains)
         else {
             throw CompetitionWireContractError.serverContractMismatch
         }
         self.installationID = installationID
         self.apnsToken = apnsToken
         self.environment = environment
+        self.supportsReactions = supportsReactions
+        self.mutedPushKinds = mutedPushKinds
     }
 
     private enum CodingKeys: String, CodingKey {
@@ -1523,6 +1535,8 @@ struct CompetitionInstallationRequest: Codable, Equatable, Sendable {
         case apnsToken = "apns_token"
         case environment
         case supportsChallenges = "supports_challenges"
+        case supportsReactions = "supports_reactions"
+        case mutedPushKinds = "muted_push_kinds"
     }
 
     init(from decoder: Decoder) throws {
@@ -1533,7 +1547,9 @@ struct CompetitionInstallationRequest: Codable, Equatable, Sendable {
             environment: try container.decode(
                 CompetitionInstallationEnvironment.self,
                 forKey: .environment
-            )
+            ),
+            supportsReactions: try container.decodeIfPresent(Bool.self, forKey: .supportsReactions) ?? true,
+            mutedPushKinds: try container.decodeIfPresent([String].self, forKey: .mutedPushKinds) ?? []
         )
     }
 
@@ -1544,6 +1560,8 @@ struct CompetitionInstallationRequest: Codable, Equatable, Sendable {
         try container.encode(environment, forKey: .environment)
         // Opts this install into challenge pushes; 1.0.2 omits it.
         try container.encode(true, forKey: .supportsChallenges)
+        try container.encode(supportsReactions, forKey: .supportsReactions)
+        try container.encode(mutedPushKinds, forKey: .mutedPushKinds)
     }
 }
 
@@ -3622,11 +3640,13 @@ private enum CompetitionWireValidator {
             value,
             keys: [
                 "apns_token", "environment", "installation_id",
-                "supports_challenges",
+                "muted_push_kinds", "supports_challenges", "supports_reactions",
             ]
         )
         guard uuid(object["installation_id"]),
+              object["muted_push_kinds"] is [String],
               boolean(object["supports_challenges"]),
+              boolean(object["supports_reactions"]),
               object["supports_challenges"] as? Bool == true,
               let token = object["apns_token"] as? String,
               token.range(

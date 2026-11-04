@@ -20,11 +20,15 @@ extension CompetitionClient {
             installationEnvironment: installationEnvironment,
             appAttestServiceFactory: { DeviceCheckAppAttestClient() },
             notificationPreferencesFactory: { _ in
-                .remote(remoteAPI: remoteAPI)
+                var preferences = CompetitionNotificationPreferencesClient.remote(remoteAPI: remoteAPI)
+                preferences.switchedOff = { CompetitionNotificationChoice.switchedOff() }
+                return preferences
             },
             observerDeliveryReceiptFactory: { paths in
                 .live(directory: paths.observerDeliveryDirectory)
-            }
+            },
+            widgetSnapshots: .liveValue,
+            liveActivities: CompetitionLiveActivities(client: .live)
         )
     }
 
@@ -47,6 +51,8 @@ extension CompetitionClient {
         ) -> HealthKitObserverDeliveryReceiptClient = { _ in
             .discarding
         },
+        widgetSnapshots: CompetitionWidgetSnapshotClient = .noop,
+        liveActivities: CompetitionLiveActivities? = nil,
         lifecycleInvalidationObserver: @escaping @Sendable () -> Void = {}
     ) -> Self {
         let router = RemoteCompetitionPublicationRouter()
@@ -63,7 +69,9 @@ extension CompetitionClient {
             appAttestServiceFactory: appAttestServiceFactory,
             notificationPreferencesFactory: notificationPreferencesFactory,
             observerDeliveryReceiptFactory: observerDeliveryReceiptFactory,
-            router: router
+            router: router,
+            widgetSnapshots: widgetSnapshots,
+            liveActivities: liveActivities
         )
         return Self(
             start: {
@@ -86,7 +94,7 @@ extension CompetitionClient {
             archive: { id in await coordinator.archive(id) },
             rematch: { id in await coordinator.unsupported(id) },
             reinvite: { await coordinator.unsupported(nil) },
-            delete: { id in await coordinator.unsupported(id) },
+            delete: { id in await coordinator.endPractice(id) },
             reconcileNotifications: {
                 await coordinator.reconcileNotifications()
             },
@@ -138,6 +146,15 @@ extension CompetitionClient {
             cancel: { id in
                 await coordinator.respond(id) { try await $0.cancelCompetition($1) }
             },
+            block: { id in
+                await coordinator.respond(id) { try await $0.blockChallenger($1) }
+            },
+            loadBlockedProfiles: {
+                try await coordinator.remote { try await $0.listBlockedProfiles() }
+            },
+            unblock: { profileID in
+                try await coordinator.remote { try await $0.unblockProfile(profileID) }
+            },
             previewInvite: { request in
                 try await coordinator.remote { try await $0.previewInvite(request) }
             },
@@ -149,7 +166,16 @@ extension CompetitionClient {
             },
             resolveChallengeLink: { code in
                 try await coordinator.remote { try await $0.resolveChallengeLink(code) }
-            }
+            },
+            nudge: { id in
+                try await coordinator.remote {
+                    try await $0.nudgeCompetitionParticipant(id.rawValue)
+                }
+            },
+            setReaction: { id, target, kind in
+                try await coordinator.setReaction(id, target, kind)
+            },
+            startPractice: { await coordinator.startPractice($0) }
         )
     }
 }
@@ -388,6 +414,8 @@ private actor RemoteCompetitionClientCoordinator {
         AuthenticatedProfileStoragePaths
     ) -> HealthKitObserverDeliveryReceiptClient
     private let router: RemoteCompetitionPublicationRouter
+    private let widgetSnapshots: CompetitionWidgetSnapshotClient
+    private let liveActivities: CompetitionLiveActivities?
 
     private var profile: AuthenticatedProfile?
     private var runtime: RemoteCompetitionRuntime?
@@ -426,12 +454,19 @@ private actor RemoteCompetitionClientCoordinator {
     private var lastMaterializations: [CompetitionID: RemoteCompetitionMaterialization] = [:]
     /// The last challenge list; kept when a refresh can't load it.
     private var latestChallenges = CompetitionChallengeList.empty
+    /// The last reaction list; kept when a refresh can't load it.
+    private var latestReactions: [CompetitionReactionRecord] = []
     private var hasStarted = false
     private var isStopped = false
     private var healthAuthorizationIssue: CompetitionClientIssue?
     private var runtimeGeneration: UInt64 = 0
     private var operationIsInProgress = false
     private var operationWaiters: [OperationWaiter] = []
+    /// The practice match: a local runtime that only reads (never
+    /// `handle`/`handleAll`), so the remote runtime keeps signal ownership.
+    private var practiceRuntime: LocalCompetitionRuntime?
+    private var practiceJournals: [LoadedCompetitionJournal] = []
+    private var practiceIssues: [CompetitionClientIssue] = []
 
     init(
         remoteAPI: CompetitionRemoteAPI,
@@ -448,8 +483,12 @@ private actor RemoteCompetitionClientCoordinator {
         observerDeliveryReceiptFactory: @escaping @Sendable (
             AuthenticatedProfileStoragePaths
         ) -> HealthKitObserverDeliveryReceiptClient,
-        router: RemoteCompetitionPublicationRouter
+        router: RemoteCompetitionPublicationRouter,
+        widgetSnapshots: CompetitionWidgetSnapshotClient,
+        liveActivities: CompetitionLiveActivities?
     ) {
+        self.widgetSnapshots = widgetSnapshots
+        self.liveActivities = liveActivities
         self.remoteAPI = remoteAPI
         self.environment = environment
         self.realtimeClient = realtimeClient
@@ -500,6 +539,7 @@ private actor RemoteCompetitionClientCoordinator {
                 self.publicationRevision = 0
                 self.latestPublication = nil
                 self.latestChallenges = .empty
+                self.latestReactions = []
                 self.hasStarted = false
                 self.isStopped = false
                 let installationStore = CompetitionInstallationStateStore(
@@ -537,6 +577,14 @@ private actor RemoteCompetitionClientCoordinator {
                 )
                 self.runtime = runtime
                 self.lastMaterializations = [:]
+                self.practiceRuntime = LocalCompetitionRuntime(
+                    environment: environment,
+                    store: JSONCompetitionEventStore(
+                        rootDirectory: paths.practiceEventsDirectory
+                    )
+                )
+                self.practiceJournals = []
+                self.practiceIssues = []
                 let preferences = notificationPreferencesFactory(paths)
                 self.notificationPreferences = preferences
                 self.observerDeliveryReceipts =
@@ -560,7 +608,8 @@ private actor RemoteCompetitionClientCoordinator {
                             remoteAPI: remoteAPI,
                             registration: pushRegistrationClient,
                             store: installationStore,
-                            environment: installationEnvironment
+                            environment: installationEnvironment,
+                            mutedPushKinds: { CompetitionNotificationChoice.mutedPushKinds() }
                         )
                     self.installationCoordinator = installationCoordinator
                     try await installationCoordinator.start()
@@ -604,6 +653,7 @@ private actor RemoteCompetitionClientCoordinator {
                     hub = nil
                     latestPublication = nil
                     latestChallenges = .empty
+                    latestReactions = []
                     publicationRevision = 0
                     hasStarted = false
                     isStopped = true
@@ -689,6 +739,7 @@ private actor RemoteCompetitionClientCoordinator {
             hub = nil
             latestPublication = nil
             latestChallenges = .empty
+            latestReactions = []
             publicationRevision = 0
             hasStarted = false
             isStopped = true
@@ -761,8 +812,12 @@ private actor RemoteCompetitionClientCoordinator {
         }
         await installationCoordinator?.reconcile()
         let outcome = await runtime.synchronizeAll()
+        await refreshPractice(.reconciliationProbe)
         if let challenges = try? await remoteAPI.listChallenges() {
             latestChallenges = challenges
+        }
+        if let reactions = try? await remoteAPI.listReactions() {
+            latestReactions = reactions
         }
         for failure in outcome.failures {
             failure.failure.recordRefreshDiagnostic()
@@ -799,6 +854,9 @@ private actor RemoteCompetitionClientCoordinator {
         await withOperationGate {
             guard terminalTeardown == nil else { return }
             await notificationCoordinator.reconcileLatest()
+            await liveActivities?.reconcileLatest()
+            // Re-registers only when the token or switched-off push kinds changed.
+            await installationCoordinator?.reconcile()
         }
     }
 
@@ -848,6 +906,84 @@ private actor RemoteCompetitionClientCoordinator {
             await notificationCoordinator.reconcileLatest()
             return state
         }
+    }
+
+    // MARK: Practice
+
+    /// Reads Health for the practice match and deletes a finished one once
+    /// its result leaves Home. No network.
+    private func refreshPractice(_ trigger: ActivityRefreshTrigger) async {
+        guard let practiceRuntime else { return }
+        let outcome = await practiceRuntime.reconcileAll(trigger: trigger)
+        practiceJournals = await practiceRuntime.loadAll().successfulJournals
+        let now = await environment.context().instant.wallDate
+        let expired = PracticeMatch.expiredResults(journals: practiceJournals, now: now)
+        for id in expired {
+            try? await practiceRuntime.delete(competitionID: id)
+        }
+        if !expired.isEmpty {
+            practiceJournals = await practiceRuntime.loadAll().successfulJournals
+        }
+        let failedIDs = outcome.failures.map(\.competitionID)
+            .filter { !expired.contains($0) }
+            .sorted { $0.rawValue.uuidString < $1.rawValue.uuidString }
+        practiceIssues = failedIDs.isEmpty ? [] : [.competitionFailures(failedIDs)]
+    }
+
+    func startPractice(_ difficulty: OpponentDifficulty) async -> CompetitionPublication {
+        await withOperationGate {
+            guard terminalTeardown == nil else {
+                return terminalBlockedPublication()
+            }
+            guard hasStarted, let practiceRuntime,
+                  (try? await PracticeMatch.start(
+                      difficulty,
+                      runtime: practiceRuntime,
+                      environment: environment
+                  )) != nil
+            else {
+                return publication(adding: .commandRejected(PracticeMatch.startCommandID))
+            }
+            await refreshPractice(.reconciliationProbe)
+            return await republishLastInputs()
+        }
+    }
+
+    /// End Practice. Real matches can't be deleted, as before.
+    func endPractice(_ id: CompetitionID) async -> CompetitionPublication {
+        await withOperationGate {
+            guard terminalTeardown == nil else {
+                return terminalBlockedPublication()
+            }
+            guard let practiceRuntime,
+                  practiceJournals.contains(where: { $0.projection.competition.id == id }),
+                  (try? await practiceRuntime.delete(competitionID: id)) != nil
+            else {
+                return publication(adding: .commandRejected(id))
+            }
+            practiceJournals = await practiceRuntime.loadAll().successfulJournals
+            // A stale failure for this id would keep the deleted practice on Home.
+            practiceIssues = practiceIssues.compactMap { issue in
+                guard case .competitionFailures(let ids) = issue else { return issue }
+                let rest = ids.filter { $0 != id }
+                return rest.isEmpty ? nil : .competitionFailures(rest)
+            }
+            return await republishLastInputs()
+        }
+    }
+
+    /// The last server inputs again, with fresh practice; a full
+    /// reconciliation when nothing was published yet.
+    private func republishLastInputs() async -> CompetitionPublication {
+        guard let profile, let inputs = lastPublishInputs else {
+            return await performReconciliation()
+        }
+        return await publish(
+            materializations: inputs.materializations,
+            profile: profile,
+            issues: inputs.issues,
+            knownCompetitionIDs: inputs.knownCompetitionIDs
+        )
     }
 
     func unsupported(_ id: CompetitionID?) async -> CompetitionPublication {
@@ -928,6 +1064,50 @@ private actor RemoteCompetitionClientCoordinator {
             }
             guard runtime != nil else { throw CompetitionRemoteFailure.unauthenticated }
             return try await operation(remoteAPI)
+        }
+    }
+
+    /// Saves your reaction, then republishes the last inputs with it (no
+    /// network beyond the RPC). The realtime wakeup that follows reconciles
+    /// and replaces this row with the server's.
+    func setReaction(
+        _ id: CompetitionID,
+        _ target: CompetitionReactionTarget,
+        _ kind: CompetitionReactionKind?
+    ) async throws -> CompetitionPublication {
+        try await withCancellableOperationGate {
+            guard terminalTeardown == nil else {
+                throw EnvironmentSignalOwnershipError.activeOwnerNotRetired
+            }
+            guard runtime != nil, let profile, let inputs = lastPublishInputs else {
+                throw CompetitionRemoteFailure.unauthenticated
+            }
+            try await remoteAPI.setReaction(
+                CompetitionReactionRequest(competitionID: id.rawValue, target: target, kind: kind)
+            )
+            let now = await environment.context().instant.wallDate
+            latestReactions.removeAll {
+                $0.competitionID == id.rawValue && $0.target == target
+                    && $0.authorProfileID == profile.id
+            }
+            if let kind {
+                latestReactions.insert(
+                    CompetitionReactionRecord(
+                        competitionID: id.rawValue,
+                        target: target,
+                        authorProfileID: profile.id,
+                        kind: kind,
+                        updatedAt: now
+                    ),
+                    at: 0
+                )
+            }
+            return await publish(
+                materializations: inputs.materializations,
+                profile: profile,
+                issues: inputs.issues,
+                knownCompetitionIDs: inputs.knownCompetitionIDs
+            )
         }
     }
 
@@ -1050,10 +1230,14 @@ private actor RemoteCompetitionClientCoordinator {
             }
             isStopped = true
             let stoppedTasks = await stopRuntime()
+            // Not in stopRuntime(): mount calls it, and would end the card
+            // the previous process left at every launch.
+            await liveActivities?.endAll()
             profile = nil
             hub = nil
             latestPublication = nil
             latestChallenges = .empty
+            latestReactions = []
             publicationRevision = 0
             hasStarted = false
             router.finishCurrent()
@@ -1385,6 +1569,7 @@ private actor RemoteCompetitionClientCoordinator {
         boundaryTask = nil
         lastPublishInputs = nil
         latestChallenges = .empty
+        latestReactions = []
         if stoppedTasks.realtime != nil {
             await realtimeClient.stop()
         }
@@ -1405,6 +1590,9 @@ private actor RemoteCompetitionClientCoordinator {
         await runtime?.stop()
         runtime = nil
         lastMaterializations = [:]
+        practiceRuntime = nil
+        practiceJournals = []
+        practiceIssues = []
         return stoppedTasks
     }
 
@@ -1702,8 +1890,16 @@ private actor RemoteCompetitionClientCoordinator {
                 materializations: materializations,
                 profile: profile,
                 context: context,
-                issues: issues,
-                challenges: latestChallenges
+                issues: Self.deduplicated(issues + practiceIssues),
+                challenges: latestChallenges,
+                reactions: latestReactions
+            ).addingPractice(
+                LocalCompetitionProjector.practicePresentations(
+                    journals: practiceJournals,
+                    context: context,
+                    configuration: .live,
+                    ownerDisplayName: profile.displayName
+                )
             ).keepingFailedCompetitions(
                 from: latestPublication?.dashboard,
                 now: context.instant.wallDate
@@ -1712,10 +1908,20 @@ private actor RemoteCompetitionClientCoordinator {
             timeZoneIdentifier: context.timeZoneIdentifier
         )
         lastPublishInputs = (materializations, issues, knownCompetitionIDs)
+        // A floor, so a wake the runtime asks for "now" can't spin.
+        let practiceWake = await practiceRuntime?.nextWake(
+            in: practiceJournals,
+            context: context
+        ).map { max($0, context.instant.wallDate.addingTimeInterval(60)) }
         scheduleBoundaryRepublish(
-            at: publication.dashboard.nextHomeBoundary(
-                after: context.instant.wallDate
-            )
+            at: [
+                publication.dashboard.nextHomeBoundary(after: context.instant.wallDate),
+                practiceWake,
+                PracticeMatch.nextPacerReveal(
+                    journals: practiceJournals,
+                    now: context.instant.wallDate
+                ),
+            ].compactMap { $0 }.min()
         )
         let materializedIDs = Set(materializations.map {
             CompetitionID($0.descriptor.competitionID)
@@ -1734,6 +1940,15 @@ private actor RemoteCompetitionClientCoordinator {
                 knownCompetitionIDs: knownCompetitionIDs
             )
         )
+        await liveActivities?.submit(publication, knownCompetitionIDs: knownCompetitionIDs)
+        // Without discovery the full set of matches is unknown: keep the
+        // last good file. Matches that didn't sync this round carry forward.
+        if let knownCompetitionIDs {
+            let unsynced = Set(knownCompetitionIDs.subtracting(materializedIDs).map(\.rawValue))
+            await widgetSnapshots.write(
+                CompetitionWidgetSnapshot(dashboard: publication.dashboard), unsynced
+            )
+        }
         return publication
     }
 
@@ -1759,17 +1974,14 @@ private actor RemoteCompetitionClientCoordinator {
             guard generation == runtimeGeneration,
                   terminalTeardown == nil,
                   !isStopped,
-                  let profile,
-                  let inputs = lastPublishInputs
+                  profile != nil,
+                  lastPublishInputs != nil
             else {
                 return
             }
-            _ = await publish(
-                materializations: inputs.materializations,
-                profile: profile,
-                issues: inputs.issues,
-                knownCompetitionIDs: inputs.knownCompetitionIDs
-            )
+            // Also a pacer checkpoint: one local read, at most every 5 min.
+            await refreshPractice(.dayBoundary)
+            _ = await republishLastInputs()
         }
     }
 
@@ -1864,15 +2076,28 @@ enum RemoteCompetitionProjector {
         profile: AuthenticatedProfile,
         context: CompetitionEnvironmentContext,
         issues: [CompetitionClientIssue],
-        challenges: CompetitionChallengeList = .empty
+        challenges: CompetitionChallengeList = .empty,
+        reactions: [CompetitionReactionRecord] = []
     ) -> CompetitionDashboard {
-        let materialized = materializations.compactMap {
-            presentation(
-                from: $0,
+        let reactionsByMatch = Dictionary(grouping: reactions, by: \.competitionID)
+        let materialized = materializations.compactMap { materialization in
+            var item = presentation(
+                from: materialization,
                 profile: profile,
                 context: context,
                 closesLapsedChallenges: true
             )
+            item?.reactions = (reactionsByMatch[materialization.descriptor.competitionID] ?? [])
+                .map {
+                    CompetitionReaction(
+                        target: $0.target,
+                        kind: $0.kind,
+                        isFromYou: $0.authorProfileID == profile.id,
+                        updatedAt: $0.updatedAt
+                    )
+                }
+                .sorted { $0.updatedAt > $1.updatedAt }
+            return item
         }
         let all = (materialized + challengePresentations(
             challenges,
@@ -2014,7 +2239,8 @@ enum RemoteCompetitionProjector {
             emissionHistory: materialization.journal.projection
                 .notificationEmissions,
             evaluatedAt: context.instant.wallDate,
-            timeZoneIdentifier: projected.timeZoneIdentifier
+            timeZoneIdentifier: projected.timeZoneIdentifier,
+            whatItTakes: competitionWhatItTakes(projected)
         )
     }
 
@@ -2085,7 +2311,10 @@ enum RemoteCompetitionProjector {
             emissionHistory: projection.notificationEmissions,
             evaluatedAt: baseline.evaluatedAt,
             timeZoneIdentifier: schedule?.calendar.timeZoneIdentifier
-                ?? baseline.timeZoneIdentifier
+                ?? baseline.timeZoneIdentifier,
+            // No owner activity here; currentDayOrdinal comes from the same
+            // evaluatedAt, so the reminder's day check still holds.
+            whatItTakes: baseline.whatItTakes
         )
     }
 

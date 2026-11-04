@@ -117,6 +117,31 @@ struct HealthCompApp: App {
         } else {
             self.testLabColorScheme = nil
         }
+        // Deterministic widget captures. Use with the Test Lab only: it builds
+        // no AppFeature store, so no publish or sign-out clear replaces it.
+        if arguments.contains("--widget-sample") {
+            let url = URL(
+                string: "\(CompetitionRoute.customURLScheme)://competition/00000000-0000-0000-0000-000000000005"
+            )!
+            Task {
+                await CompetitionWidgetSnapshotClient.liveValue.write(
+                    .sample(now: Date(), url: url), []
+                )
+            }
+        }
+        // Every widget state for the UI tests; an unknown name clears the file.
+        if let scenario = zip(arguments, arguments.dropFirst())
+            .first(where: { $0.0 == "--widget-scenario" })?.1
+        {
+            Task {
+                let client = CompetitionWidgetSnapshotClient.liveValue
+                if let snapshot = CompetitionWidgetSnapshot.testLab(scenario, now: Date()) {
+                    await client.write(snapshot, [])
+                } else {
+                    try? await client.clear()
+                }
+            }
+        }
     }
 #else
     private let store: StoreOf<AppFeature>
@@ -267,7 +292,7 @@ private struct AppProgressView: View {
 }
 
 // Account lives behind the Home avatar, so there is no two-item tab bar.
-private struct AuthenticatedRootView: View {
+struct AuthenticatedRootView: View {
     let mainStore: StoreOf<MainTabFeature>
     let accountStore: StoreOf<AccountFeature>
 
@@ -325,7 +350,10 @@ private struct AccountSheet: View {
                 muted: competition.mutedOpponentIdentities
             ),
             mutesInFlight: competition.muteOpponentIdentitiesInFlight,
-            unmute: { mainStore.send(.competition(.muteTapped($0))) }
+            unmute: { mainStore.send(.competition(.muteTapped($0))) },
+            choicesChanged: {
+                mainStore.send(.competition(.notificationChoicesChanged))
+            }
         )
         let health = mainStore.healthAccess.map {
             AccountHealthSettings(
@@ -347,6 +375,15 @@ private struct AccountSheet: View {
                 reset: { mainStore.send(.competition(.challengeLinkResetConfirmed)) }
             )
             : nil
+        let blockedPeople = mainStore.competition.publication?.source == .remoteParticipants
+            ? AccountBlockedPeople(
+                people: competition.blockedPeople,
+                unblocking: competition.unblocksInFlight,
+                unblockFailed: competition.unblockFailed,
+                load: { mainStore.send(.competition(.blockedPeopleRequested)) },
+                unblock: { mainStore.send(.competition(.unblockTapped($0))) }
+            )
+            : nil
 #if HEALTHCOMP_STAGING
         return AccountSettingsView(
             store: accountStore,
@@ -354,6 +391,7 @@ private struct AccountSheet: View {
             health: health,
             liveMatchCount: liveMatchCount,
             challengeLink: challengeLink,
+            blockedPeople: blockedPeople,
             refreshCompetition: { mainStore.send(.competition(.pullToRefresh)) }
         )
 #else
@@ -362,7 +400,8 @@ private struct AccountSheet: View {
             notifications: notifications,
             health: health,
             liveMatchCount: liveMatchCount,
-            challengeLink: challengeLink
+            challengeLink: challengeLink,
+            blockedPeople: blockedPeople
         )
 #endif
     }

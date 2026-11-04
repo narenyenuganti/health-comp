@@ -1,3 +1,4 @@
+import ActivityKit
 import ComposableArchitecture
 import CoreImage.CIFilterBuiltins
 import SwiftUI
@@ -12,6 +13,16 @@ struct AccountChallengeLink {
     let reset: () -> Void
 }
 
+/// The people you blocked, for Account. Hidden until a non-empty list loads.
+struct AccountBlockedPeople {
+    let people: [AuthenticatedProfile]?
+    let unblocking: Set<UUID>
+    /// The person whose last Unblock failed.
+    let unblockFailed: UUID?
+    let load: () -> Void
+    let unblock: (UUID) -> Void
+}
+
 /// What Account → Notifications needs from the competition. Hosts without
 /// competition state pass nil, which hides the row.
 struct AccountNotificationSettings {
@@ -21,6 +32,10 @@ struct AccountNotificationSettings {
     var mutedPeople: [AccountMutedPerson] = []
     var mutesInFlight: Set<String> = []
     var unmute: (String) -> Void = { _ in }
+    var choicesChanged: () -> Void = {}
+    /// nil reads and observes `ActivityAuthorizationInfo`; a value overrides
+    /// it for the DEBUG fixture.
+    var liveActivitiesEnabled: Bool? = nil
 
     var statusText: String {
         authorization?.permitsNotifications == true ? "On" : "Off"
@@ -74,9 +89,10 @@ struct AccountHealthSettings {
 /// Matches whose points stop reaching the server while signed out.
 func accountLiveMatchCount(_ competitions: [LocalCompetitionPresentation]) -> Int {
     competitions.filter {
+        guard !$0.isPractice else { return false }
         switch $0.lifecycle {
-        case .active, .endsToday, .tallying: true
-        default: false
+        case .active, .endsToday, .tallying: return true
+        default: return false
         }
     }.count
 }
@@ -101,6 +117,7 @@ struct AccountSettingsView: View {
     var health: AccountHealthSettings?
     var liveMatchCount = 0
     var challengeLink: AccountChallengeLink?
+    var blockedPeople: AccountBlockedPeople?
 #if HEALTHCOMP_STAGING
     var refreshCompetition: (() -> Void)?
 #endif
@@ -112,12 +129,16 @@ struct AccountSettingsView: View {
     private var appearance = AppAppearance.system
     @State private var showsChallengeCode = false
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @ScaledMetric(relativeTo: .headline) private var blockedInitialSize: CGFloat = 34
 
     var body: some View {
         List {
             profileSection
             if challengeLink != nil {
                 challengeLinkSection
+            }
+            if let blocked = blockedPeople, let people = blocked.people, !people.isEmpty {
+                blockedSection(blocked, people)
             }
             settingsSection
             signOutSection
@@ -127,6 +148,7 @@ struct AccountSettingsView: View {
         .task {
             store.send(.appeared)
             challengeLink?.load()
+            blockedPeople?.load()
         }
         .sheet(isPresented: $showsChallengeCode) {
             if let url = challengeLink?.url {
@@ -253,9 +275,11 @@ struct AccountSettingsView: View {
                     } else {
                         HStack(spacing: 8) { buttons }
                     }
-                    Button("Reset Link") { isResetLinkConfirmationPresented = true }
+                    // The 44 pt frame sits inside the label so the hit area gets it too.
+                    Button { isResetLinkConfirmationPresented = true } label: {
+                        Text("Reset Link").frame(minHeight: 44).contentShape(Rectangle())
+                    }
                         .buttonStyle(.borderless)
-                        .frame(minHeight: 44)
                         .disabled(isResetting)
                         .accessibilityValue(isResetting ? "Resetting" : "")
                         .accessibilityIdentifier("account.challenge-link.reset")
@@ -297,6 +321,73 @@ struct AccountSettingsView: View {
             SectionLabel("YOUR CHALLENGE LINK")
         }
         .listRowBackground(Theme.panel)
+    }
+
+    private func blockedSection(
+        _ blocked: AccountBlockedPeople,
+        _ people: [AuthenticatedProfile]
+    ) -> some View {
+        Section {
+            ForEach(people, id: \.id) { blockedRow($0, blocked) }
+        } header: {
+            SectionLabel("BLOCKED")
+        } footer: {
+            Text("Blocked people can’t challenge you. They aren’t notified.")
+                .foregroundStyle(Theme.secondary)
+        }
+        .listRowBackground(Theme.panel)
+    }
+
+    private func blockedRow(
+        _ person: AuthenticatedProfile,
+        _ blocked: AccountBlockedPeople
+    ) -> some View {
+        let isAccessibilitySize = dynamicTypeSize.isAccessibilitySize
+        let isUnblocking = blocked.unblocking.contains(person.id)
+        let layout = isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
+            : AnyLayout(HStackLayout(spacing: 12))
+        return VStack(alignment: .leading, spacing: 4) {
+            layout {
+                HStack(spacing: 12) {
+                    // At accessibility sizes the initial would squeeze the
+                    // name into a narrow column, so the name gets the width.
+                    if !isAccessibilitySize {
+                        Text(person.displayName.first.map { String($0).uppercased() } ?? "")
+                            .font(.headline.width(.condensed))
+                            .foregroundStyle(Theme.ink)
+                            .frame(width: blockedInitialSize, height: blockedInitialSize)
+                            .background(Theme.control, in: Circle())
+                            .accessibilityHidden(true)
+                    }
+                    Text(person.displayName)
+                        .foregroundStyle(Theme.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                Button { blocked.unblock(person.id) } label: {
+                    // The ink tint doesn't dim when disabled, so saving shows here.
+                    Text("Unblock")
+                        .foregroundStyle(isUnblocking ? Theme.secondary : Theme.ink)
+                        .frame(minHeight: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.borderless)
+                .disabled(isUnblocking)
+                .accessibilityLabel("Unblock \(person.displayName)")
+                .accessibilityValue(isUnblocking ? "Unblocking" : "")
+                .accessibilityIdentifier("account.blocked.unblock")
+            }
+            // In the row it belongs to, so it shows where the tap was even
+            // when the list runs past the screen.
+            if blocked.unblockFailed == person.id {
+                Text("Couldn’t unblock. Check your connection and try again.")
+                    .font(.callout)
+                    .foregroundStyle(Theme.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("account.blocked.error")
+            }
+        }
     }
 
     /// The URL without its scheme: "healthcomp.app/c/Xb3k…".
@@ -524,6 +615,11 @@ private struct AccountNotificationsPage: View {
     @Environment(\.openURL) private var openURL
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @ScaledMetric(relativeTo: .headline) private var initialSize: CGFloat = 34
+    @State private var systemLiveActivitiesEnabled = true
+
+    private var liveActivitiesEnabled: Bool {
+        settings.liveActivitiesEnabled ?? systemLiveActivitiesEnabled
+    }
 
     var body: some View {
         List {
@@ -557,10 +653,13 @@ private struct AccountNotificationsPage: View {
                     EmptyView()
                 }
             } footer: {
-                Text(footer)
+                Text("HealthComp only sends match moments, like lead changes and results. To mute someone, open your match with them.")
                     .foregroundStyle(Theme.secondary)
             }
             .listRowBackground(Theme.panel)
+
+            choiceSection("DURING A MATCH", CompetitionNotificationChoice.allCases.filter { !$0.isServerSent })
+            choiceSection("FROM THE OTHER PERSON", CompetitionNotificationChoice.allCases.filter(\.isServerSent))
 
             if !settings.mutedPeople.isEmpty {
                 Section {
@@ -577,13 +676,41 @@ private struct AccountNotificationsPage: View {
             }
         }
         .accountPageStyle(title: "Notifications")
+        .task {
+            guard settings.liveActivitiesEnabled == nil else { return }
+            let info = ActivityAuthorizationInfo()
+            systemLiveActivitiesEnabled = info.areActivitiesEnabled
+            for await enabled in info.activityEnablementUpdates {
+                systemLiveActivitiesEnabled = enabled
+            }
+        }
     }
 
-    private var footer: String {
-        let base = "HealthComp only sends match moments, like lead changes and results. To mute someone, open your match with them."
-        return settings.authorization?.permitsNotifications == true
-            ? base + " Turn them off in iOS Settings."
-            : base
+    private func choiceSection(
+        _ title: String,
+        _ choices: [CompetitionNotificationChoice]
+    ) -> some View {
+        Section {
+            ForEach(choices, id: \.self) { choice in
+                NotificationChoiceToggle(choice: choice, changed: settings.choicesChanged)
+                    .disabled(choice == .liveActivity && !liveActivitiesEnabled)
+                if choice == .liveActivity && !liveActivitiesEnabled {
+                    Text("Live Activities are off for HealthComp in iOS Settings.")
+                        .foregroundStyle(Theme.secondary)
+                    Button("Open Settings") {
+                        openURL(URL(string: UIApplication.openSettingsURLString)!)
+                    }
+                    .frame(minHeight: 44)
+                    // The status section has its own Open Settings; VoiceOver
+                    // tells them apart.
+                    .accessibilityLabel("Open Settings for Live Activities")
+                    .accessibilityIdentifier("account.notifications.live-activity.settings")
+                }
+            }
+        } header: {
+            SectionLabel(title)
+        }
+        .listRowBackground(Theme.panel)
     }
 
     private var openSettingsButton: some View {
@@ -612,9 +739,14 @@ private struct AccountNotificationsPage: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            Button("Unmute") { settings.unmute(person.id) }
+            // The frame sits inside the label so the tap area, not just the
+            // layout, stays 44pt at the smallest text sizes.
+            Button { settings.unmute(person.id) } label: {
+                Text("Unmute")
+                    .frame(minWidth: 44, minHeight: 44)
+                    .contentShape(Rectangle())
+            }
                 .buttonStyle(.borderless)
-                .frame(minHeight: 44)
                 .disabled(settings.mutesInFlight.contains(person.id))
                 .accessibilityLabel("Unmute \(person.name)")
                 .accessibilityIdentifier("account.notifications.unmute")
@@ -622,6 +754,26 @@ private struct AccountNotificationsPage: View {
     }
 
 
+}
+
+private struct NotificationChoiceToggle: View {
+    let choice: CompetitionNotificationChoice
+    let changed: () -> Void
+    @AppStorage private var isOn: Bool
+
+    init(choice: CompetitionNotificationChoice, changed: @escaping () -> Void) {
+        self.choice = choice
+        self.changed = changed
+        _isOn = AppStorage(wrappedValue: true, choice.storageKey)
+    }
+
+    var body: some View {
+        Toggle(choice.title, isOn: $isOn)
+            // Q-notifs-5: the page's ink tint hides the thumb in dark mode.
+            .tint(Color(uiColor: .systemGreen))
+            .onChange(of: isOn) { changed() }
+            .accessibilityIdentifier("account.notifications.choice.\(choice.rawValue)")
+    }
 }
 
 private struct AccountPrivacyPage: View {

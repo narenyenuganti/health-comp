@@ -2,6 +2,8 @@ import Foundation
 
 public struct OpponentGeneratorVersion: Codable, Hashable, Sendable {
     public static let v1 = Self(rawValue: 1)
+    /// Scales each day's final points to the owner's baseline daily points.
+    public static let v2 = Self(rawValue: 2)
 
     public let rawValue: UInt32
 
@@ -30,6 +32,7 @@ public enum OpponentPlanError: Error, Equatable, Sendable {
     case invalidCommitment
     case invalidRevealDayOrdinal(Int)
     case invalidRevealProgress(Int)
+    case invalidBaseline(Int?)
 }
 
 public struct OpponentCheckpoint: Codable, Equatable, Sendable {
@@ -425,15 +428,20 @@ public struct OpponentPlanGenerationRequest: Codable, Equatable, Sendable {
     public let seed: UInt64
     public let generatorVersion: OpponentGeneratorVersion
     public let difficulty: OpponentDifficulty
+    /// Required by `.v2`, rejected by `.v1`. Never persisted: the plan keeps
+    /// every day's points, and its commitment covers them.
+    public let baselineDailyPoints: Int?
 
     public init(
         seed: UInt64,
         generatorVersion: OpponentGeneratorVersion,
-        difficulty: OpponentDifficulty
+        difficulty: OpponentDifficulty,
+        baselineDailyPoints: Int? = nil
     ) {
         self.seed = seed
         self.generatorVersion = generatorVersion
         self.difficulty = difficulty
+        self.baselineDailyPoints = baselineDailyPoints
     }
 }
 
@@ -442,9 +450,24 @@ public enum OpponentPlanGenerator {
         seed: UInt64,
         generatorVersion: OpponentGeneratorVersion,
         difficulty: OpponentDifficulty,
-        schedule: CompetitionSchedule
+        schedule: CompetitionSchedule,
+        baselineDailyPoints: Int? = nil
     ) throws -> OpponentPlan {
-        guard generatorVersion == .v1 else {
+        let policy: OpponentDifficultyV1Policy
+        switch generatorVersion {
+        case .v1:
+            guard baselineDailyPoints == nil else {
+                throw OpponentPlanError.invalidBaseline(baselineDailyPoints)
+            }
+            policy = difficulty.versionOnePolicy
+        case .v2:
+            guard let baseline = baselineDailyPoints,
+                  (100...600).contains(baseline)
+            else {
+                throw OpponentPlanError.invalidBaseline(baselineDailyPoints)
+            }
+            policy = difficulty.versionTwoPolicy(baseline: baseline)
+        default:
             throw OpponentPlanError.unsupportedGeneratorVersion(
                 generatorVersion.rawValue
             )
@@ -455,7 +478,6 @@ public enum OpponentPlanGenerator {
             throw OpponentPlanError.invalidSchedule
         }
 
-        let policy = difficulty.versionOnePolicy
         var days: [OpponentDayPlan] = []
         days.reserveCapacity(7)
         for ordinal in 1...7 {
@@ -600,6 +622,27 @@ private extension OpponentDifficulty {
                 curve: .earlyBuild
             )
         }
+    }
+
+    /// v1's checkpoint counts and curves, with final points scaled to the
+    /// baseline: relaxed 45-60%, balanced 90-110%, challenging 110-130%,
+    /// rounded and capped at 600.
+    func versionTwoPolicy(baseline: Int) -> OpponentDifficultyV1Policy {
+        let percents: ClosedRange<Int>
+        switch self {
+        case .relaxed: percents = 45...60
+        case .balanced: percents = 90...110
+        case .challenging: percents = 110...130
+        }
+        func scaled(_ percent: Int) -> Int {
+            min(600, (baseline * percent + 50) / 100)
+        }
+        let versionOne = versionOnePolicy
+        return OpponentDifficultyV1Policy(
+            finalPoints: scaled(percents.lowerBound)...scaled(percents.upperBound),
+            checkpointCount: versionOne.checkpointCount,
+            curve: versionOne.curve
+        )
     }
 }
 

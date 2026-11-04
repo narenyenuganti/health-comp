@@ -378,6 +378,22 @@ Do not expose APNs tokens or their hashes while diagnosing delivery.
 `score_update` and `result` work resolves as `discarded` without APNs; the app
 posts match notifications.
 
+`nudge` work is one row per recipient installation per sender per match day
+(`nudge_day`); a muted pair resolves `suppressed`, a finished match
+`discarded`. The support query needs no change.
+
+`reaction` work is at most one row per recipient installation per match per
+hour; `suppressed` means the recipient muted the sender or switched
+Reactions off. None is enqueued for installations with `supports_reactions`
+false (an older build). Reactions themselves are in
+`private.competition_reactions`, not the change log.
+
+Lead changes, close scores, What it takes (the 7 PM reminder), the Last day
+reminder and the Live Activity can be switched off per iPhone in Account →
+Notifications; the server can't see those. Reactions and nudges switched off show up as
+`device_installations.muted_push_kinds` and as `suppressed` work. Ask the
+person to check that page first.
+
 ### Support events
 
 ~~~sql
@@ -593,6 +609,7 @@ permission to bypass a deadline, forge an attestation, or alter a result.
 | Force reconciliation or upload for a participant | Unsupported. Only that authenticated participant owns submission. | Diagnose connectivity/session state and ask the app to retry. |
 | Change a score, result, winner, award, or server sequence | Forbidden by the append-only and immutable contracts. | Open an engineering/security incident; preserve the evidence. |
 | Delete a participant to clean up a case | Forbidden. Account deletion follows its own durable, Apple-bound flow. | Use the account-deletion runbook. |
+| Add, remove or disclose a block | Unsupported. Blocks are private to the blocker (`private.account_blocks`) and never shown to the blocked person. | The person unblocks in Account → BLOCKED. Do not read or edit the table. |
 
 ## Escalation conditions
 

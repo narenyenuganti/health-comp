@@ -90,6 +90,14 @@ struct CompetitionFeature {
         case failed(InviteCreationFailure)
     }
 
+    enum NudgeStatus: Equatable, Sendable {
+        case sending
+        case sent(Date)
+        case failed
+        /// The server said no: they updated, or the result no longer waits on them.
+        case notNeeded(Date)
+    }
+
     enum InviteCreationResponse: Equatable, Sendable {
         case success(
             link: CompetitionInviteShareLink,
@@ -126,6 +134,16 @@ struct CompetitionFeature {
         var challengeLinkLoadFailed = false
         var challengeLinkIsResetting = false
         var challengeLinkResetFailed = false
+        /// People you blocked, newest first; nil until Account loads them.
+        var blockedPeople: [AuthenticatedProfile]?
+        var unblocksInFlight: Set<UUID> = []
+        /// The person whose last Unblock failed; the error shows in their row.
+        var unblockFailed: UUID?
+        /// Per match; not persisted.
+        var nudges: [CompetitionID: NudgeStatus] = [:]
+        /// Reactions being saved: the kind being set, or nil while removing.
+        var pendingReactions: [CompetitionReactionKey: CompetitionReactionKind?] = [:]
+        var reactionFailures: Set<CompetitionReactionKey> = []
 
         init(
             publication: CompetitionPublication? = nil,
@@ -165,6 +183,20 @@ struct CompetitionFeature {
         func isCommandInFlight(_ id: CompetitionID) -> Bool {
             commandIDsInFlight.contains(id)
         }
+
+        /// One match's reaction state, for its match and result screens.
+        func reactionControl(
+            for id: CompetitionID,
+            send: @escaping (Action) -> Void
+        ) -> CompetitionReactionControl {
+            CompetitionReactionControl(
+                pending: Dictionary(uniqueKeysWithValues: pendingReactions
+                    .filter { $0.key.competitionID == id }
+                    .map { ($0.key.target, $0.value) }),
+                failed: Set(reactionFailures.filter { $0.competitionID == id }.map(\.target)),
+                react: { send(.reactionTapped(id, $0, $1)) }
+            )
+        }
     }
 
     enum Action: Equatable, Sendable {
@@ -177,6 +209,14 @@ struct CompetitionFeature {
         /// Someone's challenge link resolved: prefill the + sheet's person.
         case challengeRecipientChosen(InviteRecipient)
         case cancelTapped(CompetitionID)
+        case nudgeTapped(CompetitionID)
+        case nudgeResponse(
+            CompetitionID,
+            tappedAt: Date,
+            Result<Date, CompetitionRemoteFailure>
+        )
+        case reactionTapped(CompetitionID, CompetitionReactionTarget, CompetitionReactionKind)
+        case reactionFinished(CompetitionReactionKey, succeeded: Bool)
         case challengeLinkRequested
         case challengeLinkResponse(URL?)
         /// Reset Link, after its confirmation.
@@ -193,10 +233,17 @@ struct CompetitionFeature {
         case inviteLinkResponse(CompetitionID, InviteLinkState)
         case acceptTapped(CompetitionID)
         case declineTapped(CompetitionID)
+        /// Decline and block the sender.
+        case blockTapped(CompetitionID)
+        case blockedPeopleRequested
+        case blockedPeopleResponse([AuthenticatedProfile]?)
+        case unblockTapped(UUID)
+        case unblockFinished(UUID, succeeded: Bool)
         case archiveTapped(CompetitionID)
         case rematchTapped(CompetitionID)
         case challengeAgainTapped(CompetitionID)
         case reinviteTapped
+        case practiceStartTapped(OpponentDifficulty)
         case deleteTapped(CompetitionID)
         case commandFinished(CompetitionID, expectedRevision: UInt64)
         case mutePreferencesLoaded(Set<String>?)
@@ -206,6 +253,7 @@ struct CompetitionFeature {
             CompetitionNotificationAuthorizationState
         )
         case enableNotificationsTapped
+        case notificationChoicesChanged
         case notificationAuthorizationRequestFinished(
             CompetitionNotificationAuthorizationState
         )
@@ -225,6 +273,9 @@ struct CompetitionFeature {
         case inviteLink
         case challengeLink
         case challengeLinkReset
+        case blockedPeople
+        case nudge
+        case reaction
     }
 
     var body: some ReducerOf<Self> {
@@ -376,6 +427,67 @@ struct CompetitionFeature {
                         )
                     )
                 }
+
+            case let .nudgeTapped(id):
+                guard state.nudges[id] != .sending else { return .none }
+                state.nudges[id] = .sending
+                let tappedAt = state.publication?.dashboard.competitions
+                    .first { $0.id == id }?.evaluatedAt ?? .distantPast
+                return .run { send in
+                    let result: Result<Date, CompetitionRemoteFailure>
+                    do {
+                        result = .success(try await competitionClient.nudge(id))
+                    } catch {
+                        result = .failure(
+                            (error as? CompetitionRemoteFailure) ?? .operationFailed
+                        )
+                    }
+                    await send(.nudgeResponse(id, tappedAt: tappedAt, result))
+                }
+                // No cancelInFlight: nudges for two matches can both run.
+                .cancellable(id: CancelID.nudge)
+
+            case let .reactionTapped(id, target, kind):
+                let key = CompetitionReactionKey(competitionID: id, target: target)
+                guard state.pendingReactions[key] == nil,
+                      let competition = state.publication?.dashboard.competitions
+                        .first(where: { $0.id == id })
+                else { return .none }
+                // The same preset again removes it.
+                let next: CompetitionReactionKind? =
+                    competition.ownReaction(target)?.kind == kind ? nil : kind
+                // Must be .some: assigning nil would remove the key.
+                state.pendingReactions[key] = .some(next)
+                state.reactionFailures.remove(key)
+                return .run { send in
+                    do {
+                        let publication = try await competitionClient.setReaction(id, target, next)
+                        // Before finishing, so the chip never flickers back.
+                        await send(.publication(publication))
+                        await send(.reactionFinished(key, succeeded: true))
+                    } catch {
+                        await send(.reactionFinished(key, succeeded: false))
+                    }
+                }
+                .cancellable(id: CancelID.reaction)
+
+            case let .reactionFinished(key, succeeded):
+                state.pendingReactions[key] = nil
+                if !succeeded { state.reactionFailures.insert(key) }
+                return .none
+
+            case let .nudgeResponse(id, tappedAt, result):
+                switch result {
+                case let .success(nudgedAt):
+                    state.nudges[id] = .sent(nudgedAt)
+                case .failure(.forbidden), .failure(.notFound):
+                    state.nudges[id] = .notNeeded(tappedAt)
+                    // Not .pullToRefresh: Staging wraps that in operator capture.
+                    return reconcile(trigger: .foreground)
+                case .failure:
+                    state.nudges[id] = .failed
+                }
+                return .none
 
             // Loaded each time it's shown, so a reset on another iPhone
             // shows here too. A reset in flight answers for itself.
@@ -567,6 +679,60 @@ struct CompetitionFeature {
                     )
                 }
 
+            case let .blockTapped(id):
+                guard state.commandIDsInFlight.insert(id).inserted else {
+                    return .none
+                }
+                return .run { send in
+                    let returned = await competitionClient.block(id)
+                    await send(
+                        .commandFinished(
+                            id,
+                            expectedRevision: returned.publicationRevision
+                        )
+                    )
+                }
+
+            case .blockedPeopleRequested:
+                state.unblockFailed = nil
+                return .run { send in
+                    await send(.blockedPeopleResponse(
+                        try? await competitionClient.loadBlockedProfiles()
+                    ))
+                }
+                .cancellable(id: CancelID.blockedPeople, cancelInFlight: true)
+
+            case let .blockedPeopleResponse(people):
+                // A failed refresh keeps whatever was shown.
+                if let people { state.blockedPeople = people }
+                return .none
+
+            case let .unblockTapped(id):
+                guard state.unblocksInFlight.insert(id).inserted else {
+                    return .none
+                }
+                state.unblockFailed = nil
+                // A list load already running may have read before this
+                // unblock and would bring the row back, so it's dropped.
+                // Not cancellable: the server call finishes.
+                return .merge(
+                    .cancel(id: CancelID.blockedPeople),
+                    .run { send in
+                        let succeeded = (try? await competitionClient.unblock(id)) != nil
+                        await send(.unblockFinished(id, succeeded: succeeded))
+                    }
+                )
+
+            case let .unblockFinished(id, succeeded):
+                // stop clears the set, so a late result never marks the next account.
+                guard state.unblocksInFlight.remove(id) != nil else { return .none }
+                if succeeded {
+                    state.blockedPeople?.removeAll { $0.id == id }
+                } else {
+                    state.unblockFailed = id
+                }
+                return .none
+
             case let .archiveTapped(id):
                 guard state.commandIDsInFlight.insert(id).inserted else {
                     return .none
@@ -636,6 +802,21 @@ struct CompetitionFeature {
                 }
                 return .run { send in
                     let returned = await competitionClient.reinvite()
+                    await send(
+                        .commandFinished(
+                            id,
+                            expectedRevision: returned.publicationRevision
+                        )
+                    )
+                }
+
+            case let .practiceStartTapped(difficulty):
+                let id = PracticeMatch.startCommandID
+                guard state.commandIDsInFlight.insert(id).inserted else {
+                    return .none
+                }
+                return .run { send in
+                    let returned = await competitionClient.startPractice(difficulty)
                     await send(
                         .commandFinished(
                             id,
@@ -725,6 +906,13 @@ struct CompetitionFeature {
                 state.notificationAuthorizationState = authorization
                 return .none
 
+            case .notificationChoicesChanged:
+                // Replans with the new switches, ends a switched-off Live
+                // Activity and re-registers the installation.
+                return .run { _ in
+                    await competitionClient.reconcileNotifications()
+                }
+
             case .enableNotificationsTapped:
                 guard state.notificationAuthorizationState
                     == .notDetermined,
@@ -790,14 +978,23 @@ struct CompetitionFeature {
                 state.challengeLinkLoadFailed = false
                 state.challengeLinkIsResetting = false
                 state.challengeLinkResetFailed = false
+                state.blockedPeople = nil
+                state.unblocksInFlight = []
+                state.unblockFailed = nil
+                state.nudges = [:]
+                state.pendingReactions = [:]
+                state.reactionFailures = []
                 return .concatenate(
                     .merge(
+                        .cancel(id: CancelID.reaction),
                         .cancel(id: CancelID.publications),
                         .cancel(id: CancelID.inviteRecipient),
                         .cancel(id: CancelID.inviteCreation),
                         .cancel(id: CancelID.inviteLink),
                         .cancel(id: CancelID.challengeLink),
-                        .cancel(id: CancelID.challengeLinkReset)
+                        .cancel(id: CancelID.challengeLinkReset),
+                        .cancel(id: CancelID.blockedPeople),
+                        .cancel(id: CancelID.nudge)
                     ),
                     .run { _ in await competitionClient.stop() }
                 )

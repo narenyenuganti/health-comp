@@ -1,3 +1,4 @@
+import ComposableArchitecture
 import Foundation
 import UIKit
 import XCTest
@@ -211,6 +212,73 @@ final class CompetitionPushRegistrationTests: XCTestCase {
         await coordinator.stopListening()
     }
 
+    func testChangingMutedPushKindsReRegistersSameToken() async throws {
+        let root = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let token = String(repeating: "ab", count: 32)
+        let registration = PushRegistrationProbe(token: token)
+        let remote = RemoteInstallationProbe()
+        let kinds = LockIsolated<[String]>([])
+        let coordinator = CompetitionInstallationCoordinator(
+            remoteAPI: remote.api,
+            registration: registration.client,
+            store: CompetitionInstallationStateStore(
+                directory: root,
+                fileProtection: JSONCompetitionEventStoreFileProtection {
+                    _, _ in
+                }
+            ),
+            environment: .sandbox,
+            mutedPushKinds: { kinds.value }
+        )
+
+        try await coordinator.start()
+        await coordinator.reconcile()
+        let unchanged = await remote.registrationRequests()
+        XCTAssertEqual(unchanged.map(\.mutedPushKinds), [[]])
+
+        kinds.setValue(["nudge"])
+        await coordinator.reconcile()
+        let changed = await remote.registrationRequests()
+        XCTAssertEqual(changed.map(\.mutedPushKinds), [[], ["nudge"]])
+        XCTAssertEqual(Set(changed.map(\.apnsToken)), [token])
+        await coordinator.stopListening()
+    }
+
+    /// Off and back on while the "off" registration is still in flight: the
+    /// server must end with the switch on again.
+    func testSwitchFlippedBackDuringARegistrationRegistersTheLatestKinds() async throws {
+        let root = try temporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let registration = PushRegistrationProbe(token: String(repeating: "ab", count: 32))
+        let remote = RemoteInstallationProbe(registrationDelay: .milliseconds(400))
+        let kinds = LockIsolated<[String]>([])
+        let coordinator = CompetitionInstallationCoordinator(
+            remoteAPI: remote.api,
+            registration: registration.client,
+            store: CompetitionInstallationStateStore(
+                directory: root,
+                fileProtection: JSONCompetitionEventStoreFileProtection {
+                    _, _ in
+                }
+            ),
+            environment: .sandbox,
+            mutedPushKinds: { kinds.value }
+        )
+        try await coordinator.start()
+
+        kinds.setValue(["nudge"])
+        let off = Task { await coordinator.reconcile() }
+        try await Task.sleep(for: .milliseconds(150))
+        kinds.setValue([])
+        await coordinator.reconcile()
+        await off.value
+
+        let requests = await remote.registrationRequests()
+        XCTAssertEqual(requests.map(\.mutedPushKinds), [[], ["nudge"], []])
+        await coordinator.stopListening()
+    }
+
     private func temporaryDirectory() throws -> URL {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent(
@@ -259,9 +327,14 @@ private actor RemoteInstallationProbe {
     private var registrations: [CompetitionInstallationRequest] = []
     private var removals: [UUID] = []
     private let removalFailure: CompetitionRemoteFailure?
+    private let registrationDelay: Duration
 
-    init(removalFailure: CompetitionRemoteFailure? = nil) {
+    init(
+        removalFailure: CompetitionRemoteFailure? = nil,
+        registrationDelay: Duration = .zero
+    ) {
         self.removalFailure = removalFailure
+        self.registrationDelay = registrationDelay
     }
 
     nonisolated var api: CompetitionRemoteAPI {
@@ -319,8 +392,9 @@ private actor RemoteInstallationProbe {
 
     private func register(
         _ request: CompetitionInstallationRequest
-    ) throws -> CompetitionInstallation {
+    ) async throws -> CompetitionInstallation {
         registrations.append(request)
+        if registrationDelay > .zero { try await Task.sleep(for: registrationDelay) }
         return try CompetitionInstallation(
             installationID: request.installationID,
             environment: request.environment,

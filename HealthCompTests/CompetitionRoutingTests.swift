@@ -23,6 +23,15 @@ final class CompetitionRoutingTests: XCTestCase {
         )
     }
 
+    func testCompetitionRouteURLRoundTrips() throws {
+        let id = CompetitionID(UUID(uuidString: "EAD172F8-531D-4327-823D-E82A4F696050")!)
+        let url = try XCTUnwrap(CompetitionRoute.competition(id).url)
+        XCTAssertEqual(url.absoluteString, "healthcomp://competition/ead172f8-531d-4327-823d-e82a4f696050")
+        XCTAssertEqual(CompetitionRoute(url: url), .competition(id))
+        let token = try XCTUnwrap(CompetitionInviteClaimToken(rawValue: String(repeating: "A", count: 43)))
+        XCTAssertNil(CompetitionRoute.claimInvite(token).url)
+    }
+
     func testChallengeLinkParsesHttpsAndCustomScheme() throws {
         let raw = "Xb3kP9qL2mN8vR4tY6wZ1a"
         let code = try XCTUnwrap(CompetitionChallengeLinkCode(rawValue: raw))

@@ -60,6 +60,7 @@ final class AuthenticatedProfileStorageTests: XCTestCase {
                 "Installations",
                 "AppAttest",
                 "BackgroundDelivery",
+                "PracticeEvents",
             ]
         )
         for url in [paths.rootDirectory] + paths.fixedDirectories {
@@ -161,12 +162,14 @@ final class AuthenticatedProfileStorageTests: XCTestCase {
         )
         let siblingSentinel = rootB.appendingPathComponent("keep.txt")
         try Data("profile-b-must-survive".utf8).write(to: siblingSentinel)
+        UserDefaults.standard.set("{}", forKey: CompetitionReactionsSeen.storageKey)
 
         try await storage.teardown(profileA)
 
         XCTAssertFalse(
             FileManager.default.fileExists(atPath: pathsA.rootDirectory.path)
         )
+        XCTAssertNil(UserDefaults.standard.object(forKey: CompetitionReactionsSeen.storageKey))
         XCTAssertEqual(
             try Data(contentsOf: siblingSentinel),
             Data("profile-b-must-survive".utf8)

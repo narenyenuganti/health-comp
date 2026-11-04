@@ -925,6 +925,366 @@ final class RemoteCompetitionFeatureTests: XCTestCase {
         await store.finish()
     }
 
+    private static func nudgeState(_ id: CompetitionID, evaluatedAt: Date) -> CompetitionFeature.State {
+        CompetitionFeature.State(publication: .remote(revision: 1, competitions: [
+            CompetitionPresentation(
+                id: id, ownerDisplayName: "Sender", opponentDisplayName: recipient.displayName,
+                lifecycle: .active(dayOrdinal: 2),
+                acceptedConfiguration: nil, userPoints: 0, opponentPoints: 0, days: [],
+                currentDayOrdinal: 2, lastRefresh: nil, tally: nil, terminalResult: nil,
+                evaluatedAt: evaluatedAt
+            ),
+        ]))
+    }
+
+    @MainActor
+    func testNudgeTappedSendsOnceAndShowsWhenItWasSent() async {
+        let id = CompetitionID(UUID())
+        let now = Date(timeIntervalSince1970: 1_786_979_520)
+        let nudgedAt = now.addingTimeInterval(2)
+        let sent = LockIsolated<[CompetitionID]>([])
+        let gate = AsyncStream<Void>.makeStream()
+        var client = InviteCreationRecorder(results: []).client
+        client.nudge = { id in
+            sent.withValue { $0.append(id) }
+            for await _ in gate.stream { break }
+            return nudgedAt
+        }
+        let store = TestStore(initialState: Self.nudgeState(id, evaluatedAt: now)) {
+            CompetitionFeature()
+        } withDependencies: { $0.competitionClient = client }
+        await store.send(.nudgeTapped(id)) { $0.nudges[id] = .sending }
+        // A second tap while sending sends nothing.
+        await store.send(.nudgeTapped(id))
+        gate.continuation.yield()
+        await store.receive(.nudgeResponse(id, tappedAt: now, .success(nudgedAt))) {
+            $0.nudges[id] = .sent(nudgedAt)
+        }
+        XCTAssertEqual(sent.value, [id])
+        await store.finish()
+    }
+
+    @MainActor
+    func testNudgeRefusedByServerShowsNotNeededAndRefreshes() async {
+        for failure in [CompetitionRemoteFailure.forbidden, .notFound] {
+            let id = CompetitionID(UUID())
+            let now = Date(timeIntervalSince1970: 1_786_979_520)
+            let recorder = InviteCreationRecorder(results: [])
+            var client = recorder.client
+            client.nudge = { _ in throw failure }
+            let store = TestStore(initialState: Self.nudgeState(id, evaluatedAt: now)) {
+                CompetitionFeature()
+            } withDependencies: { $0.competitionClient = client }
+            await store.send(.nudgeTapped(id)) { $0.nudges[id] = .sending }
+            await store.receive(.nudgeResponse(id, tappedAt: now, .failure(failure))) {
+                $0.nudges[id] = .notNeeded(now)
+            }
+            await store.finish()
+            XCTAssertEqual(recorder.reconcileTriggers, [.foreground], "\(failure)")
+        }
+    }
+
+    @MainActor
+    func testNudgeConnectionFailureKeepsTheButton() async {
+        let id = CompetitionID(UUID())
+        let now = Date(timeIntervalSince1970: 1_786_979_520)
+        let recorder = InviteCreationRecorder(results: [])
+        var client = recorder.client
+        client.nudge = { _ in throw CompetitionRemoteFailure.retryableTransport }
+        let store = TestStore(initialState: Self.nudgeState(id, evaluatedAt: now)) {
+            CompetitionFeature()
+        } withDependencies: { $0.competitionClient = client }
+        await store.send(.nudgeTapped(id)) { $0.nudges[id] = .sending }
+        await store.receive(.nudgeResponse(id, tappedAt: now, .failure(.retryableTransport))) {
+            $0.nudges[id] = .failed
+        }
+        await store.finish()
+        XCTAssertEqual(recorder.reconcileTriggers, [])
+    }
+
+    private static func reactionPublication(
+        _ id: CompetitionID,
+        revision: UInt64,
+        own: CompetitionReactionKind?
+    ) -> CompetitionPublication {
+        var match = CompetitionPresentation(
+            id: id, ownerDisplayName: "Sender", opponentDisplayName: recipient.displayName,
+            lifecycle: .active(dayOrdinal: 3),
+            acceptedConfiguration: nil, userPoints: 0, opponentPoints: 0, days: [],
+            currentDayOrdinal: 3, lastRefresh: nil, tally: nil, terminalResult: nil,
+            evaluatedAt: Date(timeIntervalSince1970: 1_786_979_520)
+        )
+        match.reactions = own.map {
+            [CompetitionReaction(
+                target: .day(2), kind: $0, isFromYou: true,
+                updatedAt: Date(timeIntervalSince1970: 1_786_979_520)
+            )]
+        } ?? []
+        return .remote(revision: revision, competitions: [match])
+    }
+
+    @MainActor
+    func testReactionTapSetsTogglesAndClears() async {
+        let id = CompetitionID(UUID())
+        let key = CompetitionReactionKey(competitionID: id, target: .day(2))
+        let sent = LockIsolated<[CompetitionReactionKind?]>([])
+        var client = InviteCreationRecorder(results: []).client
+        client.setReaction = { id, _, kind in
+            let revision = UInt64(sent.withValue { $0.append(kind); return $0.count }) + 1
+            return Self.reactionPublication(id, revision: revision, own: kind)
+        }
+        let store = TestStore(
+            initialState: CompetitionFeature.State(
+                publication: Self.reactionPublication(id, revision: 1, own: nil)
+            )
+        ) { CompetitionFeature() } withDependencies: { $0.competitionClient = client }
+
+        // Fire sets it; fire again removes it.
+        await store.send(.reactionTapped(id, .day(2), .fire)) {
+            $0.pendingReactions[key] = .some(.fire)
+        }
+        await store.receive(.publication(Self.reactionPublication(id, revision: 2, own: .fire))) {
+            $0.publication = Self.reactionPublication(id, revision: 2, own: .fire)
+        }
+        await store.receive(.reactionFinished(key, succeeded: true)) {
+            $0.pendingReactions = [:]
+        }
+        await store.send(.reactionTapped(id, .day(2), .fire)) {
+            $0.pendingReactions[key] = .some(nil)
+        }
+        await store.receive(.publication(Self.reactionPublication(id, revision: 3, own: nil))) {
+            $0.publication = Self.reactionPublication(id, revision: 3, own: nil)
+        }
+        await store.receive(.reactionFinished(key, succeeded: true)) {
+            $0.pendingReactions = [:]
+        }
+        XCTAssertEqual(sent.value, [.fire, nil])
+        await store.finish()
+    }
+
+    @MainActor
+    func testReactionFailureMarksTheTargetAndClearsPending() async {
+        let id = CompetitionID(UUID())
+        let key = CompetitionReactionKey(competitionID: id, target: .day(2))
+        var client = InviteCreationRecorder(results: []).client
+        client.setReaction = { _, _, _ in throw CompetitionRemoteFailure.forbidden }
+        let store = TestStore(
+            initialState: CompetitionFeature.State(
+                publication: Self.reactionPublication(id, revision: 1, own: nil)
+            )
+        ) { CompetitionFeature() } withDependencies: { $0.competitionClient = client }
+
+        await store.send(.reactionTapped(id, .day(2), .clap)) {
+            $0.pendingReactions[key] = .some(.clap)
+        }
+        await store.receive(.reactionFinished(key, succeeded: false)) {
+            $0.pendingReactions = [:]
+            $0.reactionFailures = [key]
+        }
+        let control = store.state.reactionControl(for: id) { _ in }
+        XCTAssertEqual(control.failed, [.day(2)])
+        XCTAssertNil(control.selection(.day(2), in: store.state.publication!.dashboard.competitions[0]))
+        // Tapping again retries and clears the error line.
+        await store.send(.reactionTapped(id, .day(2), .clap)) {
+            $0.pendingReactions[key] = .some(.clap)
+            $0.reactionFailures = []
+        }
+        await store.receive(.reactionFinished(key, succeeded: false)) {
+            $0.pendingReactions = [:]
+            $0.reactionFailures = [key]
+        }
+        await store.finish()
+    }
+
+    @MainActor
+    func testReactionTapWhilePendingIsIgnored() async {
+        let id = CompetitionID(UUID())
+        let key = CompetitionReactionKey(competitionID: id, target: .day(2))
+        let calls = LockIsolated(0)
+        let gate = AsyncStream<Void>.makeStream()
+        var client = InviteCreationRecorder(results: []).client
+        client.setReaction = { id, _, kind in
+            calls.withValue { $0 += 1 }
+            for await _ in gate.stream { break }
+            return Self.reactionPublication(id, revision: 2, own: kind)
+        }
+        let store = TestStore(
+            initialState: CompetitionFeature.State(
+                publication: Self.reactionPublication(id, revision: 1, own: nil)
+            )
+        ) { CompetitionFeature() } withDependencies: { $0.competitionClient = client }
+
+        await store.send(.reactionTapped(id, .day(2), .fire)) {
+            $0.pendingReactions[key] = .some(.fire)
+        }
+        XCTAssertEqual(
+            store.state.reactionControl(for: id) { _ in }
+                .selection(.day(2), in: store.state.publication!.dashboard.competitions[0]),
+            .fire,
+            "The chip shows the pending choice"
+        )
+        await store.send(.reactionTapped(id, .day(2), .salute))
+        gate.continuation.yield()
+        await store.receive(.publication(Self.reactionPublication(id, revision: 2, own: .fire))) {
+            $0.publication = Self.reactionPublication(id, revision: 2, own: .fire)
+        }
+        await store.receive(.reactionFinished(key, succeeded: true)) {
+            $0.pendingReactions = [:]
+        }
+        XCTAssertEqual(calls.value, 1)
+        await store.finish()
+    }
+
+    @MainActor
+    func testStopClearsAndCancelsNudges() async {
+        let id = CompetitionID(UUID())
+        let now = Date(timeIntervalSince1970: 1_786_979_520)
+        let started = AsyncStream<Void>.makeStream()
+        let gate = AsyncStream<Void>.makeStream()
+        var client = InviteCreationRecorder(results: []).client
+        client.nudge = { _ in
+            started.continuation.yield()
+            for await _ in gate.stream { break }
+            return now
+        }
+        let store = TestStore(initialState: Self.nudgeState(id, evaluatedAt: now)) {
+            CompetitionFeature()
+        } withDependencies: { $0.competitionClient = client }
+        await store.send(.nudgeTapped(id)) { $0.nudges[id] = .sending }
+        for await _ in started.stream { break }
+        await store.send(.stop) { $0.nudges = [:] }
+        // The suspended request finishing after sign-out changes nothing.
+        gate.continuation.yield()
+        await store.finish()
+        XCTAssertEqual(store.state.nudges, [:])
+    }
+
+    @MainActor
+    func testBlockTappedRunsBlockCommand() async {
+        let id = CompetitionID(UUID())
+        let blocked = LockIsolated<[CompetitionID]>([])
+        var client = InviteCreationRecorder(results: []).client
+        client.block = { id in
+            blocked.withValue { $0.append(id) }
+            return .remote(revision: 0)
+        }
+        let store = TestStore(initialState: CompetitionFeature.State(
+            publication: .remote(revision: 1)
+        )) { CompetitionFeature() } withDependencies: { $0.competitionClient = client }
+        await store.send(.blockTapped(id)) { $0.commandIDsInFlight = [id] }
+        await store.receive(.commandFinished(id, expectedRevision: 0)) {
+            $0.commandIDsInFlight = []
+        }
+        XCTAssertEqual(blocked.value, [id])
+        await store.finish()
+    }
+
+    @MainActor
+    func testBlockedPeopleLoadKeepsListOnFailedRefresh() async {
+        let alex = AuthenticatedProfile(id: UUID(), displayName: "Alex")
+        let answers = LockIsolated<[Result<[AuthenticatedProfile], CompetitionRemoteFailure>]>([
+            .failure(.retryableTransport), .success([alex]), .failure(.retryableTransport),
+        ])
+        var client = InviteCreationRecorder(results: []).client
+        client.loadBlockedProfiles = { try answers.withValue { $0.removeFirst() }.get() }
+        let store = TestStore(initialState: CompetitionFeature.State()) { CompetitionFeature() }
+            withDependencies: { $0.competitionClient = client }
+        // A first-load failure leaves the section hidden.
+        await store.send(.blockedPeopleRequested)
+        await store.receive(.blockedPeopleResponse(nil))
+        await store.send(.blockedPeopleRequested)
+        await store.receive(.blockedPeopleResponse([alex])) { $0.blockedPeople = [alex] }
+        // A failed refresh keeps the list shown.
+        await store.send(.blockedPeopleRequested)
+        await store.receive(.blockedPeopleResponse(nil))
+        await store.finish()
+    }
+
+    @MainActor
+    func testUnblockRemovesPersonOrShowsError() async {
+        let alex = AuthenticatedProfile(id: UUID(), displayName: "Alex")
+        let sam = AuthenticatedProfile(id: UUID(), displayName: "Sam")
+        let unblocked = LockIsolated<[UUID]>([])
+        var client = InviteCreationRecorder(results: []).client
+        client.unblock = { id in
+            guard id == alex.id else { throw CompetitionRemoteFailure.retryableTransport }
+            unblocked.withValue { $0.append(id) }
+        }
+        client.loadBlockedProfiles = { [sam] }
+        var initial = CompetitionFeature.State()
+        initial.blockedPeople = [alex, sam]
+        let store = TestStore(initialState: initial) { CompetitionFeature() }
+            withDependencies: { $0.competitionClient = client }
+        await store.send(.unblockTapped(alex.id)) { $0.unblocksInFlight = [alex.id] }
+        await store.receive(.unblockFinished(alex.id, succeeded: true)) {
+            $0.unblocksInFlight = []
+            $0.blockedPeople = [sam]
+        }
+        await store.send(.unblockTapped(sam.id)) { $0.unblocksInFlight = [sam.id] }
+        await store.receive(.unblockFinished(sam.id, succeeded: false)) {
+            $0.unblocksInFlight = []
+            $0.unblockFailed = sam.id
+        }
+        // The next load clears the error.
+        await store.send(.blockedPeopleRequested) { $0.unblockFailed = nil }
+        await store.receive(.blockedPeopleResponse([sam]))
+        XCTAssertEqual(unblocked.value, [alex.id])
+        await store.finish()
+    }
+
+    @MainActor
+    func testUnblockDropsAListLoadThatStartedBeforeIt() async {
+        let alex = AuthenticatedProfile(id: UUID(), displayName: "Alex")
+        var client = InviteCreationRecorder(results: []).client
+        // The load read before the unblock and answers after it.
+        client.loadBlockedProfiles = {
+            try await Task.sleep(for: .seconds(30))
+            return [alex]
+        }
+        client.unblock = { _ in }
+        var initial = CompetitionFeature.State()
+        initial.blockedPeople = [alex]
+        let store = TestStore(initialState: initial) { CompetitionFeature() }
+            withDependencies: { $0.competitionClient = client }
+        await store.send(.blockedPeopleRequested)
+        await store.send(.unblockTapped(alex.id)) { $0.unblocksInFlight = [alex.id] }
+        await store.receive(.unblockFinished(alex.id, succeeded: true)) {
+            $0.unblocksInFlight = []
+            $0.blockedPeople = []
+        }
+        // No blockedPeopleResponse([alex]) arrives to bring the row back.
+        await store.finish()
+    }
+
+    @MainActor
+    func testLateUnblockResultAfterStopIsDropped() async {
+        let alex = AuthenticatedProfile(id: UUID(), displayName: "Alex")
+        var initial = CompetitionFeature.State()
+        initial.blockedPeople = [alex]
+        initial.unblocksInFlight = [alex.id]
+        let store = TestStore(initialState: initial) { CompetitionFeature() }
+        await store.send(.stop) {
+            $0.blockedPeople = nil
+            $0.unblocksInFlight = []
+        }
+        await store.send(.unblockFinished(alex.id, succeeded: false))
+        await store.finish()
+    }
+
+    @MainActor
+    func testStopClearsBlockedPeople() async {
+        let alex = AuthenticatedProfile(id: UUID(), displayName: "Alex")
+        var initial = CompetitionFeature.State()
+        initial.blockedPeople = [alex]
+        initial.unblockFailed = alex.id
+        let store = TestStore(initialState: initial) { CompetitionFeature() }
+        await store.send(.stop) {
+            $0.blockedPeople = nil
+            $0.unblockFailed = nil
+        }
+        await store.finish()
+    }
+
     @MainActor
     func testChallengeLinkRequested() async throws {
         let code = try XCTUnwrap(CompetitionChallengeLinkCode(rawValue: "Xb3kP9qL2mN8vR4tY6wZ1a"))

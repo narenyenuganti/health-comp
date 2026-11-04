@@ -374,15 +374,27 @@ portal/dashboard readback; source configuration alone is not proof.
 1. Confirm the signed-in Apple account is an active member of the paid team
    that owns the App ID. Record the team ID only after reading Membership
    Details; do not infer it from an old project setting.
-2. Register the exact App ID:
-   - staging: com.narenyenuganti.HealthComp.staging
-   - production: com.narenyenuganti.HealthComp
+2. Register the exact App ID, and the explicit widget App ID beside it:
+   - staging: com.narenyenuganti.HealthComp.staging and
+     com.narenyenuganti.HealthComp.staging.widgets
+   - production: com.narenyenuganti.HealthComp and
+     com.narenyenuganti.HealthComp.widgets
 3. Enable Sign in with Apple, Push Notifications, HealthKit with background
    delivery, and App Attest for that App ID.
+   - App Groups: register the environment's group
+     (staging: group.com.narenyenuganti.HealthComp.staging; production and
+     Debug: group.com.narenyenuganti.HealthComp), then turn on App Groups with
+     that group for both the app App ID and its widget App ID. The widget App
+     ID gets nothing else. Signing fails for an App ID without the group once
+     the entitlements carry it.
 4. Do not add an Associated Domains entitlement, route, or domain until an
    invitation domain is selected. A portal capability toggle by itself is not
    signed-app or domain-association evidence.
-5. Regenerate and install the provisioning profile after capability changes.
+5. Regenerate and install the provisioning profile after capability changes,
+   and create one for the widget App ID. At archive, confirm
+   `PlugIns/HealthCompWidgets.appex` is signed with the widget profile and has
+   the app's `CFBundleShortVersionString` and `CFBundleVersion`; bump both
+   together.
 6. For native `signInWithIdToken`, enable Apple Auth in the matching Supabase
    project and register the matching bundle ID as its Client ID. Native-only
    login does not require an OAuth Services ID or OAuth client secret.
@@ -494,6 +506,109 @@ Edges:
   registers through the three-argument call and gets no challenge pushes
   until it updates. None had been distributed when this landed, because
   that server work was not yet deployed.
+
+### Nudges
+
+Migration `20261101002500` adds `public.nudge_competition_participant(uuid)`,
+the `nudge` work kind and a nullable `competition_notification_work.nudge_day`.
+An accepted participant can ask the other person to open HealthComp when the
+match is live (Day 1 to Day 7 in the match time zone) and the other person's
+newest upload, or Day 1's start, is over 12 hours old, or after Day 7 when the
+result waits on the other person's stable check (no result yet, before
+`best_available_deadline`). Anything else is `nudge_not_allowed`; a
+non-participant gets `competition_not_found`.
+
+- One nudge per sender, per match, per match day (`nudge_day`), and at least
+  12 hours after the sender's previous one. A repeat queues nothing.
+- Every success returns `{"nudged_at": <now>}`: a first send, a repeat, a
+  recipient who muted the sender (rows stored `suppressed`) and a recipient
+  with no active installation (no rows). The answer never says whether the
+  recipient has a device or a mute.
+- The push is generic: "Score update needed" / "Open HealthComp to update
+  your match.", routed to the match. The lease discards nudge work once the
+  match has left `scheduled`/`active`/`ends_today`/`tallying` or the sender's
+  account is no longer active, and suppresses it if the pair was muted after
+  queuing.
+
+Deploy order is load-bearing: **deploy `send-competition-notification` (which
+accepts `nudge`) before applying `20261101002500`**, in Staging and then in
+production. A function without `nudge` rejects the whole lease batch with a
+502, which leaves rows leased and delays challenge pushes too. Never roll the
+function back to a version without `nudge`.
+
+To turn nudges off, do not redeploy an older function. Ship a forward
+migration that runs
+`revoke execute on function public.nudge_competition_participant(uuid) from authenticated`
+and
+`update private.competition_notification_work set state = 'discarded', completed_at = now(), updated_at = now() where kind = 'nudge' and state = 'pending'`.
+Leased rows finish normally. Apps then get a permission refusal and show
+that no nudge is needed.
+
+The app build with the Nudge control needs `20261101002500` in production
+before it reaches TestFlight; without the RPC the control only ever answers
+that no nudge is needed. Nudges reach 1.0.2 and every later install: they
+use the existing generic alert path and route to the match.
+
+### Reactions
+
+Migration `20261102002700` adds `private.competition_reactions` (RLS on and
+forced, no client grants), `public.set_competition_reaction(uuid, integer,
+text)`, `public.list_competition_reactions()`, the `reaction` work kind and
+`device_installations.supports_reactions` (default false). Each accepted
+participant keeps at most one preset (`clap`, `fire`, `huffing`, `salute`) on
+each of the other person's started days while the match is live or tallying,
+and one on the result once it exists. A null reaction removes it. Every
+refusal, including a non-participant or an unknown match, is
+`reaction_not_allowed`.
+
+- Reactions never enter `competition_change_log`: every installed app's feed
+  rejects change kinds it doesn't know. A real change sends the existing
+  `competition_changed` wakeup to both accepted, active participants, so every
+  build just reconciles; repeating the same reaction does nothing.
+- A five-argument `register_current_device_installation` sets
+  `supports_reactions`. The four-argument call now delegates with false, and
+  the three-argument call still delegates to it, so 1.0.2 and pre-reaction
+  builds record false/false. New builds fall back 5 → 4 → 3 on PGRST202.
+- The push is generic ("New reaction", no body, no name), routed to the match,
+  at most one per match and recipient per rolling hour. The work row's
+  identity also keeps a reaction silent when the match has no new change-log
+  row since the last reaction push. A muted sender's rows are stored
+  `suppressed`.
+- The install filter applies at enqueue only; the lease is unchanged. A row
+  already pending when an install re-registers without the flag still sends.
+  The per-iPhone Reactions switch arrives with `muted_push_kinds`, which the
+  lease suppresses at send time.
+
+Deploy order is load-bearing: **deploy `send-competition-notification` (which
+accepts `reaction`) before applying `20261102002700`**, in Staging and then in
+production, and never roll the function back to a version without
+`reaction`. To turn reactions off, redeploy the function with `reaction`
+mapped to no payload (rows resolve `discarded`), or ship a forward migration
+that makes `set_competition_reaction` raise. The app build that shows
+reactions needs the migration in production before it reaches TestFlight.
+
+### Notification choices
+
+Migration `20261103002800` adds `device_installations.muted_push_kinds`
+(`text[]`, default `'{}'`, only `nudge` and `reaction`), a six-argument
+`register_current_device_installation` that sets it, and a new
+`lease_competition_notification_work` body (2500's, with one more mute
+condition).
+
+- Account → Notifications has a switch per kind. Reactions and Nudges are
+  server pushes, so the app sends the ones switched off with registration.
+  The lease resolves that work `suppressed`, like a mute, including rows that
+  were already pending when the switch turned off.
+- The five-argument call now delegates with `'{}'`; the four- and
+  three-argument calls still delegate down the chain. Builds without the
+  switch therefore keep getting every kind. New builds fall back
+  6 → 5 → 4 → 3 on PGRST202.
+- The other switches (lead changes, close scores, the Last day reminder, the
+  Live Activity) act only on the iPhone; the server never sees them.
+
+The migration must be in production before any build containing the switches
+reaches TestFlight. Without it the app registers through the five-argument
+call and the server keeps sending switched-off reactions and nudges.
 
 ## Finalizer and notification repair schedules
 

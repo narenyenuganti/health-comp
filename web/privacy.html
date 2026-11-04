@@ -30,7 +30,7 @@
         United States.</p>
 
       <p><strong>Operator:</strong> Naren Yenuganti.<br>
-        <strong>Effective date:</strong> November 1, 2026.<br>
+        <strong>Effective date:</strong> November 3, 2026.<br>
         <strong>Questions or privacy requests:</strong> <a href="mailto:yrnaren1@gmail.com">yrnaren1@gmail.com</a>.</p>
 
       <h2>Information used by the app</h2>
@@ -41,18 +41,22 @@
           supplied by Apple, including a private-relay address, and sign-in metadata.
           Your Apple email-sharing choice affects the information Apple provides.</li>
         <li><strong>Activity on your iPhone:</strong> HealthComp reads Activity summaries to calculate
-          competition scores. It requests related Activity/workout read permissions to
-          notice changes and wheelchair-use information to select Stand/Roll behavior.
+          competition scores. A practice match also reads your last 2 weeks of Activity
+          on your iPhone to set the pacer; practice data is never sent. HealthComp
+          requests related Activity/workout read permissions to notice changes and
+          wheelchair-use information to select Stand/Roll behavior.
           It does not request permission to write Health data. Raw HealthKit data stays
           on your iPhone; the score submission does not upload raw workout samples,
           routes, or raw goal values.</li>
         <li><strong>Derived competition data:</strong> our server stores rounded Activity percentages,
           Move/Stand/Roll modes, availability, daily points, competition dates/time zone,
-          revision information, results, and awards, linked to participant accounts.
+          revision information, results, awards, and the preset reactions you send (👏 🔥 😤 🫡)
+          and when you sent them, linked to participant accounts.
           Keeping raw Health data on-device does not mean no fitness information is
           collected by the service.</li>
         <li><strong>Installation and security information:</strong> installation identifiers, notification
-          tokens, and app-integrity verification records support notification delivery,
+          tokens, which kinds of notification you turned off on that device, and
+          app-integrity verification records support notification delivery,
           secure score submission, and installation retirement.</li>
         <li><strong>Operational and support information:</strong> the service keeps workflow status and
           error/event records to operate competitions and account cleanup. If you email
@@ -68,12 +72,15 @@
 
       <h2>Sharing and service providers</h2>
       <p>Your competitor can see your display name and shared competition information,
-        including daily points, availability, dates, results, rounded
+        including daily points, availability, dates, results, the reactions you send, rounded
         Move/Exercise/Stand-or-Roll percentages, Activity modes, and when your iPhone
         last updated each daily score. These are derived
         fitness values, not raw HealthKit samples or workout records. A private invitation
         link grants its recipient a chance to join; share it only with your intended
-        competitor, not in a public issue or support message.</p>
+        competitor, not in a public issue or support message. Either person can share an
+        image of a finished match's result from the app. It shows both final scores, the
+        week, which days each person won and up to two highlights, and the person sharing
+        can hide the other person's name.</p>
 
       <p>Supabase provides the configured authentication and competition backend. Apple
         provides sign-in, notification delivery, and app-integrity services. Remote push
@@ -86,7 +93,9 @@
         enable browser network-error reporting to Cloudflare; the live support response
         also includes Cloudflare's email-decoding script. Connection-error reports can
         include the requested URL and referrer, so avoid placing private information in
-        website URLs or sharing private invitation links publicly. Google Gmail receives
+        website URLs or sharing private invitation links publicly. If you join the waitlist
+        on the website, Resend receives the email address you enter and emails it to
+        our Gmail inbox so we can invite you to test. Google Gmail receives
         mail sent to our support address, including the sender's address and message.
         We handle support mail in Gmail without automatic forwarding or connected
         helpdesk, AI, or other support-mail services.</p>
@@ -110,7 +119,13 @@
       <h2>Controls, deletion, and retained history</h2>
       <p>You can change HealthComp's Health access and notification permissions through
         Apple's system controls. Withdrawing access stops the corresponding future access;
-        it does not itself delete previously synchronized competition records.</p>
+        it does not itself delete previously synchronized competition records. If you
+        choose Save Image for a result image, iOS asks for add-only Photos access, which
+        you can change in Apple's system controls.</p>
+
+      <p>You can block someone from a challenge they sent you. Blocks are stored with your
+        account, aren’t shown to the blocked person, and are removed when either account
+        is deleted.</p>
 
       <p>In HealthComp, tap your profile avatar on the Home screen to open account
         settings. <strong>Sign Out</strong> and <strong>Delete Account</strong> are different: signing out retires
@@ -125,7 +140,7 @@
         in the protected competition history. Revoked installations lose their push
         tokens; related integrity keys/challenges are purged by the cleanup hooks.</p>
 
-      <p>Shared derived results, stable history identifiers, and some operational records
+      <p>Shared derived results, reactions you sent, stable history identifiers, and some operational records
         remain. The other participant may already know whom they competed with; the label
         Former competitor does not guarantee that a person is unidentifiable. Deleting
         the app, signing out, or starting a deletion request is not confirmation that

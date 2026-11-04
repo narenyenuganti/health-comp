@@ -12,6 +12,7 @@ struct CompetitionInviteView: View {
     var commandFailed = false
     @State private var showsDeclineConfirmation = false
     @State private var showsCancelConfirmation = false
+    @State private var showsBlockConfirmation = false
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.locale) private var locale
     @Environment(\.timeZone) private var timeZone
@@ -55,20 +56,65 @@ struct CompetitionInviteView: View {
         }
         .navigationTitle(competition.opponentDisplayName)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            if isRemoteIncoming {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        Button(role: .destructive) {
+                            showsBlockConfirmation = true
+                        } label: {
+                            Label("Block \(competition.opponentDisplayName)", systemImage: "hand.raised")
+                        }
+                        .disabled(isCommandInFlight)
+                        .accessibilityIdentifier("competition.invite.block")
+                    } label: {
+                        CompetitionMoreLabel()
+                    }
+                    .accessibilityIdentifier("competition.more")
+                }
+            }
+        }
+        // The simulated fixture has no server, so it offers no block.
         .alert(
             "Decline challenge from \(competition.opponentDisplayName)?",
-            isPresented: $showsDeclineConfirmation
+            isPresented: declineBinding(remote: false)
         ) {
             Button("Keep Challenge", role: .cancel) {}
             Button("Decline Challenge", role: .destructive) {
                 send(.declineTapped(competition.id))
             }
         } message: {
-            Text(
-                source == .remoteParticipants
-                    ? "\(competition.opponentDisplayName) will see that you declined."
-                    : "This closes the challenge without starting a match."
-            )
+            Text("This closes the challenge without starting a match.")
+        }
+        .confirmationDialog(
+            "Decline challenge from \(competition.opponentDisplayName)?",
+            isPresented: declineBinding(remote: true),
+            titleVisibility: .visible
+        ) {
+            Button("Decline Challenge", role: .destructive) {
+                send(.declineTapped(competition.id))
+            }
+            .accessibilityIdentifier("competition.invite.decline.confirm")
+            Button("Decline and Block \(competition.opponentDisplayName)", role: .destructive) {
+                send(.blockTapped(competition.id))
+            }
+            .accessibilityIdentifier("competition.invite.decline-block")
+            Button("Keep Challenge", role: .cancel) {}
+        } message: {
+            Text("\(competition.opponentDisplayName) will see a decline either way. If you block them, they can’t challenge you again.")
+        }
+        .confirmationDialog(
+            "Block \(competition.opponentDisplayName)?",
+            isPresented: $showsBlockConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Block \(competition.opponentDisplayName)", role: .destructive) {
+                send(.blockTapped(competition.id))
+            }
+            .accessibilityIdentifier("competition.invite.block.confirm")
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("This declines the challenge. \(competition.opponentDisplayName) will see a decline and can’t challenge you again.")
         }
         .confirmationDialog(
             "Cancel your challenge to \(competition.opponentDisplayName)?",
@@ -254,6 +300,18 @@ struct CompetitionInviteView: View {
 
     private var isRemoteOutgoing: Bool {
         source == .remoteParticipants && direction == .outgoing
+    }
+
+    private var isRemoteIncoming: Bool {
+        source == .remoteParticipants && direction == .incoming
+    }
+
+    /// One decline flag; the fixture shows the alert, a remote challenge the dialog.
+    private func declineBinding(remote: Bool) -> Binding<Bool> {
+        Binding(
+            get: { showsDeclineConfirmation && (source == .remoteParticipants) == remote },
+            set: { showsDeclineConfirmation = $0 }
+        )
     }
 
     private var directionTitle: String {

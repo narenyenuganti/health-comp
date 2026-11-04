@@ -375,6 +375,161 @@ final class RemoteCompetitionClientTests: XCTestCase {
         await client.stop()
     }
 
+    private func widgetTestProfile() throws -> (AuthenticatedProfile, AuthenticatedProfileStoragePaths) {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let profile = AuthenticatedProfile(
+            id: UUID(uuidString: "81000000-0000-4000-8000-000000000001")!,
+            displayName: "Beta Alice"
+        )
+        let paths = AuthenticatedProfileStoragePaths(profileID: profile.id, rootDirectory: root)
+        for directory in paths.fixedDirectories {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        }
+        return (profile, paths)
+    }
+
+    private func waitForWidgetWrite(_ spy: WidgetSnapshotSpy) async throws {
+        for _ in 0..<200 where spy.writes.isEmpty {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+    }
+
+    func testCanonicalPublishWritesTheWidgetSnapshot() async throws {
+        let (profile, paths) = try widgetTestProfile()
+        let spy = WidgetSnapshotSpy()
+        let client = CompetitionClient.remote(
+            remoteAPI: remoteAPI(listCompetitions: { [] }),
+            environment: try environment(),
+            widgetSnapshots: spy.client
+        )
+
+        try await client.mountAuthenticatedProfile(profile, paths)
+        var iterator = client.start().makeAsyncIterator()
+        _ = await iterator.next()
+        try await waitForWidgetWrite(spy)
+
+        XCTAssertEqual(spy.writes.count, 1)
+        XCTAssertEqual(spy.writes.first?.snapshot.matches, [])
+        XCTAssertEqual(spy.writes.first?.carryForward, [])
+        await client.stop()
+        _ = await client.reconcileAll(.pullToRefresh)
+        XCTAssertEqual(spy.writes.count, 1)
+    }
+
+    func testColdMountCarriesForwardAMatchWhoseSyncFailedOrWasCancelled() async throws {
+        let (profile, paths) = try widgetTestProfile()
+        let failedID = UUID(uuidString: "82000000-0000-4000-8000-0000000000F1")!
+        let cancelledID = UUID(uuidString: "82000000-0000-4000-8000-0000000000F2")!
+        let expiresAt = Date(timeIntervalSince1970: 1_786_540_000 + 48 * 60 * 60)
+        let descriptors = try [failedID, cancelledID].map {
+            try pendingDescriptor(competitionID: $0, profile: profile, expiresAt: expiresAt)
+        }
+        let spy = WidgetSnapshotSpy()
+        let client = CompetitionClient.remote(
+            remoteAPI: remoteAPI(
+                listCompetitions: { descriptors },
+                fetchChanges: { cursor, _ in
+                    if cursor.competitionID == cancelledID { throw CancellationError() }
+                    throw CompetitionRemoteFailure.operationFailed
+                }
+            ),
+            environment: try environment(),
+            widgetSnapshots: spy.client
+        )
+
+        try await client.mountAuthenticatedProfile(profile, paths)
+        var iterator = client.start().makeAsyncIterator()
+        _ = await iterator.next()
+        try await waitForWidgetWrite(spy)
+
+        XCTAssertEqual(spy.writes.first?.carryForward, [failedID, cancelledID])
+        XCTAssertEqual(spy.writes.first?.snapshot.matches, [])
+        await client.stop()
+    }
+
+    func testDiscoveryFailureDoesNotWriteTheWidgetSnapshot() async throws {
+        let (profile, paths) = try widgetTestProfile()
+        let spy = WidgetSnapshotSpy()
+        let client = CompetitionClient.remote(
+            remoteAPI: remoteAPI(listCompetitions: { throw CompetitionRemoteFailure.operationFailed }),
+            environment: try environment(),
+            widgetSnapshots: spy.client
+        )
+
+        try await client.mountAuthenticatedProfile(profile, paths)
+        var iterator = client.start().makeAsyncIterator()
+        _ = await iterator.next()
+        _ = await client.reconcileAll(.pullToRefresh)
+
+        XCTAssertEqual(spy.writes.count, 0)
+        await client.stop()
+    }
+
+    private func waitForLiveActivityCheck(_ probe: LiveActivityProbe) async throws {
+        for _ in 0..<200 where probe.currentCalls == 0 {
+            try await Task.sleep(nanoseconds: 10_000_000)
+        }
+    }
+
+    func testPublishSubmitsToLiveActivitiesAndStopEndsThem() async throws {
+        let (profile, paths) = try widgetTestProfile()
+        let leftover = CompetitionLiveActivitySnapshot(
+            matchID: "82000000-0000-4000-8000-0000000000c1",
+            state: MatchActivityAttributes.ContentState(
+                phase: .live, title: "Last day", timing: nil, opponentName: "Sam",
+                userPoints: 10, opponentPoints: 9, freshness: nil
+            )
+        )
+        let probe = LiveActivityProbe(running: [leftover], started: [leftover.matchID])
+        // Discovery fails, so publish can't tell whether the match is gone
+        // and leaves the card: only stop() ends it.
+        let client = CompetitionClient.remote(
+            remoteAPI: remoteAPI(listCompetitions: { throw CompetitionRemoteFailure.operationFailed }),
+            environment: try environment(),
+            liveActivities: CompetitionLiveActivities(client: probe.client)
+        )
+
+        try await client.mountAuthenticatedProfile(profile, paths)
+        var iterator = client.start().makeAsyncIterator()
+        _ = await iterator.next()
+        try await waitForLiveActivityCheck(probe)
+        XCTAssertGreaterThan(probe.currentCalls, 0, "publish reached the Live Activity planner")
+        XCTAssertEqual(probe.ends, [])
+
+        await client.stop()
+        XCTAssertEqual(probe.ends, [leftover.matchID])
+        XCTAssertFalse(probe.started.contains(leftover.matchID))
+    }
+
+    func testRemountDoesNotEndLiveActivities() async throws {
+        let (profile, paths) = try widgetTestProfile()
+        let leftover = CompetitionLiveActivitySnapshot(
+            matchID: "82000000-0000-4000-8000-0000000000c2",
+            state: MatchActivityAttributes.ContentState(
+                phase: .live, title: "Last day", timing: nil, opponentName: "Sam",
+                userPoints: 10, opponentPoints: 9, freshness: nil
+            )
+        )
+        let probe = LiveActivityProbe(running: [leftover], started: [leftover.matchID])
+        let client = CompetitionClient.remote(
+            remoteAPI: remoteAPI(listCompetitions: { throw CompetitionRemoteFailure.operationFailed }),
+            environment: try environment(),
+            liveActivities: CompetitionLiveActivities(client: probe.client)
+        )
+
+        try await client.mountAuthenticatedProfile(profile, paths)
+        var iterator = client.start().makeAsyncIterator()
+        _ = await iterator.next()
+        try await client.mountAuthenticatedProfile(profile, paths)
+        var remounted = client.start().makeAsyncIterator()
+        _ = await remounted.next()
+
+        XCTAssertEqual(probe.ends, [], "a mount never ends the card the last process left")
+        await client.stop()
+    }
+
     func testStartRequestsHealthAuthorizationAndPublishesFailure()
         async throws
     {
@@ -751,6 +906,206 @@ final class RemoteCompetitionClientTests: XCTestCase {
             publication.dashboard.competitions.map(\.rematchParentID),
             [CompetitionID(parentID)]
         )
+        await client.stop()
+    }
+
+    /// One real match for the reaction tests, mounted for `profile`.
+    private func reactionMatch(
+        profile: AuthenticatedProfile,
+        root: URL,
+        competitionID: UUID
+    ) throws -> (
+        paths: AuthenticatedProfileStoragePaths,
+        descriptor: CompetitionDescriptor,
+        page: CompetitionChangePage
+    ) {
+        let paths = AuthenticatedProfileStoragePaths(profileID: profile.id, rootDirectory: root)
+        for directory in paths.fixedDirectories {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        }
+        let createdAt = Date(timeIntervalSince1970: 1_786_540_000)
+        let descriptor = try pendingDescriptor(
+            competitionID: competitionID,
+            profile: profile,
+            expiresAt: createdAt.addingTimeInterval(48 * 60 * 60)
+        )
+        let page = try pendingHistoryPage(
+            descriptor: descriptor,
+            profileID: profile.id,
+            createdAt: createdAt
+        )
+        return (paths, descriptor, page)
+    }
+
+    func testReactionsAttachToTheirMatchAndSurviveAFailedFetch() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let profile = AuthenticatedProfile(
+            id: UUID(uuidString: "81000000-0000-4000-8000-000000000001")!,
+            displayName: "Beta Alice"
+        )
+        let jordan = UUID(uuidString: "81000000-0000-4000-8000-0000000000d2")!
+        let competitionID = UUID(uuidString: "82000000-0000-4000-8000-0000000000d1")!
+        let match = try reactionMatch(profile: profile, root: root, competitionID: competitionID)
+        let theirs = CompetitionReactionRecord(
+            competitionID: competitionID, target: .day(2), authorProfileID: jordan,
+            kind: .huffing, updatedAt: Date(timeIntervalSince1970: 1_786_550_000)
+        )
+        let yours = CompetitionReactionRecord(
+            competitionID: competitionID, target: .day(1), authorProfileID: profile.id,
+            kind: .fire, updatedAt: Date(timeIntervalSince1970: 1_786_540_000)
+        )
+        // Another match's reaction never lands on this one.
+        let elsewhere = CompetitionReactionRecord(
+            competitionID: UUID(uuidString: "82000000-0000-4000-8000-0000000000d9")!,
+            target: .result, authorProfileID: jordan,
+            kind: .clap, updatedAt: Date(timeIntervalSince1970: 1_786_560_000)
+        )
+        let calls = ChallengeFetchCounter()
+        var api = remoteAPI(
+            listCompetitions: { [match.descriptor] },
+            fetchChanges: { _, _ in match.page }
+        )
+        api.listReactions = {
+            guard calls.next() == 1 else { throw CompetitionRemoteFailure.retryableTransport }
+            return [elsewhere, yours, theirs]
+        }
+        let client = CompetitionClient.remote(remoteAPI: api, environment: try environment())
+        try await client.mountAuthenticatedProfile(profile, match.paths)
+        var iterator = client.start().makeAsyncIterator()
+        let firstNext = await awaitNext(&iterator)
+        let first = try XCTUnwrap(firstNext)
+        let expected = [
+            CompetitionReaction(
+                target: .day(2), kind: .huffing, isFromYou: false, updatedAt: theirs.updatedAt
+            ),
+            CompetitionReaction(
+                target: .day(1), kind: .fire, isFromYou: true, updatedAt: yours.updatedAt
+            ),
+        ]
+        XCTAssertEqual(first.dashboard.competitions.map(\.reactions), [expected])
+
+        let second = await client.reconcileAll(.foreground)
+        XCTAssertGreaterThanOrEqual(calls.count, 2)
+        XCTAssertEqual(second.dashboard.competitions.map(\.reactions), [expected])
+        await client.stop()
+    }
+
+    func testSetReactionRepublishesWithoutAFullReconcile() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let profile = AuthenticatedProfile(
+            id: UUID(uuidString: "81000000-0000-4000-8000-000000000001")!,
+            displayName: "Beta Alice"
+        )
+        let competitionID = UUID(uuidString: "82000000-0000-4000-8000-0000000000d3")!
+        let match = try reactionMatch(profile: profile, root: root, competitionID: competitionID)
+        let lists = ChallengeFetchCounter()
+        let fetches = ChallengeFetchCounter()
+        let sets = ReactionRequestRecorder()
+        var api = remoteAPI(
+            listCompetitions: {
+                _ = lists.next()
+                return [match.descriptor]
+            },
+            fetchChanges: { _, _ in
+                _ = fetches.next()
+                return match.page
+            }
+        )
+        api.listReactions = { [] }
+        api.setReaction = { sets.record($0) }
+        let client = CompetitionClient.remote(remoteAPI: api, environment: try environment())
+        try await client.mountAuthenticatedProfile(profile, match.paths)
+        var iterator = client.start().makeAsyncIterator()
+        let firstNext = await awaitNext(&iterator)
+        let first = try XCTUnwrap(firstNext)
+        let listsBefore = lists.count
+        let fetchesBefore = fetches.count
+
+        let published = try await client.setReaction(
+            CompetitionID(competitionID), .day(1), .fire
+        )
+
+        XCTAssertEqual(sets.requests, [
+            CompetitionReactionRequest(competitionID: competitionID, target: .day(1), kind: .fire),
+        ])
+        XCTAssertEqual(lists.count, listsBefore)
+        XCTAssertEqual(fetches.count, fetchesBefore)
+        XCTAssertGreaterThan(published.publicationRevision, first.publicationRevision)
+        XCTAssertEqual(
+            published.dashboard.competitions.first?.ownReaction(.day(1))?.kind,
+            .fire
+        )
+
+        let removed = try await client.setReaction(CompetitionID(competitionID), .day(1), nil)
+        XCTAssertNil(removed.dashboard.competitions.first?.ownReaction(.day(1)))
+        await client.stop()
+    }
+
+    func testProfileSwitchClearsReactions() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let first = AuthenticatedProfile(
+            id: UUID(uuidString: "81000000-0000-4000-8000-000000000011")!,
+            displayName: "Beta Alice"
+        )
+        let second = AuthenticatedProfile(
+            id: UUID(uuidString: "81000000-0000-4000-8000-000000000012")!,
+            displayName: "Beta Bob"
+        )
+        let competitionID = UUID(uuidString: "82000000-0000-4000-8000-0000000000d4")!
+        let firstMatch = try reactionMatch(
+            profile: first,
+            root: root.appendingPathComponent("first", isDirectory: true),
+            competitionID: competitionID
+        )
+        let secondMatch = try reactionMatch(
+            profile: second,
+            root: root.appendingPathComponent("second", isDirectory: true),
+            competitionID: competitionID
+        )
+        let mounted = ProfileBox(first.id)
+        let calls = ChallengeFetchCounter()
+        var api = remoteAPI(
+            listCompetitions: {
+                [mounted.value == first.id ? firstMatch.descriptor : secondMatch.descriptor]
+            },
+            fetchChanges: { _, _ in
+                mounted.value == first.id ? firstMatch.page : secondMatch.page
+            }
+        )
+        // Only the first profile's first fetch succeeds.
+        api.listReactions = {
+            guard calls.next() == 1 else { throw CompetitionRemoteFailure.retryableTransport }
+            return [CompetitionReactionRecord(
+                competitionID: competitionID, target: .day(2),
+                authorProfileID: UUID(uuidString: "81000000-0000-4000-8000-0000000000d5")!,
+                kind: .salute, updatedAt: Date(timeIntervalSince1970: 1_786_550_000)
+            )]
+        }
+        let client = CompetitionClient.remote(remoteAPI: api, environment: try environment())
+
+        try await client.mountAuthenticatedProfile(first, firstMatch.paths)
+        var firstIterator = client.start().makeAsyncIterator()
+        let firstPublication = await firstIterator.next()
+        XCTAssertEqual(firstPublication?.dashboard.competitions.first?.reactions.count, 1)
+
+        try await client.prepareForProfileTeardown(requireRemoteInstallationRemoval: false)
+        await client.stop()
+        mounted.value = second.id
+        try await client.mountAuthenticatedProfile(second, secondMatch.paths)
+        var secondIterator = client.start().makeAsyncIterator()
+        let secondPublication = await secondIterator.next()
+        XCTAssertEqual(secondPublication?.dashboard.competitions.map(\.id.rawValue), [competitionID])
+        XCTAssertEqual(secondPublication?.dashboard.competitions.first?.reactions, [])
+        XCTAssertGreaterThanOrEqual(calls.count, 2)
         await client.stop()
     }
 
@@ -4640,6 +4995,24 @@ private final class RemoteLockedFlag: @unchecked Sendable {
     }
 }
 
+private final class WidgetSnapshotSpy: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: [(snapshot: CompetitionWidgetSnapshot, carryForward: Set<UUID>)] = []
+
+    var writes: [(snapshot: CompetitionWidgetSnapshot, carryForward: Set<UUID>)] {
+        lock.withLock { stored }
+    }
+
+    var client: CompetitionWidgetSnapshotClient {
+        CompetitionWidgetSnapshotClient(
+            write: { snapshot, carryForward in
+                self.lock.withLock { self.stored.append((snapshot, carryForward)) }
+            },
+            clear: {}
+        )
+    }
+}
+
 private actor RemoteObserverDeliveryReceiptPersistenceGate {
     private struct CountWaiter {
         let minimum: Int
@@ -5514,4 +5887,308 @@ private final class ChallengeFetchCounter: @unchecked Sendable {
     private var value = 0
     var count: Int { lock.withLock { value } }
     func next() -> Int { lock.withLock { value += 1; return value } }
+}
+
+private final class ReactionRequestRecorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var recorded: [CompetitionReactionRequest] = []
+    var requests: [CompetitionReactionRequest] { lock.withLock { recorded } }
+    func record(_ request: CompetitionReactionRequest) { lock.withLock { recorded.append(request) } }
+}
+
+private final class ProfileBox: @unchecked Sendable {
+    private let lock = NSLock()
+    private var current: UUID
+    init(_ value: UUID) { current = value }
+    var value: UUID {
+        get { lock.withLock { current } }
+        set { lock.withLock { current = newValue } }
+    }
+}
+
+// MARK: - Practice match
+
+extension RemoteCompetitionClientTests {
+    /// Thu Aug 13 2026, 9 AM in Los Angeles; a practice started now runs Aug 14–20.
+    private func practiceSource(
+        changes: [FixtureActivityChange] = []
+    ) throws -> (source: FixtureActivitySource, calendar: CompetitionCalendar, startedAt: Date) {
+        let calendar = try CompetitionCalendar(timeZoneIdentifier: "America/Los_Angeles")
+        let startedAt = try practiceDay(13, in: calendar).addingTimeInterval(9 * 3_600)
+        // Every practice day has rings, so the week can finish.
+        let week = try calendar.sevenDayWindow(
+            startingOn: calendar.day(containing: practiceDay(14, in: calendar))
+        )
+        let snapshot = ActivitySnapshot(
+            moveMode: .activeEnergyKilocalories,
+            standMode: .standHours,
+            move: try ActivityRingReading(value: 300, goal: 100),
+            exercise: try ActivityRingReading(value: 0, goal: 30),
+            standOrRoll: try ActivityRingReading(value: 0, goal: 12),
+            pauseState: .running
+        )
+        let source = FixtureActivitySource(
+            fixture: try ActivityFixture(
+                initialInstant: EnvironmentInstant(
+                    wallDate: startedAt,
+                    monotonic: MonotonicInstant(epochID: "remote-practice", nanoseconds: 1)
+                ),
+                timeZoneIdentifier: calendar.timeZoneIdentifier,
+                initialDays: week.map { .snapshot(day: $0, snapshot: snapshot) },
+                changes: changes
+            )
+        )
+        return (source, calendar, startedAt)
+    }
+
+    private func practiceDay(_ day: Int, in calendar: CompetitionCalendar) throws -> Date {
+        try calendar.startOfDay(
+            CompetitionDay(
+                era: 1, year: 2026, month: 8, day: day,
+                timeZoneIdentifier: calendar.timeZoneIdentifier
+            )
+        )
+    }
+
+    func testPracticePublishesBesideRemoteMatchesWithoutServerCalls() async throws {
+        let (profile, paths) = try widgetTestProfile()
+        let fixture = try practiceSource()
+        let realID = UUID(uuidString: "82000000-0000-4000-8000-0000000000A1")!
+        let createdAt = Date(timeIntervalSince1970: 1_786_540_000)
+        let descriptor = try pendingDescriptor(
+            competitionID: realID,
+            profile: profile,
+            expiresAt: createdAt.addingTimeInterval(48 * 60 * 60)
+        )
+        let page = try pendingHistoryPage(
+            descriptor: descriptor,
+            profileID: profile.id,
+            createdAt: createdAt
+        )
+        let probe = RemoteCompetitionClientProbe()
+        let fetches = ChallengeFetchCounter()
+        let spy = WidgetSnapshotSpy()
+        let client = CompetitionClient.remote(
+            remoteAPI: remoteAPI(
+                listCompetitions: {
+                    await probe.recordList()
+                    return [descriptor]
+                },
+                fetchChanges: { _, _ in
+                    _ = fetches.next()
+                    return page
+                }
+            ),
+            environment: .accelerated(source: fixture.source),
+            widgetSnapshots: spy.client
+        )
+        try await client.mountAuthenticatedProfile(profile, paths)
+        var iterator = client.start().makeAsyncIterator()
+        let first = await awaitNext(&iterator)
+        let real = try XCTUnwrap(
+            first?.dashboard.competitions.first(where: { $0.id == CompetitionID(realID) })
+        )
+        XCTAssertFalse(real.isPractice)
+        let listsBefore = await probe.listCount()
+        let fetchesBefore = fetches.count
+
+        let publication = await client.startPractice(.balanced)
+
+        let listsAfter = await probe.listCount()
+        XCTAssertEqual(listsAfter, listsBefore)
+        XCTAssertEqual(fetches.count, fetchesBefore)
+        XCTAssertEqual(publication.source, .remoteParticipants)
+        // The real match sits beside the practice, unchanged.
+        XCTAssertEqual(
+            publication.dashboard.competitions.filter { !$0.isPractice },
+            [real]
+        )
+        let practice = publication.dashboard.competitions.filter(\.isPractice)
+        XCTAssertEqual(practice.count, 1)
+        XCTAssertEqual(practice.first?.opponentDisplayName, "Pacer")
+        XCTAssertEqual(practice.first?.ownerDisplayName, "Beta Alice")
+        XCTAssertEqual(practice.first?.lifecycle, .scheduled)
+        XCTAssertEqual(publication.dashboard.awards, [])
+        XCTAssertEqual(publication.dashboard.issues, [])
+        XCTAssertEqual(spy.writes.last?.snapshot.matches, [])
+
+        // One at a time.
+        let again = await client.startPractice(.relaxed)
+        XCTAssertTrue(again.dashboard.issues.contains(.commandRejected(PracticeMatch.startCommandID)))
+        XCTAssertEqual(again.dashboard.competitions.filter(\.isPractice).map(\.id), practice.map(\.id))
+        await client.stop()
+    }
+
+    func testPracticeRefreshesOnReconcileAndAdvancesAtDayBoundary() async throws {
+        let (profile, paths) = try widgetTestProfile()
+        let fixture = try practiceSource()
+        let client = CompetitionClient.remote(
+            remoteAPI: remoteAPI(listCompetitions: { [] }),
+            environment: .accelerated(source: fixture.source)
+        )
+        try await client.mountAuthenticatedProfile(profile, paths)
+        var iterator = client.start().makeAsyncIterator()
+        _ = await iterator.next()
+        _ = await client.startPractice(.balanced)
+
+        // Midnight starts Day 1 with no tap: the boundary republish refreshes practice.
+        try await fixture.source.advance(to: practiceDay(14, in: fixture.calendar))
+        await waitForBoundedAsyncCondition("Day 1 at the boundary") {
+            for await publication in client.updates() {
+                if publication.dashboard.competitions.contains(where: {
+                    $0.isPractice && $0.lifecycle == .active(dayOrdinal: 1)
+                }) { return }
+            }
+        }
+
+        let noon = try practiceDay(14, in: fixture.calendar).addingTimeInterval(12 * 3_600)
+        try await fixture.source.advance(to: noon)
+        let reconciled = await client.reconcileAll(.pullToRefresh)
+        let practice = try XCTUnwrap(reconciled.dashboard.competitions.first(where: \.isPractice))
+        XCTAssertEqual(practice.lastRefresh?.attemptedAt, noon)
+        await client.stop()
+    }
+
+    func testEndPracticeDeletesOnlyPracticeAndOtherDeletesStayRejected() async throws {
+        let (profile, paths) = try widgetTestProfile()
+        let fixture = try practiceSource()
+        let client = CompetitionClient.remote(
+            remoteAPI: remoteAPI(listCompetitions: { [] }),
+            environment: .accelerated(source: fixture.source)
+        )
+        try await client.mountAuthenticatedProfile(profile, paths)
+        var iterator = client.start().makeAsyncIterator()
+        _ = await iterator.next()
+        let started = await client.startPractice(.balanced)
+        let id = try XCTUnwrap(started.dashboard.competitions.first(where: \.isPractice)?.id)
+
+        let ended = await client.delete(id)
+        XCTAssertFalse(ended.dashboard.competitions.contains(where: \.isPractice))
+        XCTAssertFalse(ended.dashboard.issues.contains(.commandRejected(id)))
+
+        let other = CompetitionID(UUID())
+        let rejected = await client.delete(other)
+        XCTAssertTrue(rejected.dashboard.issues.contains(.commandRejected(other)))
+
+        // Nothing is underway any more.
+        let restarted = await client.startPractice(.relaxed)
+        let next = try XCTUnwrap(restarted.dashboard.competitions.first(where: \.isPractice))
+        XCTAssertNotEqual(next.id, id)
+        await client.stop()
+    }
+
+    func testEndPracticeAfterTeardownIsTerminalBlocked() async throws {
+        let (profile, paths) = try widgetTestProfile()
+        let fixture = try practiceSource()
+        let client = CompetitionClient.remote(
+            remoteAPI: remoteAPI(listCompetitions: { [] }),
+            environment: .accelerated(source: fixture.source)
+        )
+        try await client.mountAuthenticatedProfile(profile, paths)
+        var iterator = client.start().makeAsyncIterator()
+        _ = await iterator.next()
+        let started = await client.startPractice(.balanced)
+        let id = try XCTUnwrap(started.dashboard.competitions.first(where: \.isPractice)?.id)
+
+        try await client.prepareForProfileTeardown(requireRemoteInstallationRemoval: false)
+        let ended = await client.delete(id)
+        let restarted = await client.startPractice(.balanced)
+
+        XCTAssertEqual(ended.publicationRevision, restarted.publicationRevision)
+        XCTAssertFalse(ended.dashboard.issues.contains(.commandRejected(id)))
+        XCTAssertFalse(
+            restarted.dashboard.issues.contains(.commandRejected(PracticeMatch.startCommandID))
+        )
+        await client.stop()
+    }
+
+    func testFinishedPracticeIsDeletedWhenItLeavesHome() async throws {
+        let (profile, paths) = try widgetTestProfile()
+        let fixture = try practiceSource()
+        let client = CompetitionClient.remote(
+            remoteAPI: remoteAPI(listCompetitions: { [] }),
+            environment: .accelerated(source: fixture.source)
+        )
+        try await client.mountAuthenticatedProfile(profile, paths)
+        var iterator = client.start().makeAsyncIterator()
+        _ = await iterator.next()
+        _ = await client.startPractice(.balanced)
+
+        // The week ends Aug 21; best available after 24 h of tallying.
+        let end = try practiceDay(21, in: fixture.calendar)
+        try await fixture.source.advance(to: end.addingTimeInterval(1))
+        _ = await client.reconcileAll(.pullToRefresh)
+        try await fixture.source.advance(to: end.addingTimeInterval(24 * 3_600 + 2))
+        let finished = await client.reconcileAll(.pullToRefresh)
+        let practice = try XCTUnwrap(finished.dashboard.competitions.first(where: \.isPractice))
+        guard case .completed = practice.lifecycle else {
+            return XCTFail("Not completed: \(practice.lifecycle)")
+        }
+        let leaves = try XCTUnwrap(competitionResultLeavesHome(practice)?.at)
+
+        try await fixture.source.advance(to: leaves)
+        let gone = await client.reconcileAll(.pullToRefresh)
+        XCTAssertFalse(gone.dashboard.competitions.contains(where: \.isPractice))
+        await client.stop()
+        let journals = await LocalCompetitionRuntime(
+            environment: .accelerated(source: fixture.source),
+            store: JSONCompetitionEventStore(rootDirectory: paths.practiceEventsDirectory)
+        ).loadAll().successfulJournals
+        XCTAssertEqual(journals, [])
+    }
+
+    func testPracticeNeverReachesTheNotificationSnapshot() async throws {
+        let (profile, paths) = try widgetTestProfile()
+        let fixture = try practiceSource()
+        let notifications = RemoteCompetitionNotificationProbe()
+        let client = CompetitionClient.remote(
+            remoteAPI: remoteAPI(listCompetitions: { [] }),
+            environment: .accelerated(source: fixture.source),
+            notificationClient: notifications.client
+        )
+        try await client.mountAuthenticatedProfile(profile, paths)
+        var iterator = client.start().makeAsyncIterator()
+        _ = await iterator.next()
+        _ = await client.startPractice(.balanced)
+        try await fixture.source.advance(
+            to: practiceDay(20, in: fixture.calendar).addingTimeInterval(9 * 3_600)
+        )
+        _ = await client.reconcileAll(.pullToRefresh)
+        await client.reconcileNotifications()
+
+        let pending = await notifications.pendingIdentifiers()
+        XCTAssertEqual(pending, [])
+        await client.stop()
+    }
+
+    func testPracticeDoesNotTakeSignalOwnership() async throws {
+        let (profile, paths) = try widgetTestProfile()
+        let signalDate = try practiceSource().startedAt.addingTimeInterval(60)
+        let fixture = try practiceSource(changes: [
+            try FixtureActivityChange(
+                at: signalDate,
+                updates: [],
+                triggers: [.observerWakeupBackground]
+            ),
+        ])
+        let client = CompetitionClient.remote(
+            remoteAPI: remoteAPI(listCompetitions: { [] }),
+            environment: .accelerated(source: fixture.source)
+        )
+        try await client.mountAuthenticatedProfile(profile, paths)
+        var iterator = client.start().makeAsyncIterator()
+        _ = await iterator.next()
+        let started = await client.startPractice(.balanced)
+        XCTAssertTrue(started.dashboard.competitions.contains(where: \.isPractice))
+        let subscribers = await fixture.source.signalSubscriberCount()
+        XCTAssertEqual(subscribers, 1)
+
+        try await fixture.source.advance(to: signalDate)
+        await waitForBoundedAsyncCondition("remote completes the observer signal") {
+            await fixture.source.waitUntilSignalCompletionCount("fixture-signal-1", minimum: 1)
+        }
+        let completions = await fixture.source.signalCompletionCount("fixture-signal-1")
+        XCTAssertEqual(completions, 1)
+        await client.stop()
+    }
 }

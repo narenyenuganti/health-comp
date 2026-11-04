@@ -198,6 +198,8 @@ struct AppFeature {
     private var authenticatedProfileStorage
     @Dependency(\.competitionClient) private var competitionClient
     @Dependency(\.competitionRoutingClient) private var competitionRoutingClient
+    @Dependency(\.competitionWidgetSnapshotClient)
+    private var competitionWidgetSnapshotClient
     private let profileTransitionGate = AppProfileTransitionGate()
 
     private enum CancelID {
@@ -288,7 +290,11 @@ struct AppFeature {
                         )
                     }
                     becomeSignedOut(state: &state, message: nil)
-                    return .none
+                    // The session ended while the app was closed; no runtime
+                    // is running yet, so nothing can rewrite the widgets.
+                    return .run { _ in
+                        try? await competitionWidgetSnapshotClient.clear()
+                    }
 
                 case .success(.some):
                     state.phase = .bootstrappingProfile
@@ -1035,6 +1041,8 @@ struct AppFeature {
                 case .removeProfileStorage:
                     do {
                         try await profileTransitionGate.run {
+                            // Every signed-out path, with or without a profile.
+                            try await competitionWidgetSnapshotClient.clear()
                             if let profileID = pendingTeardown.profileID {
                                 try await authenticatedProfileStorage.teardown(
                                     profileID

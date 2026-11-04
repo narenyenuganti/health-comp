@@ -33,12 +33,18 @@
 	<string>$(HEALTHCOMP_ALLOW_CUSTOM_INVITE_SCHEME)</string>
 	<key>HEALTHCOMP_APNS_ENVIRONMENT</key>
 	<string>$(HEALTHCOMP_APNS_ENVIRONMENT)</string>
+	<key>HEALTHCOMP_APP_GROUP</key>
+	<string>$(HEALTHCOMP_APP_GROUP)</string>
 	<key>HEALTHCOMP_INVITE_HOST</key>
 	<string>$(HEALTHCOMP_INVITE_HOST)</string>
 	<key>NSHealthShareUsageDescription</key>
 	<string>HealthComp reads your Activity data to score matches with friends.</string>
 	<key>NSHealthUpdateUsageDescription</key>
 	<string>HealthComp uses read-only Health access for Activity matches and does not save or change Health data.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>HealthComp saves your match result image to Photos when you choose Save Image.</string>
+	<key>NSSupportsLiveActivities</key>
+	<true/>
 	<key>SUPABASE_PUBLISHABLE_KEY</key>
 	<string>$(SUPABASE_PUBLISHABLE_KEY)</string>
 	<key>SUPABASE_URL</key>
