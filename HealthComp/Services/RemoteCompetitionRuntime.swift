@@ -532,6 +532,7 @@ actor RemoteCompetitionRuntime {
     private let now: @Sendable () -> Date
     private let engine = CompetitionEngine()
     private let maximumCursorRetries = 4
+    private var isStopped = false
 
     init(
         profileID: UUID,
@@ -561,6 +562,7 @@ actor RemoteCompetitionRuntime {
     }
 
     func stop() async {
+        isStopped = true
         await syncCoordinator?.stop()
     }
 
@@ -624,6 +626,9 @@ actor RemoteCompetitionRuntime {
     }
 
     private func synchronizeInventory() async -> RemoteCompetitionRuntimeOutcome {
+        guard !isStopped else {
+            return RemoteCompetitionRuntimeOutcome(outcomes: [], discoveryFailure: .cancelled)
+        }
         await syncCoordinator?.wake()
         let cachedEntries: [RemoteCompetitionCacheEntry]
         do {
@@ -654,7 +659,37 @@ actor RemoteCompetitionRuntime {
             }
         )
         let listedIDs = Set(descriptors.map(\.competitionID))
-        nextCacheByID = nextCacheByID.filter { listedIDs.contains($0.key) }
+        do {
+            let journalIDs = try await store.ids().map(\.rawValue)
+            let queuedIDs = try await outboxStore?.entries().map(\.payload.competitionID) ?? []
+            let localIDs = Set(journalIDs).union(nextCacheByID.keys).union(queuedIDs)
+            var deletedIDs: [UUID] = []
+            for rawID in localIDs.subtracting(listedIDs).sorted(by: { $0.uuidString < $1.uuidString }) {
+                // An omitted page or a network error is not proof of deletion.
+                guard try await !remoteAPI.competitionExists(rawID) else {
+                    throw RemoteCompetitionRuntimeFailure.discoveryUnavailable
+                }
+                deletedIDs.append(rawID)
+            }
+            for rawID in deletedIDs {
+                try Task.checkCancellation()
+                guard !isStopped else { throw CancellationError() }
+                try await syncCoordinator?.discardQueuedEntries(for: rawID)
+                try Task.checkCancellation()
+                let id = CompetitionID(rawID)
+                if let loaded = try await store.load(id) {
+                    try Task.checkCancellation()
+                    guard !isStopped else { throw CancellationError() }
+                    try await store.delete(id, expectedCursor: loaded.journal.cursor)
+                }
+                nextCacheByID.removeValue(forKey: rawID)
+            }
+        } catch {
+            return await offlineOutcome(
+                cachedEntries: cachedEntries,
+                discoveryFailure: Self.failure(from: error)
+            )
+        }
         for descriptor in descriptors.sorted(by: Self.sortDescriptors) {
             let competitionID = CompetitionID(descriptor.competitionID)
             guard descriptor.participants.contains(where: {

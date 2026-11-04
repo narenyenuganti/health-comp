@@ -73,6 +73,27 @@ enum SupabaseCompetitionRemoteAPI {
                     contract: .competitionDescriptor
                 )
             },
+            competitionExists: { competitionID in
+                try validateUUID(competitionID)
+                let response = try await sendReadOnly(
+                    .competitionPresence(competitionID),
+                    transport: transport
+                )
+                guard response.statusCode == 200,
+                      let rows = try? JSONSerialization.jsonObject(with: response.data)
+                        as? [[String: Any]],
+                      rows.count <= 1
+                else {
+                    throw CompetitionRemoteFailure.serverContractMismatch
+                }
+                guard let row = rows.first else { return false }
+                guard Set(row.keys) == ["id"],
+                      row["id"] as? String == competitionID.uuidString.lowercased()
+                else {
+                    throw CompetitionRemoteFailure.serverContractMismatch
+                }
+                return true
+            },
             createInvite: { request in
                 let response = try await send(
                     .function(
@@ -1317,6 +1338,18 @@ private actor SupabaseCompetitionClientBox {
                         value: competitionID.uuidString.lowercased()
                     )
                     .single()
+                    .retry(enabled: false)
+                    .execute()
+                return CompetitionRemoteTransportResponse(
+                    statusCode: response.status,
+                    data: response.data
+                )
+            case let .competitionPresence(competitionID):
+                let response = try await client
+                    .from("competitions")
+                    .select("id")
+                    .eq("id", value: competitionID.uuidString.lowercased())
+                    .limit(1)
                     .retry(enabled: false)
                     .execute()
                 return CompetitionRemoteTransportResponse(

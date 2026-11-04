@@ -548,6 +548,179 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
         XCTAssertEqual(fetches[0].pageSize, 200)
     }
 
+    func testServerDeletedCompetitionRemovesItsJournalAfterConfirmedAbsence()
+        async throws
+    {
+        let root = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = makeStore(root: root.appendingPathComponent("events"))
+        let cacheRoot = root.appendingPathComponent("cache")
+        try FileManager.default.createDirectory(at: cacheRoot, withIntermediateDirectories: true)
+        let cache = JSONRemoteCompetitionCacheStore(
+            rootDirectory: cacheRoot,
+            fileProtection: JSONCompetitionEventStoreFileProtection { _, _ in }
+        )
+        let createdAt = Date(timeIntervalSince1970: 1_786_540_000)
+        let pending = try pendingDescriptor(
+            creatorProfileID: profileID,
+            expiresAt: createdAt.addingTimeInterval(86_400)
+        )
+        let page = try CompetitionChangePage(
+            competitionID: competitionID,
+            afterServerSequence: 0,
+            snapshotServerSequence: 1,
+            nextServerSequence: 1,
+            hasMore: false,
+            changes: [try participantAddedChange(
+                sequence: 1, profileID: profileID, role: .creator, occurredAt: createdAt
+            )]
+        )
+        let initial = RemoteCompetitionRuntime(
+            profileID: profileID, store: store,
+            remoteAPI: remoteAPI(listCompetitions: { [pending] }, fetchChanges: { _, _ in page }),
+            cacheStore: cache
+        )
+        let seeded = await initial.synchronizeAll()
+        XCTAssertEqual(seeded.successfulCompetitions.count, 1)
+        await initial.stop()
+
+        let presenceReads: [@Sendable (UUID) async throws -> Bool] = [
+            { _ in true },
+            { _ in throw CompetitionRemoteFailure.unauthenticated },
+            { _ in throw CompetitionRemoteFailure.retryableTransport },
+            { _ in throw CompetitionRemoteFailure.serverContractMismatch },
+        ]
+        for presence in presenceReads {
+            let incomplete = RemoteCompetitionRuntime(
+                profileID: profileID, store: store,
+                remoteAPI: remoteAPI(listCompetitions: { [] }, competitionExists: presence),
+                cacheStore: cache
+            )
+            _ = await incomplete.synchronizeAll()
+            await incomplete.stop()
+            let preservedIDs = try await store.ids()
+            let preservedCache = try await cache.load(profileID: profileID)
+            XCTAssertEqual(preservedIDs, [CompetitionID(competitionID)])
+            XCTAssertEqual(preservedCache.count, 1)
+        }
+
+        let afterDeletion = RemoteCompetitionRuntime(
+            profileID: profileID, store: store,
+            remoteAPI: remoteAPI(
+                listCompetitions: { [] },
+                competitionExists: { id in
+                    XCTAssertEqual(id, pending.competitionID)
+                    return false
+                }
+            ),
+            cacheStore: cache
+        )
+        let outcome = await afterDeletion.synchronizeAll()
+        await afterDeletion.stop()
+
+        XCTAssertNil(outcome.discoveryFailure)
+        XCTAssertEqual(outcome.failures, [])
+        let remainingIDs = try await store.ids()
+        XCTAssertEqual(remainingIDs, [])
+        let remainingCache = try await cache.load(profileID: profileID)
+        XCTAssertEqual(remainingCache, [])
+    }
+
+    func testStoppedRuntimeDoesNotDeleteAJournalAfterDelayedPresenceRead()
+        async throws
+    {
+        let root = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = makeStore(root: root)
+        _ = try await store.create(CompetitionGenesis(
+            competitionID: CompetitionID(competitionID), direction: .outgoing,
+            createdAt: Date(timeIntervalSince1970: 1_786_540_000), expiresAt: nil,
+            scoringPolicy: .appleCompatibility, downwardRevisionPolicy: .maximumObserved
+        ))
+        let gate = SuspendedScoreSubmissionProbe()
+        let runtime = RemoteCompetitionRuntime(
+            profileID: profileID, store: store,
+            remoteAPI: remoteAPI(listCompetitions: { [] }, competitionExists: { _ in
+                await gate.suspendUntilReleased()
+                return false
+            })
+        )
+        let sync = Task { await runtime.synchronizeAll() }
+        await gate.waitUntilStarted()
+        await runtime.stop()
+        await gate.release()
+        _ = await sync.value
+        let remaining = try await store.ids()
+        XCTAssertEqual(remaining, [CompetitionID(competitionID)])
+    }
+
+    func testIncompleteInventoryDoesNotAuthorizePartialJournalDeletion()
+        async throws
+    {
+        let root = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = makeStore(root: root)
+        let otherID = UUID(uuidString: "73000000-0000-4000-8000-000000000002")!
+        for id in [competitionID, otherID] {
+            _ = try await store.create(CompetitionGenesis(
+                competitionID: CompetitionID(id), direction: .outgoing,
+                createdAt: Date(timeIntervalSince1970: 1_786_540_000), expiresAt: nil,
+                scoringPolicy: .appleCompatibility, downwardRevisionPolicy: .maximumObserved
+            ))
+        }
+        let runtime = RemoteCompetitionRuntime(
+            profileID: profileID, store: store,
+            remoteAPI: remoteAPI(
+                listCompetitions: { [] }, competitionExists: { $0 == otherID }
+            )
+        )
+        let outcome = await runtime.synchronizeAll()
+        await runtime.stop()
+        XCTAssertNotNil(outcome.discoveryFailure)
+        let remaining = try await store.ids()
+        XCTAssertEqual(Set(remaining), Set([CompetitionID(competitionID), CompetitionID(otherID)]))
+    }
+
+    func testServerDeletedCompetitionRemovesAnOrphanedTerminalOutboxEntry()
+        async throws
+    {
+        let root = try makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let outboxRoot = root.appendingPathComponent("outbox")
+        try FileManager.default.createDirectory(at: outboxRoot, withIntermediateDirectories: true)
+        let outbox = JSONCompetitionOutboxStore(
+            rootDirectory: outboxRoot,
+            fileProtection: JSONCompetitionEventStoreFileProtection { _, _ in }
+        )
+        let observedAt = Date(timeIntervalSince1970: 1_786_540_000)
+        let request = try CompetitionScoreRevisionRequest(
+            competitionID: competitionID,
+            semanticEventID: UUID(uuidString: "74000000-0000-4000-8000-000000000009")!,
+            dayOrdinal: 1, clientRevision: 1, evaluatedAt: observedAt,
+            moveMode: "activeEnergyKilocalories", standMode: "standHours",
+            moveBasisPoints: 7_000, exerciseBasisPoints: 8_000, standBasisPoints: 8_333,
+            availabilityReason: "available", scoringPolicyIdentity: RemoteScoringWireV1.policyIdentity,
+            wireContentSHA256: String(repeating: "a", count: 64)
+        )
+        let entry = try await outbox.enqueue(.scoreRevision(request), enqueuedAt: observedAt)
+        _ = try await outbox.update(
+            entry.semanticEventID, expectedGeneration: entry.generation,
+            state: .permanentFailure(.appAttestRejectedTerminal, failedAt: observedAt)
+        )
+        let runtime = RemoteCompetitionRuntime(
+            profileID: profileID, store: makeStore(root: root.appendingPathComponent("events")),
+            remoteAPI: remoteAPI(listCompetitions: { [] }, competitionExists: { _ in false }),
+            outboxStore: outbox
+        )
+
+        let outcome = await runtime.synchronizeAll()
+        await runtime.stop()
+
+        XCTAssertNil(outcome.discoveryFailure)
+        let remaining = try await outbox.entries()
+        XCTAssertEqual(remaining, [])
+    }
+
     func testExpiredDescriptorPrunesInventoryWithoutDeletingJournalOrFailure()
         async throws
     {
@@ -3551,6 +3724,9 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
     private func remoteAPI(
         listCompetitions: @escaping @Sendable () async throws ->
             [CompetitionDescriptor],
+        competitionExists: @escaping @Sendable (UUID) async throws -> Bool = { _ in
+            throw CompetitionRemoteFailure.operationFailed
+        },
         fetchChanges: @escaping @Sendable (
             CompetitionSynchronizationCursor,
             Int
@@ -3579,6 +3755,7 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
             fetchCompetition: { _ in
                 throw CompetitionRemoteFailure.operationFailed
             },
+            competitionExists: competitionExists,
             createInvite: { _ in
                 throw CompetitionRemoteFailure.operationFailed
             },

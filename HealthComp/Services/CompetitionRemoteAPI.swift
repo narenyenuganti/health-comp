@@ -39,6 +39,10 @@ struct CompetitionRemoteAPI: Sendable {
     var fetchCompetition: @Sendable (
         _ competitionID: UUID
     ) async throws -> CompetitionDescriptor
+    /// A successful, exact-ID lookup; transport failures are never absence.
+    var competitionExists: @Sendable (UUID) async throws -> Bool = { _ in
+        throw CompetitionRemoteFailure.operationFailed
+    }
     var createInvite: @Sendable (
         _ request: CompetitionInviteCreationRequest
     ) async throws -> CompetitionInvite
@@ -202,6 +206,7 @@ enum CompetitionRemoteTransportRequest: Equatable, Sendable {
     case function(name: String, body: Data)
     case listCompetitions
     case fetchCompetition(UUID)
+    case competitionPresence(UUID)
 }
 
 struct CompetitionRemoteTransportResponse: Equatable, Sendable {

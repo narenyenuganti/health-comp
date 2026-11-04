@@ -106,6 +106,7 @@ actor CompetitionSyncCoordinator {
     private var retryTask: Task<Void, Never>?
     private var scheduledRetryAt: Date?
     private var isStopped = false
+    private var deletedCompetitionIDs: Set<UUID> = []
     private var shouldRecoverPersistedLegacyAppAttestFailure = true
 
     init(
@@ -138,10 +139,17 @@ actor CompetitionSyncCoordinator {
         guard !isStopped else {
             throw CompetitionSyncCoordinatorFailure.stopped
         }
+        guard !deletedCompetitionIDs.contains(payload.competitionID) else {
+            throw CompetitionRemoteFailure.notFound
+        }
         let entry = try await outboxStore.enqueue(
             payload,
             enqueuedAt: enqueuedAt
         )
+        if deletedCompetitionIDs.contains(payload.competitionID) {
+            try await discardQueuedEntries(for: payload.competitionID)
+            throw CompetitionRemoteFailure.notFound
+        }
         requestDrain()
         return entry
     }
@@ -154,6 +162,28 @@ actor CompetitionSyncCoordinator {
 
     func wake() {
         requestDrain()
+    }
+
+    func discardQueuedEntries(for competitionID: UUID) async throws {
+        guard !isStopped else { throw CompetitionSyncCoordinatorFailure.stopped }
+        deletedCompetitionIDs.insert(competitionID)
+        let activeDrain = drainTask
+        activeDrain?.cancel()
+        retryTask?.cancel()
+        retryTask = nil
+        scheduledRetryAt = nil
+        await activeDrain?.value
+        defer { requestDrain() }
+        for entry in try await outboxStore.entries()
+            where entry.payload.competitionID == competitionID
+        {
+            try Task.checkCancellation()
+            guard !isStopped else { throw CompetitionSyncCoordinatorFailure.stopped }
+            try await outboxStore.remove(
+                entry.semanticEventID,
+                expectedGeneration: entry.generation
+            )
+        }
     }
 
     func stop() async {
@@ -207,6 +237,9 @@ actor CompetitionSyncCoordinator {
         var nextRetryAt: Date?
         for entry in entries {
             try Task.checkCancellation()
+            guard !deletedCompetitionIDs.contains(entry.payload.competitionID) else {
+                continue
+            }
             switch (entry.payload, entry.state) {
             case let (
                 .scoreRevision(request),
