@@ -460,7 +460,13 @@ final class BlockChallengerUITests: XCTestCase {
         if button.exists, button.isHittable {
             button.tap()
         } else {
-            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.08)).tap()
+            let popover = app.popovers.firstMatch
+            XCTAssertTrue(popover.exists)
+            XCTAssertGreaterThan(popover.frame.minX, app.frame.minX)
+            // Large-text popovers cover the old top-center dismissal point.
+            let outside = CGVector(dx: (popover.frame.minX - app.frame.minX) / 2,
+                                   dy: popover.frame.midY - app.frame.minY)
+            app.coordinate(withNormalizedOffset: .zero).withOffset(outside).tap()
         }
     }
 
