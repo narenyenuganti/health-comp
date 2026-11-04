@@ -1391,8 +1391,11 @@ final class MultiUserCompetitionUITests: XCTestCase {
     }
 
     func testAccountEditingAndPrivacyBoundariesRemainAccessible() {
-        launch(.account)
+        launch(.account, appearanceArguments: [
+            "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryL",
+        ])
         defer { app.terminate() }
+        assertRemoteRenderedConfiguration("Appearance: Light; Dynamic Type: large")
         XCTAssertTrue(app.navigationBars["Account"].waitForExistence(timeout: 8))
         let privacy = element("account.privacy")
         scrollToElement(privacy)
