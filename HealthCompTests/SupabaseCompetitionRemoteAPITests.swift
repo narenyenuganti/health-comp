@@ -3,6 +3,38 @@ import XCTest
 @testable import HealthComp
 
 final class SupabaseCompetitionRemoteAPITests: XCTestCase {
+    func testCompetitionPresenceUsesOnlySuccessfulExactIDRows() async throws {
+        for (rows, expected) in [
+            ([[String: String]](), false),
+            ([["id": competitionID.uuidString.lowercased()]], true),
+        ] {
+            let harness = CompetitionTransportHarness(stubs: [.response(200, try jsonData(rows))])
+            let exists = try await makeAPI(harness).competitionExists(competitionID)
+            XCTAssertEqual(exists, expected)
+            let requests = await harness.recordedRequests()
+            XCTAssertEqual(requests, [.competitionPresence(competitionID)])
+        }
+    }
+
+    func testCompetitionPresenceRejectsErrorsAndMalformedRowsInsteadOfReportingAbsence() async throws {
+        for body: Any in [
+            NSNull(), ["id": competitionID.uuidString.lowercased()],
+            [["id": profileID.uuidString.lowercased()]], [["id": NSNull()]],
+            [["id": competitionID.uuidString.lowercased(), "extra": "unexpected"]],
+            [["id": competitionID.uuidString.lowercased()], ["id": competitionID.uuidString.lowercased()]],
+        ] {
+            let data = body is NSNull ? Data("null".utf8) : try jsonData(body)
+            let harness = CompetitionTransportHarness(stubs: [.response(200, data)])
+            let failure = await remoteFailure { _ = try await makeAPI(harness).competitionExists(competitionID) }
+            XCTAssertEqual(failure, .serverContractMismatch)
+        }
+        for status in [204, 206, 401, 403, 404, 406] {
+            let harness = CompetitionTransportHarness(stubs: [.response(status, Data())])
+            let failure = await remoteFailure { _ = try await makeAPI(harness).competitionExists(competitionID) }
+            XCTAssertNotNil(failure)
+        }
+    }
+
     func testRecipientResolutionUsesOnlyExactAccountCodeAndRejectsAnotherIdentity() async throws {
         let id = UUID(uuidString: "22000000-0000-4000-8000-000000000001")!
         let harness = CompetitionTransportHarness(stubs: [

@@ -5,6 +5,51 @@ import XCTest
 @testable import HealthComp
 
 final class CompetitionSyncCoordinatorTests: XCTestCase {
+    func testDeletingAMatchCancelsItsUploadAndContinuesOtherMatches()
+        async throws
+    {
+        let root = makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = JSONCompetitionOutboxStore(rootDirectory: root, fileProtection: .testNoop)
+        let removed = try scoreRequest()
+        let retained = try scoreRequest(
+            semanticEventID: UUID(uuidString: "64000000-0000-4000-8000-000000000002")!,
+            competitionID: UUID(uuidString: "63000000-0000-4000-8000-000000000002")!
+        )
+        let now = Date(timeIntervalSince1970: 1_786_536_010)
+        _ = try await store.enqueue(.scoreRevision(removed), enqueuedAt: now)
+        _ = try await store.enqueue(.scoreRevision(retained), enqueuedAt: now)
+        let probe = CompetitionSyncCoordinatorProbe()
+        let accepted = try scoreResponse(for: retained)
+        let coordinator = CompetitionSyncCoordinator(
+            profileID: profileID, outboxStore: store,
+            remoteAPI: remoteAPI(appendScoreRevision: { request in
+                await probe.recordRemoteCall(request: request, durableEntries: try await store.entries())
+                if request.competitionID == removed.competitionID {
+                    try await Task.sleep(for: .seconds(3_600))
+                }
+                return accepted
+            }),
+            acceptedScorePersistence: CompetitionAcceptedScorePersistence { _, _, _, _ in },
+            now: { now }
+        )
+        await coordinator.wake()
+        await probe.waitForRemoteCallCount(1)
+        try await coordinator.discardQueuedEntries(for: removed.competitionID)
+        await coordinator.waitUntilIdle()
+        let remaining = try await store.entries()
+        XCTAssertEqual(remaining, [])
+        let calls = await probe.remoteCallCount()
+        XCTAssertEqual(calls, 2)
+        do {
+            _ = try await coordinator.enqueue(.scoreRevision(removed), enqueuedAt: now)
+            XCTFail("A deleted match must not be queued again")
+        } catch {
+            XCTAssertEqual(error as? CompetitionRemoteFailure, .notFound)
+        }
+        await coordinator.stop()
+    }
+
     func testEnqueueCommitsPayloadBeforeFirstRemoteCall() async throws {
         let root = makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -1838,10 +1883,11 @@ final class CompetitionSyncCoordinatorTests: XCTestCase {
             uuidString: "64000000-0000-4000-8000-000000000001"
         )!,
         clientRevision: Int64 = 1,
-        wireContentSHA256: String = String(repeating: "a", count: 64)
+        wireContentSHA256: String = String(repeating: "a", count: 64),
+        competitionID: UUID? = nil
     ) throws -> CompetitionScoreRevisionRequest {
         try CompetitionScoreRevisionRequest(
-            competitionID: competitionID,
+            competitionID: competitionID ?? self.competitionID,
             semanticEventID: semanticEventID,
             dayOrdinal: 1,
             clientRevision: clientRevision,
