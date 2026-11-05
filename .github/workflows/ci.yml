@@ -229,6 +229,7 @@ jobs:
             -only-testing:HealthCompUITests/BlockChallengerUITests/testDeclineAndBlockDisablesTheScreenThenLeavesHomeAndListsThemInAccount \
             -only-testing:HealthCompUITests/WhatItTakesUITests/testWhatItTakesPanelForEveryRemoteState \
             -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testBeltShowsOnHomeHistoryAndThePersonPage \
+            -only-testing:HealthCompUITests/BeltUITests/testHistoryRecordsPassTheAuditAtAccessibility5 \
             -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testShareResultPreviewsTheImageAndRemembersHideName \
             -only-testing:HealthCompUITests/RecapCardUITests/testShareOpensTheSystemSheetWithSaveImage \
             -only-testing:HealthCompUITests/WidgetUITests/testMatchWidgetShowsTheSampleScoreAndPicksAPerson \
