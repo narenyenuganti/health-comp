@@ -663,14 +663,15 @@ private struct AccountNotificationsPage: View {
 
             if !settings.mutedPeople.isEmpty {
                 Section {
-                    ForEach(settings.mutedPeople) { person in
-                        mutedRow(person)
+                    VStack(alignment: .leading, spacing: 12) {
+                        SectionLabel("MUTED")
+                        ForEach(settings.mutedPeople) { person in
+                            mutedRow(person)
+                        }
+                        Text("Muting someone silences all your matches with them.")
+                            .font(.footnote)
+                            .foregroundStyle(Theme.secondary)
                     }
-                } header: {
-                    SectionLabel("MUTED")
-                } footer: {
-                    Text("Muting someone silences all your matches with them.")
-                        .foregroundStyle(Theme.secondary)
                 }
                 .listRowBackground(Theme.panel)
             }
