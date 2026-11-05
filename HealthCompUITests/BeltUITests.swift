@@ -20,6 +20,7 @@ final class BeltUITests: XCTestCase {
     }
 
     override func tearDownWithError() throws {
+        if app.state != .notRunning { app.terminate() }
         XCUIDevice.shared.appearance = .light
         app = nil
     }
@@ -266,6 +267,16 @@ final class BeltUITests: XCTestCase {
     }
 
     // MARK: Accessibility 5
+
+    func testHistoryRecordsPassTheAuditAtAccessibility5() throws {
+        continueAfterFailure = true
+        for appearance in ["Light", "Dark"] {
+            launchLab(Self.darkAX5.map { $0 == "Dark" ? appearance : $0 })
+            openHistory()
+            shot("history", "\(appearance.lowercased())-ax5")
+            try audit()
+        }
+    }
 
     func testBeltScreensPassTheAuditAtAccessibility5() throws {
         // Report every screen's issues, not only the first.

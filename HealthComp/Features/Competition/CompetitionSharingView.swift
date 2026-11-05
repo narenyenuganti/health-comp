@@ -1183,22 +1183,22 @@ private struct CompetitionRecordRow: View {
     @ScaledMetric(relativeTo: .headline) private var badgeSize: CGFloat = 40
     @Environment(\.locale) private var locale
     @Environment(\.timeZone) private var timeZone
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 14) {
-                badge
-                identity
-                Spacer(minLength: 8)
-                recordText
-            }
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(alignment: .top, spacing: 14) {
-                    badge
-                    identity
-                    Spacer(minLength: 0)
+        Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                stackedContent
+            } else {
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 14) {
+                        badge
+                        identity
+                        Spacer(minLength: 8)
+                        recordText
+                    }
+                    stackedContent
                 }
-                recordText
             }
         }
         .padding(16)
@@ -1210,6 +1210,17 @@ private struct CompetitionRecordRow: View {
                 .joined(separator: ". ")
         )
         .accessibilityHint("Opens your weeks with \(record.opponentDisplayName)")
+    }
+
+    private var stackedContent: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .top, spacing: 14) {
+                badge
+                identity
+                Spacer(minLength: 0)
+            }
+            recordText
+        }
     }
 
     /// "You hold the belt, 1 week".
