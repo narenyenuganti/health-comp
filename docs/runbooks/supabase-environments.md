@@ -4,7 +4,16 @@ This runbook is the source of truth for selecting, configuring, and promoting
 HealthComp environments. It intentionally separates verified state from
 required future work.
 
-## Latest scoped update: September 20, 2026
+## Latest scoped update: November 4, 2026
+
+The App Attest policy below was rechecked by comparing secret digests, without
+reading secret values or changing either project. Staging still accepts build 1;
+production accepts builds 1, 2 and candidate 3. Exact App IDs, environments and
+validation categories remain unchanged. Admitting build 3 does not mean it has
+been uploaded, distributed or physically verified. The environment inventory and
+earlier scoped observations below remain dated evidence, not a current audit.
+
+## Dated scoped update: September 20, 2026
 
 The App Attest assertion-signature correction at `e78aadc` passed exact-main
 Backend and iOS CI. Only `submit-score-revision` advanced to staging version 14;
@@ -423,7 +432,7 @@ Each project accepts one exact App ID and environment:
 | Environment | APP_ATTEST_APP_ID | Environment | Categories | Current bundle versions |
 | --- | --- | --- | --- | --- |
 | Staging | PAID_TEAM_ID.com.narenyenuganti.HealthComp.staging | development | 3 | 1 |
-| Production TestFlight | PAID_TEAM_ID.com.narenyenuganti.HealthComp | production | 2 | 1 |
+| Production TestFlight | PAID_TEAM_ID.com.narenyenuganti.HealthComp | production | 2 | 1, 2, 3 |
 
 Add category 4 only when an App Store build actually exists. Update the
 bundle-version allowlist deliberately before distributing a new
