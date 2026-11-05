@@ -1832,7 +1832,10 @@ final class MultiUserCompetitionUITests: XCTestCase {
         let input = recipientCodeField
         scrollToElement(input)
         input.tap()
-        input.typeText("a1000000-0000-4000-8000-000000000005")
+        let code = "a1000000-0000-4000-8000-000000000005"
+        // Bulk Simulator typing can drop a repeated character before Find.
+        for character in code { input.typeText(String(character)) }
+        XCTAssertEqual(input.value as? String, code)
         let done = app.buttons["competition.create.keyboard-done"]
         XCTAssertTrue(done.waitForExistence(timeout: 3))
         done.tap()
