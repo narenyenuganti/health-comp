@@ -268,6 +268,33 @@ final class NotificationChoicesUITests: XCTestCase {
         }
     }
 
+    func testMutedNameUsesFullLeadingEdgeAtLargestTextSize() throws {
+        launch(.notificationChoices, arguments: [
+            "-AppleInterfaceStyle", "Light",
+            "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL",
+        ])
+        XCTAssertTrue(waitForServer("none", registrations: 1, failures: 0))
+        let banner = app.staticTexts["REMOTE UI TEST LAB"]
+        XCTAssertTrue(banner.waitForExistence(timeout: 3))
+        XCTAssertEqual(banner.value as? String, "Appearance: Light; Dynamic Type: accessibility5")
+        openAccount()
+        openNotifications()
+        scrollToElement(app.buttons["account.notifications.unmute"].firstMatch)
+        let lists = app.collectionViews.containing(.button, identifier: "account.notifications.unmute")
+        XCTAssertEqual(lists.count, 1)
+        let names = lists.element.staticTexts.matching(NSPredicate(format: "label == %@", Self.longName))
+        XCTAssertEqual(names.count, 1)
+        shot("muted-name-width-light-ax5")
+        let unmute = lists.element.buttons["account.notifications.unmute"]
+        XCTAssertEqual(names.element.frame.minX, unmute.frame.minX, accuracy: 1)
+        let explanation = text("Muting someone silences all your matches with them.")
+        scrollToElement(explanation)
+        XCTAssertTrue(explanation.exists)
+        XCTAssertTrue(app.frame.contains(explanation.frame))
+        shot("muted-name-and-explanation-light-ax5")
+        try audit("muted-name-and-explanation-light-ax5")
+    }
+
     // MARK: Helpers
 
     private enum Scenario: String {

@@ -728,12 +728,14 @@ private struct AccountNotificationsPage: View {
             : AnyLayout(HStackLayout(spacing: 12))
         return layout {
             HStack(spacing: 12) {
-                Text(person.name.first.map { String($0).uppercased() } ?? "")
-                    .font(.headline.width(.condensed))
-                    .foregroundStyle(Theme.ink)
-                    .frame(width: initialSize, height: initialSize)
-                    .background(Theme.control, in: Circle())
-                    .accessibilityHidden(true)
+                if !isAccessibilitySize {
+                    Text(person.name.first.map { String($0).uppercased() } ?? "")
+                        .font(.headline.width(.condensed))
+                        .foregroundStyle(Theme.ink)
+                        .frame(width: initialSize, height: initialSize)
+                        .background(Theme.control, in: Circle())
+                        .accessibilityHidden(true)
+                }
                 Text(person.name)
                     .foregroundStyle(Theme.ink)
                     .fixedSize(horizontal: false, vertical: true)
