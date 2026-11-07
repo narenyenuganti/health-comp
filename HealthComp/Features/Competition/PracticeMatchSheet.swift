@@ -12,6 +12,7 @@ struct CompetitionPracticeStart {
 struct PracticeMatchSheet: View {
     let practice: CompetitionPracticeStart
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @State private var selection: OpponentDifficulty = .balanced
     /// `commandRejected` lingers in the dashboard, so only a Start tapped in
@@ -48,6 +49,7 @@ struct PracticeMatchSheet: View {
                 }
                 .themePanel()
                 .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .sensoryFeedback(.selection, trigger: selection)
 
                 // At accessibility sizes a pinned button would cover the rows.
                 if dynamicTypeSize.isAccessibilitySize {
@@ -68,6 +70,7 @@ struct PracticeMatchSheet: View {
                     .background(Theme.ground)
             }
         }
+        .moving(Motion.settle, value: showsError)
         .background(Theme.ground)
         // At AX sizes medium shows only the title, so the sheet opens full
         // height there.
@@ -80,7 +83,18 @@ struct PracticeMatchSheet: View {
         .presentationBackground(Theme.ground)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("competition.practice.sheet")
+        .sensoryFeedback(.error, trigger: showsError) { _, new in new }
         .onAppear { hasAttempted = false }
+    }
+
+    private var showsError: Bool {
+        hasAttempted && practice.failed && !practice.isStarting
+    }
+
+    /// `isStarting` clears a tick before the sheet closes, so a start that
+    /// didn't fail stays busy until it has gone.
+    private var isBusy: Bool {
+        practice.isStarting || (hasAttempted && !practice.failed)
     }
 
     private func paceRow(
@@ -108,6 +122,8 @@ struct PracticeMatchSheet: View {
                     // At AX sizes a full-size mark would split "Challenging".
                     .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
                     .foregroundStyle(isSelected ? Theme.ink : Theme.tertiary)
+                    .contentTransition(reduceMotion ? .opacity : .symbolEffect(.replace))
+                    .animation(Motion.fade, value: isSelected)
                     .accessibilityHidden(true)
             }
             .padding(.horizontal, 16)
@@ -124,27 +140,24 @@ struct PracticeMatchSheet: View {
 
     private var startControl: some View {
         VStack(alignment: .leading, spacing: 10) {
-            if hasAttempted, practice.failed, !practice.isStarting {
+            if showsError {
                 Text("Couldn’t start the practice match. Try again.")
                     .font(.callout)
                     .foregroundStyle(Theme.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+                    .transition(Motion.appear)
                     .accessibilityIdentifier("competition.practice.error")
             }
             Button {
                 hasAttempted = true
                 practice.start(selection)
             } label: {
-                if practice.isStarting {
-                    ProgressView()
-                } else {
-                    Text("Start Tomorrow")
-                }
+                BusyLabel("Start Tomorrow", isBusy: isBusy)
             }
             .buttonStyle(PrimaryButtonStyle())
-            .disabled(practice.isStarting)
+            .disabled(isBusy)
             .accessibilityLabel("Start Tomorrow")
-            .accessibilityValue(practice.isStarting ? "Action in progress" : "")
+            .accessibilityValue(isBusy ? "Action in progress" : "")
             .accessibilityIdentifier("competition.practice.start")
         }
     }

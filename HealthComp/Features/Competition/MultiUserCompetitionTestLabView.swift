@@ -523,8 +523,8 @@ private struct MultiUserCompetitionClaimTestLabView: View {
                 outcomeView(outcome)
             } else {
                 ClaimCompetitionView(
-                    status: status,
-                    preview: MultiUserCompetitionTestLabFixtures.claimPreview,
+                    liveStatus: status,
+                    livePreview: MultiUserCompetitionTestLabFixtures.claimPreview,
                     now: MultiUserCompetitionTestLabFixtures.labNow,
                     accept: accept,
                     notNow: { outcome = .notNow },

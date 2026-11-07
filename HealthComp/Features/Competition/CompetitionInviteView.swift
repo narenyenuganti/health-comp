@@ -49,6 +49,9 @@ struct CompetitionInviteView: View {
                     .background(Theme.ground)
             }
         }
+        .moving(Motion.settle, value: commandFailed)
+        .moving(Motion.settle, value: linkIsShareable)
+        .sensoryFeedback(.error, trigger: commandFailed) { _, new in new }
         .task(id: competition.id) {
             if isRemoteOutgoing, link == nil {
                 send(.inviteLinkNeeded(competition.id))
@@ -132,7 +135,13 @@ struct CompetitionInviteView: View {
 
     private var outgoingControls: some View {
         VStack(spacing: 6) {
-            shareControl
+            // `.loading` to `.ready` stays a swap: both are
+            // competition.invite.share, and they differ by an opacity.
+            ZStack {
+                shareControl
+                    .id(linkIsShareable)
+                    .transition(Motion.appear)
+            }
             Button(role: .destructive) {
                 showsCancelConfirmation = true
             } label: {
@@ -151,12 +160,20 @@ struct CompetitionInviteView: View {
         }
     }
 
+    private var linkIsShareable: Bool {
+        switch link {
+        case nil, .loading?, .ready?: true
+        case .failed?, .notOnThisPhone?: false
+        }
+    }
+
     private func errorLine(_ text: String) -> some View {
         Text(text)
             .font(.caption)
             .foregroundStyle(Theme.secondary)
             .frame(maxWidth: .infinity, alignment: .leading)
             .fixedSize(horizontal: false, vertical: true)
+            .transition(Motion.appear)
             .accessibilityIdentifier("competition.invite.error")
     }
 
@@ -277,18 +294,9 @@ struct CompetitionInviteView: View {
         .accessibilityIdentifier("competition.invite.decline")
     }
 
-    @ViewBuilder
     private func commandLabel(_ title: String) -> some View {
-        if isCommandInFlight {
-            HStack(spacing: 8) {
-                ProgressView()
-                Text(title)
-            }
+        BusyLabel(title, isBusy: isCommandInFlight)
             .frame(maxWidth: .infinity)
-        } else {
-            Text(title)
-                .frame(maxWidth: .infinity)
-        }
     }
 
     private var direction: InvitationDirection {
@@ -390,9 +398,10 @@ struct CompetitionInviteView: View {
 
         case nil, .loading?:
             Button {} label: {
-                HStack(spacing: 8) {
-                    ProgressView()
-                    Label("Share Link Again", systemImage: "square.and.arrow.up")
+                Label {
+                    BusyLabel("Share Link Again", isBusy: true)
+                } icon: {
+                    Image(systemName: "square.and.arrow.up")
                 }
             }
             .buttonStyle(PrimaryButtonStyle())

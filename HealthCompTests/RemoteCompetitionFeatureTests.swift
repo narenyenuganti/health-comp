@@ -671,6 +671,59 @@ final class RemoteCompetitionFeatureTests: XCTestCase {
         XCTAssertEqual(state.challengeSheetStatus, .ready)
     }
 
+    /// Motion keys on these, so a new publication must not change them and
+    /// a real change must.
+    func testControlPhaseAndScreenKindKeys() {
+        typealias Status = CompetitionFeature.ChallengeSheetStatus
+        let id = CompetitionID(UUID())
+        let waiting = Self.pending(id, identity: "them")
+        let accepted = Self.presentation(id, lifecycle: .scheduled, identity: "them")
+
+        XCTAssertEqual(Status.creating.controlPhase, Status.ready.controlPhase)
+        XCTAssertEqual(
+            Status.alreadyChallenged(waiting).controlPhase,
+            Status.inMatch(accepted).controlPhase
+        )
+        XCTAssertEqual(
+            Status.sent(challengeID: id, challenge: nil, link: nil).controlPhase, .sent
+        )
+        XCTAssertEqual(
+            Status.sent(challengeID: id, challenge: waiting, link: nil).controlPhase, .sent
+        )
+        XCTAssertEqual(
+            Status.sent(challengeID: id, challenge: accepted, link: nil).controlPhase, .accepted
+        )
+
+        XCTAssertEqual(
+            competitionScreenKind(waiting, source: .remoteParticipants),
+            .invite(waitsOnThem: true)
+        )
+        XCTAssertEqual(
+            competitionScreenKind(waiting, source: .simulatedFixture),
+            .invite(waitsOnThem: false)
+        )
+        let incoming = Self.presentation(
+            id,
+            lifecycle: .pending(direction: .incoming, createdAt: .distantPast, expiresAt: nil),
+            identity: "them"
+        )
+        XCTAssertEqual(
+            competitionScreenKind(incoming, source: .remoteParticipants),
+            .invite(waitsOnThem: false)
+        )
+        XCTAssertEqual(competitionScreenKind(accepted, source: .remoteParticipants), .underway)
+        XCTAssertEqual(
+            competitionScreenKind(Self.presentation(id), source: .remoteParticipants), .result
+        )
+        XCTAssertEqual(
+            competitionScreenKind(
+                Self.pending(id, identity: PracticeMatch.opponentIdentity),
+                source: .remoteParticipants
+            ),
+            .underway
+        )
+    }
+
     @MainActor
     func testDivergentDuplicateRotatesKey() async {
         let first = UUID()
