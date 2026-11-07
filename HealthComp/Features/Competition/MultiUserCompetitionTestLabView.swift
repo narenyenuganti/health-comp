@@ -64,6 +64,11 @@ enum MultiUserCompetitionTestLabScenario:
     /// belt banner, a reaction and Share Result; Jordan tallying with a
     /// nudge; Riley; and a practice match.
     case featureRound = "feature-round"
+    /// The versus intro through Home's own reducer: Alex's challenge to
+    /// accept, yours to Sam (who accepts 6 s after launch), first fights,
+    /// rematches with either belt, a long name, Day 2, and a practice.
+    /// Pair with `--versus-intro`.
+    case versus
 }
 
 struct MultiUserCompetitionTestLabConfiguration: Equatable, Sendable {
@@ -119,14 +124,17 @@ struct MultiUserCompetitionTestLabRootView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Text("REMOTE UI TEST LAB")
-                .font(.body.weight(.bold))
-                .foregroundStyle(.secondary)
-                .padding(.vertical, 6)
-                .frame(maxWidth: .infinity)
-                .background(.thinMaterial)
-                .accessibilityIdentifier("multiuser.testlab.banner")
-                .accessibilityValue(renderedConfigurationAccessibilityValue)
+            // Filmed, and the intro runs edge to edge.
+            if configuration.scenario != .versus {
+                Text("REMOTE UI TEST LAB")
+                    .font(.body.weight(.bold))
+                    .foregroundStyle(.secondary)
+                    .padding(.vertical, 6)
+                    .frame(maxWidth: .infinity)
+                    .background(.thinMaterial)
+                    .accessibilityIdentifier("multiuser.testlab.banner")
+                    .accessibilityValue(renderedConfigurationAccessibilityValue)
+            }
 
             scenarioView
         }
@@ -204,6 +212,8 @@ struct MultiUserCompetitionTestLabRootView: View {
             MultiUserCompetitionNotificationChoicesTestLabView()
         case .featureRound:
             MultiUserCompetitionFeatureRoundTestLabView()
+        case .versus:
+            MultiUserCompetitionVersusTestLabView()
         }
     }
 }
@@ -509,7 +519,8 @@ private struct MultiUserCompetitionClaimTestLabView: View {
              .healthOnboarding, .healthOnboardingChallenge, .healthOnboardingClaim,
              .incomingChallenge, .block, .blockedAccount, .blockClaim,
              .nudge, .nudgeSimulated, .whatItTakes, .reactions, .reactionsSimulated,
-             .liveActivity, .practice, .notificationChoices, .belt, .beltHero, .featureRound:
+             .liveActivity, .practice, .notificationChoices, .belt, .beltHero, .featureRound,
+             .versus:
             .ready
         }
         _status = State(initialValue: initialStatus)
@@ -1173,6 +1184,95 @@ private final class MultiUserCompetitionFeatureRoundTestLabServer: @unchecked Se
         lock.withLock {
             own[CompetitionReactionKey(competitionID: id, target: target)] = kind
         }
+        return publish()
+    }
+}
+
+/// Both ends of an acceptance, through Home's own reducer and screens. Only
+/// the server is a stand-in.
+private struct MultiUserCompetitionVersusTestLabView: View {
+    @State private var store: StoreOf<MainTabFeature>
+    @AppStorage(CompetitionVersusIntroGate.announcedKey) private var announced = ""
+
+    /// Once per process, as with the seen marks.
+    private static let resetAnnounced: Void = UserDefaults.standard
+        .removeObject(forKey: CompetitionVersusIntroGate.announcedKey)
+
+    init() {
+        _ = Self.resetAnnounced
+        typealias Fixtures = MultiUserCompetitionTestLabFixtures
+        let hub = LocalCompetitionPublicationHub()
+        let server = MultiUserCompetitionVersusTestLabServer(hub: hub)
+        _store = State(initialValue: Store(initialState: MainTabFeature.State()) {
+            MainTabFeature()
+        } withDependencies: {
+            $0.competitionClient = CompetitionClient(
+                start: {
+                    let stream = hub.stream()
+                    server.publish()
+                    Task {
+                        try? await Task.sleep(for: .seconds(6))
+                        _ = server.accept(Fixtures.versusID(0x02))
+                    }
+                    return stream
+                },
+                updates: { hub.stream() },
+                reconcileAll: { _ in server.publish() },
+                accept: { server.accept($0) },
+                decline: { _ in server.publish() },
+                archive: { _ in server.publish() },
+                rematch: { _ in server.publish() },
+                reinvite: { server.publish() },
+                waitUntil: { _ in },
+                stop: { hub.finish() }
+            )
+            $0.competitionRoutingClient = CompetitionRoutingClient(
+                routes: { AsyncStream { _ in } },
+                enqueue: { _ in },
+                consume: { _ in }
+            )
+            $0.permissionOnboardingClient = .inert
+            $0.date = .constant(Fixtures.labNow)
+        })
+    }
+
+    var body: some View {
+        MainTabView(store: store)
+            .overlay(alignment: .bottom) {
+                if !announced.isEmpty {
+                    Text(announced).accessibilityIdentifier("versus.lab.announced")
+                }
+            }
+            .accessibilityIdentifier("multiuser.versus.root")
+    }
+}
+
+private final class MultiUserCompetitionVersusTestLabServer: @unchecked Sendable {
+    private let hub: LocalCompetitionPublicationHub
+    private let lock = NSLock()
+    private var revision: UInt64 = 0
+    private var accepted: Set<CompetitionID> = []
+
+    init(hub: LocalCompetitionPublicationHub) {
+        self.hub = hub
+    }
+
+    @discardableResult
+    func publish() -> LocalCompetitionPublication {
+        let (next, accepted) = lock.withLock { () -> (UInt64, Set<CompetitionID>) in
+            revision += 1
+            return (revision, self.accepted)
+        }
+        let publication = MultiUserCompetitionTestLabFixtures.versusPublication(
+            revision: next,
+            accepted: accepted
+        )
+        hub.publish(publication)
+        return publication
+    }
+
+    func accept(_ id: CompetitionID) -> LocalCompetitionPublication {
+        lock.withLock { _ = accepted.insert(id) }
         return publish()
     }
 }
@@ -2827,6 +2927,127 @@ private enum MultiUserCompetitionTestLabFixtures {
             publicationRevision: revision,
             dashboard: LocalCompetitionDashboard(
                 competitions: competitions,
+                awards: [],
+                issues: [],
+                hiddenTerminalCompetitionCount: 0
+            ),
+            evaluatedAt: evaluatedAt,
+            timeZoneIdentifier: "America/Los_Angeles",
+            source: .remoteParticipants
+        )
+    }
+
+    static func versusID(_ byte: UInt8) -> CompetitionID {
+        CompetitionID(UUID(uuidString: String(format: "A4000000-0000-4000-8000-0000000000%02X", byte))!)
+    }
+
+    /// Now is Sun Aug 16: Day 1 is today for the live matches, Monday for
+    /// the rest. Morgan holds the belt 4–1; you hold Jordan's at 2–0–1.
+    static func versusPublication(
+        revision: UInt64,
+        accepted: Set<CompetitionID>
+    ) -> LocalCompetitionPublication {
+        func person(_ byte: UInt8) -> String {
+            "remote-profile:v1:c4000000-0000-4000-8000-0000000000" + String(format: "%02x", byte)
+        }
+        func upcoming(
+            _ byte: UInt8,
+            _ name: String,
+            _ lifecycle: LocalCompetitionLifecyclePresentation
+        ) -> LocalCompetitionPresentation {
+            presentation(
+                id: versusID(byte),
+                opponentName: name,
+                lifecycle: accepted.contains(versusID(byte)) ? .scheduled : lifecycle,
+                userPoints: 0,
+                opponentPoints: 0,
+                days: [],
+                currentDayOrdinal: nil,
+                terminal: nil,
+                startDay: 17,
+                opponentIdentity: person(byte)
+            )
+        }
+        func pending(_ direction: InvitationDirection) -> LocalCompetitionLifecyclePresentation {
+            .pending(
+                direction: direction,
+                createdAt: labNow,
+                expiresAt: labNow.addingTimeInterval(20 * 60 * 60)
+            )
+        }
+        func live(_ byte: UInt8, _ name: String, day: Int = 1) -> LocalCompetitionPresentation {
+            presentation(
+                id: versusID(byte),
+                opponentName: name,
+                lifecycle: .active(dayOrdinal: day),
+                userPoints: 120,
+                opponentPoints: 95,
+                days: activeDays(startDay: 17 - day, currentDay: day),
+                currentDayOrdinal: day,
+                terminal: nil,
+                startDay: 17 - day,
+                opponentIdentity: person(byte)
+            )
+        }
+        func past(
+            _ byte: UInt8,
+            _ name: String,
+            against opponent: UInt8,
+            startDay: Int,
+            _ outcome: CompetitionOutcome
+        ) -> LocalCompetitionPresentation {
+            let end = competitionScheduleBoundaries(schedule(startDay: startDay, month: 7))!.end
+            let points: (user: Double, opponent: Double) = switch outcome {
+            case .win: (3_210, 3_050)
+            case .loss: (2_980, 3_140)
+            case .tie: (3_000, 3_000)
+            }
+            return presentation(
+                id: versusID(byte),
+                opponentName: name,
+                lifecycle: .archived(
+                    outcome: outcome,
+                    basis: .stableAcrossPostBoundaryReads,
+                    completedAt: end,
+                    archivedAt: end
+                ),
+                userPoints: points.user,
+                opponentPoints: points.opponent,
+                days: [],
+                currentDayOrdinal: nil,
+                terminal: LocalCompetitionTerminalPresentation(
+                    userPoints: points.user,
+                    opponentPoints: points.opponent,
+                    outcome: outcome,
+                    basis: .stableAcrossPostBoundaryReads,
+                    completedAt: end
+                ),
+                startDay: startDay,
+                month: 7,
+                opponentIdentity: person(opponent)
+            )
+        }
+        return LocalCompetitionPublication(
+            publicationRevision: revision,
+            dashboard: LocalCompetitionDashboard(
+                competitions: [
+                    upcoming(0x01, "Alex", pending(.incoming)),
+                    upcoming(0x02, "Sam", pending(.outgoing)),
+                    upcoming(0x03, "Riley", .scheduled),
+                    live(0x04, "Morgan"),
+                    live(0x05, "Jordan"),
+                    live(0x06, "Maximiliana Featherstonehaugh-Worthington"),
+                    live(0x07, "Casey", day: 2),
+                    practiceScheduledPresentation(),
+                    past(0x41, "Morgan", against: 0x04, startDay: 1, .win),
+                    past(0x42, "Morgan", against: 0x04, startDay: 8, .loss),
+                    past(0x43, "Morgan", against: 0x04, startDay: 15, .loss),
+                    past(0x44, "Morgan", against: 0x04, startDay: 22, .loss),
+                    past(0x45, "Morgan", against: 0x04, startDay: 29, .loss),
+                    past(0x51, "Jordan", against: 0x05, startDay: 1, .win),
+                    past(0x52, "Jordan", against: 0x05, startDay: 8, .tie),
+                    past(0x53, "Jordan", against: 0x05, startDay: 15, .win),
+                ],
                 awards: [],
                 issues: [],
                 hiddenTerminalCompetitionCount: 0

@@ -11,6 +11,7 @@ struct MainTabView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var isChallengePresented = false
     @State private var isPracticePresented = false
+    @State private var isVersusPlaying = false
 
     var body: some View {
         Group {
@@ -33,8 +34,9 @@ struct MainTabView: View {
             store.send(.scenePhaseChanged(Self.sceneState(newValue)))
         }
         // Keeps the notifications prompt from presenting under the
-        // Challenge or practice sheet, where SwiftUI would drop it.
-        .onChange(of: isChallengePresented || isPracticePresented) { _, isOpen in
+        // Challenge or practice sheet, where SwiftUI would drop it, or over
+        // the versus intro.
+        .onChange(of: isChallengePresented || isPracticePresented || isVersusPlaying) { _, isOpen in
             store.send(.challengeSheetVisibilityChanged(isOpen))
         }
         .onReceive(
@@ -187,6 +189,11 @@ struct MainTabView: View {
                 notNowTapped: { store.send(.notificationPromptNotNowTapped) }
             )
         }
+        .competitionVersusIntro(
+            matchID: store.path.last,
+            publication: store.competition.publication,
+            isPlaying: $isVersusPlaying
+        )
     }
 
     private var notificationPromptPresented: Binding<Bool> {
