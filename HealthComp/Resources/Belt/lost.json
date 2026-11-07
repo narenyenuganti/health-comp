@@ -1,0 +1,87 @@
+[
+ {
+  "t": 0.63,
+  "kind": "rise",
+  "label": "strap snaps taut"
+ },
+ {
+  "t": 0.73,
+  "kind": "impact",
+  "label": "taut peak, hit-stop, sparks at the lug"
+ },
+ {
+  "t": 0.78,
+  "kind": "impact",
+  "label": "belt rips away"
+ },
+ {
+  "t": 1.0,
+  "kind": "impact",
+  "label": "first light cuts"
+ },
+ {
+  "t": 1.11,
+  "kind": "rise",
+  "label": "pull lets go, belt tumbles"
+ },
+ {
+  "t": 1.26,
+  "kind": "rise",
+  "label": "gold starts to die"
+ },
+ {
+  "t": 1.28,
+  "kind": "impact",
+  "label": "second light cuts"
+ },
+ {
+  "t": 1.56,
+  "kind": "impact",
+  "label": "third light cuts"
+ },
+ {
+  "t": 1.86,
+  "kind": "impact",
+  "label": "last light cuts"
+ },
+ {
+  "t": 1.82,
+  "kind": "settle",
+  "label": "plate is pewter"
+ },
+ {
+  "t": 2.16,
+  "kind": "impact",
+  "label": "cold pool on the empty floor"
+ },
+ {
+  "t": 2.36,
+  "kind": "impact",
+  "label": "corner hits the floor"
+ },
+ {
+  "t": 2.43,
+  "kind": "impact",
+  "label": "plate slaps down"
+ },
+ {
+  "t": 2.515,
+  "kind": "impact",
+  "label": "left strap slaps"
+ },
+ {
+  "t": 2.555,
+  "kind": "impact",
+  "label": "right strap slaps"
+ },
+ {
+  "t": 2.84,
+  "kind": "settle",
+  "label": "last glint"
+ },
+ {
+  "t": 2.92,
+  "kind": "settle",
+  "label": "hold, text can come in"
+ }
+]

@@ -1,0 +1,52 @@
+{
+ "fps": 60,
+ "duration": 2.2667,
+ "holdStart": 1.717,
+ "beats": [
+  {
+   "t": 0.417,
+   "kind": "rise",
+   "label": "Camera punches in on the strap"
+  },
+  {
+   "t": 0.683,
+   "kind": "rise",
+   "label": "Stud drops through the top of frame"
+  },
+  {
+   "t": 0.8,
+   "kind": "impact",
+   "label": "Stud hits: 2-frame hit-stop, flash on the metal"
+  },
+  {
+   "t": 0.833,
+   "kind": "impact",
+   "label": "Release: strap dips, camera kick, sparks, ring of light"
+  },
+  {
+   "t": 0.917,
+   "kind": "settle",
+   "label": "Streak runs the stud's bevel: locked"
+  },
+  {
+   "t": 1.033,
+   "kind": "rise",
+   "label": "Camera pulls back"
+  },
+  {
+   "t": 1.25,
+   "kind": "rise",
+   "label": "Sheen sweeps the plate"
+  },
+  {
+   "t": 1.583,
+   "kind": "settle",
+   "label": "Ping on the new stud"
+  },
+  {
+   "t": 1.717,
+   "kind": "settle",
+   "label": "Hold: show name and stats"
+  }
+ ]
+}

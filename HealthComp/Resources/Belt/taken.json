@@ -1,0 +1,13 @@
+{"fps": 60, "duration": 3.4, "holdFrom": 2.5, "beats": [
+  {"t": 0.367, "kind": "rise", "label": "tension: hairline wakes in the slot"},
+  {"t": 0.567, "kind": "rise", "label": "spot flickers once"},
+  {"t": 0.85, "kind": "rise", "label": "belt coils back, spot dims"},
+  {"t": 0.95, "kind": "impact", "label": "slash tears down the slant; hit-stop"},
+  {"t": 1.0, "kind": "rise", "label": "knock; gold fronts run out from the slot"},
+  {"t": 1.333, "kind": "rise", "label": "belt flips and rushes the lens"},
+  {"t": 1.683, "kind": "rise", "label": "plate overfills the frame"},
+  {"t": 1.733, "kind": "impact", "label": "slam: flash, jolt, shockwave; hit-stop"},
+  {"t": 1.833, "kind": "impact", "label": "strap cracks at the end of its travel"},
+  {"t": 2.1, "kind": "settle", "label": "bounce spent"},
+  {"t": 2.5, "kind": "settle", "label": "at rest, hold for overlay"}
+]}

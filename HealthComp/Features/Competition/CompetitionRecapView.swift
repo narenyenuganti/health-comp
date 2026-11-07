@@ -12,14 +12,14 @@ struct CompetitionRecapHighlight: Equatable {
     let accessibilityValue: String
 }
 
-/// The belt as the card tells it. Nil = no line (tie, short reign, retired, no data).
+/// The belt as the card tells it. Nil = no line (tie, retired, no data).
 enum CompetitionRecapBelt: Equatable {
-    case youTook, theyTook, youKept(weeks: Int), theyKept(weeks: Int)
+    case youTook, theyTook, youDefended(defenses: Int), theyDefended(defenses: Int)
 
     var isYours: Bool {
         switch self {
-        case .youTook, .youKept: true
-        case .theyTook, .theyKept: false
+        case .youTook, .youDefended: true
+        case .theyTook, .theyDefended: false
         }
     }
 }
@@ -43,8 +43,8 @@ struct CompetitionRecap: Equatable {
     let accessibilityText: String
 }
 
-/// The card's belt line from PR 1's per-match event: a take, or a winner's
-/// reign of 3+ weeks. Never on a tie or for a retired pair.
+/// The card's belt line from PR 1's per-match event: a take or a title
+/// defense. Never on a tie or for a retired pair.
 func competitionRecapBelt(
     _ event: CompetitionBeltEvent?,
     outcome: CompetitionOutcome,
@@ -52,10 +52,10 @@ func competitionRecapBelt(
 ) -> CompetitionRecapBelt? {
     guard !isRetired, outcome != .tie, let event else { return nil }
     switch event {
-    case .took(.you, _): return .youTook
-    case .took(.them, _): return .theyTook
-    case let .kept(.you, n) where n >= 3 && outcome == .win: return .youKept(weeks: n)
-    case let .kept(.them, n) where n >= 3 && outcome == .loss: return .theyKept(weeks: n)
+    case .took(.you, _, _): return .youTook
+    case .took(.them, _, _): return .theyTook
+    case let .defended(.you, _, defenses): return .youDefended(defenses: defenses)
+    case let .defended(.them, _, defenses): return .theyDefended(defenses: defenses)
     default: return nil
     }
 }
@@ -65,14 +65,15 @@ func competitionRecapAllowsNameChoice(_ competition: LocalCompetitionPresentatio
     competition.opponentDisplayName != competitionFormerCompetitorName
 }
 
-/// "Took the belt" / "Sam kept the belt · 4 weeks". A nil name is hidden: "They …".
+/// "Took the belt" / "Sam's 3rd title defense". A nil name is hidden: "They …".
 func competitionRecapBeltText(_ belt: CompetitionRecapBelt, opponentName: String?) -> String {
     let they = opponentName ?? "They"
     return switch belt {
     case .youTook: "Took the belt"
     case .theyTook: "\(they) took the belt"
-    case let .youKept(weeks): "Kept the belt · \(competitionWeeksText(weeks))"
-    case let .theyKept(weeks): "\(they) kept the belt · \(competitionWeeksText(weeks))"
+    case let .youDefended(defenses): competitionTitleDefenseText(defenses)
+    case let .theyDefended(defenses):
+        "\(opponentName.map { "\($0)'s" } ?? "Their") \(competitionTitleDefenseText(defenses))"
     }
 }
 
@@ -135,7 +136,7 @@ func competitionRecap(
     let accessibilityText = (
         parts.compactMap { $0 }
             + highlights.map { "\($0.title): \($0.accessibilityValue)" }
-            + [beltText?.replacingOccurrences(of: " · ", with: ", ")].compactMap { $0 }
+            + [beltText].compactMap { $0 }
     ).joined(separator: ". ") + "."
 
     return CompetitionRecap(
@@ -347,11 +348,11 @@ struct CompetitionRecapCard: View {
     }
 
     /// Whole, or on its own row with the name truncated: "took the belt" /
-    /// "kept the belt · n weeks" is never cut.
+    /// "'s 3rd title defense" is never cut.
     @ViewBuilder
     private func beltLine(fits: Bool) -> some View {
         if let belt = recap.belt, let text = recap.beltText {
-            let verb = text.range(of: " took the belt") ?? text.range(of: " kept the belt")
+            let verb = text.range(of: " took the belt") ?? text.range(of: "'s ", options: .backwards)
             HStack(spacing: 8) {
                 if belt.isYours {
                     CompetitionBeltMark(holder: .you, width: 22)

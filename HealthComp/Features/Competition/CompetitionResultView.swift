@@ -26,8 +26,11 @@ struct CompetitionResultView: View {
     @State private var isDeleteConfirmationPresented = false
     @State private var showsWeek = false
     @State private var showsShare = false
+    @State private var replaysCeremony = false
     @AppStorage(CompetitionReactionsSeen.storageKey)
     private var reactionsSeen = CompetitionReactionsSeen()
+    @AppStorage(CompetitionBeltCeremoniesSeen.storageKey)
+    private var ceremoniesSeen = CompetitionBeltCeremoniesSeen()
 
     var body: some View {
         ScrollView {
@@ -161,6 +164,14 @@ struct CompetitionResultView: View {
             )
         }
         .onDisappear { reactionsSeen = reactionsSeen.marking(competition) }
+        // Own seen store and no Verdict hook yet: the Verdict wiring replaces both.
+        .competitionBeltCeremony(
+            event: beltEvent,
+            opponentName: opponentName,
+            isFirstView: !isArchived && !ceremoniesSeen.contains(competition.id),
+            replay: $replaysCeremony,
+            onFinished: { ceremoniesSeen = ceremoniesSeen.marking(competition.id) }
+        )
         .onAppear {
             if reduceMotion {
                 isRevealed = true
@@ -487,7 +498,24 @@ struct CompetitionResultView: View {
     }
 
     // The belt replaces the awards list: what this week did to it.
+    @ViewBuilder
     private func beltBanner(
+        _ text: (holder: CompetitionBeltHolder, title: String, detail: String?)
+    ) -> some View {
+        if competitionBeltCeremonyCanPlay(beltEvent, opponentName: opponentName) {
+            Button {
+                replaysCeremony = true
+            } label: {
+                beltBannerContent(text)
+            }
+            .buttonStyle(CompetitionPressButtonStyle())
+            .accessibilityHint("Plays the belt ceremony again")
+        } else {
+            beltBannerContent(text)
+        }
+    }
+
+    private func beltBannerContent(
         _ text: (holder: CompetitionBeltHolder, title: String, detail: String?)
     ) -> some View {
         VStack(spacing: 6) {

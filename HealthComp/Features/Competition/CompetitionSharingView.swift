@@ -220,8 +220,8 @@ struct CompetitionSharingView: View {
         _ belt: CompetitionBelt?,
         _ competition: LocalCompetitionPresentation
     ) -> String? {
-        belt?.holder.map {
-            competitionBeltStandingText($0, opponentName: competition.opponentDisplayName)
+        belt.flatMap {
+            competitionBeltChipText($0, opponentName: competition.opponentDisplayName)
         }
     }
 
@@ -517,14 +517,11 @@ private struct CompetitionHeroCard: View {
         VStack(alignment: .leading, spacing: 16) {
             statusRow
 
-            if let holder = belt?.holder {
-                CompetitionBeltChip(
-                    holder: holder,
-                    text: competitionBeltStandingText(
-                        holder,
-                        opponentName: competition.opponentDisplayName
-                    )
-                )
+            if let holder = belt?.holder,
+               let text = belt.flatMap({
+                   competitionBeltChipText($0, opponentName: competition.opponentDisplayName)
+               }) {
+                CompetitionBeltChip(holder: holder, text: text)
             }
 
             if competitionShouldShowScores(competition.lifecycle) {
@@ -927,6 +924,25 @@ struct CompetitionBeltMark: View {
                 .frame(width: 10 * unit, height: 10 * unit)
         }
         .frame(width: width, height: width * 24 / 44)
+        .accessibilityHidden(true)
+    }
+}
+
+/// One slanted bar per title defense, up to the strap's twelve sockets.
+struct CompetitionDefensePips: View {
+    let count: Int
+    /// Bars lit so far, when the count is rolling up.
+    var lit: Int? = nil
+    let color: Color
+
+    var body: some View {
+        HStack(spacing: 5) {
+            ForEach(0..<min(count, 12), id: \.self) { index in
+                SlantedBar()
+                    .fill(index < lit ?? count ? color : Theme.track)
+                    .frame(width: 7, height: 18)
+            }
+        }
         .accessibilityHidden(true)
     }
 }
@@ -1384,6 +1400,7 @@ struct CompetitionPersonView: View {
     @Environment(\.timeZone) private var timeZone
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @ScaledMetric(relativeTo: .largeTitle) private var recordSize: CGFloat = 64
+    @ScaledMetric(relativeTo: .title2) private var tapeValueSize: CGFloat = 21
 
     var body: some View {
         let competitions = publication.dashboard.competitions
@@ -1422,12 +1439,12 @@ struct CompetitionPersonView: View {
             : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: 8))
     }
 
-    // At accessibility sizes the mark sits above the title, so it doesn't
-    // float beside a wrapped title or squeeze it.
-    private var titleLayout: AnyLayout {
+    // At accessibility sizes the count sits under the title, so it doesn't
+    // squeeze a wrapped title.
+    private var holdLayout: AnyLayout {
         dynamicTypeSize.isAccessibilitySize
             ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
-            : AnyLayout(HStackLayout(spacing: 10))
+            : AnyLayout(HStackLayout(alignment: .bottom, spacing: 12))
     }
 
     private func header(_ record: CompetitionOpponentRecord, weekCount: Int) -> some View {
@@ -1448,46 +1465,133 @@ struct CompetitionPersonView: View {
         .accessibilityIdentifier("competition.person.record")
     }
 
+    /// The fighter card: the belt, who holds it, and the tale of the tape.
     private func beltPanel(
         _ record: CompetitionOpponentRecord,
         weeks: [LocalCompetitionPresentation]
     ) -> some View {
         let belt = record.belt
         let name = record.opponentDisplayName
-        return VStack(alignment: .leading, spacing: 8) {
-            titleLayout {
-                if let holder = belt.holder {
-                    CompetitionBeltMark(holder: holder, width: 44)
+        let tape = belt.changes > 0 ? competitionTaleOfTheTape(belt) : []
+        let title = beltTitle(belt, name: name)
+        let since = belt.holder == nil ? nil : belt.current.flatMap { sinceText($0, weeks: weeks) }
+        let defenses = belt.holder == nil ? 0 : belt.current?.defenses ?? 0
+        return VStack(alignment: .leading, spacing: 12) {
+            if let holder = belt.holder {
+                Image(holder == .you ? "BeltHeroGold" : "BeltHeroPewter")
+                    .resizable()
+                    .scaledToFit()
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 16)
+                    .frame(maxWidth: .infinity)
+                    .background { Theme.ground.environment(\.colorScheme, .dark) }
+                    .accessibilityHidden(true)
+            }
+            VStack(alignment: .leading, spacing: 12) {
+                holdLayout {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(title)
+                            .font(.headline)
+                            .foregroundStyle(belt.holder == .you ? Theme.you : Theme.ink)
+                        if let since {
+                            Text(since)
+                                .font(.subheadline)
+                                .foregroundStyle(Theme.secondary)
+                        }
+                    }
+                    if defenses > 0 {
+                        if !dynamicTypeSize.isAccessibilitySize {
+                            Spacer(minLength: 0)
+                        }
+                        VStack(alignment: dynamicTypeSize.isAccessibilitySize ? .leading : .trailing, spacing: 4) {
+                            CompetitionDefensePips(
+                                count: defenses,
+                                color: belt.holder == .you ? Theme.youFill : Theme.ink
+                            )
+                            Text(competitionDefensesText(defenses).uppercased())
+                                .font(.themeLabel)
+                                .tracking(1.2)
+                                .foregroundStyle(Theme.secondary)
+                        }
+                    }
                 }
-                Text(beltTitle(belt, name: name))
-                    .font(.headline)
-                    .foregroundStyle(belt.holder == .you ? Theme.you : Theme.ink)
-            }
-            if belt.holder != nil, let current = belt.current,
-               let since = sinceText(current, weeks: weeks) {
-                Text(since)
-                    .font(.subheadline)
-                    .foregroundStyle(Theme.secondary)
-            }
-            if belt.changes > 0 {
-                Rectangle()
-                    .fill(Theme.hairline)
-                    .frame(height: 1)
-                    .padding(.vertical, 4)
-                if let longest = belt.longest {
-                    statRow(
-                        "Longest reign",
-                        "\(longest.holder == .you ? "You" : name) · \(competitionWeeksText(longest.weeks))"
-                    )
+                if !tape.isEmpty {
+                    taleOfTheTape(tape, name: name)
                 }
-                statRow("Title changes", String(belt.changes))
             }
+            .padding(.horizontal, 16)
         }
-        .padding(16)
+        .padding(.top, belt.holder == nil ? 16 : 0)
+        .padding(.bottom, 16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .themePanel()
-        .accessibilityElement(children: .combine)
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(
+            ([title, since, defenses > 0 ? competitionDefensesText(defenses) : nil].compactMap { $0 }
+                + tape.map { "\($0.label): You \($0.you), \(name) \($0.them)" })
+                .joined(separator: ", ")
+        )
         .accessibilityIdentifier("competition.person.belt")
+    }
+
+    /// You on the left, them on the right. At accessibility sizes each row
+    /// stacks, with the names spelled out.
+    private func taleOfTheTape(
+        _ rows: [(label: String, you: String, them: String)],
+        name: String
+    ) -> some View {
+        let isStacked = dynamicTypeSize.isAccessibilitySize
+        return VStack(spacing: 7) {
+            Rectangle()
+                .fill(Theme.hairline)
+                .frame(height: 1)
+                .padding(.bottom, 5)
+            if !isStacked {
+                tapeRow(you: "YOU", label: "TALE OF THE TAPE", them: name.uppercased(), valueFont: .themeLabel)
+            }
+            ForEach(rows, id: \.label) { row in
+                if isStacked {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(row.label.uppercased())
+                            .font(.themeLabel)
+                            .tracking(1.1)
+                            .foregroundStyle(Theme.secondary)
+                        Text("You \(row.you)")
+                            .foregroundStyle(Theme.you)
+                        Text("\(name) \(row.them)")
+                            .foregroundStyle(Theme.ink)
+                    }
+                    .font(.subheadline.bold())
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    tapeRow(
+                        you: row.you,
+                        label: row.label.uppercased(),
+                        them: row.them,
+                        valueFont: .system(size: tapeValueSize, weight: .heavy).width(.condensed).monospacedDigit()
+                    )
+                }
+            }
+        }
+    }
+
+    private func tapeRow(you: String, label: String, them: String, valueFont: Font) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(you)
+                .font(valueFont)
+                .foregroundStyle(Theme.you)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Text(label)
+                .font(.themeLabel)
+                .tracking(1.1)
+                .foregroundStyle(Theme.secondary)
+            Text(them)
+                .font(valueFont)
+                .foregroundStyle(Theme.ink)
+                .frame(maxWidth: .infinity, alignment: .trailing)
+        }
+        .lineLimit(1)
     }
 
     private func beltTitle(_ belt: CompetitionBelt, name: String) -> String {
@@ -1513,20 +1617,6 @@ struct CompetitionPersonView: View {
             timeZone: timeZone
         )
         return "Since \(day) · \(competitionWeeksText(current.weeks))"
-    }
-
-    private func statRow(_ title: String, _ value: String) -> some View {
-        rowLayout {
-            Text(title)
-                .foregroundStyle(Theme.secondary)
-            if !dynamicTypeSize.isAccessibilitySize {
-                Spacer(minLength: 8)
-            }
-            Text(value)
-                .bold()
-                .foregroundStyle(Theme.ink)
-        }
-        .font(.subheadline)
     }
 
     private func weeksSection(
@@ -2307,7 +2397,8 @@ func competitionOpponentRecords(
                             end: week.acceptedConfiguration.flatMap {
                                 competitionScheduleBoundaries($0.schedule)?.end
                             },
-                            outcome: $0.outcome
+                            outcome: $0.outcome,
+                            margin: abs($0.userPoints - $0.opponentPoints)
                         )
                     }
                 },
@@ -2343,34 +2434,65 @@ enum CompetitionBeltHolder: Equatable, Sendable { case you, them }
 enum CompetitionBeltEvent: Equatable, Sendable {
     /// A tie before anyone held it.
     case vacant
-    /// The winner took it; `fromWeeks` is the other person's reign, nil on the first win.
-    case took(by: CompetitionBeltHolder, fromWeeks: Int?)
-    /// The holder won again or tied; `weeks` counts the reign including this week.
+    /// The winner took it; `fromWeeks` and `fromDefenses` are the other
+    /// person's reign, `fromWeeks` nil on the first win.
+    case took(by: CompetitionBeltHolder, fromWeeks: Int?, fromDefenses: Int = 0)
+    /// The holder tied; `weeks` counts the reign including this week.
     case kept(by: CompetitionBeltHolder, weeks: Int)
+    /// A title defense: the holder won again. `weeks` and `defenses` count the
+    /// reign including this week.
+    case defended(by: CompetitionBeltHolder, weeks: Int, defenses: Int)
 }
 
 struct CompetitionBeltReign: Equatable, Sendable {
     let holder: CompetitionBeltHolder
     let weeks: Int
     let startID: CompetitionID
+    var defenses = 0
+}
+
+/// One person's side of a pair's finished weeks.
+struct CompetitionTitleStats: Equatable, Sendable {
+    var wins = 0
+    var losses = 0
+    var ties = 0
+    var reigns = 0
+    var defenses = 0
+    var mostDefenses = 0
+    var longestReign = 0
+    /// In points; nil before their first win.
+    var biggestWin: Double?
 }
 
 struct CompetitionBelt: Equatable, Sendable {
     let current: CompetitionBeltReign?
     let longest: CompetitionBeltReign?
+    /// Nil until someone defends the belt.
+    let mostDefenses: CompetitionBeltReign?
     /// Weeks the belt went to someone new, the first win included.
     let changes: Int
     let events: [CompetitionID: CompetitionBeltEvent]
+    let you: CompetitionTitleStats
+    let them: CompetitionTitleStats
     let isRetired: Bool
     /// Nil before the first decided week and once the other person's account is deleted.
     var holder: CompetitionBeltHolder? { isRetired ? nil : current?.holder }
-    static let vacant = Self(current: nil, longest: nil, changes: 0, events: [:], isRetired: false)
+    static let vacant = Self(
+        current: nil,
+        longest: nil,
+        mostDefenses: nil,
+        changes: 0,
+        events: [:],
+        you: CompetitionTitleStats(),
+        them: CompetitionTitleStats(),
+        isRetired: false
+    )
 }
 
 /// One pair's finished weeks in any order. The fold sorts them (schedule end,
 /// then uuid) so History and the notification planner can't disagree.
 func competitionBelt(
-    _ weeks: [(id: CompetitionID, end: Date?, outcome: CompetitionOutcome)],
+    _ weeks: [(id: CompetitionID, end: Date?, outcome: CompetitionOutcome, margin: Double)],
     isRetired: Bool = false
 ) -> CompetitionBelt {
     let ordered = weeks.sorted {
@@ -2379,36 +2501,73 @@ func competitionBelt(
     }
     var current: CompetitionBeltReign?
     var longest: CompetitionBeltReign?
+    var mostDefenses: CompetitionBeltReign?
     var changes = 0
     var events: [CompetitionID: CompetitionBeltEvent] = [:]
+    var you = CompetitionTitleStats()
+    var them = CompetitionTitleStats()
+    func stats(of holder: CompetitionBeltHolder, _ update: (inout CompetitionTitleStats) -> Void) {
+        holder == .you ? update(&you) : update(&them)
+    }
     for week in ordered {
         let winner: CompetitionBeltHolder? = switch week.outcome {
         case .win: .you
         case .loss: .them
         case .tie: nil
         }
+        if let winner {
+            stats(of: winner) {
+                $0.wins += 1
+                $0.biggestWin = max($0.biggestWin ?? 0, week.margin)
+            }
+            stats(of: winner == .you ? .them : .you) { $0.losses += 1 }
+        } else {
+            you.ties += 1
+            them.ties += 1
+        }
         if let reign = current, winner == nil || winner == reign.holder {
+            let defenses = reign.defenses + (winner == nil ? 0 : 1)
             current = CompetitionBeltReign(
                 holder: reign.holder,
                 weeks: reign.weeks + 1,
-                startID: reign.startID
+                startID: reign.startID,
+                defenses: defenses
             )
-            events[week.id] = .kept(by: reign.holder, weeks: reign.weeks + 1)
+            if winner == nil {
+                events[week.id] = .kept(by: reign.holder, weeks: reign.weeks + 1)
+            } else {
+                events[week.id] = .defended(by: reign.holder, weeks: reign.weeks + 1, defenses: defenses)
+                stats(of: reign.holder) { $0.defenses += 1 }
+            }
         } else if let winner {
-            events[week.id] = .took(by: winner, fromWeeks: current?.weeks)
+            events[week.id] = .took(
+                by: winner,
+                fromWeeks: current?.weeks,
+                fromDefenses: current?.defenses ?? 0
+            )
             current = CompetitionBeltReign(holder: winner, weeks: 1, startID: week.id)
             changes += 1
+            stats(of: winner) { $0.reigns += 1 }
         } else {
             events[week.id] = .vacant
         }
+        guard let reign = current else { continue }
         // >=: on equal length the more recent reign is the longest.
-        if let reign = current, reign.weeks >= (longest?.weeks ?? 0) { longest = reign }
+        if reign.weeks >= (longest?.weeks ?? 0) { longest = reign }
+        if reign.defenses > 0, reign.defenses >= (mostDefenses?.defenses ?? 0) { mostDefenses = reign }
+        stats(of: reign.holder) {
+            $0.longestReign = max($0.longestReign, reign.weeks)
+            $0.mostDefenses = max($0.mostDefenses, reign.defenses)
+        }
     }
     return CompetitionBelt(
         current: current,
         longest: longest,
+        mostDefenses: mostDefenses,
         changes: changes,
         events: events,
+        you: you,
+        them: them,
         isRetired: isRetired
     )
 }
@@ -2451,26 +2610,73 @@ func competitionBeltWaitsOnAnEarlierMatch(
 /// "1 week" / "3 weeks".
 func competitionWeeksText(_ count: Int) -> String { count == 1 ? "1 week" : "\(count) weeks" }
 
+/// "1 defense" / "3 defenses".
+func competitionDefensesText(_ count: Int) -> String { count == 1 ? "1 defense" : "\(count) defenses" }
+
+/// "4 weeks · 2 defenses", or "1 week" before the first defense.
+func competitionReignText(weeks: Int, defenses: Int) -> String {
+    let length = competitionWeeksText(weeks)
+    return defenses > 0 ? "\(length) · \(competitionDefensesText(defenses))" : length
+}
+
 /// "You hold the belt" / "Sam holds the belt".
 func competitionBeltStandingText(_ holder: CompetitionBeltHolder, opponentName: String) -> String {
     holder == .you ? "You hold the belt" : "\(opponentName) holds the belt"
 }
 
-/// The result banner: on a take, or a reign of 3+ weeks; otherwise nil.
-/// Every line stays true after the belt moves on.
+/// The Home chip: "You hold the belt · 3 defenses", no count before the first.
+func competitionBeltChipText(_ belt: CompetitionBelt, opponentName: String) -> String? {
+    guard let holder = belt.holder else { return nil }
+    let standing = competitionBeltStandingText(holder, opponentName: opponentName)
+    let defenses = belt.current?.defenses ?? 0
+    return defenses > 0 ? "\(standing) · \(competitionDefensesText(defenses))" : standing
+}
+
+/// The fighter card's rows, you against them.
+func competitionTaleOfTheTape(
+    _ belt: CompetitionBelt
+) -> [(label: String, you: String, them: String)] {
+    func row(_ label: String, _ value: (CompetitionTitleStats) -> String) -> (label: String, you: String, them: String) {
+        (label, value(belt.you), value(belt.them))
+    }
+    return [
+        row("Record") {
+            ([$0.wins, $0.losses] + ($0.ties > 0 ? [$0.ties] : [])).map(String.init).joined(separator: "–")
+        },
+        row("Title reigns") { String($0.reigns) },
+        row("Title defenses") { String($0.defenses) },
+        row("Most defenses") { String($0.mostDefenses) },
+        row("Longest reign") { competitionWeeksText($0.longestReign) },
+        row("Biggest win") { $0.biggestWin.map { "+\(competitionPointsText($0))" } ?? "–" },
+    ]
+}
+
+/// "1st title defense" / "3rd title defense".
+func competitionTitleDefenseText(_ defenses: Int) -> String {
+    let formatter = NumberFormatter()
+    formatter.locale = Locale(identifier: "en_US")
+    formatter.numberStyle = .ordinal
+    return "\(formatter.string(from: defenses as NSNumber) ?? String(defenses)) title defense"
+}
+
+/// The result banner: on a take, a title defense, or a tie in a reign of 3+
+/// weeks; otherwise nil. Every line stays true after the belt moves on.
 func competitionBeltResultText(
     _ event: CompetitionBeltEvent,
     opponentName: String
 ) -> (holder: CompetitionBeltHolder, title: String, detail: String?)? {
     func name(_ holder: CompetitionBeltHolder) -> String { holder == .you ? "You" : opponentName }
     switch event {
-    case let .took(holder, fromWeeks):
+    case let .took(holder, fromWeeks, _):
         let previous: CompetitionBeltHolder = holder == .you ? .them : .you
         return (
             holder,
             "\(name(holder)) took the belt",
             fromWeeks.map { "\(name(previous)) held it for \(competitionWeeksText($0))." }
         )
+    case let .defended(holder, weeks, defenses):
+        let title = competitionTitleDefenseText(defenses)
+        return (holder, holder == .you ? title : "\(opponentName)'s \(title)", "\(weeks) weeks in a row.")
     case let .kept(holder, weeks) where weeks >= 3:
         return (holder, "\(name(holder)) kept the belt", "\(weeks) weeks in a row.")
     case .kept, .vacant:
