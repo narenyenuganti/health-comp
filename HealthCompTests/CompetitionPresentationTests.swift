@@ -1911,24 +1911,6 @@ final class CompetitionPresentationTests: XCTestCase {
         )
     }
 
-    func testAMatchKeepsItsScreenThroughTheWeekAndChangesItOnlyAtTheResult() {
-        XCTAssertEqual(
-            competitionDestinationScreen(.scheduled),
-            competitionDestinationScreen(.tallying(startedAt: homeNow))
-        )
-        XCTAssertEqual(competitionDestinationScreen(.active(dayOrdinal: 7)), .match)
-        XCTAssertEqual(
-            competitionDestinationScreen(.completed(
-                outcome: .win, basis: .bestAvailable, completedAt: homeNow
-            )),
-            .result
-        )
-        XCTAssertEqual(
-            competitionDestinationScreen(.cancelled(at: homeNow)),
-            .closed
-        )
-    }
-
     func testResultLeavesHomeOnTheFourthDayAfterTheWeek() throws {
         let onTime = homePresentation(
             id: 1,

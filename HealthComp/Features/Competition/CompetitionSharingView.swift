@@ -171,7 +171,6 @@ struct CompetitionSharingView: View {
             // Derived keys only: every publication carries a new `evaluatedAt`,
             // which would animate all the time-derived text.
             .moving(Motion.settle, value: layout.shape)
-            .moving(Motion.settle, value: summary)
             .moving(Motion.settle, value: publication.dashboard.issues)
             .moving(Motion.settle, value: layout.allItems.map { unseen($0)?.updatedAt })
             .moving(Motion.settle, value: layout.allItems.map { beltGoingIn(for: $0, in: records)?.holder })
@@ -887,17 +886,12 @@ private struct CompetitionSharingRow: View {
 
     private var trailingScore: some View {
         let digits = sharingFractionDigits(competition)
-        // Two Texts, so either number can roll on its own.
-        return HStack(spacing: 0) {
-            Text(competitionPointsText(competition.userPoints, fractionDigits: digits, locale: locale))
-                .foregroundStyle(Theme.you)
-                .scoreRoll(competition.userPoints, id: competition.id)
-            Text(" / ").foregroundStyle(Theme.faint)
-            Text(competitionPointsText(competition.opponentPoints, fractionDigits: digits, locale: locale))
-                .foregroundStyle(Theme.ink)
-                .scoreRoll(competition.opponentPoints, id: competition.id)
-        }
-        .font(.title3.weight(.heavy).width(.condensed).monospacedDigit())
+        return (Text(competitionPointsText(competition.userPoints, fractionDigits: digits, locale: locale))
+            .foregroundStyle(Theme.you)
+            + Text(" / ").foregroundStyle(Theme.faint)
+            + Text(competitionPointsText(competition.opponentPoints, fractionDigits: digits, locale: locale))
+            .foregroundStyle(Theme.ink))
+            .font(.title3.weight(.heavy).width(.condensed).monospacedDigit())
     }
 
     // A challenge waiting on you says what tapping it does.
