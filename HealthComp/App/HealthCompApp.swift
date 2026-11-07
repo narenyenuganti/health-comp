@@ -277,7 +277,7 @@ struct AppRootView: View {
     }
 }
 
-private struct AppProgressView: View {
+struct AppProgressView: View {
     let title: String
 
     var body: some View {

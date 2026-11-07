@@ -1887,6 +1887,48 @@ final class CompetitionPresentationTests: XCTestCase {
         )
     }
 
+    func testHomeShapeChangesWithPlacementAndLifecycleButNotWithANewPublication() {
+        let hermes = homePresentation(id: 1, lifecycle: .active(dayOrdinal: 4))
+        let andy = homePresentation(id: 2, name: "Andy", lifecycle: .active(dayOrdinal: 3))
+        func shape(_ competitions: [LocalCompetitionPresentation]) -> [[String]] {
+            competitionHomeLayout(homeDashboard(competitions), now: homeNow).shape
+        }
+
+        // The next day, or a new `evaluatedAt`, moves nothing on Home.
+        XCTAssertEqual(
+            shape([hermes]),
+            shape([homePresentation(
+                id: 1,
+                lifecycle: .active(dayOrdinal: 5),
+                evaluatedAt: homeNow.addingTimeInterval(60)
+            )])
+        )
+        // The same match moving from hero to Live does.
+        XCTAssertNotEqual(shape([hermes]), shape([hermes, andy]))
+        XCTAssertNotEqual(
+            shape([hermes]),
+            shape([homePresentation(id: 1, lifecycle: .tallying(startedAt: homeNow))])
+        )
+    }
+
+    func testAMatchKeepsItsScreenThroughTheWeekAndChangesItOnlyAtTheResult() {
+        XCTAssertEqual(
+            competitionDestinationScreen(.scheduled),
+            competitionDestinationScreen(.tallying(startedAt: homeNow))
+        )
+        XCTAssertEqual(competitionDestinationScreen(.active(dayOrdinal: 7)), .match)
+        XCTAssertEqual(
+            competitionDestinationScreen(.completed(
+                outcome: .win, basis: .bestAvailable, completedAt: homeNow
+            )),
+            .result
+        )
+        XCTAssertEqual(
+            competitionDestinationScreen(.cancelled(at: homeNow)),
+            .closed
+        )
+    }
+
     func testResultLeavesHomeOnTheFourthDayAfterTheWeek() throws {
         let onTime = homePresentation(
             id: 1,

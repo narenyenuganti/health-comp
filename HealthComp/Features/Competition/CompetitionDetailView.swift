@@ -510,7 +510,7 @@ struct CompetitionDetailView: View {
     }
 }
 
-private extension View {
+extension View {
     @ViewBuilder
     func refreshable(_ action: (@Sendable () async -> Void)?) -> some View {
         if let action {

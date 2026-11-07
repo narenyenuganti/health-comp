@@ -96,7 +96,8 @@ struct MainTabView: View {
                 )
             )
         ) {
-            Group {
+            // Home lays out finished under the loader, which fades off it.
+            ZStack {
                 if let publication = store.competition.publication {
                     CompetitionSharingView(
                         publication: publication,
@@ -134,18 +135,21 @@ struct MainTabView: View {
                         commandIDsInFlight: store.competition.commandIDsInFlight,
                         retry: retry,
                         practice: practiceStart(publication),
-                        isPracticePresented: $isPracticePresented
+                        isPracticePresented: $isPracticePresented,
+                        refresh: { [store] in
+                            await store.send(.competition(.pullToRefresh)).finish()
+                        }
                     )
-                    .refreshable {
-                        await store.send(.competition(.pullToRefresh)).finish()
-                    }
+                    .transition(.identity)
                 } else {
-                    ProgressView("Loading matches…")
-                        .foregroundStyle(Theme.secondary)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .background(Theme.ground)
+                    AppProgressView(title: "Loading matches…")
+                        .ignoresSafeArea()
+                        .allowsHitTesting(false)
+                        .transition(.opacity)
+                        .zIndex(1)
                 }
             }
+            .animation(Motion.fade, value: store.competition.publication == nil)
             .toolbar { homeToolbar }
             // Outside Home's `.refreshable`, which a sheet presented from
             // inside it inherits: a drag down would refresh, not close.
@@ -171,7 +175,11 @@ struct MainTabView: View {
                         .toolbarRole(.editor)
                     }
                 case let .competition(id):
-                    destination(for: id)
+                    let screen = destinationScreen(for: id)
+                    // A ZStack, so old and new share the slot. Into a result
+                    // keeps the cut: the Verdict is that transition.
+                    ZStack { destination(for: id) }
+                        .animation(screen == .result ? nil : Motion.fade, value: screen)
                         .toolbarRole(.editor)
                 }
             }
@@ -186,6 +194,7 @@ struct MainTabView: View {
                 continueTapped: { store.send(.notificationPromptTurnOnTapped) },
                 notNowTapped: { store.send(.notificationPromptNotNowTapped) }
             )
+            .presentationBackground(Theme.ground)
         }
     }
 
@@ -203,7 +212,10 @@ struct MainTabView: View {
     @ToolbarContentBuilder
     private var homeToolbar: some ToolbarContent {
         ToolbarItem(placement: .topBarLeading) {
-            BrandMark().frame(height: 26)
+            // The loader's mark stands in until Home arrives.
+            BrandMark()
+                .frame(height: 26)
+                .opacity(store.competition.publication == nil ? 0 : 1)
         }
         ToolbarItemGroup(placement: .topBarTrailing) {
             // Invitations are private links between real people.
@@ -273,6 +285,12 @@ struct MainTabView: View {
                 }
             }
         )
+    }
+
+    private func destinationScreen(for id: CompetitionID) -> CompetitionDestinationScreen? {
+        store.competition.publication?.dashboard.competitions
+            .first { $0.id == id }
+            .map { competitionDestinationScreen($0.lifecycle) }
     }
 
     @ViewBuilder
@@ -477,6 +495,26 @@ struct MainTabView: View {
     }
 }
 
+/// Which screen a match draws: the animation key for its pushed destination.
+/// The lifecycle's dates and scores change without changing the screen.
+enum CompetitionDestinationScreen: Equatable {
+    case invite
+    case match
+    case result
+    case closed
+}
+
+func competitionDestinationScreen(
+    _ lifecycle: LocalCompetitionLifecyclePresentation
+) -> CompetitionDestinationScreen {
+    switch lifecycle {
+    case .pending: .invite
+    case .scheduled, .active, .endsToday, .tallying: .match
+    case .completed, .archived: .result
+    case .declined, .expired, .cancelled: .closed
+    }
+}
+
 /// A challenge that closed while its screen was open, drawn in place. After
 /// a day the match leaves the dashboard and the screen pops.
 private struct CompetitionClosedChallengeView: View {
@@ -508,11 +546,10 @@ private struct CompetitionClosedChallengeView: View {
         } actions: {
             if competitionIsClosedOutgoing(competition.lifecycle), canChallengeAgain {
                 Button(action: challengeAgain) {
-                    if isInFlight {
-                        ProgressView()
-                    } else {
-                        Text("Challenge \(competition.opponentDisplayName) Again")
-                    }
+                    BusyLabel(
+                        "Challenge \(competition.opponentDisplayName) Again",
+                        isBusy: isInFlight
+                    )
                 }
                 .buttonStyle(PrimaryButtonStyle())
                 .disabled(isInFlight)
