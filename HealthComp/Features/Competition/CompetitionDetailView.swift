@@ -30,8 +30,8 @@ struct CompetitionDetailView: View {
     private var reactionsSeen = CompetitionReactionsSeen()
     @AppStorage(CompetitionMotionSeen.storageKey)
     private var motionSeen = CompetitionMotionSeen()
-    /// Your bars already grew on this visit, so later flips stay still.
-    @State private var weekDrew = false
+    /// Week has shown on this visit, so later flips and new days settle.
+    @State private var weekShown = false
     @State private var showsEndPracticeConfirmation = false
 
     /// Today's numbers or the whole week; the scoreboard stays above both.
@@ -383,9 +383,10 @@ struct CompetitionDetailView: View {
     }
 
     /// The Week: your bars grow only when the week has gained a day since they
-    /// last drew, and only on the first flip of a visit.
+    /// last drew, and only on the first flip of a visit. Latched on that flip:
+    /// a day landing while Week is open settles, it never holds bars at zero.
     private var weekGrows: Bool {
-        !weekDrew && !reduceMotion && !voiceOver && motionSeen.weekGained(competition)
+        !weekShown && !reduceMotion && !voiceOver && motionSeen.weekGained(competition)
     }
 
     private var weekSection: some View {
@@ -406,9 +407,9 @@ struct CompetitionDetailView: View {
             )
         }
         .onAppear {
-            guard weekGrows else { return }
-            weekDrew = true
-            motionSeen = motionSeen.drawingWeek(competition)
+            // Only a real draw closes the gate for the day.
+            if weekGrows { motionSeen = motionSeen.drawingWeek(competition) }
+            weekShown = true
         }
     }
 
