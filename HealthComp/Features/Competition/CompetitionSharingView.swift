@@ -1120,6 +1120,7 @@ struct CompetitionIssueLine: View {
                     Group {
                         if isRetrying {
                             ProgressView()
+                                .waitingFade()
                         } else {
                             Text("Retry")
                                 .font(.subheadline.weight(.semibold))

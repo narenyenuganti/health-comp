@@ -2465,7 +2465,8 @@ final class CompetitionPresentationTests: XCTestCase {
         opponentIdentity: String = RemoteCompetitionOpponentIdentity.identity(
             for: UUID(uuidString: "86000000-0000-4000-8000-000000000002")!
         ),
-        reactions: [CompetitionReaction] = []
+        reactions: [CompetitionReaction] = [],
+        days: [LocalCompetitionDayPresentation] = []
     ) -> LocalCompetitionPresentation {
         var presentation = LocalCompetitionPresentation(
             id: Self.reactionMatchID,
@@ -2476,7 +2477,7 @@ final class CompetitionPresentationTests: XCTestCase {
             acceptedConfiguration: nil,
             userPoints: 0,
             opponentPoints: 0,
-            days: [],
+            days: days,
             currentDayOrdinal: nil,
             lastRefresh: nil,
             tally: nil,
@@ -2577,6 +2578,39 @@ final class CompetitionPresentationTests: XCTestCase {
         XCTAssertEqual(CompetitionReactionsSeen(rawValue: marked.rawValue), marked)
         XCTAssertEqual(CompetitionReactionsSeen(rawValue: CompetitionReactionsSeen().rawValue), .init())
         XCTAssertNil(CompetitionReactionsSeen(rawValue: "not json"))
+    }
+
+    func testWeekGrowsOnlyWhenTheNewestScoredDayIsNew() {
+        func match(_ points: [Double?]) -> LocalCompetitionPresentation {
+            reactionPresentation(days: points.enumerated().map { index, points in
+                LocalCompetitionDayPresentation(
+                    day: presentation(.observed, points: nil).day,
+                    ordinal: index + 1,
+                    ownerAcceptedPoints: points,
+                    ownerLatestAvailability: .observed,
+                    opponentRevealedPoints: 100
+                )
+            })
+        }
+        let seen = CompetitionMotionSeen()
+
+        XCTAssertFalse(seen.weekGained(match([nil, nil])), "no bars of yours to grow")
+        XCTAssertTrue(seen.weekGained(match([120, nil])))
+
+        let drawn = seen.drawingWeek(match([120, 200]))
+        XCTAssertFalse(drawn.weekGained(match([120, 200])), "once a day, not once a push")
+        XCTAssertFalse(drawn.weekGained(match([120, 240])), "a score moving is not a new day")
+        XCTAssertFalse(drawn.weekGained(match([120, nil])))
+        XCTAssertTrue(drawn.weekGained(match([120, 240, 10])))
+        XCTAssertEqual(CompetitionMotionSeen(rawValue: drawn.rawValue), drawn)
+        XCTAssertNil(CompetitionMotionSeen(rawValue: "not json"))
+    }
+
+    func testLeadSideComesFromTheNumbersAsShown() {
+        XCTAssertEqual(competitionLeadSide(userPoints: 12, opponentPoints: 3), .you)
+        XCTAssertEqual(competitionLeadSide(userPoints: 3, opponentPoints: 12), .them)
+        XCTAssertEqual(competitionLeadSide(userPoints: 5, opponentPoints: 5), .square)
+        XCTAssertEqual(competitionLeadSide(userPoints: 300.4, opponentPoints: 300.2), .square)
     }
 
     func testCanReactOnlyWithARealOtherPersonAfterTheMatchStarts() {
