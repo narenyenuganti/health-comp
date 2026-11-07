@@ -132,7 +132,7 @@ final class WidgetUITests: XCTestCase {
             addLockScreenWidgets()
         }
         XCUIDevice.shared.press(.home)
-        for scenario in ["trailing", "live", "scheduled", "live", "several", "noSam"] {
+        for scenario in ["trailing", "live", "lastDay", "live", "scheduled", "live", "several", "noSam"] {
             changeWithWidgetShowing(scenario, delay: 9) { showLockScreen() }
             sleep(9)
             shot("rolled-lock-\(scenario)")
