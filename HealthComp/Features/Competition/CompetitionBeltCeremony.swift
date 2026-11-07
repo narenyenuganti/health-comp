@@ -267,6 +267,8 @@ private struct CompetitionBeltCeremonyPlayer: View {
                     .transition(Motion.appear)
             }
         }
+        // The words' 38% is of the whole screen, where the clips hold clear.
+        .ignoresSafeArea()
         .environment(\.colorScheme, .dark)
         .statusBarHidden()
         .opacity(isLeaving ? 0 : 1)
@@ -291,7 +293,7 @@ private struct CompetitionBeltCeremonyPlayer: View {
     }
 
     private func showPoster() async {
-        guard let image = UIImage(named: "\(script.clip)-final.png") else { return }
+        guard let image = UIImage(named: "\(script.clip)-final.jpg") else { return }
         thuds += 1
         withAnimation(Motion.fade) {
             poster = image

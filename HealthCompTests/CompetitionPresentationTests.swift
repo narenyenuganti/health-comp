@@ -1844,7 +1844,12 @@ final class CompetitionPresentationTests: XCTestCase {
             let duration = try await asset.load(.duration).seconds
             XCTAssertLessThan(clip.settle, duration, name)
             XCTAssertFalse(clip.impacts.isEmpty, name)
-            XCTAssertNotNil(UIImage(named: "\(name)-final.png"), name)
+            XCTAssertNotNil(UIImage(named: "\(name)-final.jpg"), name)
+            // The words land on the last settle beat, where the hold starts.
+            let json = try XCTUnwrap(Bundle.main.url(forResource: name, withExtension: "json"))
+            let file = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: json)) as? [String: Any])
+            let holdStart = try XCTUnwrap(file["holdStart"] as? Double, name)
+            XCTAssertEqual(clip.settle, holdStart, accuracy: 0.001, name)
         }
         XCTAssertEqual(CompetitionBeltCeremonyClip(named: "lost")?.impacts.count, 1)
         XCTAssertNil(CompetitionBeltCeremonyClip(named: "missing"))

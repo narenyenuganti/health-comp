@@ -1,12 +1,12 @@
 {
  "duration": 3.2,
  "fps": 60,
- "holdStart": 2.683,
+ "holdStart": 2.367,
  "beats": [
   {
-   "t": 0.12,
+   "t": 0.05,
    "kind": "rise",
-   "label": "slash ignites"
+   "label": "slash burns"
   },
   {
    "t": 0.55,
@@ -14,32 +14,32 @@
    "label": "move bar slams"
   },
   {
-   "t": 0.7,
+   "t": 0.733,
    "kind": "impact",
    "label": "exercise bar slams"
   },
   {
-   "t": 0.85,
+   "t": 0.867,
    "kind": "impact",
    "label": "stand bar slams, plate forges"
   },
   {
-   "t": 1.233,
+   "t": 1.45,
    "kind": "rise",
-   "label": "strap rolls out"
+   "label": "strap swings out"
   },
   {
-   "t": 1.683,
+   "t": 1.75,
    "kind": "impact",
    "label": "strap snaps taut"
   },
   {
-   "t": 2.033,
+   "t": 1.9,
    "kind": "rise",
    "label": "sheen sweep"
   },
   {
-   "t": 2.683,
+   "t": 2.367,
    "kind": "settle",
    "label": "hold"
   }
