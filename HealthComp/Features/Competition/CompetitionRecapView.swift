@@ -525,19 +525,23 @@ struct CompetitionRecapSheet: View {
             .aspectRatio(4 / 5, contentMode: .fit)
             .overlay {
                 GeometryReader { proxy in
-                    CompetitionRecapCard(recap: recap)
-                        .environment(\.colorScheme, .light)
-                        .environment(\.dynamicTypeSize, .large)
-                        .scaleEffect(
-                            proxy.size.width / CompetitionRecapCard.size.width,
-                            anchor: .topLeading
-                        )
-                        // A picture of the card: the text clipping audit
-                        // reads its Text otherwise, ignored or not.
-                        .drawingGroup()
+                    let scale = proxy.size.width / CompetitionRecapCard.size.width
+                    // A Canvas, not .scaleEffect: the text clipping audit
+                    // flags every line of scaled Text, hidden or not.
+                    Canvas { context, _ in
+                        guard let card = context.resolveSymbol(id: 0) else { return }
+                        context.scaleBy(x: scale, y: scale)
+                        context.draw(card, at: .zero, anchor: .topLeading)
+                    } symbols: {
+                        CompetitionRecapCard(recap: recap)
+                            .environment(\.colorScheme, .light)
+                            .environment(\.dynamicTypeSize, .large)
+                            .tag(0)
+                    }
+                    .id(hidesName)
+                    .transition(Motion.appear)
                 }
             }
-            .animation(Motion.fade, value: hidesName)
             .clipShape(shape)
             .overlay(shape.strokeBorder(Theme.hairline, lineWidth: 1))
             .frame(maxWidth: 320)

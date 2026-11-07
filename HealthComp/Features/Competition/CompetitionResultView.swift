@@ -608,6 +608,9 @@ struct CompetitionResultView: View {
             rematchStateContent
                 .transition(Motion.appear)
         }
+        // A taller state starts at its final size: this holds it inside the
+        // height as it settles, off the page above.
+        .clipped()
     }
 
     @ViewBuilder
