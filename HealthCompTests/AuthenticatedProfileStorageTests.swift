@@ -163,7 +163,7 @@ final class AuthenticatedProfileStorageTests: XCTestCase {
         let siblingSentinel = rootB.appendingPathComponent("keep.txt")
         try Data("profile-b-must-survive".utf8).write(to: siblingSentinel)
         UserDefaults.standard.set("{}", forKey: CompetitionReactionsSeen.storageKey)
-        UserDefaults.standard.set("", forKey: CompetitionMotionSeen.storageKey)
+        UserDefaults.standard.set("{}", forKey: CompetitionMotionSeen.storageKey)
 
         try await storage.teardown(profileA)
 

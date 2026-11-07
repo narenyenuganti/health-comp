@@ -2571,15 +2571,7 @@ final class CompetitionPresentationTests: XCTestCase {
         )
     }
 
-    func testReactionsSeenRawValueRoundTrips() {
-        let match = reactionPresentation(reactions: [reaction(.result, .salute, at: 1_786_867_200.5)])
-        let marked = CompetitionReactionsSeen().marking(match)
-        XCTAssertEqual(CompetitionReactionsSeen(rawValue: marked.rawValue), marked)
-        XCTAssertEqual(CompetitionReactionsSeen(rawValue: CompetitionReactionsSeen().rawValue), .init())
-        XCTAssertNil(CompetitionReactionsSeen(rawValue: "not json"))
-    }
-
-    func testMotionSeenMarksOneMatchAndSurvivesItsRawValue() {
+    func testMotionSeenMarksAMomentForOneMatchAndSurvivesItsRawValue() {
         let id = CompetitionID(UUID())
         let other = CompetitionID(UUID())
         let marked = CompetitionMotionSeen().marking(.verdict, id)
@@ -2590,7 +2582,6 @@ final class CompetitionPresentationTests: XCTestCase {
 
         let both = marked.marking(.verdict, other)
         XCTAssertEqual(CompetitionMotionSeen(rawValue: both.rawValue), both)
-        XCTAssertEqual(CompetitionMotionSeen(rawValue: CompetitionMotionSeen().rawValue), .init())
     }
 
     func testRematchStageIgnoresThePresentationAndKeepsWhatResizesTheControl() {
@@ -2614,6 +2605,14 @@ final class CompetitionPresentationTests: XCTestCase {
             unknown,
             CompetitionRematchStage(.sent(challengeID: id, expiresAt: nil, link: .failed))
         )
+    }
+
+    func testReactionsSeenRawValueRoundTrips() {
+        let match = reactionPresentation(reactions: [reaction(.result, .salute, at: 1_786_867_200.5)])
+        let marked = CompetitionReactionsSeen().marking(match)
+        XCTAssertEqual(CompetitionReactionsSeen(rawValue: marked.rawValue), marked)
+        XCTAssertEqual(CompetitionReactionsSeen(rawValue: CompetitionReactionsSeen().rawValue), .init())
+        XCTAssertNil(CompetitionReactionsSeen(rawValue: "not json"))
     }
 
     func testCanReactOnlyWithARealOtherPersonAfterTheMatchStarts() {

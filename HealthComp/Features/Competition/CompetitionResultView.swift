@@ -1093,36 +1093,22 @@ enum CompetitionRematchStage: Equatable {
     }
 }
 
-/// Moments that play once per match on this phone. Add a case for another;
-/// each is marked on its own. Write the mark on leaving the screen, not on
-/// appear, or the moment ends itself mid-play.
-struct CompetitionMotionSeen: RawRepresentable, Equatable {
+/// Moments that play once per match on this phone, marked in the same map
+/// as the Week under keys of their own. Add a case for another. Write the
+/// mark on leaving the screen, not on appear, or the moment ends itself
+/// mid-play.
+extension CompetitionMotionSeen {
     enum Moment: String {
         case verdict
     }
 
-    static let storageKey = "healthcomp.motionSeen"
-
-    // ponytail: never pruned (about 45 bytes per match); prune against the dashboard if that ever matters.
-    private var marks: Set<String>
-
-    init() { marks = [] }
-
-    init(rawValue: String) {
-        marks = Set(rawValue.split(separator: ",").map(String.init))
-    }
-
-    var rawValue: String {
-        marks.sorted().joined(separator: ",")
-    }
-
     func hasSeen(_ moment: Moment, _ id: CompetitionID) -> Bool {
-        marks.contains(Self.mark(moment, id))
+        weekDrawn[Self.mark(moment, id)] != nil
     }
 
     func marking(_ moment: Moment, _ id: CompetitionID) -> Self {
         var marked = self
-        marked.marks.insert(Self.mark(moment, id))
+        marked.weekDrawn[Self.mark(moment, id)] = 1
         return marked
     }
 
