@@ -244,6 +244,8 @@ final class LiveActivityUITests: XCTestCase {
         /// Taps a Test Lab button, then shows the card before the update lands.
         func tapThenLeave(_ button: String, show: () -> Void) {
             app.activate()
+            // A tap during the app's return animation can be dropped.
+            sleep(1)
             let button = app.buttons["liveActivity.preview.\(button)"]
             for _ in 0..<6 where !button.isHittable { app.swipeUp() }
             button.tap()
