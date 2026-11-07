@@ -228,6 +228,53 @@ final class LiveActivityUITests: XCTestCase {
         }
     }
 
+    /// Updates reach the running card while the island and the Lock Screen
+    /// show, for a recording to judge the score roll: points, then a lead flip.
+    func testRunningCardTakesUpdatesInTheIslandAndOnTheLockScreen() throws {
+        secondsLeft = 3600
+        let app = launch(arguments: ["-liveActivityPreviewUpdateDelay", "9"])
+        let start = app.buttons["liveActivity.preview.start"]
+        XCTAssertTrue(start.waitForExistence(timeout: 10))
+        for _ in 0..<6 where !start.isHittable { app.swipeUp() }
+        start.tap()
+        sleep(2)
+
+        /// Taps a Test Lab button, then shows the card before the update lands.
+        func tapThenLeave(_ button: String, show: () -> Void) {
+            app.activate()
+            let button = app.buttons["liveActivity.preview.\(button)"]
+            for _ in 0..<6 where !button.isHittable { app.swipeUp() }
+            button.tap()
+            XCUIDevice.shared.press(.home)
+            sleep(2)
+            allowLiveActivities()
+            show()
+        }
+
+        // Compact island.
+        tapThenLeave("update") {}
+        let you = springboardElement("You 2,202 points")
+        XCTAssertTrue(you.waitForExistence(timeout: 15), springboard.debugDescription)
+        sleep(2)
+        tapThenLeave("flip") {}
+        XCTAssertTrue(springboardElement("Sam 2,207 points").waitForExistence(timeout: 15), springboard.debugDescription)
+        sleep(2)
+
+        // Expanded island.
+        tapThenLeave("flip") { springboardElement("You 2,202 points").press(forDuration: 1.2) }
+        XCTAssertTrue(springboardElement("You 2,212 points").waitForExistence(timeout: 15), springboard.debugDescription)
+        sleep(2)
+        XCUIDevice.shared.press(.home)
+        sleep(1)
+
+        // Lock Screen card.
+        tapThenLeave("update") { showLockScreen() }
+        XCTAssertTrue(springboardElement("You 2,224 points").waitForExistence(timeout: 15), springboard.debugDescription)
+        sleep(3)
+        XCUIDevice.shared.press(.home)
+        sleep(1)
+    }
+
     /// Tapping the island opens HealthComp (the card's link).
     func testTappingTheIslandOpensHealthComp() throws {
         secondsLeft = 3600
