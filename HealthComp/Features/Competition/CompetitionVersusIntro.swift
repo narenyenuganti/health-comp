@@ -100,6 +100,12 @@ enum CompetitionVersusIntroGate {
     /// path and leaves the announcement here for the lab to show.
     static let assumesVoiceOver = ProcessInfo.processInfo.arguments.contains("--versus-voiceover")
     static let announcedKey = "healthcomp.versusAnnounced"
+    /// `--versus-hold` keeps the composed screen up until a tap: XCUITest
+    /// only looks once the app idles, and by then the intro is gone.
+    static let holds = ProcessInfo.processInfo.arguments.contains("--versus-hold")
+#else
+    static let assumesVoiceOver = false
+    static let holds = false
 #endif
 }
 
@@ -156,21 +162,13 @@ private struct CompetitionVersusIntroHost: ViewModifier {
             .onChange(of: due, initial: true) { _, due in
                 guard let due else { return }
                 seen += " \(key(due.id))"
-                if usesVoiceOver {
+                if voiceOver || CompetitionVersusIntroGate.assumesVoiceOver {
                     announce(due.announcement)
                 } else {
                     playing = due
                     isPlaying = true
                 }
             }
-    }
-
-    private var usesVoiceOver: Bool {
-#if DEBUG
-        voiceOver || CompetitionVersusIntroGate.assumesVoiceOver
-#else
-        voiceOver
-#endif
     }
 
     private func announce(_ text: String) {
@@ -316,10 +314,12 @@ private struct CompetitionVersusIntroView: View {
                 insets: insets,
                 labelLine: labelLine
             )
-            TimelineView(.animation(paused: reduceMotion)) { timeline in
+            TimelineView(.animation(paused: reduceMotion || isHeld)) { timeline in
                 frame(
                     stage,
-                    at: reduceMotion ? VersusClock.composed : timeline.date.timeIntervalSince(start)
+                    at: reduceMotion || isHeld
+                        ? VersusClock.composed
+                        : timeline.date.timeIntervalSince(start)
                 )
             }
             .frame(width: stage.size.width, height: stage.size.height)
@@ -335,16 +335,27 @@ private struct CompetitionVersusIntroView: View {
         }
         .sensoryFeedback(.impact(weight: .heavy), trigger: hits)
         .sensoryFeedback(.impact(weight: .light), trigger: stamps)
+        .onAppear { start = Date() }
         .task(id: isSkipped) { await play() }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(content.announcement)
         .accessibilityAddTraits(.isButton)
         .accessibilityAction { skip() }
-        .accessibilityIdentifier("competition.versus")
+    }
+
+    private var isHeld: Bool { CompetitionVersusIntroGate.holds && !isSkipped }
+
+    /// Off the same clock as the frames, so a haptic lands on its hit.
+    private func sleep(until t: Double) async throws {
+        try await Task.sleep(for: .seconds(max(t - Date().timeIntervalSince(start), 0)))
     }
 
     private func play() async {
         do {
+            if isHeld {
+                isShown = true
+                try await Task.sleep(for: .seconds(3_600))
+            }
             if reduceMotion {
                 if !isSkipped {
                     withAnimation(Motion.fade) { isShown = true }
@@ -354,14 +365,14 @@ private struct CompetitionVersusIntroView: View {
                 }
                 withAnimation(Motion.fade) { isShown = false }
                 try await Task.sleep(for: .seconds(0.2))
-            } else if isSkipped {
-                try await Task.sleep(for: .seconds(VersusClock.end - VersusClock.split))
             } else {
-                try await Task.sleep(for: .seconds(VersusClock.contact))
-                hits += 1
-                try await Task.sleep(for: .seconds(VersusClock.stamp - VersusClock.contact))
-                stamps += 1
-                try await Task.sleep(for: .seconds(VersusClock.end - VersusClock.stamp))
+                if !isSkipped {
+                    try await sleep(until: VersusClock.contact)
+                    hits += 1
+                    try await sleep(until: VersusClock.stamp)
+                    stamps += 1
+                }
+                try await sleep(until: VersusClock.end)
             }
             finished()
         } catch {
@@ -371,7 +382,9 @@ private struct CompetitionVersusIntroView: View {
 
     /// To the split, or Reduce Motion's fade out.
     private func skip() {
-        guard !isSkipped, Date().timeIntervalSince(start) < VersusClock.split else { return }
+        guard isHeld || !isSkipped && Date().timeIntervalSince(start) < VersusClock.split else {
+            return
+        }
         start = Date().addingTimeInterval(-VersusClock.split)
         isSkipped = true
     }
@@ -431,7 +444,7 @@ private struct CompetitionVersusIntroView: View {
                 .offset(x: -side * (12 - 14 * creep), y: side * (6 - 7 * creep))
                 .position(
                     x: (isYours ? 240 : 150) * stage.kx,
-                    y: (isYours ? 433 : 316) * stage.ky
+                    y: (isYours ? 456 : 316) * stage.ky
                 )
         }
         .clipShape(VersusSlashSide(isYours: isYours, centerY: stage.center.y, inset: 5))

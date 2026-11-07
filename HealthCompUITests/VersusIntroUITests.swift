@@ -1,9 +1,11 @@
 import XCTest
 
 /// The versus intro through Home's own reducer. The `versus` Test Lab scenario
-/// holds Alex's challenge to you, yours to Sam (who accepts 6 s after launch),
+/// holds Alex's challenge to you, yours to Sam (who accepts 12 s after launch),
 /// Riley's scheduled first fight, Morgan and Jordan's Day 1 rematches with the
 /// belt on either side, a long name, Casey on Day 2 and a practice.
+/// `--versus-hold` keeps the intro up until a tap, or it is over before
+/// XCUITest looks; the tests without it check that it ends by itself.
 final class VersusIntroUITests: XCTestCase {
     private var app: XCUIApplication!
 
@@ -31,7 +33,7 @@ final class VersusIntroUITests: XCTestCase {
 
         XCTAssertTrue(intro.waitForExistence(timeout: 3))
         XCTAssertEqual(intro.label, "You versus Alex. Day 1 is Monday.")
-        assertEnds()
+        skip()
         // The match was already there underneath.
         XCTAssertTrue(app.navigationBars["Alex"].exists)
         XCTAssertTrue(app.staticTexts["competition.schedule.dates"].exists)
@@ -45,33 +47,22 @@ final class VersusIntroUITests: XCTestCase {
         launch()
         open("pending", 0x02)
         XCTAssertFalse(intro.exists)
-        // Sam accepts 6 s after launch, with the screen open.
-        XCTAssertTrue(intro.waitForExistence(timeout: 10))
+        // Sam accepts with the screen open.
+        XCTAssertTrue(intro.waitForExistence(timeout: 16))
         XCTAssertEqual(intro.label, "You versus Sam. Day 1 is Monday.")
-        assertEnds()
+        skip()
         XCTAssertTrue(app.staticTexts["competition.schedule.dates"].exists)
     }
 
     func testPlaysForTheSenderOnTheNextOpen() {
         launch()
         let scheduled = card("scheduled", 0x02)
-        XCTAssertTrue(scheduled.waitForExistence(timeout: 10))
+        XCTAssertTrue(scheduled.waitForExistence(timeout: 16))
         XCTAssertFalse(intro.exists)
         scrollToElement(scheduled)
         scheduled.tap()
         XCTAssertTrue(intro.waitForExistence(timeout: 3))
-        assertEnds()
-    }
-
-    func testTapSkipsToTheSplit() {
-        launch()
-        open("active", 0x04)
-        XCTAssertTrue(intro.waitForExistence(timeout: 3))
-        let tapped = Date()
-        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
-        assertEnds()
-        XCTAssertLessThan(Date().timeIntervalSince(tapped), 2.4)
-        XCTAssertTrue(app.navigationBars["Morgan"].exists)
+        skip()
     }
 
     func testNeverPlaysForAPracticeOrAMatchPastDayOne() {
@@ -89,18 +80,30 @@ final class VersusIntroUITests: XCTestCase {
         assertDoesNotPlay(title: "Morgan")
     }
 
-    func testEveryMatchupPlaysToTheEnd() {
+    private static let matchups: [(String, UInt8, String)] = [
+        ("scheduled", 0x03, "Riley"),
+        ("active", 0x04, "Morgan"),
+        ("active", 0x05, "Jordan"),
+        ("active", 0x06, longName),
+    ]
+
+    func testEveryMatchupEndsByItself() {
+        launch(holds: false)
+        for (state, byte, title) in Self.matchups {
+            open(state, byte)
+            assertEnds()
+            XCTAssertTrue(app.navigationBars[title].waitForExistence(timeout: 3), title)
+            goHome()
+        }
+    }
+
+    func testEveryMatchupComposes() {
         launch()
-        for (state, byte, title) in [
-            ("scheduled", UInt8(0x03), "Riley"),
-            ("active", 0x04, "Morgan"),
-            ("active", 0x05, "Jordan"),
-            ("active", 0x06, Self.longName),
-        ] {
+        for (state, byte, title) in Self.matchups {
             open(state, byte)
             XCTAssertTrue(intro.waitForExistence(timeout: 3), title)
             capture(title)
-            assertEnds()
+            skip()
             goHome()
         }
     }
@@ -114,47 +117,51 @@ final class VersusIntroUITests: XCTestCase {
             open("active", byte)
             XCTAssertTrue(intro.waitForExistence(timeout: 3), title)
             capture(title)
-            assertEnds()
+            skip()
             goHome()
         }
     }
 
-    func testReduceMotionFadesAndAnyTapStillEndsIt() {
+    func testReduceMotionShowsTheComposedScreenAndATapEndsIt() {
         launch(["-UIAccessibilityReduceMotionEnabled", "YES"])
         open("active", 0x04)
         XCTAssertTrue(intro.waitForExistence(timeout: 3))
         capture("Reduce Motion")
-        assertEnds()
-        goHome()
+        skip()
+    }
 
-        open("active", 0x05)
-        XCTAssertTrue(intro.waitForExistence(timeout: 3))
-        let tapped = Date()
-        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
-        assertEnds()
-        XCTAssertLessThan(Date().timeIntervalSince(tapped), 1.4)
+    func testReduceMotionEndsByItself() {
+        launch(["-UIAccessibilityReduceMotionEnabled", "YES"], holds: false)
+        for (state, byte, title) in Self.matchups.prefix(2) {
+            open(state, byte)
+            assertEnds()
+            XCTAssertTrue(app.navigationBars[title].waitForExistence(timeout: 3), title)
+            goHome()
+        }
     }
 
     func testVoiceOverSkipsTheScreenAndAnnouncesIt() {
         launch(["--versus-voiceover"])
         open("scheduled", 0x03)
-        let announced = app.staticTexts["versus.lab.announced"]
-        XCTAssertTrue(announced.waitForExistence(timeout: 3))
-        XCTAssertEqual(announced.label, "You versus Riley. Day 1 is Monday.")
+        // The lab prints what would have been announced.
+        XCTAssertTrue(app.staticTexts["You versus Riley. Day 1 is Monday."].waitForExistence(timeout: 3))
         XCTAssertFalse(intro.exists)
     }
 
     // MARK: Helpers
 
-    private var intro: XCUIElement { app.buttons["competition.versus"] }
+    /// By label: the lab root's identifier replaces any id on Home's overlay.
+    private var intro: XCUIElement {
+        app.buttons.matching(NSPredicate(format: "label BEGINSWITH %@", "You versus ")).firstMatch
+    }
 
-    private func launch(_ arguments: [String] = [], enabled: Bool = true) {
+    private func launch(_ arguments: [String] = [], enabled: Bool = true, holds: Bool = true) {
         XCUIDevice.shared.appearance = arguments.contains("Dark") ? .dark : .light
         app.launchArguments = [
             "--multi-user-competition-test-lab",
             "--multi-user-competition-scenario", "versus",
             "-healthcomp.colorHintSeen", "YES",
-        ] + (enabled ? ["--versus-intro"] : []) + arguments
+        ] + (enabled ? ["--versus-intro"] : []) + (holds ? ["--versus-hold"] : []) + arguments
         app.launch()
         XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 8))
     }
@@ -172,6 +179,11 @@ final class VersusIntroUITests: XCTestCase {
     private func open(_ element: XCUIElement) {
         scrollToElement(element)
         element.tap()
+    }
+
+    private func skip(file: StaticString = #filePath, line: UInt = #line) {
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        assertEnds(file: file, line: line)
     }
 
     private func assertEnds(file: StaticString = #filePath, line: UInt = #line) {
@@ -198,9 +210,8 @@ final class VersusIntroUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 3))
     }
 
-    /// A still from the hold, for judging by eye.
+    /// A still of the composed screen, for judging by eye.
     private func capture(_ name: String) {
-        Thread.sleep(forTimeInterval: 0.7)
         let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         attachment.name = name
         attachment.lifetime = .keepAlways

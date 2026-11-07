@@ -65,7 +65,7 @@ enum MultiUserCompetitionTestLabScenario:
     /// nudge; Riley; and a practice match.
     case featureRound = "feature-round"
     /// The versus intro through Home's own reducer: Alex's challenge to
-    /// accept, yours to Sam (who accepts 6 s after launch), first fights,
+    /// accept, yours to Sam (who accepts 12 s after launch), first fights,
     /// rematches with either belt, a long name, Day 2, and a practice.
     /// Pair with `--versus-intro`.
     case versus
@@ -1211,7 +1211,7 @@ private struct MultiUserCompetitionVersusTestLabView: View {
                     let stream = hub.stream()
                     server.publish()
                     Task {
-                        try? await Task.sleep(for: .seconds(6))
+                        try? await Task.sleep(for: .seconds(12))
                         _ = server.accept(Fixtures.versusID(0x02))
                     }
                     return stream
@@ -1240,10 +1240,9 @@ private struct MultiUserCompetitionVersusTestLabView: View {
         MainTabView(store: store)
             .overlay(alignment: .bottom) {
                 if !announced.isEmpty {
-                    Text(announced).accessibilityIdentifier("versus.lab.announced")
+                    Text(announced)
                 }
             }
-            .accessibilityIdentifier("multiuser.versus.root")
     }
 }
 
