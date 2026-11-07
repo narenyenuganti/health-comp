@@ -253,7 +253,8 @@ struct AppRootView: View {
             case .signedOut, .settingUpProfile, .launchFailure:
                 AccountView(
                     store: store.scope(state: \.account, action: \.account),
-                    hasPendingChallenge: store.hasPendingChallenge
+                    hasPendingChallenge: store.hasPendingChallenge,
+                    held: store.account
                 )
                 .transition(Motion.appear)
                 .zIndex(1)
@@ -314,6 +315,8 @@ struct AppProgressView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.ground)
         .ignoresSafeArea()
+        // One flat layer: faded in parts, the mark dips over its twin below.
+        .compositingGroup()
         .allowsHitTesting(false)
     }
 
@@ -358,6 +361,16 @@ private struct AccountSheet: View {
     let accountStore: StoreOf<AccountFeature>
     let done: () -> Void
 
+    @AppStorage(AppAppearance.storageKey)
+    private var appearance = AppAppearance.system
+
+    /// A nil preference doesn't reach an open sheet, so going back to System
+    /// here names the iPhone's own setting instead.
+    private var colorScheme: ColorScheme {
+        appearance.colorScheme
+            ?? (UIScreen.main.traitCollection.userInterfaceStyle == .dark ? .dark : .light)
+    }
+
     var body: some View {
         NavigationStack {
             accountSettings
@@ -367,6 +380,7 @@ private struct AccountSheet: View {
                 }
             }
         }
+        .preferredColorScheme(colorScheme)
         .task { mainStore.send(.refreshHealthAccess) }
     }
 

@@ -292,95 +292,92 @@ struct AccountSettingsView: View {
 
     private var challengeLinkSection: some View {
         Section {
-            // A ZStack, so the old state and the new share the row as they cross.
-            ZStack(alignment: .topLeading) {
-                if let url = challengeLink?.url {
-                    VStack(alignment: .leading, spacing: 12) {
-                        let isResetting = challengeLink?.isResetting == true
-                        Text(Self.displayText(url))
-                            .font(.callout.monospaced())
-                            .foregroundStyle(Theme.ink)
-                            .textSelection(.enabled)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .accessibilityLabel("Your challenge link")
-                            .accessibilityValue(Self.displayText(url))
-                            .accessibilityIdentifier("account.challenge-link.url")
-                            .contentTransition(.opacity)
-                            .animation(Motion.fade, value: url)
-                        let buttons = Group {
-                            Button {
-                                showsChallengeCode = true
-                            } label: {
-                                Label("Show Code", systemImage: "qrcode")
-                            }
-                            .buttonStyle(SecondaryButtonStyle())
-                            .disabled(isResetting)
-                            .accessibilityIdentifier("account.challenge-link.show-code")
-                            ShareLink(
-                                item: url,
-                                subject: Text("My HealthComp challenge link"),
-                                message: Text("Challenge me to a week of rings on HealthComp.")
-                            ) {
-                                Label("Share Link", systemImage: "square.and.arrow.up")
-                            }
-                            .buttonStyle(PrimaryButtonStyle())
-                            .disabled(isResetting)
-                            .accessibilityIdentifier("account.challenge-link.share")
+            // Separate rows, so the List settles the swap. Inside one cell it cuts.
+            if let url = challengeLink?.url {
+                VStack(alignment: .leading, spacing: 12) {
+                    let isResetting = challengeLink?.isResetting == true
+                    Text(Self.displayText(url))
+                        .font(.callout.monospaced())
+                        .foregroundStyle(Theme.ink)
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityLabel("Your challenge link")
+                        .accessibilityValue(Self.displayText(url))
+                        .accessibilityIdentifier("account.challenge-link.url")
+                        .contentTransition(.opacity)
+                        .animation(Motion.fade, value: url)
+                    let buttons = Group {
+                        Button {
+                            showsChallengeCode = true
+                        } label: {
+                            Label("Show Code", systemImage: "qrcode")
                         }
-                        if dynamicTypeSize.isAccessibilitySize {
-                            VStack(spacing: 8) { buttons }
-                        } else {
-                            HStack(spacing: 8) { buttons }
+                        .buttonStyle(SecondaryButtonStyle())
+                        .disabled(isResetting)
+                        .accessibilityIdentifier("account.challenge-link.show-code")
+                        ShareLink(
+                            item: url,
+                            subject: Text("My HealthComp challenge link"),
+                            message: Text("Challenge me to a week of rings on HealthComp.")
+                        ) {
+                            Label("Share Link", systemImage: "square.and.arrow.up")
                         }
-                        // The 44 pt frame sits inside the label so the hit area gets it too.
-                        Button { isResetLinkConfirmationPresented = true } label: {
-                            Text("Reset Link").frame(minHeight: 44).contentShape(Rectangle())
-                        }
-                            .buttonStyle(.borderless)
-                            .disabled(isResetting)
-                            .accessibilityValue(isResetting ? "Resetting" : "")
-                            .accessibilityIdentifier("account.challenge-link.reset")
-                            .alert(
-                                "Reset your challenge link?",
-                                isPresented: $isResetLinkConfirmationPresented
-                            ) {
-                                Button("Reset Link", role: .destructive) { challengeLink?.reset() }
-                                    .accessibilityIdentifier("account.challenge-link.reset.confirm")
-                                Button("Cancel", role: .cancel) {}
-                            } message: {
-                                Text("Your old link stops working. Challenges already sent stay.")
-                            }
-                        if challengeLink?.resetFailed == true {
-                            Text("Couldn’t reset your link. Try again.")
-                                .font(.callout)
-                                .foregroundStyle(Theme.ink)
-                                .fixedSize(horizontal: false, vertical: true)
-                                .accessibilityIdentifier("account.challenge-link.reset-error")
-                                .transition(Motion.appear)
-                        }
-                        Text("Anyone with this link can challenge you. Reset it to turn off the old one; challenges already sent stay.")
-                            .font(.caption)
-                            .foregroundStyle(Theme.secondary)
-                            .fixedSize(horizontal: false, vertical: true)
+                        .buttonStyle(PrimaryButtonStyle())
+                        .disabled(isResetting)
+                        .accessibilityIdentifier("account.challenge-link.share")
                     }
-                    .transition(Motion.appear)
-                } else if challengeLink?.failed == true {
-                    VStack(alignment: .leading, spacing: 12) {
-                        Text("Couldn’t load your link.")
+                    if dynamicTypeSize.isAccessibilitySize {
+                        VStack(spacing: 8) { buttons }
+                    } else {
+                        HStack(spacing: 8) { buttons }
+                    }
+                    // The 44 pt frame sits inside the label so the hit area gets it too.
+                    Button { isResetLinkConfirmationPresented = true } label: {
+                        Text("Reset Link").frame(minHeight: 44).contentShape(Rectangle())
+                    }
+                        .buttonStyle(.borderless)
+                        .disabled(isResetting)
+                        .accessibilityValue(isResetting ? "Resetting" : "")
+                        .accessibilityIdentifier("account.challenge-link.reset")
+                        .alert(
+                            "Reset your challenge link?",
+                            isPresented: $isResetLinkConfirmationPresented
+                        ) {
+                            Button("Reset Link", role: .destructive) { challengeLink?.reset() }
+                                .accessibilityIdentifier("account.challenge-link.reset.confirm")
+                            Button("Cancel", role: .cancel) {}
+                        } message: {
+                            Text("Your old link stops working. Challenges already sent stay.")
+                        }
+                    if challengeLink?.resetFailed == true {
+                        Text("Couldn’t reset your link. Try again.")
                             .font(.callout)
                             .foregroundStyle(Theme.ink)
-                        Button("Try Again") { challengeLink?.load() }
-                            .buttonStyle(SecondaryButtonStyle())
-                            .accessibilityIdentifier("account.challenge-link.retry")
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityIdentifier("account.challenge-link.reset-error")
+                            .transition(Motion.appear)
                     }
-                    .transition(Motion.appear)
-                } else {
-                    ProgressView("Loading your link…")
-                        .frame(maxWidth: .infinity, minHeight: 44)
-                        .transition(Motion.appear)
+                    Text("Anyone with this link can challenge you. Reset it to turn off the old one; challenges already sent stay.")
+                        .font(.caption)
+                        .foregroundStyle(Theme.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
+                .padding(.vertical, 4)
+            } else if challengeLink?.failed == true {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("Couldn’t load your link.")
+                        .font(.callout)
+                        .foregroundStyle(Theme.ink)
+                    Button("Try Again") { challengeLink?.load() }
+                        .buttonStyle(SecondaryButtonStyle())
+                        .accessibilityIdentifier("account.challenge-link.retry")
+                }
+                .padding(.vertical, 4)
+            } else {
+                ProgressView("Loading your link…")
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .padding(.vertical, 4)
             }
-            .padding(.vertical, 4)
         } header: {
             SectionLabel("YOUR CHALLENGE LINK")
         }

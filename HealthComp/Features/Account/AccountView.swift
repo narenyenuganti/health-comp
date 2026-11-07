@@ -8,20 +8,25 @@ struct AccountView: View {
     let store: StoreOf<AccountFeature>
     /// A challenge link arrived before sign-in.
     var hasPendingChallenge = false
+    /// What to draw, when the host has it. The root passes it so the screen it
+    /// fades off keeps its last state: by then the store is the signed-in one.
+    var held: AccountFeature.State?
+
+    private var state: AccountFeature.State { held ?? store.state }
 
     var body: some View {
         GeometryReader { proxy in
             ScrollView {
                 VStack(spacing: 24) {
                     header
-                    if store.mode == .settingUpProfile {
+                    if state.mode == .settingUpProfile {
                         displayNameField
                             .transition(Motion.appear)
                     }
                     // Launch failure and profile conflict fold the message
                     // into the subtitle.
-                    if store.mode == .signedOut || store.mode == .settingUpProfile,
-                       let message = store.message {
+                    if state.mode == .signedOut || state.mode == .settingUpProfile,
+                       let message = state.message {
                         Text(message.text)
                             .font(.callout)
                             .foregroundStyle(Theme.ink)
@@ -39,10 +44,10 @@ struct AccountView: View {
         }
         .background(Theme.ground)
         .task { store.send(.appeared) }
-        .moving(Motion.settle, value: store.mode)
-        .moving(Motion.settle, value: store.message)
+        .moving(Motion.settle, value: state.mode)
+        .moving(Motion.settle, value: state.message)
         .moving(Motion.settle, value: hasPendingChallenge)
-        .sensoryFeedback(.error, trigger: store.message, condition: Self.isFailure)
+        .sensoryFeedback(.error, trigger: state.message, condition: Self.isFailure)
     }
 
     /// Account deleted and session ended report something already done.
@@ -101,7 +106,7 @@ struct AccountView: View {
             TextField(
                 "Display name",
                 text: Binding(
-                    get: { store.displayName },
+                    get: { state.displayName },
                     set: { store.send(.displayNameChanged($0)) }
                 )
             )
@@ -121,7 +126,7 @@ struct AccountView: View {
     }
 
     private var displayNameInitial: String? {
-        store.displayName.trimmingCharacters(in: .whitespaces).first
+        state.displayName.trimmingCharacters(in: .whitespaces).first
             .map { String($0).uppercased() }
     }
 
@@ -132,13 +137,13 @@ struct AccountView: View {
                 primaryButton
                     .transition(Motion.appear)
             }
-            .disabled(store.isRequestInFlight)
-            if store.mode == .signedOut, store.isBrowserSignInAvailable {
+            .disabled(state.isRequestInFlight)
+            if state.mode == .signedOut, state.isBrowserSignInAvailable {
                 Button("Sign in with Apple in Browser") {
                     store.send(.browserSignInButtonTapped)
                 }
                 .buttonStyle(SecondaryButtonStyle())
-                .disabled(store.isRequestInFlight)
+                .disabled(state.isRequestInFlight)
                 .accessibilityIdentifier("account.sign-in-with-apple.browser")
             }
             Link(destination: URL(string: "https://healthcomp.app/privacy")!) {
@@ -156,7 +161,7 @@ struct AccountView: View {
 
     @ViewBuilder
     private var primaryButton: some View {
-        switch store.mode {
+        switch state.mode {
         case .signedOut:
             SignInWithAppleButton(
                 style: AppleSignInAppearance.buttonStyle(for: colorScheme)
@@ -172,7 +177,7 @@ struct AccountView: View {
             Button {
                 store.send(.submitDisplayNameButtonTapped)
             } label: {
-                BusyLabel("Continue", isBusy: store.isRequestInFlight)
+                BusyLabel("Continue", isBusy: state.isRequestInFlight)
             }
             .buttonStyle(PrimaryButtonStyle())
             .accessibilityIdentifier("account.submit-display-name")
@@ -181,7 +186,7 @@ struct AccountView: View {
             Button {
                 store.send(.retryButtonTapped)
             } label: {
-                BusyLabel("Try Again", isBusy: store.isRequestInFlight)
+                BusyLabel("Try Again", isBusy: state.isRequestInFlight)
             }
             .buttonStyle(PrimaryButtonStyle())
             .accessibilityIdentifier("account.retry")
@@ -190,7 +195,7 @@ struct AccountView: View {
             Button {
                 store.send(.signOutButtonTapped)
             } label: {
-                BusyLabel("Sign Out to Switch", isBusy: store.isRequestInFlight)
+                BusyLabel("Sign Out to Switch", isBusy: state.isRequestInFlight)
             }
             .buttonStyle(PrimaryButtonStyle())
             .accessibilityIdentifier("account.recover-profile")
@@ -199,7 +204,7 @@ struct AccountView: View {
             Button(role: .destructive) {
                 store.send(.signOutButtonTapped)
             } label: {
-                BusyLabel("Sign Out", isBusy: store.isRequestInFlight)
+                BusyLabel("Sign Out", isBusy: state.isRequestInFlight)
             }
             .buttonStyle(SecondaryButtonStyle())
             .accessibilityIdentifier("account.sign-out")
@@ -207,25 +212,25 @@ struct AccountView: View {
     }
 
     private var title: String {
-        switch store.mode {
+        switch state.mode {
         case .signedOut:
             hasPendingChallenge ? "You have a challenge" : "Welcome to HealthComp"
         case .settingUpProfile: "Choose your display name"
-        case .launchFailure: store.message?.failureTitle ?? "Couldn’t connect"
+        case .launchFailure: state.message?.failureTitle ?? "Couldn’t connect"
         case .profileConflict: "This iPhone has history for another account"
         case .authenticated: "Account"
         }
     }
 
     private var subtitle: String? {
-        switch store.mode {
+        switch state.mode {
         case .signedOut:
             hasPendingChallenge ? "Sign in with the account it was sent to." : nil
         case .settingUpProfile:
             // A new account can't be a challenge's recipient.
             "The people you play will see this name. You can change it later."
         case .launchFailure:
-            store.message?.text ?? "Check your connection and try again."
+            state.message?.text ?? "Check your connection and try again."
         case .profileConflict:
             "Only this iPhone is signed out. Saved history and your other devices are unchanged."
         case .authenticated:
