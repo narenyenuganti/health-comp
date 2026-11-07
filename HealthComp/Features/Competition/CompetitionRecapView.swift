@@ -532,6 +532,9 @@ struct CompetitionRecapSheet: View {
                             proxy.size.width / CompetitionRecapCard.size.width,
                             anchor: .topLeading
                         )
+                        // A picture of the card: the text clipping audit
+                        // reads its Text otherwise, ignored or not.
+                        .drawingGroup()
                 }
             }
             .animation(Motion.fade, value: hidesName)
