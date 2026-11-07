@@ -122,6 +122,8 @@ struct CompetitionResultView: View {
                     .background(Theme.ground)
             }
         }
+        // Out here so the pinned bar's ground moves with the control in it.
+        .moving(Motion.settle, value: rematchStage)
         .onChange(of: rematch) { oldValue, newValue in
             guard oldValue == .sending, newValue != .sending,
                   let text = rematchAnnouncement(newValue)
@@ -600,14 +602,12 @@ struct CompetitionResultView: View {
 
     private var rematchStage: CompetitionRematchStage { CompetitionRematchStage(rematch) }
 
-    /// One slot in both placements: each state crossfades into the last
-    /// while the height settles.
+    /// One slot in both placements: each state crossfades into the last.
     private var rematchStateControl: some View {
         ZStack {
             rematchStateContent
                 .transition(Motion.appear)
         }
-        .moving(Motion.settle, value: rematchStage)
     }
 
     @ViewBuilder
