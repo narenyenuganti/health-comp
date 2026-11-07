@@ -365,7 +365,7 @@ private struct WatchBeltCard: View {
                     .opacity(runs ? 1 : 0)
                     .animation(beat(0), value: runs)
             }
-            .frame(width: 113)
+            .frame(maxWidth: 113, alignment: .leading)  // gives way to the words on small watches
             .padding(.bottom, 5)
             Text(text.headline)
                 .font(.score(size: 42))
@@ -374,6 +374,7 @@ private struct WatchBeltCard: View {
                 .minimumScaleFactor(0.5)
                 .opacity(runs ? 1 : 0)
                 .animation(beat(1), value: runs)
+                .layoutPriority(1)
             Group {
                 Text(text.line)
                     .font(.headline.weight(.heavy).width(.condensed))
@@ -384,6 +385,7 @@ private struct WatchBeltCard: View {
                     Text(text.detail.joined(separator: "\n"))
                         .font(.caption2)
                         .foregroundStyle(Theme.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                         .privacySensitive()
                 }
                 if let defended {
@@ -392,10 +394,12 @@ private struct WatchBeltCard: View {
             }
             .opacity(runs ? 1 : 0)
             .animation(beat(2), value: runs)
+            .layoutPriority(1)
             Spacer(minLength: 0)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(Color.black)
+        .ignoresSafeArea(edges: .bottom)
     }
 
     /// One slanted bar per defense; the newest grows on the first beat.
@@ -457,10 +461,14 @@ private struct WatchBeltPlate: View {
 private struct WatchNothingView: View {
     let text: CompetitionWidgetEmptyText
 
+    @Environment(\.dynamicTypeSize) private var typeSize
+
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            BrandMark()
-                .frame(height: 44)
+            if typeSize < .accessibility1 {
+                BrandMark()
+                    .frame(height: 44)
+            }
             Text(text.title)
                 .font(.title3.weight(.heavy).width(.condensed))
                 .foregroundStyle(Theme.ink)
