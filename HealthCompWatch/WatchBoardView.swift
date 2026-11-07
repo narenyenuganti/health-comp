@@ -264,8 +264,10 @@ private struct WatchBoardPage: View {
             .scoreRoll(points, id: match.id)
     }
 
-    private var numberAnimation: Animation {
-        reduceMotion ? Motion.fade : Motion.beat(1)
+    /// Only out of rest: into it must land at once, or a live match going
+    /// final shows your number first.
+    private var numberAnimation: Animation? {
+        numberRests ? nil : reduceMotion ? Motion.fade : Motion.beat(1)
     }
 
     /// The bars fade to a new day through the ZStack, and your won bars grow
