@@ -371,6 +371,11 @@ struct MainTabView: View {
                     }
                 )
             }
+        } else if !store.path.contains(id) {
+            // ponytail: popping after the match left (End Practice, a server
+            // delete) slides off blank, not "Match Unavailable"; cache the
+            // last screen if the blank shows.
+            Theme.ground.ignoresSafeArea()
         } else {
             ContentUnavailableView(
                 "Match Unavailable",
