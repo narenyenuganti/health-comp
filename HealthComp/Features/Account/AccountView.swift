@@ -42,9 +42,17 @@ struct AccountView: View {
         .moving(Motion.settle, value: store.mode)
         .moving(Motion.settle, value: store.message)
         .moving(Motion.settle, value: hasPendingChallenge)
-        // Those two messages report something that already happened.
-        .sensoryFeedback(.error, trigger: store.message) { _, new in
-            new != nil && new != .accountDeleted && new != .sessionEnded
+        .sensoryFeedback(.error, trigger: store.message, condition: Self.isFailure)
+    }
+
+    /// Account deleted and session ended report something already done.
+    private static func isFailure(
+        _: AccountFeature.State.Message?,
+        _ new: AccountFeature.State.Message?
+    ) -> Bool {
+        switch new {
+        case nil, .accountDeleted, .sessionEnded: false
+        default: true
         }
     }
 

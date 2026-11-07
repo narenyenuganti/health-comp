@@ -148,7 +148,7 @@ struct AccountSettingsView: View {
     }
 
     var body: some View {
-        list
+        listWithHaptics
             .task { load() }
             .onChange(of: store.isEditingDisplayName) { _, isEditing in
                 isNameFocused = isEditing
@@ -178,12 +178,25 @@ struct AccountSettingsView: View {
         }
         .moving(Motion.settle, value: listShape)
         .accountPageStyle(title: "Account")
-        .sensoryFeedback(.error, trigger: store.message) { _, new in new != nil }
-        .sensoryFeedback(.error, trigger: blockedPeople?.unblockFailed) { _, new in new != nil }
-        .sensoryFeedback(.error, trigger: challengeLink?.resetFailed) { _, new in new == true }
-        .sensoryFeedback(.success, trigger: challengeLink?.url) { old, new in
-            old != nil && new != nil
-        }
+    }
+
+    // Plain Bools and its own property: on the List's chain, these closures
+    // don't type-check in time. Each failure clears before the next attempt.
+    private var listWithHaptics: some View {
+        let hasMessage: Bool = store.message != nil
+        let unblockFailed: Bool = blockedPeople?.unblockFailed != nil
+        let resetFailed: Bool = challengeLink?.resetFailed ?? false
+        let linkURL: URL? = challengeLink?.url
+        return list
+            .sensoryFeedback(.error, trigger: hasMessage, condition: { _, new in new })
+            .sensoryFeedback(.error, trigger: unblockFailed, condition: { _, new in new })
+            .sensoryFeedback(.error, trigger: resetFailed, condition: { _, new in new })
+            .sensoryFeedback(.success, trigger: linkURL, condition: Self.linkWasReset)
+    }
+
+    /// First load isn't a reset.
+    private static func linkWasReset(_ old: URL?, _ new: URL?) -> Bool {
+        old != nil && new != nil
     }
 
     /// This runs again on pop back, and a reload would clear the failure on
