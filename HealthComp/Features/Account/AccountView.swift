@@ -47,8 +47,8 @@ struct AccountView: View {
 
     /// Account deleted and session ended report something already done.
     private static func isFailure(
-        _: AccountFeature.State.Message?,
-        _ new: AccountFeature.State.Message?
+        _: AccountFeature.Message?,
+        _ new: AccountFeature.Message?
     ) -> Bool {
         switch new {
         case nil, .accountDeleted, .sessionEnded: false
