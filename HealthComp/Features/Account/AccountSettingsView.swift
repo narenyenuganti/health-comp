@@ -292,7 +292,8 @@ struct AccountSettingsView: View {
 
     private var challengeLinkSection: some View {
         Section {
-            // Separate rows, so the List settles the swap. Inside one cell it cuts.
+            // Separate rows, so the List settles these. A height change inside
+            // one cell jumps, and its text runs over its neighbours.
             if let url = challengeLink?.url {
                 VStack(alignment: .leading, spacing: 12) {
                     let isResetting = challengeLink?.isResetting == true
@@ -349,20 +350,20 @@ struct AccountSettingsView: View {
                         } message: {
                             Text("Your old link stops working. Challenges already sent stay.")
                         }
-                    if challengeLink?.resetFailed == true {
-                        Text("Couldn’t reset your link. Try again.")
-                            .font(.callout)
-                            .foregroundStyle(Theme.ink)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .accessibilityIdentifier("account.challenge-link.reset-error")
-                            .transition(Motion.appear)
-                    }
                     Text("Anyone with this link can challenge you. Reset it to turn off the old one; challenges already sent stay.")
                         .font(.caption)
                         .foregroundStyle(Theme.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(.vertical, 4)
+                if challengeLink?.resetFailed == true {
+                    Text("Couldn’t reset your link. Try again.")
+                        .font(.callout)
+                        .foregroundStyle(Theme.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("account.challenge-link.reset-error")
+                        .listRowSeparator(.hidden, edges: .top)
+                }
             } else if challengeLink?.failed == true {
                 VStack(alignment: .leading, spacing: 12) {
                     Text("Couldn’t load your link.")
@@ -389,7 +390,19 @@ struct AccountSettingsView: View {
         _ people: [AuthenticatedProfile]
     ) -> some View {
         Section {
-            ForEach(people, id: \.id) { blockedRow($0, blocked) }
+            ForEach(people, id: \.id) { person in
+                blockedRow(person, blocked)
+                // Under the person, so it shows where the tap was even when
+                // the list runs past the screen.
+                if blocked.unblockFailed == person.id {
+                    Text("Couldn’t unblock. Check your connection and try again.")
+                        .font(.callout)
+                        .foregroundStyle(Theme.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("account.blocked.error")
+                        .listRowSeparator(.hidden, edges: .top)
+                }
+            }
         } header: {
             SectionLabel("BLOCKED")
         } footer: {
@@ -408,48 +421,36 @@ struct AccountSettingsView: View {
         let layout = isAccessibilitySize
             ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
             : AnyLayout(HStackLayout(spacing: 12))
-        return VStack(alignment: .leading, spacing: 4) {
-            layout {
-                HStack(spacing: 12) {
-                    // At accessibility sizes the initial would squeeze the
-                    // name into a narrow column, so the name gets the width.
-                    if !isAccessibilitySize {
-                        Text(person.displayName.first.map { String($0).uppercased() } ?? "")
-                            .font(.headline.width(.condensed))
-                            .foregroundStyle(Theme.ink)
-                            .frame(width: blockedInitialSize, height: blockedInitialSize)
-                            .background(Theme.control, in: Circle())
-                            .accessibilityHidden(true)
-                    }
-                    Text(person.displayName)
+        return layout {
+            HStack(spacing: 12) {
+                // At accessibility sizes the initial would squeeze the
+                // name into a narrow column, so the name gets the width.
+                if !isAccessibilitySize {
+                    Text(person.displayName.first.map { String($0).uppercased() } ?? "")
+                        .font(.headline.width(.condensed))
                         .foregroundStyle(Theme.ink)
-                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(width: blockedInitialSize, height: blockedInitialSize)
+                        .background(Theme.control, in: Circle())
+                        .accessibilityHidden(true)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                Button { blocked.unblock(person.id) } label: {
-                    // The ink tint doesn't dim when disabled, so saving shows here.
-                    Text("Unblock")
-                        .foregroundStyle(isUnblocking ? Theme.secondary : Theme.ink)
-                        .animation(Motion.fade, value: isUnblocking)
-                        .frame(minHeight: 44)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.borderless)
-                .disabled(isUnblocking)
-                .accessibilityLabel("Unblock \(person.displayName)")
-                .accessibilityValue(isUnblocking ? "Unblocking" : "")
-                .accessibilityIdentifier("account.blocked.unblock")
-            }
-            // In the row it belongs to, so it shows where the tap was even
-            // when the list runs past the screen.
-            if blocked.unblockFailed == person.id {
-                Text("Couldn’t unblock. Check your connection and try again.")
-                    .font(.callout)
+                Text(person.displayName)
                     .foregroundStyle(Theme.ink)
                     .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityIdentifier("account.blocked.error")
-                    .transition(Motion.appear)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Button { blocked.unblock(person.id) } label: {
+                // The ink tint doesn't dim when disabled, so saving shows here.
+                Text("Unblock")
+                    .foregroundStyle(isUnblocking ? Theme.secondary : Theme.ink)
+                    .animation(Motion.fade, value: isUnblocking)
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.borderless)
+            .disabled(isUnblocking)
+            .accessibilityLabel("Unblock \(person.displayName)")
+            .accessibilityValue(isUnblocking ? "Unblocking" : "")
+            .accessibilityIdentifier("account.blocked.unblock")
         }
     }
 

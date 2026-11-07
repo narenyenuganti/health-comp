@@ -8,11 +8,21 @@ struct AccountView: View {
     let store: StoreOf<AccountFeature>
     /// A challenge link arrived before sign-in.
     var hasPendingChallenge = false
-    /// What to draw, when the host has it. The root passes it so the screen it
-    /// fades off keeps its last state: by then the store is the signed-in one.
-    var held: AccountFeature.State?
 
-    private var state: AccountFeature.State { held ?? store.state }
+    /// The root fades this screen off after the store has become the signed-in
+    /// account's, which isn't this screen's to draw, so it keeps its last state.
+    private final class LastDrawn {
+        var state: AccountFeature.State?
+    }
+
+    @State private var lastDrawn = LastDrawn()
+
+    private var state: AccountFeature.State {
+        let live = store.state
+        if live.mode == .authenticated { return lastDrawn.state ?? live }
+        lastDrawn.state = live
+        return live
+    }
 
     var body: some View {
         GeometryReader { proxy in

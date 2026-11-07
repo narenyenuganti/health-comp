@@ -253,8 +253,7 @@ struct AppRootView: View {
             case .signedOut, .settingUpProfile, .launchFailure:
                 AccountView(
                     store: store.scope(state: \.account, action: \.account),
-                    hasPendingChallenge: store.hasPendingChallenge,
-                    held: store.account
+                    hasPendingChallenge: store.hasPendingChallenge
                 )
                 .transition(Motion.appear)
                 .zIndex(1)
