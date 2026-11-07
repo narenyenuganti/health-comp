@@ -148,7 +148,7 @@ struct AccountSettingsView: View {
     }
 
     var body: some View {
-        listWithHaptics
+        scrollingList
             .task { load() }
             .onChange(of: store.isEditingDisplayName) { _, isEditing in
                 isNameFocused = isEditing
@@ -179,6 +179,20 @@ struct AccountSettingsView: View {
         .moving(Motion.settle, value: listShape)
         .accountPageStyle(title: "Account")
     }
+
+    /// Delete is the last row, so its message lands off the bottom of the list.
+    private var scrollingList: some View {
+        ScrollViewReader { proxy in
+            listWithHaptics
+                .onChange(of: store.message) { _, message in
+                    if message?.isDeletionMessage == true {
+                        proxy.scrollTo(Self.deletionMessageID, anchor: .bottom)
+                    }
+                }
+        }
+    }
+
+    private static let deletionMessageID = "account.deletion-message"
 
     // Plain Bools and its own property: on the List's chain, these closures
     // don't type-check in time. Each failure clears before the next attempt.
@@ -599,6 +613,7 @@ struct AccountSettingsView: View {
                     .font(.callout)
                     .foregroundStyle(Theme.ink)
                     .accessibilityIdentifier("account.message")
+                    .id(Self.deletionMessageID)
             }
         }
         .listRowBackground(Theme.panel)
