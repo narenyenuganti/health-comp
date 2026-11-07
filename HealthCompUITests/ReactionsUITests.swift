@@ -399,8 +399,7 @@ final class ReactionsUITests: XCTestCase {
 
     private func captureScreens(dark: Bool, largest: Bool) throws {
         let suffix = "\(dark ? "dark" : "light")-\(largest ? "ax5" : "default")"
-        // The contrast audit must not catch a first result mid-Verdict.
-        var arguments = ["-UIAccessibilityReduceMotionEnabled", "YES"]
+        var arguments: [String] = []
         if dark { arguments += ["-AppleInterfaceStyle", "Dark"] }
         if largest {
             arguments += [
