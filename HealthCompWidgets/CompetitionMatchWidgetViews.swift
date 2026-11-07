@@ -308,25 +308,7 @@ private struct MediumView: View {
     }
 
     private var strip: some View {
-        HStack(spacing: 4) {
-            ForEach(Array(match.dayOutcomes(at: date).enumerated()), id: \.offset) { _, outcome in
-                CompetitionDayBar(outcome: outcome, todayColor: todayColor)
-                    .frame(height: 14)
-            }
-        }
-        .frame(maxWidth: .infinity)
-    }
-
-    /// Today's dashed bar in the color of whoever leads the day.
-    private var todayColor: Color {
-        guard case let .live(day) = match.state(at: date),
-              match.userDayPoints.indices.contains(day - 1),
-              match.opponentDayPoints.indices.contains(day - 1),
-              let user = match.userDayPoints[day - 1],
-              let opponent = match.opponentDayPoints[day - 1]
-        else { return Theme.outline }
-        return competitionDisplayedMargin(userPoints: user, opponentPoints: opponent) >= 0
-            ? Theme.you : Theme.ink
+        CompetitionWeekStrip(match: match, date: date, height: 14, spacing: 4)
     }
 }
 

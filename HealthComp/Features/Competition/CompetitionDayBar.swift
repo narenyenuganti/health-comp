@@ -1,7 +1,7 @@
 import SwiftUI
 
-// The app and the widget extension both compile this file: SwiftUI and
-// Theme only.
+// The app, the widget extensions and the watch compile this file: SwiftUI,
+// Theme and the widget snapshot only.
 
 /// One day on the week strip: amber when you won it, ink when they did, grey
 /// for a tie, striped for no data, an outline when upcoming, and a dashed
@@ -26,6 +26,44 @@ struct CompetitionDayBar: View {
         case .tied:
             SlantedBar().fill(Theme.tertiary)
         }
+    }
+}
+
+/// The week as seven bars. `decorate` lets a surface move or accent one bar,
+/// so this file needs no Motion and works in the widgets.
+struct CompetitionWeekStrip<Bar: View>: View {
+    let match: CompetitionWidgetSnapshot.Match
+    let date: Date
+    let height: CGFloat
+    let spacing: CGFloat
+    @ViewBuilder let decorate: (Int, CompetitionDayOutcome, CompetitionDayBar) -> Bar
+
+    var body: some View {
+        HStack(spacing: spacing) {
+            ForEach(Array(match.dayOutcomes(at: date).enumerated()), id: \.offset) { index, outcome in
+                decorate(index, outcome, CompetitionDayBar(outcome: outcome, todayColor: todayColor))
+                    .frame(height: height)
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    /// Today's dashed bar in the color of whoever leads the day.
+    private var todayColor: Color {
+        guard case let .live(day) = match.state(at: date),
+              match.userDayPoints.indices.contains(day - 1),
+              match.opponentDayPoints.indices.contains(day - 1),
+              let user = match.userDayPoints[day - 1],
+              let opponent = match.opponentDayPoints[day - 1]
+        else { return Theme.outline }
+        return competitionDisplayedMargin(userPoints: user, opponentPoints: opponent) >= 0
+            ? Theme.you : Theme.ink
+    }
+}
+
+extension CompetitionWeekStrip where Bar == CompetitionDayBar {
+    init(match: CompetitionWidgetSnapshot.Match, date: Date, height: CGFloat, spacing: CGFloat) {
+        self.init(match: match, date: date, height: height, spacing: spacing) { _, _, bar in bar }
     }
 }
 

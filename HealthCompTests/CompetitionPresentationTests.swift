@@ -1583,6 +1583,44 @@ final class CompetitionPresentationTests: XCTestCase {
         competitionOpponentRecords(weeks).first
     }
 
+    func testWatchBeltCountsDefensesAndCardsPerResult() throws {
+        let outcomes: [CompetitionOutcome] = [.win, .win, .tie, .win, .loss, .loss, .win]
+        let starts = [(8, 4), (8, 11), (8, 18), (8, 25), (9, 1), (9, 8), (9, 15)]
+        let weeks = outcomes.indices.map { beltWeek($0 + 1, outcomes[$0], start: starts[$0]) }
+        let records = competitionOpponentRecords(weeks)
+        func belt(_ index: Int, of weeks: [LocalCompetitionPresentation] = weeks) -> CompetitionWidgetSnapshot.Belt? {
+            .init(for: weeks[index], records: competitionOpponentRecords(weeks), in: weeks)
+        }
+        XCTAssertFalse(records.isEmpty)
+
+        XCTAssertEqual(weeks.indices.map { belt($0)?.card }, [
+            .earned,
+            .defended(1),
+            nil,  // a tie keeps the belt but isn't a defense
+            .defended(2),
+            .lost(weeks: 4, defenses: 2),
+            nil,  // their defense earns you no card
+            .taken(weeks: 2, defenses: 1),
+        ])
+        XCTAssertEqual(belt(6)?.holder, .you)
+        XCTAssertEqual(belt(6)?.defenses, 0)
+
+        let stillTheirs = Array(weeks.prefix(6))
+        XCTAssertEqual(belt(5, of: stillTheirs)?.holder, .them)
+        XCTAssertEqual(belt(5, of: stillTheirs)?.defenses, 1)
+    }
+
+    func testWatchBeltHasNoRowWhenVacantOrRetired() {
+        let vacant = [beltWeek(1, .tie, start: (9, 1))]
+        XCTAssertNil(CompetitionWidgetSnapshot.Belt(
+            for: vacant[0], records: competitionOpponentRecords(vacant), in: vacant
+        ))
+        let retired = [beltWeek(1, .win, start: (9, 1), name: "Former competitor")]
+        XCTAssertNil(CompetitionWidgetSnapshot.Belt(
+            for: retired[0], records: competitionOpponentRecords(retired), in: retired
+        ))
+    }
+
     func testBeltGoesToTheFirstWinnerAndTiesLeaveIt() throws {
         let outcomes: [CompetitionOutcome] = [.tie, .win, .tie, .loss, .loss, .win]
         let starts = [(9, 1), (9, 8), (9, 15), (9, 22), (9, 29), (10, 6)]
@@ -2715,6 +2753,12 @@ extension CompetitionPresentationTests {
             lifecycle: lifecycle,
             start: start
         )
+    }
+
+    /// "Nothing leaves this iPhone" on the practice invite depends on this.
+    func testPracticeNeverReachesTheWidgetsOrTheWatch() {
+        let practice = practicePresentation(id: 1, lifecycle: .active(dayOrdinal: 3), start: (10, 28))
+        XCTAssertNil(CompetitionWidgetSnapshot.Match(presentation: practice))
     }
 
     func testPracticeStatusIsLabeledOnCardsRowsButNotNotifications() throws {

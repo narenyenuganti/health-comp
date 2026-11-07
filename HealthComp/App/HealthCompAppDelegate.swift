@@ -23,6 +23,8 @@ final class HealthCompAppDelegate: NSObject,
             UIApplication.LaunchOptionsKey: Any
         ]? = nil
     ) -> Bool {
+        // Before the Test Lab return: its fixtures reach the watch too.
+        CompetitionWatchSync.shared.activate()
 #if DEBUG
         guard case .disabled = CompetitionTestLabLaunchParser.decision(
             arguments: ProcessInfo.processInfo.arguments

@@ -116,6 +116,7 @@ targets:
     sources:
       - path: HealthCompWatch
       - path: HealthComp/Features/Widgets/CompetitionWidgetSnapshot.swift
+      - path: HealthComp/Features/Widgets/CompetitionWatchBoard.swift
       - path: HealthComp/Features/Competition/CompetitionDayBar.swift
       - path: HealthComp/Features/Competition/CompetitionDateFormatting.swift
       - path: HealthComp/Features/Competition/CompetitionLeadText.swift
@@ -152,6 +153,7 @@ targets:
     sources:
       - path: HealthCompWatchWidgets
       - path: HealthComp/Features/Widgets/CompetitionWidgetSnapshot.swift
+      - path: HealthComp/Features/Widgets/CompetitionWatchBoard.swift
       - path: HealthComp/Features/Competition/CompetitionDayBar.swift
       - path: HealthComp/Features/Competition/CompetitionDateFormatting.swift
       - path: HealthComp/App/Theme.swift

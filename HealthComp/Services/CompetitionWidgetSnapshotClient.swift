@@ -12,8 +12,14 @@ struct CompetitionWidgetSnapshotClient: Sendable {
 
     static let noop = Self(write: { _, _ in }, clear: {})
 
-    static func live(fileURL: URL?, reload: @escaping @Sendable () -> Void) -> Self {
-        let store = CompetitionWidgetSnapshotStore(fileURL: fileURL, reload: reload)
+    /// `mirror` gets every successful write, and whether it changed more than
+    /// `updatedAt`, then nil after a clear.
+    static func live(
+        fileURL: URL?,
+        reload: @escaping @Sendable () -> Void,
+        mirror: @escaping @Sendable (CompetitionWidgetSnapshot?, Bool) -> Void = { _, _ in }
+    ) -> Self {
+        let store = CompetitionWidgetSnapshotStore(fileURL: fileURL, reload: reload, mirror: mirror)
         return Self(
             write: { await store.write($0, carryForward: $1) },
             clear: { try await store.clear() }
@@ -24,12 +30,18 @@ struct CompetitionWidgetSnapshotClient: Sendable {
 private actor CompetitionWidgetSnapshotStore {
     private let fileURL: URL?
     private let reload: @Sendable () -> Void
+    private let mirror: @Sendable (CompetitionWidgetSnapshot?, Bool) -> Void
     private var lastWritten: CompetitionWidgetSnapshot?
     private var isSeeded = false
 
-    init(fileURL: URL?, reload: @escaping @Sendable () -> Void) {
+    init(
+        fileURL: URL?,
+        reload: @escaping @Sendable () -> Void,
+        mirror: @escaping @Sendable (CompetitionWidgetSnapshot?, Bool) -> Void
+    ) {
         self.fileURL = fileURL
         self.reload = reload
+        self.mirror = mirror
     }
 
     func write(_ snapshot: CompetitionWidgetSnapshot, carryForward: Set<UUID>) {
@@ -59,7 +71,9 @@ private actor CompetitionWidgetSnapshotStore {
             return
         }
         // Every Health read sets a new time; that alone isn't worth a reload.
-        if next.ignoringUpdatedAt != lastWritten?.ignoringUpdatedAt { reload() }
+        let material = next.ignoringUpdatedAt != lastWritten?.ignoringUpdatedAt
+        if material { reload() }
+        mirror(next, material)
         lastWritten = next
     }
 
@@ -73,13 +87,15 @@ private actor CompetitionWidgetSnapshotStore {
             // Nothing to clear.
         }
         reload()
+        mirror(nil, true)
     }
 }
 
 extension CompetitionWidgetSnapshotClient: DependencyKey {
     static let liveValue = Self.live(
         fileURL: CompetitionWidgetSnapshot.fileURL(),
-        reload: { WidgetCenter.shared.reloadAllTimelines() }
+        reload: { WidgetCenter.shared.reloadAllTimelines() },
+        mirror: { CompetitionWatchSync.shared.mirror($0, material: $1) }
     )
     static let testValue = Self.noop
 }
@@ -94,12 +110,65 @@ extension DependencyValues {
 extension CompetitionWidgetSnapshot {
     /// Live, scheduled and recent results only, with Home's numbers.
     init(dashboard: CompetitionDashboard) {
+        let competitions = dashboard.competitions
+        let records = competitionOpponentRecords(competitions)
         self.init(
-            matches: dashboard.competitions.compactMap(Match.init(presentation:)),
-            hasIncomingChallenge: dashboard.competitions.contains {
+            matches: competitions.compactMap { competition in
+                Match(presentation: competition).map {
+                    var match = $0
+                    match.belt = Belt(for: competition, records: records, in: competitions)
+                    return match
+                }
+            },
+            hasIncomingChallenge: competitions.contains {
                 if case .pending(.incoming, _, _) = $0.lifecycle { true } else { false }
             }
         )
+    }
+}
+
+extension CompetitionWidgetSnapshot.Belt {
+    /// Nil with no holder, or while an earlier match with them could still
+    /// move it. Walks the pair's weeks in the belt fold's order.
+    init?(
+        for competition: CompetitionPresentation,
+        records: [CompetitionOpponentRecord],
+        in competitions: [CompetitionPresentation]
+    ) {
+        guard !competitionBeltWaitsOnAnEarlierMatch(competition, in: competitions),
+              let record = records.first(where: { $0.opponentIdentity == competition.opponentIdentity }),
+              let holder = record.belt.holder
+        else { return nil }
+        func end(_ week: CompetitionPresentation) -> Date {
+            week.acceptedConfiguration.flatMap { competitionScheduleBoundaries($0.schedule)?.end } ?? .distantPast
+        }
+        let weeks = competitionHistoryWeeks(competitions)
+            .filter { $0.opponentIdentity == competition.opponentIdentity }
+            .sorted { (end($0), $0.id.rawValue.uuidString) < (end($1), $1.id.rawValue.uuidString) }
+        var defenses = 0
+        var card: Card?
+        for week in weeks {
+            var weekCard: Card?
+            switch record.belt.events[week.id] {
+            case let .took(by, fromWeeks):
+                switch (by, fromWeeks) {
+                case (.you, nil): weekCard = .earned
+                case let (.you, reign?): weekCard = .taken(weeks: reign, defenses: defenses)
+                case let (.them, reign?): weekCard = .lost(weeks: reign, defenses: defenses)
+                case (.them, nil): break
+                }
+                defenses = 0
+            case let .kept(by, _):
+                // A tie keeps the belt but isn't a defense.
+                guard week.terminalResult?.outcome == (by == .you ? .win : .loss) else { break }
+                defenses += 1
+                if by == .you { weekCard = .defended(defenses) }
+            case .vacant, nil:
+                break
+            }
+            if week.id == competition.id { card = weekCard }
+        }
+        self.init(holder: holder == .you ? .you : .them, defenses: defenses, card: card)
     }
 }
 
@@ -146,106 +215,3 @@ extension CompetitionWidgetSnapshot.Match {
         )
     }
 }
-
-#if DEBUG
-extension CompetitionWidgetSnapshot {
-    /// Widget states for the Mac mini UI tests (`--widget-scenario <name>`),
-    /// in UTC days around `now`. Nil means no snapshot: the caller clears the file.
-    static func testLab(_ scenario: String, now: Date) -> Self? {
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: "UTC")!
-        let today = calendar.startOfDay(for: now)
-        func day(_ offset: Int) -> Date { calendar.date(byAdding: .day, value: offset, to: today)! }
-        /// `currentDay` 1...7 is live; 0 starts tomorrow, -1 the day after;
-        /// 8 ended at today's midnight, 9 and more ended earlier.
-        func match(
-            _ index: Int, _ name: String, person: String? = nil, currentDay: Int,
-            you: Double = 0, them: Double = 0,
-            youDays: [Double?] = [], themDays: [Double?] = [],
-            updated: Bool = true, final: Final.Outcome? = nil, leavesInDays: Int = 3
-        ) -> Match {
-            let first = day(1 - currentDay)
-            let id = UUID(uuidString: String(format: "00000000-0000-0000-0000-%012ld", index))!
-            func padded(_ values: [Double?]) -> [Double?] {
-                Array((values + Array(repeating: nil, count: 7)).prefix(7))
-            }
-            return Match(
-                id: id,
-                personID: person ?? "sample:\(name.lowercased())",
-                name: name,
-                url: URL(string: "\(CompetitionRoute.customURLScheme)://competition/\(id.uuidString.lowercased())")!,
-                timeZoneIdentifier: "UTC",
-                dayStarts: (0..<7).map { calendar.date(byAdding: .day, value: $0, to: first)! },
-                endsAt: calendar.date(byAdding: .day, value: 7, to: first)!,
-                userPoints: you,
-                opponentPoints: them,
-                userDayPoints: padded(youDays),
-                opponentDayPoints: padded(themDays),
-                updatedAt: updated ? now.addingTimeInterval(-11 * 60) : nil,
-                final: final.map {
-                    Final(outcome: $0, completedAt: day(0).addingTimeInterval(3_600), leavesAt: day(leavesInDays))
-                }
-            )
-        }
-        let week: [Double?] = [250, 230, 262, 250, 212, 260, 300]
-        let theirs: [Double?] = [230, 260, 280, 192, 188, 250, 240]
-        let sam = match(5, "Sam", currentDay: 5, you: 1_204, them: 1_150, youDays: week, themDays: theirs)
-        let alex = match(6, "Alex", currentDay: 2, you: 480, them: 455, youDays: [250, 230], themDays: [230, 225])
-        let matches: [Match]
-        var hasIncomingChallenge = false
-        switch scenario {
-        case "live": matches = [sam]
-        case "trailing":
-            matches = [match(5, "Sam", currentDay: 3, you: 610, them: 664,
-                             youDays: [200, 210, 200], themDays: [220, 224, 220])]
-        case "square":
-            matches = [match(5, "Sam", currentDay: 2, you: 480, them: 480,
-                             youDays: [250, 230], themDays: [230, 250])]
-        case "lastDay":
-            matches = [match(5, "Sam", currentDay: 7, you: 2_190, them: 2_171, youDays: week, themDays: theirs)]
-        case "pending":
-            matches = [match(5, "Sam", currentDay: 8, you: 2_190, them: 2_171, youDays: week, themDays: theirs)]
-        case "won":
-            matches = [match(5, "Sam", currentDay: 9, you: 1_840, them: 1_726,
-                             youDays: week, themDays: theirs, final: .win)]
-        case "lost":
-            matches = [match(5, "Sam", currentDay: 9, you: 1_700, them: 1_720,
-                             youDays: theirs, themDays: week, final: .loss)]
-        case "tied":
-            matches = [match(5, "Sam", currentDay: 9, you: 1_650, them: 1_650,
-                             youDays: week, themDays: theirs, final: .tie)]
-        case "scheduled": matches = [match(5, "Sam", currentDay: -1)]
-        case "empty": matches = []
-        case "challenge":
-            matches = []
-            hasIncomingChallenge = true
-        case "longName":
-            matches = [match(
-                5, "Maximiliana Featherstonehaugh-Worthington", person: "sample:long", currentDay: 5,
-                you: 12_045, them: 11_980, youDays: [2_500, 2_300, 2_620, 2_500, 2_125],
-                themDays: [2_300, 2_600, 2_800, 1_920, 2_360]
-            )]
-        case "former":
-            matches = [match(7, "Former competitor", person: "sample:former", currentDay: 9,
-                             you: 1_840, them: 1_726, youDays: week, themDays: theirs, final: .win)]
-        case "several":
-            matches = [
-                alex, sam,
-                match(8, "Riley", currentDay: 8, you: 2_190, them: 2_171, youDays: week, themDays: theirs),
-                match(9, "Casey", currentDay: -2),
-                match(10, "Former competitor", person: "sample:former", currentDay: 9,
-                      you: 1_840, them: 1_726, final: .win),
-            ]
-        case "noData":
-            matches = [match(5, "Sam", currentDay: 4, you: 742, them: 510,
-                             youDays: [250, 230, 262], themDays: [230, 280, nil], updated: false)]
-        case "samGone":
-            // Sam's result has left Home; only Alex is live.
-            matches = [alex, match(5, "Sam", currentDay: 12, you: 1_840, them: 1_726, final: .win, leavesInDays: -1)]
-        case "noSam": matches = [alex]
-        default: return nil
-        }
-        return Self(matches: matches, hasIncomingChallenge: hasIncomingChallenge)
-    }
-}
-#endif

@@ -135,7 +135,9 @@ struct HealthCompApp: App {
         {
             Task {
                 let client = CompetitionWidgetSnapshotClient.liveValue
-                if let snapshot = CompetitionWidgetSnapshot.testLab(scenario, now: Date()) {
+                if let snapshot = CompetitionWidgetSnapshot.testLab(
+                    scenario, now: Date(), scheme: CompetitionRoute.customURLScheme
+                ) {
                     await client.write(snapshot, [])
                 } else {
                     try? await client.clear()
