@@ -128,10 +128,42 @@ struct AccountSettingsView: View {
     @AppStorage(AppAppearance.storageKey)
     private var appearance = AppAppearance.system
     @State private var showsChallengeCode = false
+    @State private var hasLoaded = false
+    @FocusState private var isNameFocused: Bool
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @ScaledMetric(relativeTo: .headline) private var blockedInitialSize: CGFloat = 34
 
+    /// What can resize the list once it's open.
+    private var listShape: [AnyHashable] {
+        [
+            AnyHashable(challengeLink?.url),
+            AnyHashable(challengeLink?.failed),
+            AnyHashable(challengeLink?.resetFailed),
+            AnyHashable(blockedPeople?.people?.map(\.id)),
+            AnyHashable(blockedPeople?.unblockFailed),
+            AnyHashable(store.isEditingDisplayName),
+            AnyHashable(store.message?.text),
+            AnyHashable(health != nil),
+        ]
+    }
+
     var body: some View {
+        list
+            .task { load() }
+            .onChange(of: store.isEditingDisplayName) { _, isEditing in
+                isNameFocused = isEditing
+            }
+            .sheet(isPresented: $showsChallengeCode) {
+                if let url = challengeLink?.url {
+                    ChallengeLinkCodeView(url: url) { showsChallengeCode = false }
+                }
+            }
+            .overlay {
+                AccountProgressOverlay(store: store)
+            }
+    }
+
+    private var list: some View {
         List {
             profileSection
             if challengeLink != nil {
@@ -144,20 +176,24 @@ struct AccountSettingsView: View {
             signOutSection
             deleteSection
         }
+        .moving(Motion.settle, value: listShape)
         .accountPageStyle(title: "Account")
-        .task {
-            store.send(.appeared)
-            challengeLink?.load()
-            blockedPeople?.load()
+        .sensoryFeedback(.error, trigger: store.message) { _, new in new != nil }
+        .sensoryFeedback(.error, trigger: blockedPeople?.unblockFailed) { _, new in new != nil }
+        .sensoryFeedback(.error, trigger: challengeLink?.resetFailed) { _, new in new == true }
+        .sensoryFeedback(.success, trigger: challengeLink?.url) { old, new in
+            old != nil && new != nil
         }
-        .sheet(isPresented: $showsChallengeCode) {
-            if let url = challengeLink?.url {
-                ChallengeLinkCodeView(url: url) { showsChallengeCode = false }
-            }
-        }
-        .overlay {
-            AccountProgressOverlay(store: store)
-        }
+    }
+
+    /// This runs again on pop back, and a reload would clear the failure on
+    /// screen. Hosts with no link yet can still load later.
+    private func load() {
+        store.send(.appeared)
+        guard !hasLoaded else { return }
+        hasLoaded = challengeLink != nil
+        challengeLink?.load()
+        blockedPeople?.load()
     }
 
     private var profileSection: some View {
@@ -174,6 +210,7 @@ struct AccountSettingsView: View {
                 .textInputAutocapitalization(.words)
                 .autocorrectionDisabled()
                 .submitLabel(.done)
+                .focused($isNameFocused)
                 .onSubmit {
                     store.send(.saveDisplayNameButtonTapped)
                 }
@@ -185,10 +222,13 @@ struct AccountSettingsView: View {
                     }
                     .buttonStyle(SecondaryButtonStyle())
 
-                    Button("Save") {
+                    Button {
                         store.send(.saveDisplayNameButtonTapped)
+                    } label: {
+                        BusyLabel("Save", isBusy: store.isRequestInFlight)
                     }
                     .buttonStyle(PrimaryButtonStyle())
+                    .accessibilityValue(store.isRequestInFlight ? "Saving" : "")
                     .accessibilityIdentifier(
                         "account.settings.save-display-name"
                     )
@@ -239,81 +279,92 @@ struct AccountSettingsView: View {
 
     private var challengeLinkSection: some View {
         Section {
-            VStack(alignment: .leading, spacing: 12) {
+            // A ZStack, so the old state and the new share the row as they cross.
+            ZStack(alignment: .topLeading) {
                 if let url = challengeLink?.url {
-                    let isResetting = challengeLink?.isResetting == true
-                    Text(Self.displayText(url))
-                        .font(.callout.monospaced())
-                        .foregroundStyle(Theme.ink)
-                        .textSelection(.enabled)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .accessibilityLabel("Your challenge link")
-                        .accessibilityValue(Self.displayText(url))
-                        .accessibilityIdentifier("account.challenge-link.url")
-                    let buttons = Group {
-                        Button {
-                            showsChallengeCode = true
-                        } label: {
-                            Label("Show Code", systemImage: "qrcode")
+                    VStack(alignment: .leading, spacing: 12) {
+                        let isResetting = challengeLink?.isResetting == true
+                        Text(Self.displayText(url))
+                            .font(.callout.monospaced())
+                            .foregroundStyle(Theme.ink)
+                            .textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .accessibilityLabel("Your challenge link")
+                            .accessibilityValue(Self.displayText(url))
+                            .accessibilityIdentifier("account.challenge-link.url")
+                            .contentTransition(.opacity)
+                            .animation(Motion.fade, value: url)
+                        let buttons = Group {
+                            Button {
+                                showsChallengeCode = true
+                            } label: {
+                                Label("Show Code", systemImage: "qrcode")
+                            }
+                            .buttonStyle(SecondaryButtonStyle())
+                            .disabled(isResetting)
+                            .accessibilityIdentifier("account.challenge-link.show-code")
+                            ShareLink(
+                                item: url,
+                                subject: Text("My HealthComp challenge link"),
+                                message: Text("Challenge me to a week of rings on HealthComp.")
+                            ) {
+                                Label("Share Link", systemImage: "square.and.arrow.up")
+                            }
+                            .buttonStyle(PrimaryButtonStyle())
+                            .disabled(isResetting)
+                            .accessibilityIdentifier("account.challenge-link.share")
                         }
-                        .buttonStyle(SecondaryButtonStyle())
-                        .disabled(isResetting)
-                        .accessibilityIdentifier("account.challenge-link.show-code")
-                        ShareLink(
-                            item: url,
-                            subject: Text("My HealthComp challenge link"),
-                            message: Text("Challenge me to a week of rings on HealthComp.")
-                        ) {
-                            Label("Share Link", systemImage: "square.and.arrow.up")
+                        if dynamicTypeSize.isAccessibilitySize {
+                            VStack(spacing: 8) { buttons }
+                        } else {
+                            HStack(spacing: 8) { buttons }
                         }
-                        .buttonStyle(PrimaryButtonStyle())
-                        .disabled(isResetting)
-                        .accessibilityIdentifier("account.challenge-link.share")
-                    }
-                    if dynamicTypeSize.isAccessibilitySize {
-                        VStack(spacing: 8) { buttons }
-                    } else {
-                        HStack(spacing: 8) { buttons }
-                    }
-                    // The 44 pt frame sits inside the label so the hit area gets it too.
-                    Button { isResetLinkConfirmationPresented = true } label: {
-                        Text("Reset Link").frame(minHeight: 44).contentShape(Rectangle())
-                    }
-                        .buttonStyle(.borderless)
-                        .disabled(isResetting)
-                        .accessibilityValue(isResetting ? "Resetting" : "")
-                        .accessibilityIdentifier("account.challenge-link.reset")
-                        .alert(
-                            "Reset your challenge link?",
-                            isPresented: $isResetLinkConfirmationPresented
-                        ) {
-                            Button("Reset Link", role: .destructive) { challengeLink?.reset() }
-                                .accessibilityIdentifier("account.challenge-link.reset.confirm")
-                            Button("Cancel", role: .cancel) {}
-                        } message: {
-                            Text("Your old link stops working. Challenges already sent stay.")
+                        // The 44 pt frame sits inside the label so the hit area gets it too.
+                        Button { isResetLinkConfirmationPresented = true } label: {
+                            Text("Reset Link").frame(minHeight: 44).contentShape(Rectangle())
                         }
-                    if challengeLink?.resetFailed == true {
-                        Text("Couldn’t reset your link. Try again.")
+                            .buttonStyle(.borderless)
+                            .disabled(isResetting)
+                            .accessibilityValue(isResetting ? "Resetting" : "")
+                            .accessibilityIdentifier("account.challenge-link.reset")
+                            .alert(
+                                "Reset your challenge link?",
+                                isPresented: $isResetLinkConfirmationPresented
+                            ) {
+                                Button("Reset Link", role: .destructive) { challengeLink?.reset() }
+                                    .accessibilityIdentifier("account.challenge-link.reset.confirm")
+                                Button("Cancel", role: .cancel) {}
+                            } message: {
+                                Text("Your old link stops working. Challenges already sent stay.")
+                            }
+                        if challengeLink?.resetFailed == true {
+                            Text("Couldn’t reset your link. Try again.")
+                                .font(.callout)
+                                .foregroundStyle(Theme.ink)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .accessibilityIdentifier("account.challenge-link.reset-error")
+                                .transition(Motion.appear)
+                        }
+                        Text("Anyone with this link can challenge you. Reset it to turn off the old one; challenges already sent stay.")
+                            .font(.caption)
+                            .foregroundStyle(Theme.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                    .transition(Motion.appear)
+                } else if challengeLink?.failed == true {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text("Couldn’t load your link.")
                             .font(.callout)
                             .foregroundStyle(Theme.ink)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .accessibilityIdentifier("account.challenge-link.reset-error")
+                        Button("Try Again") { challengeLink?.load() }
+                            .buttonStyle(SecondaryButtonStyle())
+                            .accessibilityIdentifier("account.challenge-link.retry")
                     }
-                    Text("Anyone with this link can challenge you. Reset it to turn off the old one; challenges already sent stay.")
-                        .font(.caption)
-                        .foregroundStyle(Theme.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                } else if challengeLink?.failed == true {
-                    Text("Couldn’t load your link.")
-                        .font(.callout)
-                        .foregroundStyle(Theme.ink)
-                    Button("Try Again") { challengeLink?.load() }
-                        .buttonStyle(SecondaryButtonStyle())
-                        .accessibilityIdentifier("account.challenge-link.retry")
+                    .transition(Motion.appear)
                 } else {
                     ProgressView("Loading your link…")
                         .frame(maxWidth: .infinity, minHeight: 44)
+                        .transition(Motion.appear)
                 }
             }
             .padding(.vertical, 4)
@@ -369,6 +420,7 @@ struct AccountSettingsView: View {
                     // The ink tint doesn't dim when disabled, so saving shows here.
                     Text("Unblock")
                         .foregroundStyle(isUnblocking ? Theme.secondary : Theme.ink)
+                        .animation(Motion.fade, value: isUnblocking)
                         .frame(minHeight: 44)
                         .contentShape(Rectangle())
                 }
@@ -386,6 +438,7 @@ struct AccountSettingsView: View {
                     .foregroundStyle(Theme.ink)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("account.blocked.error")
+                    .transition(Motion.appear)
             }
         }
     }
@@ -615,7 +668,8 @@ private struct AccountNotificationsPage: View {
     @Environment(\.openURL) private var openURL
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @ScaledMetric(relativeTo: .headline) private var initialSize: CGFloat = 34
-    @State private var systemLiveActivitiesEnabled = true
+    // Read up front, so the rows it adds are there on the push.
+    @State private var systemLiveActivitiesEnabled = ActivityAuthorizationInfo().areActivitiesEnabled
 
     private var liveActivitiesEnabled: Bool {
         settings.liveActivitiesEnabled ?? systemLiveActivitiesEnabled
@@ -675,6 +729,9 @@ private struct AccountNotificationsPage: View {
                 .listRowBackground(Theme.panel)
             }
         }
+        .moving(Motion.settle, value: settings.authorization)
+        .moving(Motion.settle, value: settings.mutedPeople)
+        .moving(Motion.settle, value: liveActivitiesEnabled)
         .accountPageStyle(title: "Notifications")
         .task {
             guard settings.liveActivitiesEnabled == nil else { return }
@@ -726,6 +783,7 @@ private struct AccountNotificationsPage: View {
         let layout = isAccessibilitySize
             ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
             : AnyLayout(HStackLayout(spacing: 12))
+        let isUnmuting = settings.mutesInFlight.contains(person.id)
         return layout {
             HStack(spacing: 12) {
                 if !isAccessibilitySize {
@@ -744,12 +802,15 @@ private struct AccountNotificationsPage: View {
             // The frame sits inside the label so the tap area, not just the
             // layout, stays 44pt at the smallest text sizes.
             Button { settings.unmute(person.id) } label: {
+                // The ink tint doesn't dim when disabled, so saving shows here.
                 Text("Unmute")
+                    .foregroundStyle(isUnmuting ? Theme.secondary : Theme.ink)
+                    .animation(Motion.fade, value: isUnmuting)
                     .frame(minWidth: 44, minHeight: 44)
                     .contentShape(Rectangle())
             }
                 .buttonStyle(.borderless)
-                .disabled(settings.mutesInFlight.contains(person.id))
+                .disabled(isUnmuting)
                 .accessibilityLabel("Unmute \(person.name)")
                 .accessibilityIdentifier("account.notifications.unmute")
         }
@@ -807,7 +868,8 @@ private struct AccountProgressOverlay: View {
     let store: StoreOf<AccountFeature>
 
     var body: some View {
-        if store.isRequestInFlight {
+        // Save waits in its own button.
+        if store.isRequestInFlight, !store.isEditingDisplayName {
             ProgressView()
                 .tint(Theme.ink)
                 .accessibilityLabel(
@@ -815,6 +877,8 @@ private struct AccountProgressOverlay: View {
                         ? "Deleting account"
                         : "Saving account changes"
                 )
+                .waitingFade()
+                .transition(Motion.appear)
         }
     }
 }
@@ -996,7 +1060,7 @@ private struct AppearancePicker: View {
         layout {
             ForEach(AppAppearance.allCases) { option in
                 Button {
-                    selection = option
+                    choose(option)
                 } label: {
                     VStack(spacing: 8) {
                         AppearanceThumbnail(
@@ -1015,6 +1079,7 @@ private struct AppearancePicker: View {
                         .foregroundStyle(
                             selection == option ? Theme.ink : Theme.tertiary
                         )
+                        .contentTransition(.opacity)
                     }
                     .frame(maxWidth: .infinity, minHeight: 44)
                     .contentShape(Rectangle())
@@ -1025,6 +1090,28 @@ private struct AppearancePicker: View {
             }
         }
         .padding(.vertical, 8)
+        .animation(Motion.fade, value: selection)
+        .sensoryFeedback(.selection, trigger: selection)
+    }
+
+    /// The whole window changes, and dynamic colours don't interpolate through
+    /// a transaction, so it crossfades from a snapshot: `Motion.fade` in UIKit.
+    private func choose(_ option: AppAppearance) {
+        guard option != selection else { return }
+        let window = UIApplication.shared.connectedScenes
+            .compactMap { ($0 as? UIWindowScene)?.keyWindow }.first
+        let snapshot = window?.snapshotView(afterScreenUpdates: false)
+        if let snapshot {
+            snapshot.isUserInteractionEnabled = false
+            snapshot.accessibilityElementsHidden = true
+            window?.addSubview(snapshot)
+        }
+        selection = option
+        UIView.animate(withDuration: 0.2, delay: 0, options: .curveEaseOut) {
+            snapshot?.alpha = 0
+        } completion: { _ in
+            snapshot?.removeFromSuperview()
+        }
     }
 }
 
@@ -1119,13 +1206,15 @@ private struct ChallengeLinkCodeView: View {
     }
 }
 
+private let challengeLinkQRContext = CIContext()
+
 private func challengeLinkQRCode(_ url: URL) -> UIImage? {
     let filter = CIFilter.qrCodeGenerator()
     filter.message = Data(url.absoluteString.utf8)
     filter.correctionLevel = "M"
     guard let output = filter.outputImage?
         .transformed(by: CGAffineTransform(scaleX: 10, y: 10)),
-          let cgImage = CIContext().createCGImage(output, from: output.extent)
+          let cgImage = challengeLinkQRContext.createCGImage(output, from: output.extent)
     else {
         return nil
     }

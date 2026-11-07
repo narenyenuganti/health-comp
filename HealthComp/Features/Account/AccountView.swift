@@ -16,6 +16,7 @@ struct AccountView: View {
                     header
                     if store.mode == .settingUpProfile {
                         displayNameField
+                            .transition(Motion.appear)
                     }
                     // Launch failure and profile conflict fold the message
                     // into the subtitle.
@@ -26,6 +27,7 @@ struct AccountView: View {
                             .foregroundStyle(Theme.ink)
                             .multilineTextAlignment(.center)
                             .accessibilityIdentifier("account.message")
+                            .transition(Motion.appear)
                     }
                     actions
                 }
@@ -37,7 +39,13 @@ struct AccountView: View {
         }
         .background(Theme.ground)
         .task { store.send(.appeared) }
-        .animation(.easeInOut(duration: 0.2), value: store.message)
+        .moving(Motion.settle, value: store.mode)
+        .moving(Motion.settle, value: store.message)
+        .moving(Motion.settle, value: hasPendingChallenge)
+        // Those two messages report something that already happened.
+        .sensoryFeedback(.error, trigger: store.message) { _, new in
+            new != nil && new != .accountDeleted && new != .sessionEnded
+        }
     }
 
     private var header: some View {
@@ -50,12 +58,17 @@ struct AccountView: View {
                     .foregroundStyle(Theme.ink)
                     .multilineTextAlignment(.center)
                     .accessibilityAddTraits(.isHeader)
+                    .contentTransition(.opacity)
+                    .animation(Motion.fade, value: title)
                 if let subtitle {
                     Text(subtitle)
                         .font(.body)
                         .foregroundStyle(Theme.secondary)
                         .multilineTextAlignment(.center)
                         .accessibilityIdentifier("account.subtitle")
+                        .contentTransition(.opacity)
+                        .animation(Motion.fade, value: subtitle)
+                        .transition(Motion.appear)
                 }
             }
         }
@@ -106,13 +119,12 @@ struct AccountView: View {
 
     private var actions: some View {
         VStack(spacing: 12) {
-            primaryButton
-                .disabled(store.isRequestInFlight)
-                .overlay {
-                    if store.isRequestInFlight {
-                        ProgressView().tint(progressTint)
-                    }
-                }
+            // A ZStack, so two buttons never stack during the crossfade.
+            ZStack {
+                primaryButton
+                    .transition(Motion.appear)
+            }
+            .disabled(store.isRequestInFlight)
             if store.mode == .signedOut, store.isBrowserSignInAvailable {
                 Button("Sign in with Apple in Browser") {
                     store.send(.browserSignInButtonTapped)
@@ -134,17 +146,6 @@ struct AccountView: View {
         }
     }
 
-    // The Apple button and Sign Out keep the tested contrast rule; the
-    // neutral primary buttons carry onInk content in both modes.
-    private var progressTint: Color {
-        switch store.mode {
-        case .signedOut, .authenticated:
-            AccountProgressAppearance.tint(for: store.mode, colorScheme: colorScheme)
-        case .settingUpProfile, .launchFailure, .profileConflict:
-            Theme.onInk
-        }
-    }
-
     @ViewBuilder
     private var primaryButton: some View {
         switch store.mode {
@@ -160,29 +161,37 @@ struct AccountView: View {
             .accessibilityIdentifier("account.sign-in-with-apple")
 
         case .settingUpProfile:
-            Button("Continue") {
+            Button {
                 store.send(.submitDisplayNameButtonTapped)
+            } label: {
+                BusyLabel("Continue", isBusy: store.isRequestInFlight)
             }
             .buttonStyle(PrimaryButtonStyle())
             .accessibilityIdentifier("account.submit-display-name")
 
         case .launchFailure:
-            Button("Try Again") {
+            Button {
                 store.send(.retryButtonTapped)
+            } label: {
+                BusyLabel("Try Again", isBusy: store.isRequestInFlight)
             }
             .buttonStyle(PrimaryButtonStyle())
             .accessibilityIdentifier("account.retry")
 
         case .profileConflict:
-            Button("Sign Out to Switch") {
+            Button {
                 store.send(.signOutButtonTapped)
+            } label: {
+                BusyLabel("Sign Out to Switch", isBusy: store.isRequestInFlight)
             }
             .buttonStyle(PrimaryButtonStyle())
             .accessibilityIdentifier("account.recover-profile")
 
         case .authenticated:
-            Button("Sign Out", role: .destructive) {
+            Button(role: .destructive) {
                 store.send(.signOutButtonTapped)
+            } label: {
+                BusyLabel("Sign Out", isBusy: store.isRequestInFlight)
             }
             .buttonStyle(SecondaryButtonStyle())
             .accessibilityIdentifier("account.sign-out")

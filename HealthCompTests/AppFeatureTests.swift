@@ -5,6 +5,15 @@ import XCTest
 @testable import HealthComp
 
 final class AppFeatureTests: XCTestCase {
+    func testOnlyARealSignOutIsToldItIsSigningOut() {
+        for reason: AppFeature.TeardownReason? in [nil, .restoredWithoutSession, .cancelledAuthentication] {
+            XCTAssertEqual(AppRootView.progressTitle(reason), "Connecting…")
+        }
+        for reason: AppFeature.TeardownReason in [.userRequested, .sessionEnded, .accountDeleted, .profileConflict] {
+            XCTAssertEqual(AppRootView.progressTitle(reason), "Signing out…")
+        }
+    }
+
     @MainActor
     func testProfileRecoveryAfterTerminalSessionLossRetiresBeforeAllowingSignIn() async throws {
         for deliversSignedOutEvent in [false, true] {
