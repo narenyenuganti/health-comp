@@ -240,8 +240,10 @@ private struct MultiUserCompetitionSharingTestLabView: View {
     /// Once per process, never per init: SwiftUI re-runs child inits
     /// whenever the root re-evaluates. Launch arguments can't do this: an
     /// argument-domain value would mask the app's own writes.
-    private static let resetReactionsSeen: Void = UserDefaults.standard
-        .removeObject(forKey: CompetitionReactionsSeen.storageKey)
+    private static let resetReactionsSeen: Void = {
+        UserDefaults.standard.removeObject(forKey: CompetitionReactionsSeen.storageKey)
+        UserDefaults.standard.removeObject(forKey: CompetitionMotionSeen.storageKey)
+    }()
 
     init(scenario: MultiUserCompetitionTestLabScenario) {
         self.scenario = scenario
@@ -1096,8 +1098,10 @@ private final class MultiUserCompetitionNudgeTestLabServer: @unchecked Sendable 
 private struct MultiUserCompetitionFeatureRoundTestLabView: View {
     @State private var store: StoreOf<MainTabFeature>
 
-    private static let resetReactionsSeen: Void = UserDefaults.standard
-        .removeObject(forKey: CompetitionReactionsSeen.storageKey)
+    private static let resetReactionsSeen: Void = {
+        UserDefaults.standard.removeObject(forKey: CompetitionReactionsSeen.storageKey)
+        UserDefaults.standard.removeObject(forKey: CompetitionMotionSeen.storageKey)
+    }()
 
     init() {
         _ = Self.resetReactionsSeen
@@ -1185,8 +1189,10 @@ private struct MultiUserCompetitionReactionsTestLabView: View {
     @State private var store: StoreOf<MainTabFeature>
 
     /// Once per process, as in the sharing lab: the marks persist otherwise.
-    private static let resetReactionsSeen: Void = UserDefaults.standard
-        .removeObject(forKey: CompetitionReactionsSeen.storageKey)
+    private static let resetReactionsSeen: Void = {
+        UserDefaults.standard.removeObject(forKey: CompetitionReactionsSeen.storageKey)
+        UserDefaults.standard.removeObject(forKey: CompetitionMotionSeen.storageKey)
+    }()
 
     init(source: CompetitionPublicationSource) {
         _ = Self.resetReactionsSeen

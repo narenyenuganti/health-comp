@@ -211,8 +211,12 @@ struct CompetitionReactionPicker: View {
                 }
                 .font(.caption)
                 .foregroundStyle(Theme.ink)
+                .transition(Motion.appear)
             }
         }
+        .moving(Motion.settle, value: failed)
+        .sensoryFeedback(.selection, trigger: isPending) { _, pending in pending }
+        .sensoryFeedback(.error, trigger: failed) { _, failed in failed }
     }
 
     private func chip(_ kind: CompetitionReactionKind) -> some View {
@@ -229,6 +233,7 @@ struct CompetitionReactionPicker: View {
                         isSelected ? Theme.you : Theme.hairline,
                         lineWidth: isSelected ? 2 : 1
                     )
+                    .animation(Motion.fade, value: isSelected)
                 }
                 .contentShape(Circle())
         }

@@ -490,8 +490,6 @@ struct CompetitionRecapSheet: View {
     let belt: CompetitionRecapBelt?
 
     @AppStorage("healthcomp.recapHidesName") private var hidesName = false
-    @State private var png: Data?
-    @State private var uiImage: UIImage?
     @State private var renderFailed = false
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.locale) private var locale
@@ -507,43 +505,44 @@ struct CompetitionRecapSheet: View {
             if competitionRecapAllowsNameChoice(competition) {
                 nameChoice
             }
+            share(recap)
             if renderFailed {
                 Text("Couldn’t make the image.")
                     .font(.callout)
                     .foregroundStyle(Theme.secondary)
                     .accessibilityIdentifier("competition.recap.error")
+                    .transition(Motion.appear)
             }
-            share(recap)
         }
-        .task(id: recap) {
-            let image = competitionRecapImage(recap)
-            png = image?.pngData()
-            uiImage = image
-            renderFailed = png == nil
-        }
+        .sensoryFeedback(.error, trigger: renderFailed) { _, failed in failed }
     }
 
     private func preview(_ recap: CompetitionRecap) -> some View {
         let shape = RoundedRectangle(cornerRadius: 20, style: .continuous)
-        return Group {
-            if let uiImage {
-                Image(uiImage: uiImage)
-                    .resizable()
-                    .scaledToFit()
-            } else {
-                Color.clear
-                    .aspectRatio(4 / 5, contentMode: .fit)
-                    .overlay { if !renderFailed { ProgressView() } }
+        // The real card, so the sheet slides up with it there. The image is
+        // made on Share: making it here would drop frames from the slide.
+        return Color.clear
+            .aspectRatio(4 / 5, contentMode: .fit)
+            .overlay {
+                GeometryReader { proxy in
+                    CompetitionRecapCard(recap: recap)
+                        .environment(\.colorScheme, .light)
+                        .environment(\.dynamicTypeSize, .large)
+                        .scaleEffect(
+                            proxy.size.width / CompetitionRecapCard.size.width,
+                            anchor: .topLeading
+                        )
+                }
             }
-        }
-        .clipShape(shape)
-        .overlay(shape.strokeBorder(Theme.hairline, lineWidth: 1))
-        .frame(maxWidth: 320)
-        .frame(maxWidth: .infinity)
-        .accessibilityElement(children: .ignore)
-        .accessibilityAddTraits(.isImage)
-        .accessibilityLabel(recap.accessibilityText)
-        .accessibilityIdentifier("competition.recap.card")
+            .animation(Motion.fade, value: hidesName)
+            .clipShape(shape)
+            .overlay(shape.strokeBorder(Theme.hairline, lineWidth: 1))
+            .frame(maxWidth: 320)
+            .frame(maxWidth: .infinity)
+            .accessibilityElement(children: .ignore)
+            .accessibilityAddTraits(.isImage)
+            .accessibilityLabel(recap.accessibilityText)
+            .accessibilityIdentifier("competition.recap.card")
     }
 
     @ViewBuilder
@@ -567,27 +566,21 @@ struct CompetitionRecapSheet: View {
         }
     }
 
-    @ViewBuilder
     private func share(_ recap: CompetitionRecap) -> some View {
-        if let png, let uiImage {
-            Button {
-                competitionPresentShareSheet(
-                    CompetitionRecapShareItem(png: png, image: uiImage, title: recap.headline)
-                )
-            } label: {
-                Label("Share", systemImage: "square.and.arrow.up")
+        Button {
+            guard let image = competitionRecapImage(recap), let png = image.pngData() else {
+                renderFailed = true
+                return
             }
-            .buttonStyle(PrimaryButtonStyle())
-            .accessibilityHint("Opens the system share sheet")
-            .accessibilityIdentifier("competition.recap.share")
-        } else {
-            Button {} label: {
-                Label("Share", systemImage: "square.and.arrow.up")
-            }
-            .buttonStyle(PrimaryButtonStyle())
-            .disabled(true)
-            .accessibilityValue(renderFailed ? "Unavailable" : "Loading")
-            .accessibilityIdentifier("competition.recap.share")
+            renderFailed = false
+            competitionPresentShareSheet(
+                CompetitionRecapShareItem(png: png, image: image, title: recap.headline)
+            )
+        } label: {
+            Label("Share", systemImage: "square.and.arrow.up")
         }
+        .buttonStyle(PrimaryButtonStyle())
+        .accessibilityHint("Opens the system share sheet")
+        .accessibilityIdentifier("competition.recap.share")
     }
 }

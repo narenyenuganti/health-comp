@@ -2579,6 +2579,43 @@ final class CompetitionPresentationTests: XCTestCase {
         XCTAssertNil(CompetitionReactionsSeen(rawValue: "not json"))
     }
 
+    func testMotionSeenMarksOneMatchAndSurvivesItsRawValue() {
+        let id = CompetitionID(UUID())
+        let other = CompetitionID(UUID())
+        let marked = CompetitionMotionSeen().marking(.verdict, id)
+
+        XCTAssertFalse(CompetitionMotionSeen().hasSeen(.verdict, id))
+        XCTAssertTrue(marked.hasSeen(.verdict, id))
+        XCTAssertFalse(marked.hasSeen(.verdict, other))
+
+        let both = marked.marking(.verdict, other)
+        XCTAssertEqual(CompetitionMotionSeen(rawValue: both.rawValue), both)
+        XCTAssertEqual(CompetitionMotionSeen(rawValue: CompetitionMotionSeen().rawValue), .init())
+    }
+
+    func testRematchStageIgnoresThePresentationAndKeepsWhatResizesTheControl() {
+        let earlier = reactionPresentation()
+        let later = reactionPresentation(reactions: [reaction(.result, .salute, at: 1)])
+        XCTAssertNotEqual(earlier, later)
+        XCTAssertEqual(CompetitionRematchStage(.next(earlier)), CompetitionRematchStage(.next(later)))
+        XCTAssertNotEqual(CompetitionRematchStage(.next(earlier)), CompetitionRematchStage(.received(earlier)))
+
+        let id = CompetitionID(UUID())
+        let unknown = CompetitionRematchStage(.sent(challengeID: id, expiresAt: nil, link: nil))
+        XCTAssertEqual(
+            unknown,
+            CompetitionRematchStage(.sent(challengeID: CompetitionID(UUID()), expiresAt: nil, link: nil))
+        )
+        XCTAssertNotEqual(
+            unknown,
+            CompetitionRematchStage(.sent(challengeID: id, expiresAt: Date(), link: nil))
+        )
+        XCTAssertNotEqual(
+            unknown,
+            CompetitionRematchStage(.sent(challengeID: id, expiresAt: nil, link: .failed))
+        )
+    }
+
     func testCanReactOnlyWithARealOtherPersonAfterTheMatchStarts() {
         let completed = LocalCompetitionLifecyclePresentation.completed(
             outcome: .win,
