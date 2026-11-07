@@ -308,7 +308,7 @@ private struct MediumView: View {
     }
 
     private var strip: some View {
-        CompetitionWeekStrip(match: match, date: date, height: 14, spacing: 4)
+        CompetitionMatchStrip(match: match, date: date, height: 14, spacing: 4)
     }
 }
 

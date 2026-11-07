@@ -179,7 +179,7 @@ private struct WatchRectangularView: View {
                         number(match.opponentPointsText(), Theme.ink)
                     }
                     .font(.score(size: min(34, geometry.size.height - 26)))
-                    CompetitionWeekStrip(match: match, date: date, height: 6, spacing: 3) { _, outcome, bar in
+                    CompetitionMatchStrip(match: match, date: date, height: 6, spacing: 3) { _, outcome, bar in
                         bar.widgetAccentable(outcome == .won)
                     }
                 }

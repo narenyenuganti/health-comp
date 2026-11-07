@@ -31,7 +31,7 @@ struct CompetitionDayBar: View {
 
 /// The week as seven bars. `decorate` lets a surface move or accent one bar,
 /// so this file needs no Motion and works in the widgets.
-struct CompetitionWeekStrip<Bar: View>: View {
+struct CompetitionMatchStrip<Bar: View>: View {
     let match: CompetitionWidgetSnapshot.Match
     let date: Date
     let height: CGFloat
@@ -61,7 +61,7 @@ struct CompetitionWeekStrip<Bar: View>: View {
     }
 }
 
-extension CompetitionWeekStrip where Bar == CompetitionDayBar {
+extension CompetitionMatchStrip where Bar == CompetitionDayBar {
     init(match: CompetitionWidgetSnapshot.Match, date: Date, height: CGFloat, spacing: CGFloat) {
         self.init(match: match, date: date, height: height, spacing: spacing) { _, _, bar in bar }
     }

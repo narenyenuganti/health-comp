@@ -212,7 +212,7 @@ private struct WatchBoardPage: View {
                 .minimumScaleFactor(0.6)
                 .privacySensitive()
             if typeSize < .accessibility1 {
-                CompetitionWeekStrip(match: match, date: date, height: 12, spacing: 4)
+                CompetitionMatchStrip(match: match, date: date, height: 12, spacing: 4)
             }
             Spacer(minLength: 0)
         }
@@ -272,7 +272,7 @@ private struct WatchBoardPage: View {
     /// on a first result.
     private func strip(_ status: String) -> some View {
         ZStack {
-            CompetitionWeekStrip(match: match, date: date, height: 12, spacing: 4) { index, outcome, bar in
+            CompetitionMatchStrip(match: match, date: date, height: 12, spacing: 4) { index, outcome, bar in
                 bar
                     .scaleEffect(x: outcome == .won && barsRest ? 0 : 1, anchor: .trailing)
                     .moving(Motion.grow(index, of: 7), value: barsRest)

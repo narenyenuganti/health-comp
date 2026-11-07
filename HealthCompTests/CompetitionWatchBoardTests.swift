@@ -53,8 +53,8 @@ final class CompetitionWatchBoardTests: XCTestCase {
         await client.write(first, [])
         await client.write(first, [])  // unchanged: silent
         await client.write(touched, [])
-        XCTAssertEqual(calls.value.map(\.snapshot), [first, touched])
-        XCTAssertEqual(calls.value.map(\.material), [true, false])
+        XCTAssertEqual(calls.value.map { $0.snapshot }, [first, touched])
+        XCTAssertEqual(calls.value.map { $0.material }, [true, false])
     }
 
     func testMirrorClearsOnlyAfterTheFileIsGone() async throws {
@@ -151,10 +151,10 @@ final class CompetitionWatchBoardTests: XCTestCase {
             ("scheduled", "Day 1 is Sunday", "Day 1 is Sun · Sam", "DAY 1 · SAM"),
         ]
         for row in rows {
-            let match = match(row.scenario)
-            XCTAssertEqual(match.boardStatus(at: now, locale: en), row.status, row.scenario)
-            XCTAssertEqual(match.inlineText(at: now, locale: en), row.inline, row.scenario)
-            XCTAssertEqual(match.cornerLabel(at: now, locale: en), row.corner, row.scenario)
+            let shown = match(row.scenario)
+            XCTAssertEqual(shown.boardStatus(at: now, locale: en), row.status, row.scenario)
+            XCTAssertEqual(shown.inlineText(at: now, locale: en), row.inline, row.scenario)
+            XCTAssertEqual(shown.cornerLabel(at: now, locale: en), row.corner, row.scenario)
         }
     }
 
@@ -193,14 +193,8 @@ final class CompetitionWatchBoardTests: XCTestCase {
     }
 
     func testAnOlderFileWithNoBeltStillDecodes() throws {
-        var object = try XCTUnwrap(
-            JSONSerialization.jsonObject(with: JSONEncoder().encode(fixture("live"))) as? [String: Any]
-        )
-        var matches = try XCTUnwrap(object["matches"] as? [[String: Any]])
-        XCTAssertNil(matches[0]["belt"])
-        matches[0]["belt"] = nil
-        object["matches"] = matches
-        let data = try JSONSerialization.data(withJSONObject: object)
+        let data = try JSONEncoder().encode(fixture("live"))
+        XCTAssertFalse(String(decoding: data, as: UTF8.self).contains("belt"))
         XCTAssertEqual(try JSONDecoder().decode(Snapshot.self, from: data), fixture("live"))
     }
 

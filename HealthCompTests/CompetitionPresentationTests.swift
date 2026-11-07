@@ -1587,13 +1587,12 @@ final class CompetitionPresentationTests: XCTestCase {
         let outcomes: [CompetitionOutcome] = [.win, .win, .tie, .win, .loss, .loss, .win]
         let starts = [(8, 4), (8, 11), (8, 18), (8, 25), (9, 1), (9, 8), (9, 15)]
         let weeks = outcomes.indices.map { beltWeek($0 + 1, outcomes[$0], start: starts[$0]) }
-        let records = competitionOpponentRecords(weeks)
-        func belt(_ index: Int, of weeks: [LocalCompetitionPresentation] = weeks) -> CompetitionWidgetSnapshot.Belt? {
-            .init(for: weeks[index], records: competitionOpponentRecords(weeks), in: weeks)
+        func belt(_ index: Int, of all: [LocalCompetitionPresentation]) -> CompetitionWidgetSnapshot.Belt? {
+            CompetitionWidgetSnapshot.Belt(for: all[index], records: competitionOpponentRecords(all), in: all)
         }
-        XCTAssertFalse(records.isEmpty)
 
-        XCTAssertEqual(weeks.indices.map { belt($0)?.card }, [
+        let cards: [CompetitionWidgetSnapshot.Belt.Card?] = weeks.indices.map { belt($0, of: weeks)?.card }
+        XCTAssertEqual(cards, [
             .earned,
             .defended(1),
             nil,  // a tie keeps the belt but isn't a defense
@@ -1602,8 +1601,8 @@ final class CompetitionPresentationTests: XCTestCase {
             nil,  // their defense earns you no card
             .taken(weeks: 2, defenses: 1),
         ])
-        XCTAssertEqual(belt(6)?.holder, .you)
-        XCTAssertEqual(belt(6)?.defenses, 0)
+        XCTAssertEqual(belt(6, of: weeks)?.holder, .you)
+        XCTAssertEqual(belt(6, of: weeks)?.defenses, 0)
 
         let stillTheirs = Array(weeks.prefix(6))
         XCTAssertEqual(belt(5, of: stillTheirs)?.holder, .them)
