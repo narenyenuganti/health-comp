@@ -183,7 +183,11 @@ struct CompetitionResultView: View {
         .onDisappear {
             reactionsSeen = reactionsSeen.marking(competition)
             // On leaving: written earlier, it would end the Verdict mid-play.
-            motionSeen = motionSeen.marking(.verdict, competition.id)
+            // Only once it started: a full-screen cover held in front of it
+            // also counts as leaving.
+            if isRevealed {
+                motionSeen = motionSeen.marking(.verdict, competition.id)
+            }
         }
         .onAppear { startVerdict() }
         // A sleeping task, so leaving the screen cancels the tap.
