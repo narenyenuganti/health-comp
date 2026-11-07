@@ -265,6 +265,17 @@ private struct VersusStage {
         let left = slashX(top) + 21
         return CGRect(x: left, y: top, width: size.width - 20 - left, height: bottom - top)
     }
+
+    /// The giant initial's centre, kept clear of its own side's words: they
+    /// share its colour, so any overlap would hide them. A belt or a large
+    /// text size moves the initial, never the words.
+    func initialY(isYours: Bool, holdsBelt: Bool) -> CGFloat {
+        // SF Pro's capitals are about 0.7 em tall; 12 covers the creep.
+        let half = 0.35 * 660 * k
+        return isYours
+            ? max(456 * ky, yourBox(holdsBelt: holdsBelt).maxY + 12 + half)
+            : min(316 * ky, theirBox(holdsBelt: holdsBelt).minY - 12 - half)
+    }
 }
 
 /// One side of the slash, `inset` away from it (negative overlaps it).
@@ -434,6 +445,7 @@ private struct CompetitionVersusIntroView: View {
         )
         let creep = VersusClock.ramp(t, VersusClock.contact, 1.95)
         let dx = stage.size.width + 60
+        let holdsBelt = content.holder == (isYours ? .you : .them)
         return ZStack {
             isYours ? Theme.youFill : Theme.panel
             Text(String((isYours ? content.you : content.them).prefix(1)).uppercased())
@@ -444,7 +456,7 @@ private struct CompetitionVersusIntroView: View {
                 .offset(x: -side * (12 - 14 * creep), y: side * (6 - 7 * creep))
                 .position(
                     x: (isYours ? 240 : 150) * stage.kx,
-                    y: (isYours ? 456 : 316) * stage.ky
+                    y: stage.initialY(isYours: isYours, holdsBelt: holdsBelt)
                 )
         }
         .clipShape(VersusSlashSide(isYours: isYours, centerY: stage.center.y, inset: 5))
