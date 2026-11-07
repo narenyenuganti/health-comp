@@ -99,6 +99,24 @@ struct MainTabView: View {
             || store.competition.challengeSheetStatus.controlPhase == .sent
     }
 
+    /// A lifecycle change while the screen is open crossfades in place. The
+    /// result keeps its cut, because its own reveal is the transition.
+    private func competitionScreen(_ id: CompetitionID) -> some View {
+        let publication = store.competition.publication
+        let kind = publication?.dashboard.competitions.first { $0.id == id }
+            .map { competitionScreenKind($0, source: publication?.source) }
+        return ZStack {
+            destination(for: id)
+                .id(kind)
+                .transition(.opacity)
+        }
+        .animation(kind == nil || kind == .result ? nil : Motion.fade, value: kind)
+        .sensoryFeedback(trigger: kind) { old, new in
+            guard new == .underway, case let .invite(waitsOnThem)? = old else { return nil }
+            return waitsOnThem ? .impact(weight: .medium) : .success
+        }
+    }
+
     private var home: some View {
         NavigationStack(
             path: CompetitionHomeRoute.stack(
@@ -291,24 +309,6 @@ struct MainTabView: View {
                 }
             }
         )
-    }
-
-    /// A lifecycle change while the screen is open crossfades in place. The
-    /// result keeps its cut, because its own reveal is the transition.
-    private func competitionScreen(_ id: CompetitionID) -> some View {
-        let publication = store.competition.publication
-        let kind = publication?.dashboard.competitions.first { $0.id == id }
-            .map { competitionScreenKind($0, source: publication?.source) }
-        return ZStack {
-            destination(for: id)
-                .id(kind)
-                .transition(.opacity)
-        }
-        .animation(kind == nil || kind == .result ? nil : Motion.fade, value: kind)
-        .sensoryFeedback(trigger: kind) { old, new in
-            guard new == .underway, case let .invite(waitsOnThem)? = old else { return nil }
-            return waitsOnThem ? .impact(weight: .medium) : .success
-        }
     }
 
     @ViewBuilder
