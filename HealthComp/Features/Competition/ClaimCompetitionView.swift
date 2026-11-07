@@ -101,7 +101,7 @@ struct ClaimCompetitionView: View {
                 }
             }
             // Here, not on the NavigationStack, so the bar stays still.
-            .moving(Motion.settle, value: slotKey)
+            .moving(Motion.settle, value: settleKey)
             .moving(Motion.settle, value: hasQueuedChallenge)
             .background(Theme.ground)
             .navigationTitle("Challenge")
@@ -148,6 +148,12 @@ struct ClaimCompetitionView: View {
     /// `.ready` and `.declining` are one screen: a new id would regrow the mark.
     private var slotKey: MainTabFeature.InviteClaimStatus {
         status == .declining ? .ready : status
+    }
+
+    /// The reveal is one fade: an inset still rising would show the rules
+    /// through the buttons, and nothing already on screen needs to move.
+    private var settleKey: MainTabFeature.InviteClaimStatus {
+        slotKey == .loadingPreview ? .ready : slotKey
     }
 
     private var showsPreview: Bool {

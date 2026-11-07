@@ -265,12 +265,14 @@ struct CreateCompetitionView: View {
     }
 
     /// One slot: a new control crossfades over the last while height settles.
+    /// The group makes the incoming control ride the slot, not land ahead of it.
     private var controlSlot: some View {
         ZStack(alignment: .top) {
             control
                 .id(status.controlPhase)
                 .transition(Motion.appear)
         }
+        .geometryGroup()
     }
 
     @ViewBuilder
@@ -547,7 +549,6 @@ struct ChallengeFromLinkView: View {
                     .transition(Motion.appear)
             }
         }
-        .moving(Motion.settle, value: link.status)
         .moving(Motion.settle, value: controlPhase)
         .background(Theme.ground)
         .presentationDetents([.large])
@@ -574,12 +575,14 @@ struct ChallengeFromLinkView: View {
     }
 
     /// One slot: a new control crossfades over the last while height settles.
+    /// The group makes the incoming control ride the slot, not land ahead of it.
     private var controlSlot: some View {
         ZStack(alignment: .top) {
             control
                 .id(controlPhase)
                 .transition(Motion.appear)
         }
+        .geometryGroup()
     }
 
     @ViewBuilder
