@@ -187,7 +187,8 @@ struct AccountSettingsView: View {
 
     var body: some View {
         scrollingList
-            .task { load() }
+            // The id, as Account can open before the publication mounts the link.
+            .task(id: challengeLink != nil) { load() }
             .onChange(of: store.isEditingDisplayName) { _, isEditing in
                 isNameFocused = isEditing
             }
