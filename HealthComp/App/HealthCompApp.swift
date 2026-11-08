@@ -277,7 +277,9 @@ struct AppRootView: View {
     }
 }
 
-private struct AppProgressView: View {
+/// The mark holding still. The root and Home draw the same one at window
+/// centre, keyboard or not, so it stays put as one hands over to the other.
+struct AppProgressView: View {
     let title: String
 
     var body: some View {

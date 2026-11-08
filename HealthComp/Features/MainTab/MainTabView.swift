@@ -96,7 +96,8 @@ struct MainTabView: View {
                 )
             )
         ) {
-            Group {
+            // Home lays out finished under the loader, which fades off it.
+            ZStack {
                 if let publication = store.competition.publication {
                     CompetitionSharingView(
                         publication: publication,
@@ -134,18 +135,21 @@ struct MainTabView: View {
                         commandIDsInFlight: store.competition.commandIDsInFlight,
                         retry: retry,
                         practice: practiceStart(publication),
-                        isPracticePresented: $isPracticePresented
+                        isPracticePresented: $isPracticePresented,
+                        refresh: { [store] in
+                            await store.send(.competition(.pullToRefresh)).finish()
+                        }
                     )
-                    .refreshable {
-                        await store.send(.competition(.pullToRefresh)).finish()
-                    }
+                    .transition(.identity)
                 } else {
-                    ProgressView("Loading matches…")
-                        .foregroundStyle(Theme.secondary)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .background(Theme.ground)
+                    AppProgressView(title: "Loading matches…")
+                        .ignoresSafeArea()
+                        .allowsHitTesting(false)
+                        .transition(.opacity)
+                        .zIndex(1)
                 }
             }
+            .animation(Motion.fade, value: store.competition.publication == nil)
             .toolbar { homeToolbar }
             // Outside Home's `.refreshable`, which a sheet presented from
             // inside it inherits: a drag down would refresh, not close.
@@ -193,6 +197,7 @@ struct MainTabView: View {
                 continueTapped: { store.send(.notificationPromptTurnOnTapped) },
                 notNowTapped: { store.send(.notificationPromptNotNowTapped) }
             )
+            .presentationBackground(Theme.ground)
         }
     }
 
@@ -385,6 +390,11 @@ struct MainTabView: View {
                     }
                 )
             }
+        } else if !store.path.contains(id) {
+            // ponytail: popping after the match left (End Practice, a server
+            // delete) slides off blank, not "Match Unavailable"; cache the
+            // last screen if the blank shows.
+            Theme.ground.ignoresSafeArea()
         } else {
             ContentUnavailableView(
                 "Match Unavailable",
@@ -527,11 +537,7 @@ private struct CompetitionClosedChallengeView: View {
         } actions: {
             if competitionIsClosedOutgoing(competition.lifecycle), canChallengeAgain {
                 Button(action: challengeAgain) {
-                    if isInFlight {
-                        ProgressView()
-                    } else {
-                        Text("Challenge \(competition.opponentDisplayName) Again")
-                    }
+                    BusyLabel("Challenge \(competition.opponentDisplayName) Again", isBusy: isInFlight)
                 }
                 .buttonStyle(PrimaryButtonStyle())
                 .disabled(isInFlight)

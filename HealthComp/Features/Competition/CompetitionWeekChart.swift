@@ -111,14 +111,18 @@ struct CompetitionWeekStrip: View {
                 .frame(maxWidth: .infinity)
             }
         }
+        // Only a real change: nothing draws in on appear.
+        .animation(Motion.fade, value: days.map(outcome))
+        .animation(Motion.fade, value: days.map(leaderColor))
         .accessibilityHidden(true)
     }
 
     private func bar(_ day: LocalCompetitionDayPresentation) -> some View {
-        CompetitionDayBar(
-            outcome: competitionDayOutcome(day, currentDayOrdinal: currentDayOrdinal),
-            todayColor: leaderColor(day)
-        )
+        CompetitionDayBar(outcome: outcome(day), todayColor: leaderColor(day))
+    }
+
+    private func outcome(_ day: LocalCompetitionDayPresentation) -> CompetitionDayOutcome {
+        competitionDayOutcome(day, currentDayOrdinal: currentDayOrdinal)
     }
 
     private func leaderColor(_ day: LocalCompetitionDayPresentation) -> Color {

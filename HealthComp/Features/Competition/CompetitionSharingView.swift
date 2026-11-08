@@ -30,6 +30,9 @@ struct CompetitionSharingView: View {
     /// The pace sheet, presented by the host above `.refreshable`, so a
     /// downward drag closes it instead of refreshing Home.
     var isPracticePresented: Binding<Bool> = .constant(false)
+    /// Pull to refresh. On the scroll view, not the host, so the + sheet
+    /// doesn't inherit it and a downward drag closes the sheet.
+    var refresh: (@Sendable () async -> Void)? = nil
 
     // ponytail: in-memory, a dismissed row returns after relaunch within its 24 h; persist per profile if that annoys
     @State private var dismissedChallengeIDs: Set<CompetitionID> = []
@@ -42,15 +45,17 @@ struct CompetitionSharingView: View {
     var body: some View {
         let layout = self.layout
         let records = self.records
+        let summary = competitionIssueSummary(
+            publication.dashboard.issues,
+            attributedIDs: attributedIDs(layout)
+        )
         // A plain VStack keeps every card in the hierarchy, so scrolling to a
         // card works in both directions.
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
-                if let summary = competitionIssueSummary(
-                    publication.dashboard.issues,
-                    attributedIDs: attributedIDs(layout)
-                ) {
+                if let summary {
                     issueBanner(summary)
+                        .transition(Motion.appear)
                 }
 
                 if !layout.needsYou.isEmpty {
@@ -63,18 +68,24 @@ struct CompetitionSharingView: View {
 
                 if let hero = layout.hero {
                     let belt = beltGoingIn(for: hero, in: records)
-                    VStack(alignment: .leading, spacing: 12) {
-                        competitionButton(hero, caption: homeCaption(beltStanding(belt, hero), hero)) {
-                            CompetitionHeroCard(
-                                competition: hero,
-                                source: publication.source,
-                                belt: belt,
-                                reaction: unseen(hero)
-                            )
+                    // One slot: a new hero crossfades over the last one.
+                    ZStack {
+                        VStack(alignment: .leading, spacing: 12) {
+                            competitionButton(hero, caption: homeCaption(beltStanding(belt, hero), hero)) {
+                                CompetitionHeroCard(
+                                    competition: hero,
+                                    source: publication.source,
+                                    belt: belt,
+                                    reaction: unseen(hero)
+                                )
+                            }
+                            .buttonStyle(CompetitionPressButtonStyle())
+                            issueLine(hero)
                         }
-                        .buttonStyle(CompetitionPressButtonStyle())
-                        issueLine(hero)
+                        .id(hero.id)
+                        .transition(Motion.appear)
                     }
+                    .transition(Motion.appear)
                 }
 
                 if !layout.live.isEmpty {
@@ -100,6 +111,7 @@ struct CompetitionSharingView: View {
                                 }
                                 .padding(16)
                                 .themePanel()
+                                .transition(Motion.appear)
                             }
                         }
                     }
@@ -141,19 +153,30 @@ struct CompetitionSharingView: View {
                     }
                     .buttonStyle(SecondaryButtonStyle())
                     .accessibilityIdentifier("competition.practice.challenge")
+                    .transition(Motion.appear)
                 }
 
                 if layout.isEmpty {
                     emptyState
+                        .transition(Motion.appear)
                 }
 
                 if !records.isEmpty {
                     historyButton
+                        .transition(Motion.appear)
                 }
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
+            // Derived keys only: every publication carries a new `evaluatedAt`,
+            // which would animate all the time-derived text.
+            .moving(Motion.settle, value: layout.shape)
+            .moving(Motion.settle, value: publication.dashboard.issues)
+            .moving(Motion.settle, value: layout.allItems.map { unseen($0)?.updatedAt })
+            .moving(Motion.settle, value: layout.allItems.map { beltGoingIn(for: $0, in: records)?.holder })
+            .moving(Motion.settle, value: records.isEmpty)
         }
+        .refreshable(refresh)
         .background(Theme.ground)
         .navigationTitle("Home")
         .navigationBarTitleDisplayMode(.inline)
@@ -265,6 +288,7 @@ struct CompetitionSharingView: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier(id)
+        .transition(Motion.appear)
     }
 
     private func rowPanel<Row: View>(
@@ -275,11 +299,13 @@ struct CompetitionSharingView: View {
             ForEach(Array(competitions.enumerated()), id: \.element.id) { index, competition in
                 if index > 0 {
                     CompetitionRowDivider()
+                        .transition(Motion.appear)
                 }
                 VStack(spacing: 0) {
                     row(competition)
                     issueLine(competition, inset: true)
                 }
+                .transition(Motion.appear)
             }
         }
         .themePanel()
@@ -340,6 +366,7 @@ struct CompetitionSharingView: View {
                 .padding(.leading, inset ? 70 : 0)
                 .padding(.trailing, inset ? 16 : 0)
                 .padding(.bottom, inset ? 8 : 0)
+                .transition(Motion.appear)
         }
     }
 
@@ -416,13 +443,10 @@ struct CompetitionSharingView: View {
                 Button {
                     reinvite()
                 } label: {
-                    if isReinviteInFlight {
-                        ProgressView()
-                    } else {
-                        Text(
-                            "Challenge \(LocalCompetitionIdentity.opponentDisplayName) Again"
-                        )
-                    }
+                    BusyLabel(
+                        "Challenge \(LocalCompetitionIdentity.opponentDisplayName) Again",
+                        isBusy: isReinviteInFlight
+                    )
                 }
                 .buttonStyle(PrimaryButtonStyle())
                 .disabled(isReinviteInFlight)
@@ -491,6 +515,8 @@ struct CompetitionSharingView: View {
         Label(summary, systemImage: "exclamationmark.triangle.fill")
             .font(.subheadline.weight(.medium))
             .foregroundStyle(Theme.ink)
+            .contentTransition(.opacity)
+            .animation(Motion.fade, value: summary)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(14)
             .themePanel(cornerRadius: 16)
@@ -522,15 +548,19 @@ private struct CompetitionHeroCard: View {
                    competitionBeltChipText($0, opponentName: competition.opponentDisplayName)
                }) {
                 CompetitionBeltChip(holder: holder, text: text)
+                    .transition(Motion.appear)
             }
 
             if competitionShouldShowScores(competition.lifecycle) {
                 HeroScoreboard(competition: competition, isCompact: isCompact)
+                    .transition(Motion.appear)
                 statement
                     .font(.body)
                     .foregroundStyle(Theme.secondary)
+                    .transition(Motion.appear)
             } else {
                 scheduledHeadline
+                    .transition(Motion.appear)
             }
 
             CompetitionWeekStrip(
@@ -540,10 +570,12 @@ private struct CompetitionHeroCard: View {
 
             if let reaction {
                 Divider().overlay(Theme.hairline)
+                    .transition(Motion.appear)
                 CompetitionReactionLine(
                     reaction: reaction,
                     opponentName: competition.opponentDisplayName
                 )
+                .transition(Motion.appear)
             }
 
             if let disclosure = competitionFixtureDisclosure(
@@ -567,6 +599,8 @@ private struct CompetitionHeroCard: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
+        // A flipped sentence can wrap differently.
+        .moving(Motion.settle, value: leadSide)
     }
 
     private var statusRow: some View {
@@ -621,13 +655,30 @@ private struct CompetitionHeroCard: View {
         }
     }
 
-    private var statement: Text {
-        competitionLeadText(
+    private var margin: Double {
+        competitionDisplayedMargin(
             userPoints: competition.userPoints,
-            opponentPoints: competition.opponentPoints,
-            opponentDisplayName: competition.opponentDisplayName,
-            locale: locale
+            opponentPoints: competition.opponentPoints
         )
+    }
+
+    /// Who leads. The same side only rolls the digits; a change is a new
+    /// sentence, which lands after the numbers that caused it.
+    private var leadSide: FloatingPointSign? {
+        margin == 0 ? nil : margin.sign
+    }
+
+    private var statement: some View {
+        ZStack(alignment: .leading) {
+            competitionLeadText(
+                userPoints: competition.userPoints,
+                opponentPoints: competition.opponentPoints,
+                opponentDisplayName: competition.opponentDisplayName,
+                locale: locale
+            )
+            .scoreRoll(abs(margin), id: leadSide)
+        }
+        .animation(Motion.late, value: leadSide)
     }
 
     private var scheduledHeadline: some View {
@@ -702,6 +753,7 @@ private struct HeroScoreboard: View {
                 .tracking(1.4)
             Text(competitionPointsText(points))
                 .font(.score(size: scoreSize).monospacedDigit())
+                .scoreRoll(points, id: competition.id)
         }
         .foregroundStyle(color)
         .frame(maxWidth: .infinity, alignment: trailing ? .trailing : .leading)
@@ -734,6 +786,7 @@ private struct CompetitionSharingRow: View {
                     reaction: reaction,
                     opponentName: competition.opponentDisplayName
                 )
+                .transition(Motion.appear)
             }
         }
         .padding(16)
@@ -961,7 +1014,9 @@ private struct CompetitionBeltChip: View {
                 .textCase(.uppercase)
                 .foregroundStyle(holder == .you ? Theme.you : Theme.ink)
                 .fixedSize(horizontal: false, vertical: true)
+                .contentTransition(.opacity)
         }
+        .animation(Motion.fade, value: text)
         .padding(.horizontal, 9)
         .padding(.vertical, 4)
         // A capsule at one line; a rounded rectangle once the text wraps, so
@@ -1031,11 +1086,10 @@ private struct CompetitionClosedChallengeRow: View {
 
             if canChallengeAgain {
                 Button(action: challengeAgain) {
-                    if isInFlight {
-                        ProgressView()
-                    } else {
-                        Text("Challenge \(competition.opponentDisplayName) Again")
-                    }
+                    BusyLabel(
+                        "Challenge \(competition.opponentDisplayName) Again",
+                        isBusy: isInFlight
+                    )
                 }
                 .buttonStyle(SecondaryButtonStyle())
                 .disabled(isInFlight)
@@ -1075,20 +1129,14 @@ private struct CompetitionArchiveSwipeRow<Row: View>: View {
                 row()
                     .containerRelativeFrame(.horizontal)
                 Button(action: archive) {
-                    Group {
-                        if isInFlight {
-                            ProgressView()
-                                .tint(Theme.onInk)
-                        } else {
-                            Text("Archive")
-                                .font(.subheadline.weight(.semibold))
-                        }
-                    }
-                    .foregroundStyle(Theme.onInk)
-                    .frame(width: actionWidth)
-                    .frame(maxHeight: .infinity)
-                    .background(Theme.ink)
-                    .contentShape(Rectangle())
+                    BusyLabel("Archive", isBusy: isInFlight)
+                        .font(.subheadline.weight(.semibold))
+                        .tint(Theme.onInk)
+                        .foregroundStyle(Theme.onInk)
+                        .frame(width: actionWidth)
+                        .frame(maxHeight: .infinity)
+                        .background(Theme.ink)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .disabled(isInFlight)
@@ -1850,7 +1898,7 @@ struct CompetitionPressButtonStyle: ButtonStyle {
         configuration.label
             .scaleEffect(configuration.isPressed && !reduceMotion ? 0.96 : 1)
             .animation(
-                reduceMotion ? nil : .easeOut(duration: 0.14),
+                reduceMotion ? nil : Motion.press,
                 value: configuration.isPressed
             )
     }
@@ -2108,6 +2156,13 @@ struct CompetitionHomeLayout: Equatable {
 
     var allItems: [LocalCompetitionPresentation] {
         [hero].compactMap { $0 } + needsYou + live + upNext + recentResults
+    }
+
+    /// Who is drawn where, and in which lifecycle: Home's animation key. Not
+    /// the layout itself, whose presentations change on every publication.
+    var shape: [[String]] {
+        [[hero].compactMap { $0 }, needsYou, live, upNext, recentResults]
+            .map { $0.map(competitionSharingIdentifier) }
     }
 }
 
