@@ -345,9 +345,11 @@ final class BlockChallengerUITests: XCTestCase {
                 longUnblock.tap()
                 XCTAssertTrue(eventually { longUnblock.value as? String == "Unblocking" })
                 shot("account-unblocking-\(suffix)")
+                // At AX5 the error row lands below the fold, where the list
+                // hasn't made it yet: scroll it on screen, as for Health.
                 let unblockError = element("account.blocked.error")
-                XCTAssertTrue(unblockError.waitForExistence(timeout: 5))
                 scrollToElement(unblockError)
+                XCTAssertEqual(unblockError.label, "Couldn’t unblock. Check your connection and try again.")
                 shot("account-blocked-error-\(suffix)")
                 try audit("account-blocked-error-\(suffix)", region: blockedSection())
 
