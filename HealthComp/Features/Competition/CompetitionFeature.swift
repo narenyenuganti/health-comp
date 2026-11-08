@@ -144,6 +144,12 @@ struct CompetitionFeature {
         /// Reactions being saved: the kind being set, or nil while removing.
         var pendingReactions: [CompetitionReactionKey: CompetitionReactionKind?] = [:]
         var reactionFailures: Set<CompetitionReactionKey> = []
+        /// Photos you may see, by profile id; anyone missing shows initials.
+        var profilePhotos: [UUID: ProfilePhoto] = [:]
+        /// People whose photo you reported on this iPhone.
+        var reportedPhotoOwners: Set<UUID> = []
+        var photoReportsInFlight: Set<UUID> = []
+        var ownPhoto = OwnPhotoState()
 
         init(
             publication: CompetitionPublication? = nil,
@@ -184,6 +190,19 @@ struct CompetitionFeature {
             commandIDsInFlight.contains(id)
         }
 
+        /// What `PersonAvatar` reads from the environment.
+        var profilePhotoImages: ProfilePhotoImages {
+            ProfilePhotoImages(ownID: ownProfile?.id, photos: profilePhotos)
+        }
+
+        /// You and everyone on a real match, sorted so it can key a task.
+        var photoOwners: [UUID] {
+            guard publication?.source == .remoteParticipants else { return [] }
+            let others = publication?.dashboard.competitions.compactMap(\.opponentProfileID) ?? []
+            return Array(Set(others + [ownProfile?.id].compactMap { $0 }))
+                .sorted { $0.uuidString < $1.uuidString }
+        }
+
         /// One match's reaction state, for its match and result screens.
         func reactionControl(
             for id: CompetitionID,
@@ -197,6 +216,17 @@ struct CompetitionFeature {
                 react: { send(.reactionTapped(id, $0, $1)) }
             )
         }
+    }
+
+    /// Your photo in Account: saving or removing it, and why it's gone.
+    struct OwnPhotoState: Equatable, Sendable {
+        enum Status: Equatable, Sendable {
+            case idle, saving, saveFailed, removing, removeFailed
+        }
+
+        var status: Status = .idle
+        /// A reviewer removed your last photo; cleared once you set or remove one.
+        var removedByReview = false
     }
 
     enum Action: Equatable, Sendable {
@@ -261,6 +291,25 @@ struct CompetitionFeature {
         case sceneBecameActive
         case timeZoneChanged
         case stop
+        /// Shown people's photos: this iPhone's cache first, then the server.
+        case profilePhotosNeeded([UUID])
+        case profilePhotosListed(
+            owners: [UUID],
+            visible: [ProfilePhotoReference],
+            reported: Set<UUID>
+        )
+        case profilePhotoLoaded(UUID, ProfilePhoto)
+        case ownPhotoRequested
+        case ownPhotoLoaded(OwnProfilePhoto)
+        /// A `ProfilePhotoImage.jpeg(from:crop:)` result.
+        case ownPhotoSaveTapped(Data)
+        case ownPhotoSaveFinished(ProfilePhoto?)
+        /// Move and Scale closed without saving.
+        case ownPhotoCropClosed
+        case ownPhotoRemoveConfirmed
+        case ownPhotoRemoveFinished(succeeded: Bool)
+        case photoReportConfirmed(UUID)
+        case photoReportFinished(UUID, succeeded: Bool)
     }
 
     @Dependency(\.competitionClient) var competitionClient
@@ -276,6 +325,8 @@ struct CompetitionFeature {
         case blockedPeople
         case nudge
         case reaction
+        case profilePhotos
+        case ownPhoto
     }
 
     var body: some ReducerOf<Self> {
@@ -984,8 +1035,14 @@ struct CompetitionFeature {
                 state.nudges = [:]
                 state.pendingReactions = [:]
                 state.reactionFailures = []
+                state.profilePhotos = [:]
+                state.reportedPhotoOwners = []
+                state.photoReportsInFlight = []
+                state.ownPhoto = OwnPhotoState()
                 return .concatenate(
                     .merge(
+                        .cancel(id: CancelID.profilePhotos),
+                        .cancel(id: CancelID.ownPhoto),
                         .cancel(id: CancelID.reaction),
                         .cancel(id: CancelID.publications),
                         .cancel(id: CancelID.inviteRecipient),
@@ -998,6 +1055,135 @@ struct CompetitionFeature {
                     ),
                     .run { _ in await competitionClient.stop() }
                 )
+
+            case let .profilePhotosNeeded(owners):
+                guard !owners.isEmpty else { return .none }
+                let missing = owners.filter { state.profilePhotos[$0] == nil }
+                let versions = state.profilePhotos.compactMapValues(\.version)
+                // Each lookup replaces the last. A failure leaves initials
+                // and tries again next time.
+                return .run { send in
+                    for owner in missing {
+                        if let data = await competitionClient.cachedProfilePhotoData(owner),
+                           let photo = ProfilePhoto(jpeg: data, version: nil) {
+                            await send(.profilePhotoLoaded(owner, photo))
+                        }
+                    }
+                    guard let visible = try? await competitionClient.loadProfilePhotos(owners) else {
+                        return
+                    }
+                    let shown = Set(visible.map(\.ownerProfileID))
+                    var reported: Set<UUID> = []
+                    for owner in owners where !shown.contains(owner) {
+                        if await competitionClient.isProfilePhotoReported(owner) {
+                            reported.insert(owner)
+                        }
+                    }
+                    await send(.profilePhotosListed(owners: owners, visible: visible, reported: reported))
+                    for reference in visible where versions[reference.ownerProfileID] != reference.version {
+                        guard let data = try? await competitionClient.profilePhotoData(reference),
+                              let photo = ProfilePhoto(jpeg: data, version: reference.version)
+                        else { continue }
+                        await send(.profilePhotoLoaded(reference.ownerProfileID, photo))
+                    }
+                }
+                .cancellable(id: CancelID.profilePhotos, cancelInFlight: true)
+
+            case let .profilePhotosListed(owners, visible, reported):
+                // Removed, blocked, reported or no longer shared: back to the initial.
+                let shown = Set(visible.map(\.ownerProfileID))
+                for owner in owners where !shown.contains(owner) {
+                    state.profilePhotos[owner] = nil
+                }
+                state.reportedPhotoOwners.formUnion(reported)
+                return .none
+
+            case let .profilePhotoLoaded(owner, photo):
+                guard !state.reportedPhotoOwners.contains(owner) else { return .none }
+                state.profilePhotos[owner] = photo
+                return .none
+
+            case .ownPhotoRequested:
+                return .run { send in
+                    if let own = try? await competitionClient.loadOwnProfilePhoto() {
+                        await send(.ownPhotoLoaded(own))
+                    }
+                }
+                .cancellable(id: CancelID.ownPhoto)
+
+            case let .ownPhotoLoaded(own):
+                state.ownPhoto.removedByReview = own.removedByReview
+                if own.reference == nil, let id = state.ownProfile?.id {
+                    state.profilePhotos[id] = nil
+                }
+                return .none
+
+            case let .ownPhotoSaveTapped(jpeg):
+                guard state.ownPhoto.status != .saving, state.ownPhoto.status != .removing else {
+                    return .none
+                }
+                state.ownPhoto.status = .saving
+                return .run { send in
+                    let reference = try? await competitionClient.setProfilePhoto(jpeg)
+                    await send(.ownPhotoSaveFinished(
+                        reference.flatMap { ProfilePhoto(jpeg: jpeg, version: $0.version) }
+                    ))
+                }
+                .cancellable(id: CancelID.ownPhoto)
+
+            case let .ownPhotoSaveFinished(photo):
+                guard state.ownPhoto.status == .saving else { return .none }
+                guard let photo, let id = state.ownProfile?.id else {
+                    state.ownPhoto.status = .saveFailed
+                    return .none
+                }
+                state.profilePhotos[id] = photo
+                state.ownPhoto = OwnPhotoState()
+                return .none
+
+            case .ownPhotoCropClosed:
+                if state.ownPhoto.status == .saveFailed { state.ownPhoto.status = .idle }
+                return .none
+
+            case .ownPhotoRemoveConfirmed:
+                guard state.ownPhoto.status != .saving, state.ownPhoto.status != .removing else {
+                    return .none
+                }
+                state.ownPhoto.status = .removing
+                return .run { send in
+                    let succeeded = (try? await competitionClient.removeProfilePhoto()) != nil
+                    await send(.ownPhotoRemoveFinished(succeeded: succeeded))
+                }
+                .cancellable(id: CancelID.ownPhoto)
+
+            case let .ownPhotoRemoveFinished(succeeded):
+                guard state.ownPhoto.status == .removing else { return .none }
+                guard succeeded else {
+                    state.ownPhoto.status = .removeFailed
+                    return .none
+                }
+                if let id = state.ownProfile?.id { state.profilePhotos[id] = nil }
+                state.ownPhoto = OwnPhotoState()
+                return .none
+
+            case let .photoReportConfirmed(owner):
+                guard !state.reportedPhotoOwners.contains(owner),
+                      state.photoReportsInFlight.insert(owner).inserted
+                else { return .none }
+                // Not cancellable: the server call finishes.
+                return .run { send in
+                    let succeeded = (try? await competitionClient.reportProfilePhoto(owner)) != nil
+                    await send(.photoReportFinished(owner, succeeded: succeeded))
+                }
+
+            case let .photoReportFinished(owner, succeeded):
+                // stop clears the set, so a late result never marks the next account.
+                guard state.photoReportsInFlight.remove(owner) != nil else { return .none }
+                if succeeded {
+                    state.profilePhotos[owner] = nil
+                    state.reportedPhotoOwners.insert(owner)
+                }
+                return .none
             }
         }
     }

@@ -134,8 +134,8 @@ private struct SmallView: View {
         VStack(alignment: .leading, spacing: 2) {
             StatusLabel(text: match.status(at: date), namesSomeone: match.statusNamesSomeone(at: date))
             Spacer(minLength: 4)
-            row("You", match.userPointsText(), Theme.you, isYou: true)
-            row(match.name, match.opponentPointsText(), Theme.ink, isYou: false)
+            row("You", match.userPointsText(), match.userPoints, Theme.you, isYou: true)
+            row(match.name, match.opponentPointsText(), match.opponentPoints, Theme.ink, isYou: false)
             if showsLead, let lead = match.leadLine(at: date) {
                 Text(lead)
                     .font(.caption)
@@ -154,7 +154,9 @@ private struct SmallView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 
-    private func row(_ label: String, _ number: String, _ color: Color, isYou: Bool) -> some View {
+    private func row(
+        _ label: String, _ number: String, _ points: Double, _ color: Color, isYou: Bool
+    ) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             // Always a few letters of the name: the number shrinks first,
             // but never truncates, so large text leaves the name less room.
@@ -172,6 +174,7 @@ private struct SmallView: View {
                 .minimumScaleFactor(0.4)
                 .lineLimit(1)
                 .foregroundStyle(color)
+                .scoreRoll(points, id: match.id)
                 .widgetAccentable(isYou)
                 .privacySensitive()
                 .layoutPriority(1)  // fills what the name leaves, shrinking to fit
@@ -247,7 +250,7 @@ private struct MediumView: View {
         let today = match.todayLines(at: date)
         let isFinal = if case .final = match.state(at: date) { true } else { false }
         return HStack(alignment: .bottom, spacing: 12) {
-            side("YOU", match.userPointsText(), showsToday ? today.user : nil, Theme.you, isYou: true)
+            side("YOU", match.userPointsText(), match.userPoints, showsToday ? today.user : nil, Theme.you, isYou: true)
             VStack(spacing: 6) {
                 ViewThatFits(in: .horizontal) {
                     strip.frame(minWidth: 60, idealWidth: 60, maxWidth: .infinity)
@@ -266,14 +269,14 @@ private struct MediumView: View {
             .frame(maxWidth: .infinity)
             .padding(.bottom, 6)
             side(
-                match.name.uppercased(), match.opponentPointsText(),
+                match.name.uppercased(), match.opponentPointsText(), match.opponentPoints,
                 showsToday ? today.opponent : nil, Theme.ink, isYou: false
             )
         }
     }
 
     private func side(
-        _ caption: String, _ number: String, _ today: String?, _ color: Color, isYou: Bool
+        _ caption: String, _ number: String, _ points: Double, _ today: String?, _ color: Color, isYou: Bool
     ) -> some View {
         VStack(alignment: isYou ? .leading : .trailing, spacing: 2) {
             self.caption(caption, isYou: isYou)
@@ -283,6 +286,7 @@ private struct MediumView: View {
                 .minimumScaleFactor(0.5)
                 .lineLimit(1)
                 .foregroundStyle(color)
+                .scoreRoll(points, id: match.id)
                 .widgetAccentable(isYou)
                 .privacySensitive()
             if let today {
@@ -308,25 +312,7 @@ private struct MediumView: View {
     }
 
     private var strip: some View {
-        HStack(spacing: 4) {
-            ForEach(Array(match.dayOutcomes(at: date).enumerated()), id: \.offset) { _, outcome in
-                CompetitionDayBar(outcome: outcome, todayColor: todayColor)
-                    .frame(height: 14)
-            }
-        }
-        .frame(maxWidth: .infinity)
-    }
-
-    /// Today's dashed bar in the color of whoever leads the day.
-    private var todayColor: Color {
-        guard case let .live(day) = match.state(at: date),
-              match.userDayPoints.indices.contains(day - 1),
-              match.opponentDayPoints.indices.contains(day - 1),
-              let user = match.userDayPoints[day - 1],
-              let opponent = match.opponentDayPoints[day - 1]
-        else { return Theme.outline }
-        return competitionDisplayedMargin(userPoints: user, opponentPoints: opponent) >= 0
-            ? Theme.you : Theme.ink
+        CompetitionMatchStrip(match: match, date: date, height: 14, spacing: 4)
     }
 }
 
@@ -338,10 +324,21 @@ private struct RectangularView: View {
 
     var body: some View {
         let lines = match.rectangularLines(at: date)
+        let hasScores = match.state(at: date) != .scheduled
         VStack(alignment: .leading, spacing: 0) {
             ForEach(Array(lines.enumerated()), id: \.offset) { index, choices in
-                ViewThatFits(in: .horizontal) {
-                    ForEach(choices, id: \.self) { Text($0).lineLimit(1) }
+                // Keyed by position: keyed by text, a changed score is a new view.
+                let line = ViewThatFits(in: .horizontal) {
+                    ForEach(Array(choices.enumerated()), id: \.offset) { _, choice in
+                        Text(choice).lineLimit(1)
+                    }
+                }
+                Group {
+                    if index == 1, hasScores {
+                        line.scoreRoll(match.userPoints + match.opponentPoints, id: match.id)
+                    } else {
+                        line
+                    }
                 }
                 .font(index == 0 ? .headline : .body)
                 .privacySensitive(index < 2)
@@ -357,6 +354,9 @@ private struct CircularView: View {
 
     var body: some View {
         let circular = match.circular(at: date)
+        let margin = competitionDisplayedMargin(
+            userPoints: match.userPoints, opponentPoints: match.opponentPoints
+        )
         VStack(spacing: 0) {
             Text(circular.caption)
                 .font(.caption2.weight(.bold).width(.condensed))
@@ -365,6 +365,9 @@ private struct CircularView: View {
                 .font(.title3.weight(.heavy).width(.compressed))
                 .minimumScaleFactor(0.5)
                 .lineLimit(1)
+                // Per match, with a separate id for the weekday before Day 1, so
+                // the first margin fades in and switching matches never rolls.
+                .scoreRoll(margin, id: "\(match.id)/\(match.state(at: date) == .scheduled)")
                 .privacySensitive()
         }
         .padding(4)

@@ -232,8 +232,11 @@ final class BlockChallengerUITests: XCTestCase {
         XCTAssertEqual(error.label, "Couldn’t unblock. Check your connection and try again.")
         XCTAssertEqual(app.descendants(matching: .any).matching(identifier: "account.blocked.error").count, 1)
         // In Alexandria's row, under her Unblock, above Morgan.
-        XCTAssertGreaterThanOrEqual(error.frame.minY, longUnblock.frame.maxY - 1)
-        XCTAssertLessThan(error.frame.maxY, morganUnblock.frame.minY)
+        // The row settles open, so its frames are final a moment later.
+        XCTAssertTrue(eventually {
+            error.frame.minY >= longUnblock.frame.maxY - 1
+                && error.frame.maxY < morganUnblock.frame.minY
+        })
         XCTAssertTrue(longUnblock.exists)
         XCTAssertTrue(eventually { longUnblock.isEnabled && (longUnblock.value as? String ?? "").isEmpty })
 

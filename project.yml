@@ -3,6 +3,7 @@ options:
   bundleIdPrefix: com.narenyenuganti
   deploymentTarget:
     iOS: "17.0"
+    watchOS: "10.0"
   xcodeVersion: "16.0"
   createIntermediateGroups: true
 
@@ -38,7 +39,8 @@ targets:
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
         UIApplicationSupportsIndirectInputEvents: true
-        UILaunchScreen: {}
+        UILaunchScreen:
+          UIColorName: LaunchGround
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
         UIRequiredDeviceCapabilities:
@@ -74,6 +76,7 @@ targets:
       - package: Supabase
         product: Supabase
       - target: HealthCompWidgets
+      - target: HealthCompWatch
 
   # Reads the app's snapshot file and Live Activity content only: no
   # network, HealthKit, TCA or CompetitionCore. Shared sources must stay extension-safe.
@@ -88,6 +91,7 @@ targets:
       - path: HealthComp/Features/Competition/CompetitionLeadText.swift
       - path: HealthComp/LiveActivity
       - path: HealthComp/App/Theme.swift
+      - path: HealthComp/App/Motion.swift
     info:
       path: HealthCompWidgets/Info.plist
       properties:
@@ -104,6 +108,87 @@ targets:
       configs:
         Staging:
           PRODUCT_BUNDLE_IDENTIFIER: com.narenyenuganti.HealthComp.staging.widgets
+
+  # No network, HealthKit, TCA or CompetitionCore: the iPhone sends the widget
+  # snapshot over WatchConnectivity and this app stores it for the complication.
+  HealthCompWatch:
+    type: application
+    platform: watchOS
+    sources:
+      - path: HealthCompWatch
+      - path: HealthComp/Features/Widgets/CompetitionWidgetSnapshot.swift
+      - path: HealthComp/Features/Widgets/CompetitionWatchBoard.swift
+      - path: HealthComp/Features/Competition/CompetitionDayBar.swift
+      - path: HealthComp/Features/Competition/CompetitionDateFormatting.swift
+      - path: HealthComp/Features/Competition/CompetitionLeadText.swift
+      - path: HealthComp/App/Theme.swift
+      - path: HealthComp/App/Motion.swift
+    info:
+      path: HealthCompWatch/Info.plist
+      properties:
+        CFBundleDisplayName: HealthComp
+        CFBundleShortVersionString: "1.0"
+        CFBundleVersion: "1"
+        WKApplication: true
+        WKCompanionAppBundleIdentifier: "$(HEALTHCOMP_IOS_BUNDLE_ID)"
+        WKRunsIndependentlyOfCompanionApp: false
+        HEALTHCOMP_APP_GROUP: "$(HEALTHCOMP_APP_GROUP)"
+    settings:
+      base:
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        CODE_SIGN_ENTITLEMENTS: HealthCompWatch/HealthCompWatch.entitlements
+        HEALTHCOMP_IOS_BUNDLE_ID: com.narenyenuganti.HealthComp
+        PRODUCT_BUNDLE_IDENTIFIER: com.narenyenuganti.HealthComp.watchkitapp
+        TARGETED_DEVICE_FAMILY: "4"
+        SWIFT_VERSION: "5.9"
+      configs:
+        Staging:
+          HEALTHCOMP_IOS_BUNDLE_ID: com.narenyenuganti.HealthComp.staging
+          PRODUCT_BUNDLE_IDENTIFIER: com.narenyenuganti.HealthComp.staging.watchkitapp
+    dependencies:
+      - target: HealthCompWatchWidgets
+
+  HealthCompWatchWidgets:
+    type: app-extension
+    platform: watchOS
+    sources:
+      - path: HealthCompWatchWidgets
+      - path: HealthComp/Features/Widgets/CompetitionWidgetSnapshot.swift
+      - path: HealthComp/Features/Widgets/CompetitionWatchBoard.swift
+      - path: HealthComp/Features/Competition/CompetitionDayBar.swift
+      - path: HealthComp/Features/Competition/CompetitionDateFormatting.swift
+      - path: HealthComp/App/Theme.swift
+      - path: HealthComp/App/Motion.swift
+    info:
+      path: HealthCompWatchWidgets/Info.plist
+      properties:
+        CFBundleDisplayName: HealthComp
+        CFBundleShortVersionString: "1.0"
+        CFBundleVersion: "1"
+        HEALTHCOMP_APP_GROUP: "$(HEALTHCOMP_APP_GROUP)"
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        CODE_SIGN_ENTITLEMENTS: HealthCompWatch/HealthCompWatch.entitlements
+        PRODUCT_BUNDLE_IDENTIFIER: com.narenyenuganti.HealthComp.watchkitapp.widgets
+        TARGETED_DEVICE_FAMILY: "4"
+        SWIFT_VERSION: "5.9"
+      configs:
+        Staging:
+          PRODUCT_BUNDLE_IDENTIFIER: com.narenyenuganti.HealthComp.staging.watchkitapp.widgets
+
+  HealthCompWatchUITests:
+    type: bundle.ui-testing
+    platform: watchOS
+    sources:
+      - path: HealthCompWatchUITests
+    dependencies:
+      - target: HealthCompWatch
+    settings:
+      base:
+        GENERATE_INFOPLIST_FILE: YES
+        SWIFT_VERSION: "5.9"
 
   HealthCompTests:
     type: bundle.unit-test
@@ -151,6 +236,18 @@ targets:
         SWIFT_VERSION: "5.9"
 
 schemes:
+  HealthCompWatch:
+    build:
+      targets:
+        HealthCompWatch: all
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - name: HealthCompWatchUITests
+          parallelizable: false
+
   HealthComp:
     build:
       targets:

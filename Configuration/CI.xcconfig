@@ -18,3 +18,7 @@ ENABLE_TESTABILITY[sdk=iphonesimulator*] = YES
 // macOS plugins keep the same signing in both, so device builds skip relinking.
 CODE_SIGN_IDENTITY = -
 CODE_SIGNING_ALLOWED[sdk=iphoneos*] = NO
+
+// The embedded watch app builds with every iOS build, so it needs the same rules.
+ARCHS[sdk=watchsimulator*] = arm64
+CODE_SIGNING_ALLOWED[sdk=watchos*] = NO

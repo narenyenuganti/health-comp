@@ -16,48 +16,70 @@ struct CompetitionResultView: View {
     var reactions: CompetitionReactionControl? = nil
     /// Practice only: the pinned action in place of Rematch.
     var challengeSomeone: (() -> Void)? = nil
+    /// Real matches only: your own win in a loss or a tie.
+    var personalBest: String? = nil
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.locale) private var locale
     @Environment(\.timeZone) private var timeZone
     @ScaledMetric(relativeTo: .largeTitle) private var headlineSize: CGFloat = 52
     @State private var isRevealed = false
+    @State private var winLanded = false
     @State private var isDeleteConfirmationPresented = false
     @State private var showsWeek = false
     @State private var showsShare = false
+    @State private var replaysCeremony = false
     @AppStorage(CompetitionReactionsSeen.storageKey)
     private var reactionsSeen = CompetitionReactionsSeen()
+    @AppStorage(CompetitionMotionSeen.storageKey)
+    private var motionSeen = CompetitionMotionSeen()
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 28) {
                 if let issue {
                     CompetitionIssueLine(issue: issue, retry: retry, id: competition.id)
+                        .transition(Motion.appear)
                 }
 
                 muteButton?.failureNote
+                    .transition(Motion.appear)
 
                 resultHero
-                    .opacity(isRevealed ? 1 : 0)
-                    .offset(y: isRevealed || reduceMotion ? 0 : 10)
+                    .verdictBeat(0, shown: isShown)
 
                 VStack(spacing: 12) {
                     finalScore
                     summaryLine
+                    if let personalBest {
+                        Text(personalBest)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(Theme.you)
+                            .multilineTextAlignment(.center)
+                            .frame(maxWidth: .infinity)
+                            .accessibilityIdentifier("competition.result.personal-best")
+                            .verdictBeat(2, shown: isShown)
+                    }
                 }
-                .opacity(isRevealed ? 1 : 0)
+                .verdictBeat(1, shown: isShown)
 
-                if let text = beltEvent.flatMap({
-                    competitionBeltResultText($0, opponentName: opponentName)
-                }) {
+                if let text = beltText {
                     beltBanner(text)
-                        .opacity(isRevealed ? 1 : 0)
+                        .verdictBeat(2, shown: isShown)
+                        .transition(Motion.appear)
+                }
+
+                // The Verdict's insights sit with the belt, before the rest.
+                if let split = competitionRingSplit(competition.days) {
+                    ringSplitPanel(split)
+                        .verdictBeat(2, shown: isShown)
                 }
 
                 if let reactions {
                     reactionPanel(reactions)
-                        .opacity(isRevealed ? 1 : 0)
+                        .verdictBeat(2, shown: isShown)
                 }
 
                 if isBestAvailableResult {
@@ -68,10 +90,12 @@ struct CompetitionResultView: View {
                     .font(.caption)
                     .foregroundStyle(Theme.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .verdictBeat(2, shown: isShown)
                 }
 
                 if !competition.days.isEmpty {
                     weekCard
+                        .verdictBeat(2, shown: isShown)
                 }
 
                 if dataControl == .preservedHistory {
@@ -83,11 +107,13 @@ struct CompetitionResultView: View {
                     .foregroundStyle(Theme.secondary)
                     .frame(maxWidth: .infinity, minHeight: 44)
                     .accessibilityIdentifier("competition.history.preserved")
+                    .transition(Motion.appear)
                 }
 
                 // Real matches only; practice also renders as remote.
                 if source == .remoteParticipants, !competition.isPractice {
                     shareResultButton
+                        .verdictBeat(2, shown: isShown)
                 }
 
                 // At accessibility sizes a pinned control would cover the screen.
@@ -95,6 +121,7 @@ struct CompetitionResultView: View {
                     rematchControl
                 }
             }
+            .moving(Motion.settle, value: layoutKey)
             .frame(maxWidth: 560)
             .padding(.horizontal, 16)
             .padding(.vertical, 18)
@@ -113,12 +140,23 @@ struct CompetitionResultView: View {
                     .background(Theme.ground)
             }
         }
+        // Out here so the pinned bar's ground moves with the control in it.
+        .moving(Motion.settle, value: rematchStage)
         .onChange(of: rematch) { oldValue, newValue in
             guard oldValue == .sending, newValue != .sending,
                   let text = rematchAnnouncement(newValue)
             else { return }
             AccessibilityNotification.Announcement(text).post()
         }
+        .sensoryFeedback(trigger: rematchStage) { old, new in
+            guard old == .sending else { return nil }
+            switch new {
+            case .sent: return .success
+            case .failed: return .error
+            default: return nil
+            }
+        }
+        .sensoryFeedback(.success, trigger: winLanded) { _, landed in landed }
         .navigationTitle(competition.opponentDisplayName)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -160,16 +198,76 @@ struct CompetitionResultView: View {
                 )
             )
         }
-        .onDisappear { reactionsSeen = reactionsSeen.marking(competition) }
-        .onAppear {
-            if reduceMotion {
-                isRevealed = true
-            } else {
-                withAnimation(.easeOut(duration: 0.28)) {
-                    isRevealed = true
-                }
+        .onDisappear {
+            reactionsSeen = reactionsSeen.marking(competition)
+            // On leaving: written earlier, it would end the Verdict mid-play.
+            // Only once it started: a full-screen cover held in front of it
+            // also counts as leaving.
+            if isRevealed {
+                motionSeen = motionSeen.marking(.verdict, competition.id)
             }
         }
+        // Plays first, on the Verdict's seen mark, then starts its clock; at
+        // once when there is nothing to play.
+        .competitionBeltCeremony(
+            event: beltEvent,
+            opponentName: opponentName,
+            isFirstView: isFirstView,
+            replay: $replaysCeremony,
+            onFinished: startVerdict
+        )
+        // Yours only: what you got already rained on Home.
+        .competitionReactionRain()
+        // A sleeping task, so leaving the screen cancels the tap.
+        .task(id: isRevealed) {
+            guard isRevealed, isFirstView, outcome == .win else { return }
+            // A ceremony's thuds were this win's haptics.
+            guard voiceOver || !competitionBeltCeremonyCanPlay(beltEvent, opponentName: opponentName)
+            else { return }
+            if isStaged {
+                // Mid-way through the title's fade.
+                guard (try? await Task.sleep(for: .seconds(0.35))) != nil else { return }
+            }
+            winLanded = true
+        }
+    }
+
+    /// The Verdict's one start: every beat and the win haptic key off this
+    /// flip, so holding it back holds the whole clock.
+    private func startVerdict() {
+        isRevealed = true
+    }
+
+    /// False from the visit after the first: the mark is written on leaving,
+    /// so this holds still for the whole of this one.
+    private var isFirstView: Bool {
+        !isArchived && !motionSeen.hasSeen(.verdict, competition.id)
+    }
+
+    /// Reduce Motion and VoiceOver get the page final on the first frame.
+    private var isStaged: Bool {
+        isFirstView && !reduceMotion && !voiceOver
+    }
+
+    private var isShown: Bool {
+        isRevealed || !isStaged
+    }
+
+    /// What can resize the page after first paint. Never a publication, whose
+    /// `evaluatedAt` changes every time.
+    private var layoutKey: [Bool] {
+        [
+            issue != nil,
+            muteButton?.failure != nil,
+            beltText != nil,
+            reactions?.failed.contains(.result) == true,
+            competition.receivedReaction(.result) != nil,
+            isArchived,
+        ]
+    }
+
+    private var beltText: (holder: CompetitionBeltHolder, title: String, detail: String?)? {
+        beltEvent.flatMap { competitionBeltResultText($0, opponentName: opponentName) }
     }
 
     private var resultHero: some View {
@@ -259,6 +357,7 @@ struct CompetitionResultView: View {
     private var finalScoreOwners: some View {
         FinalScoreOwner(
             name: "You",
+            avatar: PersonAvatar(name: competition.ownerDisplayName, size: 40, isYou: true),
             points: competition.userPoints,
             fractionDigits: digits,
             tint: Theme.you
@@ -269,6 +368,11 @@ struct CompetitionResultView: View {
             .accessibilityHidden(true)
         FinalScoreOwner(
             name: competition.opponentDisplayName,
+            avatar: PersonAvatar(
+                name: competition.opponentDisplayName,
+                photo: competition.opponentProfileID,
+                size: 40
+            ),
             points: competition.opponentPoints,
             fractionDigits: digits,
             tint: Theme.ink
@@ -381,6 +485,7 @@ struct CompetitionResultView: View {
                         opponentName: opponentName,
                         id: "competition.reaction.received"
                     )
+                    .transition(Motion.appear)
                 }
             }
             .padding(16)
@@ -388,6 +493,7 @@ struct CompetitionResultView: View {
             .themePanel()
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("competition.result.react")
+            .transition(Motion.appear)
         }
     }
 
@@ -486,8 +592,93 @@ struct CompetitionResultView: View {
         }
     }
 
+    /// Who took Move, Exercise and Stand: amber where you did, ink where
+    /// they did, so a loss can still hold a ring.
+    private func ringSplitPanel(_ split: (you: [Double], them: [Double])) -> some View {
+        let names = ["Move", "Exercise", competitionStandTitle(competition.days).capitalized]
+        let took = names.indices.filter { split.you[$0] > split.them[$0] }.map { names[$0] }
+        let tookText: String? = switch took.count {
+        case 0: nil
+        case 3: "You took all three"
+        default: "You took " + took.joined(separator: " and ")
+        }
+        return VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                SectionLabel("EACH RING")
+                Spacer(minLength: 8)
+                if let tookText {
+                    Text(tookText)
+                        .font(.themeLabel)
+                        .foregroundStyle(Theme.you)
+                        .multilineTextAlignment(.trailing)
+                }
+            }
+            ForEach(names.indices, id: \.self) { index in
+                ringSplitRow(names[index], you: split.you[index], them: split.them[index])
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .themePanel()
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(
+            (["Each ring", tookText] + names.indices.map {
+                "\(names[$0]): you \(competitionPointsText(split.you[$0], locale: locale)), \(opponentName) \(competitionPointsText(split.them[$0], locale: locale))"
+            })
+            .compactMap { $0 }
+            .joined(separator: ". ")
+        )
+        .accessibilityIdentifier("competition.result.rings")
+    }
+
+    private func ringSplitRow(_ name: String, you: Double, them: Double) -> some View {
+        let total = you + them
+        return VStack(alignment: .leading, spacing: 4) {
+            Text(name)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(Theme.ink)
+            GeometryReader { proxy in
+                let width = proxy.size.width - 2
+                HStack(spacing: 2) {
+                    SlantedBar()
+                        .fill(you > them ? Theme.youFill : Theme.track)
+                        .frame(width: total > 0 ? width * you / total : width / 2)
+                    SlantedBar()
+                        .fill(them > you ? Theme.ink : Theme.track)
+                }
+            }
+            .frame(height: 14)
+            HStack {
+                Text(competitionPointsText(you, locale: locale))
+                    .fontWeight(.semibold)
+                    .foregroundStyle(you > them ? Theme.you : Theme.secondary)
+                Spacer(minLength: 8)
+                Text(competitionPointsText(them, locale: locale))
+                    .foregroundStyle(Theme.secondary)
+            }
+            .font(.caption.monospacedDigit())
+        }
+    }
+
     // The belt replaces the awards list: what this week did to it.
+    @ViewBuilder
     private func beltBanner(
+        _ text: (holder: CompetitionBeltHolder, title: String, detail: String?)
+    ) -> some View {
+        if competitionBeltCeremonyCanPlay(beltEvent, opponentName: opponentName) {
+            Button {
+                replaysCeremony = true
+            } label: {
+                beltBannerContent(text)
+            }
+            .buttonStyle(CompetitionPressButtonStyle())
+            .accessibilityHint("Plays the belt ceremony again")
+        } else {
+            beltBannerContent(text)
+        }
+    }
+
+    private func beltBannerContent(
         _ text: (holder: CompetitionBeltHolder, title: String, detail: String?)
     ) -> some View {
         VStack(spacing: 6) {
@@ -535,24 +726,33 @@ struct CompetitionResultView: View {
         }
     }
 
-    @ViewBuilder
+    private var rematchStage: CompetitionRematchStage { CompetitionRematchStage(rematch) }
+
+    /// One slot in both placements: each state crossfades into the last.
     private var rematchStateControl: some View {
+        ZStack {
+            rematchStateContent
+                .transition(Motion.appear)
+        }
+        // A taller state starts at its final size: this holds it inside the
+        // height as it settles, off the page above.
+        .clipped()
+    }
+
+    @ViewBuilder
+    private var rematchStateContent: some View {
         switch rematch {
-        case .available:
-            Button("Rematch \(opponentName)") {
+        case .available, .sending:
+            let isSending = rematch == .sending
+            Button {
                 send(.rematchTapped(competition.id))
+            } label: {
+                BusyLabel("Rematch \(opponentName)", isBusy: isSending)
             }
             .buttonStyle(PrimaryButtonStyle())
+            .disabled(isSending)
+            .accessibilityValue(isSending ? "Sending" : "")
             .accessibilityIdentifier("competition.rematch.create")
-
-        case .sending:
-            HStack(spacing: 8) {
-                ProgressView()
-                Text("Sending rematch…")
-            }
-            .foregroundStyle(Theme.secondary)
-            .frame(maxWidth: .infinity, minHeight: 54)
-            .accessibilityElement(children: .combine)
 
         case let .sent(challengeID, expiresAt, link):
             sentRow(challengeID: challengeID, expiresAt: expiresAt, link: link)
@@ -652,7 +852,11 @@ struct CompetitionResultView: View {
         }
         Group {
             if isRemote, link != .notOnThisPhone {
-                let share = rematchShare(challengeID: challengeID, link: link)
+                // One slot, or both states would sit side by side as they fade.
+                let share = ZStack {
+                    rematchShare(challengeID: challengeID, link: link)
+                        .transition(Motion.appear)
+                }
                 if dynamicTypeSize.isAccessibilitySize {
                     VStack(spacing: 10) {
                         row
@@ -704,9 +908,13 @@ struct CompetitionResultView: View {
 
         case nil, .loading?, .notOnThisPhone?:
             Button {} label: {
-                HStack(spacing: 8) {
-                    ProgressView()
-                    Label("Share", systemImage: "square.and.arrow.up")
+                Label {
+                    Text("Share")
+                } icon: {
+                    // In the icon's own slot, so the row beside it keeps its width.
+                    Image(systemName: "square.and.arrow.up")
+                        .hidden()
+                        .overlay { ProgressView().waitingFade() }
                 }
             }
             .buttonStyle(SecondaryButtonStyle())
@@ -883,6 +1091,60 @@ func competitionResultTitle(
     }
 }
 
+/// Each side's week by ring (Move, Exercise, Stand), as the server accepted
+/// it. Nil unless every scored day on both sides kept its split, so the parts
+/// always add up to the final scores.
+func competitionRingSplit(
+    _ days: [LocalCompetitionDayPresentation]
+) -> (you: [Double], them: [Double])? {
+    var you = [0.0, 0, 0]
+    var them = [0.0, 0, 0]
+    var counted = false
+    for day in days {
+        if day.ownerAcceptedPoints != nil {
+            guard let rings = day.ownerRingPoints else { return nil }
+            you = zip(you, rings).map(+)
+        }
+        if day.opponentRevealedPoints != nil {
+            guard let rings = day.opponentRingPoints else { return nil }
+            them = zip(them, rings).map(+)
+        }
+        counted = counted || (day.ownerAcceptedPoints != nil && day.opponentRevealedPoints != nil)
+    }
+    return counted ? (you, them) : nil
+}
+
+/// One true line about your own week on a loss or a tie, against your last
+/// four finished real weeks before it. Nil with fewer than three of them, or
+/// when this week was no better than your average. Points only.
+func competitionPersonalBestText(
+    for competition: LocalCompetitionPresentation,
+    in competitions: [LocalCompetitionPresentation],
+    locale: Locale = .current
+) -> String? {
+    guard let result = competition.terminalResult, result.outcome != .win else { return nil }
+    func bounds(_ week: LocalCompetitionPresentation) -> (start: Date, end: Date)? {
+        week.acceptedConfiguration.flatMap { competitionScheduleBoundaries($0.schedule) }
+    }
+    let weeks = competitionHistoryWeeks(competitions)
+    guard let index = weeks.firstIndex(where: { $0.id == competition.id }),
+          let start = bounds(competition)?.start
+    else { return nil }
+    // Finished before this one began: a match that overlapped it isn't past.
+    let past = weeks[(index + 1)...]
+        .filter { bounds($0).map { $0.end <= start } ?? false }
+        .prefix(4)
+        .compactMap(\.terminalResult?.userPoints)
+    guard past.count >= 3 else { return nil }
+    let above = (result.userPoints - past.reduce(0, +) / Double(past.count)).rounded()
+    guard above >= 1 else { return nil }
+    let amount = "\(competitionPointsText(above, locale: locale)) \(above == 1 ? "point" : "points")"
+    if past.allSatisfy({ result.userPoints > $0 }) {
+        return "Your best week of your last \(past.count + 1), \(amount) above your average"
+    }
+    return "\(amount) above your average week"
+}
+
 /// "won 2 days, lost 4, tied 1": only days with both scores, never a 0–0
 /// day. Nil when no day counts.
 func competitionDaysSummaryText(_ days: [LocalCompetitionDayPresentation]) -> String? {
@@ -959,6 +1221,7 @@ struct CompetitionFinalScoreLayout: Layout {
 
 private struct FinalScoreOwner: View {
     let name: String
+    let avatar: PersonAvatar
     let points: Double
     let fractionDigits: Int
     let tint: Color
@@ -967,6 +1230,9 @@ private struct FinalScoreOwner: View {
 
     var body: some View {
         VStack(spacing: 4) {
+            // A late photo fades in where it sits; the beat doesn't wait.
+            avatar
+                .padding(.bottom, 2)
             Text(name)
                 .font(.subheadline.weight(.semibold))
             Text(competitionPointsText(points, fractionDigits: fractionDigits))
@@ -978,6 +1244,64 @@ private struct FinalScoreOwner: View {
         }
         .foregroundStyle(tint)
         .frame(maxWidth: .infinity)
+    }
+}
+
+private extension View {
+    /// Rests just above nothing, still hittable and in the accessibility
+    /// tree, until the Verdict's clock reaches this beat.
+    func verdictBeat(_ step: Int, shown: Bool) -> some View {
+        opacity(shown ? 1 : Motion.pendingOpacity)
+            .animation(Motion.beat(step), value: shown)
+    }
+}
+
+/// `CompetitionRematchState` without its presentations, whose `evaluatedAt`
+/// moves with every publication. Safe to animate and to fire haptics on.
+enum CompetitionRematchStage: Equatable {
+    case available, sending
+    case sent(expiryKnown: Bool, link: CompetitionFeature.InviteLinkState?)
+    case received, next, alreadyChallenged, challengedYou, inMatch
+    case failed(CompetitionFeature.InviteCreationFailure)
+
+    init(_ state: CompetitionFeature.CompetitionRematchState) {
+        switch state {
+        case .available: self = .available
+        case .sending: self = .sending
+        case let .sent(_, expiresAt, link):
+            self = .sent(expiryKnown: expiresAt != nil, link: link)
+        case .received: self = .received
+        case .next: self = .next
+        case .alreadyChallenged: self = .alreadyChallenged
+        case .challengedYou: self = .challengedYou
+        case .inMatch: self = .inMatch
+        case let .failed(failure): self = .failed(failure)
+        }
+    }
+}
+
+/// Moments that play once per match on this phone, marked in the same map
+/// as the Week under keys of their own. Add a case for another. Write the
+/// mark on leaving the screen, not on appear, or the moment ends itself
+/// mid-play.
+extension CompetitionMotionSeen {
+    enum Moment: String {
+        case verdict
+        case versus
+    }
+
+    func hasSeen(_ moment: Moment, _ id: CompetitionID) -> Bool {
+        weekDrawn[Self.mark(moment, id)] != nil
+    }
+
+    func marking(_ moment: Moment, _ id: CompetitionID) -> Self {
+        var marked = self
+        marked.weekDrawn[Self.mark(moment, id)] = 1
+        return marked
+    }
+
+    private static func mark(_ moment: Moment, _ id: CompetitionID) -> String {
+        "\(moment.rawValue):\(id.rawValue.uuidString.lowercased())"
     }
 }
 

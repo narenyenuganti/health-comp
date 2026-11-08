@@ -14,6 +14,9 @@ public struct RemoteAcceptedScoreRow: Codable, Equatable, Sendable {
     public let scoringPolicyIdentity: String
     public let clientRevision: Int64
     public let serverSequence: Int64
+    /// Move, Exercise and Stand in basis points, adding up to the accepted
+    /// score. Display only, and nil on rows stored before it was kept.
+    public let ringBasisPoints: [Int]?
 
     public init(
         ordinal: Int,
@@ -22,7 +25,8 @@ public struct RemoteAcceptedScoreRow: Codable, Equatable, Sendable {
         wireContentSHA256: String,
         scoringPolicyIdentity: String = RemoteScoringWireV1.policyIdentity,
         clientRevision: Int64,
-        serverSequence: Int64
+        serverSequence: Int64,
+        ringBasisPoints: [Int]? = nil
     ) throws {
         guard (1...7).contains(ordinal) else { throw ValidationError.invalidOrdinal }
         guard scoringPolicyIdentity == RemoteScoringWireV1.policyIdentity else { throw ValidationError.invalidPolicy }
@@ -34,6 +38,11 @@ public struct RemoteAcceptedScoreRow: Codable, Equatable, Sendable {
         } else {
             guard let availabilityReason, Self.closedUnavailableReasons.contains(availabilityReason) else { throw ValidationError.invalidAvailability }
         }
+        if let ringBasisPoints {
+            guard ringBasisPoints.count == 3, ringBasisPoints.allSatisfy({ (0...20_000).contains($0) }),
+                  acceptedCentiPoints == min(ringBasisPoints.reduce(0, +), 60_000)
+            else { throw ValidationError.invalidAcceptedScore }
+        }
         self.ordinal = ordinal
         self.acceptedCentiPoints = acceptedCentiPoints
         self.availabilityReason = availabilityReason
@@ -41,10 +50,20 @@ public struct RemoteAcceptedScoreRow: Codable, Equatable, Sendable {
         self.scoringPolicyIdentity = scoringPolicyIdentity
         self.clientRevision = clientRevision
         self.serverSequence = serverSequence
+        self.ringBasisPoints = ringBasisPoints
+    }
+
+    /// The digest already binds the ring values, so a row stored before they
+    /// were kept is the same row as its replay that carries them.
+    public static func == (lhs: Self, rhs: Self) -> Bool {
+        lhs.ordinal == rhs.ordinal && lhs.acceptedCentiPoints == rhs.acceptedCentiPoints
+            && lhs.availabilityReason == rhs.availabilityReason && lhs.wireContentSHA256 == rhs.wireContentSHA256
+            && lhs.scoringPolicyIdentity == rhs.scoringPolicyIdentity && lhs.clientRevision == rhs.clientRevision
+            && lhs.serverSequence == rhs.serverSequence
     }
 
     private enum CodingKeys: String, CodingKey {
-        case ordinal, acceptedCentiPoints, availabilityReason, wireContentSHA256, scoringPolicyIdentity, clientRevision, serverSequence
+        case ordinal, acceptedCentiPoints, availabilityReason, wireContentSHA256, scoringPolicyIdentity, clientRevision, serverSequence, ringBasisPoints
     }
 
     public init(from decoder: Decoder) throws {
@@ -56,7 +75,8 @@ public struct RemoteAcceptedScoreRow: Codable, Equatable, Sendable {
             wireContentSHA256: container.decode(String.self, forKey: .wireContentSHA256),
             scoringPolicyIdentity: container.decode(String.self, forKey: .scoringPolicyIdentity),
             clientRevision: container.decode(Int64.self, forKey: .clientRevision),
-            serverSequence: container.decode(Int64.self, forKey: .serverSequence)
+            serverSequence: container.decode(Int64.self, forKey: .serverSequence),
+            ringBasisPoints: container.decodeIfPresent([Int].self, forKey: .ringBasisPoints)
         )
     }
 

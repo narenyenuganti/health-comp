@@ -11,9 +11,10 @@ struct MainTabView: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var isChallengePresented = false
     @State private var isPracticePresented = false
+    @State private var isVersusPlaying = false
 
     var body: some View {
-        Group {
+        ZStack {
             if let onboarding = store.onboarding {
                 PermissionOnboardingView(
                     step: onboarding.step,
@@ -22,19 +23,30 @@ struct MainTabView: View {
                     continueTapped: { store.send(.onboardingContinueTapped) },
                     notNowTapped: {}
                 )
+                .transition(Motion.appear)
+                .zIndex(1)
             } else {
                 home
+                    .transition(.identity)
             }
         }
         .task {
             await store.send(.task).finish()
         }
+        .task(id: photoOwners) {
+            store.send(.competition(.profilePhotosNeeded(photoOwners)))
+        }
         .onChange(of: scenePhase) { _, newValue in
             store.send(.scenePhaseChanged(Self.sceneState(newValue)))
+            // A photo changed or hidden while away shows without a relaunch.
+            if newValue == .active {
+                store.send(.competition(.profilePhotosNeeded(photoOwners)))
+            }
         }
         // Keeps the notifications prompt from presenting under the
-        // Challenge or practice sheet, where SwiftUI would drop it.
-        .onChange(of: isChallengePresented || isPracticePresented) { _, isOpen in
+        // Challenge or practice sheet, where SwiftUI would drop it, or over
+        // the versus intro.
+        .onChange(of: isChallengePresented || isPracticePresented || isVersusPlaying) { _, isOpen in
             store.send(.challengeSheetVisibilityChanged(isOpen))
         }
         .onReceive(
@@ -46,8 +58,9 @@ struct MainTabView: View {
         }
         .sheet(isPresented: claimSheetPresented) {
             ClaimCompetitionView(
-                status: store.inviteClaimStatus,
-                preview: store.inviteClaimPreview,
+                liveStatus: store.inviteClaimStatus,
+                livePreview: store.inviteClaimPreview,
+                ownName: store.competition.ownProfile?.displayName ?? "",
                 now: store.inviteClaimPreviewEvaluatedAt ?? Date(),
                 hasQueuedChallenge: store.queuedClaimRoute != nil,
                 declineFailed: store.claimDeclineFailed,
@@ -80,6 +93,53 @@ struct MainTabView: View {
                 store.send(.competition(.challengeLinkRequested))
             }
         }
+        // Here, because both sheets can close without drawing the outcome.
+        // A timeout reaches `.idle` too, so the open match is the proof.
+        .sensoryFeedback(.success, trigger: isSheetLanding) { old, new in
+            old && !new && !store.path.isEmpty
+                && store.inviteClaimStatus == .idle && store.challengeFromLink == nil
+        }
+        // Last, so every screen and sheet above draws the same photos.
+        .environment(\.profilePhotos, store.competition.profilePhotoImages)
+    }
+
+    /// Everyone whose photo could show, with the sender of a challenge
+    /// being claimed: they sent it to you, so you may see theirs.
+    private var photoOwners: [UUID] {
+        let owners = store.competition.photoOwners
+        guard let sender = store.inviteClaimPreview?.sender.id, !owners.contains(sender) else {
+            return owners
+        }
+        return owners + [sender]
+    }
+
+    /// Accept, or Send from a link: both end by closing the sheet on the match.
+    private var isSheetLanding: Bool {
+        if store.inviteClaimStatus == .claiming
+            || store.inviteClaimStatus == .waitingForCompetition {
+            return true
+        }
+        guard store.challengeFromLink != nil else { return false }
+        return store.competition.challengeSheetStatus == .creating
+            || store.competition.challengeSheetStatus.controlPhase == .sent
+    }
+
+    /// A lifecycle change while the screen is open crossfades in place. The
+    /// result keeps its cut, because its own reveal is the transition.
+    private func competitionScreen(_ id: CompetitionID) -> some View {
+        let publication = store.competition.publication
+        let kind = publication?.dashboard.competitions.first { $0.id == id }
+            .map { competitionScreenKind($0, source: publication?.source) }
+        return ZStack {
+            destination(for: id)
+                .id(kind)
+                .transition(.opacity)
+        }
+        .animation(kind == nil || kind == .result ? nil : Motion.fade, value: kind)
+        .sensoryFeedback(trigger: kind) { old, new in
+            guard new == .underway, case let .invite(waitsOnThem)? = old else { return nil }
+            return waitsOnThem ? .impact(weight: .medium) : .success
+        }
     }
 
     private var home: some View {
@@ -96,7 +156,8 @@ struct MainTabView: View {
                 )
             )
         ) {
-            Group {
+            // Home lays out finished under the loader, which fades off it.
+            ZStack {
                 if let publication = store.competition.publication {
                     CompetitionSharingView(
                         publication: publication,
@@ -134,18 +195,21 @@ struct MainTabView: View {
                         commandIDsInFlight: store.competition.commandIDsInFlight,
                         retry: retry,
                         practice: practiceStart(publication),
-                        isPracticePresented: $isPracticePresented
+                        isPracticePresented: $isPracticePresented,
+                        refresh: { [store] in
+                            await store.send(.competition(.pullToRefresh)).finish()
+                        }
                     )
-                    .refreshable {
-                        await store.send(.competition(.pullToRefresh)).finish()
-                    }
+                    .transition(.identity)
                 } else {
-                    ProgressView("Loading matches…")
-                        .foregroundStyle(Theme.secondary)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity)
-                        .background(Theme.ground)
+                    AppProgressView(title: "Loading matches…")
+                        .ignoresSafeArea()
+                        .allowsHitTesting(false)
+                        .transition(.opacity)
+                        .zIndex(1)
                 }
             }
+            .animation(Motion.fade, value: store.competition.publication == nil)
             .toolbar { homeToolbar }
             // Outside Home's `.refreshable`, which a sheet presented from
             // inside it inherits: a drag down would refresh, not close.
@@ -171,8 +235,15 @@ struct MainTabView: View {
                         .toolbarRole(.editor)
                     }
                 case let .competition(id):
-                    destination(for: id)
+                    competitionScreen(id)
                         .toolbarRole(.editor)
+                        // Here, as this outlives the swap to the result: the
+                        // swap moves no focus, and a push never reaches this.
+                        .onChange(of: completedResultTitle(id)) { old, title in
+                            if old == nil, let title {
+                                AccessibilityNotification.Announcement(title).post()
+                            }
+                        }
                 }
             }
         }
@@ -186,7 +257,13 @@ struct MainTabView: View {
                 continueTapped: { store.send(.notificationPromptTurnOnTapped) },
                 notNowTapped: { store.send(.notificationPromptNotNowTapped) }
             )
+            .presentationBackground(Theme.ground)
         }
+        .competitionVersusIntro(
+            matchID: store.path.last,
+            publication: store.competition.publication,
+            isPlaying: $isVersusPlaying
+        )
     }
 
     private var notificationPromptPresented: Binding<Bool> {
@@ -212,27 +289,24 @@ struct MainTabView: View {
             }
             if let openAccount {
                 Button(action: openAccount) {
-                    Group {
-                        if let accountInitial {
-                            Text(accountInitial)
-                                .font(.headline.width(.condensed))
-                                .foregroundStyle(Theme.you)
-                        } else {
-                            Image(systemName: "person.fill")
-                                .foregroundStyle(Theme.ink)
-                        }
+                    if let name = store.competition.ownProfile?.displayName, !name.isEmpty {
+                        PersonAvatar(
+                            name: name,
+                            size: 34,
+                            isYou: true,
+                            initialFont: .headline.width(.condensed)
+                        )
+                    } else {
+                        Image(systemName: "person.fill")
+                            .foregroundStyle(Theme.ink)
+                            .frame(width: 34, height: 34)
+                            .background(Theme.control, in: Circle())
                     }
-                    .frame(width: 34, height: 34)
-                    .background(Theme.control, in: Circle())
                 }
                 .accessibilityLabel("Account")
                 .accessibilityIdentifier("app.account")
             }
         }
-    }
-
-    private var accountInitial: String? {
-        store.competition.ownProfile?.displayName.first.map { String($0).uppercased() }
     }
 
     /// The fixture reinvites Alex; a real match prefills the Challenge sheet
@@ -272,6 +346,18 @@ struct MainTabView: View {
                     break
                 }
             }
+        )
+    }
+
+    /// Nil until that match finishes.
+    private func completedResultTitle(_ id: CompetitionID) -> String? {
+        guard let competition = store.competition.publication?.dashboard.competitions
+            .first(where: { $0.id == id }),
+            case .completed = competition.lifecycle
+        else { return nil }
+        return competitionResultTitle(
+            outcome: competitionResultOutcome(competition),
+            opponentDisplayName: competition.opponentDisplayName
         )
     }
 
@@ -327,7 +413,14 @@ struct MainTabView: View {
                             send: { store.send(.competition(.nudgeTapped(id))) }
                         )
                         : nil,
-                    reactions: reactionControl(id, source: publication.source)
+                    reactions: reactionControl(id, source: publication.source),
+                    reportPhoto: competition.opponentProfileID.map { owner in
+                        CompetitionReportPhoto(
+                            isReported: store.competition.reportedPhotoOwners.contains(owner),
+                            isInFlight: store.competition.photoReportsInFlight.contains(owner),
+                            report: { store.send(.competition(.photoReportConfirmed(owner))) }
+                        )
+                    }
                 )
 
             case .completed, .archived:
@@ -346,7 +439,11 @@ struct MainTabView: View {
                     muteButton: muteButton(for: competition),
                     issue: competitionRowIssue(id, in: publication.dashboard.issues),
                     retry: retry,
-                    reactions: reactionControl(id, source: publication.source)
+                    reactions: reactionControl(id, source: publication.source),
+                    personalBest: competitionPersonalBestText(
+                        for: competition,
+                        in: publication.dashboard.competitions
+                    )
                 )
 
             case .declined, .expired, .cancelled:
@@ -366,6 +463,11 @@ struct MainTabView: View {
                     }
                 )
             }
+        } else if !store.path.contains(id) {
+            // ponytail: popping after the match left (End Practice, a server
+            // delete) slides off blank, not "Match Unavailable"; cache the
+            // last screen if the blank shows.
+            Theme.ground.ignoresSafeArea()
         } else {
             ContentUnavailableView(
                 "Match Unavailable",
@@ -477,6 +579,26 @@ struct MainTabView: View {
     }
 }
 
+/// Which screen `destination(for:)` draws. `waitsOnThem` is a real challenge
+/// you sent: it can only change because they answered.
+enum CompetitionScreenKind: Hashable {
+    case invite(waitsOnThem: Bool), underway, result, closed
+}
+
+func competitionScreenKind(
+    _ competition: LocalCompetitionPresentation,
+    source: CompetitionPublicationSource?
+) -> CompetitionScreenKind {
+    switch competition.lifecycle {
+    case .completed, .archived: .result
+    case _ where competition.isPractice: .underway
+    case .scheduled, .active, .endsToday, .tallying: .underway
+    case let .pending(direction, _, _):
+        .invite(waitsOnThem: source == .remoteParticipants && direction == .outgoing)
+    case .declined, .expired, .cancelled: .closed
+    }
+}
+
 /// A challenge that closed while its screen was open, drawn in place. After
 /// a day the match leaves the dashboard and the screen pops.
 private struct CompetitionClosedChallengeView: View {
@@ -508,11 +630,7 @@ private struct CompetitionClosedChallengeView: View {
         } actions: {
             if competitionIsClosedOutgoing(competition.lifecycle), canChallengeAgain {
                 Button(action: challengeAgain) {
-                    if isInFlight {
-                        ProgressView()
-                    } else {
-                        Text("Challenge \(competition.opponentDisplayName) Again")
-                    }
+                    BusyLabel("Challenge \(competition.opponentDisplayName) Again", isBusy: isInFlight)
                 }
                 .buttonStyle(PrimaryButtonStyle())
                 .disabled(isInFlight)

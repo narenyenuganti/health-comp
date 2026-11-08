@@ -59,11 +59,19 @@ enum MultiUserCompetitionTestLabScenario:
     case belt
     /// The same history with only Sam's match live: the hero card's chip.
     case beltHero = "belt-hero"
+    /// A finished week for each belt event, ceremony or not. Ceremonies also
+    /// need `--belt-ceremonies`.
+    case beltCeremony = "belt-ceremony"
     /// The round's features together, through Home's own reducer: Sam's
     /// match with the belt, a reaction and a nudge; Sam's last week with the
     /// belt banner, a reaction and Share Result; Jordan tallying with a
     /// nudge; Riley; and a practice match.
     case featureRound = "feature-round"
+    /// The versus intro through Home's own reducer: Alex's challenge to
+    /// accept, yours to Sam (who accepts 12 s after launch), first fights,
+    /// rematches with either belt, a long name, Day 2, and a practice.
+    /// Pair with `--versus-intro`.
+    case versus
 }
 
 struct MultiUserCompetitionTestLabConfiguration: Equatable, Sendable {
@@ -119,14 +127,17 @@ struct MultiUserCompetitionTestLabRootView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            Text("REMOTE UI TEST LAB")
-                .font(.body.weight(.bold))
-                .foregroundStyle(.secondary)
-                .padding(.vertical, 6)
-                .frame(maxWidth: .infinity)
-                .background(.thinMaterial)
-                .accessibilityIdentifier("multiuser.testlab.banner")
-                .accessibilityValue(renderedConfigurationAccessibilityValue)
+            // Filmed, and the intro runs edge to edge.
+            if configuration.scenario != .versus {
+                Text("REMOTE UI TEST LAB")
+                    .font(.body.weight(.bold))
+                    .foregroundStyle(.secondary)
+                    .padding(.vertical, 6)
+                    .frame(maxWidth: .infinity)
+                    .background(.thinMaterial)
+                    .accessibilityIdentifier("multiuser.testlab.banner")
+                    .accessibilityValue(renderedConfigurationAccessibilityValue)
+            }
 
             scenarioView
         }
@@ -156,7 +167,7 @@ struct MultiUserCompetitionTestLabRootView: View {
     @ViewBuilder
     private var scenarioView: some View {
         switch configuration.scenario {
-        case .sharing, .sharingCustomScheme, .whatItTakes, .belt, .beltHero:
+        case .sharing, .sharingCustomScheme, .whatItTakes, .belt, .beltHero, .beltCeremony:
             MultiUserCompetitionSharingTestLabView(scenario: configuration.scenario)
         case .coldClaim, .warmClaim, .signedOutClaim,
              .unavailableClaim, .offlineClaim:
@@ -204,6 +215,8 @@ struct MultiUserCompetitionTestLabRootView: View {
             MultiUserCompetitionNotificationChoicesTestLabView()
         case .featureRound:
             MultiUserCompetitionFeatureRoundTestLabView()
+        case .versus:
+            MultiUserCompetitionVersusTestLabView()
         }
     }
 }
@@ -240,8 +253,10 @@ private struct MultiUserCompetitionSharingTestLabView: View {
     /// Once per process, never per init: SwiftUI re-runs child inits
     /// whenever the root re-evaluates. Launch arguments can't do this: an
     /// argument-domain value would mask the app's own writes.
-    private static let resetReactionsSeen: Void = UserDefaults.standard
-        .removeObject(forKey: CompetitionReactionsSeen.storageKey)
+    private static let resetReactionsSeen: Void = {
+        UserDefaults.standard.removeObject(forKey: CompetitionReactionsSeen.storageKey)
+        UserDefaults.standard.removeObject(forKey: CompetitionMotionSeen.storageKey)
+    }()
 
     init(scenario: MultiUserCompetitionTestLabScenario) {
         self.scenario = scenario
@@ -373,7 +388,11 @@ private struct MultiUserCompetitionSharingTestLabView: View {
                     isCommandInFlight: false,
                     send: handle,
                     openCompetition: { path.append($0) },
-                    reactions: reactionControl(id)
+                    reactions: reactionControl(id),
+                    personalBest: competitionPersonalBestText(
+                        for: competition,
+                        in: publication.dashboard.competitions
+                    )
                 )
             case .pending:
                 CompetitionInviteView(
@@ -405,6 +424,7 @@ private struct MultiUserCompetitionSharingTestLabView: View {
         case .whatItTakes: MultiUserCompetitionTestLabFixtures.whatItTakesPublication()
         case .belt: MultiUserCompetitionTestLabFixtures.beltPublication(heroOnly: false)
         case .beltHero: MultiUserCompetitionTestLabFixtures.beltPublication(heroOnly: true)
+        case .beltCeremony: MultiUserCompetitionTestLabFixtures.beltPublication(heroOnly: false, ceremonies: true)
         default: MultiUserCompetitionTestLabFixtures.publication(
             archivedIDs: archivedIDs,
             ownReactions: ownReactions
@@ -509,7 +529,8 @@ private struct MultiUserCompetitionClaimTestLabView: View {
              .healthOnboarding, .healthOnboardingChallenge, .healthOnboardingClaim,
              .incomingChallenge, .block, .blockedAccount, .blockClaim,
              .nudge, .nudgeSimulated, .whatItTakes, .reactions, .reactionsSimulated,
-             .liveActivity, .practice, .notificationChoices, .belt, .beltHero, .featureRound:
+             .liveActivity, .practice, .notificationChoices, .belt, .beltHero, .beltCeremony, .featureRound,
+             .versus:
             .ready
         }
         _status = State(initialValue: initialStatus)
@@ -523,8 +544,8 @@ private struct MultiUserCompetitionClaimTestLabView: View {
                 outcomeView(outcome)
             } else {
                 ClaimCompetitionView(
-                    status: status,
-                    preview: MultiUserCompetitionTestLabFixtures.claimPreview,
+                    liveStatus: status,
+                    livePreview: MultiUserCompetitionTestLabFixtures.claimPreview,
                     now: MultiUserCompetitionTestLabFixtures.labNow,
                     accept: accept,
                     notNow: { outcome = .notNow },
@@ -1096,14 +1117,17 @@ private final class MultiUserCompetitionNudgeTestLabServer: @unchecked Sendable 
 private struct MultiUserCompetitionFeatureRoundTestLabView: View {
     @State private var store: StoreOf<MainTabFeature>
 
-    private static let resetReactionsSeen: Void = UserDefaults.standard
-        .removeObject(forKey: CompetitionReactionsSeen.storageKey)
+    private static let resetReactionsSeen: Void = {
+        UserDefaults.standard.removeObject(forKey: CompetitionReactionsSeen.storageKey)
+        UserDefaults.standard.removeObject(forKey: CompetitionMotionSeen.storageKey)
+    }()
 
     init() {
         _ = Self.resetReactionsSeen
         typealias Fixtures = MultiUserCompetitionTestLabFixtures
         let hub = LocalCompetitionPublicationHub()
         let server = MultiUserCompetitionFeatureRoundTestLabServer(hub: hub)
+        let photos = Fixtures.featureRoundPhotos
         _store = State(initialValue: Store(initialState: MainTabFeature.State()) {
             MainTabFeature()
         } withDependencies: {
@@ -1123,7 +1147,14 @@ private struct MultiUserCompetitionFeatureRoundTestLabView: View {
                 waitUntil: { _ in },
                 stop: { hub.finish() },
                 nudge: { _ in Fixtures.labNow },
-                setReaction: { server.setReaction($0, $1, $2) }
+                setReaction: { server.setReaction($0, $1, $2) },
+                loadProfilePhotos: photos.load,
+                loadOwnProfilePhoto: photos.own,
+                profilePhotoData: photos.data,
+                setProfilePhoto: photos.set,
+                removeProfilePhoto: photos.remove,
+                reportProfilePhoto: photos.report,
+                isProfilePhotoReported: photos.isReported
             )
             $0.competitionRoutingClient = CompetitionRoutingClient(
                 routes: { AsyncStream { _ in } },
@@ -1177,6 +1208,94 @@ private final class MultiUserCompetitionFeatureRoundTestLabServer: @unchecked Se
     }
 }
 
+/// Both ends of an acceptance, through Home's own reducer and screens. Only
+/// the server is a stand-in.
+private struct MultiUserCompetitionVersusTestLabView: View {
+    @State private var store: StoreOf<MainTabFeature>
+    @AppStorage(CompetitionVersusIntroGate.announcedKey) private var announced = ""
+
+    /// Once per process, as with the seen marks.
+    private static let resetAnnounced: Void = UserDefaults.standard
+        .removeObject(forKey: CompetitionVersusIntroGate.announcedKey)
+
+    init() {
+        _ = Self.resetAnnounced
+        typealias Fixtures = MultiUserCompetitionTestLabFixtures
+        let hub = LocalCompetitionPublicationHub()
+        let server = MultiUserCompetitionVersusTestLabServer(hub: hub)
+        _store = State(initialValue: Store(initialState: MainTabFeature.State()) {
+            MainTabFeature()
+        } withDependencies: {
+            $0.competitionClient = CompetitionClient(
+                start: {
+                    let stream = hub.stream()
+                    server.publish()
+                    Task {
+                        try? await Task.sleep(for: .seconds(12))
+                        _ = server.accept(Fixtures.versusID(0x02))
+                    }
+                    return stream
+                },
+                updates: { hub.stream() },
+                reconcileAll: { _ in server.publish() },
+                accept: { server.accept($0) },
+                decline: { _ in server.publish() },
+                archive: { _ in server.publish() },
+                rematch: { _ in server.publish() },
+                reinvite: { server.publish() },
+                waitUntil: { _ in },
+                stop: { hub.finish() }
+            )
+            $0.competitionRoutingClient = CompetitionRoutingClient(
+                routes: { AsyncStream { _ in } },
+                enqueue: { _ in },
+                consume: { _ in }
+            )
+            $0.permissionOnboardingClient = .inert
+            $0.date = .constant(Fixtures.labNow)
+        })
+    }
+
+    var body: some View {
+        MainTabView(store: store)
+            .overlay(alignment: .bottom) {
+                if !announced.isEmpty {
+                    Text(announced)
+                }
+            }
+    }
+}
+
+private final class MultiUserCompetitionVersusTestLabServer: @unchecked Sendable {
+    private let hub: LocalCompetitionPublicationHub
+    private let lock = NSLock()
+    private var revision: UInt64 = 0
+    private var accepted: Set<CompetitionID> = []
+
+    init(hub: LocalCompetitionPublicationHub) {
+        self.hub = hub
+    }
+
+    @discardableResult
+    func publish() -> LocalCompetitionPublication {
+        let (next, accepted) = lock.withLock { () -> (UInt64, Set<CompetitionID>) in
+            revision += 1
+            return (revision, self.accepted)
+        }
+        let publication = MultiUserCompetitionTestLabFixtures.versusPublication(
+            revision: next,
+            accepted: accepted
+        )
+        hub.publish(publication)
+        return publication
+    }
+
+    func accept(_ id: CompetitionID) -> LocalCompetitionPublication {
+        lock.withLock { _ = accepted.insert(id) }
+        return publish()
+    }
+}
+
 /// Real matches with reactions, through Home's own reducer and screens.
 /// Only the server is a stand-in: Jordan's saves take 3 s, Sam's first save
 /// fails, Quinn's first save is refused, and a pull to refresh on Home brings
@@ -1185,8 +1304,10 @@ private struct MultiUserCompetitionReactionsTestLabView: View {
     @State private var store: StoreOf<MainTabFeature>
 
     /// Once per process, as in the sharing lab: the marks persist otherwise.
-    private static let resetReactionsSeen: Void = UserDefaults.standard
-        .removeObject(forKey: CompetitionReactionsSeen.storageKey)
+    private static let resetReactionsSeen: Void = {
+        UserDefaults.standard.removeObject(forKey: CompetitionReactionsSeen.storageKey)
+        UserDefaults.standard.removeObject(forKey: CompetitionMotionSeen.storageKey)
+    }()
 
     init(source: CompetitionPublicationSource) {
         _ = Self.resetReactionsSeen
@@ -1533,7 +1654,12 @@ private struct MultiUserCompetitionAccountTestLabView: View {
     @State private var openedURL: URL?
     @State private var challengeURL = URL(string: "https://invites.ui.healthcomp.test/c/Xb3kP9qL2mN8vR4tY6wZ1a")
     @State private var muted = [
-        AccountMutedPerson(id: "remote-opponent:v1:hermes", name: "Hermes"),
+        AccountMutedPerson(
+            id: RemoteCompetitionOpponentIdentity.identity(
+                for: MultiUserCompetitionTestLabFixtures.hermesProfileID
+            ),
+            name: "Hermes"
+        ),
     ]
     @State private var blocked = [
         AuthenticatedProfile(
@@ -1541,6 +1667,19 @@ private struct MultiUserCompetitionAccountTestLabView: View {
             displayName: "Alex"
         ),
     ]
+    /// Hermes has a photo; Alex has one too, but the block hides it.
+    @State private var photoServer = ProfilePhotoTestLabServer(
+        ownProfileID: MultiUserCompetitionTestLabFixtures.ownProfileID,
+        photos: [
+            MultiUserCompetitionTestLabFixtures.hermesProfileID:
+                ProfilePhotoTestLabServer.fixtureJPEG(red: 0.25, green: 0.45, blue: 0.7),
+            UUID(uuidString: "a1000000-0000-4000-8000-0000000000b1")!:
+                ProfilePhotoTestLabServer.fixtureJPEG(red: 0.3, green: 0.6, blue: 0.35),
+        ],
+        hidden: [UUID(uuidString: "a1000000-0000-4000-8000-0000000000b1")!]
+    )
+    @State private var photos = ProfilePhotoImages(ownID: MultiUserCompetitionTestLabFixtures.ownProfileID)
+    @State private var photoStatus = CompetitionFeature.OwnPhotoState.Status.idle
     let store: StoreOf<AccountFeature>
     let hasPendingChallenge: Bool
 
@@ -1604,10 +1743,19 @@ private struct MultiUserCompetitionAccountTestLabView: View {
                         unblockFailed: nil,
                         load: {},
                         unblock: { id in blocked.removeAll { $0.id == id } }
+                    ),
+                    profilePhoto: AccountProfilePhoto(
+                        status: photoStatus,
+                        removedByReview: false,
+                        load: loadPhotos,
+                        save: savePhoto,
+                        remove: removePhoto,
+                        cropClosed: { if photoStatus == .saveFailed { photoStatus = .idle } }
                     )
                 )
             }
         }
+        .environment(\.profilePhotos, photos)
         .environment(\.openURL, OpenURLAction { url in
             openedURL = url
             return .handled
@@ -1618,6 +1766,47 @@ private struct MultiUserCompetitionAccountTestLabView: View {
             }
         }
         .accessibilityIdentifier("multiuser.account.root")
+    }
+
+    /// The Test Lab's stand-in for Home's photo lookup.
+    private func loadPhotos() {
+        let server = photoServer
+        let owners = [MultiUserCompetitionTestLabFixtures.ownProfileID, MultiUserCompetitionTestLabFixtures.hermesProfileID]
+            + blocked.map(\.id)
+        Task { @MainActor in
+            guard let visible = try? await server.load(owners) else { return }
+            for reference in visible {
+                if let data = try? await server.data(reference),
+                   let photo = ProfilePhoto(jpeg: data, version: reference.version) {
+                    photos.photos[reference.ownerProfileID] = photo
+                }
+            }
+        }
+    }
+
+    private func savePhoto(_ jpeg: Data) {
+        let server = photoServer
+        photoStatus = .saving
+        Task { @MainActor in
+            guard let reference = try? await server.set(jpeg),
+                  let photo = ProfilePhoto(jpeg: jpeg, version: reference.version)
+            else {
+                photoStatus = .saveFailed
+                return
+            }
+            photos.photos[MultiUserCompetitionTestLabFixtures.ownProfileID] = photo
+            photoStatus = .idle
+        }
+    }
+
+    private func removePhoto() {
+        let server = photoServer
+        photoStatus = .removing
+        Task { @MainActor in
+            try? await server.remove()
+            photos.photos[MultiUserCompetitionTestLabFixtures.ownProfileID] = nil
+            photoStatus = .idle
+        }
     }
 }
 
@@ -1647,6 +1836,21 @@ private enum MultiUserCompetitionTestLabFixtures {
     static let ownProfileID = UUID(
         uuidString: "a1000000-0000-4000-8000-000000000099"
     )!
+    /// Muted in the Account lab, with a photo.
+    static let hermesProfileID = UUID(
+        uuidString: "a1000000-0000-4000-8000-0000000000c1"
+    )!
+    /// Feature round: Sam has a photo, Jordan none, and Riley's is reported.
+    static let featureRoundPhotos = ProfilePhotoTestLabServer(
+        ownProfileID: ownProfileID,
+        photos: [
+            UUID(uuidString: "c4000000-0000-4000-8000-000000000001")!:
+                ProfilePhotoTestLabServer.fixtureJPEG(red: 0.25, green: 0.45, blue: 0.7),
+            UUID(uuidString: "c4000000-0000-4000-8000-000000000003")!:
+                ProfilePhotoTestLabServer.fixtureJPEG(red: 0.6, green: 0.3, blue: 0.5),
+        ],
+        reported: [UUID(uuidString: "c4000000-0000-4000-8000-000000000003")!]
+    )
     static let expiredRecipientID = UUID(
         uuidString: "A1000000-0000-4000-8000-000000000008"
     )!
@@ -2595,7 +2799,13 @@ private enum MultiUserCompetitionTestLabFixtures {
     /// - Morgan: two ties, so nobody holds it.
     /// - Former competitor: a win, then the account was deleted mid-match.
     /// `heroOnly` keeps Sam's as the one live match, so Home draws the hero card.
-    static func beltPublication(heroOnly: Bool) -> LocalCompetitionPublication {
+    /// `ceremonies` swaps in one person per belt event, none of them live:
+    /// - Avery: a first win. Earned.
+    /// - Sam: L L T L, then you won. Taken from a 4-week reign with 2 defenses.
+    /// - Riley: W W T W, then Riley won. Lost a 4-week reign with 2 defenses.
+    /// - Jordan: W W W W. Defended, the 3rd title defense.
+    /// - Casey took a vacant belt, Dana defended, Taylor tied: no ceremony.
+    static func beltPublication(heroOnly: Bool, ceremonies: Bool = false) -> LocalCompetitionPublication {
         func id(_ byte: UInt8) -> CompetitionID {
             CompetitionID(UUID(uuidString: String(format: "A3000000-0000-4000-8000-0000000000%02X", byte))!)
         }
@@ -2707,10 +2917,34 @@ private enum MultiUserCompetitionTestLabFixtures {
             live(0x33, "Riley", riley),
             live(0x52, competitionFormerCompetitorName, former),
         ]
+        let ceremonyWeeks = [
+            week(0x61, "Avery", person(6), startDay: 8, .win, completed: true),
+            week(0x71, "Sam", sam, month: 7, startDay: 11, .loss),
+            week(0x72, "Sam", sam, month: 7, startDay: 18, .loss),
+            week(0x73, "Sam", sam, month: 7, startDay: 25, .tie),
+            week(0x74, "Sam", sam, startDay: 1, .loss),
+            week(0x75, "Sam", sam, startDay: 8, .win, completed: true),
+            week(0x81, "Riley", riley, month: 7, startDay: 11, .win),
+            week(0x82, "Riley", riley, month: 7, startDay: 18, .win),
+            week(0x83, "Riley", riley, month: 7, startDay: 25, .tie),
+            week(0x84, "Riley", riley, startDay: 1, .win),
+            week(0x85, "Riley", riley, startDay: 8, .loss, completed: true),
+            week(0x91, "Jordan", person(9), month: 7, startDay: 18, .win),
+            week(0x92, "Jordan", person(9), month: 7, startDay: 25, .win),
+            week(0x93, "Jordan", person(9), startDay: 1, .win),
+            week(0x94, "Jordan", person(9), startDay: 8, .win, completed: true),
+            week(0xA1, "Casey", person(10), startDay: 8, .loss, completed: true),
+            week(0xB1, "Dana", person(11), startDay: 1, .loss),
+            week(0xB2, "Dana", person(11), startDay: 8, .loss, completed: true),
+            week(0xC1, "Taylor", person(12), startDay: 1, .win),
+            week(0xC2, "Taylor", person(12), startDay: 8, .tie, completed: true),
+        ]
         return LocalCompetitionPublication(
             publicationRevision: 1,
             dashboard: LocalCompetitionDashboard(
-                competitions: [live(0x17, "Sam", sam)] + (heroOnly ? [] : otherLive) + finished,
+                competitions: ceremonies
+                    ? ceremonyWeeks
+                    : [live(0x17, "Sam", sam)] + (heroOnly ? [] : otherLive) + finished,
                 awards: [],
                 issues: [],
                 hiddenTerminalCompetitionCount: 0
@@ -2827,6 +3061,127 @@ private enum MultiUserCompetitionTestLabFixtures {
             publicationRevision: revision,
             dashboard: LocalCompetitionDashboard(
                 competitions: competitions,
+                awards: [],
+                issues: [],
+                hiddenTerminalCompetitionCount: 0
+            ),
+            evaluatedAt: evaluatedAt,
+            timeZoneIdentifier: "America/Los_Angeles",
+            source: .remoteParticipants
+        )
+    }
+
+    static func versusID(_ byte: UInt8) -> CompetitionID {
+        CompetitionID(UUID(uuidString: String(format: "A4000000-0000-4000-8000-0000000000%02X", byte))!)
+    }
+
+    /// Now is Sun Aug 16: Day 1 is today for the live matches, Monday for
+    /// the rest. Morgan holds the belt 4–1; you hold Jordan's at 2–0–1.
+    static func versusPublication(
+        revision: UInt64,
+        accepted: Set<CompetitionID>
+    ) -> LocalCompetitionPublication {
+        func person(_ byte: UInt8) -> String {
+            "remote-profile:v1:c4000000-0000-4000-8000-0000000000" + String(format: "%02x", byte)
+        }
+        func upcoming(
+            _ byte: UInt8,
+            _ name: String,
+            _ lifecycle: LocalCompetitionLifecyclePresentation
+        ) -> LocalCompetitionPresentation {
+            presentation(
+                id: versusID(byte),
+                opponentName: name,
+                lifecycle: accepted.contains(versusID(byte)) ? .scheduled : lifecycle,
+                userPoints: 0,
+                opponentPoints: 0,
+                days: [],
+                currentDayOrdinal: nil,
+                terminal: nil,
+                startDay: 17,
+                opponentIdentity: person(byte)
+            )
+        }
+        func pending(_ direction: InvitationDirection) -> LocalCompetitionLifecyclePresentation {
+            .pending(
+                direction: direction,
+                createdAt: labNow,
+                expiresAt: labNow.addingTimeInterval(20 * 60 * 60)
+            )
+        }
+        func live(_ byte: UInt8, _ name: String, day: Int = 1) -> LocalCompetitionPresentation {
+            presentation(
+                id: versusID(byte),
+                opponentName: name,
+                lifecycle: .active(dayOrdinal: day),
+                userPoints: 120,
+                opponentPoints: 95,
+                days: activeDays(startDay: 17 - day, currentDay: day),
+                currentDayOrdinal: day,
+                terminal: nil,
+                startDay: 17 - day,
+                opponentIdentity: person(byte)
+            )
+        }
+        func past(
+            _ byte: UInt8,
+            _ name: String,
+            against opponent: UInt8,
+            startDay: Int,
+            _ outcome: CompetitionOutcome
+        ) -> LocalCompetitionPresentation {
+            let end = competitionScheduleBoundaries(schedule(startDay: startDay, month: 7))!.end
+            let points: (user: Double, opponent: Double) = switch outcome {
+            case .win: (3_210, 3_050)
+            case .loss: (2_980, 3_140)
+            case .tie: (3_000, 3_000)
+            }
+            return presentation(
+                id: versusID(byte),
+                opponentName: name,
+                lifecycle: .archived(
+                    outcome: outcome,
+                    basis: .stableAcrossPostBoundaryReads,
+                    completedAt: end,
+                    archivedAt: end
+                ),
+                userPoints: points.user,
+                opponentPoints: points.opponent,
+                days: [],
+                currentDayOrdinal: nil,
+                terminal: LocalCompetitionTerminalPresentation(
+                    userPoints: points.user,
+                    opponentPoints: points.opponent,
+                    outcome: outcome,
+                    basis: .stableAcrossPostBoundaryReads,
+                    completedAt: end
+                ),
+                startDay: startDay,
+                month: 7,
+                opponentIdentity: person(opponent)
+            )
+        }
+        return LocalCompetitionPublication(
+            publicationRevision: revision,
+            dashboard: LocalCompetitionDashboard(
+                competitions: [
+                    upcoming(0x01, "Alex", pending(.incoming)),
+                    upcoming(0x02, "Sam", pending(.outgoing)),
+                    upcoming(0x03, "Riley", .scheduled),
+                    live(0x04, "Morgan"),
+                    live(0x05, "Jordan"),
+                    live(0x06, "Maximiliana Featherstonehaugh-Worthington"),
+                    live(0x07, "Casey", day: 2),
+                    practiceScheduledPresentation(),
+                    past(0x41, "Morgan", against: 0x04, startDay: 1, .win),
+                    past(0x42, "Morgan", against: 0x04, startDay: 8, .loss),
+                    past(0x43, "Morgan", against: 0x04, startDay: 15, .loss),
+                    past(0x44, "Morgan", against: 0x04, startDay: 22, .loss),
+                    past(0x45, "Morgan", against: 0x04, startDay: 29, .loss),
+                    past(0x51, "Jordan", against: 0x05, startDay: 1, .win),
+                    past(0x52, "Jordan", against: 0x05, startDay: 8, .tie),
+                    past(0x53, "Jordan", against: 0x05, startDay: 15, .win),
+                ],
                 awards: [],
                 issues: [],
                 hiddenTerminalCompetitionCount: 0
@@ -3048,7 +3403,7 @@ private enum MultiUserCompetitionTestLabFixtures {
 private struct LiveActivityPreviewView: View {
     private let client = CompetitionLiveActivityClient.live
     private let attributes: MatchActivityAttributes
-    private let live: MatchActivityAttributes.ContentState
+    @State private var live: MatchActivityAttributes.ContentState
     private let tallying: MatchActivityAttributes.ContentState
 
     init() {
@@ -3059,7 +3414,7 @@ private struct LiveActivityPreviewView: View {
         )
         let locale = Locale(identifier: "en_US")
         let timeZone = TimeZone(identifier: "America/Los_Angeles")!
-        live = CompetitionLiveActivityPlanner.content(sample.live, locale: locale, timeZone: timeZone)!
+        _live = State(initialValue: CompetitionLiveActivityPlanner.content(sample.live, locale: locale, timeZone: timeZone)!)
         tallying = CompetitionLiveActivityPlanner.content(sample.tallying, locale: locale, timeZone: timeZone)!
         // `-liveActivityPreviewSecondsLeft 60` lets a UI test watch the card go stale.
         let secondsLeft = defaults.double(forKey: "liveActivityPreviewSecondsLeft")
@@ -3084,6 +3439,23 @@ private struct LiveActivityPreviewView: View {
                 }
                 .buttonStyle(SecondaryButtonStyle())
                 .accessibilityIdentifier("liveActivity.preview.start")
+                Button("Add Points") {
+                    update { $0.userPoints += 12 }
+                }
+                .buttonStyle(SecondaryButtonStyle())
+                .accessibilityIdentifier("liveActivity.preview.update")
+                Button("Flip Lead") {
+                    update {
+                        if $0.userPoints > $0.opponentPoints {
+                            $0.opponentPoints = $0.userPoints + 5
+                        } else {
+                            $0.userPoints = $0.opponentPoints + 5
+                        }
+                    }
+                }
+                .buttonStyle(SecondaryButtonStyle())
+                .accessibilityIdentifier("liveActivity.preview.flip")
+                smallCard
             }
             .padding(16)
         }
@@ -3107,8 +3479,8 @@ private struct LiveActivityPreviewView: View {
         VStack(spacing: 8) {
             MatchActivityIslandHeader(attributes: attributes, state: live)
             HStack(alignment: .bottom) {
-                MatchActivityScoreColumn(side: .you, state: live, size: matchActivityIslandScoreSize)
-                MatchActivityScoreColumn(side: .them, state: live, size: matchActivityIslandScoreSize)
+                MatchActivityScoreColumn(side: .you, attributes: attributes, state: live, size: matchActivityIslandScoreSize)
+                MatchActivityScoreColumn(side: .them, attributes: attributes, state: live, size: matchActivityIslandScoreSize)
             }
             MatchActivityIslandBottom(state: live)
         }
@@ -3121,9 +3493,9 @@ private struct LiveActivityPreviewView: View {
 
     private var compactIsland: some View {
         HStack {
-            MatchActivityCompactScore(side: .you, state: live)
+            MatchActivityCompactScore(side: .you, attributes: attributes, state: live)
             Spacer(minLength: 60)
-            MatchActivityCompactScore(side: .them, state: live)
+            MatchActivityCompactScore(side: .them, attributes: attributes, state: live)
         }
         .padding(.horizontal, 16)
         .frame(height: 37)
@@ -3134,11 +3506,21 @@ private struct LiveActivityPreviewView: View {
     }
 
     private var minimalIsland: some View {
-        MatchActivityMinimalLead(state: live)
+        MatchActivityMinimalLead(attributes: attributes, state: live)
             .frame(width: 37, height: 37)
             .background(.black, in: Circle())
             .matchActivityIsland()
             .accessibilityIdentifier("liveActivity.preview.minimal")
+    }
+
+    /// The Smart Stack on a 41 mm Apple Watch.
+    private var smallCard: some View {
+        MatchActivitySmallView(attributes: attributes, state: live)
+            .padding(8)
+            .frame(width: 162, height: 69.5)
+            .background(.black, in: RoundedRectangle(cornerRadius: 16))
+            .matchActivityIsland()
+            .accessibilityIdentifier("liveActivity.preview.small")
     }
 
     private func endSamples() async {
@@ -3150,6 +3532,20 @@ private struct LiveActivityPreviewView: View {
     private func start() async {
         await endSamples()
         _ = await client.start(attributes, live, attributes.endsAt)
+    }
+
+    /// Changes the mocks now and the running card after
+    /// `-liveActivityPreviewUpdateDelay`, so a recording can leave the app first.
+    private func update(_ change: (inout MatchActivityAttributes.ContentState) -> Void) {
+        change(&live)
+        let state = live
+        let delay = UserDefaults.standard.double(forKey: "liveActivityPreviewUpdateDelay")
+        let background = UIApplication.shared.beginBackgroundTask()
+        Task {
+            try? await Task.sleep(for: .seconds(delay))
+            await client.update(attributes.matchID, state, attributes.endsAt)
+            UIApplication.shared.endBackgroundTask(background)
+        }
     }
 }
 

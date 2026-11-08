@@ -1,6 +1,7 @@
 import ActivityKit
 import ComposableArchitecture
 import CoreImage.CIFilterBuiltins
+import PhotosUI
 import SwiftUI
 
 /// Your reusable challenge link for Account. Nil hides the section.
@@ -11,6 +12,35 @@ struct AccountChallengeLink {
     let isResetting: Bool
     let resetFailed: Bool
     let reset: () -> Void
+}
+
+/// Your photo, for Account's header. The photo itself comes from the
+/// environment's `profilePhotos`.
+struct AccountProfilePhoto {
+    let status: CompetitionFeature.OwnPhotoState.Status
+    let removedByReview: Bool
+    /// Asks whether a reviewer removed your last photo.
+    let load: () -> Void
+    /// Uploads Move and Scale's JPEG.
+    let save: (Data) -> Void
+    let remove: () -> Void
+    /// Move and Scale closed without saving.
+    let cropClosed: () -> Void
+}
+
+/// One trip through Move and Scale, with where its photo comes from.
+struct AccountPhotoCropRequest: Identifiable {
+    let id = UUID()
+    let load: @Sendable () async throws -> Data
+
+#if DEBUG
+    /// `--profile-photo-fixture` skips the picker with this photo, since
+    /// PhotosPicker can't be driven from a UI test.
+    static let testLabFixture: Data? = ProcessInfo.processInfo.arguments
+        .contains("--profile-photo-fixture")
+        ? ProfilePhotoTestLabServer.fixtureJPEG(red: 0.85, green: 0.45, blue: 0.2)
+        : nil
+#endif
 }
 
 /// The people you blocked, for Account. Hidden until a non-empty list loads.
@@ -118,22 +148,62 @@ struct AccountSettingsView: View {
     var liveMatchCount = 0
     var challengeLink: AccountChallengeLink?
     var blockedPeople: AccountBlockedPeople?
+    /// Real accounts only: set, change or remove your photo.
+    var profilePhoto: AccountProfilePhoto?
 #if HEALTHCOMP_STAGING
     var refreshCompetition: (() -> Void)?
 #endif
 
     @State private var isSignOutConfirmationPresented = false
+    @State private var isRemovePhotoConfirmationPresented = false
+    @State private var isPhotoPickerPresented = false
+    @State private var pickedPhoto: PhotosPickerItem?
+    @State private var cropRequest: AccountPhotoCropRequest?
+    @Environment(\.profilePhotos) private var photos
     @State private var isResetLinkConfirmationPresented = false
 
     @AppStorage(AppAppearance.storageKey)
     private var appearance = AppAppearance.system
     @State private var showsChallengeCode = false
+    @State private var hasLoaded = false
+    @FocusState private var isNameFocused: Bool
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @ScaledMetric(relativeTo: .headline) private var blockedInitialSize: CGFloat = 34
 
+    /// What can resize the list once it's open.
+    private var listShape: [AnyHashable] {
+        [
+            AnyHashable(challengeLink?.url),
+            AnyHashable(challengeLink?.failed),
+            AnyHashable(challengeLink?.resetFailed),
+            AnyHashable(blockedPeople?.people?.map(\.id)),
+            AnyHashable(blockedPeople?.unblockFailed),
+            AnyHashable(store.isEditingDisplayName),
+            AnyHashable(store.message?.text),
+            AnyHashable(health != nil),
+            AnyHashable(photoMessage),
+        ]
+    }
+
     var body: some View {
+        scrollingList
+            .task { load() }
+            .onChange(of: store.isEditingDisplayName) { _, isEditing in
+                isNameFocused = isEditing
+            }
+            .sheet(isPresented: $showsChallengeCode) {
+                if let url = challengeLink?.url {
+                    ChallengeLinkCodeView(url: url) { showsChallengeCode = false }
+                }
+            }
+            .overlay {
+                AccountProgressOverlay(store: store)
+            }
+    }
+
+    private var list: some View {
         List {
-            profileSection
+            profileHeader
             if challengeLink != nil {
                 challengeLinkSection
             }
@@ -141,106 +211,305 @@ struct AccountSettingsView: View {
                 blockedSection(blocked, people)
             }
             settingsSection
-            signOutSection
-            deleteSection
+            footerSection
         }
+        .moving(Motion.settle, value: listShape)
         .accountPageStyle(title: "Account")
-        .task {
-            store.send(.appeared)
-            challengeLink?.load()
-            blockedPeople?.load()
-        }
-        .sheet(isPresented: $showsChallengeCode) {
-            if let url = challengeLink?.url {
-                ChallengeLinkCodeView(url: url) { showsChallengeCode = false }
-            }
-        }
-        .overlay {
-            AccountProgressOverlay(store: store)
+    }
+
+    /// Delete is the last row, so its message lands off the bottom of the list.
+    private var scrollingList: some View {
+        ScrollViewReader { proxy in
+            listWithHaptics
+                .onChange(of: store.message) { _, message in
+                    if message?.isDeletionMessage == true {
+                        proxy.scrollTo(Self.deletionMessageID, anchor: .bottom)
+                    }
+                }
         }
     }
 
-    private var profileSection: some View {
+    private static let deletionMessageID = "account.deletion-message"
+
+    // Plain Bools and its own property: on the List's chain, these closures
+    // don't type-check in time. Each failure clears before the next attempt.
+    private var listWithHaptics: some View {
+        let hasMessage: Bool = store.message != nil
+        let unblockFailed: Bool = blockedPeople?.unblockFailed != nil
+        let resetFailed: Bool = challengeLink?.resetFailed ?? false
+        let linkURL: URL? = challengeLink?.url
+        return list
+            .sensoryFeedback(.error, trigger: hasMessage, condition: { _, new in new })
+            .sensoryFeedback(.error, trigger: unblockFailed, condition: { _, new in new })
+            .sensoryFeedback(.error, trigger: resetFailed, condition: { _, new in new })
+            .sensoryFeedback(.success, trigger: linkURL, condition: Self.linkWasReset)
+    }
+
+    /// First load isn't a reset.
+    private static func linkWasReset(_ old: URL?, _ new: URL?) -> Bool {
+        old != nil && new != nil
+    }
+
+    /// This runs again on pop back, and a reload would clear the failure on
+    /// screen. Hosts with no link yet can still load later.
+    private func load() {
+        store.send(.appeared)
+        guard !hasLoaded else { return }
+        hasLoaded = challengeLink != nil
+        challengeLink?.load()
+        blockedPeople?.load()
+        profilePhoto?.load()
+    }
+
+    /// Centred on the page ground: your photo, your name and Edit Name.
+    private var profileHeader: some View {
         Section {
-            if store.isEditingDisplayName {
-                TextField(
-                    "Display name",
-                    text: Binding(
-                        get: { store.displayName },
-                        set: { store.send(.displayNameChanged($0)) }
-                    )
-                )
-                .textContentType(.nickname)
-                .textInputAutocapitalization(.words)
-                .autocorrectionDisabled()
-                .submitLabel(.done)
-                .onSubmit {
-                    store.send(.saveDisplayNameButtonTapped)
-                }
-                .accessibilityIdentifier("account.settings.display-name")
-
-                HStack(spacing: 12) {
-                    Button("Cancel", role: .cancel) {
-                        store.send(.cancelDisplayNameButtonTapped)
-                    }
-                    .buttonStyle(SecondaryButtonStyle())
-
-                    Button("Save") {
-                        store.send(.saveDisplayNameButtonTapped)
-                    }
-                    .buttonStyle(PrimaryButtonStyle())
-                    .accessibilityIdentifier(
-                        "account.settings.save-display-name"
-                    )
-                }
-                .disabled(store.isRequestInFlight)
-            } else {
-                HStack(spacing: 14) {
-                    Text(store.displayName.first.map { String($0).uppercased() } ?? "")
-                        .font(.title3.weight(.heavy).width(.condensed))
-                        .foregroundStyle(Theme.you)
-                        .frame(width: 44, height: 44)
-                        .background(Theme.control, in: Circle())
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(store.displayName)
-                            .font(.title3.weight(.bold).width(.condensed))
-                            .foregroundStyle(Theme.you)
-                            .multilineTextAlignment(.leading)
-                        Text("Display name · shown to people you play")
-                            .font(.subheadline)
-                            .foregroundStyle(Theme.secondary)
+            VStack(spacing: 12) {
+                avatarControl
+                ZStack {
+                    if store.isEditingDisplayName {
+                        nameEditor
+                            .transition(Motion.appear)
+                            .zIndex(1)
+                    } else {
+                        nameDisplay
+                            .transition(Motion.appear)
                     }
                 }
-                .accessibilityElement(children: .combine)
-                .accessibilityLabel(
-                    "Display name, \(store.displayName)"
-                )
-
-                Button("Edit Display Name") {
-                    store.send(.editDisplayNameButtonTapped)
-                }
-                .frame(minHeight: 44)
-                .accessibilityIdentifier(
-                    "account.settings.edit-display-name"
-                )
             }
-
-            if let message = store.message, !message.isDeletionMessage {
-                Text(message.text)
-                    .font(.callout)
-                    .foregroundStyle(Theme.ink)
-                    .accessibilityIdentifier("account.message")
-            }
-        } header: {
-            SectionLabel("PROFILE")
+            .frame(maxWidth: .infinity)
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+            .listRowInsets(EdgeInsets(top: 8, leading: 0, bottom: 4, trailing: 0))
         }
-        .listRowBackground(Theme.panel)
+    }
+
+    private var nameDisplay: some View {
+        VStack(spacing: 0) {
+            Text(store.displayName)
+                .font(.title.weight(.bold).width(.condensed))
+                .foregroundStyle(Theme.you)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityLabel("Display name, \(store.displayName)")
+                .accessibilityAddTraits(.isHeader)
+            // Its 44 pt is its own spacing.
+            Button("Edit Name") {
+                store.send(.editDisplayNameButtonTapped)
+            }
+            .buttonStyle(QuietButtonStyle())
+            .accessibilityLabel("Edit Display Name")
+            .accessibilityIdentifier("account.settings.edit-display-name")
+            headerMessages
+        }
+    }
+
+    private var nameEditor: some View {
+        VStack(spacing: 12) {
+            TextField(
+                "Display name",
+                text: Binding(
+                    get: { store.displayName },
+                    set: { store.send(.displayNameChanged($0)) }
+                )
+            )
+            .textContentType(.nickname)
+            .textInputAutocapitalization(.words)
+            .autocorrectionDisabled()
+            .submitLabel(.done)
+            .multilineTextAlignment(.center)
+            .font(.title3.weight(.semibold))
+            .foregroundStyle(Theme.ink)
+            .focused($isNameFocused)
+            .onSubmit {
+                store.send(.saveDisplayNameButtonTapped)
+            }
+            .padding(.horizontal, 14)
+            .frame(minHeight: 56)
+            .themePanel(cornerRadius: 14)
+            .accessibilityIdentifier("account.settings.display-name")
+
+            Text("People you play see this name.")
+                .font(.subheadline)
+                .foregroundStyle(Theme.secondary)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+            headerMessages
+
+            let layout = dynamicTypeSize.isAccessibilitySize
+                ? AnyLayout(VStackLayout(spacing: 8))
+                : AnyLayout(HStackLayout(spacing: 12))
+            layout {
+                Button("Cancel", role: .cancel) {
+                    store.send(.cancelDisplayNameButtonTapped)
+                }
+                .buttonStyle(SecondaryButtonStyle())
+
+                Button {
+                    store.send(.saveDisplayNameButtonTapped)
+                } label: {
+                    BusyLabel("Save", isBusy: store.isRequestInFlight)
+                }
+                .buttonStyle(PrimaryButtonStyle())
+                .accessibilityValue(store.isRequestInFlight ? "Saving" : "")
+                .accessibilityIdentifier(
+                    "account.settings.save-display-name"
+                )
+            }
+            .disabled(store.isRequestInFlight)
+        }
+    }
+
+    /// The name error, and what happened to your photo.
+    @ViewBuilder
+    private var headerMessages: some View {
+        if let message = store.message, !message.isDeletionMessage {
+            Text(message.text)
+                .font(.callout)
+                .foregroundStyle(Theme.ink)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("account.message")
+        }
+        if let photoMessage {
+            Text(photoMessage)
+                .font(.callout)
+                .foregroundStyle(Theme.ink)
+                .multilineTextAlignment(.center)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("account.photo.message")
+        }
+    }
+
+    private var photoMessage: String? {
+        guard let profilePhoto else { return nil }
+        if profilePhoto.status == .removeFailed { return "Couldn’t remove your photo. Try again." }
+        if profilePhoto.removedByReview, photos.own == nil {
+            return "Your photo was removed after a review. You can choose another one."
+        }
+        return nil
+    }
+
+    /// No photo: a tap opens the picker. With one: Change or Remove.
+    @ViewBuilder
+    private var avatarControl: some View {
+        if let profilePhoto {
+            Group {
+                if photos.own != nil {
+                    Menu {
+                        Button(action: choosePhoto) {
+                            Label("Change Photo", systemImage: "photo")
+                        }
+                        Button { isRemovePhotoConfirmationPresented = true } label: {
+                            Label("Remove Photo", systemImage: "delete.left")
+                        }
+                    } label: {
+                        avatarFace
+                    }
+                    .accessibilityLabel("Profile Photo")
+                    .accessibilityHint("Change or remove your photo.")
+                } else {
+                    Button(action: choosePhoto) {
+                        avatarFace
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Add Profile Photo")
+                }
+            }
+            .disabled(profilePhoto.status == .saving || profilePhoto.status == .removing)
+            .accessibilityIdentifier("account.settings.photo")
+            .confirmationDialog(
+                "Remove your photo?",
+                isPresented: $isRemovePhotoConfirmationPresented,
+                titleVisibility: .visible
+            ) {
+                Button("Remove Photo", role: .destructive) { profilePhoto.remove() }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("People you play will see your initial instead.")
+            }
+            .photosPicker(
+                isPresented: $isPhotoPickerPresented,
+                selection: $pickedPhoto,
+                matching: .images,
+                preferredItemEncoding: .current
+            )
+            .onChange(of: pickedPhoto) { _, item in
+                guard let item else { return }
+                pickedPhoto = nil
+                cropRequest = AccountPhotoCropRequest {
+                    guard let data = try await item.loadTransferable(type: Data.self) else {
+                        throw ProfilePhotoFailure.unreadableImage
+                    }
+                    return data
+                }
+            }
+            .fullScreenCover(item: $cropRequest) { request in
+                ProfilePhotoCropView(
+                    load: request.load,
+                    isSaving: profilePhoto.status == .saving,
+                    saveFailed: profilePhoto.status == .saveFailed,
+                    save: profilePhoto.save,
+                    cancel: {
+                        cropRequest = nil
+                        profilePhoto.cropClosed()
+                    },
+                    chooseAnother: {
+                        cropRequest = nil
+                        profilePhoto.cropClosed()
+                        choosePhoto()
+                    }
+                )
+            }
+            // The sheet closes once the upload lands.
+            .onChange(of: profilePhoto.status) { old, new in
+                if old == .saving, new == .idle { cropRequest = nil }
+            }
+        } else {
+            avatarFace
+        }
+    }
+
+    private var avatarFace: some View {
+        PersonAvatar(
+            name: store.displayName,
+            size: 80,
+            isYou: true,
+            initialFont: .system(size: 36, weight: .heavy).width(.condensed)
+        )
+        .overlay(alignment: .bottomTrailing) {
+            if profilePhoto != nil {
+                Image(systemName: "pencil")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(Theme.onInk)
+                    .frame(width: 24, height: 24)
+                    .background(Theme.ink, in: Circle())
+                    .padding(2)
+                    .background(Theme.ground, in: Circle())
+                    .offset(x: 3, y: 3)
+            }
+        }
+        .frame(width: 80, height: 80)
+        .contentShape(Circle())
+    }
+
+    private func choosePhoto() {
+#if DEBUG
+        // PhotosPicker can't be driven from a UI test.
+        if let fixture = AccountPhotoCropRequest.testLabFixture {
+            cropRequest = AccountPhotoCropRequest { fixture }
+            return
+        }
+#endif
+        isPhotoPickerPresented = true
     }
 
     private var challengeLinkSection: some View {
         Section {
-            VStack(alignment: .leading, spacing: 12) {
-                if let url = challengeLink?.url {
+            // Separate rows, so the List settles these. A height change inside
+            // one cell jumps, and its text runs over its neighbours.
+            if let url = challengeLink?.url {
+                VStack(alignment: .leading, spacing: 12) {
                     let isResetting = challengeLink?.isResetting == true
                     Text(Self.displayText(url))
                         .font(.callout.monospaced())
@@ -250,6 +519,8 @@ struct AccountSettingsView: View {
                         .accessibilityLabel("Your challenge link")
                         .accessibilityValue(Self.displayText(url))
                         .accessibilityIdentifier("account.challenge-link.url")
+                        .contentTransition(.opacity)
+                        .animation(Motion.fade, value: url)
                     let buttons = Group {
                         Button {
                             showsChallengeCode = true
@@ -293,30 +564,35 @@ struct AccountSettingsView: View {
                         } message: {
                             Text("Your old link stops working. Challenges already sent stay.")
                         }
-                    if challengeLink?.resetFailed == true {
-                        Text("Couldn’t reset your link. Try again.")
-                            .font(.callout)
-                            .foregroundStyle(Theme.ink)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .accessibilityIdentifier("account.challenge-link.reset-error")
-                    }
                     Text("Anyone with this link can challenge you. Reset it to turn off the old one; challenges already sent stay.")
                         .font(.caption)
                         .foregroundStyle(Theme.secondary)
                         .fixedSize(horizontal: false, vertical: true)
-                } else if challengeLink?.failed == true {
+                }
+                .padding(.vertical, 4)
+                if challengeLink?.resetFailed == true {
+                    Text("Couldn’t reset your link. Try again.")
+                        .font(.callout)
+                        .foregroundStyle(Theme.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("account.challenge-link.reset-error")
+                        .listRowSeparator(.hidden, edges: .top)
+                }
+            } else if challengeLink?.failed == true {
+                VStack(alignment: .leading, spacing: 12) {
                     Text("Couldn’t load your link.")
                         .font(.callout)
                         .foregroundStyle(Theme.ink)
                     Button("Try Again") { challengeLink?.load() }
                         .buttonStyle(SecondaryButtonStyle())
                         .accessibilityIdentifier("account.challenge-link.retry")
-                } else {
-                    ProgressView("Loading your link…")
-                        .frame(maxWidth: .infinity, minHeight: 44)
                 }
+                .padding(.vertical, 4)
+            } else {
+                ProgressView("Loading your link…")
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .padding(.vertical, 4)
             }
-            .padding(.vertical, 4)
         } header: {
             SectionLabel("YOUR CHALLENGE LINK")
         }
@@ -328,7 +604,19 @@ struct AccountSettingsView: View {
         _ people: [AuthenticatedProfile]
     ) -> some View {
         Section {
-            ForEach(people, id: \.id) { blockedRow($0, blocked) }
+            ForEach(people, id: \.id) { person in
+                blockedRow(person, blocked)
+                // Under the person, so it shows where the tap was even when
+                // the list runs past the screen.
+                if blocked.unblockFailed == person.id {
+                    Text("Couldn’t unblock. Check your connection and try again.")
+                        .font(.callout)
+                        .foregroundStyle(Theme.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("account.blocked.error")
+                        .listRowSeparator(.hidden, edges: .top)
+                }
+            }
         } header: {
             SectionLabel("BLOCKED")
         } footer: {
@@ -347,46 +635,36 @@ struct AccountSettingsView: View {
         let layout = isAccessibilitySize
             ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
             : AnyLayout(HStackLayout(spacing: 12))
-        return VStack(alignment: .leading, spacing: 4) {
-            layout {
-                HStack(spacing: 12) {
-                    // At accessibility sizes the initial would squeeze the
-                    // name into a narrow column, so the name gets the width.
-                    if !isAccessibilitySize {
-                        Text(person.displayName.first.map { String($0).uppercased() } ?? "")
-                            .font(.headline.width(.condensed))
-                            .foregroundStyle(Theme.ink)
-                            .frame(width: blockedInitialSize, height: blockedInitialSize)
-                            .background(Theme.control, in: Circle())
-                            .accessibilityHidden(true)
-                    }
-                    Text(person.displayName)
-                        .foregroundStyle(Theme.ink)
-                        .fixedSize(horizontal: false, vertical: true)
+        return layout {
+            HStack(spacing: 12) {
+                // At accessibility sizes the initial would squeeze the
+                // name into a narrow column, so the name gets the width.
+                // Never a photo: the block hides it.
+                if !isAccessibilitySize {
+                    PersonAvatar(
+                        name: person.displayName,
+                        size: blockedInitialSize,
+                        initialFont: .headline.width(.condensed)
+                    )
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                Button { blocked.unblock(person.id) } label: {
-                    // The ink tint doesn't dim when disabled, so saving shows here.
-                    Text("Unblock")
-                        .foregroundStyle(isUnblocking ? Theme.secondary : Theme.ink)
-                        .frame(minHeight: 44)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.borderless)
-                .disabled(isUnblocking)
-                .accessibilityLabel("Unblock \(person.displayName)")
-                .accessibilityValue(isUnblocking ? "Unblocking" : "")
-                .accessibilityIdentifier("account.blocked.unblock")
-            }
-            // In the row it belongs to, so it shows where the tap was even
-            // when the list runs past the screen.
-            if blocked.unblockFailed == person.id {
-                Text("Couldn’t unblock. Check your connection and try again.")
-                    .font(.callout)
+                Text(person.displayName)
                     .foregroundStyle(Theme.ink)
                     .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityIdentifier("account.blocked.error")
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Button { blocked.unblock(person.id) } label: {
+                // The ink tint doesn't dim when disabled, so saving shows here.
+                Text("Unblock")
+                    .foregroundStyle(isUnblocking ? Theme.secondary : Theme.ink)
+                    .animation(Motion.fade, value: isUnblocking)
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.borderless)
+            .disabled(isUnblocking)
+            .accessibilityLabel("Unblock \(person.displayName)")
+            .accessibilityValue(isUnblocking ? "Unblocking" : "")
+            .accessibilityIdentifier("account.blocked.unblock")
         }
     }
 
@@ -459,15 +737,16 @@ struct AccountSettingsView: View {
         .listRowBackground(Theme.panel)
     }
 
-    // Red means Move, so the destructive actions keep their role but stay neutral.
-    private var signOutSection: some View {
+    /// Quiet text at the foot, for the two actions you rarely take. Neutral,
+    /// because red means Move; the roles stay for VoiceOver.
+    private var footerSection: some View {
         Section {
             Button(role: .destructive) {
                 isSignOutConfirmationPresented = true
             } label: {
-                Text("Sign Out").foregroundStyle(Theme.ink)
+                Text("Sign Out")
             }
-            .frame(maxWidth: .infinity, minHeight: 44)
+            .buttonStyle(QuietButtonStyle(color: Theme.ink))
             .disabled(store.isRequestInFlight)
             .accessibilityIdentifier("account.sign-out")
             .accessibilityValue(
@@ -484,18 +763,13 @@ struct AccountSettingsView: View {
             } message: {
                 Text(accountSignOutMessage(liveMatchCount: liveMatchCount))
             }
-        }
-        .listRowBackground(Theme.panel)
-    }
 
-    private var deleteSection: some View {
-        Section {
             Button(role: .destructive) {
                 store.send(.deleteAccountButtonTapped)
             } label: {
-                Text("Delete Account").foregroundStyle(Theme.ink)
+                Text("Delete Account")
             }
-            .frame(maxWidth: .infinity, minHeight: 44)
+            .buttonStyle(QuietButtonStyle())
             .disabled(store.isRequestInFlight)
             .accessibilityIdentifier("account.delete")
             .accessibilityValue(
@@ -530,14 +804,22 @@ struct AccountSettingsView: View {
                     "You’ll confirm with Sign in with Apple. Live matches are cancelled, and finished matches stay in the other person’s history under the name Former competitor. This can’t be undone."
                 )
             }
+
+            // The last row, so the in-flight scroll to the bottom lands on it.
             if let message = store.message, message.isDeletionMessage {
                 Text(message.text)
                     .font(.callout)
                     .foregroundStyle(Theme.ink)
+                    .multilineTextAlignment(.center)
+                    .frame(maxWidth: .infinity)
+                    .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("account.message")
+                    .id(Self.deletionMessageID)
             }
         }
-        .listRowBackground(Theme.panel)
+        .listRowBackground(Color.clear)
+        .listRowSeparator(.hidden)
+        .listRowInsets(EdgeInsets(top: 0, leading: 0, bottom: 0, trailing: 0))
     }
 }
 
@@ -615,7 +897,8 @@ private struct AccountNotificationsPage: View {
     @Environment(\.openURL) private var openURL
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @ScaledMetric(relativeTo: .headline) private var initialSize: CGFloat = 34
-    @State private var systemLiveActivitiesEnabled = true
+    // Read up front, so the rows it adds are there on the push.
+    @State private var systemLiveActivitiesEnabled = ActivityAuthorizationInfo().areActivitiesEnabled
 
     private var liveActivitiesEnabled: Bool {
         settings.liveActivitiesEnabled ?? systemLiveActivitiesEnabled
@@ -676,6 +959,9 @@ private struct AccountNotificationsPage: View {
                 .listRowBackground(Theme.panel)
             }
         }
+        .moving(Motion.settle, value: settings.authorization)
+        .moving(Motion.settle, value: settings.mutedPeople)
+        .moving(Motion.settle, value: liveActivitiesEnabled)
         .accountPageStyle(title: "Notifications")
         .task {
             guard settings.liveActivitiesEnabled == nil else { return }
@@ -727,15 +1013,16 @@ private struct AccountNotificationsPage: View {
         let layout = isAccessibilitySize
             ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
             : AnyLayout(HStackLayout(spacing: 12))
+        let isUnmuting = settings.mutesInFlight.contains(person.id)
         return layout {
             HStack(spacing: 12) {
                 if !isAccessibilitySize {
-                    Text(person.name.first.map { String($0).uppercased() } ?? "")
-                        .font(.headline.width(.condensed))
-                        .foregroundStyle(Theme.ink)
-                        .frame(width: initialSize, height: initialSize)
-                        .background(Theme.control, in: Circle())
-                        .accessibilityHidden(true)
+                    PersonAvatar(
+                        name: person.name,
+                        photo: RemoteCompetitionOpponentIdentity.profileID(person.id),
+                        size: initialSize,
+                        initialFont: .headline.width(.condensed)
+                    )
                 }
                 Text(person.name)
                     .foregroundStyle(Theme.ink)
@@ -745,12 +1032,15 @@ private struct AccountNotificationsPage: View {
             // The frame sits inside the label so the tap area, not just the
             // layout, stays 44pt at the smallest text sizes.
             Button { settings.unmute(person.id) } label: {
+                // The ink tint doesn't dim when disabled, so saving shows here.
                 Text("Unmute")
+                    .foregroundStyle(isUnmuting ? Theme.secondary : Theme.ink)
+                    .animation(Motion.fade, value: isUnmuting)
                     .frame(minWidth: 44, minHeight: 44)
                     .contentShape(Rectangle())
             }
                 .buttonStyle(.borderless)
-                .disabled(settings.mutesInFlight.contains(person.id))
+                .disabled(isUnmuting)
                 .accessibilityLabel("Unmute \(person.name)")
                 .accessibilityIdentifier("account.notifications.unmute")
         }
@@ -808,7 +1098,8 @@ private struct AccountProgressOverlay: View {
     let store: StoreOf<AccountFeature>
 
     var body: some View {
-        if store.isRequestInFlight {
+        // Save waits in its own button.
+        if store.isRequestInFlight, !store.isEditingDisplayName {
             ProgressView()
                 .tint(Theme.ink)
                 .accessibilityLabel(
@@ -816,6 +1107,8 @@ private struct AccountProgressOverlay: View {
                         ? "Deleting account"
                         : "Saving account changes"
                 )
+                .waitingFade()
+                .transition(Motion.appear)
         }
     }
 }
@@ -997,7 +1290,7 @@ private struct AppearancePicker: View {
         layout {
             ForEach(AppAppearance.allCases) { option in
                 Button {
-                    selection = option
+                    choose(option)
                 } label: {
                     VStack(spacing: 8) {
                         AppearanceThumbnail(
@@ -1016,6 +1309,7 @@ private struct AppearancePicker: View {
                         .foregroundStyle(
                             selection == option ? Theme.ink : Theme.tertiary
                         )
+                        .contentTransition(.opacity)
                     }
                     .frame(maxWidth: .infinity, minHeight: 44)
                     .contentShape(Rectangle())
@@ -1026,6 +1320,28 @@ private struct AppearancePicker: View {
             }
         }
         .padding(.vertical, 8)
+        .animation(Motion.fade, value: selection)
+        .sensoryFeedback(.selection, trigger: selection)
+    }
+
+    /// The whole window changes, and dynamic colours don't interpolate through
+    /// a transaction, so it crossfades from a snapshot: `Motion.fade` in UIKit.
+    private func choose(_ option: AppAppearance) {
+        guard option != selection else { return }
+        let window = UIApplication.shared.connectedScenes
+            .compactMap { ($0 as? UIWindowScene)?.keyWindow }.first
+        let snapshot = window?.snapshotView(afterScreenUpdates: false)
+        if let snapshot {
+            snapshot.isUserInteractionEnabled = false
+            snapshot.accessibilityElementsHidden = true
+            window?.addSubview(snapshot)
+        }
+        selection = option
+        UIView.animate(withDuration: 0.2, delay: 0, options: .curveEaseOut) {
+            snapshot?.alpha = 0
+        } completion: { _ in
+            snapshot?.removeFromSuperview()
+        }
     }
 }
 
@@ -1120,13 +1436,15 @@ private struct ChallengeLinkCodeView: View {
     }
 }
 
+private let challengeLinkQRContext = CIContext()
+
 private func challengeLinkQRCode(_ url: URL) -> UIImage? {
     let filter = CIFilter.qrCodeGenerator()
     filter.message = Data(url.absoluteString.utf8)
     filter.correctionLevel = "M"
     guard let output = filter.outputImage?
         .transformed(by: CGAffineTransform(scaleX: 10, y: 10)),
-          let cgImage = CIContext().createCGImage(output, from: output.extent)
+          let cgImage = challengeLinkQRContext.createCGImage(output, from: output.extent)
     else {
         return nil
     }

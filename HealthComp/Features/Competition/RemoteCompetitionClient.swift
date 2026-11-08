@@ -11,11 +11,20 @@ extension CompetitionClient {
         let remoteAPI = SupabaseCompetitionRemoteAPI.live(provider: provider)
         let pushRegistrationClient: CompetitionPushRegistrationClient? =
             installationEnvironment == nil ? nil : .liveValue
+        // An alert is for whoever is signed in as it posts; its reactions are
+        // sent only as them (CompetitionReactionAlert.send).
+        var notificationClient = CompetitionNotificationClient.liveValue
+        let postNow = notificationClient.postNow
+        notificationClient.postNow = { request in
+            var request = request
+            request.recipientUserID = provider.signedInUserID()
+            try await postNow(request)
+        }
         return remote(
             remoteAPI: remoteAPI,
             environment: .production(),
             realtimeClient: .supabase(provider: provider),
-            notificationClient: .liveValue,
+            notificationClient: notificationClient,
             pushRegistrationClient: pushRegistrationClient,
             installationEnvironment: installationEnvironment,
             appAttestServiceFactory: { DeviceCheckAppAttestClient() },
@@ -175,7 +184,15 @@ extension CompetitionClient {
             setReaction: { id, target, kind in
                 try await coordinator.setReaction(id, target, kind)
             },
-            startPractice: { await coordinator.startPractice($0) }
+            startPractice: { await coordinator.startPractice($0) },
+            loadProfilePhotos: { try await coordinator.loadProfilePhotos($0) },
+            loadOwnProfilePhoto: { try await coordinator.loadOwnProfilePhoto() },
+            profilePhotoData: { try await coordinator.profilePhotoData($0) },
+            cachedProfilePhotoData: { await coordinator.cachedProfilePhotoData($0) },
+            setProfilePhoto: { try await coordinator.setProfilePhoto($0) },
+            removeProfilePhoto: { try await coordinator.removeProfilePhoto() },
+            reportProfilePhoto: { try await coordinator.reportProfilePhoto($0) },
+            isProfilePhotoReported: { await coordinator.isProfilePhotoReported($0) }
         )
     }
 }
@@ -448,6 +465,7 @@ private actor RemoteCompetitionClientCoordinator {
     private var terminalPreparationWork: TerminalPreparationWork?
     private var installationCoordinator: CompetitionInstallationCoordinator?
     private var inviteRequests: RemoteInviteRequestStore?
+    private var photoCache: ProfilePhotoCache?
     private var mountedCompetitionIDs: Set<CompetitionID> = []
     /// The last good materialization of each match, shown again when its
     /// next sync is only cancelled.
@@ -549,6 +567,7 @@ private actor RemoteCompetitionClientCoordinator {
                     fileURL: paths.rootDirectory
                         .appendingPathComponent("InviteRequests.json")
                 )
+                self.photoCache = ProfilePhotoCache(directory: paths.profilePhotosDirectory)
                 var mountedRemoteAPI = remoteAPI
                 if let appAttestServiceFactory {
                     mountedRemoteAPI = try await ProfileScopedAppAttestRemoteAPI
@@ -1067,6 +1086,96 @@ private actor RemoteCompetitionClientCoordinator {
         }
     }
 
+    /// Your id and this account's photo cache, for a signed-in, running profile.
+    private func photoAccount() throws -> (id: UUID, cache: ProfilePhotoCache) {
+        guard terminalTeardown == nil else {
+            throw EnvironmentSignalOwnershipError.activeOwnerNotRetired
+        }
+        guard runtime != nil, let profile, let photoCache else {
+            throw CompetitionRemoteFailure.unauthenticated
+        }
+        return (profile.id, photoCache)
+    }
+
+    /// Whether `cache` is still the mounted account's, after an await.
+    private func isMountedPhotoCache(_ cache: ProfilePhotoCache) -> Bool {
+        runtime != nil && terminalTeardown == nil && photoCache?.directory == cache.directory
+    }
+
+    /// Reads run outside the operation gate, so avatars never hold up a
+    /// sync; a result that lands after sign-out or a switch isn't cached.
+    func loadProfilePhotos(_ profileIDs: [UUID]) async throws -> [ProfilePhotoReference] {
+        let account = try photoAccount()
+        let owners = Array(Set(profileIDs))
+        let references = try await remoteAPI.listProfilePhotos(owners)
+        if isMountedPhotoCache(account.cache) {
+            account.cache.retain(references, among: owners)
+        }
+        return references
+    }
+
+    func loadOwnProfilePhoto() async throws -> OwnProfilePhoto {
+        let account = try photoAccount()
+        let own = try await remoteAPI.ownProfilePhoto(account.id)
+        if isMountedPhotoCache(account.cache) {
+            account.cache.retain(own.reference.map { [$0] } ?? [], among: [account.id])
+        }
+        return own
+    }
+
+    func profilePhotoData(_ reference: ProfilePhotoReference) async throws -> Data {
+        let account = try photoAccount()
+        if let cached = account.cache.data(for: reference) { return cached }
+        let data = try await remoteAPI.downloadProfilePhoto(reference)
+        if isMountedPhotoCache(account.cache) {
+            try? account.cache.store(data, for: reference)
+        }
+        return data
+    }
+
+    func cachedProfilePhotoData(_ owner: UUID) -> Data? {
+        guard runtime != nil, terminalTeardown == nil else { return nil }
+        return photoCache?.latestData(owner: owner)
+    }
+
+    /// Clears leftovers first (the folder holds three objects at most), then
+    /// uploads a new version and deletes the old one.
+    func setProfilePhoto(_ jpeg: Data) async throws -> ProfilePhotoReference {
+        try await withCancellableOperationGate {
+            let account = try photoAccount()
+            let current = try await remoteAPI.listProfilePhotos([account.id]).first?.version
+            try? await remoteAPI.removeProfilePhotoObjects(account.id, current)
+            let reference = ProfilePhotoReference(ownerProfileID: account.id, version: UUID())
+            try await remoteAPI.setProfilePhoto(reference, jpeg)
+            try? account.cache.store(jpeg, for: reference)
+            try? await remoteAPI.removeProfilePhotoObjects(account.id, reference.version)
+            return reference
+        }
+    }
+
+    func removeProfilePhoto() async throws {
+        try await withCancellableOperationGate {
+            let account = try photoAccount()
+            try await remoteAPI.clearProfilePhoto()
+            account.cache.remove(owner: account.id)
+            try await remoteAPI.removeProfilePhotoObjects(account.id, nil)
+        }
+    }
+
+    func reportProfilePhoto(_ owner: UUID) async throws {
+        try await withCancellableOperationGate {
+            let account = try photoAccount()
+            try await remoteAPI.reportProfilePhoto(owner)
+            account.cache.remove(owner: owner)
+            try? account.cache.markReported(owner: owner)
+        }
+    }
+
+    func isProfilePhotoReported(_ owner: UUID) -> Bool {
+        guard runtime != nil, terminalTeardown == nil else { return false }
+        return photoCache?.isReported(owner: owner) ?? false
+    }
+
     /// Saves your reaction, then republishes the last inputs with it (no
     /// network beyond the RPC). The realtime wakeup that follows reconciles
     /// and replaces this row with the server's.
@@ -1580,6 +1689,7 @@ private actor RemoteCompetitionClientCoordinator {
         }
         mountedCompetitionIDs = []
         inviteRequests = nil
+        photoCache = nil
         notificationCoordinator = .noop
         notificationPreferences = .unavailable
         observerDeliveryReceipts = .discarding
@@ -2491,7 +2601,7 @@ enum RemoteCompetitionProjector {
             let acceptedSnapshot = activityDay?.acceptedClientRevision != nil
                 && activityDay?.acceptedClientRevision == owner?.clientRevision
                 ? activityDay?.acceptedSnapshot : nil
-            return CompetitionDayPresentation(
+            var presentation = CompetitionDayPresentation(
                 day: day,
                 ordinal: ordinal,
                 ownerAcceptedPoints: owner?.acceptedCentiPoints.map {
@@ -2507,6 +2617,11 @@ enum RemoteCompetitionProjector {
                 ownerLatestSnapshot: activityDay?.latestSnapshot,
                 scoringPolicy: .remoteWireV1
             )
+            presentation.ownerRingPoints = owner?.ringBasisPoints?.map { Double($0) / 100 }
+            presentation.opponentRingPoints = future && terminal == nil
+                ? nil
+                : remote?.ringBasisPoints?.map { Double($0) / 100 }
+            return presentation
         }
     }
 

@@ -44,6 +44,14 @@ enum HealthCompLiveComposition {
         let competitionClient = competitionClientFactory.make(
             supabaseClientProvider
         )
+        // The same client and session as the app's, for alert reactions,
+        // sent only while the person it was posted for is still signed in.
+        let setReaction = SupabaseCompetitionRemoteAPI
+            .live(provider: supabaseClientProvider).setReaction
+        CompetitionReactionAlert.send = { recipient, reaction in
+            guard supabaseClientProvider.signedInUserID() == recipient else { return }
+            try await setReaction(reaction)
+        }
         return Store(initialState: AppFeature.State()) {
             AppFeature()
                 .dependency(\.authenticationClient, authenticationClient)
@@ -133,13 +141,21 @@ struct HealthCompApp: App {
         if let scenario = zip(arguments, arguments.dropFirst())
             .first(where: { $0.0 == "--widget-scenario" })?.1
         {
-            Task {
+            // `-widgetScenarioDelay 5` lets a test get back to the widget first,
+            // so a recording catches the change.
+            let delay = UserDefaults.standard.double(forKey: "widgetScenarioDelay")
+            Task { @MainActor in
+                let background = UIApplication.shared.beginBackgroundTask()
+                try? await Task.sleep(for: .seconds(delay))
                 let client = CompetitionWidgetSnapshotClient.liveValue
-                if let snapshot = CompetitionWidgetSnapshot.testLab(scenario, now: Date()) {
+                if let snapshot = CompetitionWidgetSnapshot.testLab(
+                    scenario, now: Date(), scheme: CompetitionRoute.customURLScheme
+                ) {
                     await client.write(snapshot, [])
                 } else {
                     try? await client.clear()
                 }
+                UIApplication.shared.endBackgroundTask(background)
             }
         }
     }
@@ -236,19 +252,27 @@ struct AppRootView: View {
     private var appearance = AppAppearance.system
 
     var body: some View {
-        Group {
+        // Layers, so only the one on top fades. Main never does: it hosts the
+        // sheets and UIKit bars, and its state goes nil with the phase.
+        ZStack {
+            Theme.ground.ignoresSafeArea()
             switch store.phase {
-            case .launching, .bootstrappingProfile:
-                AppProgressView(title: "Connecting…")
-
-            case .tearingDown:
-                AppProgressView(title: "Signing out…")
+            // One branch, so the wait doesn't restart between these phases.
+            case .launching, .bootstrappingProfile, .tearingDown:
+                AppProgressView(
+                    title: Self.progressTitle(store.pendingTeardown?.reason),
+                    waits: true
+                )
+                .transition(Motion.appear)
+                .zIndex(2)
 
             case .signedOut, .settingUpProfile, .launchFailure:
                 AccountView(
                     store: store.scope(state: \.account, action: \.account),
                     hasPendingChallenge: store.hasPendingChallenge
                 )
+                .transition(Motion.appear)
+                .zIndex(1)
 
             case .authenticated:
                 if let mainStore = store.scope(
@@ -262,6 +286,7 @@ struct AppRootView: View {
                             action: \.account
                         )
                     )
+                    .transition(.identity)
                 }
             }
         }
@@ -275,19 +300,47 @@ struct AppRootView: View {
             _ = CompetitionRoutingEnvironment.liveHub.enqueue(route)
         }
     }
+
+    /// Cleaning up after a session that never opened isn't signing out.
+    static func progressTitle(_ teardown: AppFeature.TeardownReason?) -> String {
+        switch teardown {
+        case nil, .restoredWithoutSession, .cancelledAuthentication:
+            "Connecting…"
+        case .userRequested, .sessionEnded, .accountDeleted, .profileConflict:
+            "Signing out…"
+        }
+    }
 }
 
-private struct AppProgressView: View {
+/// The mark holding still. The root and Home draw the same one at window
+/// centre, keyboard or not, so it stays put as one hands over to the other.
+struct AppProgressView: View {
     let title: String
+    /// The first loader waits 200 ms. Home's takes over from it, so it can't.
+    var waits = false
 
     var body: some View {
+        Group {
+            if waits {
+                content.waitingFade()
+            } else {
+                content
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Theme.ground)
+        .ignoresSafeArea()
+        // One flat layer: faded in parts, the mark dips over its twin below.
+        .compositingGroup()
+        .allowsHitTesting(false)
+    }
+
+    private var content: some View {
         VStack(spacing: 20) {
             BrandMark().frame(width: 88)
             ProgressView(title)
                 .foregroundStyle(Theme.secondary)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Theme.ground)
     }
 }
 
@@ -323,6 +376,16 @@ private struct AccountSheet: View {
     let accountStore: StoreOf<AccountFeature>
     let done: () -> Void
 
+    @AppStorage(AppAppearance.storageKey)
+    private var appearance = AppAppearance.system
+
+    /// A nil preference doesn't reach an open sheet, so going back to System
+    /// here names the iPhone's own setting instead.
+    private var colorScheme: ColorScheme {
+        appearance.colorScheme
+            ?? (UIScreen.main.traitCollection.userInterfaceStyle == .dark ? .dark : .light)
+    }
+
     var body: some View {
         NavigationStack {
             accountSettings
@@ -332,7 +395,10 @@ private struct AccountSheet: View {
                 }
             }
         }
+        .preferredColorScheme(colorScheme)
         .task { mainStore.send(.refreshHealthAccess) }
+        // A sheet sits outside Home's own environment.
+        .environment(\.profilePhotos, mainStore.competition.profilePhotoImages)
     }
 
     private var accountSettings: AccountSettingsView {
@@ -384,6 +450,17 @@ private struct AccountSheet: View {
                 unblock: { mainStore.send(.competition(.unblockTapped($0))) }
             )
             : nil
+        let ownPhoto = competition.ownPhoto
+        let profilePhoto = competition.publication?.source == .remoteParticipants
+            ? AccountProfilePhoto(
+                status: ownPhoto.status,
+                removedByReview: ownPhoto.removedByReview,
+                load: { mainStore.send(.competition(.ownPhotoRequested)) },
+                save: { mainStore.send(.competition(.ownPhotoSaveTapped($0))) },
+                remove: { mainStore.send(.competition(.ownPhotoRemoveConfirmed)) },
+                cropClosed: { mainStore.send(.competition(.ownPhotoCropClosed)) }
+            )
+            : nil
 #if HEALTHCOMP_STAGING
         return AccountSettingsView(
             store: accountStore,
@@ -392,6 +469,7 @@ private struct AccountSheet: View {
             liveMatchCount: liveMatchCount,
             challengeLink: challengeLink,
             blockedPeople: blockedPeople,
+            profilePhoto: profilePhoto,
             refreshCompetition: { mainStore.send(.competition(.pullToRefresh)) }
         )
 #else
@@ -401,7 +479,8 @@ private struct AccountSheet: View {
             health: health,
             liveMatchCount: liveMatchCount,
             challengeLink: challengeLink,
-            blockedPeople: blockedPeople
+            blockedPeople: blockedPeople,
+            profilePhoto: profilePhoto
         )
 #endif
     }

@@ -101,6 +101,7 @@ jobs:
           set -euo pipefail
           bash scripts/verify-app-privacy-manifest.sh
           bash scripts/test-app-privacy-manifest.sh
+          bash scripts/test-verify-watch-embed.sh
 
       - name: Verify staging-only diagnostic output
         run: |
@@ -111,6 +112,9 @@ jobs:
 
       - name: Verify local-time display formatting
         run: bash scripts/test-competition-local-date-formatting.sh
+
+      - name: Verify Motion tokens
+        run: bash scripts/verify-motion-tokens.sh
 
       - name: Test CompetitionCore in Debug and Release
         run: |
@@ -141,6 +145,8 @@ jobs:
             SUPABASE_PUBLISHABLE_KEY="$SUPABASE_PUBLISHABLE_KEY"
           bash scripts/verify-app-privacy-manifest.sh --app-bundle \
             "$RUNNER_TEMP/HealthComp-DerivedData/Build/Products/Release-iphoneos/HealthComp.app"
+          bash scripts/verify-watch-embed.sh \
+            "$RUNNER_TEMP/HealthComp-DerivedData/Build/Products/Release-iphoneos/HealthComp.app"
 
       - name: Build unsigned Debug device configuration
         run: |
@@ -159,6 +165,8 @@ jobs:
             SUPABASE_URL="$SUPABASE_URL" \
             SUPABASE_PUBLISHABLE_KEY="$SUPABASE_PUBLISHABLE_KEY"
           bash scripts/verify-app-privacy-manifest.sh --app-bundle \
+            "$RUNNER_TEMP/HealthComp-DerivedData/Build/Products/Debug-iphoneos/HealthComp.app"
+          bash scripts/verify-watch-embed.sh \
             "$RUNNER_TEMP/HealthComp-DerivedData/Build/Products/Debug-iphoneos/HealthComp.app"
 
       - name: Verify source tree remains clean
@@ -347,6 +355,8 @@ jobs:
             SUPABASE_URL="$SUPABASE_URL" \
             SUPABASE_PUBLISHABLE_KEY="$SUPABASE_PUBLISHABLE_KEY"
           bash scripts/verify-app-privacy-manifest.sh --app-bundle \
+            "$RUNNER_TEMP/HealthComp-DerivedData/Build/Products/Staging-iphoneos/HealthComp.app"
+          bash scripts/verify-watch-embed.sh \
             "$RUNNER_TEMP/HealthComp-DerivedData/Build/Products/Staging-iphoneos/HealthComp.app"
 
       - name: Verify source tree remains clean

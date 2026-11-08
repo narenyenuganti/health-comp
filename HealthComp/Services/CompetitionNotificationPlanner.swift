@@ -301,9 +301,9 @@ extension CompetitionNotificationPolicy {
     /// "You took the belt from Sam." on a take; nil otherwise.
     private static func beltSentence(_ message: CompetitionNotificationMessage) -> String? {
         switch message.beltTake {
-        case .took(.you, nil): "You took the belt."
-        case .took(.you, _?): "You took the belt from \(message.opponentDisplayName)."
-        case .took(.them, _): "\(message.opponentDisplayName) took the belt."
+        case .took(.you, nil, _): "You took the belt."
+        case .took(.you, _?, _): "You took the belt from \(message.opponentDisplayName)."
+        case .took(.them, _, _): "\(message.opponentDisplayName) took the belt."
         default: nil
         }
     }
@@ -759,7 +759,8 @@ struct CompetitionNotificationPlanner: Sendable {
                             identifier: CompetitionNotificationIdentifier
                                 .opportunistic(candidate.record),
                             content: policy.content(candidate.message),
-                            route: .competition(competition.id)
+                            route: .competition(competition.id),
+                            reactionTarget: reactionTarget(candidate.record)
                         )
                     )
                 )
@@ -783,6 +784,18 @@ struct CompetitionNotificationPlanner: Sendable {
             result.decisions = [catchUp]
         }
         return result
+    }
+
+    /// Lead changes react to the other person's day, results to the result.
+    /// Muted matches never get here, so their alerts carry no actions.
+    private func reactionTarget(
+        _ record: NotificationEmissionRecorded
+    ) -> CompetitionReactionTarget? {
+        switch record.family {
+        case .leadChange: record.episodeKey.dayOrdinal.map(CompetitionReactionTarget.day)
+        case .result: .result
+        default: nil
+        }
     }
 
     private func staleSuppressionRecords(
@@ -1212,7 +1225,8 @@ struct CompetitionNotificationPlanner: Sendable {
                         (
                             id: week.id,
                             end: week.schedule.flatMap(competitionScheduleBoundaries)?.end,
-                            outcome: $0.outcome
+                            outcome: $0.outcome,
+                            margin: abs($0.ownerPoints - $0.opponentPoints)
                         )
                     }
                 }

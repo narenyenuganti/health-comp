@@ -162,9 +162,7 @@ struct AccountFeature {
                       authenticationClient.deleteAccountInBrowser != nil,
                       state.isDeleteConfirmationPresented,
                       !state.isRequestInFlight else { return .none }
-                state.isDeleteConfirmationPresented = false
-                state.isDeletingAccount = true
-                beginRequest(state: &state)
+                beginDeletion(state: &state)
                 return .send(.delegate(.deleteAccountInBrowserRequested))
             case let .displayNameChanged(value):
                 state.displayName = value
@@ -268,9 +266,7 @@ struct AccountFeature {
                 else {
                     return .none
                 }
-                state.isDeleteConfirmationPresented = false
-                state.isDeletingAccount = true
-                beginRequest(state: &state)
+                beginDeletion(state: &state)
                 return .send(.delegate(.deleteAccountRequested))
 
             case let .operationFailed(failure):
@@ -301,6 +297,16 @@ struct AccountFeature {
     private func beginRequest(state: inout State) {
         state.isRequestInFlight = true
         state.message = nil
+    }
+
+    /// Deleting abandons an open name edit so the overlay, not the Save
+    /// button, shows the wait.
+    private func beginDeletion(state: inout State) {
+        state.isDeleteConfirmationPresented = false
+        state.displayName = state.committedDisplayName
+        state.isEditingDisplayName = false
+        state.isDeletingAccount = true
+        beginRequest(state: &state)
     }
 
     private func trimmedDisplayName(_ value: String) -> String {

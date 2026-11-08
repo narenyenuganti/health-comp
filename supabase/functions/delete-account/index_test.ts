@@ -95,6 +95,7 @@ function dependencies(
     loadAppleToken: async () => "test-refresh-token-for-account-deletion",
     revokeAppleToken: async () => {},
     markAppleRevoked: async () => progress("apple_revoked"),
+    removeProfilePhotos: async () => {},
     anonymize: async () => progress("auth_delete_pending"),
     deleteAuthUser: async () => {},
     complete: async () => progress("completed", null),
@@ -247,6 +248,10 @@ Deno.test("delete account executes durable phases in order", async () => {
         calls.push("mark-apple-revoked");
         return progress("apple_revoked");
       },
+      removeProfilePhotos: async (receivedProfileID) => {
+        assertEquals(receivedProfileID, profileID);
+        calls.push("remove-photos");
+      },
       anonymize: async () => {
         calls.push("anonymize");
         return progress("auth_delete_pending");
@@ -272,6 +277,7 @@ Deno.test("delete account executes durable phases in order", async () => {
     "load-token",
     "revoke-apple",
     "mark-apple-revoked",
+    "remove-photos",
     "anonymize",
     "delete-auth-user",
     "complete",
@@ -432,6 +438,9 @@ Deno.test("token-ready retry resumes without exchanging the single-use code", as
         calls.push("mark");
         return progress("apple_revoked");
       },
+      removeProfilePhotos: async () => {
+        calls.push("remove-photos");
+      },
       anonymize: async () => {
         calls.push("anonymize");
         return progress("auth_delete_pending");
@@ -451,6 +460,7 @@ Deno.test("token-ready retry resumes without exchanging the single-use code", as
     "load",
     "revoke:persisted-refresh-token",
     "mark",
+    "remove-photos",
     "anonymize",
     "delete-user",
     "complete",
@@ -479,6 +489,27 @@ Deno.test("Apple revocation failure preserves the resumable token phase", async 
   assertEquals(response.status, 503);
   assertEquals(await response.json(), { error: "apple_revocation_retryable" });
   assertEquals(marked, false);
+});
+
+Deno.test("photo removal failure keeps the account unanonymized and retryable", async () => {
+  let anonymized = false;
+  const response = await deleteAccountHandler(
+    request(),
+    dependencies({
+      begin: async () => progress("apple_revoked"),
+      removeProfilePhotos: async () => {
+        throw new Error("storage unavailable");
+      },
+      anonymize: async () => {
+        anonymized = true;
+        return progress("auth_delete_pending");
+      },
+    }),
+  );
+
+  assertEquals(response.status, 503);
+  assertEquals(await response.json(), { error: "account_deletion_retryable" });
+  assertEquals(anonymized, false);
 });
 
 Deno.test("lost auth-delete response succeeds only when durable completion confirms it", async () => {

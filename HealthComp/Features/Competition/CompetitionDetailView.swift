@@ -17,16 +17,26 @@ struct CompetitionDetailView: View {
     var reactions: CompetitionReactionControl? = nil
     /// Practice only: End Practice in the ••• menu.
     var endPractice: (() -> Void)? = nil
+    /// Real matches only: Report Photo in the ••• menu, while their photo shows.
+    var reportPhoto: CompetitionReportPhoto? = nil
 
     @Environment(\.locale) private var locale
     @Environment(\.timeZone) private var timeZone
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
 
     @State private var page: Page = .today
     @State private var drawer: Drawer? = nil
     @State private var showsCancelConfirmation = false
     @AppStorage(CompetitionReactionsSeen.storageKey)
     private var reactionsSeen = CompetitionReactionsSeen()
+    @AppStorage(CompetitionMotionSeen.storageKey)
+    private var motionSeen = CompetitionMotionSeen()
+    /// Week has shown on this visit, so later flips and new days settle.
+    @State private var weekShown = false
     @State private var showsEndPracticeConfirmation = false
+    @State private var showsReportPhotoConfirmation = false
+    @Environment(\.profilePhotos) private var photos
 
     /// Today's numbers or the whole week; the scoreboard stays above both.
     private enum Page: Hashable {
@@ -47,9 +57,11 @@ struct CompetitionDetailView: View {
             VStack(alignment: .leading, spacing: 20) {
                 if let issue {
                     CompetitionIssueLine(issue: issue, retry: retry, id: competition.id)
+                        .transition(Motion.appear)
                 }
 
                 muteButton?.failureNote
+                    .transition(Motion.appear)
 
                 VStack(alignment: .leading, spacing: 12) {
                     CompetitionScoreboardPanel(
@@ -67,6 +79,7 @@ struct CompetitionDetailView: View {
                             .foregroundStyle(Theme.secondary)
                             .fixedSize(horizontal: false, vertical: true)
                             .accessibilityIdentifier("competition.cancel.error")
+                            .transition(Motion.appear)
                     }
                 }
 
@@ -80,15 +93,22 @@ struct CompetitionDetailView: View {
                         Text("Week").tag(Page.week)
                     }
                     .pickerStyle(.segmented)
+                    .transition(Motion.appear)
 
-                    switch page {
-                    case .today:
-                        todayActivity
-                    case .week:
-                        weekSection
+                    ZStack(alignment: .topLeading) {
+                        switch page {
+                        case .today:
+                            todayActivity
+                                .transition(Motion.appear)
+                        case .week:
+                            weekSection
+                                .transition(Motion.appear)
+                        }
                     }
+                    .transition(Motion.appear)
                 }
             }
+            .moving(Motion.settle, value: layoutKey)
             .padding(.horizontal, 16)
             .padding(.top, 12)
             .padding(.bottom, 24)
@@ -96,6 +116,12 @@ struct CompetitionDetailView: View {
         .refreshable(refresh)
         // Back or pop, not a drawer: the line stays while you're here.
         .onDisappear { reactionsSeen = reactionsSeen.marking(competition) }
+        .competitionReactionRain(
+            incoming: reactions == nil ? nil : competitionReactionRainBatch(
+                [competition], seen: reactionsSeen, motionSeen: motionSeen
+            ),
+            rained: { motionSeen = motionSeen.raining([competition]) }
+        )
         .background(Theme.ground)
         .navigationTitle(competition.opponentDisplayName)
         .navigationBarTitleDisplayMode(.inline)
@@ -105,6 +131,7 @@ struct CompetitionDetailView: View {
                     if let muteButton {
                         muteButton
                     }
+                    reportPhotoItem
                     Button {
                         drawer = .activitySync
                     } label: {
@@ -152,6 +179,23 @@ struct CompetitionDetailView: View {
             Text("It hasn’t started yet. \(competition.opponentDisplayName) will be told.")
         }
         .confirmationDialog(
+            "Report \(competition.opponentDisplayName)’s photo?",
+            isPresented: $showsReportPhotoConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Report Photo", role: .destructive) { reportPhoto?.report() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("You won’t see \(competition.opponentDisplayName)’s photo again. We’ll review it. \(competition.opponentDisplayName) isn’t notified.")
+        }
+        .onChange(of: reportPhoto?.isReported == true) { old, new in
+            if !old, new {
+                AccessibilityNotification.Announcement(
+                    "Photo reported. You’ll see \(competition.opponentDisplayName)’s initial instead."
+                ).post()
+            }
+        }
+        .confirmationDialog(
             "End this practice match?",
             isPresented: $showsEndPracticeConfirmation,
             titleVisibility: .visible
@@ -165,6 +209,7 @@ struct CompetitionDetailView: View {
             switch item {
             case let .day(ordinal):
                 dayDrawer(ordinal)
+                    .competitionReactionRain()
             case .activitySync:
                 activitySyncDrawer
             case .rules:
@@ -183,13 +228,87 @@ struct CompetitionDetailView: View {
         }
     }
 
+    /// Only while their photo shows; after a report, a dimmed Photo Reported.
+    @ViewBuilder
+    private var reportPhotoItem: some View {
+        if let reportPhoto {
+            if reportPhoto.isReported {
+                Button {} label: {
+                    Label("Photo Reported", systemImage: "checkmark.circle")
+                }
+                .disabled(true)
+                .accessibilityIdentifier("competition.match.report-photo")
+            } else if photos.photo(competition.opponentProfileID) != nil {
+                Button {
+                    showsReportPhotoConfirmation = true
+                } label: {
+                    Label(
+                        "Report \(competition.opponentDisplayName)’s Photo",
+                        systemImage: "exclamationmark.bubble"
+                    )
+                }
+                .disabled(reportPhoto.isInFlight)
+                .accessibilityIdentifier("competition.match.report-photo")
+            }
+        }
+    }
+
+    /// What changes the page's height. Never `competition`: it differs on
+    /// every publication and would animate every time-derived string.
+    private struct LayoutKey: Equatable {
+        let hasIssue: Bool
+        let muteFailure: CompetitionMuteFailure?
+        let cancelFailed: Bool
+        let showsScores: Bool
+        let isProvisional: Bool
+        let nudge: CompetitionNudgeDisplay?
+        let tally: String?
+        let takes: String?
+        let reaction: Date?
+        let hasRings: Bool?
+        let availability: LocalCompetitionOwnerAvailability?
+    }
+
+    private var layoutKey: LayoutKey {
+        LayoutKey(
+            hasIssue: issue != nil,
+            muteFailure: muteButton?.failure,
+            cancelFailed: cancelMatch?.failed == true,
+            showsScores: competitionShouldShowScores(competition.lifecycle),
+            isProvisional: scoresAreProvisional,
+            nudge: nudgeDisplay,
+            tally: tallyCopy?.headline,
+            takes: competitionWhatItTakes(competition, locale: locale)?.headline,
+            reaction: competitionUnseenReaction(competition, seen: reactionsSeen)?.updatedAt,
+            hasRings: activityDay.map { competitionRingPanel($0, locale: locale) != nil },
+            availability: activityDay?.ownerLatestAvailability
+        )
+    }
+
     @ViewBuilder
     private var leadStatement: some View {
         if competitionShouldShowScores(competition.lifecycle) {
-            leadText
-                .font(.body)
-                .foregroundStyle(Theme.secondary)
-                .frame(maxWidth: .infinity, alignment: .leading)
+            let side = competitionLeadSide(
+                userPoints: competition.userPoints,
+                opponentPoints: competition.opponentPoints
+            )
+            let margin = competitionDisplayedMargin(
+                userPoints: competition.userPoints,
+                opponentPoints: competition.opponentPoints
+            )
+            // Same side, the margin rolls. A new side is a new id, and only a
+            // parent can animate that: the sentence follows the digits.
+            ZStack(alignment: .leading) {
+                leadText
+                    .scoreRoll(abs(margin), id: side)
+            }
+            .animation(Motion.late, value: side)
+            .font(.body)
+            .foregroundStyle(Theme.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .sensoryFeedback(.impact(weight: .medium), trigger: side) { old, new in
+                new == .you && old != .you
+            }
         }
     }
 
@@ -245,20 +364,14 @@ struct CompetitionDetailView: View {
             )
             .accessibilityHint("Opens Day \(day)")
             .accessibilityIdentifier("competition.reaction.latest")
+            .transition(Motion.appear)
         }
     }
 
     // Who or what the result waits on, and whether you need to act.
     @ViewBuilder
     private var tallyPanel: some View {
-        if let tally = competition.tally {
-            let copy = competitionTallyCopy(
-                tally,
-                opponentDisplayName: competition.opponentDisplayName,
-                now: competition.evaluatedAt,
-                locale: locale,
-                timeZone: timeZone
-            )
+        if let copy = tallyCopy {
             VStack(alignment: .leading, spacing: 12) {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(copy.headline)
@@ -278,6 +391,19 @@ struct CompetitionDetailView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(16)
             .themePanel(cornerRadius: 16)
+            .transition(Motion.appear)
+        }
+    }
+
+    private var tallyCopy: CompetitionTallyCopy? {
+        competition.tally.map {
+            competitionTallyCopy(
+                $0,
+                opponentDisplayName: competition.opponentDisplayName,
+                now: competition.evaluatedAt,
+                locale: locale,
+                timeZone: timeZone
+            )
         }
     }
 
@@ -292,20 +418,45 @@ struct CompetitionDetailView: View {
 
     @ViewBuilder
     private var nudgeControl: some View {
-        if let nudge,
-           let display = competitionNudgeDisplay(
-               nudge.status, competition: competition, locale: locale, timeZone: timeZone
-           ) {
+        if let nudge, let display = nudgeDisplay {
             CompetitionNudgeControl(
                 display: display,
                 name: competition.opponentDisplayName,
                 send: nudge.send
             )
+            .transition(Motion.appear)
         }
+    }
+
+    private var nudgeDisplay: CompetitionNudgeDisplay? {
+        nudge.flatMap {
+            competitionNudgeDisplay(
+                $0.status, competition: competition, locale: locale, timeZone: timeZone
+            )
+        }
+    }
+
+    /// The Week: your bars grow only when the week has gained a day since they
+    /// last drew, and only on the first flip of a visit. Latched on that flip:
+    /// a day landing while Week is open settles, it never holds bars at zero.
+    private var weekGrows: Bool {
+        !weekShown && !reduceMotion && !voiceOver && motionSeen.weekGained(competition)
     }
 
     private var weekSection: some View {
         VStack(alignment: .leading, spacing: 12) {
+            if let lead = competitionLeadLine(
+                competition.days, currentDayOrdinal: competition.currentDayOrdinal
+            ) {
+                CompetitionLeadLineView(
+                    line: lead,
+                    days: competition.days,
+                    currentDayOrdinal: competition.currentDayOrdinal,
+                    opponentName: competition.opponentDisplayName,
+                    isDrawn: !weekGrows
+                )
+                .padding(.bottom, 12)
+            }
             SectionLabel("THE WEEK")
             CompetitionWeekChart(
                 days: competition.days,
@@ -313,12 +464,18 @@ struct CompetitionDetailView: View {
                 now: competition.evaluatedAt,
                 opponentName: competition.opponentDisplayName,
                 showsDates: true,
+                isGrown: !weekGrows,
                 selectDay: { drawer = .day($0.ordinal) }
             )
             CompetitionRingLegend(
                 days: competition.days,
                 opponentName: competition.opponentDisplayName
             )
+        }
+        .onAppear {
+            // Only a real draw closes the gate for the day.
+            if weekGrows { motionSeen = motionSeen.drawingWeek(competition) }
+            weekShown = true
         }
     }
 
@@ -328,6 +485,7 @@ struct CompetitionDetailView: View {
             VStack(alignment: .leading, spacing: 12) {
                 if let takes = competitionWhatItTakes(competition, locale: locale) {
                     CompetitionWhatItTakesPanel(takes: takes)
+                        .transition(Motion.appear)
                 }
                 dayActivity(day, showsPullHint: true)
             }
@@ -341,14 +499,26 @@ struct CompetitionDetailView: View {
         }
     }
 
-    /// The day's ring panel, or one line saying why there isn't one.
-    @ViewBuilder
     private func dayActivity(
         _ day: LocalCompetitionDayPresentation,
         showsPullHint: Bool
     ) -> some View {
+        ZStack(alignment: .topLeading) {
+            dayPanel(day, showsPullHint: showsPullHint)
+                .transition(Motion.appear)
+        }
+    }
+
+    /// The day's ring panel, or one line saying why there isn't one.
+    @ViewBuilder
+    private func dayPanel(
+        _ day: LocalCompetitionDayPresentation,
+        showsPullHint: Bool
+    ) -> some View {
         if let panel = competitionRingPanel(day, locale: locale) {
+            // A new day is a new panel: 420 never rolls down to 0 at midnight.
             ActivityRingsView(panel: panel)
+                .id(day.ordinal)
         } else if day.ownerLatestAvailability == .notSyncedYet {
             VStack(alignment: .leading, spacing: 4) {
                 Label(
@@ -405,6 +575,7 @@ struct CompetitionDetailView: View {
                 }
                 dayActivity(day, showsPullHint: false)
             }
+            .moving(Motion.settle, value: reactions?.failed.contains(.day(ordinal)))
         }
     }
 
@@ -510,7 +681,7 @@ struct CompetitionDetailView: View {
     }
 }
 
-private extension View {
+extension View {
     @ViewBuilder
     func refreshable(_ action: (@Sendable () async -> Void)?) -> some View {
         if let action {
@@ -580,6 +751,13 @@ func competitionMuteFailureText(
 }
 
 /// The ••• that holds a match's less frequent actions.
+/// Hides one person's photos for you, on every screen and device.
+struct CompetitionReportPhoto {
+    let isReported: Bool
+    let isInFlight: Bool
+    let report: () -> Void
+}
+
 struct CompetitionMoreLabel: View {
     var body: some View {
         Image(systemName: "ellipsis")
@@ -698,6 +876,7 @@ private struct CompetitionScoreboardPanel: View {
     let isMuted: Bool
 
     @ScaledMetric(relativeTo: .largeTitle) private var scoreSize: CGFloat = 56
+    @ScaledMetric(relativeTo: .headline) private var avatarSize: CGFloat = 28
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.locale) private var locale
     @Environment(\.timeZone) private var timeZone
@@ -705,20 +884,32 @@ private struct CompetitionScoreboardPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             statusRow
-            if competitionShouldShowScores(competition.lifecycle) {
-                scoreboard
-                if isProvisional {
-                    provisionalTag
+            ZStack(alignment: .topLeading) {
+                if competitionShouldShowScores(competition.lifecycle) {
+                    VStack(alignment: .leading, spacing: 16) {
+                        scoreboard
+                        ZStack {
+                            if isProvisional {
+                                provisionalTag
+                                    .transition(Motion.appear)
+                            } else {
+                                VStack(alignment: .leading, spacing: 16) {
+                                    Rectangle()
+                                        .fill(Theme.hairline)
+                                        .frame(height: 1)
+                                        .accessibilityHidden(true)
+                                    periodRow
+                                }
+                                .transition(Motion.appear)
+                            }
+                        }
+                        CompetitionColorHint()
+                    }
+                    .transition(Motion.appear)
                 } else {
-                    Rectangle()
-                        .fill(Theme.hairline)
-                        .frame(height: 1)
-                        .accessibilityHidden(true)
-                    periodRow
+                    CompetitionScheduledSummary(competition: competition)
+                        .transition(Motion.appear)
                 }
-                CompetitionColorHint()
-            } else {
-                CompetitionScheduledSummary(competition: competition)
             }
         }
         .padding(18)
@@ -745,6 +936,8 @@ private struct CompetitionScoreboardPanel: View {
                 Text(status.title).foregroundStyle(Theme.ink)
                     + Text(isMuted ? " · Muted" : "").foregroundStyle(Theme.secondary)
             }
+            .contentTransition(.opacity)
+            .animation(Motion.fade, value: isMuted)
             .frame(maxWidth: .infinity, alignment: .leading)
             if let timing = status.timing {
                 Text(timing)
@@ -800,6 +993,7 @@ private struct CompetitionScoreboardPanel: View {
     private var ownerBlock: some View {
         scoreBlock(
             name: "You",
+            avatar: PersonAvatar(name: competition.ownerDisplayName, size: avatarSize, isYou: true),
             today: todayDay?.ownerAcceptedPoints,
             total: competition.userPoints,
             color: Theme.you,
@@ -811,6 +1005,11 @@ private struct CompetitionScoreboardPanel: View {
     private func opponentBlock(alignment: HorizontalAlignment) -> some View {
         scoreBlock(
             name: competition.opponentDisplayName,
+            avatar: PersonAvatar(
+                name: competition.opponentDisplayName,
+                photo: competition.opponentProfileID,
+                size: avatarSize
+            ),
             today: todayDay?.opponentRevealedPoints,
             total: competition.opponentPoints,
             color: Theme.ink,
@@ -821,6 +1020,7 @@ private struct CompetitionScoreboardPanel: View {
 
     private func scoreBlock(
         name: String,
+        avatar: PersonAvatar,
         today: Double?,
         total: Double,
         color: Color,
@@ -829,13 +1029,17 @@ private struct CompetitionScoreboardPanel: View {
     ) -> some View {
         // Names may wrap at large sizes; scores never do.
         VStack(alignment: alignment, spacing: 4) {
-            Text(name.uppercased())
-                .font(.themeLabel)
-                .tracking(1.4)
-                .multilineTextAlignment(alignment == .trailing ? .trailing : .leading)
+            HStack(spacing: 8) {
+                avatar
+                Text(name.uppercased())
+                    .font(.themeLabel)
+                    .tracking(1.4)
+                    .multilineTextAlignment(alignment == .trailing ? .trailing : .leading)
+            }
             Text(competitionPointsText(total))
                 .font(.score(size: scoreSize).monospacedDigit())
                 .fixedSize()
+                .scoreRoll(total, id: competition.id)
         }
         .foregroundStyle(color)
         .accessibilityElement(children: .ignore)
@@ -871,6 +1075,7 @@ private struct CompetitionScoreboardPanel: View {
             .font(.title.weight(.heavy).width(.condensed).monospacedDigit())
             .foregroundStyle(Theme.you)
             .fixedSize()
+            .scoreRoll(todayDay?.ownerAcceptedPoints, id: periodID)
     }
 
     private var opponentPeriodPoints: some View {
@@ -878,6 +1083,12 @@ private struct CompetitionScoreboardPanel: View {
             .font(.title.weight(.heavy).width(.condensed).monospacedDigit())
             .foregroundStyle(Theme.ink)
             .fixedSize()
+            .scoreRoll(todayDay?.opponentRevealedPoints, id: periodID)
+    }
+
+    /// Per day, so midnight replaces the number instead of rolling it down.
+    private var periodID: String {
+        "\(competition.id.rawValue)-\(todayDay?.ordinal ?? 0)"
     }
 
     private var periodTitle: some View {
@@ -1324,13 +1535,24 @@ private struct CompetitionNudgeControl: View {
     let send: () -> Void
 
     var body: some View {
-        content
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .onChange(of: display) { old, new in
-                if case .button(_, isSending: true) = old, case let .sent(text) = new {
-                    AccessibilityNotification.Announcement(text).post()
-                }
+        ZStack(alignment: .topLeading) {
+            content
+                .transition(Motion.appear)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .onChange(of: display) { old, new in
+            if case .button(_, isSending: true) = old, case let .sent(text) = new {
+                AccessibilityNotification.Announcement(text).post()
             }
+        }
+        .sensoryFeedback(trigger: display) { old, new in
+            guard case .button(_, isSending: true) = old else { return nil }
+            switch new {
+            case .sent: return .success
+            case .button(.some, _): return .error
+            default: return nil
+            }
+        }
     }
 
     @ViewBuilder
@@ -1349,6 +1571,7 @@ private struct CompetitionNudgeControl: View {
                         .foregroundStyle(Theme.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("competition.nudge.error")
+                        .transition(Motion.appear)
                 }
             }
         case let .sent(text):
@@ -1380,6 +1603,8 @@ private struct CompetitionNudgeButtonStyle: ButtonStyle {
             pill(configuration.label, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         }
         .opacity(isEnabled ? (configuration.isPressed ? 0.8 : 1) : 0.45)
+        .animation(Motion.press, value: configuration.isPressed)
+        .animation(Motion.press, value: isEnabled)
         .frame(minHeight: 44)
         .contentShape(Rectangle())
     }

@@ -21,6 +21,8 @@ struct AuthenticatedProfileStoragePaths: Equatable, Sendable {
     let observerDeliveryDirectory: URL
     /// The practice match's journal: exact Health values, never sent.
     let practiceEventsDirectory: URL
+    /// Downloaded profile photos (`ProfilePhotoCache`).
+    let profilePhotosDirectory: URL
 
     var fixedDirectories: [URL] {
         [
@@ -32,6 +34,7 @@ struct AuthenticatedProfileStoragePaths: Equatable, Sendable {
             appAttestDirectory,
             observerDeliveryDirectory,
             practiceEventsDirectory,
+            profilePhotosDirectory,
         ]
     }
 
@@ -70,6 +73,10 @@ struct AuthenticatedProfileStoragePaths: Equatable, Sendable {
             )
         self.practiceEventsDirectory = rootDirectory.appendingPathComponent(
             "PracticeEvents",
+            isDirectory: true
+        )
+        self.profilePhotosDirectory = rootDirectory.appendingPathComponent(
+            "ProfilePhotos",
             isDirectory: true
         )
     }
@@ -221,6 +228,7 @@ private actor AuthenticatedProfileStorageCoordinator {
         activeProfileID = profileID
         // Device-local reaction seen marks belong to this profile's matches.
         UserDefaults.standard.removeObject(forKey: CompetitionReactionsSeen.storageKey)
+        UserDefaults.standard.removeObject(forKey: CompetitionMotionSeen.storageKey)
         let profilesRoot = try prepareProfilesRoot()
         let root = profilesRoot.appendingPathComponent(
             profileID.uuidString.lowercased(),

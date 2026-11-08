@@ -34,6 +34,7 @@ enum Theme {
         Color(uiColor: UIColor(light: light, dark: dark))
     }
 
+#if !os(watchOS)
     /// Opaque bars in the ground color so each screen reads as one surface.
     static func applyNavigationBarAppearance() {
         let appearance = UINavigationBarAppearance()
@@ -47,6 +48,7 @@ enum Theme {
         bar.scrollEdgeAppearance = appearance
         bar.compactAppearance = appearance
     }
+#endif
 }
 
 extension UIColor {
@@ -60,9 +62,14 @@ extension UIColor {
     }
 
     convenience init(light: UInt32, dark: UInt32) {
+#if os(watchOS)
+        // watchOS is always dark and has no dynamic colors.
+        self.init(hex: dark)
+#else
         self.init { traits in
             UIColor(hex: traits.userInterfaceStyle == .dark ? dark : light)
         }
+#endif
     }
 }
 
@@ -70,7 +77,13 @@ extension Font {
     /// Scoreboard numerals: SF Pro Compressed, heavy. Size it with
     /// `@ScaledMetric` so it still follows Dynamic Type.
     static func score(size: CGFloat) -> Font {
+#if os(watchOS)
+        // `.system` falls back to SF Compact here; a text style keeps Compressed.
+        Font(UIFont.preferredFont(forTextStyle: .largeTitle).withSize(size))
+            .weight(.heavy).width(.compressed)
+#else
         .system(size: size, weight: .heavy).width(.compressed)
+#endif
     }
 
     /// Section and status labels: SF Pro Condensed, bold. Pair with `.tracking(1.2)`.
@@ -213,6 +226,8 @@ struct PrimaryButtonStyle: ButtonStyle {
                 in: RoundedRectangle(cornerRadius: 14, style: .continuous)
             )
             .opacity(isEnabled ? (configuration.isPressed ? 0.8 : 1) : 0.45)
+            .animation(Motion.press, value: configuration.isPressed)
+            .animation(Motion.press, value: isEnabled)
     }
 }
 
@@ -232,6 +247,54 @@ struct SecondaryButtonStyle: ButtonStyle {
                 in: RoundedRectangle(cornerRadius: 14, style: .continuous)
             )
             .opacity(isEnabled ? (configuration.isPressed ? 0.8 : 1) : 0.45)
+            .animation(Motion.press, value: configuration.isPressed)
+            .animation(Motion.press, value: isEnabled)
+    }
+}
+
+/// Rare or destructive text actions. Neutral: colour means you.
+struct QuietButtonStyle: ButtonStyle {
+    var color = Theme.secondary
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.headline.width(.condensed))
+            .multilineTextAlignment(.center)
+            .foregroundStyle(color)
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .contentShape(Rectangle())
+            .opacity(isEnabled ? (configuration.isPressed ? 0.8 : 1) : 0.45)
+            .animation(Motion.press, value: configuration.isPressed)
+            .animation(Motion.press, value: isEnabled)
+    }
+}
+
+/// A button label that waits. The words stay, dimmed by the disabled style,
+/// and the spinner replaces them only once the wait outlasts 200 ms. They keep
+/// the width and, at opacity 0, the accessibility name.
+struct BusyLabel: View {
+    let title: String
+    let isBusy: Bool
+
+    @State private var showsSpinner = false
+
+    init(_ title: String, isBusy: Bool) {
+        self.title = title
+        self.isBusy = isBusy
+    }
+
+    var body: some View {
+        ZStack {
+            Text(title)
+                .opacity(showsSpinner ? 0 : 1)
+            ProgressView()
+                .opacity(showsSpinner ? 1 : 0)
+                .accessibilityHidden(true)
+        }
+        .onChange(of: isBusy, initial: true) { _, isBusy in
+            withAnimation(isBusy ? Motion.late : Motion.fade) { showsSpinner = isBusy }
+        }
     }
 }
 

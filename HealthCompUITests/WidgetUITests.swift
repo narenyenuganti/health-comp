@@ -103,6 +103,52 @@ final class WidgetUITests: XCTestCase {
         }
     }
 
+    /// Each step lands with the Home Screen showing, for a recording to judge
+    /// the score roll: rises, a lead flip, a digit gained, the longest number,
+    /// decimals gained, then another person, which fades rather than rolls.
+    func testScoresChangeWhileTheHomeScreenShows() throws {
+        launch(scenario: "trailing")
+        XCUIDevice.shared.press(.home)
+        removeOurWidgets()
+        addWidget(sizeSwipes: 1)  // medium
+        addWidget(sizeSwipes: 0)  // small
+        XCTAssertTrue(ourWidgets().firstMatch.waitForExistence(timeout: 15), springboard.debugDescription)
+        for scenario in ["live", "almostThousand", "thousand", "longName", "lastDay", "closeFinal", "several", "noSam"] {
+            changeWithWidgetShowing(scenario)
+            sleep(6)
+            shot("rolled-\(scenario)")
+        }
+        assertOnScreen(NSPredicate(format: "label BEGINSWITH 'Alex, Day 2 of 7.'"), count: 2,
+                       name: "noSam", expected: "Alex", file: #filePath, line: #line)
+    }
+
+    /// The same on the Lock Screen's circle and rectangle.
+    func testScoresChangeWhileTheLockScreenShows() throws {
+        setLargestText(false)
+        launch(scenario: "live")
+        XCUIDevice.shared.press(.home)
+        showLockScreen()
+        if !lockScreenElement("You lead Sam by 54 points").waitForExistence(timeout: 3) {
+            addLockScreenWidgets()
+        }
+        XCUIDevice.shared.press(.home)
+        for scenario in ["trailing", "live", "lastDay", "live", "scheduled", "live", "several", "noSam"] {
+            changeWithWidgetShowing(scenario, delay: 9) { showLockScreen() }
+            sleep(9)
+            shot("rolled-lock-\(scenario)")
+            XCUIDevice.shared.press(.home)
+            sleep(1)
+        }
+    }
+
+    private func changeWithWidgetShowing(
+        _ scenario: String, delay: Int = 5, show: () -> Void = {}
+    ) {
+        launch(scenario: scenario, arguments: ["-widgetScenarioDelay", "\(delay)"])
+        XCUIDevice.shared.press(.home)
+        show()
+    }
+
     /// Edit Widget lists only people with a match here, by name, and never
     /// "Former competitor". A picked person never falls back to someone else
     /// and never shows a name the current snapshot doesn't have.
@@ -253,14 +299,14 @@ final class WidgetUITests: XCTestCase {
         }
     }
 
-    private func launch(scenario: String) {
+    private func launch(scenario: String, arguments: [String] = []) {
         let app = XCUIApplication()
         app.launchArguments = [
             "--multi-user-competition-test-lab",
             "--multi-user-competition-scenario", "sharing",
             "--widget-scenario", scenario,
             "-healthcomp.colorHintSeen", "YES",
-        ]
+        ] + arguments
         app.launch()
         XCTAssertTrue(app.wait(for: .runningForeground, timeout: 10))
         sleep(2)  // the write is a detached task

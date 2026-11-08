@@ -30,7 +30,7 @@
         United States.</p>
 
       <p><strong>Operator:</strong> Naren Yenuganti.<br>
-        <strong>Effective date:</strong> November 3, 2026.<br>
+        <strong>Effective date:</strong> November 6, 2026.<br>
         <strong>Questions or privacy requests:</strong> <a href="mailto:yrnaren1@gmail.com">yrnaren1@gmail.com</a>.</p>
 
       <h2>Information used by the app</h2>
@@ -40,6 +40,11 @@
           Auth account and provider identity records can also contain an email address
           supplied by Apple, including a private-relay address, and sign-in metadata.
           Your Apple email-sharing choice affects the information Apple provides.</li>
+        <li><strong>Profile photo:</strong> if you add one, the app uploads a square JPEG of at most
+          512 pixels, without location or other photo metadata, to a private storage bucket, linked
+          to your account with a version identifier. If you report someone's photo, the
+          server records who reported whom, which photo version, and when; we may review a
+          report and remove the photo.</li>
         <li><strong>Activity on your iPhone:</strong> HealthComp reads Activity summaries to calculate
           competition scores. A practice match also reads your last 2 weeks of Activity
           on your iPhone to set the pacer; practice data is never sent. HealthComp
@@ -54,6 +59,9 @@
           and when you sent them, linked to participant accounts.
           Keeping raw Health data on-device does not mean no fitness information is
           collected by the service.</li>
+        <li><strong>On your Apple Watch:</strong> if you install the Watch app, your iPhone sends
+          match names, points, dates, time zones, and results, including who holds the belt,
+          straight to your paired Watch. Health values are never sent to it.</li>
         <li><strong>Installation and security information:</strong> installation identifiers, notification
           tokens, which kinds of notification you turned off on that device, and
           app-integrity verification records support notification delivery,
@@ -81,6 +89,12 @@
         image of a finished match's result from the app. It shows both final scores, the
         week, which days each person won and up to two highlights, and the person sharing
         can hide the other person's name.</p>
+
+      <p>If you add a profile photo, it is shown to people you have or had a match with
+        and to someone you have a pending challenge out to, unless either of you blocked
+        the other or they reported your photo. Their apps download it with their own
+        sign-in and keep a copy on their iPhone to show it; that copy is dropped when your
+        photo changes or is removed and their app next refreshes, and when they sign out.</p>
 
       <p>Supabase provides the configured authentication and competition backend. Apple
         provides sign-in, notification delivery, and app-integrity services. Remote push
@@ -130,11 +144,14 @@
       <p>In HealthComp, tap your profile avatar on the Home screen to open account
         settings. <strong>Sign Out</strong> and <strong>Delete Account</strong> are different: signing out retires
         this installation and removes this profile's local competition cache after
-        confirmed retirement; it does not delete the account or shared history.</p>
+        confirmed retirement; it does not delete the account or shared history. A paired
+        Apple Watch clears its copy the next time it connects as your active Watch.</p>
 
       <p><strong>Delete Account</strong> starts an authenticated cleanup workflow. When it completes,
         Apple authorization is revoked, the service authentication identity is removed,
-        active competitions are cancelled, and this profile's local data is cleared.
+        active competitions are cancelled, your profile photo and the photo reports made by
+        or about you are deleted, and this profile's local data is cleared. A paired Apple
+        Watch clears its copy the next time it connects as your active Watch.
         Completed shared results remain for the other participant as <strong>Former
         competitor</strong>. The service removes the account linkage and replaces display names
         in the protected competition history. Revoked installations lose their push

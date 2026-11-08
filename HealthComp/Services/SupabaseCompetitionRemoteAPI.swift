@@ -457,8 +457,151 @@ enum SupabaseCompetitionRemoteAPI {
                 } catch {
                     throw CompetitionRemoteFailure.serverContractMismatch
                 }
+            },
+            listProfilePhotos: { profileIDs in
+                guard profileIDs.count <= 200 else {
+                    throw CompetitionRemoteFailure.serverContractMismatch
+                }
+                if profileIDs.isEmpty { return [] }
+                let response = try await sendReadOnly(
+                    .rpc(name: "list_profile_photos", parameters: try encode(
+                        ["profile_ids": profileIDs.map { $0.uuidString.lowercased() }]
+                    )),
+                    transport: transport
+                )
+                return try decodeProfilePhotos(response.data, requested: Set(profileIDs))
+            },
+            setProfilePhoto: { reference, jpeg in
+                guard ProfilePhotoImage.isAcceptableDownload(jpeg) else {
+                    throw CompetitionRemoteFailure.serverContractMismatch
+                }
+                _ = try await send(
+                    .uploadProfilePhoto(path: reference.objectPath, data: jpeg),
+                    transport: transport
+                )
+                let response = try await send(
+                    .rpc(name: "set_profile_photo", parameters: try encode(
+                        ["photo_version": reference.version.uuidString.lowercased()]
+                    )),
+                    transport: transport
+                )
+                guard let object = try? JSONSerialization.jsonObject(with: response.data)
+                    as? [String: Any],
+                      Set(object.keys) == ["photo_version"],
+                      (object["photo_version"] as? String).flatMap(wireUUID) == reference.version
+                else {
+                    throw CompetitionRemoteFailure.serverContractMismatch
+                }
+            },
+            ownProfilePhoto: { ownerProfileID in
+                let response = try await sendReadOnly(
+                    .rpc(name: "own_profile_photo", parameters: try encode(EmptyParameters())),
+                    transport: transport
+                )
+                guard let object = try? JSONSerialization.jsonObject(with: response.data)
+                    as? [String: Any],
+                      Set(object.keys) == ["photo_version", "removed_by_review"],
+                      let rawVersion = object["photo_version"],
+                      let removed = object["removed_by_review"] as? NSNumber,
+                      CFGetTypeID(removed) == CFBooleanGetTypeID()
+                else {
+                    throw CompetitionRemoteFailure.serverContractMismatch
+                }
+                let version: UUID?
+                switch rawVersion {
+                case is NSNull: version = nil
+                case let value as String:
+                    guard let parsed = wireUUID(value) else {
+                        throw CompetitionRemoteFailure.serverContractMismatch
+                    }
+                    version = parsed
+                default: throw CompetitionRemoteFailure.serverContractMismatch
+                }
+                return OwnProfilePhoto(
+                    reference: version.map { ProfilePhotoReference(ownerProfileID: ownerProfileID, version: $0) },
+                    removedByReview: removed.boolValue
+                )
+            },
+            clearProfilePhoto: {
+                let response = try await send(
+                    .rpc(name: "clear_profile_photo", parameters: try encode(EmptyParameters())),
+                    transport: transport
+                )
+                guard let object = try? JSONSerialization.jsonObject(with: response.data)
+                    as? [String: Any],
+                      Set(object.keys) == ["photo_version"],
+                      object["photo_version"] is NSNull
+                else {
+                    throw CompetitionRemoteFailure.serverContractMismatch
+                }
+            },
+            removeProfilePhotoObjects: { ownerProfileID, keeping in
+                let response = try await send(
+                    .listProfilePhotoFolder(ownerProfileID),
+                    transport: transport
+                )
+                guard let names = try? JSONSerialization.jsonObject(with: response.data)
+                    as? [String]
+                else {
+                    throw CompetitionRemoteFailure.serverContractMismatch
+                }
+                let kept = keeping.map { "\($0.uuidString.lowercased()).jpg" }
+                let paths = names.filter { $0 != kept && !$0.contains("/") }
+                    .map { "\(ownerProfileID.uuidString.lowercased())/\($0)" }
+                guard !paths.isEmpty else { return }
+                _ = try await send(.removeProfilePhotos(paths: paths), transport: transport)
+            },
+            downloadProfilePhoto: { reference in
+                let response = try await sendReadOnly(
+                    .downloadProfilePhoto(path: reference.objectPath),
+                    transport: transport
+                )
+                guard ProfilePhotoImage.isAcceptableDownload(response.data) else {
+                    throw CompetitionRemoteFailure.serverContractMismatch
+                }
+                return response.data
+            },
+            reportProfilePhoto: { profileID in
+                try validateUUID(profileID)
+                let response = try await send(
+                    .rpc(name: "report_profile_photo", parameters: try encode(
+                        ["profile_id": profileID.uuidString.lowercased()]
+                    )),
+                    transport: transport
+                )
+                guard let object = try? JSONSerialization.jsonObject(with: response.data)
+                    as? [String: Any],
+                      Set(object.keys) == ["profile_id"],
+                      (object["profile_id"] as? String).flatMap(wireUUID) == profileID
+                else {
+                    throw CompetitionRemoteFailure.serverContractMismatch
+                }
             }
         )
+    }
+
+    /// Exactly `{photos}`, only ids that were asked for; an unreadable row
+    /// is skipped (initials).
+    private static func decodeProfilePhotos(
+        _ data: Data,
+        requested: Set<UUID>
+    ) throws -> [ProfilePhotoReference] {
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              Set(object.keys) == ["photos"],
+              let rows = object["photos"] as? [Any],
+              rows.count <= requested.count
+        else {
+            throw CompetitionRemoteFailure.serverContractMismatch
+        }
+        return rows.compactMap { value in
+            guard let row = value as? [String: Any],
+                  Set(row.keys) == ["profile_id", "photo_version"],
+                  let owner = (row["profile_id"] as? String).flatMap(wireUUID),
+                  requested.contains(owner),
+                  let version = (row["photo_version"] as? String).flatMap(wireUUID)
+            else { return nil }
+            return ProfilePhotoReference(ownerProfileID: owner, version: version)
+        }
     }
 
     /// get / reset your challenge link: exactly `{code}`.
@@ -713,6 +856,8 @@ enum SupabaseCompetitionRemoteAPI {
             "competition_not_found",
             "not_found",
             "pgrst116",
+            "photo_unavailable",
+            "photo_upload_required",
         ]) || statusCode == 404 {
             return .notFound
         }
@@ -1279,6 +1424,8 @@ private actor SupabaseCompetitionClientBox {
         )
         """
 
+    private static let photoBucket = "profile-photos"
+
     private let provider: SupabaseClientProvider
 
     init(provider: SupabaseClientProvider) {
@@ -1356,6 +1503,28 @@ private actor SupabaseCompetitionClientBox {
                     statusCode: response.status,
                     data: response.data
                 )
+            case let .uploadProfilePhoto(path, data):
+                // No upsert: a version is written once (and the policy has
+                // no update rule).
+                _ = try await client.storage.from(Self.photoBucket).upload(
+                    path,
+                    data: data,
+                    options: FileOptions(cacheControl: "31536000", contentType: "image/jpeg", upsert: false)
+                )
+                return CompetitionRemoteTransportResponse(statusCode: 200, data: Data())
+            case let .downloadProfilePhoto(path):
+                let data = try await client.storage.from(Self.photoBucket).download(path: path)
+                return CompetitionRemoteTransportResponse(statusCode: 200, data: data)
+            case let .listProfilePhotoFolder(ownerProfileID):
+                let objects = try await client.storage.from(Self.photoBucket)
+                    .list(path: ownerProfileID.uuidString.lowercased())
+                return CompetitionRemoteTransportResponse(
+                    statusCode: 200,
+                    data: try JSONSerialization.data(withJSONObject: objects.map(\.name))
+                )
+            case let .removeProfilePhotos(paths):
+                _ = try await client.storage.from(Self.photoBucket).remove(paths: paths)
+                return CompetitionRemoteTransportResponse(statusCode: 200, data: Data())
             }
         } catch is CancellationError {
             throw CompetitionRemoteTransportFailure.cancelled
@@ -1373,6 +1542,12 @@ private actor SupabaseCompetitionClientBox {
             return CompetitionRemoteTransportResponse(
                 statusCode: error.response.statusCode,
                 data: error.data
+            )
+        } catch let error as StorageError {
+            throw CompetitionRemoteTransportFailure.server(
+                statusCode: error.statusCode.flatMap { Int($0) },
+                code: error.error,
+                message: error.message
             )
         } catch let error as PostgrestError {
             throw CompetitionRemoteTransportFailure.server(

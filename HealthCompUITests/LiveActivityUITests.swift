@@ -228,6 +228,54 @@ final class LiveActivityUITests: XCTestCase {
         }
     }
 
+    /// An update reaches the running card in the compact island. A lead flip,
+    /// the open island and the Lock Screen follow for a recording to judge the
+    /// score roll: updates this close together can land over 40 s late, so
+    /// only the first is checked.
+    func testRunningCardTakesUpdatesInTheIslandAndOnTheLockScreen() throws {
+        secondsLeft = 3600
+        let app = launch(arguments: ["-liveActivityPreviewUpdateDelay", "9"])
+        let start = app.buttons["liveActivity.preview.start"]
+        XCTAssertTrue(start.waitForExistence(timeout: 10))
+        for _ in 0..<6 where !start.isHittable { app.swipeUp() }
+        start.tap()
+        sleep(2)
+
+        /// Taps a Test Lab button, then shows the card before the update lands.
+        func tapThenLeave(_ button: String, show: () -> Void) {
+            app.activate()
+            // A tap during the app's return animation can be dropped.
+            sleep(1)
+            let button = app.buttons["liveActivity.preview.\(button)"]
+            for _ in 0..<6 where !button.isHittable { app.swipeUp() }
+            button.tap()
+            XCUIDevice.shared.press(.home)
+            sleep(2)
+            allowLiveActivities()
+            show()
+        }
+
+        // Compact island.
+        tapThenLeave("update") {}
+        let you = springboardElement("You 2,202 points")
+        XCTAssertTrue(you.waitForExistence(timeout: 40), springboard.debugDescription)
+        sleep(2)
+        tapThenLeave("flip") {}
+        sleep(12)
+
+        // Expanded island.
+        tapThenLeave("flip") { springboardElement("You 2,202 points").press(forDuration: 1.2) }
+        sleep(12)
+        XCUIDevice.shared.press(.home)
+        sleep(1)
+
+        // Lock Screen card.
+        tapThenLeave("update") { showLockScreen() }
+        sleep(12)
+        XCUIDevice.shared.press(.home)
+        sleep(1)
+    }
+
     /// Tapping the island opens HealthComp (the card's link).
     func testTappingTheIslandOpensHealthComp() throws {
         secondsLeft = 3600

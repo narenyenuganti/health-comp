@@ -318,6 +318,85 @@ struct CompetitionImmediateNotificationRequest: Equatable, Sendable {
     let identifier: String
     let content: CompetitionNotificationContent
     let route: CompetitionRoute?
+    /// Lead changes and results: the alert carries the four reactions, aimed
+    /// at this target in the route's match.
+    var reactionTarget: CompetitionReactionTarget? = nil
+    /// The auth user signed in when it posted. A reaction from the alert is
+    /// sent only as them; without one the alert has no actions.
+    var recipientUserID: UUID? = nil
+}
+
+/// The four reactions as actions on a local lead-change or result alert. The
+/// category names the target and the route names the match, so the payload
+/// stays exactly the route's. Sending one sets it (a second replaces the
+/// first, never removes it) without opening the app, and plays no rain.
+enum CompetitionReactionAlert {
+    static func category(_ target: CompetitionReactionTarget) -> String {
+        switch target {
+        case let .day(ordinal): "competition.react.day.\(ordinal)"
+        case .result: "competition.react.result"
+        }
+    }
+
+    static func actionIdentifier(_ kind: CompetitionReactionKind) -> String {
+        "competition.react.\(kind.rawValue)"
+    }
+
+    /// Matches have seven days.
+    static let targets: [CompetitionReactionTarget] = [.result] + (1...7).map(CompetitionReactionTarget.day)
+
+    /// The alert's recipient, next to the route's keys.
+    static let recipientKey = "recipientUserID"
+
+    /// The alert's route, read past the recipient it may carry.
+    static func route(userInfo: [AnyHashable: Any]) -> CompetitionRoute? {
+        var userInfo = userInfo
+        userInfo[recipientKey] = nil
+        return CompetitionRoute(userInfo: userInfo)
+    }
+
+    /// What a reaction action sends, and who it was for; nil for a tap, a
+    /// dismiss, an alert without a recipient or anything else.
+    static func request(
+        actionIdentifier: String,
+        categoryIdentifier: String,
+        userInfo: [AnyHashable: Any]
+    ) -> (recipientUserID: UUID, reaction: CompetitionReactionRequest)? {
+        guard let kind = CompetitionReactionKind.allCases.first(where: {
+            Self.actionIdentifier($0) == actionIdentifier
+        }),
+            let target = targets.first(where: { category($0) == categoryIdentifier }),
+            let recipient = (userInfo[recipientKey] as? String).flatMap(UUID.init(uuidString:)),
+            case let .competition(id)? = route(userInfo: userInfo)
+        else { return nil }
+        return (recipient, CompetitionReactionRequest(competitionID: id.rawValue, target: target, kind: kind))
+    }
+
+    /// Sends a reaction as the alert's recipient, or not at all. Set once by
+    /// the live composition before any delegate callback; nil in the Test
+    /// Labs, so their alerts send nothing.
+    nonisolated(unsafe) static var send: (@Sendable (_ recipientUserID: UUID, CompetitionReactionRequest) async throws -> Void)?
+
+    #if canImport(UserNotifications)
+    /// Unlock first: the session lives in the keychain, and it keeps a
+    /// pocket from reacting.
+    static var categories: Set<UNNotificationCategory> {
+        let actions = CompetitionReactionKind.allCases.map {
+            UNNotificationAction(
+                identifier: actionIdentifier($0),
+                title: "\($0.emoji) \($0.spokenName)",
+                options: [.authenticationRequired]
+            )
+        }
+        return Set(targets.map {
+            UNNotificationCategory(
+                identifier: category($0),
+                actions: actions,
+                intentIdentifiers: []
+            )
+        })
+    }
+    #endif
 }
 
 struct CompetitionScheduledNotificationRequest: Equatable, Sendable {
@@ -457,14 +536,21 @@ extension CompetitionNotificationClient: DependencyKey {
     ) -> UNNotificationRequest {
         UNNotificationRequest(
             identifier: request.identifier,
-            content: makeContent(request.content, route: request.route),
+            content: makeContent(
+                request.content,
+                route: request.route,
+                reactionTarget: request.reactionTarget,
+                recipientUserID: request.recipientUserID
+            ),
             trigger: nil
         )
     }
 
     private static func makeContent(
         _ notification: CompetitionNotificationContent,
-        route: CompetitionRoute?
+        route: CompetitionRoute?,
+        reactionTarget: CompetitionReactionTarget? = nil,
+        recipientUserID: UUID? = nil
     ) -> UNNotificationContent {
         let content = UNMutableNotificationContent()
         content.title = notification.title
@@ -472,6 +558,10 @@ extension CompetitionNotificationClient: DependencyKey {
         content.sound = .default
         content.userInfo = route?.userInfo ?? [:]
         content.threadIdentifier = competitionNotificationThreadIdentifier(route)
+        if case .competition? = route, let reactionTarget, let recipientUserID {
+            content.categoryIdentifier = CompetitionReactionAlert.category(reactionTarget)
+            content.userInfo[CompetitionReactionAlert.recipientKey] = recipientUserID.uuidString
+        }
         return content
     }
 }

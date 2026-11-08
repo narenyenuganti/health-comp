@@ -111,11 +111,11 @@ final class CompetitionRecapTests: XCTestCase {
 
     func testHiddenNameNeverAppearsOnTheCard() throws {
         let loss = try match(days(), user: 2_268, opponent: 2_412)
-        let hidden = recap(loss, belt: .theyKept(weeks: 4), hidesName: true)
+        let hidden = recap(loss, belt: .theyDefended(defenses: 2), hidesName: true)
         for text in strings(hidden) {
             XCTAssertFalse(text.contains("Sam"), text)
         }
-        XCTAssertEqual(hidden.beltText, "They kept the belt · 4 weeks")
+        XCTAssertEqual(hidden.beltText, "Their 2nd title defense")
     }
 
     func testFormerCompetitorIsAlwaysHidden() throws {
@@ -217,8 +217,8 @@ final class CompetitionRecapTests: XCTestCase {
         let cases: [(CompetitionRecapBelt, String, String, Bool)] = [
             (.youTook, "Took the belt", "Took the belt", true),
             (.theyTook, "Sam took the belt", "They took the belt", false),
-            (.youKept(weeks: 3), "Kept the belt · 3 weeks", "Kept the belt · 3 weeks", true),
-            (.theyKept(weeks: 5), "Sam kept the belt · 5 weeks", "They kept the belt · 5 weeks", false),
+            (.youDefended(defenses: 3), "3rd title defense", "3rd title defense", true),
+            (.theyDefended(defenses: 1), "Sam’s 1st title defense", "Their 1st title defense", false),
         ]
         for (belt, shown, hidden, isYours) in cases {
             XCTAssertEqual(competitionRecapBeltText(belt, opponentName: "Sam"), shown)
@@ -229,12 +229,18 @@ final class CompetitionRecapTests: XCTestCase {
         XCTAssertNil(competitionRecapBelt(nil, outcome: .win, isRetired: false))
         XCTAssertNil(competitionRecapBelt(.kept(by: .you, weeks: 4), outcome: .tie, isRetired: false))
         XCTAssertNil(competitionRecapBelt(.took(by: .you, fromWeeks: nil), outcome: .win, isRetired: true))
-        XCTAssertNil(competitionRecapBelt(.kept(by: .you, weeks: 2), outcome: .win, isRetired: false))
+        XCTAssertNil(competitionRecapBelt(.defended(by: .you, weeks: 3, defenses: 2), outcome: .win, isRetired: true))
         XCTAssertNil(competitionRecapBelt(.vacant, outcome: .win, isRetired: false))
         XCTAssertEqual(competitionRecapBelt(.took(by: .you, fromWeeks: 2), outcome: .win, isRetired: false), .youTook)
         XCTAssertEqual(competitionRecapBelt(.took(by: .them, fromWeeks: nil), outcome: .loss, isRetired: false), .theyTook)
-        XCTAssertEqual(competitionRecapBelt(.kept(by: .you, weeks: 3), outcome: .win, isRetired: false), .youKept(weeks: 3))
-        XCTAssertEqual(competitionRecapBelt(.kept(by: .them, weeks: 6), outcome: .loss, isRetired: false), .theyKept(weeks: 6))
+        XCTAssertEqual(
+            competitionRecapBelt(.defended(by: .you, weeks: 2, defenses: 1), outcome: .win, isRetired: false),
+            .youDefended(defenses: 1)
+        )
+        XCTAssertEqual(
+            competitionRecapBelt(.defended(by: .them, weeks: 6, defenses: 3), outcome: .loss, isRetired: false),
+            .theyDefended(defenses: 3)
+        )
     }
 
     func testRecapAccessibilityTextReadsTheCard() throws {
@@ -243,8 +249,8 @@ final class CompetitionRecapTests: XCTestCase {
             "Match won. Nov 2 to 8, 2026. You 2,412 points. Sam 2,268 points. Won by 144 points, won 4 days, lost 3. Comeback: down 86 points after Wednesday. Best day: Thursday, 512 points. Took the belt."
         )
         XCTAssertTrue(
-            recap(try match(days()), belt: .youKept(weeks: 3)).accessibilityText
-                .hasSuffix("Kept the belt, 3 weeks.")
+            recap(try match(days()), belt: .youDefended(defenses: 3)).accessibilityText
+                .hasSuffix("3rd title defense.")
         )
     }
 
@@ -296,7 +302,7 @@ final class CompetitionRecapTests: XCTestCase {
             ("recap-card-former-no-days", recap(
                 try match([], user: 3_110, opponent: 3_000, name: competitionFormerCompetitorName)
             )),
-            ("recap-card-kept-belt", recap(try match(days()), belt: .youKept(weeks: 3))),
+            ("recap-card-defended-belt", recap(try match(days()), belt: .youDefended(defenses: 3))),
             ("recap-card-perfect-day", recap(try match(days([4: (600, 300)])))),
             ("recap-card-two-perfect-days", recap(try match(days([4: (600, 300), 6: (600, 344)])))),
             ("recap-card-long-name-loss", recap(
@@ -304,7 +310,7 @@ final class CompetitionRecapTests: XCTestCase {
                     days(), user: 2_268, opponent: 2_412,
                     name: "Maximiliana Alexandrovna Featherstonehaugh-Montgomery Wellington"
                 ),
-                belt: .theyKept(weeks: 4)
+                belt: .theyDefended(defenses: 3)
             )),
         ]
         for (name, card) in cards {

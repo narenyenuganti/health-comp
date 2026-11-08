@@ -1,6 +1,7 @@
 # HealthComp
 
-An iPhone app for private, seven-day Activity competitions between two people.
+An iPhone app, with a read-only Apple Watch scoreboard, for private, seven-day
+Activity competitions between two people.
 Built with SwiftUI, HealthKit, and Supabase.
 
 In development. Not yet released.

@@ -1,0 +1,92 @@
+{
+ "duration": 3.533,
+ "fps": 60,
+ "holdStart": 2.983,
+ "beats": [
+  {
+   "t": 0.5,
+   "kind": "rise",
+   "label": "strap bites, plate strains"
+  },
+  {
+   "t": 0.7,
+   "kind": "impact",
+   "label": "taut peak, hit-stop, sparks at the lug"
+  },
+  {
+   "t": 0.78,
+   "kind": "impact",
+   "label": "belt rips away"
+  },
+  {
+   "t": 0.97,
+   "kind": "impact",
+   "label": "first light cuts"
+  },
+  {
+   "t": 1.05,
+   "kind": "rise",
+   "label": "pull lets go, belt tumbles"
+  },
+  {
+   "t": 1.27,
+   "kind": "rise",
+   "label": "gold starts to die"
+  },
+  {
+   "t": 1.3,
+   "kind": "impact",
+   "label": "second light cuts"
+  },
+  {
+   "t": 1.5,
+   "kind": "impact",
+   "label": "third light cuts"
+  },
+  {
+   "t": 1.68,
+   "kind": "settle",
+   "label": "plate is pewter"
+  },
+  {
+   "t": 1.72,
+   "kind": "impact",
+   "label": "last light cuts"
+  },
+  {
+   "t": 1.97,
+   "kind": "impact",
+   "label": "cold pool on the empty floor"
+  },
+  {
+   "t": 2.34,
+   "kind": "impact",
+   "label": "corner hits the floor"
+  },
+  {
+   "t": 2.44,
+   "kind": "impact",
+   "label": "plate slaps down"
+  },
+  {
+   "t": 2.555,
+   "kind": "impact",
+   "label": "bounce lands, hard stop"
+  },
+  {
+   "t": 2.605,
+   "kind": "impact",
+   "label": "left strap slaps"
+  },
+  {
+   "t": 2.68,
+   "kind": "impact",
+   "label": "right strap slaps"
+  },
+  {
+   "t": 2.983,
+   "kind": "settle",
+   "label": "hold, text can come in"
+  }
+ ]
+}

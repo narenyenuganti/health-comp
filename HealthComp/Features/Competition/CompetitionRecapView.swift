@@ -12,14 +12,14 @@ struct CompetitionRecapHighlight: Equatable {
     let accessibilityValue: String
 }
 
-/// The belt as the card tells it. Nil = no line (tie, short reign, retired, no data).
+/// The belt as the card tells it. Nil = no line (tie, retired, no data).
 enum CompetitionRecapBelt: Equatable {
-    case youTook, theyTook, youKept(weeks: Int), theyKept(weeks: Int)
+    case youTook, theyTook, youDefended(defenses: Int), theyDefended(defenses: Int)
 
     var isYours: Bool {
         switch self {
-        case .youTook, .youKept: true
-        case .theyTook, .theyKept: false
+        case .youTook, .youDefended: true
+        case .theyTook, .theyDefended: false
         }
     }
 }
@@ -43,8 +43,8 @@ struct CompetitionRecap: Equatable {
     let accessibilityText: String
 }
 
-/// The card's belt line from PR 1's per-match event: a take, or a winner's
-/// reign of 3+ weeks. Never on a tie or for a retired pair.
+/// The card's belt line from PR 1's per-match event: a take or a title
+/// defense. Never on a tie or for a retired pair.
 func competitionRecapBelt(
     _ event: CompetitionBeltEvent?,
     outcome: CompetitionOutcome,
@@ -52,10 +52,10 @@ func competitionRecapBelt(
 ) -> CompetitionRecapBelt? {
     guard !isRetired, outcome != .tie, let event else { return nil }
     switch event {
-    case .took(.you, _): return .youTook
-    case .took(.them, _): return .theyTook
-    case let .kept(.you, n) where n >= 3 && outcome == .win: return .youKept(weeks: n)
-    case let .kept(.them, n) where n >= 3 && outcome == .loss: return .theyKept(weeks: n)
+    case .took(.you, _, _): return .youTook
+    case .took(.them, _, _): return .theyTook
+    case let .defended(.you, _, defenses): return .youDefended(defenses: defenses)
+    case let .defended(.them, _, defenses): return .theyDefended(defenses: defenses)
     default: return nil
     }
 }
@@ -65,14 +65,15 @@ func competitionRecapAllowsNameChoice(_ competition: LocalCompetitionPresentatio
     competition.opponentDisplayName != competitionFormerCompetitorName
 }
 
-/// "Took the belt" / "Sam kept the belt · 4 weeks". A nil name is hidden: "They …".
+/// "Took the belt" / "Sam's 3rd title defense". A nil name is hidden: "They …".
 func competitionRecapBeltText(_ belt: CompetitionRecapBelt, opponentName: String?) -> String {
     let they = opponentName ?? "They"
     return switch belt {
     case .youTook: "Took the belt"
     case .theyTook: "\(they) took the belt"
-    case let .youKept(weeks): "Kept the belt · \(competitionWeeksText(weeks))"
-    case let .theyKept(weeks): "\(they) kept the belt · \(competitionWeeksText(weeks))"
+    case let .youDefended(defenses): competitionTitleDefenseText(defenses)
+    case let .theyDefended(defenses):
+        "\(opponentName.map { "\($0)’s" } ?? "Their") \(competitionTitleDefenseText(defenses))"
     }
 }
 
@@ -135,7 +136,7 @@ func competitionRecap(
     let accessibilityText = (
         parts.compactMap { $0 }
             + highlights.map { "\($0.title): \($0.accessibilityValue)" }
-            + [beltText?.replacingOccurrences(of: " · ", with: ", ")].compactMap { $0 }
+            + [beltText].compactMap { $0 }
     ).joined(separator: ". ") + "."
 
     return CompetitionRecap(
@@ -347,11 +348,11 @@ struct CompetitionRecapCard: View {
     }
 
     /// Whole, or on its own row with the name truncated: "took the belt" /
-    /// "kept the belt · n weeks" is never cut.
+    /// "’s 3rd title defense" is never cut.
     @ViewBuilder
     private func beltLine(fits: Bool) -> some View {
         if let belt = recap.belt, let text = recap.beltText {
-            let verb = text.range(of: " took the belt") ?? text.range(of: " kept the belt")
+            let verb = text.range(of: " took the belt") ?? text.range(of: "’s ", options: .backwards)
             HStack(spacing: 8) {
                 if belt.isYours {
                     CompetitionBeltMark(holder: .you, width: 22)
@@ -490,8 +491,6 @@ struct CompetitionRecapSheet: View {
     let belt: CompetitionRecapBelt?
 
     @AppStorage("healthcomp.recapHidesName") private var hidesName = false
-    @State private var png: Data?
-    @State private var uiImage: UIImage?
     @State private var renderFailed = false
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.locale) private var locale
@@ -507,43 +506,47 @@ struct CompetitionRecapSheet: View {
             if competitionRecapAllowsNameChoice(competition) {
                 nameChoice
             }
+            share(recap)
             if renderFailed {
                 Text("Couldn’t make the image.")
                     .font(.callout)
                     .foregroundStyle(Theme.secondary)
                     .accessibilityIdentifier("competition.recap.error")
+                    .transition(Motion.appear)
             }
-            share(recap)
         }
-        .task(id: recap) {
-            let image = competitionRecapImage(recap)
-            png = image?.pngData()
-            uiImage = image
-            renderFailed = png == nil
-        }
+        .sensoryFeedback(.error, trigger: renderFailed) { _, failed in failed }
     }
 
     private func preview(_ recap: CompetitionRecap) -> some View {
         let shape = RoundedRectangle(cornerRadius: 20, style: .continuous)
-        return Group {
-            if let uiImage {
-                Image(uiImage: uiImage)
-                    .resizable()
-                    .scaledToFit()
-            } else {
-                Color.clear
-                    .aspectRatio(4 / 5, contentMode: .fit)
-                    .overlay { if !renderFailed { ProgressView() } }
+        // The real card, so the sheet slides up with it there. The image is
+        // made on Share: making it here would drop frames from the slide.
+        return Color.clear
+            .aspectRatio(4 / 5, contentMode: .fit)
+            .overlay {
+                GeometryReader { proxy in
+                    CompetitionRecapCard(recap: recap)
+                        .environment(\.colorScheme, .light)
+                        .environment(\.dynamicTypeSize, .large)
+                        .scaleEffect(
+                            proxy.size.width / CompetitionRecapCard.size.width,
+                            anchor: .topLeading
+                        )
+                        // The text clipping audit flags every line of scaled
+                        // Text, even hidden: to it, this is a picture.
+                        .accessibilityRepresentation { Color.clear }
+                }
             }
-        }
-        .clipShape(shape)
-        .overlay(shape.strokeBorder(Theme.hairline, lineWidth: 1))
-        .frame(maxWidth: 320)
-        .frame(maxWidth: .infinity)
-        .accessibilityElement(children: .ignore)
-        .accessibilityAddTraits(.isImage)
-        .accessibilityLabel(recap.accessibilityText)
-        .accessibilityIdentifier("competition.recap.card")
+            .animation(Motion.fade, value: hidesName)
+            .clipShape(shape)
+            .overlay(shape.strokeBorder(Theme.hairline, lineWidth: 1))
+            .frame(maxWidth: 320)
+            .frame(maxWidth: .infinity)
+            .accessibilityElement(children: .ignore)
+            .accessibilityAddTraits(.isImage)
+            .accessibilityLabel(recap.accessibilityText)
+            .accessibilityIdentifier("competition.recap.card")
     }
 
     @ViewBuilder
@@ -567,27 +570,21 @@ struct CompetitionRecapSheet: View {
         }
     }
 
-    @ViewBuilder
     private func share(_ recap: CompetitionRecap) -> some View {
-        if let png, let uiImage {
-            Button {
-                competitionPresentShareSheet(
-                    CompetitionRecapShareItem(png: png, image: uiImage, title: recap.headline)
-                )
-            } label: {
-                Label("Share", systemImage: "square.and.arrow.up")
+        Button {
+            guard let image = competitionRecapImage(recap), let png = image.pngData() else {
+                renderFailed = true
+                return
             }
-            .buttonStyle(PrimaryButtonStyle())
-            .accessibilityHint("Opens the system share sheet")
-            .accessibilityIdentifier("competition.recap.share")
-        } else {
-            Button {} label: {
-                Label("Share", systemImage: "square.and.arrow.up")
-            }
-            .buttonStyle(PrimaryButtonStyle())
-            .disabled(true)
-            .accessibilityValue(renderFailed ? "Unavailable" : "Loading")
-            .accessibilityIdentifier("competition.recap.share")
+            renderFailed = false
+            competitionPresentShareSheet(
+                CompetitionRecapShareItem(png: png, image: image, title: recap.headline)
+            )
+        } label: {
+            Label("Share", systemImage: "square.and.arrow.up")
         }
+        .buttonStyle(PrimaryButtonStyle())
+        .accessibilityHint("Opens the system share sheet")
+        .accessibilityIdentifier("competition.recap.share")
     }
 }
