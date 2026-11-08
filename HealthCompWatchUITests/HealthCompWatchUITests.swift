@@ -32,6 +32,12 @@ final class HealthCompWatchUITests: XCTestCase {
         ("stale", "Sam, Day 5 of 7. You 1,204 points. Sam 1,150 points. You lead by 54. Updated"),
         ("samGone", "Alex, Day 2 of 7. You 480 points. Alex 455 points. You lead by 25."),
         ("noSam", "Alex, Day 2 of 7. You 480 points. Alex 455 points. You lead by 25."),
+        ("outOfReach", "Sam, Last day. You 1,700 points. Sam 2,171 points. Sam leads by 471."),
+    ]
+
+    private let chaseMatches: [(scenario: String, label: String)] = [
+        ("trailing", "55 points to take the lead. 200 of 255 today."),
+        ("outOfReach", "Out of reach today."),
     ]
 
     private let beltMatches: [(scenario: String, label: String)] = [
@@ -58,6 +64,14 @@ final class HealthCompWatchUITests: XCTestCase {
 
     func testTheBeltIsSpoken() {
         for (scenario, label) in beltMatches {
+            let match = element(launch(scenario), "watch.match")
+            XCTAssertTrue(match.waitForExistence(timeout: 15), scenario)
+            XCTAssertTrue(match.label.contains(label), "\(scenario): \(match.label)")
+        }
+    }
+
+    func testTheChaseIsSpoken() {
+        for (scenario, label) in chaseMatches {
             let match = element(launch(scenario), "watch.match")
             XCTAssertTrue(match.waitForExistence(timeout: 15), scenario)
             XCTAssertTrue(match.label.contains(label), "\(scenario): \(match.label)")

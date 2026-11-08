@@ -192,6 +192,36 @@ final class CompetitionWatchBoardTests: XCTestCase {
         XCTAssertEqual(defended?.line, "3rd title defense")
     }
 
+    // MARK: Chase
+
+    func testChaseFillsTodayTowardTheLead() throws {
+        let chase = try XCTUnwrap(match("trailing").chase(at: now, locale: en))
+        XCTAssertEqual(chase.fill, 200.0 / 255, accuracy: 1e-9)
+        XCTAssertEqual(chase.lead, "55")
+        XCTAssertEqual(chase.line, "200 of 255 today")
+        XCTAssertEqual(chase.spoken, "55 points to take the lead. 200 of 255 today.")
+    }
+
+    func testChaseOutOfReachIsAnEmptyBar() throws {
+        let chase = try XCTUnwrap(match("outOfReach").chase(at: now, locale: en))
+        XCTAssertEqual(chase.fill, 0)
+        XCTAssertNil(chase.lead)
+        XCTAssertEqual(chase.line, "Out of reach today")
+        XCTAssertEqual(chase.spoken, "Out of reach today.")
+    }
+
+    func testChaseOnlyWhileYouTrailOnItsDay() {
+        XCTAssertNil(match("live").chase(at: now))
+        XCTAssertNil(match("beltTrailing").chase(at: now))  // the phone couldn't work it out
+        var level = match("trailing")
+        level.opponentPoints = level.userPoints
+        XCTAssertNil(level.chase(at: now))
+        var tomorrow = match("trailing")
+        XCTAssertNil(tomorrow.chase(at: now.addingTimeInterval(86_400)))
+        tomorrow.chase?.day = 2
+        XCTAssertNil(tomorrow.chase(at: now))
+    }
+
     func testAnOlderFileWithNoBeltStillDecodes() throws {
         let data = try JSONEncoder().encode(fixture("live"))
         XCTAssertFalse(String(decoding: data, as: UTF8.self).contains("belt"))
