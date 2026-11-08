@@ -11,11 +11,20 @@ extension CompetitionClient {
         let remoteAPI = SupabaseCompetitionRemoteAPI.live(provider: provider)
         let pushRegistrationClient: CompetitionPushRegistrationClient? =
             installationEnvironment == nil ? nil : .liveValue
+        // An alert is for whoever is signed in as it posts; its reactions are
+        // sent only as them (CompetitionReactionAlert.send).
+        var notificationClient = CompetitionNotificationClient.liveValue
+        let postNow = notificationClient.postNow
+        notificationClient.postNow = { request in
+            var request = request
+            request.recipientUserID = provider.signedInUserID()
+            try await postNow(request)
+        }
         return remote(
             remoteAPI: remoteAPI,
             environment: .production(),
             realtimeClient: .supabase(provider: provider),
-            notificationClient: .liveValue,
+            notificationClient: notificationClient,
             pushRegistrationClient: pushRegistrationClient,
             installationEnvironment: installationEnvironment,
             appAttestServiceFactory: { DeviceCheckAppAttestClient() },
@@ -1088,13 +1097,18 @@ private actor RemoteCompetitionClientCoordinator {
         return (profile.id, photoCache)
     }
 
+    /// Whether `cache` is still the mounted account's, after an await.
+    private func isMountedPhotoCache(_ cache: ProfilePhotoCache) -> Bool {
+        runtime != nil && terminalTeardown == nil && photoCache?.directory == cache.directory
+    }
+
     /// Reads run outside the operation gate, so avatars never hold up a
     /// sync; a result that lands after sign-out or a switch isn't cached.
     func loadProfilePhotos(_ profileIDs: [UUID]) async throws -> [ProfilePhotoReference] {
         let account = try photoAccount()
         let owners = Array(Set(profileIDs))
         let references = try await remoteAPI.listProfilePhotos(owners)
-        if photoCache?.directory == account.cache.directory {
+        if isMountedPhotoCache(account.cache) {
             account.cache.retain(references, among: owners)
         }
         return references
@@ -1103,7 +1117,7 @@ private actor RemoteCompetitionClientCoordinator {
     func loadOwnProfilePhoto() async throws -> OwnProfilePhoto {
         let account = try photoAccount()
         let own = try await remoteAPI.ownProfilePhoto(account.id)
-        if photoCache?.directory == account.cache.directory {
+        if isMountedPhotoCache(account.cache) {
             account.cache.retain(own.reference.map { [$0] } ?? [], among: [account.id])
         }
         return own
@@ -1113,14 +1127,14 @@ private actor RemoteCompetitionClientCoordinator {
         let account = try photoAccount()
         if let cached = account.cache.data(for: reference) { return cached }
         let data = try await remoteAPI.downloadProfilePhoto(reference)
-        if photoCache?.directory == account.cache.directory {
+        if isMountedPhotoCache(account.cache) {
             try? account.cache.store(data, for: reference)
         }
         return data
     }
 
     func cachedProfilePhotoData(_ owner: UUID) -> Data? {
-        guard runtime != nil else { return nil }
+        guard runtime != nil, terminalTeardown == nil else { return nil }
         return photoCache?.latestData(owner: owner)
     }
 
@@ -1158,7 +1172,7 @@ private actor RemoteCompetitionClientCoordinator {
     }
 
     func isProfilePhotoReported(_ owner: UUID) -> Bool {
-        guard runtime != nil else { return false }
+        guard runtime != nil, terminalTeardown == nil else { return false }
         return photoCache?.isReported(owner: owner) ?? false
     }
 
@@ -1675,6 +1689,7 @@ private actor RemoteCompetitionClientCoordinator {
         }
         mountedCompetitionIDs = []
         inviteRequests = nil
+        photoCache = nil
         notificationCoordinator = .noop
         notificationPreferences = .unavailable
         observerDeliveryReceipts = .discarding

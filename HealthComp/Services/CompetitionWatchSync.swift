@@ -52,7 +52,8 @@ final class CompetitionWatchSync: NSObject, WCSessionDelegate, @unchecked Sendab
         queue.async {
             guard let url = CompetitionWidgetSnapshot.fileURL() else { return }
             if !FileManager.default.fileExists(atPath: url.path) {
-                self.send(nil, material: false)
+                // Material: a sign-out clear may never have reached the face.
+                self.send(nil, material: true)
             } else if let snapshot = CompetitionWidgetSnapshot.load(from: url) {
                 self.send(snapshot, material: false)
             }

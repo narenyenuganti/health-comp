@@ -568,7 +568,7 @@ private struct CompetitionReactionRainDrops: Equatable {
 }
 
 /// Canvas over a timeline: no per-frame state, four resolved glyphs drawn
-/// many times. Reduce Motion: one emoji at centre scales in and fades.
+/// many times. Reduce Motion: one emoji at centre fades in and out.
 private struct CompetitionReactionRainView: View {
     let rain: CompetitionReactionRainDrops
 
@@ -625,13 +625,11 @@ private struct CompetitionReactionRainView: View {
         size: CGSize
     ) {
         guard let glyph = context.resolveSymbol(id: kind) else { return }
-        // In over a fade's length and a bit, out over the last half second.
-        let grown = min(max(elapsed / 0.3, 0), 1)
-        let scale = 1.4 + 0.6 * (1 - pow(1 - grown, 3))
+        // A fade only, never a scale: in over 0.3 s, out over the last half second.
         var drawing = context
-        drawing.opacity = min(max((Motion.rain - elapsed) / 0.5, 0), 1)
+        drawing.opacity = min(max(elapsed / 0.3, 0), 1, max((Motion.rain - elapsed) / 0.5, 0))
         drawing.translateBy(x: size.width / 2, y: size.height / 2)
-        drawing.scaleBy(x: scale, y: scale)
+        drawing.scaleBy(x: 2, y: 2)
         drawing.draw(glyph, at: .zero)
     }
 }

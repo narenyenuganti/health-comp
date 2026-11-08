@@ -1651,7 +1651,11 @@ final class MultiUserCompetitionUITests: XCTestCase {
         launch(.account)
         defer { app.terminate() }
         XCTAssertTrue(app.navigationBars["Account"].waitForExistence(timeout: 8))
-        element("account.health").tap()
+        // The photo header and BLOCKED sit above it, so the row can start
+        // at or below the fold.
+        let health = element("account.health")
+        scrollToElement(health)
+        health.tap()
         XCTAssertTrue(app.navigationBars["Health"].waitForExistence(timeout: 3))
         XCTAssertTrue(
             text(
@@ -1771,6 +1775,9 @@ final class MultiUserCompetitionUITests: XCTestCase {
             try app.performAccessibilityAudit(for: auditTypes)
 
             showWeek()
+            let leadLine = app.descendants(matching: .any)["competition.leadLine"]
+            XCTAssertTrue(leadLine.waitForExistence(timeout: 3))
+            XCTAssertTrue(leadLine.label.hasPrefix("The lead after each day."), leadLine.label)
             let dayContexts: [(ordinal: Int, context: String)] = [
                 (1, ", complete."),
                 (3, "Today, scores so far"),

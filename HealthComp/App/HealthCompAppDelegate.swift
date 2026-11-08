@@ -59,19 +59,17 @@ final class HealthCompAppDelegate: NSObject,
         didReceive response: UNNotificationResponse
     ) async {
         let content = response.notification.request.content
-        if let reaction = CompetitionReactionAlert.request(
+        if let action = CompetitionReactionAlert.request(
             actionIdentifier: response.actionIdentifier,
             categoryIdentifier: content.categoryIdentifier,
             userInfo: content.userInfo
         ) {
             // In the background, without opening the app. iOS keeps it
             // running until this returns; the next open shows what you sent.
-            try? await CompetitionReactionAlert.send?(reaction)
+            try? await CompetitionReactionAlert.send?(action.recipientUserID, action.reaction)
             return
         }
-        guard let route = CompetitionRoute(
-            userInfo: response.notification.request.content.userInfo
-        ) else {
+        guard let route = CompetitionReactionAlert.route(userInfo: content.userInfo) else {
             return
         }
         _ = CompetitionRoutingEnvironment.liveHub.enqueue(route)

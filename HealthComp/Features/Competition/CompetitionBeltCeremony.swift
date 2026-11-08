@@ -39,7 +39,7 @@ func competitionBeltCeremonyScript(
             clip: "taken",
             headline: "AND NEW",
             title: "You took the belt from \(name)",
-            detail: "\(name)'s reign: \(competitionReignText(weeks: weeks, defenses: defenses))"
+            detail: "\(name)’s reign: \(competitionReignText(weeks: weeks, defenses: defenses))"
         )
     case let .took(.them, weeks?, defenses):
         return .init(
@@ -213,7 +213,7 @@ private struct CompetitionBeltCeremonyPlayer: View {
     let onLeaving: () -> Void
     let onGone: () -> Void
 
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
     @Environment(\.scenePhase) private var scenePhase
     @State private var player: AVPlayer?
     @State private var poster: UIImage?
@@ -273,6 +273,16 @@ private struct CompetitionBeltCeremonyPlayer: View {
             leave()
         }
     }
+
+#if DEBUG
+    /// A launch argument can't switch Reduce Motion on in a simulator:
+    /// `--belt-reduce-motion` takes its path for the UI tests.
+    private static let assumesReduceMotion = ProcessInfo.processInfo.arguments.contains("--belt-reduce-motion")
+#else
+    private static let assumesReduceMotion = false
+#endif
+
+    private var reduceMotion: Bool { systemReduceMotion || Self.assumesReduceMotion }
 
     private func showPoster() async {
         guard let image = UIImage(named: "\(script.clip)-final.jpg") else { return }

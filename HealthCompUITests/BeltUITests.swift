@@ -165,7 +165,7 @@ final class BeltUITests: XCTestCase {
         let results: [(String, UInt8, String?)] = [
             ("archived", 0x11, "You took the belt"),
             ("archived", 0x12, "Sam took the belt, You held it for 1 week."),
-            ("archived", 0x13, "Sam's 1st title defense, 2 weeks in a row."),
+            ("archived", 0x13, "Sam’s 1st title defense, 2 weeks in a row."),
             ("archived", 0x14, "You took the belt, Sam held it for 2 weeks."),
             // A tie keeps your reign at 2 weeks: nothing.
             ("archived", 0x15, nil),
@@ -202,7 +202,7 @@ final class BeltUITests: XCTestCase {
         XCTAssertTrue(normalized(took.label).hasSuffix(". \(Self.longName) took the belt"), took.label)
 
         openWeek(weekID("archived", 0x23), title: Self.longName)
-        assertBanner("\(Self.longName)'s 1st title defense, 3 weeks in a row.")
+        assertBanner("\(Self.longName)’s 1st title defense, 3 weeks in a row.")
         goBack(to: Self.longName)
         openWeek(weekID("archived", 0x22), title: Self.longName)
         XCTAssertTrue(element("competition.result").waitForExistence(timeout: 3))

@@ -79,12 +79,32 @@ enum ProfilePhotoImage {
             kCGImageMetadataShouldExcludeGPS: true,
         ] as CFDictionary)
         guard CGImageDestinationFinalize(destination) else { throw ProfilePhotoFailure.encodingFailed }
-        let data = output as Data
+        let data = try withoutMetadataSegments(output as Data)
         if data.count > maxBytes {
             guard quality > 0.3 else { throw ProfilePhotoFailure.encodingFailed }
             return try jpeg(from: image, crop: crop, quality: quality - 0.2)
         }
         return data
+    }
+
+    /// ImageIO always writes its own small Exif (APP1: color space and size)
+    /// and an empty Photoshop block (APP13), even for a fresh bitmap. Every
+    /// APPn segment but JFIF (APP0) is dropped, so the file is pixels only.
+    static func withoutMetadataSegments(_ jpeg: Data) throws -> Data {
+        let bytes = [UInt8](jpeg)
+        guard bytes.starts(with: [0xFF, 0xD8]) else { throw ProfilePhotoFailure.encodingFailed }
+        var kept: [UInt8] = [0xFF, 0xD8]
+        var index = 2
+        while index + 4 <= bytes.count, bytes[index] == 0xFF, bytes[index + 1] != 0xDA {
+            let end = index + 2 + (Int(bytes[index + 2]) << 8 | Int(bytes[index + 3]))
+            guard end <= bytes.count else { throw ProfilePhotoFailure.encodingFailed }
+            if !(0xE1...0xEF).contains(bytes[index + 1]) { kept += bytes[index..<end] }
+            index = end
+        }
+        guard index + 1 < bytes.count, bytes[index] == 0xFF, bytes[index + 1] == 0xDA else {
+            throw ProfilePhotoFailure.encodingFailed
+        }
+        return Data(kept + bytes[index...])
     }
 
     /// Only what this app would have uploaded is decoded for display: one

@@ -437,7 +437,10 @@ struct CompetitionLeadLineView: View {
 
     /// A quiet week still gets room, so 10 points never reads as a rout.
     private static let minimumScale = 50.0
-    private static let endLabelWidth: CGFloat = 48
+    /// The end label grows with its text, and stays inside the chart's
+    /// frame when the line ends at the top or bottom of the scale.
+    @ScaledMetric(relativeTo: .footnote) private var endLabelWidth: CGFloat = 48
+    @ScaledMetric(relativeTo: .footnote) private var endLabelHalfHeight: CGFloat = 9
 
     private var last: Double { line.margins.last ?? 0 }
     private var lastDay: Int { line.margins.count - 1 }
@@ -511,7 +514,7 @@ struct CompetitionLeadLineView: View {
         GeometryReader { proxy in
             let plot = CGRect(
                 x: 0, y: 7,
-                width: proxy.size.width - Self.endLabelWidth,
+                width: proxy.size.width - endLabelWidth,
                 height: proxy.size.height - 14
             )
             let top = max(line.margins.max() ?? 0, Self.minimumScale)
@@ -576,10 +579,13 @@ struct CompetitionLeadLineView: View {
                     .foregroundStyle(last > 0 ? Theme.you : last < 0 ? Theme.ink : Theme.secondary)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
-                    .frame(width: Self.endLabelWidth - 10, alignment: .leading)
+                    .frame(width: endLabelWidth - 10, alignment: .leading)
                     .opacity(isDrawn ? 1 : 0)
                     .animation(Motion.late, value: isDrawn)
-                    .position(x: end.x + 10 + (Self.endLabelWidth - 10) / 2, y: end.y)
+                    .position(
+                        x: end.x + 10 + (endLabelWidth - 10) / 2,
+                        y: min(max(end.y, endLabelHalfHeight), proxy.size.height - endLabelHalfHeight)
+                    )
             }
         }
     }
@@ -625,7 +631,7 @@ struct CompetitionLeadLineView: View {
                     .frame(maxWidth: .infinity)
             }
         }
-        .padding(.trailing, Self.endLabelWidth)
+        .padding(.trailing, endLabelWidth)
         .accessibilityHidden(true)
     }
 

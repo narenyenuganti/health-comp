@@ -35,8 +35,10 @@ select ok((
 select ok(not has_column_privilege('authenticated', 'public.profiles', 'photo_version', 'select')
   and not has_column_privilege('anon', 'public.profiles', 'photo_version', 'select')
   and not has_column_privilege('authenticated', 'public.profiles', 'photo_removed_by_review', 'select')
-  and not has_column_privilege('anon', 'public.profiles', 'photo_removed_by_review', 'select'),
-  'photo_version and photo_removed_by_review are not readable from the profiles table');
+  and not has_column_privilege('anon', 'public.profiles', 'photo_removed_by_review', 'select')
+  and not has_column_privilege('authenticated', 'public.profiles', 'photo_removed_version', 'select')
+  and not has_column_privilege('anon', 'public.profiles', 'photo_removed_version', 'select'),
+  'photo_version, photo_removed_by_review and photo_removed_version are not readable from the profiles table');
 
 -- A Naren (owner), B Maya (finished match), C Tess (Naren's pending
 -- challenge), D Dev (stranger), E Eli (Naren blocked him), F Fay (blocked
@@ -250,8 +252,13 @@ select is(public.own_profile_photo(), jsonb_build_object('photo_version', null, 
   'Naren is told his photo was removed after a review');
 select throws_ok($$select private.remove_profile_photo_after_review(pg_temp.pid('2'))$$,
   '42501', null, 'no client can remove someone''s photo as a reviewer');
+select is(pg_temp.sees('1'), 'none / 1', 'its object waits for the operator to delete it');
+select throws_ok($$select public.set_profile_photo(pg_temp.ver('2'))$$,
+  'P0001', 'photo_upload_required', 'Naren cannot put the removed photo back meanwhile');
 select lives_ok($$select public.clear_profile_photo()$$, 'Naren dismisses it');
 select is(public.own_profile_photo() ->> 'removed_by_review', 'false', 'and the notice is gone');
+select throws_ok($$select public.set_profile_photo(pg_temp.ver('2'))$$,
+  'P0001', 'photo_upload_required', 'nor after dismissing the notice');
 
 -- Deleting an account: its photo and its reports both ways go at once.
 reset role;

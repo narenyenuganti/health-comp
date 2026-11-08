@@ -219,7 +219,7 @@ final class CompetitionRecapTests: XCTestCase {
             (.youTook, "Took the belt", "Took the belt", true),
             (.theyTook, "Sam took the belt", "They took the belt", false),
             (.youDefended(defenses: 3), "3rd title defense", "3rd title defense", true),
-            (.theyDefended(defenses: 1), "Sam's 1st title defense", "Their 1st title defense", false),
+            (.theyDefended(defenses: 1), "Sam’s 1st title defense", "Their 1st title defense", false),
         ]
         for (belt, shown, hidden, isYours) in cases {
             XCTAssertEqual(competitionRecapBeltText(belt, opponentName: "Sam"), shown)
@@ -486,7 +486,7 @@ final class CompetitionRecapTests: XCTestCase {
         )
         XCTAssertEqual(shown.line?.text, best)
         // The belt fact stays on the recap for anything else that reads it.
-        XCTAssertEqual(shown.beltText, "Sam's 2nd title defense")
+        XCTAssertEqual(shown.beltText, "Sam’s 2nd title defense")
         XCTAssertTrue(shown.accessibilityText.hasSuffix("\(best)."))
         XCTAssertFalse(shown.accessibilityText.contains("title defense"))
         // Hidden name: "They".

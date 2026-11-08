@@ -627,8 +627,8 @@ call and the server keeps sending switched-off reactions and nudges.
 ### Profile photos
 
 Migration `20261107002900` adds the private `profile-photos` bucket (512 KiB,
-`image/jpeg` only), `profiles.photo_version` and `profiles.photo_removed_by_review` (neither
-client-readable),
+`image/jpeg` only), `profiles.photo_version`, `profiles.photo_removed_by_review` and
+`profiles.photo_removed_version` (none client-readable),
 `private.profile_photo_reports` (RLS on and forced, no client grants), storage
 RLS on `storage.objects`, and `set_profile_photo(uuid)`,
 `clear_profile_photo()`, `own_profile_photo()`, `list_profile_photos(uuid[])`
@@ -653,7 +653,9 @@ and `report_profile_photo(uuid)`, plus the operator-only
   `select private.remove_profile_photo_after_review('<profile id>')` in the
   SQL editor (initials for everyone; the owner's Account says the photo was
   removed after a review until they set or remove one), then delete the
-  objects under `<profile id>/` in the Storage dashboard.
+  objects under `<profile id>/` in the Storage dashboard. The removed version
+  is kept, and `set_profile_photo` refuses it, so the owner can't put it
+  back before the objects are gone.
 - Starting account deletion clears the photo and the account's reports both
   ways; `delete-account` deletes the objects before anonymizing.
 - A photo change records the existing `profile_presentation_changed` event

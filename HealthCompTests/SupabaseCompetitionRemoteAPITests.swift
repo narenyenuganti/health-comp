@@ -1590,17 +1590,27 @@ extension SupabaseCompetitionRemoteAPITests {
 
     func testListProfilePhotosAsksForIDsAndKeepsOnlyRequestedReadableRows() async throws {
         let stranger = "12000000-0000-4000-8000-0000000000c9"
+        // The server returns at most one row per id asked for, so three ids
+        // make room for the three rows below.
+        let others = [
+            UUID(uuidString: "12000000-0000-4000-8000-0000000000ca")!,
+            UUID(uuidString: "12000000-0000-4000-8000-0000000000cb")!,
+        ]
+        let ownerRow = ["profile_id": photoOwner.uuidString.lowercased(), "photo_version": photoVersion.uuidString.lowercased()]
         let harness = CompetitionTransportHarness(stubs: [
             .response(200, try jsonData(["photos": [
-                ["profile_id": photoOwner.uuidString.lowercased(), "photo_version": photoVersion.uuidString.lowercased()],
+                ownerRow,
                 ["profile_id": stranger, "photo_version": photoVersion.uuidString.lowercased()],
                 ["profile_id": photoOwner.uuidString.lowercased(), "photo_version": "NOT-A-UUID"],
             ]])),
+            .response(200, try jsonData(["photos": [ownerRow, ownerRow]])),
             .response(200, try jsonData(["photos": [], "extra": 1])),
         ])
         let api = makeAPI(harness)
-        let references = try await api.listProfilePhotos([photoOwner])
+        let references = try await api.listProfilePhotos([photoOwner] + others)
         XCTAssertEqual(references, [ProfilePhotoReference(ownerProfileID: photoOwner, version: photoVersion)])
+        let moreRowsThanIDs = await remoteFailure { _ = try await api.listProfilePhotos([photoOwner]) }
+        XCTAssertEqual(moreRowsThanIDs, .serverContractMismatch)
         let extra = await remoteFailure { _ = try await api.listProfilePhotos([photoOwner]) }
         XCTAssertEqual(extra, .serverContractMismatch)
         let tooMany = await remoteFailure { _ = try await api.listProfilePhotos((0..<201).map { _ in UUID() }) }
@@ -1608,8 +1618,10 @@ extension SupabaseCompetitionRemoteAPITests {
         let none = try await api.listProfilePhotos([])
         XCTAssertEqual(none, [])
         let requests = await harness.recordedRequests()
-        XCTAssertEqual(requests.count, 2, "no request for too many or no ids")
-        try assertRPC(requests[0], name: "list_profile_photos", body: ["profile_ids": [photoOwner.uuidString.lowercased()]])
+        XCTAssertEqual(requests.count, 3, "no request for too many or no ids")
+        try assertRPC(requests[0], name: "list_profile_photos", body: [
+            "profile_ids": ([photoOwner] + others).map { $0.uuidString.lowercased() },
+        ])
     }
 
     func testSetProfilePhotoUploadsThenSetsTheVersion() async throws {
