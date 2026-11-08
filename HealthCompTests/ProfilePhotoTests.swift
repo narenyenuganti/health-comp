@@ -1,3 +1,4 @@
+import ComposableArchitecture
 import CoreGraphics
 import Foundation
 import ImageIO
@@ -178,5 +179,134 @@ final class ProfilePhotoCacheTests: XCTestCase {
         try await storage.teardown(owner)
         XCTAssertFalse(FileManager.default.fileExists(atPath: paths.profilePhotosDirectory.path))
         XCTAssertNil(cache.data(for: reference))
+    }
+}
+
+final class ProfilePhotoCropTests: XCTestCase {
+    func testCropGeometryFillsTheCircleAndKeepsItCovered() {
+        // A 1200×900 photo in a 300 pt circle: the short side fills it.
+        let geometry = ProfilePhotoCropGeometry(imageSize: CGSize(width: 1200, height: 900), diameter: 300)
+        XCTAssertEqual(geometry.fillScale, 1.0 / 3, accuracy: 1e-9)
+        XCTAssertEqual(geometry.cropRect(offset: .zero, zoom: 1), CGRect(x: 150, y: 0, width: 900, height: 900))
+
+        // 400 × 300 pt on screen at 1×: 50 pt to spare sideways, none up or down.
+        XCTAssertEqual(geometry.clamped(CGSize(width: 80, height: 40), zoom: 1), CGSize(width: 50, height: 0))
+        XCTAssertEqual(
+            geometry.cropRect(offset: CGSize(width: 50, height: 0), zoom: 1),
+            CGRect(x: 0, y: 0, width: 900, height: 900),
+            "dragged right as far as it goes: the photo's left edge"
+        )
+
+        // 2× is half the pixels, still centred.
+        XCTAssertEqual(geometry.cropRect(offset: .zero, zoom: 2), CGRect(x: 375, y: 225, width: 450, height: 450))
+        // Zooming around a point keeps that point under the finger.
+        let anchor = CGPoint(x: 60, y: -30)
+        let zoomed = geometry.zooming(.zero, from: 1, to: 2, around: anchor)
+        XCTAssertEqual(zoomed, CGSize(width: -60, height: 30))
+
+        XCTAssertEqual(ProfilePhotoCropGeometry.rubberBand(4.6, to: 4), 4.2, accuracy: 1e-9)
+    }
+
+    func testSavedCropIs512PixelJPEGWithNoExifOrGPS() throws {
+        let original = try ProfilePhotoImageTests.photo(width: 1600, height: 1200, orientation: 1)
+        let image = try ProfilePhotoImage.uprightImage(from: original)
+        let geometry = ProfilePhotoCropGeometry(
+            imageSize: CGSize(width: image.width, height: image.height),
+            diameter: 361
+        )
+        let offset = geometry.clamped(CGSize(width: 1_000, height: -1_000), zoom: 1.5)
+        let jpeg = try ProfilePhotoImage.jpeg(from: image, crop: geometry.cropRect(offset: offset, zoom: 1.5))
+
+        let source = try XCTUnwrap(CGImageSourceCreateWithData(jpeg as CFData, nil))
+        let properties = try XCTUnwrap(CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any])
+        XCTAssertEqual(properties[kCGImagePropertyPixelWidth] as? Int, 512)
+        XCTAssertEqual(properties[kCGImagePropertyPixelHeight] as? Int, 512)
+        XCTAssertNil(properties[kCGImagePropertyGPSDictionary])
+        // EXIF lives in APP1; the encoder never writes one.
+        XCTAssertFalse(try ProfilePhotoImageTests.segmentMarkers(jpeg).contains(0xE1))
+        XCTAssertNotNil(ProfilePhoto(jpeg: jpeg, version: UUID()))
+    }
+}
+
+@MainActor
+final class ProfilePhotoFeatureTests: XCTestCase {
+    private let you = AuthenticatedProfile(id: UUID(uuidString: "a1000000-0000-4000-8000-0000000000aa")!, displayName: "Naren")
+    private let sam = UUID(uuidString: "a1000000-0000-4000-8000-0000000000bb")!
+    private let jo = UUID(uuidString: "a1000000-0000-4000-8000-0000000000cc")!
+    private let jpeg = ProfilePhotoTestLabServer.fixtureJPEG(red: 0.2, green: 0.4, blue: 0.6)
+
+    func testLookupShowsVisiblePhotosAndDropsHiddenOnes() async throws {
+        let (sam, jo, jpeg) = (self.sam, self.jo, self.jpeg)
+        let samPhoto = ProfilePhotoReference(ownerProfileID: sam, version: UUID())
+        var client = CompetitionClient.testValue
+        client.cachedProfilePhotoData = { _ in nil }
+        client.loadProfilePhotos = { _ in [samPhoto] }
+        client.isProfilePhotoReported = { $0 == jo }
+        client.profilePhotoData = { _ in jpeg }
+        var initial = CompetitionFeature.State(ownProfile: you)
+        initial.profilePhotos[jo] = try XCTUnwrap(ProfilePhoto(jpeg: jpeg, version: UUID()))
+        let store = TestStore(initialState: initial) { CompetitionFeature() }
+            withDependencies: { $0.competitionClient = client }
+        store.exhaustivity = .off
+
+        await store.send(.profilePhotosNeeded([sam, jo]))
+        await store.receive(\.profilePhotosListed) {
+            // Jo was reported here: back to the initial, and the menu knows.
+            $0.profilePhotos[jo] = nil
+            $0.reportedPhotoOwners = [jo]
+        }
+        await store.receive(\.profilePhotoLoaded)
+        XCTAssertEqual(store.state.profilePhotos[sam]?.version, samPhoto.version)
+        XCTAssertEqual(store.state.profilePhotoImages.photo(sam)?.version, samPhoto.version)
+        await store.finish()
+    }
+
+    func testReportHidesThePhotoAndALateDownloadStaysHidden() async throws {
+        let sam = self.sam
+        let reported = LockIsolated<[UUID]>([])
+        var client = CompetitionClient.testValue
+        client.reportProfilePhoto = { owner in reported.withValue { $0.append(owner) } }
+        var initial = CompetitionFeature.State(ownProfile: you)
+        let photo = try XCTUnwrap(ProfilePhoto(jpeg: jpeg, version: UUID()))
+        initial.profilePhotos[sam] = photo
+        let store = TestStore(initialState: initial) { CompetitionFeature() }
+            withDependencies: { $0.competitionClient = client }
+
+        await store.send(.photoReportConfirmed(sam)) { $0.photoReportsInFlight = [sam] }
+        await store.receive(.photoReportFinished(sam, succeeded: true)) {
+            $0.photoReportsInFlight = []
+            $0.profilePhotos = [:]
+            $0.reportedPhotoOwners = [sam]
+        }
+        await store.send(.profilePhotoLoaded(sam, photo))
+        await store.send(.photoReportConfirmed(sam))
+        XCTAssertEqual(reported.value, [sam])
+        await store.finish()
+    }
+
+    func testSavingYourPhotoShowsItAndAFailureKeepsTheCropOpen() async throws {
+        let you = self.you
+        let attempts = LockIsolated(0)
+        let version = UUID()
+        var client = CompetitionClient.testValue
+        client.setProfilePhoto = { _ in
+            let attempt = attempts.withValue { $0 += 1; return $0 }
+            guard attempt > 1 else { throw CompetitionRemoteFailure.retryableTransport }
+            return ProfilePhotoReference(ownerProfileID: you.id, version: version)
+        }
+        var initial = CompetitionFeature.State(ownProfile: you)
+        initial.ownPhoto.removedByReview = true
+        let store = TestStore(initialState: initial) { CompetitionFeature() }
+            withDependencies: { $0.competitionClient = client }
+        store.exhaustivity = .off
+
+        await store.send(.ownPhotoSaveTapped(jpeg)) { $0.ownPhoto.status = .saving }
+        await store.receive(.ownPhotoSaveFinished(nil)) { $0.ownPhoto.status = .saveFailed }
+        await store.send(.ownPhotoSaveTapped(jpeg)) { $0.ownPhoto.status = .saving }
+        await store.receive(\.ownPhotoSaveFinished) {
+            $0.ownPhoto = CompetitionFeature.OwnPhotoState()
+        }
+        XCTAssertEqual(store.state.profilePhotoImages.own?.version, version)
+        await store.finish()
     }
 }

@@ -1127,6 +1127,7 @@ private struct MultiUserCompetitionFeatureRoundTestLabView: View {
         typealias Fixtures = MultiUserCompetitionTestLabFixtures
         let hub = LocalCompetitionPublicationHub()
         let server = MultiUserCompetitionFeatureRoundTestLabServer(hub: hub)
+        let photos = Fixtures.featureRoundPhotos
         _store = State(initialValue: Store(initialState: MainTabFeature.State()) {
             MainTabFeature()
         } withDependencies: {
@@ -1146,7 +1147,14 @@ private struct MultiUserCompetitionFeatureRoundTestLabView: View {
                 waitUntil: { _ in },
                 stop: { hub.finish() },
                 nudge: { _ in Fixtures.labNow },
-                setReaction: { server.setReaction($0, $1, $2) }
+                setReaction: { server.setReaction($0, $1, $2) },
+                loadProfilePhotos: photos.load,
+                loadOwnProfilePhoto: photos.own,
+                profilePhotoData: photos.data,
+                setProfilePhoto: photos.set,
+                removeProfilePhoto: photos.remove,
+                reportProfilePhoto: photos.report,
+                isProfilePhotoReported: photos.isReported
             )
             $0.competitionRoutingClient = CompetitionRoutingClient(
                 routes: { AsyncStream { _ in } },
@@ -1646,7 +1654,12 @@ private struct MultiUserCompetitionAccountTestLabView: View {
     @State private var openedURL: URL?
     @State private var challengeURL = URL(string: "https://invites.ui.healthcomp.test/c/Xb3kP9qL2mN8vR4tY6wZ1a")
     @State private var muted = [
-        AccountMutedPerson(id: "remote-opponent:v1:hermes", name: "Hermes"),
+        AccountMutedPerson(
+            id: RemoteCompetitionOpponentIdentity.identity(
+                for: MultiUserCompetitionTestLabFixtures.hermesProfileID
+            ),
+            name: "Hermes"
+        ),
     ]
     @State private var blocked = [
         AuthenticatedProfile(
@@ -1654,6 +1667,19 @@ private struct MultiUserCompetitionAccountTestLabView: View {
             displayName: "Alex"
         ),
     ]
+    /// Hermes has a photo; Alex has one too, but the block hides it.
+    @State private var photoServer = ProfilePhotoTestLabServer(
+        ownProfileID: MultiUserCompetitionTestLabFixtures.ownProfileID,
+        photos: [
+            MultiUserCompetitionTestLabFixtures.hermesProfileID:
+                ProfilePhotoTestLabServer.fixtureJPEG(red: 0.25, green: 0.45, blue: 0.7),
+            UUID(uuidString: "a1000000-0000-4000-8000-0000000000b1")!:
+                ProfilePhotoTestLabServer.fixtureJPEG(red: 0.3, green: 0.6, blue: 0.35),
+        ],
+        hidden: [UUID(uuidString: "a1000000-0000-4000-8000-0000000000b1")!]
+    )
+    @State private var photos = ProfilePhotoImages(ownID: MultiUserCompetitionTestLabFixtures.ownProfileID)
+    @State private var photoStatus = CompetitionFeature.OwnPhotoState.Status.idle
     let store: StoreOf<AccountFeature>
     let hasPendingChallenge: Bool
 
@@ -1717,10 +1743,19 @@ private struct MultiUserCompetitionAccountTestLabView: View {
                         unblockFailed: nil,
                         load: {},
                         unblock: { id in blocked.removeAll { $0.id == id } }
+                    ),
+                    profilePhoto: AccountProfilePhoto(
+                        status: photoStatus,
+                        removedByReview: false,
+                        load: loadPhotos,
+                        save: savePhoto,
+                        remove: removePhoto,
+                        cropClosed: { if photoStatus == .saveFailed { photoStatus = .idle } }
                     )
                 )
             }
         }
+        .environment(\.profilePhotos, photos)
         .environment(\.openURL, OpenURLAction { url in
             openedURL = url
             return .handled
@@ -1731,6 +1766,47 @@ private struct MultiUserCompetitionAccountTestLabView: View {
             }
         }
         .accessibilityIdentifier("multiuser.account.root")
+    }
+
+    /// The Test Lab's stand-in for Home's photo lookup.
+    private func loadPhotos() {
+        let server = photoServer
+        let owners = [MultiUserCompetitionTestLabFixtures.ownProfileID, MultiUserCompetitionTestLabFixtures.hermesProfileID]
+            + blocked.map(\.id)
+        Task { @MainActor in
+            guard let visible = try? await server.load(owners) else { return }
+            for reference in visible {
+                if let data = try? await server.data(reference),
+                   let photo = ProfilePhoto(jpeg: data, version: reference.version) {
+                    photos.photos[reference.ownerProfileID] = photo
+                }
+            }
+        }
+    }
+
+    private func savePhoto(_ jpeg: Data) {
+        let server = photoServer
+        photoStatus = .saving
+        Task { @MainActor in
+            guard let reference = try? await server.set(jpeg),
+                  let photo = ProfilePhoto(jpeg: jpeg, version: reference.version)
+            else {
+                photoStatus = .saveFailed
+                return
+            }
+            photos.photos[MultiUserCompetitionTestLabFixtures.ownProfileID] = photo
+            photoStatus = .idle
+        }
+    }
+
+    private func removePhoto() {
+        let server = photoServer
+        photoStatus = .removing
+        Task { @MainActor in
+            try? await server.remove()
+            photos.photos[MultiUserCompetitionTestLabFixtures.ownProfileID] = nil
+            photoStatus = .idle
+        }
     }
 }
 
@@ -1760,6 +1836,21 @@ private enum MultiUserCompetitionTestLabFixtures {
     static let ownProfileID = UUID(
         uuidString: "a1000000-0000-4000-8000-000000000099"
     )!
+    /// Muted in the Account lab, with a photo.
+    static let hermesProfileID = UUID(
+        uuidString: "a1000000-0000-4000-8000-0000000000c1"
+    )!
+    /// Feature round: Sam has a photo, Jordan none, and Riley's is reported.
+    static let featureRoundPhotos = ProfilePhotoTestLabServer(
+        ownProfileID: ownProfileID,
+        photos: [
+            UUID(uuidString: "c4000000-0000-4000-8000-000000000001")!:
+                ProfilePhotoTestLabServer.fixtureJPEG(red: 0.25, green: 0.45, blue: 0.7),
+            UUID(uuidString: "c4000000-0000-4000-8000-000000000003")!:
+                ProfilePhotoTestLabServer.fixtureJPEG(red: 0.6, green: 0.3, blue: 0.5),
+        ],
+        reported: [UUID(uuidString: "c4000000-0000-4000-8000-000000000003")!]
+    )
     static let expiredRecipientID = UUID(
         uuidString: "A1000000-0000-4000-8000-000000000008"
     )!

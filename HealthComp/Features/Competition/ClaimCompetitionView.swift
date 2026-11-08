@@ -5,6 +5,8 @@ struct ClaimCompetitionView: View {
     let liveStatus: MainTabFeature.InviteClaimStatus
     /// Who sent it, from the server; shown only to the person it was sent to.
     var livePreview: CompetitionInvitePreview? = nil
+    /// Your display name, for your side of the face-off.
+    var ownName = ""
     var now: Date = Date()
     var hasQueuedChallenge = false
     var declineFailed = false
@@ -42,6 +44,16 @@ struct ClaimCompetitionView: View {
                 VStack(spacing: 24) {
                     Spacer(minLength: 12)
                     statusEmblem
+                    // They sent it to you, so you see their photo.
+                    if showsPreview, let preview {
+                        CompetitionInvitationFaceOff(
+                            ownName: ownName,
+                            opponentDisplayName: preview.sender.displayName,
+                            opponentPhoto: preview.sender.id,
+                            showsMark: false
+                        )
+                        .transition(Motion.appear)
+                    }
                     ZStack(alignment: .top) {
                         VStack(spacing: 10) {
                             Text(title)

@@ -17,8 +17,17 @@ struct CompetitionVersusIntroContent: Equatable {
     /// "First fight", "Title on the line", or nil for a rematch with no belt.
     let headline: String?
     let dayLine: String
+    /// Their account, for their photo.
+    var themPhoto: UUID? = nil
 
     var announcement: String { "You versus \(them). \(dayLine)." }
+}
+
+/// The photos the intro starts with. It decides once: a photo that lands
+/// mid-intro waits for the match screen.
+private struct VersusPhotos {
+    var you: ProfilePhoto?
+    var them: ProfilePhoto?
 }
 
 /// Nil when the intro must not play. Only scheduled or Day 1, so a match
@@ -66,7 +75,8 @@ func competitionVersusIntroContent(
         holder: holder,
         headline: holder != nil ? "Title on the line"
             : record == nil && !waits ? "First fight" : nil,
-        dayLine: dayLine
+        dayLine: dayLine,
+        themPhoto: competition.opponentProfileID
     )
 }
 
@@ -130,7 +140,9 @@ private struct CompetitionVersusIntroHost: ViewModifier {
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
     @Environment(\.locale) private var locale
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.profilePhotos) private var photos
     @State private var playing: CompetitionVersusIntroContent?
+    @State private var playingPhotos = VersusPhotos()
 
     /// The open match, if its intro is due. One rule covers the accepter and
     /// the sender, on arrival or in place when the other side accepts.
@@ -146,7 +158,7 @@ private struct CompetitionVersusIntroHost: ViewModifier {
         content
             .overlay {
                 if let playing {
-                    CompetitionVersusIntroView(content: playing) {
+                    CompetitionVersusIntroView(content: playing, photos: playingPhotos) {
                         self.playing = nil
                         isPlaying = false
                     }
@@ -160,6 +172,7 @@ private struct CompetitionVersusIntroHost: ViewModifier {
                 if voiceOver || CompetitionVersusIntroGate.assumesVoiceOver {
                     announce(due.announcement)
                 } else {
+                    playingPhotos = VersusPhotos(you: photos.own, them: photos.photo(due.themPhoto))
                     playing = due
                     isPlaying = true
                 }
@@ -298,6 +311,7 @@ private struct VersusSlashSide: Shape {
 
 private struct CompetitionVersusIntroView: View {
     let content: CompetitionVersusIntroContent
+    let photos: VersusPhotos
     let finished: () -> Void
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -432,7 +446,8 @@ private struct CompetitionVersusIntroView: View {
         }
     }
 
-    /// A slanted panel with a giant cropped initial that creeps through the hold.
+    /// A slanted panel with a giant cropped initial, or the photo in its
+    /// place as a duotone, that creeps through the hold.
     private func panel(_ stage: VersusStage, isYours: Bool, at t: Double) -> some View {
         let side: CGFloat = isYours ? -1 : 1
         let away = 1 - VersusClock.slamCurve.value(
@@ -441,18 +456,41 @@ private struct CompetitionVersusIntroView: View {
         let creep = VersusClock.ramp(t, VersusClock.contact, 1.95)
         let dx = stage.size.width + 60
         let holdsBelt = content.holder == (isYours ? .you : .them)
+        let center = CGPoint(
+            x: (isYours ? 240 : 150) * stage.kx,
+            y: stage.initialY(isYours: isYours, holdsBelt: holdsBelt)
+        )
         return ZStack {
             isYours ? Theme.youFill : Theme.panel
-            Text(String((isYours ? content.you : content.them).prefix(1)).uppercased())
-                .font(.score(size: 660 * stage.k))
-                .foregroundStyle(isYours ? Theme.onYouFill : Theme.ink)
-                .fixedSize()
+            if let photo = isYours ? photos.you : photos.them {
+                // The initial's square, so the face stays clear of the name.
+                let image = Image(uiImage: photo.image)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: 470 * stage.k, height: 470 * stage.k)
+                    .clipped()
+                    .grayscale(1)
+                Group {
+                    if isYours {
+                        // Multiplied into amber: amber still means you.
+                        image.contrast(1.15).blendMode(.multiply)
+                    } else {
+                        image.opacity(0.55)
+                    }
+                }
+                // Anchored like the letter: outward from the same edge.
                 .frame(width: 0, height: 0, alignment: isYours ? .trailing : .leading)
                 .offset(x: -side * (12 - 14 * creep), y: side * (6 - 7 * creep))
-                .position(
-                    x: (isYours ? 240 : 150) * stage.kx,
-                    y: stage.initialY(isYours: isYours, holdsBelt: holdsBelt)
-                )
+                .position(center)
+            } else {
+                Text(String((isYours ? content.you : content.them).prefix(1)).uppercased())
+                    .font(.score(size: 660 * stage.k))
+                    .foregroundStyle(isYours ? Theme.onYouFill : Theme.ink)
+                    .fixedSize()
+                    .frame(width: 0, height: 0, alignment: isYours ? .trailing : .leading)
+                    .offset(x: -side * (12 - 14 * creep), y: side * (6 - 7 * creep))
+                    .position(center)
+            }
         }
         .clipShape(VersusSlashSide(isYours: isYours, centerY: stage.center.y, inset: 5))
         .offset(x: side * away * dx, y: side * away * dx * 0.2)
