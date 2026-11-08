@@ -190,7 +190,10 @@ extension CompetitionWidgetSnapshot.Match {
             opponentDayPoints: (1...7).map { days[$0]?.opponentRevealedPoints },
             updatedAt: [p.lastSuccessfulFullWindowRefreshAt, p.opponentUpdatedAt]
                 .compactMap { $0 }.max(),
-            final: final
+            final: final,
+            chase: competitionWhatItTakes(p).map {
+                CompetitionWidgetSnapshot.Chase(day: $0.dayOrdinal, points: $0.points)
+            }
         )
     }
 }

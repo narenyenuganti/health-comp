@@ -1233,6 +1233,31 @@ final class RemoteCompetitionFeatureTests: XCTestCase {
     }
 
     @MainActor
+    func testBlockLooksPhotosUpAgainSoTheirsGoes() async throws {
+        let id = CompetitionID(UUID())
+        let sam = Self.recipient.id
+        var client = InviteCreationRecorder(results: []).client
+        client.block = { _ in .remote(revision: 0) }
+        // The server no longer lists the photo of someone you blocked.
+        client.loadProfilePhotos = { _ in [] }
+        var initial = CompetitionFeature.State(
+            publication: .remote(revision: 1, competitions: [Self.presentation(id)])
+        )
+        initial.profilePhotos[sam] = try XCTUnwrap(ProfilePhoto(
+            jpeg: ProfilePhotoTestLabServer.fixtureJPEG(red: 0.2, green: 0.4, blue: 0.6), version: UUID()
+        ))
+        let store = TestStore(initialState: initial) { CompetitionFeature() }
+            withDependencies: { $0.competitionClient = client }
+        await store.send(.blockTapped(id)) { $0.commandIDsInFlight = [id] }
+        await store.receive(.commandFinished(id, expectedRevision: 0)) {
+            $0.commandIDsInFlight = []
+        }
+        await store.receive(.profilePhotosNeeded([sam]))
+        await store.receive(\.profilePhotosListed) { $0.profilePhotos[sam] = nil }
+        await store.finish()
+    }
+
+    @MainActor
     func testBlockedPeopleLoadKeepsListOnFailedRefresh() async {
         let alex = AuthenticatedProfile(id: UUID(), displayName: "Alex")
         let answers = LockIsolated<[Result<[AuthenticatedProfile], CompetitionRemoteFailure>]>([

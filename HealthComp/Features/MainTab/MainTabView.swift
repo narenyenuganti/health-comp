@@ -12,6 +12,7 @@ struct MainTabView: View {
     @State private var isChallengePresented = false
     @State private var isPracticePresented = false
     @State private var isVersusPlaying = false
+    @State private var recapPeriod: CompetitionRecapPeriod?
 
     var body: some View {
         ZStack {
@@ -36,6 +37,13 @@ struct MainTabView: View {
         .task(id: photoOwners) {
             store.send(.competition(.profilePhotosNeeded(photoOwners)))
         }
+        // Loaded up front, so a person page rarely opens on the ledger
+        // it shows until your block list is known.
+        .task(id: store.competition.publication?.source == .remoteParticipants) {
+            if store.competition.publication?.source == .remoteParticipants {
+                store.send(.competition(.blockedPeopleRequested))
+            }
+        }
         .onChange(of: scenePhase) { _, newValue in
             store.send(.scenePhaseChanged(Self.sceneState(newValue)))
             // A photo changed or hidden while away shows without a relaunch.
@@ -44,9 +52,9 @@ struct MainTabView: View {
             }
         }
         // Keeps the notifications prompt from presenting under the
-        // Challenge or practice sheet, where SwiftUI would drop it, or over
-        // the versus intro.
-        .onChange(of: isChallengePresented || isPracticePresented || isVersusPlaying) { _, isOpen in
+        // Challenge or practice sheet or the recap deck, where SwiftUI would
+        // drop it, or over the versus intro.
+        .onChange(of: isChallengePresented || isPracticePresented || isVersusPlaying || recapPeriod != nil) { _, isOpen in
             store.send(.challengeSheetVisibilityChanged(isOpen))
         }
         .onReceive(
@@ -143,19 +151,7 @@ struct MainTabView: View {
     }
 
     private var home: some View {
-        NavigationStack(
-            path: CompetitionHomeRoute.stack(
-                path: navigationPath,
-                showsHistory: Binding(
-                    get: { store.showsHistory },
-                    set: { store.send(.historyPresentationChanged($0)) }
-                ),
-                person: Binding(
-                    get: { store.historyPersonIdentity },
-                    set: { store.send(.historyPersonChanged($0)) }
-                )
-            )
-        ) {
+        NavigationStack(path: homeStack) {
             // Home lays out finished under the loader, which fades off it.
             ZStack {
                 if let publication = store.competition.publication {
@@ -198,7 +194,8 @@ struct MainTabView: View {
                         isPracticePresented: $isPracticePresented,
                         refresh: { [store] in
                             await store.send(.competition(.pullToRefresh)).finish()
-                        }
+                        },
+                        openRecap: { recapPeriod = $0 }
                     )
                     .transition(.identity)
                 } else {
@@ -223,16 +220,18 @@ struct MainTabView: View {
                 switch route {
                 case .history:
                     if let publication = store.competition.publication {
-                        CompetitionHistoryView(publication: publication)
+                        CompetitionHistoryView(publication: publication, openRecap: { recapPeriod = $0 })
                             .toolbarRole(.editor)
                     }
                 case let .person(identity):
                     if let publication = store.competition.publication {
-                        CompetitionPersonView(
-                            publication: publication,
-                            opponentIdentity: identity
-                        )
-                        .toolbarRole(.editor)
+                        personScreen(identity, publication: publication)
+                            .toolbarRole(.editor)
+                    }
+                case let .records(identity):
+                    if let publication = store.competition.publication {
+                        CompetitionRecordsView(publication: publication, opponentIdentity: identity)
+                            .toolbarRole(.editor)
                     }
                 case let .competition(id):
                     competitionScreen(id)
@@ -259,11 +258,79 @@ struct MainTabView: View {
             )
             .presentationBackground(Theme.ground)
         }
+        .competitionRecapDeck($recapPeriod, publication: store.competition.publication) {
+            homeStack.wrappedValue = $0
+        }
         .competitionVersusIntro(
             matchID: store.path.last,
             publication: store.competition.publication,
             isPlaying: $isVersusPlaying
         )
+    }
+
+    private var homeStack: Binding<[CompetitionHomeRoute]> {
+        CompetitionHomeRoute.stack(
+            path: navigationPath,
+            showsHistory: Binding(
+                get: { store.showsHistory },
+                set: { store.send(.historyPresentationChanged($0)) }
+            ),
+            person: Binding(
+                get: { store.historyPersonIdentity },
+                set: { store.send(.historyPersonChanged($0)) }
+            ),
+            personPlace: Binding(
+                get: { store.personPlace },
+                set: { store.send(.personPlaceChanged($0)) }
+            )
+        )
+    }
+
+    /// The person page, with the match under it on the stack, whether you
+    /// blocked them, and their mute.
+    private func personScreen(
+        _ identity: String,
+        publication: LocalCompetitionPublication
+    ) -> some View {
+        let depth = store.personPlace.depth
+        let profileID = RemoteCompetitionOpponentIdentity.profileID(identity)
+        // Unknown (nil) until your block list loads, so someone you blocked
+        // never shows more than the ledger.
+        let isBlocked: Bool? = if let profileID, publication.source == .remoteParticipants {
+            store.competition.blockedPeople.map { $0.contains { $0.id == profileID } }
+        } else {
+            false
+        }
+        return CompetitionPersonView(
+            publication: publication,
+            opponentIdentity: identity,
+            cameFrom: depth > 0 && depth <= store.path.count ? store.path[depth - 1] : nil,
+            isBlocked: isBlocked,
+            unblock: profileID.map { id in { store.send(.competition(.unblockTapped(id))) } },
+            muteButton: publication.dashboard.competitions
+                .first { $0.opponentIdentity == identity }
+                .flatMap(muteButton(for:)),
+            challenge: challengeAgain
+        )
+        // Your own blocks only; the phone never learns who blocked you.
+        .task(id: identity) {
+            if publication.source == .remoteParticipants {
+                store.send(.competition(.blockedPeopleRequested))
+            }
+        }
+    }
+
+    /// "Your record with Sam" on a match: pushes their page, or pops back to
+    /// it when it's already on the stack.
+    private func recordLink(
+        _ competition: LocalCompetitionPresentation,
+        in publication: LocalCompetitionPublication
+    ) -> CompetitionRecordLink? {
+        competitionRecordLinkRecord(for: competition, in: publication.dashboard.competitions).map { record in
+            CompetitionRecordLink(record: record) {
+                homeStack.wrappedValue.append(.person(record.opponentIdentity))
+            }
+        }
     }
 
     private var notificationPromptPresented: Binding<Bool> {
@@ -382,7 +449,8 @@ struct MainTabView: View {
                         .isCommandInFlight(id),
                     link: store.competition.inviteLinks[id],
                     send: sendCompetitionAction,
-                    commandFailed: publication.dashboard.issues.contains(.commandRejected(id))
+                    commandFailed: publication.dashboard.issues.contains(.commandRejected(id)),
+                    recordLink: recordLink(competition, in: publication)
                 )
 
             case .scheduled, .active, .endsToday, .tallying:
@@ -420,7 +488,8 @@ struct MainTabView: View {
                             isInFlight: store.competition.photoReportsInFlight.contains(owner),
                             report: { store.send(.competition(.photoReportConfirmed(owner))) }
                         )
-                    }
+                    },
+                    recordLink: recordLink(competition, in: publication)
                 )
 
             case .completed, .archived:
@@ -443,7 +512,12 @@ struct MainTabView: View {
                     personalBest: competitionPersonalBestText(
                         for: competition,
                         in: publication.dashboard.competitions
-                    )
+                    ),
+                    howItWasWon: competitionHowItWasWon(
+                        for: competition,
+                        in: publication.dashboard.competitions
+                    ),
+                    recordLink: recordLink(competition, in: publication)
                 )
 
             case .declined, .expired, .cancelled:

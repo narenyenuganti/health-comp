@@ -432,7 +432,7 @@ struct CompetitionReactionLine: View {
 /// The emoji drawn as an image. The text clipping audit flags an emoji
 /// `Text` inside an accessibility container (the line, a Home card) because
 /// its glyph overflows the line box, even when it's hidden.
-private struct CompetitionReactionEmoji: View {
+struct CompetitionReactionEmoji: View {
     let kind: CompetitionReactionKind
 
     @ScaledMetric(relativeTo: .title3) private var size: CGFloat = 24

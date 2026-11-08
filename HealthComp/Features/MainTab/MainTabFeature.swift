@@ -90,8 +90,10 @@ struct MainTabFeature {
         /// Accept was tapped before the competition started; the claim is
         /// sent on its first publication.
         var acceptsClaimOnStart = false
-        /// The person page open from History, by opponent identity.
+        /// The open person page, by opponent identity: under History, a
+        /// match, or both, as `personPlace` says.
         var historyPersonIdentity: String?
+        var personPlace = CompetitionPersonPlace()
         var healthAccess: HealthAccessStatus?
         var notificationPrompt: NotificationPromptPhase = .unscheduled
         /// Mirrors MainTabView's Challenge and practice sheets.
@@ -181,6 +183,7 @@ struct MainTabFeature {
         case pathChanged([CompetitionID])
         case historyPresentationChanged(Bool)
         case historyPersonChanged(String?)
+        case personPlaceChanged(CompetitionPersonPlace)
         case accountPresentationChanged(Bool)
         case pendingRouteTimedOut(UInt64)
         case onboardingChecked([PermissionOnboardingStep])
@@ -404,6 +407,10 @@ struct MainTabFeature {
 
             case let .historyPersonChanged(identity):
                 state.historyPersonIdentity = identity
+                return .none
+
+            case let .personPlaceChanged(place):
+                state.personPlace = place
                 return .none
 
             case let .accountPresentationChanged(isPresented):
@@ -943,6 +950,7 @@ struct MainTabFeature {
             state.lastHandledRouteSequence = envelope.sequence
             state.showsHistory = false
             state.historyPersonIdentity = nil
+            state.personPlace = CompetitionPersonPlace()
             let closesAccount = state.isAccountPresented
             state.isAccountPresented = false
             state.path = [id]
@@ -1007,6 +1015,7 @@ struct MainTabFeature {
         state.challengeFromLink = nil
         state.showsHistory = false
         state.historyPersonIdentity = nil
+        state.personPlace = CompetitionPersonPlace()
         state.path = [id]
         return .send(.competition(.challengeSheetDismissed))
     }

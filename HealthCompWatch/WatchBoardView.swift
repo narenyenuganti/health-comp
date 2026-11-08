@@ -127,7 +127,8 @@ private struct WatchBoardPage: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(
-            [match.accessibilityLabel(at: date, redacted: false), match.beltAccessibilityText]
+            [match.accessibilityLabel(at: date, redacted: false), match.chase(at: date)?.spoken,
+             match.beltAccessibilityText]
                 .compactMap { $0 }.joined(separator: " ")
         )
         .accessibilityIdentifier("watch.match")
@@ -187,8 +188,14 @@ private struct WatchBoardPage: View {
             if typeSize < .accessibility1 {
                 strip(status)
             }
-            lead
-                .padding(.top, 2)
+            ZStack(alignment: .topLeading) {
+                if let chase = match.chase(at: date) {
+                    chaseBar(chase).transition(Motion.appear)
+                } else {
+                    lead.transition(Motion.appear)
+                }
+            }
+            .padding(.top, 2)
             if match.isStale(at: date), let line = match.updatedLine(at: date) {
                 Text(line)
                     .font(.footnote)
@@ -283,6 +290,39 @@ private struct WatchBoardPage: View {
             .transition(.opacity)
         }
         .animation(Motion.fade, value: status)
+    }
+
+    /// In place of the lead line while you trail. The fill moves only from
+    /// the value last shown, never from empty, and no tap fires here.
+    private func chaseBar(_ chase: (fill: Double, lead: String?, line: String, spoken: String)) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            if let lead = chase.lead {
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    Text(lead)
+                        .font(.score(size: 30))
+                        .foregroundStyle(Theme.you)
+                        .lineLimit(1)
+                        .scoreRoll(match.chase?.points, id: match.id)
+                    label("to lead")
+                }
+            }
+            ZStack(alignment: .leading) {
+                Rectangle().fill(Theme.outline)
+                Rectangle().fill(Theme.youFill)
+                    .scaleEffect(x: chase.fill, anchor: .leading)
+                    .moving(Motion.settle, value: chase.fill)
+            }
+            .frame(height: 12)
+            .clipShape(SlantedBar())
+            // "213 of 268 today" gives way at accessibility sizes; VoiceOver still reads it.
+            if chase.lead == nil || typeSize < .accessibility1 {
+                Text(chase.line)
+                    .font(.footnote)
+                    .foregroundStyle(Theme.secondary)
+                    .lineLimit(typeSize < .accessibility1 ? 1 : 2)
+            }
+        }
+        .privacySensitive()
     }
 
     private var lead: some View {

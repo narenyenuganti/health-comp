@@ -6,7 +6,7 @@ import Foundation
 /// What the app shares with its widgets through the App Group container, and
 /// with the paired Watch through `CompetitionWatchSync`.
 struct CompetitionWidgetSnapshot: Codable, Equatable, Sendable {
-    static let currentVersion = 1
+    static let currentVersion = 2
     static let fileName = "CompetitionWidgetSnapshot.json"
 
     var version = Self.currentVersion
@@ -37,6 +37,17 @@ struct CompetitionWidgetSnapshot: Codable, Equatable, Sendable {
         var final: Final?
         /// The Watch's belt row and card. Optional, so older files still decode.
         var belt: Belt?
+        /// The Watch's chase bar, from the phone's what it takes. Nil when
+        /// you lead or the phone couldn't work it out.
+        var chase: Chase?
+    }
+
+    /// What it takes to lead on a live day.
+    struct Chase: Codable, Equatable, Sendable {
+        /// The match day it was worked out for, 1...7.
+        var day: Int
+        /// Whole points that take the lead; nil when out of reach today.
+        var points: Double?
     }
 
     /// Who holds this pair's belt now, and what this result did to it.
@@ -518,7 +529,8 @@ extension CompetitionWidgetSnapshot {
             you: Double = 0, them: Double = 0,
             youDays: [Double?] = [], themDays: [Double?] = [],
             updated: Bool = true, updatedAgo: TimeInterval = 11 * 60,
-            final: Final.Outcome? = nil, leavesInDays: Int = 3, belt: Belt? = nil
+            final: Final.Outcome? = nil, leavesInDays: Int = 3, belt: Belt? = nil,
+            chase: Chase? = nil
         ) -> Match {
             let first = day(1 - currentDay)
             let id = UUID(uuidString: String(format: "00000000-0000-0000-0000-%012ld", index))!
@@ -541,7 +553,8 @@ extension CompetitionWidgetSnapshot {
                 final: final.map {
                     Final(outcome: $0, completedAt: day(0).addingTimeInterval(3_600), leavesAt: day(leavesInDays))
                 },
-                belt: belt
+                belt: belt,
+                chase: chase
             )
         }
         let week: [Double?] = [250, 230, 262, 250, 212, 260, 300]
@@ -554,7 +567,11 @@ extension CompetitionWidgetSnapshot {
         case "live": matches = [sam]
         case "trailing":
             matches = [match(5, "Sam", currentDay: 3, you: 610, them: 664,
-                             youDays: [200, 210, 200], themDays: [220, 224, 220])]
+                             youDays: [200, 210, 200], themDays: [220, 224, 220],
+                             chase: Chase(day: 3, points: 55))]
+        case "outOfReach":
+            matches = [match(5, "Sam", currentDay: 7, you: 1_700, them: 2_171, youDays: theirs,
+                             themDays: week, chase: Chase(day: 7, points: nil))]
         case "square":
             matches = [match(5, "Sam", currentDay: 2, you: 480, them: 480,
                              youDays: [250, 230], themDays: [230, 250])]

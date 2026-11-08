@@ -135,9 +135,11 @@ final class BeltUITests: XCTestCase {
         launchLab()
         openPerson(0x16, title: "Sam")
         XCTAssertEqual(element("competition.person.record").label, "Sam, 3 wins, 2 losses, 1 tie. 6 weeks")
+        // Aug 8 – 14's Verdict is unseen, so the belt holds at the week
+        // before (design: fighter card).
         XCTAssertEqual(
             element("competition.person.belt").label,
-            "You hold the belt, Since Jul 31 · 3 weeks, 1 defense, Record: You 3–2–1, Sam 2–3–1, Title reigns: You 2, Sam 1, Title defenses: You 1, Sam 1, Most defenses: You 1, Sam 1, Longest reign: You 3 weeks, Sam 2 weeks, Biggest win: You +160, Sam +160"
+            "You hold the belt, Since Jul 31 · 2 weeks, Title reigns: You 2, Sam 1, Title defenses: You 0, Sam 1, Longest reign: You 2 weeks, Sam 2 weeks, Biggest win: You +160, Sam +160"
         )
         XCTAssertTrue(app.staticTexts["WEEKS"].exists)
 
@@ -150,11 +152,24 @@ final class BeltUITests: XCTestCase {
             ("archived", 0x12, "Sam won · Jul 11 – 17. You 2,980 points. Sam 3,140 points. Sam took the belt"),
             ("archived", 0x11, "You won · Jul 4 – 10. You 3,210 points. Sam 3,050 points. You took the belt"),
         ]
-        XCTAssertEqual(
-            app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "competition.sharing."))
-                .allElementsBoundByIndex.map(\.identifier),
-            weeks.map { weekID($0.0, $0.1) }
-        )
+        // This week's match sits on top; below it the latest five weeks,
+        // then "All 6 weeks".
+        func listed() -> [String] {
+            var ids = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "competition.sharing."))
+                .allElementsBoundByIndex.map(\.identifier)
+            let live = ids.firstIndex(of: weekID("active", 0x17))
+            XCTAssertNotNil(live, "this week's card")
+            if let live { ids.remove(at: live) }
+            return ids
+        }
+        XCTAssertTrue(element("competition.person.now").exists)
+        XCTAssertEqual(listed(), weeks.prefix(5).map { weekID($0.0, $0.1) })
+        let allWeeks = element("competition.person.allWeeks")
+        scrollToElement(allWeeks)
+        XCTAssertTrue(allWeeks.label.hasPrefix("All 6 weeks"), allWeeks.label)
+        allWeeks.tap()
+        XCTAssertTrue(element(weekID("archived", 0x11)).waitForExistence(timeout: 3))
+        XCTAssertEqual(listed(), weeks.map { weekID($0.0, $0.1) })
         for (state, byte, label) in weeks {
             let row = element(weekID(state, byte))
             scrollToElement(row)
@@ -182,6 +197,11 @@ final class BeltUITests: XCTestCase {
             goBack(to: "Sam")
             XCTAssertTrue(element("competition.person.belt").exists)
         }
+        // Seen, so the belt counts Aug 8 – 14: the defense and 3 weeks.
+        XCTAssertEqual(
+            element("competition.person.belt").label,
+            "You hold the belt, Since Jul 31 · 3 weeks, 1 defense, Title reigns: You 2, Sam 1, Title defenses: You 1, Sam 1, Longest reign: You 3 weeks, Sam 2 weeks, Biggest win: You +160, Sam +160"
+        )
         goBack(to: "History")
         goBack(to: "Home")
     }
@@ -195,7 +215,7 @@ final class BeltUITests: XCTestCase {
         )
         XCTAssertEqual(
             element("competition.person.belt").label,
-            "\(Self.longName) holds the belt, Since Jul 31 · 3 weeks, 1 defense, Record: You 0–2–1, \(Self.longName) 2–0–1, Title reigns: You 0, \(Self.longName) 1, Title defenses: You 0, \(Self.longName) 1, Most defenses: You 0, \(Self.longName) 1, Longest reign: You 0 weeks, \(Self.longName) 3 weeks, Biggest win: You –, \(Self.longName) +160"
+            "\(Self.longName) holds the belt, Since Jul 31 · 3 weeks, 1 defense, Title reigns: You 0, \(Self.longName) 1, Title defenses: You 0, \(Self.longName) 1, Longest reign: You –, \(Self.longName) 3 weeks, Biggest win: You –, \(Self.longName) +160"
         )
         let took = element(weekID("archived", 0x21))
         scrollToElement(took)
@@ -235,10 +255,8 @@ final class BeltUITests: XCTestCase {
             element("competition.person.record").label,
             "Former competitor, 1 win, 0 losses. 1 week"
         )
-        XCTAssertEqual(
-            element("competition.person.belt").label,
-            "The belt is retired, Record: You 1–0, Former competitor 0–1, Title reigns: You 1, Former competitor 0, Title defenses: You 0, Former competitor 0, Most defenses: You 0, Former competitor 0, Longest reign: You 1 week, Former competitor 0 weeks, Biggest win: You +160, Former competitor –"
-        )
+        // A deleted account's ledger: a retired belt is the title only.
+        XCTAssertEqual(element("competition.person.belt").label, "The belt is retired")
         let week = element(weekID("archived", 0x51))
         XCTAssertEqual(
             normalized(week.label),
@@ -252,14 +270,13 @@ final class BeltUITests: XCTestCase {
     func testPersonPageWhileTheNextWeekIsTallying() {
         launchLab()
         openPerson(0x31, title: "Riley")
+        // One finished week: no tale of the tape until 3.
+        XCTAssertEqual(element("competition.person.belt").label, "You hold the belt, Since Aug 7 · 1 week")
+        // The tallying week sits on top; only the finished week is listed.
         XCTAssertEqual(
-            element("competition.person.belt").label,
-            "You hold the belt, Since Aug 7 · 1 week, Record: You 1–0, Riley 0–1, Title reigns: You 1, Riley 0, Title defenses: You 0, Riley 0, Most defenses: You 0, Riley 0, Longest reign: You 1 week, Riley 0 weeks, Biggest win: You +160, Riley –"
-        )
-        // Only the finished week is listed.
-        XCTAssertEqual(
-            app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "competition.sharing.")).count,
-            1
+            Set(app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@", "competition.sharing."))
+                .allElementsBoundByIndex.map(\.identifier)),
+            [weekID("tallying", 0x32), weekID("archived", 0x31)]
         )
         openWeek(weekID("archived", 0x31), title: "Riley")
         assertBanner("You took the belt")
@@ -354,6 +371,10 @@ final class BeltUITests: XCTestCase {
                     shot("\(screen)-belt", suffix)
                 }
                 if byte == 0x16 {
+                    // The sixth week is behind "All 6 weeks".
+                    let allWeeks = element("competition.person.allWeeks")
+                    scrollToElement(allWeeks)
+                    allWeeks.tap()
                     scrollToElement(element(weekID("archived", 0x11)))
                     shot("person-you-weeks", suffix)
                     for (state, week, name) in [

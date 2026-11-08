@@ -40,11 +40,16 @@ struct RemoteCompetitionCacheEntry: Codable, Equatable, Sendable {
     let lastSeenServerSequence: Int64
     // ponytail: owner activity rides in the 1 MiB inventory file, ~2–4 KB per match; move it to its own file if a profile nears ~250 listed matches.
     let ownerActivity: RemoteOwnerActivity?
+    /// Move, Exercise and Stand by server sequence, for score rows journaled
+    /// before rows kept them. Nil until a finished match has been checked;
+    /// empty when nothing was missing.
+    let ringBackfill: [Int64: [Int]]?
 
     init(
         descriptor: CompetitionDescriptor,
         lastSeenServerSequence: Int64,
-        ownerActivity: RemoteOwnerActivity? = nil
+        ownerActivity: RemoteOwnerActivity? = nil,
+        ringBackfill: [Int64: [Int]]? = nil
     ) throws {
         guard lastSeenServerSequence >= 0,
               lastSeenServerSequence <= descriptor.serverCursor
@@ -54,6 +59,7 @@ struct RemoteCompetitionCacheEntry: Codable, Equatable, Sendable {
         self.descriptor = descriptor
         self.lastSeenServerSequence = lastSeenServerSequence
         self.ownerActivity = ownerActivity
+        self.ringBackfill = ringBackfill
     }
 }
 
@@ -445,6 +451,7 @@ struct RemoteCompetitionMaterialization: Equatable, Sendable {
     let descriptor: CompetitionDescriptor
     let journal: LoadedCompetitionJournal
     var ownerActivity: RemoteOwnerActivity? = nil
+    var ringBackfill: [Int64: [Int]]? = nil
 }
 
 struct RemoteCompetitionRuntimeIDFailure: Equatable, Sendable {
@@ -730,7 +737,8 @@ actor RemoteCompetitionRuntime {
                 let cacheEntry = try RemoteCompetitionCacheEntry(
                     descriptor: descriptor,
                     lastSeenServerSequence: descriptor.serverCursor,
-                    ownerActivity: synchronized.materialization.ownerActivity
+                    ownerActivity: synchronized.materialization.ownerActivity,
+                    ringBackfill: synchronized.materialization.ringBackfill
                 )
                 outcomes.append(
                     .success(synchronized.materialization)
@@ -802,7 +810,8 @@ actor RemoteCompetitionRuntime {
                         RemoteCompetitionMaterialization(
                             descriptor: entry.descriptor,
                             journal: loaded,
-                            ownerActivity: entry.ownerActivity
+                            ownerActivity: entry.ownerActivity,
+                            ringBackfill: entry.ringBackfill
                         )
                     )
                 )
@@ -974,6 +983,11 @@ actor RemoteCompetitionRuntime {
                     for: refreshed.materialization
                 )
                 attested.ownerActivity = refreshed.ownerActivity
+                attested.ringBackfill = await ringBackfill(
+                    descriptor: descriptor,
+                    journal: attested.journal,
+                    cached: cachedEntry?.ringBackfill
+                )
                 return RemoteCompetitionSynchronizationOutcome(
                     materialization: attested,
                     activityFailure: refreshed.activityFailure
@@ -989,6 +1003,44 @@ actor RemoteCompetitionRuntime {
             }
             throw error
         }
+    }
+
+    /// A finished match's ring values for rows journaled before rows kept
+    /// them: its whole feed read once more, then never again. Display only, so
+    /// a failed read waits for the next refresh instead of failing the match.
+    private func ringBackfill(
+        descriptor: CompetitionDescriptor,
+        journal: LoadedCompetitionJournal,
+        cached: [Int64: [Int]]?
+    ) async -> [Int64: [Int]]? {
+        if let cached { return cached }
+        switch descriptor.lifecycle {
+        case .completed, .archived: break
+        default: return nil
+        }
+        let lacksRings = journal.projection.remoteScoreLedgers.values.contains { ledger in
+            (1...7).contains { ordinal in
+                guard let row = try? ledger.visibleEntry(forActiveDayOrdinal: ordinal) else {
+                    return false
+                }
+                return row.acceptedCentiPoints != nil && row.ringBasisPoints == nil
+            }
+        }
+        guard lacksRings else { return [:] }
+        guard let history = try? await fetchHistory(for: descriptor) else { return nil }
+        var rings: [Int64: [Int]] = [:]
+        for change in history {
+            guard case let .score(score) = change.payload,
+                  let values = competitionRingBasisPoints(
+                      score.acceptedCentiPoints,
+                      score.moveBasisPoints,
+                      score.exerciseBasisPoints,
+                      score.standBasisPoints
+                  )
+            else { continue }
+            rings[score.serverSequence] = values
+        }
+        return rings
     }
 
     private func advanceClock(

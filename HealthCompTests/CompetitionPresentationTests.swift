@@ -1346,6 +1346,76 @@ final class CompetitionPresentationTests: XCTestCase {
         XCTAssertNil(competitionLeadLine([day(1, 50, 0)], currentDayOrdinal: 1))
     }
 
+    func testLeadMomentsAreTheirBiggestLeadThenYourBestDay() throws {
+        // Oct 25 – 31 with Sam, through Thursday (Day 5): Sun 25 Oct is Day 1.
+        func day(_ ordinal: Int, _ you: Double?, _ them: Double?, occurred: Bool = true) -> LocalCompetitionDayPresentation {
+            LocalCompetitionDayPresentation(
+                day: try! CompetitionDay(era: 1, year: 2026, month: 10, day: 24 + ordinal, timeZoneIdentifier: "UTC"),
+                ordinal: ordinal,
+                ownerAcceptedPoints: you,
+                ownerLatestAvailability: occurred ? .observed : .notYetOccurred,
+                opponentRevealedPoints: them
+            )
+        }
+        let en = Locale(identifier: "en_US")
+        let week = [
+            day(1, 412, 394), day(2, 365, 395), day(3, 301, 329), day(4, 434, 400),
+            day(5, 420, 362), day(6, 120, 140), day(7, nil, nil, occurred: false),
+        ]
+        let line = try XCTUnwrap(competitionLeadLine(week, currentDayOrdinal: 6))
+        let moments = competitionLeadMoments(line, days: week, opponentName: "Sam")
+        XCTAssertEqual(moments.map(\.index), [3, 4])
+        XCTAssertEqual(moments.map(\.isYours), [false, true])
+        XCTAssertEqual(moments.map { weekdayText($0.day, locale: en) }, ["Tue", "Wed"])
+        XCTAssertEqual(moments.map(\.text), ["Sam’s biggest lead, 40", "Your best day, 434"])
+
+        // Never behind: only your best day. Your best day on their biggest
+        // lead steps aside rather than stack.
+        let won = [day(1, 300, 100), day(2, 200, 100)]
+        let ahead = try XCTUnwrap(competitionLeadLine(won, currentDayOrdinal: 3))
+        let aheadMoments = competitionLeadMoments(ahead, days: won, opponentName: "Sam")
+        XCTAssertEqual(aheadMoments.map(\.index), [1])
+        XCTAssertEqual(aheadMoments.map(\.isYours), [true])
+        let lost = [day(1, 300, 400), day(2, 100, 50)]
+        let behind = try XCTUnwrap(competitionLeadLine(lost, currentDayOrdinal: 3))
+        let behindMoments = competitionLeadMoments(behind, days: lost, opponentName: "Sam")
+        XCTAssertEqual(behindMoments.map(\.index), [1])
+        XCTAssertEqual(behindMoments.map(\.isYours), [false])
+    }
+
+    func testLeadMomentMovesOffASlashButStaysOnTheLineOtherwise() {
+        let axis: CGFloat = 60
+        // Clear of every slash: on the line.
+        XCTAssertEqual(competitionLeadMomentY(at: CGPoint(x: 100, y: 66), axis: axis, changes: [160], height: 120), 66)
+        // Over a slash, below the axis: moves down, clear of it.
+        let below = competitionLeadMomentY(at: CGPoint(x: 100, y: 66), axis: axis, changes: [104], height: 120)
+        XCTAssertGreaterThanOrEqual(below - axis, 25)
+        // No room below: goes above instead.
+        let above = competitionLeadMomentY(at: CGPoint(x: 100, y: 104), axis: 100, changes: [104], height: 120)
+        XCTAssertGreaterThanOrEqual(100 - above, 25)
+    }
+
+    func testClapsAreForTheirFinishedScoredDays() throws {
+        func day(_ ordinal: Int, them: Double?, occurred: Bool = true) -> LocalCompetitionDayPresentation {
+            LocalCompetitionDayPresentation(
+                day: try! CompetitionDay(era: 1, year: 2026, month: 10, day: 24 + ordinal, timeZoneIdentifier: "UTC"),
+                ordinal: ordinal,
+                ownerAcceptedPoints: 100,
+                ownerLatestAvailability: occurred ? .observed : .notYetOccurred,
+                opponentRevealedPoints: them
+            )
+        }
+        XCTAssertTrue(competitionDayIsClappable(day(3, them: 329), currentDayOrdinal: 4))
+        XCTAssertFalse(competitionDayIsClappable(day(4, them: 329), currentDayOrdinal: 4), "today waits")
+        XCTAssertFalse(competitionDayIsClappable(day(2, them: nil), currentDayOrdinal: 4), "no score to clap")
+        XCTAssertFalse(competitionDayIsClappable(day(5, them: nil, occurred: false), currentDayOrdinal: nil))
+        XCTAssertTrue(competitionDayIsClappable(day(7, them: 310), currentDayOrdinal: nil), "tallying")
+        XCTAssertEqual(
+            competitionClapLabel(opponentName: "Sam", day: day(3, them: 329).day, locale: Locale(identifier: "en_US")),
+            "Clap for Sam’s Tuesday"
+        )
+    }
+
     func testDayListTextIsSingularPluralAndCapped() {
         let en = Locale(identifier: "en_US")
         XCTAssertEqual(competitionDayListText([7], locale: en), "Day 7")
@@ -1848,15 +1918,18 @@ final class CompetitionPresentationTests: XCTestCase {
         let belt = titleFold([(.win, 412.4), (.win, 10), (.tie, 0), (.loss, 268), (.loss, 1)]).belt
         let rows = competitionTaleOfTheTape(belt)
 
+        // Four rows about the belt: the record is the page's header.
         XCTAssertEqual(rows.map(\.label), [
-            "Record", "Title reigns", "Title defenses", "Most defenses", "Longest reign", "Biggest win",
+            "Title reigns", "Title defenses", "Longest reign", "Biggest win",
         ])
-        XCTAssertEqual(rows.map(\.you), ["2–2–1", "1", "1", "1", "3 weeks", "+412"])
-        XCTAssertEqual(rows.map(\.them), ["2–2–1", "1", "1", "1", "2 weeks", "+268"])
+        XCTAssertEqual(rows.map(\.you), ["1", "1", "3 weeks", "+412"])
+        XCTAssertEqual(rows.map(\.them), ["1", "1", "2 weeks", "+268"])
         XCTAssertEqual(
             competitionTaleOfTheTape(titleFold([(.win, 5)]).belt).map(\.them),
-            ["0–1", "0", "0", "0", "0 weeks", "–"]
+            ["0", "0", "–", "–"]
         )
+        // A win under half a point keeps its decimals rather than read +0.
+        XCTAssertEqual(competitionTaleOfTheTape(titleFold([(.win, 0.4)]).belt).map(\.you).last, "+" + competitionPointsText(0.4, fractionDigits: 2))
     }
 
     func testCeremonyForEachEventAndNothingElse() {
@@ -2322,6 +2395,35 @@ final class CompetitionPresentationTests: XCTestCase {
         XCTAssertEqual(try updatedAt(you: later, them: earlier), later)
         XCTAssertEqual(try updatedAt(you: earlier, them: nil), earlier)
         XCTAssertNil(try updatedAt(you: nil, them: nil))
+    }
+
+    func testWidgetSnapshotCarriesWhatItTakesForTheWatch() throws {
+        let base = homePresentation(id: 3, lifecycle: .active(dayOrdinal: 5))
+        let takes = takesCompetition(accepted: try takesRings(move: (410, 600), exercise: (24, 30), stand: (8, 12)))
+        func chase(user: Double) throws -> CompetitionWidgetSnapshot.Chase? {
+            try XCTUnwrap(CompetitionWidgetSnapshot.Match(presentation: LocalCompetitionPresentation(
+                id: base.id,
+                ownerDisplayName: base.ownerDisplayName,
+                opponentDisplayName: base.opponentDisplayName,
+                opponentIdentity: base.opponentIdentity,
+                lifecycle: takes.lifecycle,
+                acceptedConfiguration: base.acceptedConfiguration,
+                userPoints: user,
+                opponentPoints: takes.opponentPoints,
+                days: takes.days,
+                currentDayOrdinal: takes.currentDayOrdinal,
+                lastRefresh: nil,
+                tally: nil,
+                terminalResult: nil,
+                evaluatedAt: homeNow,
+                timeZoneIdentifier: base.timeZoneIdentifier,
+                lastSuccessfulFullWindowRefreshAt: nil,
+                opponentUpdatedAt: nil
+            ))).chase
+        }
+        XCTAssertEqual(try chase(user: takes.userPoints), .init(day: 5, points: 39))
+        XCTAssertEqual(try chase(user: 500), .init(day: 5, points: nil))
+        XCTAssertNil(try chase(user: 1_200))
     }
 
     func testHomeStatusLineAddsChallengeExpiry() throws {

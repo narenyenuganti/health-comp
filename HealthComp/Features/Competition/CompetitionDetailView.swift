@@ -19,6 +19,9 @@ struct CompetitionDetailView: View {
     var endPractice: (() -> Void)? = nil
     /// Real matches only: Report Photo in the ••• menu, while their photo shows.
     var reportPhoto: CompetitionReportPhoto? = nil
+    /// The menu's first item, once a week with them has finished. This week
+    /// isn't in it until it has a final result.
+    var recordLink: CompetitionRecordLink? = nil
 
     @Environment(\.locale) private var locale
     @Environment(\.timeZone) private var timeZone
@@ -36,6 +39,8 @@ struct CompetitionDetailView: View {
     @State private var weekShown = false
     @State private var showsEndPracticeConfirmation = false
     @State private var showsReportPhotoConfirmation = false
+    /// The day you last clapped from the Week list, for the line under it.
+    @State private var clappedDay: Int?
     @Environment(\.profilePhotos) private var photos
 
     /// Today's numbers or the whole week; the scoreboard stays above both.
@@ -128,6 +133,13 @@ struct CompetitionDetailView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
+                    if let recordLink {
+                        Button(action: recordLink.open) {
+                            Label(recordLink.title, systemImage: "chart.bar")
+                        }
+                        .accessibilityLabel(recordLink.accessibilityLabel)
+                        .accessibilityIdentifier("competition.record-link")
+                    }
                     if let muteButton {
                         muteButton
                     }
@@ -465,8 +477,10 @@ struct CompetitionDetailView: View {
                 opponentName: competition.opponentDisplayName,
                 showsDates: true,
                 isGrown: !weekGrows,
-                selectDay: { drawer = .day($0.ordinal) }
+                selectDay: { drawer = .day($0.ordinal) },
+                clap: weekClap
             )
+            weekClapNote
             CompetitionRingLegend(
                 days: competition.days,
                 opponentName: competition.opponentDisplayName
@@ -576,6 +590,64 @@ struct CompetitionDetailView: View {
                 dayActivity(day, showsPullHint: false)
             }
             .moving(Motion.settle, value: reactions?.failed.contains(.day(ordinal)))
+        }
+    }
+
+    /// Claps from the Week list go with the day reactions.
+    private var weekClap: CompetitionDayClap? {
+        guard let reactions, allowsDayReactions else { return nil }
+        return CompetitionDayClap(
+            sent: { reactions.selection(.day($0), in: competition) },
+            isPending: { reactions.pending[.day($0)] != nil },
+            send: { ordinal in
+                clappedDay = ordinal
+                reactions.react(.day(ordinal), .clap)
+                if let text = clapNoteText(ordinal) {
+                    AccessibilityNotification.Announcement(text).post()
+                }
+            }
+        )
+    }
+
+    private func clapNoteText(_ ordinal: Int) -> String? {
+        competition.days.first { $0.ordinal == ordinal }.map {
+            "You clapped \(competition.opponentDisplayName)’s \(weekdayName($0.day, locale: locale))"
+        }
+    }
+
+    /// What your last clap from the list sent, or why it didn't.
+    @ViewBuilder
+    private var weekClapNote: some View {
+        if let ordinal = clappedDay, let reactions, allowsDayReactions,
+           let text = clapNoteText(ordinal) {
+            if reactions.failed.contains(.day(ordinal)) {
+                Label("Couldn’t send your reaction. Try again.", systemImage: "exclamationmark.triangle.fill")
+                    .font(.caption)
+                    .foregroundStyle(Theme.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("competition.week.clap.error")
+                    .transition(Motion.appear)
+            } else if reactions.selection(.day(ordinal), in: competition) == .clap {
+                HStack(spacing: 10) {
+                    CompetitionReactionEmoji(kind: .clap)
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(text)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(Theme.ink)
+                        Text("Open a day for all four reactions.")
+                            .font(.footnote)
+                            .foregroundStyle(Theme.secondary)
+                    }
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 12)
+                .themePanel(cornerRadius: 14)
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("competition.week.clap.sent")
+                .transition(Motion.appear)
+            }
         }
     }
 
@@ -890,7 +962,10 @@ private struct CompetitionScoreboardPanel: View {
                         scoreboard
                         ZStack {
                             if isProvisional {
-                                provisionalTag
+                                // The score headers already say "provisional total".
+                                CompetitionProvisionalTag()
+                                    .frame(maxWidth: .infinity)
+                                    .accessibilityHidden(true)
                                     .transition(Motion.appear)
                             } else {
                                 VStack(alignment: .leading, spacing: 16) {
@@ -955,20 +1030,6 @@ private struct CompetitionScoreboardPanel: View {
         .accessibilityAddTraits(.isStaticText)
         .accessibilityLabel(status.line + (isMuted ? ". Muted" : ""))
         .accessibilityIdentifier("competition.status")
-    }
-
-    // The score headers already say "provisional total".
-    private var provisionalTag: some View {
-        Text("PROVISIONAL")
-            .font(.themeLabel)
-            .tracking(1.2)
-            .foregroundStyle(Theme.secondary)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 2)
-            .overlay(Capsule().stroke(Theme.outline))
-            .fixedSize()
-            .frame(maxWidth: .infinity)
-            .accessibilityHidden(true)
     }
 
     private var scoreboard: some View {
@@ -1254,6 +1315,20 @@ func competitionOwnerAvailabilityText(
         case .invalidSourceData:
             "Activity data could not be used."
         }
+    }
+}
+
+/// The tag a tallying score wears, here and on the person page.
+struct CompetitionProvisionalTag: View {
+    var body: some View {
+        Text("PROVISIONAL")
+            .font(.themeLabel)
+            .tracking(1.2)
+            .foregroundStyle(Theme.secondary)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 2)
+            .overlay(Capsule().stroke(Theme.outline))
+            .fixedSize()
     }
 }
 

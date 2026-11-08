@@ -136,6 +136,28 @@ extension CompetitionWidgetSnapshot.Match {
         return (redacted ? status : "\(status) · \(name)").uppercased()
     }
 
+    /// The chase bar while you trail on the day the phone worked it out for:
+    /// your points today against those plus what it takes ("55", "213 of 268
+    /// today"), or an empty bar and "Out of reach today".
+    func chase(
+        at date: Date,
+        locale: Locale = .current
+    ) -> (fill: Double, lead: String?, line: String, spoken: String)? {
+        guard let chase, side == .them, state(at: date) == .live(day: chase.day) else { return nil }
+        guard let points = chase.points else {
+            return (0, nil, "Out of reach today", "Out of reach today.")
+        }
+        let today = userDayPoints.indices.contains(chase.day - 1) ? userDayPoints[chase.day - 1] ?? 0 : 0
+        let total = competitionPointsText(today + points, locale: locale)
+        let line = "\(competitionPointsText(today, locale: locale)) of \(total) today"
+        return (
+            today / max(today + points, 1),
+            competitionPointsText(points, locale: locale),
+            line,
+            "\(competitionPointsAccessibilityText(points, locale: locale)) to take the lead. \(line)."
+        )
+    }
+
     /// "2 defenses", or nil before the first.
     var beltDefensesText: String? {
         guard let defenses = belt?.defenses, defenses > 0 else { return nil }
