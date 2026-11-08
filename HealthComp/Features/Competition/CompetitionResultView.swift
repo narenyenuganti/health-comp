@@ -71,6 +71,12 @@ struct CompetitionResultView: View {
                         .transition(Motion.appear)
                 }
 
+                // The Verdict's insights sit with the belt, before the rest.
+                if let split = competitionRingSplit(competition.days) {
+                    ringSplitPanel(split)
+                        .verdictBeat(2, shown: isShown)
+                }
+
                 if let reactions {
                     reactionPanel(reactions)
                         .verdictBeat(2, shown: isShown)
@@ -85,11 +91,6 @@ struct CompetitionResultView: View {
                     .foregroundStyle(Theme.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .verdictBeat(2, shown: isShown)
-                }
-
-                if let split = competitionRingSplit(competition.days) {
-                    ringSplitPanel(split)
-                        .verdictBeat(2, shown: isShown)
                 }
 
                 if !competition.days.isEmpty {

@@ -129,7 +129,7 @@ extension CompetitionWidgetSnapshot {
 
 extension CompetitionWidgetSnapshot.Belt {
     /// Nil with no holder, or while an earlier match with them could still
-    /// move it. Walks the pair's weeks in the belt fold's order.
+    /// move it. This week's card and the reign's defenses come from the belt fold.
     init?(
         for competition: CompetitionPresentation,
         records: [CompetitionOpponentRecord],
@@ -139,35 +139,14 @@ extension CompetitionWidgetSnapshot.Belt {
               let record = records.first(where: { $0.opponentIdentity == competition.opponentIdentity }),
               let holder = record.belt.holder
         else { return nil }
-        func end(_ week: CompetitionPresentation) -> Date {
-            week.acceptedConfiguration.flatMap { competitionScheduleBoundaries($0.schedule)?.end } ?? .distantPast
+        let card: Card? = switch record.belt.events[competition.id] {
+        case .took(.you, nil, _): .earned
+        case let .took(.you, reign?, defenses): .taken(weeks: reign, defenses: defenses)
+        case let .took(.them, reign?, defenses): .lost(weeks: reign, defenses: defenses)
+        case let .defended(.you, _, defenses): .defended(defenses)
+        case .took(.them, nil, _), .defended(.them, _, _), .kept, .vacant, nil: nil
         }
-        let weeks = competitionHistoryWeeks(competitions)
-            .filter { $0.opponentIdentity == competition.opponentIdentity }
-            .sorted { (end($0), $0.id.rawValue.uuidString) < (end($1), $1.id.rawValue.uuidString) }
-        var defenses = 0
-        var card: Card?
-        for week in weeks {
-            var weekCard: Card?
-            switch record.belt.events[week.id] {
-            case let .took(by, fromWeeks):
-                switch (by, fromWeeks) {
-                case (.you, nil): weekCard = .earned
-                case let (.you, reign?): weekCard = .taken(weeks: reign, defenses: defenses)
-                case let (.them, reign?): weekCard = .lost(weeks: reign, defenses: defenses)
-                case (.them, nil): break
-                }
-                defenses = 0
-            case let .kept(by, _):
-                // A tie keeps the belt but isn't a defense.
-                guard week.terminalResult?.outcome == (by == .you ? .win : .loss) else { break }
-                defenses += 1
-                if by == .you { weekCard = .defended(defenses) }
-            case .vacant, nil:
-                break
-            }
-            if week.id == competition.id { card = weekCard }
-        }
+        let defenses = record.belt.current?.defenses ?? 0
         self.init(holder: holder == .you ? .you : .them, defenses: defenses, card: card)
     }
 }
