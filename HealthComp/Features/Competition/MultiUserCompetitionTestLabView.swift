@@ -59,6 +59,9 @@ enum MultiUserCompetitionTestLabScenario:
     case belt
     /// The same history with only Sam's match live: the hero card's chip.
     case beltHero = "belt-hero"
+    /// A finished week for each belt event, ceremony or not. Ceremonies also
+    /// need `--belt-ceremonies`.
+    case beltCeremony = "belt-ceremony"
     /// The round's features together, through Home's own reducer: Sam's
     /// match with the belt, a reaction and a nudge; Sam's last week with the
     /// belt banner, a reaction and Share Result; Jordan tallying with a
@@ -156,7 +159,7 @@ struct MultiUserCompetitionTestLabRootView: View {
     @ViewBuilder
     private var scenarioView: some View {
         switch configuration.scenario {
-        case .sharing, .sharingCustomScheme, .whatItTakes, .belt, .beltHero:
+        case .sharing, .sharingCustomScheme, .whatItTakes, .belt, .beltHero, .beltCeremony:
             MultiUserCompetitionSharingTestLabView(scenario: configuration.scenario)
         case .coldClaim, .warmClaim, .signedOutClaim,
              .unavailableClaim, .offlineClaim:
@@ -407,6 +410,7 @@ private struct MultiUserCompetitionSharingTestLabView: View {
         case .whatItTakes: MultiUserCompetitionTestLabFixtures.whatItTakesPublication()
         case .belt: MultiUserCompetitionTestLabFixtures.beltPublication(heroOnly: false)
         case .beltHero: MultiUserCompetitionTestLabFixtures.beltPublication(heroOnly: true)
+        case .beltCeremony: MultiUserCompetitionTestLabFixtures.beltPublication(heroOnly: false, ceremonies: true)
         default: MultiUserCompetitionTestLabFixtures.publication(
             archivedIDs: archivedIDs,
             ownReactions: ownReactions
@@ -511,7 +515,7 @@ private struct MultiUserCompetitionClaimTestLabView: View {
              .healthOnboarding, .healthOnboardingChallenge, .healthOnboardingClaim,
              .incomingChallenge, .block, .blockedAccount, .blockClaim,
              .nudge, .nudgeSimulated, .whatItTakes, .reactions, .reactionsSimulated,
-             .liveActivity, .practice, .notificationChoices, .belt, .beltHero, .featureRound:
+             .liveActivity, .practice, .notificationChoices, .belt, .beltHero, .beltCeremony, .featureRound:
             .ready
         }
         _status = State(initialValue: initialStatus)
@@ -2601,7 +2605,13 @@ private enum MultiUserCompetitionTestLabFixtures {
     /// - Morgan: two ties, so nobody holds it.
     /// - Former competitor: a win, then the account was deleted mid-match.
     /// `heroOnly` keeps Sam's as the one live match, so Home draws the hero card.
-    static func beltPublication(heroOnly: Bool) -> LocalCompetitionPublication {
+    /// `ceremonies` swaps in one person per belt event, none of them live:
+    /// - Avery: a first win. Earned.
+    /// - Sam: L L T L, then you won. Taken from a 4-week reign with 2 defenses.
+    /// - Riley: W W T W, then Riley won. Lost a 4-week reign with 2 defenses.
+    /// - Jordan: W W W W. Defended, the 3rd title defense.
+    /// - Casey took a vacant belt, Dana defended, Taylor tied: no ceremony.
+    static func beltPublication(heroOnly: Bool, ceremonies: Bool = false) -> LocalCompetitionPublication {
         func id(_ byte: UInt8) -> CompetitionID {
             CompetitionID(UUID(uuidString: String(format: "A3000000-0000-4000-8000-0000000000%02X", byte))!)
         }
@@ -2713,10 +2723,34 @@ private enum MultiUserCompetitionTestLabFixtures {
             live(0x33, "Riley", riley),
             live(0x52, competitionFormerCompetitorName, former),
         ]
+        let ceremonyWeeks = [
+            week(0x61, "Avery", person(6), startDay: 8, .win, completed: true),
+            week(0x71, "Sam", sam, month: 7, startDay: 11, .loss),
+            week(0x72, "Sam", sam, month: 7, startDay: 18, .loss),
+            week(0x73, "Sam", sam, month: 7, startDay: 25, .tie),
+            week(0x74, "Sam", sam, startDay: 1, .loss),
+            week(0x75, "Sam", sam, startDay: 8, .win, completed: true),
+            week(0x81, "Riley", riley, month: 7, startDay: 11, .win),
+            week(0x82, "Riley", riley, month: 7, startDay: 18, .win),
+            week(0x83, "Riley", riley, month: 7, startDay: 25, .tie),
+            week(0x84, "Riley", riley, startDay: 1, .win),
+            week(0x85, "Riley", riley, startDay: 8, .loss, completed: true),
+            week(0x91, "Jordan", person(9), month: 7, startDay: 18, .win),
+            week(0x92, "Jordan", person(9), month: 7, startDay: 25, .win),
+            week(0x93, "Jordan", person(9), startDay: 1, .win),
+            week(0x94, "Jordan", person(9), startDay: 8, .win, completed: true),
+            week(0xA1, "Casey", person(10), startDay: 8, .loss, completed: true),
+            week(0xB1, "Dana", person(11), startDay: 1, .loss),
+            week(0xB2, "Dana", person(11), startDay: 8, .loss, completed: true),
+            week(0xC1, "Taylor", person(12), startDay: 1, .win),
+            week(0xC2, "Taylor", person(12), startDay: 8, .tie, completed: true),
+        ]
         return LocalCompetitionPublication(
             publicationRevision: 1,
             dashboard: LocalCompetitionDashboard(
-                competitions: [live(0x17, "Sam", sam)] + (heroOnly ? [] : otherLive) + finished,
+                competitions: ceremonies
+                    ? ceremonyWeeks
+                    : [live(0x17, "Sam", sam)] + (heroOnly ? [] : otherLive) + finished,
                 awards: [],
                 issues: [],
                 hiddenTerminalCompetitionCount: 0

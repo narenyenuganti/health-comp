@@ -103,7 +103,7 @@ Add to the audit spec's §5. These apply to every shipped string, VoiceOver labe
 
 | Term | Means | Don't say |
 |---|---|---|
-| **Belt** | One per pair of people; won by the first decided week, taken by beating the holder. Verbs: "holds", "took", "kept". "Title changes" is the one use of "title" (person page) | championship, trophy, crown, stakes |
+| **Belt** | One per pair of people; won by the first decided week, taken by beating the holder. Verbs: "holds", "took", "kept". "Title", "title defense" and "reign" are allowed (2026-11-05: a title defense is a win while holding the belt; a tie or the take is not one) | championship, trophy, crown, stakes |
 | **Practice** / practice match | A solo 7-day week on this iPhone against the pacer. Status lines read "Practice · …" | test match, solo mode, bot |
 | **Pacer** | The practice opponent's display name | AI, computer, simulated opponent (except the existing rules row "Pacer is simulated.") |
 | **Reaction** | One of four presets (👏 Clap, 🔥 Fire, 😤 Huffing, 🫡 Salute) on the other person's day or the result. "{Name} reacted to your Day 2" | like, emoji, comment |

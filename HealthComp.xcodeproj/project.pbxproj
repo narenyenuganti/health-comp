@@ -14,6 +14,7 @@
 		044015DA32180EF60CF5DC2A /* CompetitionTraceIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB243F0BB966F7049D05D56C /* CompetitionTraceIntegrationTests.swift */; };
 		0705786CDE37ABA8956B3304 /* NotificationChoicesUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 64ABF7FD8ADDAE6821EDC24B /* NotificationChoicesUITests.swift */; };
 		07B51177CD4962804CDB26F1 /* AuthenticationClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B9BDFDDD2E2FDAB7931BA09 /* AuthenticationClient.swift */; };
+		07FDF1C6424521C77C6935F1 /* defended.mp4 in Resources */ = {isa = PBXBuildFile; fileRef = 2888E29265A40B8B0B6C8410 /* defended.mp4 */; };
 		087A4FE8435E81D45123CAC5 /* StagingScoringOperatorControls.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2D014DB9BF9CBBBC04BCD0B7 /* StagingScoringOperatorControls.swift */; };
 		093DC7E7B8D1993E54AF5D8F /* CompetitionClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6627DB76B896A69CA64FB159 /* CompetitionClient.swift */; };
 		0B50733A9DA68107D84F2BF8 /* LiveActivityUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FB2BD1609D5C6054896B040D /* LiveActivityUITests.swift */; };
@@ -57,10 +58,12 @@
 		3D7EA73CDC827C2224DFF76F /* CompetitionNotificationPreferences.swift in Sources */ = {isa = PBXBuildFile; fileRef = 78CD3641AF9961D0DE49E710 /* CompetitionNotificationPreferences.swift */; };
 		3DDD361C9B108A53763C47B8 /* StagingAppleWebAuthenticationConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3A18A121BDE529295DC3BAD /* StagingAppleWebAuthenticationConfiguration.swift */; };
 		3E9AFCB2C2C40C2F0662D72E /* MainTabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8DE98F9A6E165CAF241964EA /* MainTabView.swift */; };
+		3EDBD71DA92016845208969A /* CompetitionBeltCeremony.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3C0488BFCA772093125605E2 /* CompetitionBeltCeremony.swift */; };
 		3EF61DC4B5E1D8F171C71930 /* CompetitionNotificationModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 429BFB72B91624812F8A02B6 /* CompetitionNotificationModels.swift */; };
 		3F173DEB690AAB9D8B98667B /* MatchLiveActivityWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7068266A513948DD7D142CAB /* MatchLiveActivityWidget.swift */; };
 		3FC0C839F3D290C09C54C9D4 /* HealthKitObserverDeliveryClassifier.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45FD58C85D5EE740BBE2307B /* HealthKitObserverDeliveryClassifier.swift */; };
 		40513CB901AC87FFF3A78ADB /* SupabaseConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = BAD2EA144469EBA09645C0C8 /* SupabaseConfiguration.swift */; };
+		409EB2615EE06EFB1E660654 /* lost-final.jpg in Resources */ = {isa = PBXBuildFile; fileRef = 32B9F26CFF6D21366BDE91EE /* lost-final.jpg */; };
 		41CF9795CB853B8522FC9BC6 /* CompetitionResultView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FCDBD0348C760C1907099902 /* CompetitionResultView.swift */; };
 		420BDF83FD49D9E754C1DB0C /* NudgeUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A4C98DA12380EB04E5228ED /* NudgeUITests.swift */; };
 		420E5B3C3BA67E84B59059EF /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = E253E83C464C41456132789C /* Theme.swift */; };
@@ -80,6 +83,7 @@
 		548CAA89B58584D8851DA6EE /* BeltUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D362A9C189813C864E8BB5D /* BeltUITests.swift */; };
 		55708C5249C6BA5D2BE41A69 /* recipient-invitation-sql.json in Resources */ = {isa = PBXBuildFile; fileRef = F36B585E64E0FDD2DAAE5D2A /* recipient-invitation-sql.json */; };
 		57842F76DB92AA85B129F57C /* CompetitionCustomSchemeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A8E46DF226F0101C4902D95 /* CompetitionCustomSchemeTests.swift */; };
+		59A4BB3008716980820F0C0C /* defended.json in Resources */ = {isa = PBXBuildFile; fileRef = 6A2304DB02ADE523BFCA29EB /* defended.json */; };
 		5B459C8DA60793D0B9D2EB8D /* CompetitionWidgetSnapshotTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D318F86EDF71D4EBF0CCB74 /* CompetitionWidgetSnapshotTests.swift */; };
 		5DDCDC3DA51E4EA5BD74374C /* LocalCompetitionClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E38A46C1086F6393DC0FA12A /* LocalCompetitionClientTests.swift */; };
 		5DE7A5CF81E44A3B575C571A /* CompetitionSyncModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = B74EA43D24EEE51BE2DDEDAB /* CompetitionSyncModels.swift */; };
@@ -92,6 +96,7 @@
 		61D7414F977DAEBF9425C24C /* StagingActivityObservationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B6E59EB0F94271385170C864 /* StagingActivityObservationTests.swift */; };
 		633C2CCC1EFC5F2546E47402 /* RemoteCompetitionRuntime.swift in Sources */ = {isa = PBXBuildFile; fileRef = C552868F11DF18D3E8FB90CE /* RemoteCompetitionRuntime.swift */; };
 		63626B6583F3AA09DED4C760 /* Supabase in Frameworks */ = {isa = PBXBuildFile; productRef = 765098240911111A6F629AE3 /* Supabase */; };
+		637FA18744C38B81238B1B24 /* lost.json in Resources */ = {isa = PBXBuildFile; fileRef = C651172C5C0AE09C468076E2 /* lost.json */; };
 		65D1234EE43D981DD7756559 /* CompetitionDateFormatting.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC3953ECC27C54F100565844 /* CompetitionDateFormatting.swift */; };
 		664893A2DD239F6897D6B582 /* CompetitionDetailView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45B4CB5326E660812EDE995E /* CompetitionDetailView.swift */; };
 		6679DA44778F5B36AB876329 /* PermissionOnboardingClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = F300FAED4747AA225EB143F2 /* PermissionOnboardingClient.swift */; };
@@ -99,6 +104,7 @@
 		6889DEEA038530AC44D1DD99 /* FixtureActivitySourceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2CC1985FE34C77217A5DAAD0 /* FixtureActivitySourceTests.swift */; };
 		68E7EF63C482B3C302F04EBD /* MainTabFeature.swift in Sources */ = {isa = PBXBuildFile; fileRef = C1D8B3EF060D8C52F2299C95 /* MainTabFeature.swift */; };
 		6951A0E1D90273340663259F /* SupabaseCompetitionRemoteAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = C80D29D0BD360D57164DC524 /* SupabaseCompetitionRemoteAPI.swift */; };
+		6A62FEFFFFF5D9A45E379FC5 /* BeltCeremonyUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = ED81C5A1328943D778A8FF03 /* BeltCeremonyUITests.swift */; };
 		6AA830F2E1D0E6DE5CC84D62 /* AccountView.swift in Sources */ = {isa = PBXBuildFile; fileRef = EF9D8272E5FD39A82970617A /* AccountView.swift */; };
 		6BCDDCD3FC475AEA4415087D /* CompetitionRemoteAPI.swift in Sources */ = {isa = PBXBuildFile; fileRef = F5293E4F02146184E21401B1 /* CompetitionRemoteAPI.swift */; };
 		6C16DF7AF72FAB93F37639F1 /* Motion.swift in Sources */ = {isa = PBXBuildFile; fileRef = 561E47677F69283F909B6862 /* Motion.swift */; };
@@ -114,6 +120,9 @@
 		7AC8B015321B80E77EEEF3AF /* AccountDeletionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 091448CE772C0EE35F3C5B74 /* AccountDeletionTests.swift */; };
 		7C25EC1CE03E50E68B736A88 /* SupabaseAuthenticationClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8F0B7A0111ADA222B439C9D9 /* SupabaseAuthenticationClient.swift */; };
 		7C98D60F4FBA8CC9ECC4126B /* CompetitionLiveActivityTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 28F77E115B0E29F8B6D6E3B2 /* CompetitionLiveActivityTests.swift */; };
+		7CD7C9EF5466EC084DE7EE29 /* taken.json in Resources */ = {isa = PBXBuildFile; fileRef = B8DA5FB855E8232B3DCCA7DD /* taken.json */; };
+		7D6B12C43B28AD16DCE5A66C /* taken.mp4 in Resources */ = {isa = PBXBuildFile; fileRef = 5EA5CFEE91A9EB663AFEDD9C /* taken.mp4 */; };
+		7F188653DA1F973BDA208F93 /* earned.json in Resources */ = {isa = PBXBuildFile; fileRef = D5CAC5E433438D2BE69DF7A8 /* earned.json */; };
 		7F349991AF7E5B8AB86C1E0E /* CompetitionEnvironmentClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FC6B1F694361BA182C8C239D /* CompetitionEnvironmentClientTests.swift */; };
 		81109F66782CF21B1A77F052 /* CompetitionRecapTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3A1357F6B637C237208EE106 /* CompetitionRecapTests.swift */; };
 		82669C7399410C4DD256DEF9 /* loss.json in Resources */ = {isa = PBXBuildFile; fileRef = ABC64842924F0B681BDB3AC9 /* loss.json */; };
@@ -142,6 +151,7 @@
 		A933CF46EE745663C924FB92 /* FixtureActivitySource.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DD763262122302C88AA2F5 /* FixtureActivitySource.swift */; };
 		A9355407464950BBE1C920E6 /* CompetitionWeekChart.swift in Sources */ = {isa = PBXBuildFile; fileRef = 017114B95D382E56A88C9F3A /* CompetitionWeekChart.swift */; };
 		A9D2F08E9E2788D160090D3C /* MatchActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7FECE7A11BCFC65A4CCE6E8B /* MatchActivityAttributes.swift */; };
+		AB9CEBFAC9201B81690D71B2 /* earned.mp4 in Resources */ = {isa = PBXBuildFile; fileRef = 0CCB10B03665AE5137821D5A /* earned.mp4 */; };
 		AC27EE6DEBA9224CB7ACEAC3 /* SharedClientLifetime.swift in Sources */ = {isa = PBXBuildFile; fileRef = 515A5EEE3F6C865C5972A3B4 /* SharedClientLifetime.swift */; };
 		ACF7EB6354E49BC655F483DD /* PermissionOnboardingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4AAE86094E6A2B9B96B850BC /* PermissionOnboardingView.swift */; };
 		AD6A516F81E53576D840714E /* MatchActivityAttributes.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7FECE7A11BCFC65A4CCE6E8B /* MatchActivityAttributes.swift */; };
@@ -149,8 +159,10 @@
 		B0B792E1A5FDFA8112255420 /* AppAttestClientTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85C80155A733869ABAC1F483 /* AppAttestClientTests.swift */; };
 		B23F0459A115348014EF4500 /* CompetitionInviteView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F72580283C9D599F21484EB9 /* CompetitionInviteView.swift */; };
 		B29FF2F0455C354D914ED698 /* HealthKitProviderTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CF7DE04D723EFB17C6B0F55E /* HealthKitProviderTests.swift */; };
+		B38C2336228547E024678C6D /* earned-final.jpg in Resources */ = {isa = PBXBuildFile; fileRef = 113B39FD305A7EFD1E21C8E8 /* earned-final.jpg */; };
 		B508E276E3FE384530DF96B2 /* AccountSettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A41126B8D70DE4A10376D739 /* AccountSettingsView.swift */; };
 		B6899E8344F48093351F0A2F /* CompetitionPushRegistration.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6647E11CDA952495B6DD06A0 /* CompetitionPushRegistration.swift */; };
+		B854BEF309319485583E4FC4 /* taken-final.jpg in Resources */ = {isa = PBXBuildFile; fileRef = 7128647237263B55F89C3FBC /* taken-final.jpg */; };
 		BB8A276F99410E904AD6CF81 /* WhatItTakesUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 39AE399E36B3A5A5F3619501 /* WhatItTakesUITests.swift */; };
 		BBD9741CD776F299930705E7 /* StagingScoringResponseCaptureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5807455BF69B3050795BB69B /* StagingScoringResponseCaptureTests.swift */; };
 		BD4C2A51C3A73A0C4178E1C1 /* CompetitionRecapView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E3D37CEA378DC19DA488A488 /* CompetitionRecapView.swift */; };
@@ -176,6 +188,7 @@
 		DA998C07235B49E9345F6FE8 /* JSONCompetitionOutboxStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8249239D6EC13DC41463D081 /* JSONCompetitionOutboxStore.swift */; };
 		DC35549E42F6B1FA2A07BA25 /* CompetitionSyncCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9DF77F4B53514428AD771C0 /* CompetitionSyncCoordinatorTests.swift */; };
 		DD502924E9311DD9A99C81B2 /* CompetitionRouting.swift in Sources */ = {isa = PBXBuildFile; fileRef = 367629019F65C3FCD66B409F /* CompetitionRouting.swift */; };
+		DFC92BDF11FEACB2873F9887 /* lost.mp4 in Resources */ = {isa = PBXBuildFile; fileRef = 63446332AD0F80011C4D7FFC /* lost.mp4 */; };
 		E081A95A434343394750D800 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 58B754BE274F8905DD67F636 /* Assets.xcassets */; };
 		E2C81B0534EE9061E77A2BD5 /* SupabaseAppleWebDeletionTransportTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2F6768BD6108222519CD7CA7 /* SupabaseAppleWebDeletionTransportTests.swift */; };
 		E52A6FF60DEBF090A7A2143C /* AccountFeature.swift in Sources */ = {isa = PBXBuildFile; fileRef = B78FA5A4670AECA86AA95557 /* AccountFeature.swift */; };
@@ -188,6 +201,7 @@
 		F82EC37B40E95BB1575E2265 /* MultiUserCompetitionTestLabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2AB9F656F17E85A71D01764 /* MultiUserCompetitionTestLabView.swift */; };
 		F8A2F0C658F37F8EB109E773 /* HealthKitDeliveryDiagnostic.swift in Sources */ = {isa = PBXBuildFile; fileRef = 613A2B77D4E8A26D6A05F569 /* HealthKitDeliveryDiagnostic.swift */; };
 		FA4ADD09544E5A8FE5DB4FC5 /* CompetitionDayBar.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4942144DBF7C510B94D8D157 /* CompetitionDayBar.swift */; };
+		FAD92D553E38572357CB4265 /* defended-final.jpg in Resources */ = {isa = PBXBuildFile; fileRef = C535789091384DECE88738B3 /* defended-final.jpg */; };
 		FB55F2BA75D48FA01A4B55F6 /* AppleWebAccountDeletionClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = AF7183065EBF2A1841506F8C /* AppleWebAccountDeletionClient.swift */; };
 		FC8A2EF23ABB03B443068994 /* CompetitionPushRegistrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E4EC30544C4C442E5FDC2FE1 /* CompetitionPushRegistrationTests.swift */; };
 		FC8D536274D68264CF9C3675 /* HealthCompWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = EB791E8D1AD1F310219B014D /* HealthCompWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
@@ -296,7 +310,9 @@
 		0B62BF4147CD724EB04CECC6 /* late-watch-sync.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "late-watch-sync.json"; sourceTree = "<group>"; };
 		0C01C7894584DA0527D32431 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		0CBE1B97F76173B8D4292DCA /* CompetitionLeadText.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionLeadText.swift; sourceTree = "<group>"; };
+		0CCB10B03665AE5137821D5A /* earned.mp4 */ = {isa = PBXFileReference; path = earned.mp4; sourceTree = "<group>"; };
 		0D362A9C189813C864E8BB5D /* BeltUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BeltUITests.swift; sourceTree = "<group>"; };
+		113B39FD305A7EFD1E21C8E8 /* earned-final.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = "earned-final.jpg"; sourceTree = "<group>"; };
 		119AA0F1200F5722F1BC1092 /* RemoteCompetitionFeatureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteCompetitionFeatureTests.swift; sourceTree = "<group>"; };
 		16F2F6B05D0D979314129070 /* LocalCompetitionRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalCompetitionRuntime.swift; sourceTree = "<group>"; };
 		185D226E47FB94EBF23B7B6F /* CompetitionNotificationPreferencesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionNotificationPreferencesTests.swift; sourceTree = "<group>"; };
@@ -306,12 +322,14 @@
 		1D93500BA9AA5B7AF63C71F7 /* LocalCompetitionRuntimeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalCompetitionRuntimeTests.swift; sourceTree = "<group>"; };
 		225974742689A63371700688 /* ClaimCompetitionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaimCompetitionView.swift; sourceTree = "<group>"; };
 		226BA4E27B1F6F1804DEE79E /* StagingScoringResponseCapture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StagingScoringResponseCapture.swift; sourceTree = "<group>"; };
+		2888E29265A40B8B0B6C8410 /* defended.mp4 */ = {isa = PBXFileReference; path = defended.mp4; sourceTree = "<group>"; };
 		28F77E115B0E29F8B6D6E3B2 /* CompetitionLiveActivityTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionLiveActivityTests.swift; sourceTree = "<group>"; };
 		2B64D65DCC45357EECAFB745 /* HealthCompWatchApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthCompWatchApp.swift; sourceTree = "<group>"; };
 		2B6CEEA41B5ADC4158D1E6E5 /* SupabaseCompetitionRealtimeClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupabaseCompetitionRealtimeClient.swift; sourceTree = "<group>"; };
 		2CC1985FE34C77217A5DAAD0 /* FixtureActivitySourceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FixtureActivitySourceTests.swift; sourceTree = "<group>"; };
 		2D014DB9BF9CBBBC04BCD0B7 /* StagingScoringOperatorControls.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StagingScoringOperatorControls.swift; sourceTree = "<group>"; };
 		2F6768BD6108222519CD7CA7 /* SupabaseAppleWebDeletionTransportTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupabaseAppleWebDeletionTransportTests.swift; sourceTree = "<group>"; };
+		32B9F26CFF6D21366BDE91EE /* lost-final.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = "lost-final.jpg"; sourceTree = "<group>"; };
 		343D5C774568DAA845D489A4 /* HealthCompWidgets.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = HealthCompWidgets.entitlements; sourceTree = "<group>"; };
 		35062161F195329954CCC954 /* CompetitionNotificationClientTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionNotificationClientTests.swift; sourceTree = "<group>"; };
 		367629019F65C3FCD66B409F /* CompetitionRouting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionRouting.swift; sourceTree = "<group>"; };
@@ -320,6 +338,7 @@
 		3AB91D67DF671E84BB5BFFEB /* AppAttestClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppAttestClient.swift; sourceTree = "<group>"; };
 		3B8AD06B40107213226257FA /* CreateCompetitionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CreateCompetitionView.swift; sourceTree = "<group>"; };
 		3BE3EF97EDDB31A7DA80B856 /* CompetitionTestLabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionTestLabView.swift; sourceTree = "<group>"; };
+		3C0488BFCA772093125605E2 /* CompetitionBeltCeremony.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionBeltCeremony.swift; sourceTree = "<group>"; };
 		3D3A86214F2EA7EB552733D5 /* CompetitionSyncModelsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionSyncModelsTests.swift; sourceTree = "<group>"; };
 		3D899D441D791785E0E73B72 /* WidgetUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetUITests.swift; sourceTree = "<group>"; };
 		3DAF436531F7063C3F6F510E /* HealthCompWatchUITests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = HealthCompWatchUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -345,18 +364,22 @@
 		5807455BF69B3050795BB69B /* StagingScoringResponseCaptureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StagingScoringResponseCaptureTests.swift; sourceTree = "<group>"; };
 		58B754BE274F8905DD67F636 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		5A6710FBCACA682D0C66812B /* BlockChallengerUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BlockChallengerUITests.swift; sourceTree = "<group>"; };
+		5EA5CFEE91A9EB663AFEDD9C /* taken.mp4 */ = {isa = PBXFileReference; path = taken.mp4; sourceTree = "<group>"; };
 		612908337833B2EAE7FD7D41 /* HealthCompUITests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = HealthCompUITests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		613A2B77D4E8A26D6A05F569 /* HealthKitDeliveryDiagnostic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthKitDeliveryDiagnostic.swift; sourceTree = "<group>"; };
 		616B7E5CE526F649E00317C3 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		620B41081DED3A911320E1F0 /* LocalCompetitionClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalCompetitionClient.swift; sourceTree = "<group>"; };
+		63446332AD0F80011C4D7FFC /* lost.mp4 */ = {isa = PBXFileReference; path = lost.mp4; sourceTree = "<group>"; };
 		64ABF7FD8ADDAE6821EDC24B /* NotificationChoicesUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NotificationChoicesUITests.swift; sourceTree = "<group>"; };
 		6619D758FF31EC86B6996330 /* HealthCompAppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthCompAppDelegate.swift; sourceTree = "<group>"; };
 		6627DB76B896A69CA64FB159 /* CompetitionClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionClient.swift; sourceTree = "<group>"; };
 		6647E11CDA952495B6DD06A0 /* CompetitionPushRegistration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionPushRegistration.swift; sourceTree = "<group>"; };
 		67458E7E3FF106693A726C8B /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		6A2304DB02ADE523BFCA29EB /* defended.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = defended.json; sourceTree = "<group>"; };
 		7068266A513948DD7D142CAB /* MatchLiveActivityWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MatchLiveActivityWidget.swift; sourceTree = "<group>"; };
 		707D0C11F6133D4611BF36D7 /* remote-best-available-incomplete.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "remote-best-available-incomplete.json"; sourceTree = "<group>"; };
 		71260DEAA6FF4102413E26F8 /* CompetitionNotificationCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionNotificationCoordinatorTests.swift; sourceTree = "<group>"; };
+		7128647237263B55F89C3FBC /* taken-final.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = "taken-final.jpg"; sourceTree = "<group>"; };
 		72D97B24F7398742C8358DD9 /* MultiUserCompetitionUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MultiUserCompetitionUITests.swift; sourceTree = "<group>"; };
 		78CD3641AF9961D0DE49E710 /* CompetitionNotificationPreferences.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionNotificationPreferences.swift; sourceTree = "<group>"; };
 		79D3B2F2BE57087995DA8315 /* SupabaseAppleWebDeletionTransport.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupabaseAppleWebDeletionTransport.swift; sourceTree = "<group>"; };
@@ -404,6 +427,7 @@
 		B6E59EB0F94271385170C864 /* StagingActivityObservationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StagingActivityObservationTests.swift; sourceTree = "<group>"; };
 		B74EA43D24EEE51BE2DDEDAB /* CompetitionSyncModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionSyncModels.swift; sourceTree = "<group>"; };
 		B78FA5A4670AECA86AA95557 /* AccountFeature.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountFeature.swift; sourceTree = "<group>"; };
+		B8DA5FB855E8232B3DCCA7DD /* taken.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = taken.json; sourceTree = "<group>"; };
 		B9A7D5544146DA84C8A71125 /* RemoteCompetitionClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteCompetitionClient.swift; sourceTree = "<group>"; };
 		B9DF77F4B53514428AD771C0 /* CompetitionSyncCoordinatorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionSyncCoordinatorTests.swift; sourceTree = "<group>"; };
 		BAD2EA144469EBA09645C0C8 /* SupabaseConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupabaseConfiguration.swift; sourceTree = "<group>"; };
@@ -416,7 +440,9 @@
 		C1D8B3EF060D8C52F2299C95 /* MainTabFeature.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabFeature.swift; sourceTree = "<group>"; };
 		C3DFF07C8F1DAF91F666CE2C /* MainTabFeatureTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MainTabFeatureTests.swift; sourceTree = "<group>"; };
 		C4D8E971E96397AB14D983D3 /* DeviceCheckAppAttestClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DeviceCheckAppAttestClient.swift; sourceTree = "<group>"; };
+		C535789091384DECE88738B3 /* defended-final.jpg */ = {isa = PBXFileReference; lastKnownFileType = image.jpeg; path = "defended-final.jpg"; sourceTree = "<group>"; };
 		C552868F11DF18D3E8FB90CE /* RemoteCompetitionRuntime.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteCompetitionRuntime.swift; sourceTree = "<group>"; };
+		C651172C5C0AE09C468076E2 /* lost.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = lost.json; sourceTree = "<group>"; };
 		C80D29D0BD360D57164DC524 /* SupabaseCompetitionRemoteAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupabaseCompetitionRemoteAPI.swift; sourceTree = "<group>"; };
 		C9CF6023F728B9C7AED6DE3B /* ReactionsUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ReactionsUITests.swift; sourceTree = "<group>"; };
 		CB376F6C24D4D3EFD3ACE16B /* HealthCompWatchWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = HealthCompWatchWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -424,6 +450,7 @@
 		CD89B1AAB2A4AC2FD5A8C159 /* AuthenticatedProfileStorage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AuthenticatedProfileStorage.swift; sourceTree = "<group>"; };
 		CF7DE04D723EFB17C6B0F55E /* HealthKitProviderTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthKitProviderTests.swift; sourceTree = "<group>"; };
 		D32005C34AC39471F5E780FB /* SupabaseCompetitionRemoteAPITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SupabaseCompetitionRemoteAPITests.swift; sourceTree = "<group>"; };
+		D5CAC5E433438D2BE69DF7A8 /* earned.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = earned.json; sourceTree = "<group>"; };
 		DA18DEAEB8779CAF4DBFAA49 /* HealthCompWatch.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = HealthCompWatch.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		DA25D1EA0C137C12BC7FE9A1 /* RemoteCompetitionRuntimeFailure.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RemoteCompetitionRuntimeFailure.swift; sourceTree = "<group>"; };
 		DC1082ED31F47789C75550D1 /* SharedClientLifetimeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SharedClientLifetimeTests.swift; sourceTree = "<group>"; };
@@ -440,6 +467,7 @@
 		EB0147B34BA06F96B26ABA03 /* PracticeMatchTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PracticeMatchTests.swift; sourceTree = "<group>"; };
 		EB791E8D1AD1F310219B014D /* HealthCompWidgets.appex */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = "wrapper.app-extension"; path = HealthCompWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		EC90AB3B1EDF7C788EF0A48F /* AppFeature.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppFeature.swift; sourceTree = "<group>"; };
+		ED81C5A1328943D778A8FF03 /* BeltCeremonyUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BeltCeremonyUITests.swift; sourceTree = "<group>"; };
 		EDE353612B8354B4ACCE996F /* remote-stable-loss.json */ = {isa = PBXFileReference; lastKnownFileType = text.json; path = "remote-stable-loss.json"; sourceTree = "<group>"; };
 		EE79D3032332CABD95A740ED /* HealthCompWatchUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthCompWatchUITests.swift; sourceTree = "<group>"; };
 		EF9D8272E5FD39A82970617A /* AccountView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountView.swift; sourceTree = "<group>"; };
@@ -725,6 +753,7 @@
 			children = (
 				9B370A537E958C39D00549FA /* ActivityRingsView.swift */,
 				225974742689A63371700688 /* ClaimCompetitionView.swift */,
+				3C0488BFCA772093125605E2 /* CompetitionBeltCeremony.swift */,
 				6627DB76B896A69CA64FB159 /* CompetitionClient.swift */,
 				CC3953ECC27C54F100565844 /* CompetitionDateFormatting.swift */,
 				4942144DBF7C510B94D8D157 /* CompetitionDayBar.swift */,
@@ -777,6 +806,7 @@
 		9F5D18D2C36062228CA2B182 /* HealthCompUITests */ = {
 			isa = PBXGroup;
 			children = (
+				ED81C5A1328943D778A8FF03 /* BeltCeremonyUITests.swift */,
 				0D362A9C189813C864E8BB5D /* BeltUITests.swift */,
 				5A6710FBCACA682D0C66812B /* BlockChallengerUITests.swift */,
 				9B8ADC881AFEAFA869B4D4AD /* FeatureRoundIntegrationUITests.swift */,
@@ -802,6 +832,25 @@
 			path = Widgets;
 			sourceTree = "<group>";
 		};
+		BF9993D46AF0DB2F71BA19BC /* Belt */ = {
+			isa = PBXGroup;
+			children = (
+				C535789091384DECE88738B3 /* defended-final.jpg */,
+				6A2304DB02ADE523BFCA29EB /* defended.json */,
+				2888E29265A40B8B0B6C8410 /* defended.mp4 */,
+				113B39FD305A7EFD1E21C8E8 /* earned-final.jpg */,
+				D5CAC5E433438D2BE69DF7A8 /* earned.json */,
+				0CCB10B03665AE5137821D5A /* earned.mp4 */,
+				32B9F26CFF6D21366BDE91EE /* lost-final.jpg */,
+				C651172C5C0AE09C468076E2 /* lost.json */,
+				63446332AD0F80011C4D7FFC /* lost.mp4 */,
+				7128647237263B55F89C3FBC /* taken-final.jpg */,
+				B8DA5FB855E8232B3DCCA7DD /* taken.json */,
+				5EA5CFEE91A9EB663AFEDD9C /* taken.mp4 */,
+			);
+			path = Belt;
+			sourceTree = "<group>";
+		};
 		C297E950CB4D991163989D77 /* Account */ = {
 			isa = PBXGroup;
 			children = (
@@ -819,6 +868,7 @@
 				1D4D0A6902647274F72B003C /* HealthComp.entitlements */,
 				616B7E5CE526F649E00317C3 /* Info.plist */,
 				05C1BF82CA22E9CBDCA974CF /* PrivacyInfo.xcprivacy */,
+				BF9993D46AF0DB2F71BA19BC /* Belt */,
 			);
 			path = Resources;
 			sourceTree = "<group>";
@@ -1070,6 +1120,18 @@
 			files = (
 				998A146BD7FB471C9132FBEA /* Assets.xcassets in Resources */,
 				6E7C174808973E4A4D94F96B /* PrivacyInfo.xcprivacy in Resources */,
+				FAD92D553E38572357CB4265 /* defended-final.jpg in Resources */,
+				59A4BB3008716980820F0C0C /* defended.json in Resources */,
+				07FDF1C6424521C77C6935F1 /* defended.mp4 in Resources */,
+				B38C2336228547E024678C6D /* earned-final.jpg in Resources */,
+				7F188653DA1F973BDA208F93 /* earned.json in Resources */,
+				AB9CEBFAC9201B81690D71B2 /* earned.mp4 in Resources */,
+				409EB2615EE06EFB1E660654 /* lost-final.jpg in Resources */,
+				637FA18744C38B81238B1B24 /* lost.json in Resources */,
+				DFC92BDF11FEACB2873F9887 /* lost.mp4 in Resources */,
+				B854BEF309319485583E4FC4 /* taken-final.jpg in Resources */,
+				7CD7C9EF5466EC084DE7EE29 /* taken.json in Resources */,
+				7D6B12C43B28AD16DCE5A66C /* taken.mp4 in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -1098,6 +1160,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				6A62FEFFFFF5D9A45E379FC5 /* BeltCeremonyUITests.swift in Sources */,
 				548CAA89B58584D8851DA6EE /* BeltUITests.swift in Sources */,
 				303844E9F398E8FD157BF912 /* BlockChallengerUITests.swift in Sources */,
 				AE4819959E9FC9096C3AA3AB /* FeatureRoundIntegrationUITests.swift in Sources */,
@@ -1177,6 +1240,7 @@
 				07B51177CD4962804CDB26F1 /* AuthenticationClient.swift in Sources */,
 				8A0C6A8337123BBAC2DBA871 /* AuthenticationLifetimeTasks.swift in Sources */,
 				10877D47E948C78A37F0C748 /* ClaimCompetitionView.swift in Sources */,
+				3EDBD71DA92016845208969A /* CompetitionBeltCeremony.swift in Sources */,
 				093DC7E7B8D1993E54AF5D8F /* CompetitionClient.swift in Sources */,
 				014A98BB33AD675239CEC493 /* CompetitionDateFormatting.swift in Sources */,
 				60C635291394F07381CCA35F /* CompetitionDayBar.swift in Sources */,

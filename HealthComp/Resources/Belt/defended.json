@@ -1,0 +1,52 @@
+{
+ "fps": 60,
+ "duration": 2.2333,
+ "holdStart": 1.7,
+ "beats": [
+  {
+   "t": 0.3,
+   "kind": "rise",
+   "label": "Camera punches in on the strap"
+  },
+  {
+   "t": 0.5,
+   "kind": "rise",
+   "label": "Stud drops in from the empty side of frame"
+  },
+  {
+   "t": 0.6,
+   "kind": "impact",
+   "label": "Stud hits: 2-frame hit-stop, flash on the metal"
+  },
+  {
+   "t": 0.633,
+   "kind": "impact",
+   "label": "Release: strap dips, camera kick, sparks, light runs the leather"
+  },
+  {
+   "t": 0.7,
+   "kind": "settle",
+   "label": "Thin line runs the stud's ridge: locked"
+  },
+  {
+   "t": 0.95,
+   "kind": "rise",
+   "label": "Camera pulls back"
+  },
+  {
+   "t": 1.167,
+   "kind": "rise",
+   "label": "Sheen sweeps the plate"
+  },
+  {
+   "t": 1.567,
+   "kind": "settle",
+   "label": "Ping on the new stud"
+  },
+  {
+   "t": 1.7,
+   "kind": "settle",
+   "label": "Hold: show name and stats"
+  }
+ ]
+}

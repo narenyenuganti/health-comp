@@ -37,12 +37,12 @@ final class BeltUITests: XCTestCase {
         let sam = card("active", 0x17)
         scrollToElement(sam)
         XCTAssertTrue(sam.label.hasPrefix("Sam. Day 2 of 7"), sam.label)
-        XCTAssertTrue(sam.label.hasSuffix(". You hold the belt"), sam.label)
+        XCTAssertTrue(sam.label.hasSuffix(". You hold the belt · 1 defense"), sam.label)
 
         let long = card("active", 0x24)
         scrollToElement(long)
         XCTAssertTrue(long.label.hasPrefix("\(Self.longName). Day 2 of 7"), long.label)
-        XCTAssertTrue(long.label.hasSuffix(". \(Self.longName) holds the belt"), long.label)
+        XCTAssertTrue(long.label.hasSuffix(". \(Self.longName) holds the belt · 1 defense"), long.label)
 
         // Riley's earlier week is still tallying: that card says who holds
         // it, and the match after it waits.
@@ -66,13 +66,13 @@ final class BeltUITests: XCTestCase {
         XCTAssertEqual(labels(containing: "belt").count, 0)
         goBack(to: "Home")
 
-        // Sam's last week is still on Home: a 3-week reign shows the banner.
+        // Sam's last week is still on Home: a title defense shows the banner.
         let result = card("completed", 0x16)
         scrollToElement(result)
         XCTAssertFalse(result.label.contains("belt"), result.label)
         result.tap()
         XCTAssertTrue(app.navigationBars["Sam"].waitForExistence(timeout: 3))
-        assertBanner("You kept the belt, 3 weeks in a row.")
+        assertBanner("1st title defense, 3 weeks in a row.")
     }
 
     func testHeroCardSaysYouHoldTheBelt() {
@@ -80,7 +80,7 @@ final class BeltUITests: XCTestCase {
         let hero = card("active", 0x17)
         XCTAssertTrue(hero.waitForExistence(timeout: 3))
         XCTAssertTrue(hero.label.hasPrefix("Sam. Day 2 of 7"), hero.label)
-        XCTAssertTrue(hero.label.hasSuffix(". You hold the belt"), hero.label)
+        XCTAssertTrue(hero.label.hasSuffix(". You hold the belt · 1 defense"), hero.label)
         // The hero says LIVE on the card; there is no "LIVE · n" section.
         XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "LIVE · ")).firstMatch.exists)
         // Only the hero card speaks of the belt: its button, and the chip's
@@ -137,7 +137,7 @@ final class BeltUITests: XCTestCase {
         XCTAssertEqual(element("competition.person.record").label, "Sam, 3 wins, 2 losses, 1 tie. 6 weeks")
         XCTAssertEqual(
             element("competition.person.belt").label,
-            "You hold the belt, Since Jul 31 · 3 weeks, Longest reign, You · 3 weeks, Title changes, 3"
+            "You hold the belt, Since Jul 31 · 3 weeks, 1 defense, Record: You 3–2–1, Sam 2–3–1, Title reigns: You 2, Sam 1, Title defenses: You 1, Sam 1, Most defenses: You 1, Sam 1, Longest reign: You 3 weeks, Sam 2 weeks, Biggest win: You +160, Sam +160"
         )
         XCTAssertTrue(app.staticTexts["WEEKS"].exists)
 
@@ -165,12 +165,11 @@ final class BeltUITests: XCTestCase {
         let results: [(String, UInt8, String?)] = [
             ("archived", 0x11, "You took the belt"),
             ("archived", 0x12, "Sam took the belt, You held it for 1 week."),
-            // Sam's second week: a 2-week reign shows nothing.
-            ("archived", 0x13, nil),
+            ("archived", 0x13, "Sam's 1st title defense, 2 weeks in a row."),
             ("archived", 0x14, "You took the belt, Sam held it for 2 weeks."),
             // A tie keeps your reign at 2 weeks: nothing.
             ("archived", 0x15, nil),
-            ("completed", 0x16, "You kept the belt, 3 weeks in a row."),
+            ("completed", 0x16, "1st title defense, 3 weeks in a row."),
         ]
         for (state, byte, banner) in results {
             openWeek(weekID(state, byte), title: "Sam")
@@ -196,14 +195,14 @@ final class BeltUITests: XCTestCase {
         )
         XCTAssertEqual(
             element("competition.person.belt").label,
-            "\(Self.longName) holds the belt, Since Jul 31 · 3 weeks, Longest reign, \(Self.longName) · 3 weeks, Title changes, 1"
+            "\(Self.longName) holds the belt, Since Jul 31 · 3 weeks, 1 defense, Record: You 0–2–1, \(Self.longName) 2–0–1, Title reigns: You 0, \(Self.longName) 1, Title defenses: You 0, \(Self.longName) 1, Most defenses: You 0, \(Self.longName) 1, Longest reign: You 0 weeks, \(Self.longName) 3 weeks, Biggest win: You –, \(Self.longName) +160"
         )
         let took = element(weekID("archived", 0x21))
         scrollToElement(took)
         XCTAssertTrue(normalized(took.label).hasSuffix(". \(Self.longName) took the belt"), took.label)
 
         openWeek(weekID("archived", 0x23), title: Self.longName)
-        assertBanner("\(Self.longName) kept the belt, 3 weeks in a row.")
+        assertBanner("\(Self.longName)'s 1st title defense, 3 weeks in a row.")
         goBack(to: Self.longName)
         openWeek(weekID("archived", 0x22), title: Self.longName)
         XCTAssertTrue(element("competition.result").waitForExistence(timeout: 3))
@@ -238,7 +237,7 @@ final class BeltUITests: XCTestCase {
         )
         XCTAssertEqual(
             element("competition.person.belt").label,
-            "The belt is retired, Longest reign, You · 1 week, Title changes, 1"
+            "The belt is retired, Record: You 1–0, Former competitor 0–1, Title reigns: You 1, Former competitor 0, Title defenses: You 0, Former competitor 0, Most defenses: You 0, Former competitor 0, Longest reign: You 1 week, Former competitor 0 weeks, Biggest win: You +160, Former competitor –"
         )
         let week = element(weekID("archived", 0x51))
         XCTAssertEqual(
@@ -255,7 +254,7 @@ final class BeltUITests: XCTestCase {
         openPerson(0x31, title: "Riley")
         XCTAssertEqual(
             element("competition.person.belt").label,
-            "You hold the belt, Since Aug 7 · 1 week, Longest reign, You · 1 week, Title changes, 1"
+            "You hold the belt, Since Aug 7 · 1 week, Record: You 1–0, Riley 0–1, Title reigns: You 1, Riley 0, Title defenses: You 0, Riley 0, Most defenses: You 0, Riley 0, Longest reign: You 1 week, Riley 0 weeks, Biggest win: You +160, Riley –"
         )
         // Only the finished week is listed.
         XCTAssertEqual(

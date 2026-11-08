@@ -1,3 +1,4 @@
+import AVFoundation
 import CompetitionCore
 import SwiftUI
 import UIKit
@@ -1594,14 +1595,17 @@ final class CompetitionPresentationTests: XCTestCase {
             .took(by: .you, fromWeeks: nil),
             .kept(by: .you, weeks: 2),
             .took(by: .them, fromWeeks: 2),
-            .kept(by: .them, weeks: 2),
-            .took(by: .you, fromWeeks: 2),
+            .defended(by: .them, weeks: 2, defenses: 1),
+            .took(by: .you, fromWeeks: 2, fromDefenses: 1),
         ])
         XCTAssertEqual(belt.holder, .you)
         XCTAssertEqual(belt.current, CompetitionBeltReign(holder: .you, weeks: 1, startID: weeks[5].id))
         XCTAssertEqual(belt.changes, 3)
         // On equal length the more recent reign is the longest.
-        XCTAssertEqual(belt.longest, CompetitionBeltReign(holder: .them, weeks: 2, startID: weeks[3].id))
+        XCTAssertEqual(
+            belt.longest,
+            CompetitionBeltReign(holder: .them, weeks: 2, startID: weeks[3].id, defenses: 1)
+        )
     }
 
     func testBeltWithOnlyTiesHasNoHolder() throws {
@@ -1624,7 +1628,10 @@ final class CompetitionPresentationTests: XCTestCase {
         XCTAssertTrue(belt.isRetired)
         XCTAssertNil(belt.holder)
         XCTAssertEqual(belt.events.count, 3)
-        XCTAssertEqual(belt.longest, CompetitionBeltReign(holder: .them, weeks: 2, startID: weeks[1].id))
+        XCTAssertEqual(
+            belt.longest,
+            CompetitionBeltReign(holder: .them, weeks: 2, startID: weeks[1].id, defenses: 1)
+        )
         XCTAssertEqual(competitionBeltEvent(for: weeks[0], in: weeks), .took(by: .you, fromWeeks: nil))
     }
 
@@ -1646,19 +1653,206 @@ final class CompetitionPresentationTests: XCTestCase {
         ]
         let record = try XCTUnwrap(beltRecord(weeks + closed))
 
-        XCTAssertEqual(record.belt.events[weeks[3].id], .kept(by: .you, weeks: 2))
-        XCTAssertEqual(record.belt.events[weeks[0].id], .took(by: .them, fromWeeks: 2))
+        XCTAssertEqual(record.belt.events[weeks[3].id], .defended(by: .you, weeks: 2, defenses: 1))
+        XCTAssertEqual(record.belt.events[weeks[0].id], .took(by: .them, fromWeeks: 2, fromDefenses: 1))
         XCTAssertEqual(record.belt.events[weeks[2].id], .took(by: .you, fromWeeks: 1))
         XCTAssertEqual(record.belt.events.count, 4)
         let direct = competitionBelt(weeks.reversed().map { week in
             (
                 id: week.id,
                 end: competitionScheduleBoundaries(week.acceptedConfiguration!.schedule)?.end,
-                outcome: week.terminalResult!.outcome
+                outcome: week.terminalResult!.outcome,
+                margin: 0
             )
         })
         XCTAssertEqual(record.belt, direct)
         XCTAssertEqual(beltRecord(weeks)?.belt, direct)
+    }
+
+    private func titleFold(_ outcomes: [(CompetitionOutcome, Double)]) -> (
+        belt: CompetitionBelt,
+        events: [CompetitionBeltEvent?]
+    ) {
+        let weeks = outcomes.enumerated().map { index, week in
+            (
+                id: CompetitionID(UUID(uuidString: String(format: "00000000-0000-0000-0000-%012ld", index))!),
+                end: Date?.some(homeNow.addingTimeInterval(Double(index) * 604_800)),
+                outcome: week.0,
+                margin: week.1
+            )
+        }
+        let belt = competitionBelt(weeks)
+        return (belt, weeks.map { belt.events[$0.id] })
+    }
+
+    func testTitleDefenseIsAWinWhileHoldingTheBelt() {
+        let (belt, events) = titleFold([(.win, 10), (.tie, 0), (.win, 20), (.tie, 0), (.win, 5)])
+
+        XCTAssertEqual(events, [
+            .took(by: .you, fromWeeks: nil),
+            .kept(by: .you, weeks: 2),
+            .defended(by: .you, weeks: 3, defenses: 1),
+            .kept(by: .you, weeks: 4),
+            .defended(by: .you, weeks: 5, defenses: 2),
+        ])
+        XCTAssertEqual(belt.current?.weeks, 5)
+        XCTAssertEqual(belt.current?.defenses, 2)
+        XCTAssertEqual(belt.you.defenses, 2)
+    }
+
+    func testTitleDefensesResetEachReignAndTotalAcrossReigns() {
+        let (belt, events) = titleFold([
+            (.win, 10), (.win, 10), (.win, 40),
+            (.loss, 25), (.tie, 0), (.loss, 30),
+            (.win, 15), (.win, 20),
+        ])
+
+        XCTAssertEqual(events[3], .took(by: .them, fromWeeks: 3, fromDefenses: 2))
+        XCTAssertEqual(events[5], .defended(by: .them, weeks: 3, defenses: 1))
+        XCTAssertEqual(events[6], .took(by: .you, fromWeeks: 3, fromDefenses: 1))
+        XCTAssertEqual(events[7], .defended(by: .you, weeks: 2, defenses: 1))
+        XCTAssertEqual(belt.current?.defenses, 1)
+        XCTAssertEqual(belt.mostDefenses?.defenses, 2)
+        XCTAssertEqual(belt.mostDefenses?.holder, .you)
+        XCTAssertEqual(
+            belt.you,
+            CompetitionTitleStats(
+                wins: 5, losses: 2, ties: 1, reigns: 2, defenses: 3,
+                mostDefenses: 2, longestReign: 3, biggestWin: 40
+            )
+        )
+        XCTAssertEqual(
+            belt.them,
+            CompetitionTitleStats(
+                wins: 2, losses: 5, ties: 1, reigns: 1, defenses: 1,
+                mostDefenses: 1, longestReign: 3, biggestWin: 30
+            )
+        )
+    }
+
+    func testMostDefensesIsNilUntilADefenseAndTheMoreRecentReignWinsATie() {
+        XCTAssertNil(titleFold([(.win, 1), (.tie, 0), (.loss, 1)]).belt.mostDefenses)
+
+        let belt = titleFold([(.win, 1), (.win, 1), (.loss, 1), (.loss, 1)]).belt
+        XCTAssertEqual(belt.mostDefenses?.holder, .them)
+    }
+
+    func testTitleStatsStartEmpty() {
+        let (belt, events) = titleFold([(.tie, 0)])
+
+        XCTAssertEqual(events, [.vacant])
+        XCTAssertEqual(belt.you, CompetitionTitleStats(ties: 1))
+        XCTAssertEqual(belt.them, CompetitionTitleStats(ties: 1))
+        XCTAssertEqual(CompetitionBelt.vacant.you, CompetitionTitleStats())
+    }
+
+    func testTitleStatsExcludePractice() throws {
+        let won = LocalCompetitionLifecyclePresentation.completed(
+            outcome: .win, basis: .stableAcrossPostBoundaryReads, completedAt: homeNow
+        )
+        let practice = practicePresentation(id: 1, lifecycle: won, start: (10, 14))
+        let real = beltWeek(2, .win, start: (10, 21))
+
+        let records = competitionOpponentRecords([practice, real])
+        XCTAssertEqual(records.map(\.opponentIdentity), [real.opponentIdentity])
+        let belt = try XCTUnwrap(records.first).belt
+        XCTAssertEqual(belt.you.wins, 1)
+        XCTAssertEqual(belt.you.reigns, 1)
+        XCTAssertEqual(belt.events.count, 1)
+    }
+
+    func testHomeChipCountsDefensesFromTheFirst() {
+        func chip(_ outcomes: [(CompetitionOutcome, Double)]) -> String? {
+            competitionBeltChipText(titleFold(outcomes).belt, opponentName: "Sam")
+        }
+        XCTAssertNil(chip([(.tie, 0)]))
+        XCTAssertEqual(chip([(.win, 1), (.tie, 0)]), "You hold the belt")
+        XCTAssertEqual(chip([(.win, 1), (.win, 1)]), "You hold the belt · 1 defense")
+        XCTAssertEqual(chip([(.loss, 1), (.loss, 1), (.loss, 1)]), "Sam holds the belt · 2 defenses")
+        // A new reign starts the count again.
+        XCTAssertEqual(chip([(.win, 1), (.win, 1), (.loss, 1)]), "Sam holds the belt")
+    }
+
+    func testTaleOfTheTapeReadsBothSides() {
+        let belt = titleFold([(.win, 412.4), (.win, 10), (.tie, 0), (.loss, 268), (.loss, 1)]).belt
+        let rows = competitionTaleOfTheTape(belt)
+
+        XCTAssertEqual(rows.map(\.label), [
+            "Record", "Title reigns", "Title defenses", "Most defenses", "Longest reign", "Biggest win",
+        ])
+        XCTAssertEqual(rows.map(\.you), ["2–2–1", "1", "1", "1", "3 weeks", "+412"])
+        XCTAssertEqual(rows.map(\.them), ["2–2–1", "1", "1", "1", "2 weeks", "+268"])
+        XCTAssertEqual(
+            competitionTaleOfTheTape(titleFold([(.win, 5)]).belt).map(\.them),
+            ["0–1", "0", "0", "0", "0 weeks", "–"]
+        )
+    }
+
+    func testCeremonyForEachEventAndNothingElse() {
+        func script(_ event: CompetitionBeltEvent?, _ name: String = "Sam") -> CompetitionBeltCeremonyScript? {
+            competitionBeltCeremonyScript(event, opponentName: name)
+        }
+        XCTAssertEqual(
+            script(.took(by: .you, fromWeeks: nil)),
+            .init(clip: "earned", headline: "AND NEW", title: "You took the belt")
+        )
+        XCTAssertEqual(
+            script(.took(by: .you, fromWeeks: 4, fromDefenses: 2)),
+            .init(
+                clip: "taken",
+                headline: "AND NEW",
+                title: "You took the belt from Sam",
+                detail: "Sam's reign: 4 weeks · 2 defenses"
+            )
+        )
+        XCTAssertEqual(
+            script(.took(by: .them, fromWeeks: 1, fromDefenses: 0)),
+            .init(
+                clip: "lost",
+                headline: "AND NEW",
+                title: "Sam took the belt",
+                detail: "Your reign: 1 week",
+                isYours: false
+            )
+        )
+        let defended = script(.defended(by: .you, weeks: 4, defenses: 3))
+        XCTAssertEqual(
+            defended,
+            .init(clip: "defended", headline: "AND STILL", title: "3rd title defense", defenses: 3)
+        )
+        XCTAssertEqual(defended?.announcement, "AND STILL. 3rd title defense. 3 defenses")
+
+        XCTAssertNil(script(.took(by: .them, fromWeeks: nil)))
+        XCTAssertNil(script(.defended(by: .them, weeks: 2, defenses: 1)))
+        XCTAssertNil(script(.kept(by: .you, weeks: 4)))
+        XCTAssertNil(script(.vacant))
+        XCTAssertNil(script(nil))
+        XCTAssertNil(script(.took(by: .you, fromWeeks: nil), competitionFormerCompetitorName))
+    }
+
+    func testBundledClipsAreSilentHEVCWithBeats() async throws {
+        for name in ["earned", "taken", "lost", "defended"] {
+            let clip = try XCTUnwrap(CompetitionBeltCeremonyClip(named: name), name)
+            let asset = AVURLAsset(url: clip.url)
+            let video = try await asset.loadTracks(withMediaType: .video)
+            let audio = try await asset.loadTracks(withMediaType: .audio)
+            XCTAssertEqual(audio.count, 0, name)
+            let isPlayable = try await asset.load(.isPlayable)
+            XCTAssertTrue(isPlayable, name)
+            let formats = try await XCTUnwrap(video.first, name).load(.formatDescriptions)
+            XCTAssertEqual(formats.map { CMFormatDescriptionGetMediaSubType($0) }, [kCMVideoCodecType_HEVC], name)
+            let duration = try await asset.load(.duration).seconds
+            XCTAssertLessThan(clip.settle, duration, name)
+            XCTAssertFalse(clip.impacts.isEmpty, name)
+            XCTAssertNotNil(UIImage(named: "\(name)-final.jpg"), name)
+            // The words land on the last settle beat, where the hold starts.
+            let json = try XCTUnwrap(Bundle.main.url(forResource: name, withExtension: "json"))
+            let file = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(contentsOf: json)) as? [String: Any])
+            let holdStart = try XCTUnwrap(file["holdStart"] as? Double, name)
+            XCTAssertEqual(clip.settle, holdStart, accuracy: 0.001, name)
+        }
+        XCTAssertEqual(CompetitionBeltCeremonyClip(named: "lost")?.impacts.count, 1)
+        XCTAssertNil(CompetitionBeltCeremonyClip(named: "missing"))
     }
 
     func testBeltChipWaitsWhileAnEarlierMatchWithThemIsUnfinished() {
@@ -1708,6 +1902,18 @@ final class CompetitionPresentationTests: XCTestCase {
         XCTAssertEqual(banner(.kept(by: .you, weeks: 4)), ["you", "You kept the belt", "4 weeks in a row."])
         XCTAssertEqual(banner(.kept(by: .them, weeks: 3)), ["them", "Sam kept the belt", "3 weeks in a row."])
         XCTAssertNil(banner(.kept(by: .you, weeks: 2)))
+        XCTAssertEqual(
+            banner(.defended(by: .you, weeks: 2, defenses: 1)),
+            ["you", "1st title defense", "2 weeks in a row."]
+        )
+        XCTAssertEqual(
+            banner(.defended(by: .them, weeks: 5, defenses: 3)),
+            ["them", "Sam's 3rd title defense", "5 weeks in a row."]
+        )
+        XCTAssertEqual(
+            [1, 2, 3, 4, 11, 12, 13, 21, 22].map(competitionTitleDefenseText),
+            ["1st", "2nd", "3rd", "4th", "11th", "12th", "13th", "21st", "22nd"].map { "\($0) title defense" }
+        )
         XCTAssertNil(banner(.vacant))
     }
 
@@ -2593,6 +2799,42 @@ final class CompetitionPresentationTests: XCTestCase {
         XCTAssertEqual(
             competitionReactionsInWeekOrder([theirDay5, theirDay2, theirResult, yourDay2]),
             [theirResult, yourDay2, theirDay2, theirDay5]
+        )
+    }
+
+    func testMotionSeenMarksAMomentForOneMatchAndSurvivesItsRawValue() {
+        let id = CompetitionID(UUID())
+        let other = CompetitionID(UUID())
+        let marked = CompetitionMotionSeen().marking(.verdict, id)
+
+        XCTAssertFalse(CompetitionMotionSeen().hasSeen(.verdict, id))
+        XCTAssertTrue(marked.hasSeen(.verdict, id))
+        XCTAssertFalse(marked.hasSeen(.verdict, other))
+
+        let both = marked.marking(.verdict, other)
+        XCTAssertEqual(CompetitionMotionSeen(rawValue: both.rawValue), both)
+    }
+
+    func testRematchStageIgnoresThePresentationAndKeepsWhatResizesTheControl() {
+        let earlier = reactionPresentation()
+        let later = reactionPresentation(reactions: [reaction(.result, .salute, at: 1)])
+        XCTAssertNotEqual(earlier, later)
+        XCTAssertEqual(CompetitionRematchStage(.next(earlier)), CompetitionRematchStage(.next(later)))
+        XCTAssertNotEqual(CompetitionRematchStage(.next(earlier)), CompetitionRematchStage(.received(earlier)))
+
+        let id = CompetitionID(UUID())
+        let unknown = CompetitionRematchStage(.sent(challengeID: id, expiresAt: nil, link: nil))
+        XCTAssertEqual(
+            unknown,
+            CompetitionRematchStage(.sent(challengeID: CompetitionID(UUID()), expiresAt: nil, link: nil))
+        )
+        XCTAssertNotEqual(
+            unknown,
+            CompetitionRematchStage(.sent(challengeID: id, expiresAt: Date(), link: nil))
+        )
+        XCTAssertNotEqual(
+            unknown,
+            CompetitionRematchStage(.sent(challengeID: id, expiresAt: nil, link: .failed))
         )
     }
 
