@@ -321,10 +321,12 @@ final class CompetitionWidgetSnapshotTests: XCTestCase {
         XCTAssertNil(Snapshot.load(from: nil))
         try Data("not json".utf8).write(to: url)
         XCTAssertNil(Snapshot.load(from: url))
-        var future = Snapshot(matches: [match(1)], hasIncomingChallenge: false)
-        future.version = 2
-        try JSONEncoder().encode(future).write(to: url)
-        XCTAssertNil(Snapshot.load(from: url))
+        var other = Snapshot(matches: [match(1)], hasIncomingChallenge: false)
+        for version in [Snapshot.currentVersion - 1, Snapshot.currentVersion + 1] {
+            other.version = version
+            try JSONEncoder().encode(other).write(to: url)
+            XCTAssertNil(Snapshot.load(from: url))
+        }
         let current = Snapshot(matches: [match(1)], hasIncomingChallenge: true)
         try JSONEncoder().encode(current).write(to: url)
         XCTAssertEqual(Snapshot.load(from: url), current)

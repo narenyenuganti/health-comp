@@ -2397,6 +2397,35 @@ final class CompetitionPresentationTests: XCTestCase {
         XCTAssertNil(try updatedAt(you: nil, them: nil))
     }
 
+    func testWidgetSnapshotCarriesWhatItTakesForTheWatch() throws {
+        let base = homePresentation(id: 3, lifecycle: .active(dayOrdinal: 5))
+        let takes = takesCompetition(accepted: try takesRings(move: (410, 600), exercise: (24, 30), stand: (8, 12)))
+        func chase(user: Double) throws -> CompetitionWidgetSnapshot.Chase? {
+            try XCTUnwrap(CompetitionWidgetSnapshot.Match(presentation: LocalCompetitionPresentation(
+                id: base.id,
+                ownerDisplayName: base.ownerDisplayName,
+                opponentDisplayName: base.opponentDisplayName,
+                opponentIdentity: base.opponentIdentity,
+                lifecycle: takes.lifecycle,
+                acceptedConfiguration: base.acceptedConfiguration,
+                userPoints: user,
+                opponentPoints: takes.opponentPoints,
+                days: takes.days,
+                currentDayOrdinal: takes.currentDayOrdinal,
+                lastRefresh: nil,
+                tally: nil,
+                terminalResult: nil,
+                evaluatedAt: homeNow,
+                timeZoneIdentifier: base.timeZoneIdentifier,
+                lastSuccessfulFullWindowRefreshAt: nil,
+                opponentUpdatedAt: nil
+            ))).chase
+        }
+        XCTAssertEqual(try chase(user: takes.userPoints), .init(day: 5, points: 39))
+        XCTAssertEqual(try chase(user: 500), .init(day: 5, points: nil))
+        XCTAssertNil(try chase(user: 1_200))
+    }
+
     func testHomeStatusLineAddsChallengeExpiry() throws {
         let en = Locale(identifier: "en_US")
         let la = try XCTUnwrap(TimeZone(identifier: "America/Los_Angeles"))
