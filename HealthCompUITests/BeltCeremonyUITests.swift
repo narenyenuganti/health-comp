@@ -27,18 +27,15 @@ final class BeltCeremonyUITests: XCTestCase {
         for ceremony in Self.ceremonies {
             openPerson(ceremony.byte, title: ceremony.name)
             tapWeek(ceremony.byte)
-            XCTAssertTrue(self.ceremony.waitForExistence(timeout: 5), ceremony.clip)
-            XCTAssertTrue(element("competition.belt.ceremony.clip.\(ceremony.clip)").waitForExistence(timeout: 3))
+            XCTAssertTrue(soon(5) { self.ceremony.exists }, ceremony.clip)
+            XCTAssertTrue(soon(3) { self.element("competition.belt.ceremony.clip.\(ceremony.clip)").exists })
             // The words land on the settle beat, so these prove the clip ran.
             for word in ceremony.words {
-                XCTAssertTrue(app.staticTexts[word].waitForExistence(timeout: 6), word)
+                XCTAssertTrue(soon(6) { self.app.staticTexts[word].exists }, word)
             }
             if ceremony.clip == "defended" {
                 let count = element("competition.belt.ceremony.count")
-                XCTAssertTrue(
-                    wait(for: NSPredicate(format: "label == %@", "3 defenses"), on: count, timeout: 3),
-                    count.label
-                )
+                XCTAssertTrue(soon(3) { count.label == "3 defenses" }, count.label)
             }
             assertCeremonyEnds(within: 6)
             XCTAssertTrue(element("competition.result.belt").exists)
@@ -104,10 +101,10 @@ final class BeltCeremonyUITests: XCTestCase {
     }
 
     func testReduceMotionShowsThePosterWithTheSameWords() {
-        launchLab(["-UIAccessibilityReduceMotionEnabled", "YES"])
+        launchLab(["--belt-reduce-motion"])
         openPerson(0x94, title: "Jordan")
         tapWeek(0x94)
-        XCTAssertTrue(element("competition.belt.ceremony.poster.defended").waitForExistence(timeout: 5))
+        XCTAssertTrue(soon(5) { self.element("competition.belt.ceremony.poster.defended").exists })
         XCTAssertTrue(app.staticTexts["AND STILL"].exists)
         XCTAssertEqual(element("competition.belt.ceremony.count").label, "3 defenses")
         XCTAssertFalse(element("competition.belt.ceremony.clip.defended").exists)
@@ -187,6 +184,17 @@ final class BeltCeremonyUITests: XCTestCase {
     private func assertNoCeremony(file: StaticString = #filePath, line: UInt = #line) {
         XCTAssertTrue(element("competition.result").waitForExistence(timeout: 3), file: file, line: line)
         XCTAssertFalse(ceremony.waitForExistence(timeout: 1), file: file, line: line)
+    }
+
+    /// `waitForExistence` and predicate waits first look after a full second,
+    /// longer than a ceremony's words or a poster stay up, so this looks again
+    /// as soon as each query returns.
+    private func soon(_ seconds: TimeInterval, _ condition: () -> Bool) -> Bool {
+        let deadline = Date().addingTimeInterval(seconds)
+        repeat {
+            if condition() { return true }
+        } while Date() < deadline
+        return false
     }
 
     private func wait(for predicate: NSPredicate, on element: XCUIElement, timeout: TimeInterval) -> Bool {
