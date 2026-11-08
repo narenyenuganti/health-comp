@@ -429,6 +429,9 @@ struct CompetitionLeadLineView: View {
     let currentDayOrdinal: Int?
     let opponentName: String
     var isDrawn = true
+    /// The sticker's "You ahead" above the line and "Sam ahead" under it, in
+    /// place of the title.
+    var sideLabels: (you: String, them: String)?
 
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
@@ -441,15 +444,19 @@ struct CompetitionLeadLineView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                SectionLabel("THE LEAD AFTER EACH DAY")
-                Spacer(minLength: 0)
-                if !line.changes.isEmpty {
-                    Text(changedText)
-                        .font(.themeLabel)
-                        .tracking(1.2)
-                        .foregroundStyle(Theme.secondary)
-                        .accessibilityHidden(true)
+            if let sideLabels {
+                sideLabel(sideLabels.you, Theme.you)
+            } else {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    SectionLabel("THE LEAD AFTER EACH DAY")
+                    Spacer(minLength: 0)
+                    if !line.changes.isEmpty {
+                        Text(changedText)
+                            .font(.themeLabel)
+                            .tracking(1.2)
+                            .foregroundStyle(Theme.secondary)
+                            .accessibilityHidden(true)
+                    }
                 }
             }
             chart
@@ -457,6 +464,9 @@ struct CompetitionLeadLineView: View {
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(accessibilityText)
                 .accessibilityIdentifier("competition.leadLine")
+            if let sideLabels {
+                sideLabel(sideLabels.them, Theme.secondary)
+            }
             if dynamicTypeSize < .xxLarge {
                 weekdays
             }
@@ -471,8 +481,10 @@ struct CompetitionLeadLineView: View {
         }
     }
 
+    /// The Week page's markers; the sticker keeps the bare line.
     private var moments: [CompetitionLeadMoment] {
-        competitionLeadMoments(line, days: days, opponentName: opponentName)
+        guard sideLabels == nil else { return [] }
+        return competitionLeadMoments(line, days: days, opponentName: opponentName)
     }
 
     private func momentRow(_ index: Int, _ moment: CompetitionLeadMoment) -> some View {
@@ -579,6 +591,16 @@ struct CompetitionLeadLineView: View {
             .scaleEffect(isDrawn ? 1 : 0)
             .moving(arrival(Double(moment.index)), value: isDrawn)
             .position(point)
+    }
+
+    private func sideLabel(_ text: String, _ color: Color) -> some View {
+        Text(text)
+            .textCase(.uppercase)
+            .font(.themeLabel)
+            .tracking(1.2)
+            .foregroundStyle(color)
+            .lineLimit(1)
+            .accessibilityHidden(true)
     }
 
     private var lineStyle: StrokeStyle {

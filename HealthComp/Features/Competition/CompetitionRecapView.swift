@@ -422,6 +422,100 @@ struct CompetitionRecapCard: View {
     }
 }
 
+// MARK: Sticker
+
+/// The margin and the card's one headline: "Won by 110 points · 2nd title
+/// defense". Nil on a tie with no headline.
+func competitionRecapStickerLine(_ recap: CompetitionRecap) -> String? {
+    let parts = [recap.marginText, recap.line?.text].compactMap { $0 }
+    return parts.isEmpty ? nil : parts.joined(separator: " · ")
+}
+
+/// The result on a clear ground, to lay over a photo: score, margin, the lead
+/// line and the belt line. Points only. The card's size, so the preview slot
+/// keeps still; never reads Dynamic Type. A light scheme is dark ink.
+struct CompetitionRecapSticker: View {
+    let recap: CompetitionRecap
+    static let size = CompetitionRecapCard.size
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(alignment: .lastTextBaseline, spacing: 16) {
+                side(label: "You", points: recap.userPointsText, tint: Theme.you, alignment: .leading)
+                Spacer(minLength: 0)
+                side(label: recap.opponentLabel, points: recap.opponentPointsText, tint: Theme.ink, alignment: .trailing)
+            }
+            if let line = competitionLeadLine(recap.days, currentDayOrdinal: nil) {
+                CompetitionLeadLineView(
+                    line: line,
+                    days: recap.days,
+                    currentDayOrdinal: nil,
+                    opponentName: recap.opponentLabel,
+                    sideLabels: (you: "You ahead", them: "\(recap.opponentLabel) ahead")
+                )
+            }
+            if let text = competitionRecapStickerLine(recap) {
+                HStack(spacing: 8) {
+                    if let line = recap.line, line.isBelt, line.holder == .you {
+                        CompetitionBeltMark(holder: .you, width: 22)
+                    }
+                    Text(text)
+                        .font(.system(size: 15, weight: .bold))
+                        .foregroundStyle(recap.marginIsYours ? Theme.you : Theme.ink)
+                        .lineLimit(2)
+                        .minimumScaleFactor(0.7)
+                }
+            }
+        }
+        .padding(28)
+        .frame(width: Self.size.width, height: Self.size.height)
+    }
+
+    private func side(
+        label: String,
+        points: String,
+        tint: Color,
+        alignment: HorizontalAlignment
+    ) -> some View {
+        VStack(alignment: alignment, spacing: 2) {
+            Text(label)
+                .textCase(.uppercase)
+                .font(.system(size: 13, weight: .bold).width(.condensed))
+                .tracking(1.2)
+                .foregroundStyle(tint)
+                .lineLimit(1)
+                .minimumScaleFactor(0.6)
+            Text(points)
+                .font(.score(size: 60))
+                .monospacedDigit()
+                .foregroundStyle(tint)
+                .lineLimit(1)
+                .minimumScaleFactor(0.5)
+        }
+    }
+}
+
+/// Says "clear" behind the sticker's preview; never in the image.
+private struct CompetitionStickerGround: View {
+    var body: some View {
+        Canvas { context, size in
+            let side = 15.0
+            let squares = Path { path in
+                for row in 0 ..< Int((size.height / side).rounded(.up)) {
+                    for column in 0 ..< Int((size.width / side).rounded(.up))
+                        where (row + column).isMultiple(of: 2) {
+                        path.addRect(CGRect(
+                            x: Double(column) * side, y: Double(row) * side, width: side, height: side
+                        ))
+                    }
+                }
+            }
+            context.fill(squares, with: .color(Theme.control))
+        }
+        .background(Theme.ground)
+    }
+}
+
 // MARK: Image
 
 /// What the share sheet receives: PNG bytes, so size and type are known,
@@ -479,15 +573,36 @@ func competitionPresentShareSheet(_ item: CompetitionRecapShareItem) {
 /// 1080×1350 px, always light.
 @MainActor
 func competitionRecapImage(_ recap: CompetitionRecap) -> UIImage? {
-    let renderer = ImageRenderer(content: CompetitionRecapCard(recap: recap)
-        .environment(\.colorScheme, .light)
+    competitionRender(CompetitionRecapCard(recap: recap), size: CompetitionRecapCard.size, scheme: .light, isOpaque: true)
+}
+
+/// 1080×1350 px on a clear ground. Light ink is the dark scheme's colours.
+@MainActor
+func competitionRecapStickerImage(_ recap: CompetitionRecap, lightInk: Bool) -> UIImage? {
+    competitionRender(
+        CompetitionRecapSticker(recap: recap),
+        size: CompetitionRecapSticker.size,
+        scheme: lightInk ? .dark : .light,
+        isOpaque: false
+    )
+}
+
+@MainActor
+private func competitionRender(
+    _ content: some View,
+    size: CGSize,
+    scheme: ColorScheme,
+    isOpaque: Bool
+) -> UIImage? {
+    let renderer = ImageRenderer(content: content
+        .environment(\.colorScheme, scheme)
         .environment(\.dynamicTypeSize, .large))
-    renderer.proposedSize = ProposedViewSize(CompetitionRecapCard.size)
+    renderer.proposedSize = ProposedViewSize(size)
     renderer.scale = 3
-    renderer.isOpaque = true
+    renderer.isOpaque = isOpaque
     // The trait pins UIKit dynamic colors too, whatever the phone's appearance.
     var image: UIImage?
-    UITraitCollection(userInterfaceStyle: .light).performAsCurrent {
+    UITraitCollection(userInterfaceStyle: scheme == .dark ? .dark : .light).performAsCurrent {
         image = renderer.uiImage
     }
     return image
@@ -502,6 +617,9 @@ struct CompetitionRecapSheet: View {
     var personalBest: String? = nil
 
     @AppStorage("healthcomp.recapHidesName") private var hidesName = false
+    @State private var isSticker = false
+    @State private var lightInk = false
+    @State private var copied = false
     @State private var renderFailed = false
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.locale) private var locale
@@ -515,11 +633,26 @@ struct CompetitionRecapSheet: View {
     var body: some View {
         let recap = recap
         CompetitionDrawer(title: "Share Result", detents: [.large]) {
+            choice(
+                "Image", selection: $isSticker, off: "Card", on: "Sticker",
+                id: "competition.recap.kind"
+            )
             preview(recap)
-            if competitionRecapAllowsNameChoice(competition) {
-                nameChoice
+            if isSticker {
+                choice(
+                    "Ink", selection: $lightInk, off: "Dark ink", on: "Light ink",
+                    id: "competition.recap.ink"
+                )
+                .transition(Motion.appear)
             }
-            share(recap)
+            if competitionRecapAllowsNameChoice(competition) {
+                choice(
+                    "Name on the image", selection: $hidesName,
+                    off: "Show \(competition.opponentDisplayName)", on: "Hide name",
+                    id: "competition.recap.name"
+                )
+            }
+            buttons(recap)
             if renderFailed {
                 Text("Couldn’t make the image.")
                     .font(.callout)
@@ -529,6 +662,8 @@ struct CompetitionRecapSheet: View {
             }
         }
         .sensoryFeedback(.error, trigger: renderFailed) { _, failed in failed }
+        .sensoryFeedback(.success, trigger: copied) { _, copied in copied }
+        .onChange(of: [isSticker, lightInk, hidesName]) { copied = false }
     }
 
     private func preview(_ recap: CompetitionRecap) -> some View {
@@ -539,19 +674,31 @@ struct CompetitionRecapSheet: View {
             .aspectRatio(4 / 5, contentMode: .fit)
             .overlay {
                 GeometryReader { proxy in
-                    CompetitionRecapCard(recap: recap)
-                        .environment(\.colorScheme, .light)
-                        .environment(\.dynamicTypeSize, .large)
-                        .scaleEffect(
-                            proxy.size.width / CompetitionRecapCard.size.width,
-                            anchor: .topLeading
-                        )
-                        // The text clipping audit flags every line of scaled
-                        // Text, even hidden: to it, this is a picture.
-                        .accessibilityRepresentation { Color.clear }
+                    ZStack(alignment: .topLeading) {
+                        if isSticker {
+                            CompetitionRecapSticker(recap: recap)
+                                .background(CompetitionStickerGround())
+                                .environment(\.colorScheme, lightInk ? .dark : .light)
+                                .transition(Motion.appear)
+                                .zIndex(1)
+                        } else {
+                            CompetitionRecapCard(recap: recap)
+                                .environment(\.colorScheme, .light)
+                                .transition(Motion.appear)
+                        }
+                    }
+                    .environment(\.dynamicTypeSize, .large)
+                    .scaleEffect(
+                        proxy.size.width / CompetitionRecapCard.size.width,
+                        anchor: .topLeading
+                    )
+                    // The text clipping audit flags every line of scaled
+                    // Text, even hidden: to it, this is a picture.
+                    .accessibilityRepresentation { Color.clear }
                 }
             }
             .animation(Motion.fade, value: hidesName)
+            .animation(Motion.fade, value: lightInk)
             .clipShape(shape)
             .overlay(shape.strokeBorder(Theme.hairline, lineWidth: 1))
             .frame(maxWidth: 320)
@@ -559,45 +706,80 @@ struct CompetitionRecapSheet: View {
             .accessibilityElement(children: .ignore)
             .accessibilityAddTraits(.isImage)
             .accessibilityLabel(recap.accessibilityText)
-            .accessibilityIdentifier("competition.recap.card")
+            .accessibilityIdentifier(isSticker ? "competition.recap.sticker" : "competition.recap.card")
     }
 
+    /// Two answers. A segmented label can't wrap; larger text gets a switch.
     @ViewBuilder
-    private var nameChoice: some View {
-        // A segmented label can't wrap; larger text gets a switch.
+    private func choice(
+        _ title: String,
+        selection: Binding<Bool>,
+        off: String,
+        on: String,
+        id: String
+    ) -> some View {
         if dynamicTypeSize < .xxLarge {
-            Picker("Name on the image", selection: $hidesName) {
-                Text("Show \(competition.opponentDisplayName)").tag(false)
-                Text("Hide name").tag(true)
+            Picker(title, selection: selection) {
+                Text(off).tag(false)
+                Text(on).tag(true)
             }
             .pickerStyle(.segmented)
-            .accessibilityIdentifier("competition.recap.name")
+            .accessibilityIdentifier(id)
         } else {
-            Toggle("Hide name", isOn: $hidesName)
+            Toggle(on, isOn: selection)
                 .font(.body)
                 .foregroundStyle(Theme.ink)
                 .frame(minHeight: 44)
                 // Q-notifs-5: the inherited ink tint hides the On thumb in dark mode.
                 .tint(Color(uiColor: .systemGreen))
-                .accessibilityIdentifier("competition.recap.name")
+                .accessibilityIdentifier(id)
         }
     }
 
-    private func share(_ recap: CompetitionRecap) -> some View {
-        Button {
-            guard let image = competitionRecapImage(recap), let png = image.pngData() else {
-                renderFailed = true
-                return
-            }
-            renderFailed = false
-            competitionPresentShareSheet(
-                CompetitionRecapShareItem(png: png, image: image, title: recap.headline)
-            )
-        } label: {
-            Label("Share", systemImage: "square.and.arrow.up")
+    /// PNG bytes keep the sticker's clear ground on the pasteboard and in
+    /// the share sheet.
+    private func rendered(_ recap: CompetitionRecap) -> (image: UIImage, png: Data)? {
+        let image = isSticker
+            ? competitionRecapStickerImage(recap, lightInk: lightInk)
+            : competitionRecapImage(recap)
+        guard let image, let png = image.pngData() else {
+            renderFailed = true
+            return nil
         }
-        .buttonStyle(PrimaryButtonStyle())
-        .accessibilityHint("Opens the system share sheet")
-        .accessibilityIdentifier("competition.recap.share")
+        renderFailed = false
+        return (image, png)
+    }
+
+    @ViewBuilder
+    private func buttons(_ recap: CompetitionRecap) -> some View {
+        let layout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(spacing: 10))
+            : AnyLayout(HStackLayout(spacing: 10))
+        layout {
+            if isSticker {
+                Button {
+                    guard let png = rendered(recap)?.png else { return }
+                    UIPasteboard.general.setData(png, forPasteboardType: UTType.png.identifier)
+                    copied = true
+                } label: {
+                    Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc")
+                }
+                .buttonStyle(SecondaryButtonStyle())
+                .accessibilityHint("Copies the sticker to paste over a photo")
+                .accessibilityIdentifier("competition.recap.copy")
+                .transition(Motion.appear)
+            }
+            Button {
+                guard let made = rendered(recap) else { return }
+                competitionPresentShareSheet(
+                    CompetitionRecapShareItem(png: made.png, image: made.image, title: recap.headline)
+                )
+            } label: {
+                Label("Share", systemImage: "square.and.arrow.up")
+            }
+            .buttonStyle(PrimaryButtonStyle())
+            .accessibilityHint("Opens the system share sheet")
+            .accessibilityIdentifier("competition.recap.share")
+        }
     }
 }
