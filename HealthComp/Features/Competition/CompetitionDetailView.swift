@@ -391,6 +391,18 @@ struct CompetitionDetailView: View {
 
     private var weekSection: some View {
         VStack(alignment: .leading, spacing: 12) {
+            if let lead = competitionLeadLine(
+                competition.days, currentDayOrdinal: competition.currentDayOrdinal
+            ) {
+                CompetitionLeadLineView(
+                    line: lead,
+                    days: competition.days,
+                    currentDayOrdinal: competition.currentDayOrdinal,
+                    opponentName: competition.opponentDisplayName,
+                    isDrawn: !weekGrows
+                )
+                .padding(.bottom, 12)
+            }
             SectionLabel("THE WEEK")
             CompetitionWeekChart(
                 days: competition.days,
