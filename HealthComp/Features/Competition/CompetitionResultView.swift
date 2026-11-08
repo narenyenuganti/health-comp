@@ -18,6 +18,8 @@ struct CompetitionResultView: View {
     var challengeSomeone: (() -> Void)? = nil
     /// Real matches only: your own win in a loss or a tie.
     var personalBest: String? = nil
+    /// Real matches only: how the week was decided, in one sentence.
+    var howItWasWon: String? = nil
     /// "Your record with Sam", counting this week.
     var recordLink: CompetitionRecordLink? = nil
 
@@ -37,6 +39,7 @@ struct CompetitionResultView: View {
     private var reactionsSeen = CompetitionReactionsSeen()
     @AppStorage(CompetitionMotionSeen.storageKey)
     private var motionSeen = CompetitionMotionSeen()
+    @AppStorage("healthcomp.verdictHidesHowItWasWon") private var hidesHowItWasWon = false
 
     var body: some View {
         ScrollView {
@@ -55,19 +58,30 @@ struct CompetitionResultView: View {
                 VStack(spacing: 12) {
                     finalScore
                     summaryLine
-                    if let personalBest {
-                        Text(personalBest)
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(Theme.you)
-                            .multilineTextAlignment(.center)
-                            .frame(maxWidth: .infinity)
-                            .accessibilityIdentifier("competition.result.personal-best")
-                            .verdictBeat(2, shown: isShown)
-                    }
                 }
                 .verdictBeat(1, shown: isShown)
 
-                if let text = beltText {
+                if let sentence = shownHowItWasWon {
+                    howItWasWonLine(sentence)
+                        .verdictBeat(2, shown: isShown)
+                        .transition(Motion.appear)
+                }
+
+                // The card's one line first; the rest of these follow it.
+                if headline?.isBelt == true, let text = beltText {
+                    beltBanner(text)
+                        .verdictBeat(2, shown: isShown)
+                        .transition(Motion.appear)
+                } else if let headline, headline.kind != .personalBest,
+                          headline.kind != .lead || shownHowItWasWon == nil {
+                    headlineLine(headline.text, holder: headline.holder, id: "competition.result.headline")
+                }
+
+                if let personalBest {
+                    headlineLine(personalBest, holder: .you, id: "competition.result.personal-best")
+                }
+
+                if headline?.isBelt != true, let text = beltText {
                     beltBanner(text)
                         .verdictBeat(2, shown: isShown)
                         .transition(Motion.appear)
@@ -198,11 +212,8 @@ struct CompetitionResultView: View {
         .sheet(isPresented: $showsShare) {
             CompetitionRecapSheet(
                 competition: competition,
-                belt: competitionRecapBelt(
-                    beltEvent,
-                    outcome: outcome,
-                    isRetired: !competitionRecapAllowsNameChoice(competition)
-                )
+                belt: recapBelt,
+                personalBest: personalBest
             )
         }
         .onDisappear {
@@ -270,7 +281,57 @@ struct CompetitionResultView: View {
             reactions?.failed.contains(.result) == true,
             competition.receivedReaction(.result) != nil,
             isArchived,
+            hidesHowItWasWon,
         ]
+    }
+
+    private var headline: CompetitionHeadline? {
+        competitionHeadline(
+            belt: recapBelt,
+            personalBest: personalBest,
+            days: competition.days,
+            opponentName: opponentName
+        )
+    }
+
+    private var recapBelt: CompetitionRecapBelt? {
+        competitionRecapBelt(
+            beltEvent,
+            outcome: outcome,
+            isRetired: !competitionRecapAllowsNameChoice(competition)
+        )
+    }
+
+    private var shownHowItWasWon: String? {
+        hidesHowItWasWon ? nil : howItWasWon
+    }
+
+    /// The Verdict's one story: amber slash for your win, ink for theirs.
+    private func howItWasWonLine(_ sentence: String) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            SlantedBar()
+                .fill(outcome == .win ? Theme.youFill : Theme.ink)
+                .frame(width: 4, height: 40)
+                .accessibilityHidden(true)
+            Text(sentence)
+                .font(.body.weight(.medium))
+                .foregroundStyle(Theme.ink)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.horizontal, 6)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("competition.result.howItWasWon")
+    }
+
+    private func headlineLine(_ text: String, holder: CompetitionBeltHolder?, id: String) -> some View {
+        Text(text)
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(holder == .you ? Theme.you : holder == .them ? Theme.ink : Theme.secondary)
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: .infinity)
+            .accessibilityIdentifier(id)
+            .verdictBeat(2, shown: isShown)
     }
 
     private var beltText: (holder: CompetitionBeltHolder, title: String, detail: String?)? {
@@ -606,6 +667,8 @@ struct CompetitionResultView: View {
         let took = names.indices.filter { split.you[$0] > split.them[$0] }.map { names[$0] }
         let tookText: String? = switch took.count {
         case 0: nil
+        // Already the Verdict's headline.
+        case 3 where headline?.kind == .allThreeRings: nil
         case 3: "You took all three"
         default: "You took " + took.joined(separator: " and ")
         }
@@ -1014,7 +1077,8 @@ struct CompetitionResultView: View {
     }
 
     private var hasMenuActions: Bool {
-        !competition.isPractice && (dataControl != .preservedHistory || muteButton != nil)
+        !competition.isPractice
+            && (dataControl != .preservedHistory || muteButton != nil || howItWasWon != nil)
     }
 
     @ViewBuilder
@@ -1042,6 +1106,18 @@ struct CompetitionResultView: View {
 
         if let muteButton {
             muteButton
+        }
+
+        if howItWasWon != nil {
+            Button {
+                hidesHowItWasWon.toggle()
+            } label: {
+                Label(
+                    hidesHowItWasWon ? "Show How It Was Won" : "Hide How It Was Won",
+                    systemImage: hidesHowItWasWon ? "eye" : "eye.slash"
+                )
+            }
+            .accessibilityIdentifier("competition.result.howItWasWon.toggle")
         }
     }
 
@@ -1150,6 +1226,154 @@ func competitionPersonalBestText(
         return "Your best week of your last \(past.count + 1), \(amount) above your average"
     }
     return "\(amount) above your average week"
+}
+
+/// A result card's one highlight line: Home's result rows, the top of the
+/// Verdict and the recap card all show this one, and only this one.
+struct CompetitionHeadline: Equatable {
+    enum Kind: Equatable { case tookBelt, personalBest, allThreeRings, titleDefense, lead }
+    let kind: Kind
+    let text: String
+    /// Amber for you, ink for them, grey for neither.
+    let holder: CompetitionBeltHolder?
+
+    var isBelt: Bool { kind == .tookBelt || kind == .titleDefense }
+}
+
+/// In a fixed order: the belt changing hands, your personal-best line (nil
+/// on wins), all three rings yours, a title defense, then the lead. A nil
+/// name is hidden ("They …"). Nil when none of them is true.
+func competitionHeadline(
+    belt: CompetitionRecapBelt?,
+    personalBest: String?,
+    days: [LocalCompetitionDayPresentation],
+    opponentName: String?
+) -> CompetitionHeadline? {
+    let beltLine = belt.map { belt -> CompetitionHeadline in
+        let kind: CompetitionHeadline.Kind = switch belt {
+        case .youTook, .theyTook: .tookBelt
+        case .youDefended, .theyDefended: .titleDefense
+        }
+        return CompetitionHeadline(
+            kind: kind,
+            text: competitionRecapBeltText(belt, opponentName: opponentName),
+            holder: belt.isYours ? .you : .them
+        )
+    }
+    if let beltLine, beltLine.kind == .tookBelt { return beltLine }
+    if let personalBest {
+        return CompetitionHeadline(kind: .personalBest, text: personalBest, holder: .you)
+    }
+    if let split = competitionRingSplit(days), (0..<3).allSatisfy({ split.you[$0] > split.them[$0] }) {
+        return CompetitionHeadline(kind: .allThreeRings, text: "Took all three rings", holder: .you)
+    }
+    if let beltLine { return beltLine }
+    guard let lead = competitionLeadLine(days, currentDayOrdinal: nil) else { return nil }
+    let after = lead.margins.dropFirst()
+    switch lead.changes.count {
+    case 1:
+        return CompetitionHeadline(kind: .lead, text: "The lead changed hands once", holder: nil)
+    case 2:
+        return CompetitionHeadline(kind: .lead, text: "The lead changed hands twice", holder: nil)
+    case 3...:
+        return CompetitionHeadline(
+            kind: .lead, text: "The lead changed hands \(lead.changes.count) times", holder: nil
+        )
+    default:
+        if after.allSatisfy({ $0 > 0 }) {
+            return CompetitionHeadline(kind: .lead, text: "You led after every day", holder: .you)
+        }
+        if after.allSatisfy({ $0 < 0 }) {
+            return CompetitionHeadline(
+                kind: .lead, text: "\(opponentName ?? "They") led after every day", holder: .them
+            )
+        }
+    }
+    return nil
+}
+
+/// The Verdict's "how it was won" templates, in the order they're tried.
+enum CompetitionHowItWasWon: Equatable, CaseIterable {
+    case everyDay, fewerDays, lastDay, comeback, wireToWire, decidingDay, neverTrailed
+}
+
+/// Every true template for one week, in order, built from the margin after
+/// each day. Empty for a tie, or when any day is missing or the days don't
+/// add up to the final score, so a sentence is never wrong.
+func competitionHowItWasWonLines(
+    _ competition: LocalCompetitionPresentation,
+    locale: Locale = .current
+) -> [(template: CompetitionHowItWasWon, text: String)] {
+    let days = competition.days.sorted { $0.ordinal < $1.ordinal }
+    let final = competitionDisplayedMargin(
+        userPoints: competition.userPoints, opponentPoints: competition.opponentPoints
+    )
+    guard competition.terminalResult != nil, final != 0,
+          let lead = competitionLeadLine(days, currentDayOrdinal: nil),
+          lead.margins.count == days.count + 1,
+          lead.margins.last == final
+    else { return [] }
+    let youWon = final > 0
+    // The winner's margin after day k (w[0] is 0) and their day-by-day record.
+    let w = lead.margins.map { youWon ? $0 : -$0 }
+    let n = days.count
+    let outcomes = days.map { competitionDayOutcome($0, currentDayOrdinal: nil) }
+    let won = outcomes.filter { $0 == (youWon ? CompetitionDayOutcome.won : .lost) }.count
+    let lost = outcomes.filter { $0 == (youWon ? CompetitionDayOutcome.lost : .won) }.count
+    let winner = youWon ? "You" : competition.opponentDisplayName
+    let winnerMid = youWon ? "you" : competition.opponentDisplayName
+    let loser = youWon ? competition.opponentDisplayName : "You"
+    func points(_ value: Double) -> String { competitionPointsText(value, locale: locale) }
+    // The day the winner went ahead for good.
+    let k = (1...n).first { day in w[day...].allSatisfy { $0 > 0 } } ?? n
+    let deficits = (1..<k).map { (day: $0, down: -w[$0]) }.filter { $0.down > 0 }
+    let worst = deficits.max { $0.down < $1.down }
+
+    var lines: [(template: CompetitionHowItWasWon, text: String)] = []
+    if won == n {
+        lines.append((.everyDay, "\(winner) won all \(n) days."))
+    }
+    if won < lost {
+        lines.append((.fewerDays, "\(loser) won more days, \(lost) to \(won), but \(winnerMid) won the week by \(points(w[n]))."))
+    }
+    if k == n, n > 1 {
+        let goingIn = w[n - 1] == 0 ? "level" : "\(points(-w[n - 1])) down"
+        lines.append((.lastDay, "\(weekdayName(days[n - 1].day, locale: locale)) decided it: \(winnerMid) went in \(goingIn) and won the day by \(points(w[n] - w[n - 1]))."))
+    }
+    if let worst, worst.down >= 50 {
+        lines.append((.comeback, "\(winner) \(youWon ? "were" : "was") \(points(worst.down)) down after \(weekdayName(days[worst.day - 1].day, locale: locale)) and came back to win by \(points(w[n]))."))
+    }
+    if k == 1 {
+        lines.append((.wireToWire, "\(winner) led after every day and won by \(points(w[n]))."))
+    }
+    if k > 1, k < n, worst != nil {
+        lines.append((.decidingDay, "\(weekdayName(days[k - 1].day, locale: locale)) decided it: \(winnerMid) won it by \(points(w[k] - w[k - 1])) and never trailed again."))
+    }
+    if k > 1, worst == nil {
+        lines.append((.neverTrailed, "\(winner) never trailed and won by \(points(w[n]))."))
+    }
+    return lines
+}
+
+/// The first true template, never the one shown for last week with the same
+/// person. Real weeks only; nil when nothing is true.
+func competitionHowItWasWon(
+    for competition: LocalCompetitionPresentation,
+    in competitions: [LocalCompetitionPresentation],
+    locale: Locale = .current
+) -> String? {
+    let weeks = competitionHistoryWeeks(competitions)
+        .filter { $0.opponentIdentity == competition.opponentIdentity }
+    guard let index = weeks.firstIndex(where: { $0.id == competition.id }) else { return nil }
+    // Oldest first up to this week, so each week skips what the one before showed.
+    var last: CompetitionHowItWasWon?
+    var shown: String?
+    for week in weeks[index...].reversed() {
+        let pick = competitionHowItWasWonLines(week, locale: locale).first { $0.template != last }
+        last = pick?.template
+        shown = pick?.text
+    }
+    return shown
 }
 
 /// "won 2 days, lost 4, tied 1": only days with both scores, never a 0–0

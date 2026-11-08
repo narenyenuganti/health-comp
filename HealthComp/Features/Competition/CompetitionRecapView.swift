@@ -40,6 +40,8 @@ struct CompetitionRecap: Equatable {
     let highlights: [CompetitionRecapHighlight]
     let belt: CompetitionRecapBelt?
     let beltText: String?
+    /// The footer's one line, picked as on Home and the Verdict.
+    let line: CompetitionHeadline?
     let accessibilityText: String
 }
 
@@ -81,6 +83,7 @@ func competitionRecap(
     _ competition: LocalCompetitionPresentation,
     belt: CompetitionRecapBelt?,
     hidesName: Bool,
+    personalBest: String? = nil,
     locale: Locale = .current
 ) -> CompetitionRecap {
     let hidden = hidesName || !competitionRecapAllowsNameChoice(competition)
@@ -121,6 +124,9 @@ func competitionRecap(
         locale: locale
     )
     let beltText = belt.map { competitionRecapBeltText($0, opponentName: name) }
+    let line = competitionHeadline(
+        belt: belt, personalBest: personalBest, days: competition.days, opponentName: name
+    )
 
     func spoken(_ points: Double) -> String {
         competitionPointsAccessibilityText(points, fractionDigits: digits, locale: locale)
@@ -136,7 +142,7 @@ func competitionRecap(
     let accessibilityText = (
         parts.compactMap { $0 }
             + highlights.map { "\($0.title): \($0.accessibilityValue)" }
-            + [beltText].compactMap { $0 }
+            + [line?.text].compactMap { $0 }
     ).joined(separator: ". ") + "."
 
     return CompetitionRecap(
@@ -154,6 +160,7 @@ func competitionRecap(
         highlights: highlights,
         belt: belt,
         beltText: beltText,
+        line: line,
         accessibilityText: accessibilityText
     )
 }
@@ -318,7 +325,7 @@ struct CompetitionRecapCard: View {
             Spacer(minLength: 12)
 
             VStack(alignment: .leading, spacing: 10) {
-                if recap.beltText != nil {
+                if recap.line != nil {
                     Rectangle().fill(Theme.hairline).frame(height: 1)
                 }
                 // A belt line too long for the footer row gets a row of its own.
@@ -348,18 +355,21 @@ struct CompetitionRecapCard: View {
     }
 
     /// Whole, or on its own row with the name truncated: "took the belt" /
-    /// "'s 3rd title defense" is never cut.
+    /// "'s 3rd title defense" is never cut. Any other line gets two rows.
     @ViewBuilder
     private func beltLine(fits: Bool) -> some View {
-        if let belt = recap.belt, let text = recap.beltText {
-            let verb = text.range(of: " took the belt") ?? text.range(of: "'s ", options: .backwards)
+        if let line = recap.line {
+            let text = line.text
+            let verb = line.isBelt
+                ? text.range(of: " took the belt") ?? text.range(of: "'s ", options: .backwards)
+                : nil
             HStack(spacing: 8) {
-                if belt.isYours {
+                if line.isBelt, line.holder == .you {
                     CompetitionBeltMark(holder: .you, width: 22)
                 }
                 HStack(spacing: 0) {
                     if fits || verb == nil {
-                        Text(text).lineLimit(1).fixedSize(horizontal: fits, vertical: false)
+                        Text(text).lineLimit(fits ? 1 : 2).fixedSize(horizontal: fits, vertical: false)
                     } else if let verb {
                         Text(text[..<verb.lowerBound]).lineLimit(1)
                         Text(text[verb.lowerBound...]).fixedSize()
@@ -489,6 +499,7 @@ func competitionRecapImage(_ recap: CompetitionRecap) -> UIImage? {
 struct CompetitionRecapSheet: View {
     let competition: LocalCompetitionPresentation
     let belt: CompetitionRecapBelt?
+    var personalBest: String? = nil
 
     @AppStorage("healthcomp.recapHidesName") private var hidesName = false
     @State private var renderFailed = false
@@ -496,7 +507,9 @@ struct CompetitionRecapSheet: View {
     @Environment(\.locale) private var locale
 
     private var recap: CompetitionRecap {
-        competitionRecap(competition, belt: belt, hidesName: hidesName, locale: locale)
+        competitionRecap(
+            competition, belt: belt, hidesName: hidesName, personalBest: personalBest, locale: locale
+        )
     }
 
     var body: some View {
