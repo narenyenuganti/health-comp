@@ -201,6 +201,8 @@ struct CompetitionResultView: View {
             onFinished: { ceremoniesSeen = ceremoniesSeen.marking(competition.id) }
         )
         .onAppear { startVerdict() }
+        // Yours only: what you got already rained on Home.
+        .competitionReactionRain()
         // A sleeping task, so leaving the screen cancels the tap.
         .task(id: isRevealed) {
             guard isRevealed, isFirstView, outcome == .win else { return }

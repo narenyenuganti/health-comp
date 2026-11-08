@@ -31,6 +31,9 @@ final class HealthCompAppDelegate: NSObject,
         }
 #endif
         UNUserNotificationCenter.current().delegate = self
+        UNUserNotificationCenter.current().setNotificationCategories(
+            CompetitionReactionAlert.categories
+        )
         application.registerForRemoteNotifications()
         return true
     }
@@ -53,6 +56,17 @@ final class HealthCompAppDelegate: NSObject,
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse
     ) async {
+        let content = response.notification.request.content
+        if let reaction = CompetitionReactionAlert.request(
+            actionIdentifier: response.actionIdentifier,
+            categoryIdentifier: content.categoryIdentifier,
+            userInfo: content.userInfo
+        ) {
+            // In the background, without opening the app. iOS keeps it
+            // running until this returns; the next open shows what you sent.
+            try? await CompetitionReactionAlert.send?(reaction)
+            return
+        }
         guard let route = CompetitionRoute(
             userInfo: response.notification.request.content.userInfo
         ) else {

@@ -2824,6 +2824,56 @@ final class CompetitionPresentationTests: XCTestCase {
         XCTAssertEqual(CompetitionMotionSeen(rawValue: both.rawValue), both)
     }
 
+    func testReactionRainsOnceForUnseenIncomingAndSurvivesItsRawValue() {
+        let older = reaction(.day(1), .clap, at: 100)
+        let newest = reaction(.day(2), .huffing, at: 200)
+        let yours = reaction(.day(3), .fire, fromYou: true, at: 300)
+        let match = reactionPresentation(reactions: [yours, older, newest])
+        let seen = CompetitionReactionsSeen()
+
+        let batch = competitionReactionRainBatch([match], seen: seen, motionSeen: CompetitionMotionSeen())
+        XCTAssertEqual(batch?.kinds, [.huffing, .clap])
+        XCTAssertEqual(
+            batch?.announcement,
+            "Huffing. Jordan reacted to your Day 2. Clap. Jordan reacted to your Day 1"
+        )
+
+        let rained = CompetitionMotionSeen().raining([match])
+        XCTAssertNil(competitionReactionRainBatch([match], seen: seen, motionSeen: rained))
+        XCTAssertEqual(CompetitionMotionSeen(rawValue: rained.rawValue), rained)
+        // The rain mark leaves the Week's alone.
+        XCTAssertFalse(rained.weekGained(match))
+
+        // A newer one rains alone; one already seen on its screen never does.
+        let changed = reactionPresentation(reactions: [reaction(.day(2), .fire, at: 250), older])
+        XCTAssertEqual(
+            competitionReactionRainBatch([changed], seen: seen, motionSeen: rained)?.kinds,
+            [.fire]
+        )
+        XCTAssertNil(competitionReactionRainBatch(
+            [changed], seen: seen.marking(changed), motionSeen: CompetitionMotionSeen()
+        ))
+    }
+
+    func testReactionRainIsCappedAndSkipsPracticeAndMatchesWithoutScores() {
+        let five = (1...5).map { reaction(.day($0), .salute, at: Double($0)) }
+        XCTAssertEqual(
+            competitionReactionRainBatch(
+                [reactionPresentation(reactions: five)],
+                seen: CompetitionReactionsSeen(), motionSeen: CompetitionMotionSeen()
+            )?.kinds.count,
+            4
+        )
+        let practice = reactionPresentation(
+            opponentIdentity: PracticeMatch.opponentIdentity, reactions: five
+        )
+        let scheduled = reactionPresentation(lifecycle: .scheduled, reactions: five)
+        XCTAssertNil(competitionReactionRainBatch(
+            [practice, scheduled],
+            seen: CompetitionReactionsSeen(), motionSeen: CompetitionMotionSeen()
+        ))
+    }
+
     func testRematchStageIgnoresThePresentationAndKeepsWhatResizesTheControl() {
         let earlier = reactionPresentation()
         let later = reactionPresentation(reactions: [reaction(.result, .salute, at: 1)])

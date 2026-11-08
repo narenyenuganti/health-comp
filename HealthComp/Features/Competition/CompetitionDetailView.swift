@@ -112,6 +112,12 @@ struct CompetitionDetailView: View {
         .refreshable(refresh)
         // Back or pop, not a drawer: the line stays while you're here.
         .onDisappear { reactionsSeen = reactionsSeen.marking(competition) }
+        .competitionReactionRain(
+            incoming: reactions == nil ? nil : competitionReactionRainBatch(
+                [competition], seen: reactionsSeen, motionSeen: motionSeen
+            ),
+            rained: { motionSeen = motionSeen.raining([competition]) }
+        )
         .background(Theme.ground)
         .navigationTitle(competition.opponentDisplayName)
         .navigationBarTitleDisplayMode(.inline)
@@ -181,6 +187,7 @@ struct CompetitionDetailView: View {
             switch item {
             case let .day(ordinal):
                 dayDrawer(ordinal)
+                    .competitionReactionRain()
             case .activitySync:
                 activitySyncDrawer
             case .rules:
