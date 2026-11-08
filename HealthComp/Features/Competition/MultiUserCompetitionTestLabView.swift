@@ -379,7 +379,11 @@ private struct MultiUserCompetitionSharingTestLabView: View {
                     isCommandInFlight: false,
                     send: handle,
                     openCompetition: { path.append($0) },
-                    reactions: reactionControl(id)
+                    reactions: reactionControl(id),
+                    personalBest: competitionPersonalBestText(
+                        for: competition,
+                        in: publication.dashboard.competitions
+                    )
                 )
             case .pending:
                 CompetitionInviteView(

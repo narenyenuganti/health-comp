@@ -2491,7 +2491,7 @@ enum RemoteCompetitionProjector {
             let acceptedSnapshot = activityDay?.acceptedClientRevision != nil
                 && activityDay?.acceptedClientRevision == owner?.clientRevision
                 ? activityDay?.acceptedSnapshot : nil
-            return CompetitionDayPresentation(
+            var presentation = CompetitionDayPresentation(
                 day: day,
                 ordinal: ordinal,
                 ownerAcceptedPoints: owner?.acceptedCentiPoints.map {
@@ -2507,6 +2507,11 @@ enum RemoteCompetitionProjector {
                 ownerLatestSnapshot: activityDay?.latestSnapshot,
                 scoringPolicy: .remoteWireV1
             )
+            presentation.ownerRingPoints = owner?.ringBasisPoints?.map { Double($0) / 100 }
+            presentation.opponentRingPoints = future && terminal == nil
+                ? nil
+                : remote?.ringBasisPoints?.map { Double($0) / 100 }
+            return presentation
         }
     }
 

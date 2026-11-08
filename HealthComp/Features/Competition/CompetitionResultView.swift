@@ -16,6 +16,8 @@ struct CompetitionResultView: View {
     var reactions: CompetitionReactionControl? = nil
     /// Practice only: the pinned action in place of Rematch.
     var challengeSomeone: (() -> Void)? = nil
+    /// Real matches only: your own win in a loss or a tie.
+    var personalBest: String? = nil
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
@@ -53,6 +55,15 @@ struct CompetitionResultView: View {
                 VStack(spacing: 12) {
                     finalScore
                     summaryLine
+                    if let personalBest {
+                        Text(personalBest)
+                            .font(.subheadline.weight(.semibold))
+                            .foregroundStyle(Theme.you)
+                            .multilineTextAlignment(.center)
+                            .frame(maxWidth: .infinity)
+                            .accessibilityIdentifier("competition.result.personal-best")
+                            .verdictBeat(2, shown: isShown)
+                    }
                 }
                 .verdictBeat(1, shown: isShown)
 
@@ -76,6 +87,11 @@ struct CompetitionResultView: View {
                     .foregroundStyle(Theme.secondary)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .verdictBeat(2, shown: isShown)
+                }
+
+                if let split = competitionRingSplit(competition.days) {
+                    ringSplitPanel(split)
+                        .verdictBeat(2, shown: isShown)
                 }
 
                 if !competition.days.isEmpty {
@@ -566,6 +582,74 @@ struct CompetitionResultView: View {
         }
     }
 
+    /// Who took Move, Exercise and Stand: amber where you did, ink where
+    /// they did, so a loss can still hold a ring.
+    private func ringSplitPanel(_ split: (you: [Double], them: [Double])) -> some View {
+        let names = ["Move", "Exercise", competitionStandTitle(competition.days).capitalized]
+        let took = names.indices.filter { split.you[$0] > split.them[$0] }.map { names[$0] }
+        let tookText: String? = switch took.count {
+        case 0: nil
+        case 3: "You took all three"
+        default: "You took " + took.joined(separator: " and ")
+        }
+        return VStack(alignment: .leading, spacing: 14) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                SectionLabel("EACH RING")
+                Spacer(minLength: 8)
+                if let tookText {
+                    Text(tookText)
+                        .font(.themeLabel)
+                        .foregroundStyle(Theme.you)
+                        .multilineTextAlignment(.trailing)
+                }
+            }
+            ForEach(names.indices, id: \.self) { index in
+                ringSplitRow(names[index], you: split.you[index], them: split.them[index])
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .themePanel()
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(
+            (["Each ring", tookText] + names.indices.map {
+                "\(names[$0]): you \(competitionPointsText(split.you[$0], locale: locale)), \(opponentName) \(competitionPointsText(split.them[$0], locale: locale))"
+            })
+            .compactMap { $0 }
+            .joined(separator: ". ")
+        )
+        .accessibilityIdentifier("competition.result.rings")
+    }
+
+    private func ringSplitRow(_ name: String, you: Double, them: Double) -> some View {
+        let total = you + them
+        return VStack(alignment: .leading, spacing: 4) {
+            Text(name)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(Theme.ink)
+            GeometryReader { proxy in
+                let width = proxy.size.width - 2
+                HStack(spacing: 2) {
+                    SlantedBar()
+                        .fill(you > them ? Theme.youFill : Theme.track)
+                        .frame(width: total > 0 ? width * you / total : width / 2)
+                    SlantedBar()
+                        .fill(them > you ? Theme.ink : Theme.track)
+                }
+            }
+            .frame(height: 14)
+            HStack {
+                Text(competitionPointsText(you, locale: locale))
+                    .fontWeight(.semibold)
+                    .foregroundStyle(you > them ? Theme.you : Theme.secondary)
+                Spacer(minLength: 8)
+                Text(competitionPointsText(them, locale: locale))
+                    .foregroundStyle(Theme.secondary)
+            }
+            .font(.caption.monospacedDigit())
+        }
+    }
+
     // The belt replaces the awards list: what this week did to it.
     @ViewBuilder
     private func beltBanner(
@@ -995,6 +1079,60 @@ func competitionResultTitle(
     case .loss: "\(opponentDisplayName) won"
     case .tie: "All square with \(opponentDisplayName)"
     }
+}
+
+/// Each side's week by ring (Move, Exercise, Stand), as the server accepted
+/// it. Nil unless every scored day on both sides kept its split, so the parts
+/// always add up to the final scores.
+func competitionRingSplit(
+    _ days: [LocalCompetitionDayPresentation]
+) -> (you: [Double], them: [Double])? {
+    var you = [0.0, 0, 0]
+    var them = [0.0, 0, 0]
+    var counted = false
+    for day in days {
+        if day.ownerAcceptedPoints != nil {
+            guard let rings = day.ownerRingPoints else { return nil }
+            you = zip(you, rings).map(+)
+        }
+        if day.opponentRevealedPoints != nil {
+            guard let rings = day.opponentRingPoints else { return nil }
+            them = zip(them, rings).map(+)
+        }
+        counted = counted || (day.ownerAcceptedPoints != nil && day.opponentRevealedPoints != nil)
+    }
+    return counted ? (you, them) : nil
+}
+
+/// One true line about your own week on a loss or a tie, against your last
+/// four finished real weeks before it. Nil with fewer than three of them, or
+/// when this week was no better than your average. Points only.
+func competitionPersonalBestText(
+    for competition: LocalCompetitionPresentation,
+    in competitions: [LocalCompetitionPresentation],
+    locale: Locale = .current
+) -> String? {
+    guard let result = competition.terminalResult, result.outcome != .win else { return nil }
+    func bounds(_ week: LocalCompetitionPresentation) -> (start: Date, end: Date)? {
+        week.acceptedConfiguration.flatMap { competitionScheduleBoundaries($0.schedule) }
+    }
+    let weeks = competitionHistoryWeeks(competitions)
+    guard let index = weeks.firstIndex(where: { $0.id == competition.id }),
+          let start = bounds(competition)?.start
+    else { return nil }
+    // Finished before this one began: a match that overlapped it isn't past.
+    let past = weeks[(index + 1)...]
+        .filter { bounds($0).map { $0.end <= start } ?? false }
+        .prefix(4)
+        .compactMap(\.terminalResult?.userPoints)
+    guard past.count >= 3 else { return nil }
+    let above = (result.userPoints - past.reduce(0, +) / Double(past.count)).rounded()
+    guard above >= 1 else { return nil }
+    let amount = "\(competitionPointsText(above, locale: locale)) \(above == 1 ? "point" : "points")"
+    if past.allSatisfy({ result.userPoints > $0 }) {
+        return "Your best week of your last \(past.count + 1), \(amount) above your average"
+    }
+    return "\(amount) above your average week"
 }
 
 /// "won 2 days, lost 4, tied 1": only days with both scores, never a 0–0

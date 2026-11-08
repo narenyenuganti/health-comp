@@ -5,6 +5,21 @@ enum CompetitionSyncCoordinatorFailure: Error, Equatable, Sendable {
     case stopped
 }
 
+/// Move, Exercise and Stand for display, or nil unless all three are known
+/// and add up to the accepted score, so a split never disagrees with it.
+func competitionRingBasisPoints(
+    _ accepted: Int?,
+    _ move: Int?,
+    _ exercise: Int?,
+    _ stand: Int?
+) -> [Int]? {
+    guard let accepted, let move, let exercise, let stand,
+          [move, exercise, stand].allSatisfy({ (0...20_000).contains($0) }),
+          accepted == min(move + exercise + stand, 60_000)
+    else { return nil }
+    return [move, exercise, stand]
+}
+
 struct CompetitionAcceptedScorePersistence: Sendable {
     var persist: @Sendable (
         _ profileID: UUID,
@@ -47,7 +62,13 @@ struct CompetitionAcceptedScorePersistence: Sendable {
                 wireContentSHA256: wireContentSHA256,
                 scoringPolicyIdentity: request.scoringPolicyIdentity,
                 clientRevision: request.clientRevision,
-                serverSequence: serverSequence
+                serverSequence: serverSequence,
+                ringBasisPoints: competitionRingBasisPoints(
+                    response.acceptedCentiPoints,
+                    request.moveBasisPoints,
+                    request.exerciseBasisPoints,
+                    request.standBasisPoints
+                )
             )
             let revision = try RemoteScoreRevision(
                 competitionID: competitionID,
