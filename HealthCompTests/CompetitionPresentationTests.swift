@@ -1855,15 +1855,6 @@ final class CompetitionPresentationTests: XCTestCase {
         XCTAssertNil(CompetitionBeltCeremonyClip(named: "missing"))
     }
 
-    func testCeremoniesSeenSurvivesItsRawValue() throws {
-        let id = CompetitionID(UUID())
-        let seen = CompetitionBeltCeremoniesSeen().marking(id)
-
-        XCTAssertFalse(CompetitionBeltCeremoniesSeen().contains(id))
-        XCTAssertTrue(seen.contains(id))
-        XCTAssertTrue(try XCTUnwrap(CompetitionBeltCeremoniesSeen(rawValue: seen.rawValue)).contains(id))
-    }
-
     func testBeltChipWaitsWhileAnEarlierMatchWithThemIsUnfinished() {
         let earlier = homePresentation(id: 1, name: "Sam", lifecycle: .tallying(startedAt: homeNow),
                                        start: (10, 14))
@@ -2783,6 +2774,42 @@ final class CompetitionPresentationTests: XCTestCase {
         XCTAssertEqual(
             competitionReactionsInWeekOrder([theirDay5, theirDay2, theirResult, yourDay2]),
             [theirResult, yourDay2, theirDay2, theirDay5]
+        )
+    }
+
+    func testMotionSeenMarksAMomentForOneMatchAndSurvivesItsRawValue() {
+        let id = CompetitionID(UUID())
+        let other = CompetitionID(UUID())
+        let marked = CompetitionMotionSeen().marking(.verdict, id)
+
+        XCTAssertFalse(CompetitionMotionSeen().hasSeen(.verdict, id))
+        XCTAssertTrue(marked.hasSeen(.verdict, id))
+        XCTAssertFalse(marked.hasSeen(.verdict, other))
+
+        let both = marked.marking(.verdict, other)
+        XCTAssertEqual(CompetitionMotionSeen(rawValue: both.rawValue), both)
+    }
+
+    func testRematchStageIgnoresThePresentationAndKeepsWhatResizesTheControl() {
+        let earlier = reactionPresentation()
+        let later = reactionPresentation(reactions: [reaction(.result, .salute, at: 1)])
+        XCTAssertNotEqual(earlier, later)
+        XCTAssertEqual(CompetitionRematchStage(.next(earlier)), CompetitionRematchStage(.next(later)))
+        XCTAssertNotEqual(CompetitionRematchStage(.next(earlier)), CompetitionRematchStage(.received(earlier)))
+
+        let id = CompetitionID(UUID())
+        let unknown = CompetitionRematchStage(.sent(challengeID: id, expiresAt: nil, link: nil))
+        XCTAssertEqual(
+            unknown,
+            CompetitionRematchStage(.sent(challengeID: CompetitionID(UUID()), expiresAt: nil, link: nil))
+        )
+        XCTAssertNotEqual(
+            unknown,
+            CompetitionRematchStage(.sent(challengeID: id, expiresAt: Date(), link: nil))
+        )
+        XCTAssertNotEqual(
+            unknown,
+            CompetitionRematchStage(.sent(challengeID: id, expiresAt: nil, link: .failed))
         )
     }
 

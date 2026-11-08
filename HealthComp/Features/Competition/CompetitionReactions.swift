@@ -91,6 +91,49 @@ struct CompetitionReactionsSeen: RawRepresentable, Equatable {
     }
 }
 
+/// Motion that plays once, not on every visit. Device-local, like the
+/// reaction marks: per match, the newest day your Week bars grew for.
+struct CompetitionMotionSeen: RawRepresentable, Equatable {
+    static let storageKey = "healthcomp.motionSeen"
+
+    // ponytail: never pruned (about 50 bytes per match), like the reaction marks.
+    var weekDrawn: [String: Int]
+
+    init() { weekDrawn = [:] }
+
+    init?(rawValue: String) {
+        guard let data = rawValue.data(using: .utf8),
+              let weekDrawn = try? JSONDecoder().decode([String: Int].self, from: data)
+        else { return nil }
+        self.weekDrawn = weekDrawn
+    }
+
+    var rawValue: String {
+        guard let data = try? JSONEncoder().encode(weekDrawn) else { return "{}" }
+        return String(decoding: data, as: UTF8.self)
+    }
+
+    /// True when your newest scored day is newer than the last one drawn.
+    func weekGained(_ competition: LocalCompetitionPresentation) -> Bool {
+        guard let newest = Self.newestScoredDay(competition) else { return false }
+        return newest > weekDrawn[Self.key(competition)] ?? 0
+    }
+
+    func drawingWeek(_ competition: LocalCompetitionPresentation) -> Self {
+        var drawn = self
+        drawn.weekDrawn[Self.key(competition)] = Self.newestScoredDay(competition)
+        return drawn
+    }
+
+    private static func newestScoredDay(_ competition: LocalCompetitionPresentation) -> Int? {
+        competition.days.filter { $0.ownerAcceptedPoints != nil }.map(\.ordinal).max()
+    }
+
+    private static func key(_ competition: LocalCompetitionPresentation) -> String {
+        competition.id.rawValue.uuidString.lowercased()
+    }
+}
+
 func competitionReactionText(_ reaction: CompetitionReaction, opponentName: String) -> String {
     switch (reaction.isFromYou, reaction.target) {
     case let (false, .day(ordinal)): "\(opponentName) reacted to your Day \(ordinal)"
@@ -211,8 +254,11 @@ struct CompetitionReactionPicker: View {
                 }
                 .font(.caption)
                 .foregroundStyle(Theme.ink)
+                .transition(Motion.appear)
             }
         }
+        .sensoryFeedback(.selection, trigger: isPending) { _, new in new }
+        .sensoryFeedback(.error, trigger: failed) { _, new in new }
     }
 
     private func chip(_ kind: CompetitionReactionKind) -> some View {
@@ -229,6 +275,7 @@ struct CompetitionReactionPicker: View {
                         isSelected ? Theme.you : Theme.hairline,
                         lineWidth: isSelected ? 2 : 1
                     )
+                    .animation(Motion.fade, value: isSelected)
                 }
                 .contentShape(Circle())
         }

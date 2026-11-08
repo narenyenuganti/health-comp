@@ -91,25 +91,6 @@ struct CompetitionBeltCeremonyClip {
     }
 }
 
-/// Matches whose ceremony has had its first view on this device.
-struct CompetitionBeltCeremoniesSeen: RawRepresentable, Equatable {
-    static let storageKey = "healthcomp.beltCeremoniesSeen"
-
-    private var ids: Set<String> = []
-
-    init() {}
-    init?(rawValue: String) { ids = Set(rawValue.split(separator: ",").map(String.init)) }
-    var rawValue: String { ids.sorted().joined(separator: ",") }
-
-    func contains(_ id: CompetitionID) -> Bool { ids.contains(id.rawValue.uuidString) }
-
-    func marking(_ id: CompetitionID) -> Self {
-        var marked = self
-        marked.ids.insert(id.rawValue.uuidString)
-        return marked
-    }
-}
-
 /// Test Lab launches run without ceremonies, so its tests stay untouched,
 /// unless `--belt-ceremonies` asks for them.
 private let competitionBeltCeremoniesAreOn: Bool = {
@@ -259,6 +240,7 @@ private struct CompetitionBeltCeremonyPlayer: View {
                     .clipped()
                     .ignoresSafeArea()
                     .accessibilityElement()
+                    .accessibilityAddTraits(.isImage)
                     .accessibilityIdentifier("competition.belt.ceremony.poster.\(script.clip)")
                     .transition(Motion.appear)
             }
