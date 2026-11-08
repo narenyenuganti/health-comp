@@ -466,10 +466,15 @@ func competitionPresentShareSheet(_ item: CompetitionRecapShareItem) {
     )
 }
 
-/// 1080×1350 px, always light.
 @MainActor
 func competitionRecapImage(_ recap: CompetitionRecap) -> UIImage? {
-    let renderer = ImageRenderer(content: CompetitionRecapCard(recap: recap)
+    competitionShareImage(CompetitionRecapCard(recap: recap))
+}
+
+/// A card at `CompetitionRecapCard.size` as 1080×1350 px, always light.
+@MainActor
+func competitionShareImage(_ card: some View) -> UIImage? {
+    let renderer = ImageRenderer(content: card
         .environment(\.colorScheme, .light)
         .environment(\.dynamicTypeSize, .large))
     renderer.proposedSize = ProposedViewSize(CompetitionRecapCard.size)
@@ -586,5 +591,668 @@ struct CompetitionRecapSheet: View {
         .buttonStyle(PrimaryButtonStyle())
         .accessibilityHint("Opens the system share sheet")
         .accessibilityIdentifier("competition.recap.share")
+    }
+}
+
+// MARK: Your month, your year
+
+/// A calendar month, or the whole year when `month` is nil.
+struct CompetitionRecapPeriod: Hashable, Identifiable, Sendable {
+    let year: Int
+    var month: Int? = nil
+    var id: Self { self }
+
+    func contains(_ day: CompetitionDay) -> Bool {
+        day.year == year && (month == nil || day.month == month)
+    }
+
+    /// "October 2026", or "2026" for the year.
+    func title(locale: Locale = .current) -> String {
+        month.map { "\(competitionMonthName($0, locale: locale)) \(year)" } ?? String(year)
+    }
+
+    /// "Your October", or "Your 2026" for the year.
+    func headline(locale: Locale = .current) -> String {
+        "Your " + (month.map { competitionMonthName($0, locale: locale) } ?? String(year))
+    }
+}
+
+private func competitionMonthName(_ month: Int, locale: Locale) -> String {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.locale = locale
+    return calendar.standaloneMonthSymbols[month - 1]
+}
+
+/// The day a finished week counts on: its last, in the match's calendar.
+private func competitionRecapDay(_ week: LocalCompetitionPresentation) -> CompetitionDay? {
+    week.acceptedConfiguration.flatMap {
+        try? $0.schedule.calendar.sevenDayWindow(startingOn: $0.schedule.startDay).last
+    } ?? week.days.last?.day
+}
+
+/// Today in the publication's zone.
+func competitionRecapToday(_ publication: LocalCompetitionPublication) -> CompetitionDay? {
+    try? CompetitionCalendar(timeZoneIdentifier: publication.timeZoneIdentifier)
+        .day(containing: publication.evaluatedAt)
+}
+
+/// A period's finished real weeks, oldest first, across every rival.
+func competitionRecapWeeks(
+    _ competitions: [LocalCompetitionPresentation],
+    in period: CompetitionRecapPeriod
+) -> [LocalCompetitionPresentation] {
+    competitionHistoryWeeks(competitions).reversed().filter {
+        competitionRecapDay($0).map(period.contains) ?? false
+    }
+}
+
+/// Every month once it has ended and every year from its 31 December, with
+/// a finished week in it. Newest first, a year before its December. Built
+/// from the weeks on the phone, so past months stay.
+func competitionRecapPeriods(
+    _ competitions: [LocalCompetitionPresentation],
+    today: CompetitionDay
+) -> [CompetitionRecapPeriod] {
+    var periods = Set<CompetitionRecapPeriod>()
+    for week in competitionHistoryWeeks(competitions) {
+        guard let day = competitionRecapDay(week) else { continue }
+        if (day.year, day.month) < (today.year, today.month) {
+            periods.insert(CompetitionRecapPeriod(year: day.year, month: day.month))
+        }
+        if day.year < today.year || (today.month == 12 && today.day == 31) {
+            periods.insert(CompetitionRecapPeriod(year: day.year))
+        }
+    }
+    return periods.sorted { ($0.year, $0.month ?? 13) > ($1.year, $1.month ?? 13) }
+}
+
+/// Home's one row: last month from the 1st to the 3rd, the year from
+/// 31 December to 3 January (it holds December). Nil without a finished week.
+func competitionRecapOffer(
+    _ competitions: [LocalCompetitionPresentation],
+    today: CompetitionDay
+) -> CompetitionRecapPeriod? {
+    let period: CompetitionRecapPeriod
+    if today.month == 12, today.day == 31 {
+        period = CompetitionRecapPeriod(year: today.year)
+    } else if today.month == 1, today.day <= 3 {
+        period = CompetitionRecapPeriod(year: today.year - 1)
+    } else if today.day <= 3 {
+        period = CompetitionRecapPeriod(year: today.year, month: today.month - 1)
+    } else {
+        return nil
+    }
+    return competitionRecapPeriods(competitions, today: today).contains(period) ? period : nil
+}
+
+private func competitionRecapTally(
+    _ weeks: [LocalCompetitionPresentation]
+) -> (won: Int, lost: Int, tied: Int) {
+    let outcomes = weeks.compactMap(\.terminalResult?.outcome)
+    return (
+        outcomes.filter { $0 == .win }.count,
+        outcomes.filter { $0 == .loss }.count,
+        outcomes.filter { $0 == .tie }.count
+    )
+}
+
+/// "won 3, lost 1", leaving out what didn't happen.
+private func competitionRecapTallyWords(_ tally: (won: Int, lost: Int, tied: Int)) -> String {
+    [(tally.won, "won"), (tally.lost, "lost"), (tally.tied, "tied")]
+        .filter { $0.0 > 0 }
+        .map { "\($0.1) \($0.0)" }
+        .joined(separator: ", ")
+}
+
+private func competitionSentenceCase(_ text: String) -> String {
+    text.prefix(1).uppercased() + text.dropFirst()
+}
+
+/// "4 weeks · won 3, lost 1": the Home and History rows.
+func competitionRecapSummaryLine(
+    _ competitions: [LocalCompetitionPresentation],
+    period: CompetitionRecapPeriod
+) -> String {
+    let weeks = competitionRecapWeeks(competitions, in: period)
+    return "\(competitionWeeksText(weeks.count)) · \(competitionRecapTallyWords(competitionRecapTally(weeks)))"
+}
+
+/// One card of the deck. Rows link to History instead of repeating it.
+struct CompetitionRecapPeriodCard: Equatable, Identifiable {
+    enum Kind: String { case weeks, record, belt, bestDay, rings, rival }
+    /// Amber you, ink them, grey even.
+    enum Side: Equatable { case you, them, even }
+    enum Value: Equatable {
+        case text(String, side: Side?)
+        case record(won: Int, lost: Int, tied: Int)
+    }
+    /// A week or a person, each opened from History.
+    enum Link: Hashable {
+        case week(CompetitionID)
+        case person(String)
+
+        var historyRoutes: [CompetitionHomeRoute] {
+            switch self {
+            case let .week(id): [.history, .competition(id)]
+            case let .person(identity): [.history, .person(identity)]
+            }
+        }
+    }
+    struct Row: Equatable {
+        let title: String
+        let detail: String
+        let side: Side?
+        let link: Link
+    }
+
+    let kind: Kind
+    let label: String
+    let value: Value
+    let detail: String
+    var rows: [Row] = []
+    var id: Kind { kind }
+
+    /// "Your record: won 3, lost 1. Won 3, lost 1 across 4 weeks, 2 rivals".
+    var accessibilityText: String {
+        let spoken = switch value {
+        case let .text(text, _): text
+        case let .record(won, lost, tied): competitionRecapTallyWords((won: won, lost: lost, tied: tied))
+        }
+        return "\(label): \(spoken). \(detail)"
+    }
+}
+
+/// Weeks played, your record, belt moves, your best day, rings you closed
+/// (your own values) and, with two or more rivals, the closest one. Each
+/// appears only once it's true; nothing without a finished week. Opponents
+/// show only as points, wins and the belt. `hidesNames` is the shared image.
+func competitionRecapCards(
+    _ competitions: [LocalCompetitionPresentation],
+    period: CompetitionRecapPeriod,
+    hidesNames: Bool = false,
+    now: Date,
+    locale: Locale = .current
+) -> [CompetitionRecapPeriodCard] {
+    typealias Card = CompetitionRecapPeriodCard
+    let weeks = competitionRecapWeeks(competitions, in: period)
+    guard !weeks.isEmpty else { return [] }
+    func points(_ value: Double) -> String { competitionPointsText(value, locale: locale) }
+    func range(_ week: LocalCompetitionPresentation) -> String {
+        week.acceptedConfiguration.flatMap {
+            competitionScheduleDateRangeText($0.schedule, now: now, locale: locale)
+        } ?? ""
+    }
+    func weekRow(_ week: LocalCompetitionPresentation) -> Card.Row {
+        let name = week.opponentDisplayName
+        let result: (detail: String, side: Card.Side) = switch week.terminalResult?.outcome {
+        case .win: ("Beat \(name)", .you)
+        case .loss: ("Lost to \(name)", .them)
+        case .tie, nil: ("Tied with \(name)", .even)
+        }
+        return Card.Row(title: range(week), detail: result.detail, side: result.side, link: .week(week.id))
+    }
+
+    // Newest played first, named as in their newest week.
+    var rivals: [(identity: String, name: String, weeks: [LocalCompetitionPresentation])] = []
+    for week in weeks.reversed() {
+        if let index = rivals.firstIndex(where: { $0.identity == week.opponentIdentity }) {
+            rivals[index].weeks.append(week)
+        } else {
+            rivals.append((identity: week.opponentIdentity, name: week.opponentDisplayName, weeks: [week]))
+        }
+    }
+    func hidden(_ name: String) -> Bool { hidesNames || name == competitionFormerCompetitorName }
+    func personRow(_ rival: (identity: String, name: String, weeks: [LocalCompetitionPresentation])) -> Card.Row {
+        let tally = competitionRecapTally(rival.weeks)
+        let record = ([tally.won, tally.lost] + (tally.tied > 0 ? [tally.tied] : []))
+            .map(String.init).joined(separator: "–")
+        return Card.Row(
+            title: rival.name,
+            detail: "\(competitionWeeksText(rival.weeks.count)) · \(record)",
+            side: nil,
+            link: .person(rival.identity)
+        )
+    }
+    let rivalCount = rivals.count == 1 ? "1 rival" : "\(rivals.count) rivals"
+    var cards: [Card] = []
+
+    let against = rivals.count > 2 || rivals.contains(where: { hidden($0.name) })
+        ? rivalCount
+        : rivals.map { $0.name }.joined(separator: " and ")
+    cards.append(Card(
+        kind: .weeks,
+        label: "Weeks played",
+        value: .text(String(weeks.count), side: nil),
+        detail: "Against \(against)",
+        // ponytail: five rows, so a year doesn't become a second History.
+        rows: rivals.prefix(5).map(personRow)
+    ))
+
+    let tally = competitionRecapTally(weeks)
+    cards.append(Card(
+        kind: .record,
+        label: "Your record",
+        value: .record(won: tally.won, lost: tally.lost, tied: tally.tied),
+        detail: competitionSentenceCase(competitionRecapTallyWords(tally))
+            + " across \(competitionWeeksText(weeks.count))"
+            + (rivals.count > 1 ? ", \(rivalCount)" : ""),
+        rows: weeks.suffix(5).map(weekRow)
+    ))
+
+    var events: [CompetitionBeltEvent] = []
+    var beltRows: [Card.Row] = []
+    for week in weeks {
+        let found = competitionBeltEvent(for: week, in: competitions)
+        guard let outcome = week.terminalResult?.outcome,
+              let belt = competitionRecapBelt(
+                  found,
+                  outcome: outcome,
+                  isRetired: week.opponentDisplayName == competitionFormerCompetitorName
+              ),
+              let event = found
+        else { continue }
+        events.append(event)
+        beltRows.append(Card.Row(
+            title: range(week),
+            detail: competitionRecapBeltText(belt, opponentName: week.opponentDisplayName),
+            side: belt.isYours ? .you : .them,
+            link: .week(week.id)
+        ))
+    }
+    // Yours only: their defenses and their first win list below but don't count.
+    func count(_ matches: (CompetitionBeltEvent) -> Bool) -> Int { events.filter(matches).count }
+    let took = count { if case .took(.you, _, _) = $0 { true } else { false } }
+    let defended = count { if case .defended(.you, _, _) = $0 { true } else { false } }
+    let lost = count { if case .took(.them, .some, _) = $0 { true } else { false } }
+    if took + defended + lost > 0 {
+        cards.append(Card(
+            kind: .belt,
+            label: "Belt moves",
+            value: .text(String(took + defended + lost), side: took + defended > 0 ? .you : .them),
+            detail: competitionSentenceCase(
+                [(took, "took"), (defended, "defended"), (lost, "lost")]
+                    .filter { $0.0 > 0 }
+                    .map { "\($0.1) \($0.0)" }
+                    .joined(separator: ", ")
+            ),
+            rows: Array(beltRows.suffix(5))
+        ))
+    }
+
+    // max(by:) keeps the first of equal values: the earliest day.
+    let scored = weeks.flatMap { week in
+        week.days.compactMap { day in day.ownerAcceptedPoints.map { (week: week, day: day, points: $0) } }
+    }
+    if let best = scored.max(by: { $0.points < $1.points }), best.points > 0 {
+        cards.append(Card(
+            kind: .bestDay,
+            label: "Your best day",
+            value: .text(points(best.points), side: .you),
+            detail: competitionDayText(best.day.day, now: now, locale: locale),
+            rows: [weekRow(best.week)]
+        ))
+    }
+
+    let days = weeks.flatMap(\.days)
+    var closed = [0, 0, 0]
+    for day in days {
+        for (ring, isClosed) in (competitionClosedRings(day) ?? []).enumerated() where isClosed {
+            closed[ring] += 1
+        }
+    }
+    if closed.reduce(0, +) > 0 {
+        let names = ["Move", "Exercise", competitionStandTitle(days).capitalized]
+        cards.append(Card(
+            kind: .rings,
+            label: "Rings you closed",
+            value: .text(points(Double(closed.reduce(0, +))), side: .you),
+            detail: zip(names, closed).map { "\($0) \(points(Double($1)))" }.joined(separator: ", ")
+        ))
+    }
+
+    // The smallest average gap a week; on a tie the one played most recently.
+    func gap(_ weeks: [LocalCompetitionPresentation]) -> Double {
+        weeks.reduce(0) { total, week in
+            total + abs((week.terminalResult?.userPoints ?? 0) - (week.terminalResult?.opponentPoints ?? 0))
+        } / Double(weeks.count)
+    }
+    if rivals.count > 1, let closest = rivals.min(by: { gap($0.weeks) < gap($1.weeks) }) {
+        let tally = competitionRecapTally(closest.weeks)
+        let apart = "\(points(gap(closest.weeks))) points apart a week"
+        cards.append(Card(
+            kind: .rival,
+            label: "Closest rival",
+            value: hidden(closest.name)
+                ? .record(won: tally.won, lost: tally.lost, tied: tally.tied)
+                : .text(closest.name, side: nil),
+            detail: hidden(closest.name)
+                ? competitionSentenceCase(apart)
+                : "\(competitionSentenceCase(competitionRecapTallyWords(tally))) · \(apart)",
+            rows: [personRow(closest)]
+        ))
+    }
+    return cards
+}
+
+/// Move, Exercise and Stand closed from your own values: the Health reading
+/// against its goal, else the ring's share of its goal (100 is closed).
+func competitionClosedRings(_ day: LocalCompetitionDayPresentation) -> [Bool]? {
+    if let snapshot = day.ownerAcceptedSnapshot {
+        return [snapshot.move, snapshot.exercise, snapshot.standOrRoll].map { reading in
+            guard let value = reading.value, let goal = reading.goal, goal > 0 else { return false }
+            return value >= goal
+        }
+    }
+    guard day.ownerAcceptedPoints != nil, let rings = day.ownerRingPoints, rings.count == 3 else {
+        return nil
+    }
+    return rings.map { $0 >= 100 }
+}
+
+private func competitionRecapValueText(_ value: CompetitionRecapPeriodCard.Value) -> Text {
+    switch value {
+    case let .text(text, side):
+        Text(text).foregroundStyle(side == .you ? Theme.you : side == .even ? Theme.secondary : Theme.ink)
+    case let .record(won, lost, tied):
+        Text(String(won)).foregroundStyle(Theme.you)
+            + Text("–").foregroundStyle(Theme.faint)
+            + Text(String(lost)).foregroundStyle(Theme.ink)
+            + (tied > 0
+                ? Text("–").foregroundStyle(Theme.faint) + Text(String(tied)).foregroundStyle(Theme.secondary)
+                : Text(""))
+    }
+}
+
+/// One card as the shared image: the recap card's size and frame, no rows.
+struct CompetitionRecapPeriodShareCard: View {
+    /// "October 2026".
+    let title: String
+    let card: CompetitionRecapPeriodCard
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .firstTextBaseline, spacing: 12) {
+                Text("HEALTHCOMP")
+                    .font(.system(size: 13, weight: .heavy).width(.condensed))
+                    .tracking(1.6)
+                    .foregroundStyle(Theme.ink)
+                Spacer(minLength: 0)
+                Text(title)
+                    .textCase(.uppercase)
+                    .font(.system(size: 13, weight: .bold).width(.condensed))
+                    .foregroundStyle(Theme.secondary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 12)
+            VStack(alignment: .leading, spacing: 8) {
+                Text(card.label)
+                    .textCase(.uppercase)
+                    .font(.system(size: 13, weight: .bold).width(.condensed))
+                    .tracking(1.2)
+                    .foregroundStyle(Theme.secondary)
+                competitionRecapValueText(card.value)
+                    .font(.score(size: 120))
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.4)
+                Text(card.detail)
+                    .font(.system(size: 17, weight: .semibold))
+                    .foregroundStyle(Theme.ink)
+                    .lineLimit(3)
+                    .minimumScaleFactor(0.7)
+            }
+            Spacer(minLength: 12)
+            Rectangle().fill(Theme.hairline).frame(height: 1)
+            Text("healthcomp.app")
+                .font(.system(size: 12))
+                .foregroundStyle(Theme.secondary)
+                .frame(maxWidth: .infinity, alignment: .trailing)
+                .padding(.top, 10)
+        }
+        .padding(28)
+        .frame(
+            width: CompetitionRecapCard.size.width,
+            height: CompetitionRecapCard.size.height,
+            alignment: .topLeading
+        )
+        .background(Theme.ground)
+    }
+}
+
+/// A swipeable stack of a month's or a year's cards, each with its own Share.
+@MainActor
+struct CompetitionRecapDeck: View {
+    let publication: LocalCompetitionPublication
+    let period: CompetitionRecapPeriod
+    let open: (CompetitionRecapPeriodCard.Link) -> Void
+
+    @AppStorage("healthcomp.recapHidesName") private var hidesName = false
+    @State private var shown = CompetitionRecapPeriodCard.Kind.weeks
+    @State private var renderFailed = false
+    @Environment(\.dismiss) private var dismiss
+    @Environment(\.locale) private var locale
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @ScaledMetric(relativeTo: .largeTitle) private var valueSize: CGFloat = 112
+
+    var body: some View {
+        let cards = competitionRecapCards(
+            publication.dashboard.competitions,
+            period: period,
+            now: publication.evaluatedAt,
+            locale: locale
+        )
+        let index = cards.firstIndex { $0.kind == shown } ?? 0
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(spacing: 4) {
+                ForEach(cards.indices, id: \.self) { item in
+                    Capsule()
+                        .fill(item <= index ? Theme.ink : Theme.track)
+                        .frame(height: 4)
+                }
+            }
+            .animation(Motion.fade, value: index)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Card \(index + 1) of \(cards.count)")
+            HStack(spacing: 12) {
+                Text(period.headline(locale: locale).uppercased())
+                    .font(.themeLabel)
+                    .tracking(1.2)
+                    .foregroundStyle(Theme.ink)
+                    .accessibilityAddTraits(.isHeader)
+                Spacer(minLength: 8)
+                CompetitionDrawerCloseButton { dismiss() }
+            }
+            if cards.isEmpty {
+                Text("Finished matches appear here.")
+                    .font(.subheadline)
+                    .foregroundStyle(Theme.secondary)
+                Spacer()
+            } else {
+                TabView(selection: $shown) {
+                    ForEach(cards) { card in
+                        ScrollView {
+                            page(card)
+                        }
+                        .scrollBounceBehavior(.basedOnSize)
+                        .tag(card.kind)
+                    }
+                }
+                .tabViewStyle(.page(indexDisplayMode: .never))
+                share(cards[index])
+                if renderFailed {
+                    Text("Couldn’t make the image.")
+                        .font(.callout)
+                        .foregroundStyle(Theme.secondary)
+                        .transition(Motion.appear)
+                }
+            }
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 12)
+        .padding(.bottom, 8)
+        .background(Theme.ground)
+        .sensoryFeedback(.error, trigger: renderFailed) { _, failed in failed }
+        .onChange(of: shown) { renderFailed = false }
+        .accessibilityIdentifier("competition.recap.deck")
+    }
+
+    private func page(_ card: CompetitionRecapPeriodCard) -> some View {
+        VStack(alignment: .leading, spacing: 20) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(card.label.uppercased())
+                    .font(.themeLabel)
+                    .tracking(1.2)
+                    .foregroundStyle(Theme.secondary)
+                competitionRecapValueText(card.value)
+                    .font(.score(size: min(valueSize, 180)))
+                    .monospacedDigit()
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.4)
+                Text(card.detail)
+                    .font(.subheadline)
+                    .foregroundStyle(Theme.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.top, 24)
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(card.accessibilityText)
+            .accessibilityIdentifier("competition.recap.\(card.kind.rawValue)")
+
+            if !card.rows.isEmpty {
+                VStack(spacing: 0) {
+                    ForEach(Array(card.rows.enumerated()), id: \.offset) { item, row in
+                        if item > 0 {
+                            CompetitionRowDivider(inset: 16)
+                        }
+                        Button { open(row.link) } label: { rowLabel(row) }
+                            .buttonStyle(CompetitionRowButtonStyle())
+                            .accessibilityLabel("\(row.title), \(row.detail)")
+                            .accessibilityHint({
+                                if case .person = row.link { return "Opens their page in History" }
+                                return "Opens this match in History"
+                            }())
+                    }
+                }
+                .themePanel()
+                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    // At accessibility sizes the detail sits under the title.
+    private func rowLabel(_ row: CompetitionRecapPeriodCard.Row) -> some View {
+        let layout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 2))
+            : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: 12))
+        return HStack(spacing: 12) {
+            if let side = row.side {
+                SlantedBar()
+                    .fill(side == .you ? Theme.youFill : side == .them ? Theme.ink : Theme.faint)
+                    .frame(width: 26, height: 16)
+            }
+            layout {
+                Text(row.title)
+                    .font(.subheadline)
+                    .foregroundStyle(Theme.ink)
+                if !dynamicTypeSize.isAccessibilitySize {
+                    Spacer(minLength: 8)
+                }
+                Text(row.detail)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(row.side == .you ? Theme.you : Theme.secondary)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Image(systemName: "chevron.right")
+                .font(.caption.weight(.bold))
+                .foregroundStyle(Theme.tertiary)
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+        .contentShape(Rectangle())
+    }
+
+    /// The image uses the Share Result sheet's Show / Hide name choice.
+    private func share(_ card: CompetitionRecapPeriodCard) -> some View {
+        Button {
+            let shared = competitionRecapCards(
+                publication.dashboard.competitions,
+                period: period,
+                hidesNames: hidesName,
+                now: publication.evaluatedAt,
+                locale: locale
+            ).first { $0.kind == card.kind } ?? card
+            guard let image = competitionShareImage(
+                CompetitionRecapPeriodShareCard(title: period.title(locale: locale), card: shared)
+            ),
+                  let png = image.pngData()
+            else {
+                renderFailed = true
+                return
+            }
+            renderFailed = false
+            competitionPresentShareSheet(
+                CompetitionRecapShareItem(png: png, image: image, title: period.headline(locale: locale))
+            )
+        } label: {
+            Label("Share This Card", systemImage: "square.and.arrow.up")
+        }
+        .buttonStyle(PrimaryButtonStyle())
+        .accessibilityHint("Opens the system share sheet")
+        .accessibilityIdentifier("competition.recap.deck.share")
+    }
+}
+
+extension View {
+    /// The month or year deck over everything. A row closes it and opens
+    /// History at that week or person.
+    func competitionRecapDeck(
+        _ period: Binding<CompetitionRecapPeriod?>,
+        publication: LocalCompetitionPublication?,
+        openHistory: @escaping ([CompetitionHomeRoute]) -> Void
+    ) -> some View {
+        fullScreenCover(item: period) { shown in
+            if let publication {
+                CompetitionRecapDeck(publication: publication, period: shown) { link in
+                    period.wrappedValue = nil
+                    openHistory(link.historyRoutes)
+                }
+            }
+        }
+    }
+}
+
+/// The Home row and each History row: "Your October", "4 weeks · won 3, lost 1".
+struct CompetitionRecapRow: View {
+    let title: String
+    let period: CompetitionRecapPeriod
+    let competitions: [LocalCompetitionPresentation]
+    /// Home's row is its own panel; History's sit in one.
+    var isPanel = false
+    let open: () -> Void
+
+    var body: some View {
+        Button(action: open) {
+            HStack(spacing: 14) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(title)
+                        .font(.headline)
+                        .foregroundStyle(Theme.ink)
+                    Text(competitionRecapSummaryLine(competitions, period: period))
+                        .font(.subheadline)
+                        .foregroundStyle(Theme.secondary)
+                }
+                Spacer(minLength: 8)
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(Theme.tertiary)
+            }
+            .padding(16)
+            .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)
+            .background(isPanel ? Theme.panel : .clear, in: RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .contentShape(Rectangle())
+        }
+        .accessibilityHint(period.month == nil ? "Opens your year" : "Opens your month")
     }
 }

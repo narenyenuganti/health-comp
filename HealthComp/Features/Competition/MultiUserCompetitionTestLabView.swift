@@ -77,6 +77,9 @@ enum MultiUserCompetitionTestLabScenario:
     case rivalry
     /// The first five of those weeks: Records holds five rows.
     case rivalryFive = "rivalry-5"
+    /// Sun Nov 1: October with Sam and Alex, its deck open over Home with
+    /// its row; History lists October and September.
+    case month
 }
 
 struct MultiUserCompetitionTestLabConfiguration: Equatable, Sendable {
@@ -173,7 +176,7 @@ struct MultiUserCompetitionTestLabRootView: View {
     private var scenarioView: some View {
         switch configuration.scenario {
         case .sharing, .sharingCustomScheme, .whatItTakes, .belt, .beltHero, .beltCeremony,
-             .rivalry, .rivalryFive:
+             .rivalry, .rivalryFive, .month:
             MultiUserCompetitionSharingTestLabView(scenario: configuration.scenario)
         case .coldClaim, .warmClaim, .signedOutClaim,
              .unavailableClaim, .offlineClaim:
@@ -256,6 +259,7 @@ private struct MultiUserCompetitionSharingTestLabView: View {
     @State private var pastedInvitationStatus = "Not checked"
     @State private var labNudges: [CompetitionID: CompetitionFeature.NudgeStatus] = [:]
     @State private var ownReactions: [CompetitionReactionKey: CompetitionReactionKind] = [:]
+    @State private var recapPeriod: CompetitionRecapPeriod?
 
     /// Once per process, never per init: SwiftUI re-runs child inits
     /// whenever the root re-evaluates. Launch arguments can't do this: an
@@ -267,6 +271,7 @@ private struct MultiUserCompetitionSharingTestLabView: View {
 
     init(scenario: MultiUserCompetitionTestLabScenario) {
         self.scenario = scenario
+        _recapPeriod = State(initialValue: scenario == .month ? CompetitionMonthFixture.october : nil)
         _ = Self.resetReactionsSeen
     }
 
@@ -316,7 +321,8 @@ private struct MultiUserCompetitionSharingTestLabView: View {
                     },
                     archive: { archivedIDs.insert($0) },
                     commandIDsInFlight: [],
-                    retry: {}
+                    retry: {},
+                    openRecap: { recapPeriod = $0 }
                 )
                 .toolbar {
                     ToolbarItem(placement: .topBarTrailing) {
@@ -328,7 +334,7 @@ private struct MultiUserCompetitionSharingTestLabView: View {
                 .navigationDestination(for: CompetitionHomeRoute.self) { route in
                     switch route {
                     case .history:
-                        CompetitionHistoryView(publication: publication)
+                        CompetitionHistoryView(publication: publication, openRecap: { recapPeriod = $0 })
                     case let .person(identity):
                         CompetitionPersonView(
                             publication: publication,
@@ -344,6 +350,7 @@ private struct MultiUserCompetitionSharingTestLabView: View {
                     }
                 }
             }
+            .competitionRecapDeck($recapPeriod, publication: publication) { homeStack.wrappedValue = $0 }
             if usesCustomScheme {
                 HStack {
                     PasteButton(payloadType: String.self) { strings in
@@ -455,6 +462,7 @@ private struct MultiUserCompetitionSharingTestLabView: View {
         case .beltCeremony: MultiUserCompetitionTestLabFixtures.beltPublication(heroOnly: false, ceremonies: true)
         case .rivalry: CompetitionRivalryFixture.publication(weeks: 10)
         case .rivalryFive: CompetitionRivalryFixture.publication(weeks: 5)
+        case .month: CompetitionMonthFixture.publication()
         default: MultiUserCompetitionTestLabFixtures.publication(
             archivedIDs: archivedIDs,
             ownReactions: ownReactions
@@ -560,7 +568,7 @@ private struct MultiUserCompetitionClaimTestLabView: View {
              .incomingChallenge, .block, .blockedAccount, .blockClaim,
              .nudge, .nudgeSimulated, .whatItTakes, .reactions, .reactionsSimulated,
              .liveActivity, .practice, .notificationChoices, .belt, .beltHero, .beltCeremony, .featureRound,
-             .versus, .rivalry, .rivalryFive:
+             .versus, .rivalry, .rivalryFive, .month:
             .ready
         }
         _status = State(initialValue: initialStatus)
@@ -3710,5 +3718,106 @@ enum CompetitionRivalryFixture {
     }
 }
 
+/// Your October, from the strava proposals page's example week: you took
+/// Sam's belt Oct 4–10 (Sam won Sep 20–26), defended it Oct 11–17 and
+/// Oct 25–31 (2,612–2,502), and lost Oct 18–24 to Alex (2,418–2,530). Seen
+/// Sun Nov 1, 6 pm in Los Angeles. Ring points split each day 38/28/34, so
+/// the rings closed come from your own values. Internal, for the tests.
+enum CompetitionMonthFixture {
+    static let samIdentity = "remote-profile:v1:c6000000-0000-4000-8000-000000000001"
+    static let alexIdentity = "remote-profile:v1:c6000000-0000-4000-8000-000000000002"
+    static let october = CompetitionRecapPeriod(year: 2026, month: 10)
+    static let now = Date(timeIntervalSince1970: 1_793_584_800)
+    private static let zone = "America/Los_Angeles"
+
+    /// Sunday starts, then your days and theirs.
+    private static let data: [(month: Int, day: Int, sam: Bool, you: [Double], them: [Double])] = [
+        (9, 20, true, [300, 320, 310, 280, 330, 300, 290], [330, 310, 320, 300, 340, 310, 300]),
+        (10, 4, true, [380, 350, 360, 340, 400, 370, 330], [350, 360, 330, 350, 360, 340, 320]),
+        (10, 11, true, [360, 340, 390, 350, 420, 380, 345], [370, 330, 360, 340, 380, 350, 330]),
+        (10, 18, false, [340, 350, 330, 360, 345, 348, 345], [360, 370, 350, 380, 355, 365, 350]),
+        (10, 25, true, [412, 365, 301, 434, 420, 330, 350], [394, 395, 329, 400, 362, 312, 310]),
+    ]
+
+    /// Oldest first; the newest is completed, the rest archived.
+    static func weeks() -> [LocalCompetitionPresentation] {
+        let calendar = try! CompetitionCalendar(timeZoneIdentifier: zone)
+        return data.enumerated().map { index, week in
+            let schedule = CompetitionSchedule(
+                calendar: calendar,
+                startDay: try! CompetitionDay(
+                    era: 1, year: 2026, month: week.month, day: week.day, timeZoneIdentifier: zone
+                )
+            )
+            func split(_ points: Double) -> [Double] {
+                let move = (points * 0.38).rounded(), exercise = (points * 0.28).rounded()
+                return [move, exercise, points - move - exercise]
+            }
+            let days = try! calendar.sevenDayWindow(startingOn: schedule.startDay).enumerated().map { offset, day in
+                var presentation = LocalCompetitionDayPresentation(
+                    day: day,
+                    ordinal: offset + 1,
+                    ownerAcceptedPoints: week.you[offset],
+                    ownerLatestAvailability: .observed,
+                    opponentRevealedPoints: week.them[offset],
+                    scoringPolicy: .remoteWireV1
+                )
+                presentation.ownerRingPoints = split(week.you[offset])
+                presentation.opponentRingPoints = split(week.them[offset])
+                return presentation
+            }
+            let userPoints = week.you.reduce(0, +)
+            let opponentPoints = week.them.reduce(0, +)
+            let outcome: CompetitionOutcome = userPoints > opponentPoints ? .win
+                : userPoints < opponentPoints ? .loss : .tie
+            let completedAt = competitionScheduleBoundaries(schedule)!.end.addingTimeInterval(43_200)
+            return LocalCompetitionPresentation(
+                id: CompetitionID(UUID(uuidString: String(format: "A6000000-0000-4000-8000-0000000000%02X", index + 1))!),
+                ownerDisplayName: "Beta Alice",
+                opponentDisplayName: week.sam ? "Sam" : "Alex",
+                opponentIdentity: week.sam ? samIdentity : alexIdentity,
+                lifecycle: index == data.count - 1
+                    ? .completed(outcome: outcome, basis: .stableAcrossPostBoundaryReads, completedAt: completedAt)
+                    : .archived(
+                        outcome: outcome,
+                        basis: .stableAcrossPostBoundaryReads,
+                        completedAt: completedAt,
+                        archivedAt: completedAt.addingTimeInterval(86_400)
+                    ),
+                acceptedConfiguration: LocalCompetitionAcceptedPresentation(schedule: schedule, difficulty: .balanced),
+                userPoints: userPoints,
+                opponentPoints: opponentPoints,
+                days: days,
+                currentDayOrdinal: nil,
+                lastRefresh: nil,
+                tally: nil,
+                terminalResult: LocalCompetitionTerminalPresentation(
+                    userPoints: userPoints,
+                    opponentPoints: opponentPoints,
+                    outcome: outcome,
+                    basis: .stableAcrossPostBoundaryReads,
+                    completedAt: completedAt
+                ),
+                evaluatedAt: now,
+                timeZoneIdentifier: zone
+            )
+        }
+    }
+
+    static func publication() -> LocalCompetitionPublication {
+        LocalCompetitionPublication(
+            publicationRevision: 1,
+            dashboard: LocalCompetitionDashboard(
+                competitions: Array(weeks().reversed()),
+                awards: [],
+                issues: [],
+                hiddenTerminalCompetitionCount: 0
+            ),
+            evaluatedAt: now,
+            timeZoneIdentifier: zone,
+            source: .remoteParticipants
+        )
+    }
+}
 
 #endif

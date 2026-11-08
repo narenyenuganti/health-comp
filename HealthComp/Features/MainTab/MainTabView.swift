@@ -12,6 +12,7 @@ struct MainTabView: View {
     @State private var isChallengePresented = false
     @State private var isPracticePresented = false
     @State private var isVersusPlaying = false
+    @State private var recapPeriod: CompetitionRecapPeriod?
 
     var body: some View {
         ZStack {
@@ -44,9 +45,9 @@ struct MainTabView: View {
             }
         }
         // Keeps the notifications prompt from presenting under the
-        // Challenge or practice sheet, where SwiftUI would drop it, or over
-        // the versus intro.
-        .onChange(of: isChallengePresented || isPracticePresented || isVersusPlaying) { _, isOpen in
+        // Challenge or practice sheet or the recap deck, where SwiftUI would
+        // drop it, or over the versus intro.
+        .onChange(of: isChallengePresented || isPracticePresented || isVersusPlaying || recapPeriod != nil) { _, isOpen in
             store.send(.challengeSheetVisibilityChanged(isOpen))
         }
         .onReceive(
@@ -186,7 +187,8 @@ struct MainTabView: View {
                         isPracticePresented: $isPracticePresented,
                         refresh: { [store] in
                             await store.send(.competition(.pullToRefresh)).finish()
-                        }
+                        },
+                        openRecap: { recapPeriod = $0 }
                     )
                     .transition(.identity)
                 } else {
@@ -211,7 +213,7 @@ struct MainTabView: View {
                 switch route {
                 case .history:
                     if let publication = store.competition.publication {
-                        CompetitionHistoryView(publication: publication)
+                        CompetitionHistoryView(publication: publication, openRecap: { recapPeriod = $0 })
                             .toolbarRole(.editor)
                     }
                 case let .person(identity):
@@ -248,6 +250,9 @@ struct MainTabView: View {
                 notNowTapped: { store.send(.notificationPromptNotNowTapped) }
             )
             .presentationBackground(Theme.ground)
+        }
+        .competitionRecapDeck($recapPeriod, publication: store.competition.publication) {
+            homeStack.wrappedValue = $0
         }
         .competitionVersusIntro(
             matchID: store.path.last,
