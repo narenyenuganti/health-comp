@@ -147,6 +147,33 @@ struct CompetitionRemoteAPI: Sendable {
     ) async throws -> String = { _ in
         throw CompetitionRemoteFailure.operationFailed
     }
+    /// The current photo of each of these people (at most 200 ids) that you
+    /// may see, yours included. A missing id shows initials.
+    var listProfilePhotos: @Sendable ([UUID]) async throws -> [ProfilePhotoReference] = { _ in [] }
+    /// Uploads the processed JPEG at `reference` (your own id, a new version)
+    /// and makes it your photo.
+    var setProfilePhoto: @Sendable (ProfilePhotoReference, Data) async throws -> Void = { _, _ in
+        throw CompetitionRemoteFailure.operationFailed
+    }
+    /// Shows initials from now on; the objects stay until removed.
+    var clearProfilePhoto: @Sendable () async throws -> Void = {
+        throw CompetitionRemoteFailure.operationFailed
+    }
+    /// Deletes every object in your folder except the `keeping` version.
+    var removeProfilePhotoObjects: @Sendable (
+        _ ownerProfileID: UUID,
+        _ keeping: UUID?
+    ) async throws -> Void = { _, _ in
+        throw CompetitionRemoteFailure.operationFailed
+    }
+    /// The JPEG, downloaded with your session (no public or signed URL).
+    var downloadProfilePhoto: @Sendable (ProfilePhotoReference) async throws -> Data = { _ in
+        throw CompetitionRemoteFailure.operationFailed
+    }
+    /// Reports this person's photo and hides their photos from you for good.
+    var reportProfilePhoto: @Sendable (UUID) async throws -> Void = { _ in
+        throw CompetitionRemoteFailure.operationFailed
+    }
 }
 
 /// What the person a challenge was sent to may see before accepting it.
@@ -207,6 +234,12 @@ enum CompetitionRemoteTransportRequest: Equatable, Sendable {
     case listCompetitions
     case fetchCompetition(UUID)
     case competitionPresence(UUID)
+    /// The `profile-photos` bucket, with the caller's session.
+    case uploadProfilePhoto(path: String, data: Data)
+    case downloadProfilePhoto(path: String)
+    /// Answers a JSON array of the object names in that folder.
+    case listProfilePhotoFolder(UUID)
+    case removeProfilePhotos(paths: [String])
 }
 
 struct CompetitionRemoteTransportResponse: Equatable, Sendable {

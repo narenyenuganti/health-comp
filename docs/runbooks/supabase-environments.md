@@ -619,6 +619,37 @@ The migration must be in production before any build containing the switches
 reaches TestFlight. Without it the app registers through the five-argument
 call and the server keeps sending switched-off reactions and nudges.
 
+### Profile photos
+
+Migration `20261107002900` adds the private `profile-photos` bucket (512 KiB,
+`image/jpeg` only), `profiles.photo_version` (not client-readable),
+`private.profile_photo_reports` (RLS on and forced, no client grants), storage
+RLS on `storage.objects`, and `set_profile_photo(uuid)`,
+`clear_profile_photo()`, `list_profile_photos(uuid[])` and
+`report_profile_photo(uuid)`.
+
+- Objects are `<profile id>/<version>.jpg`. The owner can write (three objects
+  at most, no overwrite), read and delete only their own folder. Anyone else
+  can read only the current version of someone they have or had a match with,
+  or who has a pending challenge out to them, and never through a block either
+  way or after reporting that person. There are no public or signed URLs in
+  the app: it downloads with the user's session.
+- `report_profile_photo` needs a photo the caller can see (else
+  `photo_unavailable`), records reporter, reported and version, and hides
+  that person's photos from the reporter for good. Review the rows in
+  `private.profile_photo_reports`; replacing or removing the photo deletes the
+  reported object, so look soon.
+- Starting account deletion clears the photo and the account's reports both
+  ways; `delete-account` deletes the objects before anonymizing.
+- A photo change records the existing `profile_presentation_changed` event
+  with the unchanged `{display_name, profile_id}` payload, so every build just
+  reconciles. No existing response gains a key: installed apps validate exact
+  keys.
+
+Either order works for the migration and `delete-account` (before the
+bucket exists, its listing is empty). The app build that sets photos needs
+both in production before it reaches TestFlight.
+
 ## Finalizer and notification repair schedules
 
 These schedules are hosted environment state, not proof supplied by source.

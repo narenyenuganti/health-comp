@@ -1583,3 +1583,95 @@ private actor HeldDiscoveryTransport {
         continuation = nil
     }
 }
+
+extension SupabaseCompetitionRemoteAPITests {
+    private var photoOwner: UUID { UUID(uuidString: "12000000-0000-4000-8000-0000000000c1")! }
+    private var photoVersion: UUID { UUID(uuidString: "13000000-0000-4000-8000-0000000000c1")! }
+
+    func testListProfilePhotosAsksForIDsAndKeepsOnlyRequestedReadableRows() async throws {
+        let stranger = "12000000-0000-4000-8000-0000000000c9"
+        let harness = CompetitionTransportHarness(stubs: [
+            .response(200, try jsonData(["photos": [
+                ["profile_id": photoOwner.uuidString.lowercased(), "photo_version": photoVersion.uuidString.lowercased()],
+                ["profile_id": stranger, "photo_version": photoVersion.uuidString.lowercased()],
+                ["profile_id": photoOwner.uuidString.lowercased(), "photo_version": "NOT-A-UUID"],
+            ]])),
+            .response(200, try jsonData(["photos": [], "extra": 1])),
+        ])
+        let api = makeAPI(harness)
+        let references = try await api.listProfilePhotos([photoOwner])
+        XCTAssertEqual(references, [ProfilePhotoReference(ownerProfileID: photoOwner, version: photoVersion)])
+        let extra = await remoteFailure { _ = try await api.listProfilePhotos([photoOwner]) }
+        XCTAssertEqual(extra, .serverContractMismatch)
+        let tooMany = await remoteFailure { _ = try await api.listProfilePhotos((0..<201).map { _ in UUID() }) }
+        XCTAssertEqual(tooMany, .serverContractMismatch)
+        let none = try await api.listProfilePhotos([])
+        XCTAssertEqual(none, [])
+        let requests = await harness.recordedRequests()
+        XCTAssertEqual(requests.count, 2, "no request for too many or no ids")
+        try assertRPC(requests[0], name: "list_profile_photos", body: ["profile_ids": [photoOwner.uuidString.lowercased()]])
+    }
+
+    func testSetProfilePhotoUploadsThenSetsTheVersion() async throws {
+        let jpeg = ProfilePhotoTestLabServer.fixtureJPEG(red: 0.8, green: 0.5, blue: 0.1)
+        let reference = ProfilePhotoReference(ownerProfileID: photoOwner, version: photoVersion)
+        let harness = CompetitionTransportHarness(stubs: [
+            .response(200, Data()),
+            .response(200, try jsonData(["photo_version": photoVersion.uuidString.lowercased()])),
+            .failure(.server(statusCode: 403, code: "403", message: "new row violates row-level security policy")),
+        ])
+        let api = makeAPI(harness)
+        try await api.setProfilePhoto(reference, jpeg)
+        let refused = await remoteFailure { try await api.setProfilePhoto(reference, jpeg) }
+        XCTAssertEqual(refused, .forbidden)
+        let notJPEG = await remoteFailure { try await api.setProfilePhoto(reference, Data("<html>".utf8)) }
+        XCTAssertEqual(notJPEG, .serverContractMismatch)
+        let requests = await harness.recordedRequests()
+        XCTAssertEqual(requests.count, 3, "a non-JPEG is never sent")
+        XCTAssertEqual(requests[0], .uploadProfilePhoto(path: reference.objectPath, data: jpeg))
+        XCTAssertEqual(
+            reference.objectPath,
+            "12000000-0000-4000-8000-0000000000c1/13000000-0000-4000-8000-0000000000c1.jpg"
+        )
+        try assertRPC(requests[1], name: "set_profile_photo", body: ["photo_version": photoVersion.uuidString.lowercased()])
+    }
+
+    func testClearRemoveDownloadAndReportProfilePhoto() async throws {
+        let jpeg = ProfilePhotoTestLabServer.fixtureJPEG(red: 0.1, green: 0.5, blue: 0.3)
+        let reference = ProfilePhotoReference(ownerProfileID: photoOwner, version: photoVersion)
+        let owner = photoOwner.uuidString.lowercased()
+        let harness = CompetitionTransportHarness(stubs: [
+            .response(200, try jsonData(["photo_version": NSNull()])),
+            .response(200, try jsonData(["\(photoVersion.uuidString.lowercased()).jpg", "old.jpg", "nested/x.jpg"])),
+            .response(200, Data()),
+            .response(200, try jsonData([String]())),
+            .response(200, jpeg),
+            .response(200, Data("<html>".utf8)),
+            .failure(.server(statusCode: 400, code: "not_found", message: "Object not found")),
+            .response(200, try jsonData(["profile_id": owner])),
+            .failure(.server(statusCode: 400, code: "P0001", message: "photo_unavailable")),
+        ])
+        let api = makeAPI(harness)
+        try await api.clearProfilePhoto()
+        try await api.removeProfilePhotoObjects(photoOwner, photoVersion)
+        try await api.removeProfilePhotoObjects(photoOwner, nil)
+        let downloaded = try await api.downloadProfilePhoto(reference)
+        XCTAssertEqual(downloaded, jpeg)
+        let notJPEG = await remoteFailure { _ = try await api.downloadProfilePhoto(reference) }
+        XCTAssertEqual(notJPEG, .serverContractMismatch)
+        let hidden = await remoteFailure { _ = try await api.downloadProfilePhoto(reference) }
+        XCTAssertEqual(hidden, .notFound)
+        try await api.reportProfilePhoto(photoOwner)
+        let unavailable = await remoteFailure { try await api.reportProfilePhoto(photoOwner) }
+        XCTAssertEqual(unavailable, .notFound)
+
+        let requests = await harness.recordedRequests()
+        try assertRPC(requests[0], name: "clear_profile_photo", body: [:])
+        XCTAssertEqual(requests[1], .listProfilePhotoFolder(photoOwner))
+        XCTAssertEqual(requests[2], .removeProfilePhotos(paths: ["\(owner)/old.jpg"]))
+        XCTAssertEqual(requests[3], .listProfilePhotoFolder(photoOwner), "an empty folder removes nothing")
+        XCTAssertEqual(requests[4], .downloadProfilePhoto(path: reference.objectPath))
+        try assertRPC(requests[7], name: "report_profile_photo", body: ["profile_id": owner])
+        XCTAssertEqual(requests.count, 9)
+    }
+}
