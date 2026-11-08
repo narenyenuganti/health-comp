@@ -392,6 +392,8 @@ private struct AccountSheet: View {
         }
         .preferredColorScheme(colorScheme)
         .task { mainStore.send(.refreshHealthAccess) }
+        // A sheet sits outside Home's own environment.
+        .environment(\.profilePhotos, mainStore.competition.profilePhotoImages)
     }
 
     private var accountSettings: AccountSettingsView {
@@ -443,6 +445,17 @@ private struct AccountSheet: View {
                 unblock: { mainStore.send(.competition(.unblockTapped($0))) }
             )
             : nil
+        let ownPhoto = competition.ownPhoto
+        let profilePhoto = competition.publication?.source == .remoteParticipants
+            ? AccountProfilePhoto(
+                status: ownPhoto.status,
+                removedByReview: ownPhoto.removedByReview,
+                load: { mainStore.send(.competition(.ownPhotoRequested)) },
+                save: { mainStore.send(.competition(.ownPhotoSaveTapped($0))) },
+                remove: { mainStore.send(.competition(.ownPhotoRemoveConfirmed)) },
+                cropClosed: { mainStore.send(.competition(.ownPhotoCropClosed)) }
+            )
+            : nil
 #if HEALTHCOMP_STAGING
         return AccountSettingsView(
             store: accountStore,
@@ -451,6 +464,7 @@ private struct AccountSheet: View {
             liveMatchCount: liveMatchCount,
             challengeLink: challengeLink,
             blockedPeople: blockedPeople,
+            profilePhoto: profilePhoto,
             refreshCompetition: { mainStore.send(.competition(.pullToRefresh)) }
         )
 #else
@@ -460,7 +474,8 @@ private struct AccountSheet: View {
             health: health,
             liveMatchCount: liveMatchCount,
             challengeLink: challengeLink,
-            blockedPeople: blockedPeople
+            blockedPeople: blockedPeople,
+            profilePhoto: profilePhoto
         )
 #endif
     }

@@ -18,10 +18,12 @@ final class ProfilePhotoTestLabServer: @unchecked Sendable {
         ownProfileID: UUID,
         photos: [UUID: Data] = [:],
         hidden: Set<UUID> = [],
+        reported: Set<UUID> = [],
         latency: Duration = .milliseconds(600)
     ) {
         self.ownProfileID = ownProfileID
         self.hidden = hidden
+        self.reported = reported
         self.latency = latency
         for (owner, data) in photos {
             self.photos[owner] = (ProfilePhotoReference(ownerProfileID: owner, version: UUID()), data)

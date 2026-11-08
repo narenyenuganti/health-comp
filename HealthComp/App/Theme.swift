@@ -252,6 +252,24 @@ struct SecondaryButtonStyle: ButtonStyle {
     }
 }
 
+/// Rare or destructive text actions. Neutral: colour means you.
+struct QuietButtonStyle: ButtonStyle {
+    var color = Theme.secondary
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.headline.width(.condensed))
+            .multilineTextAlignment(.center)
+            .foregroundStyle(color)
+            .frame(maxWidth: .infinity, minHeight: 44)
+            .contentShape(Rectangle())
+            .opacity(isEnabled ? (configuration.isPressed ? 0.8 : 1) : 0.45)
+            .animation(Motion.press, value: configuration.isPressed)
+            .animation(Motion.press, value: isEnabled)
+    }
+}
+
 /// A button label that waits. The words stay, dimmed by the disabled style,
 /// and the spinner replaces them only once the wait outlasts 200 ms. They keep
 /// the width and, at opacity 0, the accessibility name.

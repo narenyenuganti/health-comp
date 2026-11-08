@@ -179,7 +179,11 @@ struct CompetitionInviteView: View {
 
     // The mark, labeled: your ring bars against their single block.
     private var faceOff: some View {
-        CompetitionInvitationFaceOff(opponentDisplayName: competition.opponentDisplayName)
+        CompetitionInvitationFaceOff(
+            ownName: competition.ownerDisplayName,
+            opponentDisplayName: competition.opponentDisplayName,
+            opponentPhoto: competition.opponentProfileID
+        )
     }
 
     private var invitationCopy: some View {
@@ -413,19 +417,33 @@ struct CompetitionInviteView: View {
 }
 
 struct CompetitionInvitationFaceOff: View {
+    /// Yours, for your initial.
+    var ownName = ""
     let opponentDisplayName: String
+    /// Their account. The server shares a photo only once you may see it.
+    var opponentPhoto: UUID? = nil
+    /// The claim sheet has its own mark above.
+    var showsMark = true
 
     var body: some View {
         VStack(spacing: 8) {
-            BrandMark().frame(width: 176)
+            if showsMark {
+                BrandMark().frame(width: 176)
+            }
             HStack(alignment: .top, spacing: 16) {
-                Text("YOU")
-                    .foregroundStyle(Theme.you)
-                    .frame(maxWidth: .infinity)
-                Text(opponentDisplayName.uppercased())
-                    .foregroundStyle(Theme.ink)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity)
+                VStack(spacing: 8) {
+                    PersonAvatar(name: ownName, size: 56, isYou: true)
+                    Text("YOU")
+                        .foregroundStyle(Theme.you)
+                }
+                .frame(maxWidth: .infinity)
+                VStack(spacing: 8) {
+                    PersonAvatar(name: opponentDisplayName, photo: opponentPhoto, size: 56)
+                    Text(opponentDisplayName.uppercased())
+                        .foregroundStyle(Theme.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .frame(maxWidth: .infinity)
             }
             .font(.themeLabel)
             .tracking(1.4)

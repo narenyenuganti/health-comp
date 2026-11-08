@@ -357,6 +357,7 @@ struct CompetitionResultView: View {
     private var finalScoreOwners: some View {
         FinalScoreOwner(
             name: "You",
+            avatar: PersonAvatar(name: competition.ownerDisplayName, size: 40, isYou: true),
             points: competition.userPoints,
             fractionDigits: digits,
             tint: Theme.you
@@ -367,6 +368,11 @@ struct CompetitionResultView: View {
             .accessibilityHidden(true)
         FinalScoreOwner(
             name: competition.opponentDisplayName,
+            avatar: PersonAvatar(
+                name: competition.opponentDisplayName,
+                photo: competition.opponentProfileID,
+                size: 40
+            ),
             points: competition.opponentPoints,
             fractionDigits: digits,
             tint: Theme.ink
@@ -1215,6 +1221,7 @@ struct CompetitionFinalScoreLayout: Layout {
 
 private struct FinalScoreOwner: View {
     let name: String
+    let avatar: PersonAvatar
     let points: Double
     let fractionDigits: Int
     let tint: Color
@@ -1223,6 +1230,9 @@ private struct FinalScoreOwner: View {
 
     var body: some View {
         VStack(spacing: 4) {
+            // A late photo fades in where it sits; the beat doesn't wait.
+            avatar
+                .padding(.bottom, 2)
             Text(name)
                 .font(.subheadline.weight(.semibold))
             Text(competitionPointsText(points, fractionDigits: fractionDigits))

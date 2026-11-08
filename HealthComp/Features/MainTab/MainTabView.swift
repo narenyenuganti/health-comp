@@ -33,8 +33,15 @@ struct MainTabView: View {
         .task {
             await store.send(.task).finish()
         }
+        .task(id: photoOwners) {
+            store.send(.competition(.profilePhotosNeeded(photoOwners)))
+        }
         .onChange(of: scenePhase) { _, newValue in
             store.send(.scenePhaseChanged(Self.sceneState(newValue)))
+            // A photo changed or hidden while away shows without a relaunch.
+            if newValue == .active {
+                store.send(.competition(.profilePhotosNeeded(photoOwners)))
+            }
         }
         // Keeps the notifications prompt from presenting under the
         // Challenge or practice sheet, where SwiftUI would drop it, or over
@@ -53,6 +60,7 @@ struct MainTabView: View {
             ClaimCompetitionView(
                 liveStatus: store.inviteClaimStatus,
                 livePreview: store.inviteClaimPreview,
+                ownName: store.competition.ownProfile?.displayName ?? "",
                 now: store.inviteClaimPreviewEvaluatedAt ?? Date(),
                 hasQueuedChallenge: store.queuedClaimRoute != nil,
                 declineFailed: store.claimDeclineFailed,
@@ -91,6 +99,18 @@ struct MainTabView: View {
             old && !new && !store.path.isEmpty
                 && store.inviteClaimStatus == .idle && store.challengeFromLink == nil
         }
+        // Last, so every screen and sheet above draws the same photos.
+        .environment(\.profilePhotos, store.competition.profilePhotoImages)
+    }
+
+    /// Everyone whose photo could show, with the sender of a challenge
+    /// being claimed: they sent it to you, so you may see theirs.
+    private var photoOwners: [UUID] {
+        let owners = store.competition.photoOwners
+        guard let sender = store.inviteClaimPreview?.sender.id, !owners.contains(sender) else {
+            return owners
+        }
+        return owners + [sender]
     }
 
     /// Accept, or Send from a link: both end by closing the sheet on the match.
@@ -269,27 +289,24 @@ struct MainTabView: View {
             }
             if let openAccount {
                 Button(action: openAccount) {
-                    Group {
-                        if let accountInitial {
-                            Text(accountInitial)
-                                .font(.headline.width(.condensed))
-                                .foregroundStyle(Theme.you)
-                        } else {
-                            Image(systemName: "person.fill")
-                                .foregroundStyle(Theme.ink)
-                        }
+                    if let name = store.competition.ownProfile?.displayName, !name.isEmpty {
+                        PersonAvatar(
+                            name: name,
+                            size: 34,
+                            isYou: true,
+                            initialFont: .headline.width(.condensed)
+                        )
+                    } else {
+                        Image(systemName: "person.fill")
+                            .foregroundStyle(Theme.ink)
+                            .frame(width: 34, height: 34)
+                            .background(Theme.control, in: Circle())
                     }
-                    .frame(width: 34, height: 34)
-                    .background(Theme.control, in: Circle())
                 }
                 .accessibilityLabel("Account")
                 .accessibilityIdentifier("app.account")
             }
         }
-    }
-
-    private var accountInitial: String? {
-        store.competition.ownProfile?.displayName.first.map { String($0).uppercased() }
     }
 
     /// The fixture reinvites Alex; a real match prefills the Challenge sheet
@@ -396,7 +413,14 @@ struct MainTabView: View {
                             send: { store.send(.competition(.nudgeTapped(id))) }
                         )
                         : nil,
-                    reactions: reactionControl(id, source: publication.source)
+                    reactions: reactionControl(id, source: publication.source),
+                    reportPhoto: competition.opponentProfileID.map { owner in
+                        CompetitionReportPhoto(
+                            isReported: store.competition.reportedPhotoOwners.contains(owner),
+                            isInFlight: store.competition.photoReportsInFlight.contains(owner),
+                            report: { store.send(.competition(.photoReportConfirmed(owner))) }
+                        )
+                    }
                 )
 
             case .completed, .archived:

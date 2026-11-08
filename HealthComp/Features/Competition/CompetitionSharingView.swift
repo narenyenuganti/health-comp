@@ -708,6 +708,7 @@ private struct HeroScoreboard: View {
     let competition: LocalCompetitionPresentation
 
     @ScaledMetric private var scoreSize: CGFloat
+    @ScaledMetric(relativeTo: .headline) private var avatarSize: CGFloat = 28
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     init(competition: LocalCompetitionPresentation, isCompact: Bool) {
@@ -719,6 +720,7 @@ private struct HeroScoreboard: View {
         layout {
             side(
                 name: "You",
+                avatar: PersonAvatar(name: competition.ownerDisplayName, size: avatarSize, isYou: true),
                 points: competition.userPoints,
                 color: Theme.you,
                 trailing: false
@@ -732,6 +734,11 @@ private struct HeroScoreboard: View {
             }
             side(
                 name: competition.opponentDisplayName,
+                avatar: PersonAvatar(
+                    name: competition.opponentDisplayName,
+                    photo: competition.opponentProfileID,
+                    size: avatarSize
+                ),
                 points: competition.opponentPoints,
                 color: Theme.ink,
                 trailing: !isStacked
@@ -751,14 +758,18 @@ private struct HeroScoreboard: View {
 
     private func side(
         name: String,
+        avatar: PersonAvatar,
         points: Double,
         color: Color,
         trailing: Bool
     ) -> some View {
         VStack(alignment: trailing ? .trailing : .leading, spacing: 2) {
-            Text(name.uppercased(with: .current))
-                .font(.themeLabel)
-                .tracking(1.4)
+            HStack(spacing: 8) {
+                avatar
+                Text(name.uppercased(with: .current))
+                    .font(.themeLabel)
+                    .tracking(1.4)
+            }
             Text(competitionPointsText(points))
                 .font(.score(size: scoreSize).monospacedDigit())
                 .scoreRoll(points, id: competition.id)
@@ -841,12 +852,11 @@ private struct CompetitionSharingRow: View {
         if let outcome = sharingOutcome(competition.lifecycle) {
             CompetitionOutcomeChip(outcome: outcome)
         } else {
-            Text(competition.opponentDisplayName.prefix(1).uppercased())
-                .font(.headline.weight(.heavy).width(.condensed))
-                .foregroundStyle(Theme.ink)
-                .frame(width: badgeSize, height: badgeSize)
-                .background(Theme.control, in: Circle())
-                .accessibilityHidden(true)
+            PersonAvatar(
+                name: competition.opponentDisplayName,
+                photo: competition.opponentProfileID,
+                size: badgeSize
+            )
         }
     }
 
@@ -1054,12 +1064,11 @@ private struct CompetitionClosedChallengeRow: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top, spacing: 14) {
-                Text(competition.opponentDisplayName.prefix(1).uppercased())
-                    .font(.headline.weight(.heavy).width(.condensed))
-                    .foregroundStyle(Theme.ink)
-                    .frame(width: badgeSize, height: badgeSize)
-                    .background(Theme.control, in: Circle())
-                    .accessibilityHidden(true)
+                PersonAvatar(
+                    name: competition.opponentDisplayName,
+                    photo: competition.opponentProfileID,
+                    size: badgeSize
+                )
                 VStack(alignment: .leading, spacing: 4) {
                     Text(text?.title ?? competition.opponentDisplayName)
                         .font(.headline)
@@ -1305,11 +1314,11 @@ private struct CompetitionRecordRow: View {
     }
 
     private var badge: some View {
-        Text(record.opponentDisplayName.prefix(1).uppercased())
-            .font(.headline.weight(.heavy).width(.condensed))
-            .foregroundStyle(Theme.ink)
-            .frame(width: badgeSize, height: badgeSize)
-            .background(Theme.control, in: Circle())
+        PersonAvatar(
+            name: record.opponentDisplayName,
+            photo: record.latest.opponentProfileID,
+            size: badgeSize
+        )
     }
 
     private var identity: some View {
@@ -1573,7 +1582,7 @@ struct CompetitionPersonView: View {
                     }
                 }
                 if !tape.isEmpty {
-                    taleOfTheTape(tape, name: name)
+                    taleOfTheTape(tape, name: name, latest: record.latest)
                 }
             }
             .padding(.horizontal, 16)
@@ -1596,7 +1605,8 @@ struct CompetitionPersonView: View {
     /// stacks, with the names spelled out.
     private func taleOfTheTape(
         _ rows: [(label: String, you: String, them: String)],
-        name: String
+        name: String,
+        latest: LocalCompetitionPresentation
     ) -> some View {
         let isStacked = dynamicTypeSize.isAccessibilitySize
         return VStack(spacing: 7) {
@@ -1604,6 +1614,14 @@ struct CompetitionPersonView: View {
                 .fill(Theme.hairline)
                 .frame(height: 1)
                 .padding(.bottom, 5)
+            // Each column's face; they drop out when the tape stacks.
+            if !isStacked {
+                HStack {
+                    PersonAvatar(name: latest.ownerDisplayName, size: 44, isYou: true)
+                    Spacer(minLength: 8)
+                    PersonAvatar(name: name, photo: latest.opponentProfileID, size: 44)
+                }
+            }
             if !isStacked {
                 tapeRow(you: "YOU", label: "TALE OF THE TAPE", them: name.uppercased(), valueFont: .themeLabel)
             }

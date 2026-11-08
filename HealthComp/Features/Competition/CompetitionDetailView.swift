@@ -17,6 +17,8 @@ struct CompetitionDetailView: View {
     var reactions: CompetitionReactionControl? = nil
     /// Practice only: End Practice in the ••• menu.
     var endPractice: (() -> Void)? = nil
+    /// Real matches only: Report Photo in the ••• menu, while their photo shows.
+    var reportPhoto: CompetitionReportPhoto? = nil
 
     @Environment(\.locale) private var locale
     @Environment(\.timeZone) private var timeZone
@@ -33,6 +35,8 @@ struct CompetitionDetailView: View {
     /// Week has shown on this visit, so later flips and new days settle.
     @State private var weekShown = false
     @State private var showsEndPracticeConfirmation = false
+    @State private var showsReportPhotoConfirmation = false
+    @Environment(\.profilePhotos) private var photos
 
     /// Today's numbers or the whole week; the scoreboard stays above both.
     private enum Page: Hashable {
@@ -127,6 +131,7 @@ struct CompetitionDetailView: View {
                     if let muteButton {
                         muteButton
                     }
+                    reportPhotoItem
                     Button {
                         drawer = .activitySync
                     } label: {
@@ -174,6 +179,23 @@ struct CompetitionDetailView: View {
             Text("It hasn’t started yet. \(competition.opponentDisplayName) will be told.")
         }
         .confirmationDialog(
+            "Report \(competition.opponentDisplayName)’s photo?",
+            isPresented: $showsReportPhotoConfirmation,
+            titleVisibility: .visible
+        ) {
+            Button("Report Photo", role: .destructive) { reportPhoto?.report() }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("You won’t see \(competition.opponentDisplayName)’s photo again. We’ll review it. \(competition.opponentDisplayName) isn’t notified.")
+        }
+        .onChange(of: reportPhoto?.isReported == true) { old, new in
+            if !old, new {
+                AccessibilityNotification.Announcement(
+                    "Photo reported. You’ll see \(competition.opponentDisplayName)’s initial instead."
+                ).post()
+            }
+        }
+        .confirmationDialog(
             "End this practice match?",
             isPresented: $showsEndPracticeConfirmation,
             titleVisibility: .visible
@@ -202,6 +224,31 @@ struct CompetitionDetailView: View {
                         }
                     )
                 }
+            }
+        }
+    }
+
+    /// Only while their photo shows; after a report, a dimmed Photo Reported.
+    @ViewBuilder
+    private var reportPhotoItem: some View {
+        if let reportPhoto {
+            if reportPhoto.isReported {
+                Button {} label: {
+                    Label("Photo Reported", systemImage: "checkmark.circle")
+                }
+                .disabled(true)
+                .accessibilityIdentifier("competition.match.report-photo")
+            } else if photos.photo(competition.opponentProfileID) != nil {
+                Button {
+                    showsReportPhotoConfirmation = true
+                } label: {
+                    Label(
+                        "Report \(competition.opponentDisplayName)’s Photo",
+                        systemImage: "exclamationmark.bubble"
+                    )
+                }
+                .disabled(reportPhoto.isInFlight)
+                .accessibilityIdentifier("competition.match.report-photo")
             }
         }
     }
@@ -704,6 +751,13 @@ func competitionMuteFailureText(
 }
 
 /// The ••• that holds a match's less frequent actions.
+/// Hides one person's photos for you, on every screen and device.
+struct CompetitionReportPhoto {
+    let isReported: Bool
+    let isInFlight: Bool
+    let report: () -> Void
+}
+
 struct CompetitionMoreLabel: View {
     var body: some View {
         Image(systemName: "ellipsis")
@@ -822,6 +876,7 @@ private struct CompetitionScoreboardPanel: View {
     let isMuted: Bool
 
     @ScaledMetric(relativeTo: .largeTitle) private var scoreSize: CGFloat = 56
+    @ScaledMetric(relativeTo: .headline) private var avatarSize: CGFloat = 28
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.locale) private var locale
     @Environment(\.timeZone) private var timeZone
@@ -938,6 +993,7 @@ private struct CompetitionScoreboardPanel: View {
     private var ownerBlock: some View {
         scoreBlock(
             name: "You",
+            avatar: PersonAvatar(name: competition.ownerDisplayName, size: avatarSize, isYou: true),
             today: todayDay?.ownerAcceptedPoints,
             total: competition.userPoints,
             color: Theme.you,
@@ -949,6 +1005,11 @@ private struct CompetitionScoreboardPanel: View {
     private func opponentBlock(alignment: HorizontalAlignment) -> some View {
         scoreBlock(
             name: competition.opponentDisplayName,
+            avatar: PersonAvatar(
+                name: competition.opponentDisplayName,
+                photo: competition.opponentProfileID,
+                size: avatarSize
+            ),
             today: todayDay?.opponentRevealedPoints,
             total: competition.opponentPoints,
             color: Theme.ink,
@@ -959,6 +1020,7 @@ private struct CompetitionScoreboardPanel: View {
 
     private func scoreBlock(
         name: String,
+        avatar: PersonAvatar,
         today: Double?,
         total: Double,
         color: Color,
@@ -967,10 +1029,13 @@ private struct CompetitionScoreboardPanel: View {
     ) -> some View {
         // Names may wrap at large sizes; scores never do.
         VStack(alignment: alignment, spacing: 4) {
-            Text(name.uppercased())
-                .font(.themeLabel)
-                .tracking(1.4)
-                .multilineTextAlignment(alignment == .trailing ? .trailing : .leading)
+            HStack(spacing: 8) {
+                avatar
+                Text(name.uppercased())
+                    .font(.themeLabel)
+                    .tracking(1.4)
+                    .multilineTextAlignment(alignment == .trailing ? .trailing : .leading)
+            }
             Text(competitionPointsText(total))
                 .font(.score(size: scoreSize).monospacedDigit())
                 .fixedSize()
