@@ -130,6 +130,7 @@ struct ActivityRingsView: View {
                                 .font(.headline.weight(.heavy).width(.condensed).monospacedDigit())
                                 .foregroundStyle(Theme.ink)
                                 .fixedSize()
+                                .scoreRoll(points, id: row.title)
                         }
                     }
                 }
@@ -299,10 +300,16 @@ struct CompetitionWhatItTakesPanel: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(takes.headline)
-                .font(.title3.weight(.heavy).width(.condensed))
-                .foregroundStyle(takes.points == nil ? Theme.ink : Theme.you)
-                .fixedSize(horizontal: false, vertical: true)
+            // Within reach the number rolls. Out of reach or a new day is a
+            // new id, so the words and the colour crossfade.
+            ZStack(alignment: .leading) {
+                Text(takes.headline)
+                    .font(.title3.weight(.heavy).width(.condensed))
+                    .foregroundStyle(takes.points == nil ? Theme.ink : Theme.you)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .scoreRoll(takes.points, id: headlineID)
+            }
+            .animation(Motion.fade, value: headlineID)
             Text(takes.detail)
                 .font(.subheadline)
                 .foregroundStyle(Theme.secondary)
@@ -314,5 +321,9 @@ struct CompetitionWhatItTakesPanel: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(takes.accessibilityLabel)
         .accessibilityIdentifier("competition.takes")
+    }
+
+    private var headlineID: String {
+        "\(takes.dayOrdinal)-\(takes.points == nil)"
     }
 }
