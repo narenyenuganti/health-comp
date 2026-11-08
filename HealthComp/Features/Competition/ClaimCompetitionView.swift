@@ -2,9 +2,9 @@ import CompetitionCore
 import SwiftUI
 
 struct ClaimCompetitionView: View {
-    let status: MainTabFeature.InviteClaimStatus
+    let liveStatus: MainTabFeature.InviteClaimStatus
     /// Who sent it, from the server; shown only to the person it was sent to.
-    var preview: CompetitionInvitePreview? = nil
+    var livePreview: CompetitionInvitePreview? = nil
     var now: Date = Date()
     var hasQueuedChallenge = false
     var declineFailed = false
@@ -18,9 +18,21 @@ struct ClaimCompetitionView: View {
     let dismiss: () -> Void
 
     @State private var showsDeclineConfirmation = false
+    /// `.idle` lands as the sheet starts to leave, with the preview already
+    /// gone, so the slide-down keeps drawing the last real state.
+    @State private var lastStatus = MainTabFeature.InviteClaimStatus.loadingPreview
+    @State private var lastPreview: CompetitionInvitePreview?
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.locale) private var locale
     @Environment(\.timeZone) private var timeZone
+
+    private var status: MainTabFeature.InviteClaimStatus {
+        liveStatus == .idle ? lastStatus : liveStatus
+    }
+
+    private var preview: CompetitionInvitePreview? {
+        liveStatus == .idle ? lastPreview : livePreview
+    }
 
     var body: some View {
         // At accessibility sizes the controls scroll with the content.
@@ -30,22 +42,26 @@ struct ClaimCompetitionView: View {
                 VStack(spacing: 24) {
                     Spacer(minLength: 12)
                     statusEmblem
-                    VStack(spacing: 10) {
-                        Text(title)
-                            .font(.title.weight(.heavy).width(.condensed))
-                            .foregroundStyle(Theme.ink)
-                            .multilineTextAlignment(.center)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .accessibilityAddTraits(.isHeader)
-                            .accessibilityIdentifier(showsPreview ? "competition.claim.sender" : "")
-                        if showsPreview, let preview {
-                            previewLines(preview)
-                        } else if let message {
-                            Text(message)
-                                .font(.body)
-                                .foregroundStyle(Theme.secondary)
+                    ZStack(alignment: .top) {
+                        VStack(spacing: 10) {
+                            Text(title)
+                                .font(.title.weight(.heavy).width(.condensed))
+                                .foregroundStyle(Theme.ink)
                                 .multilineTextAlignment(.center)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .accessibilityAddTraits(.isHeader)
+                                .accessibilityIdentifier(showsPreview ? "competition.claim.sender" : "")
+                            if showsPreview, let preview {
+                                previewLines(preview)
+                            } else if let message {
+                                Text(message)
+                                    .font(.body)
+                                    .foregroundStyle(Theme.secondary)
+                                    .multilineTextAlignment(.center)
+                            }
                         }
+                        .id(slotKey)
+                        .transition(Motion.appear)
                     }
                     .frame(maxWidth: 440)
 
@@ -55,16 +71,18 @@ struct ClaimCompetitionView: View {
                             opponentName: preview?.sender.displayName
                         )
                         .frame(maxWidth: 440)
+                        .transition(Motion.appear)
                     }
 
                     if hasQueuedChallenge {
                         Text("Another challenge link is waiting.")
                             .font(.caption)
                             .foregroundStyle(Theme.secondary)
+                            .transition(Motion.appear)
                     }
 
                     if !pinsControls {
-                        actionControls
+                        controlSlot
                     }
                 }
                 .padding(.horizontal, 24)
@@ -74,7 +92,7 @@ struct ClaimCompetitionView: View {
             .scrollBounceBehavior(.basedOnSize)
             .safeAreaInset(edge: .bottom) {
                 if pinsControls {
-                    actionControls
+                    controlSlot
                         .padding(.horizontal, 24)
                         .padding(.top, 12)
                         .padding(.bottom, 8)
@@ -82,12 +100,16 @@ struct ClaimCompetitionView: View {
                         .background(Theme.ground)
                 }
             }
+            // Here, not on the NavigationStack, so the bar stays still.
+            .moving(Motion.settle, value: settleKey)
+            .moving(Motion.settle, value: hasQueuedChallenge)
             .background(Theme.ground)
             .navigationTitle("Challenge")
             .navigationBarTitleDisplayMode(.inline)
         }
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
+        .presentationBackground(Theme.ground)
         .interactiveDismissDisabled(
             status == .claiming || status == .waitingForCompetition
                 || status == .declining
@@ -107,6 +129,31 @@ struct ClaimCompetitionView: View {
             Text("\(senderName) will see a decline either way. If you block them, they can’t challenge you again.")
         }
         .accessibilityIdentifier("competition.claim.sheet")
+        .onChange(of: liveStatus, initial: true) { _, new in
+            if new != .idle { lastStatus = new }
+        }
+        .onChange(of: livePreview, initial: true) { _, new in
+            if liveStatus != .idle { lastPreview = new }
+        }
+        .onChange(of: title) { _, new in
+            AccessibilityNotification.Announcement(new).post()
+        }
+        .sensoryFeedback(.error, trigger: liveStatus) { old, new in
+            [.loadingPreview, .claiming, .waitingForCompetition].contains(old)
+                && [.retryable, .wrongAccount, .confirmationTimedOut].contains(new)
+        }
+        .sensoryFeedback(.error, trigger: declineFailed) { _, new in new }
+    }
+
+    /// `.ready` and `.declining` are one screen: a new id would regrow the mark.
+    private var slotKey: MainTabFeature.InviteClaimStatus {
+        status == .declining ? .ready : status
+    }
+
+    /// The reveal is one fade: an inset still rising would show the rules
+    /// through the buttons, and nothing already on screen needs to move.
+    private var settleKey: MainTabFeature.InviteClaimStatus {
+        slotKey == .loadingPreview ? .ready : slotKey
     }
 
     private var showsPreview: Bool {
@@ -159,12 +206,21 @@ struct ClaimCompetitionView: View {
 
     private var statusEmblem: some View {
         ZStack {
-            Circle()
-                .fill(Theme.panel)
-                .frame(width: 104, height: 104)
             statusIcon
+                .id(emblemKey)
+                .transition(Motion.appear)
         }
+        .frame(width: 104, height: 104)
+        .background(Theme.panel, in: Circle())
         .accessibilityHidden(true)
+    }
+
+    /// The spinner stays one view from opening through accepting.
+    private var emblemKey: MainTabFeature.InviteClaimStatus {
+        switch status {
+        case .claiming, .waitingForCompetition: .loadingPreview
+        default: slotKey
+        }
     }
 
     @ViewBuilder
@@ -187,12 +243,7 @@ struct ClaimCompetitionView: View {
         case .retryable:
             symbol("wifi.exclamationmark")
         case .idle, .ready, .declining:
-            if let preview {
-                CompetitionInvitationFaceOff(opponentDisplayName: preview.sender.displayName)
-                    .frame(width: 96)
-            } else {
-                BrandMark().frame(width: 58)
-            }
+            BrandMark(grows: true).frame(width: 58)
         }
     }
 
@@ -200,6 +251,15 @@ struct ClaimCompetitionView: View {
         Image(systemName: name)
             .font(.system(size: 40, weight: .semibold))
             .foregroundStyle(Theme.ink)
+    }
+
+    /// One slot: a new control crossfades over the last while height settles.
+    private var controlSlot: some View {
+        ZStack(alignment: .top) {
+            actionControls
+                .id(slotKey)
+                .transition(Motion.appear)
+        }
     }
 
     @ViewBuilder
@@ -249,6 +309,8 @@ struct ClaimCompetitionView: View {
                 .foregroundStyle(Theme.secondary)
                 .multilineTextAlignment(.center)
                 .fixedSize(horizontal: false, vertical: true)
+                .contentTransition(.opacity)
+                .animation(Motion.fade, value: declineFailed)
                 .accessibilityIdentifier(declineFailed ? "competition.claim.decline-error" : "")
             }
 

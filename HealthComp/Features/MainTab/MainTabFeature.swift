@@ -31,7 +31,7 @@ struct MainTabFeature {
 
     /// Someone's challenge link, opened on this iPhone.
     struct ChallengeFromLink: Equatable, Sendable, Identifiable {
-        enum Status: Equatable, Sendable {
+        enum Status: Hashable, Sendable {
             case resolving
             /// The link owner's display name; Send uses the link's code.
             case ready(displayName: String)

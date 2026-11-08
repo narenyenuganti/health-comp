@@ -37,7 +37,7 @@ struct CreateCompetitionView: View {
                     .foregroundStyle(Theme.secondary)
                     .accessibilityIdentifier("competition.create.time-zone")
                 if !pinsControl {
-                    control
+                    controlSlot
                 }
             }
             .padding(.horizontal, 20)
@@ -56,19 +56,29 @@ struct CreateCompetitionView: View {
                     .padding(.vertical, 8)
                     .background(Theme.ground)
             } else if pinsControl {
-                control
+                controlSlot
                     .padding(.horizontal, 20)
                     .padding(.top, 12)
                     .padding(.bottom, 8)
                     .background(Theme.ground)
             }
         }
+        // Here, so the inset and the rows under a new line move together.
+        .moving(Motion.settle, value: status.controlPhase)
+        .moving(Motion.settle, value: recipient?.displayName)
+        .moving(Motion.settle, value: competitionRecipientErrorText(recipientStatus))
+        .moving(Motion.settle, value: ownChallengeLink)
         .background(Theme.ground)
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
         .presentationBackground(Theme.ground)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("competition.create.card")
+        .sensoryFeedback(.success, trigger: isSent) { !$0 && $1 }
+        .sensoryFeedback(.error, trigger: status.controlPhase == .failed) { _, new in new }
+        .sensoryFeedback(.error, trigger: recipientStatus) { _, new in
+            competitionRecipientErrorText(new) != nil
+        }
         .onChange(of: recipientStatus) { _, newValue in
             if let text = competitionRecipientErrorText(newValue) {
                 announce(text)
@@ -94,6 +104,10 @@ struct CreateCompetitionView: View {
 
     private func announce(_ text: String) {
         AccessibilityNotification.Announcement(text).post()
+    }
+
+    private var isSent: Bool {
+        status.controlPhase == .sent || status.controlPhase == .accepted
     }
 
     private var isLocked: Bool {
@@ -142,21 +156,31 @@ struct CreateCompetitionView: View {
 
     private var header: some View {
         HStack(alignment: .top, spacing: 14) {
-            // The opponent's slot, still empty.
-            SlantedBar()
-                .stroke(
-                    Theme.tertiary,
-                    style: StrokeStyle(lineWidth: 1.5, dash: [4, 3])
-                )
-                .frame(width: 16, height: 30)
-                .padding(.horizontal, 6)
-                .padding(.top, 2)
-                .accessibilityHidden(true)
+            // The opponent's slot: empty, then filled in neutral ink once
+            // the challenge is sent.
+            ZStack {
+                SlantedBar()
+                    .stroke(
+                        Theme.tertiary,
+                        style: StrokeStyle(lineWidth: 1.5, dash: [4, 3])
+                    )
+                    .opacity(isSent ? 0 : 1)
+                SlantedBar()
+                    .fill(Theme.ink)
+                    .opacity(isSent ? 1 : 0)
+            }
+            .animation(Motion.fade, value: isSent)
+            .frame(width: 16, height: 30)
+            .padding(.horizontal, 6)
+            .padding(.top, 2)
+            .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
                     .font(.title3.weight(.heavy).width(.condensed))
                     .foregroundStyle(Theme.ink)
+                    .contentTransition(.opacity)
+                    .animation(Motion.fade, value: isSent)
                     .accessibilityAddTraits(.isHeader)
                 Text(
                     "Choose an existing HealthComp account. Only that account can accept your private link, which expires after 24 hours."
@@ -193,10 +217,13 @@ struct CreateCompetitionView: View {
                 .background(Theme.control, in: RoundedRectangle(cornerRadius: 10))
                 .disabled(isLocked)
                 .accessibilityIdentifier("competition.create.recipient-code")
-            Button("Find", action: find)
-                .buttonStyle(SecondaryButtonStyle())
-                .disabled(!canFind)
-                .accessibilityIdentifier("competition.create.find-recipient")
+            Button(action: find) {
+                BusyLabel("Find", isBusy: recipientStatus == .lookingUp)
+            }
+            .buttonStyle(SecondaryButtonStyle())
+            .disabled(!canFind)
+            .accessibilityValue(recipientStatus == .lookingUp ? "Finding account" : "")
+            .accessibilityIdentifier("competition.create.find-recipient")
             if let ownChallengeLink {
                 ShareLink(
                     item: ownChallengeLink,
@@ -206,25 +233,27 @@ struct CreateCompetitionView: View {
                     Label("Share Your Link", systemImage: "square.and.arrow.up")
                 }
                 .buttonStyle(SecondaryButtonStyle())
+                .transition(Motion.appear)
                 .accessibilityIdentifier("competition.create.share-own-link")
             }
-            if recipientStatus == .lookingUp {
-                ProgressView("Finding account…")
-            } else if let error = competitionRecipientErrorText(recipientStatus) {
+            if let error = competitionRecipientErrorText(recipientStatus) {
                 Text(error)
                     .font(.callout)
                     .foregroundStyle(Theme.secondary)
                     .fixedSize(horizontal: false, vertical: true)
+                    .transition(Motion.appear)
                     .accessibilityIdentifier("competition.create.recipient-error")
             }
             if let recipient {
                 Text("Challenge \(recipient.displayName)")
                     .font(.headline)
                     .fixedSize(horizontal: false, vertical: true)
+                    .transition(Motion.appear)
                     .accessibilityIdentifier("competition.create.recipient-name")
                 Text("Confirm this is the person you intended before creating the challenge.")
                     .font(.caption)
                     .foregroundStyle(Theme.secondary)
+                    .transition(Motion.appear)
             }
         }
         .foregroundStyle(Theme.ink)
@@ -235,10 +264,22 @@ struct CreateCompetitionView: View {
         return "Challenge someone"
     }
 
+    /// One slot: a new control crossfades over the last while height settles.
+    /// The group makes the incoming control ride the slot, not land ahead of it.
+    private var controlSlot: some View {
+        ZStack(alignment: .top) {
+            control
+                .id(status.controlPhase)
+                .transition(Motion.appear)
+        }
+        .geometryGroup()
+    }
+
     @ViewBuilder
     private var control: some View {
         switch status {
-        case .ready:
+        // One arm, so the button stays put and BusyLabel keeps its clock.
+        case .ready, .creating:
             createButton(title: "Create Challenge")
 
         case let .alreadyChallenged(challenge):
@@ -266,17 +307,6 @@ struct CreateCompetitionView: View {
                 button: "View Match",
                 id: match.id
             )
-
-        case .creating:
-            HStack(spacing: 10) {
-                ProgressView()
-                Text("Creating challenge…")
-                    .font(.subheadline.weight(.medium))
-            }
-            .foregroundStyle(Theme.secondary)
-            .frame(maxWidth: .infinity, minHeight: 44)
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel("Creating challenge")
 
         case let .sent(_, challenge, link):
             sentControl(challenge: challenge, link: link)
@@ -380,10 +410,31 @@ struct CreateCompetitionView: View {
     }
 
     private func createButton(title: String) -> some View {
-        Button(title, action: create)
-            .buttonStyle(PrimaryButtonStyle())
-            .disabled(recipient == nil || recipientStatus == .lookingUp)
-            .accessibilityIdentifier("competition.create.button")
+        let isCreating = status == .creating
+        return Button(action: create) {
+            BusyLabel(title, isBusy: isCreating)
+        }
+        .buttonStyle(PrimaryButtonStyle())
+        .disabled(isCreating || recipient == nil || recipientStatus == .lookingUp)
+        .accessibilityLabel(isCreating ? "Creating challenge" : title)
+        .accessibilityIdentifier("competition.create.button")
+    }
+}
+
+/// Which control a challenge status draws, payloads collapsed: `status` itself
+/// changes on every publication, so nothing may key on it.
+enum ChallengeControlPhase: Hashable {
+    case compose, existing, sent, accepted, failed
+}
+
+extension CompetitionFeature.ChallengeSheetStatus {
+    var controlPhase: ChallengeControlPhase {
+        switch self {
+        case .ready, .creating: .compose
+        case .alreadyChallenged, .challengedYou, .inMatch: .existing
+        case let .sent(_, challenge, _): challenge?.isPending == false ? .accepted : .sent
+        case .failed: .failed
+        }
     }
 }
 
@@ -472,9 +523,14 @@ struct ChallengeFromLinkView: View {
                     CompetitionDrawerCloseButton(action: close)
                         .accessibilityIdentifier("competition.link.close")
                 }
-                content
+                ZStack(alignment: .top) {
+                    VStack(alignment: .leading, spacing: 18) { content }
+                        .id(link.status)
+                        .transition(Motion.appear)
+                }
                 if !pinsControl, case .ready = link.status {
-                    control
+                    controlSlot
+                        .transition(Motion.appear)
                 }
             }
             .padding(.horizontal, 20)
@@ -485,13 +541,15 @@ struct ChallengeFromLinkView: View {
         .scrollBounceBehavior(.basedOnSize)
         .safeAreaInset(edge: .bottom) {
             if pinsControl, case .ready = link.status {
-                control
+                controlSlot
                     .padding(.horizontal, 20)
                     .padding(.top, 12)
                     .padding(.bottom, 8)
                     .background(Theme.ground)
+                    .transition(Motion.appear)
             }
         }
+        .moving(Motion.settle, value: controlPhase)
         .background(Theme.ground)
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
@@ -499,6 +557,32 @@ struct ChallengeFromLinkView: View {
         .interactiveDismissDisabled(status == .creating)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("competition.link.sheet")
+        // The success lands in MainTabView: this sheet may never render `.sent`.
+        .sensoryFeedback(.error, trigger: status.controlPhase == .failed) { _, new in new }
+        .sensoryFeedback(.error, trigger: linkFailed) { _, new in new }
+    }
+
+    private var linkFailed: Bool {
+        link.status == .unavailable || link.status == .retryable
+    }
+
+    /// Here `.sent` is still the sending row, until the sheet closes.
+    private var controlPhase: ChallengeControlPhase {
+        switch status.controlPhase {
+        case .sent, .accepted: .compose
+        case let phase: phase
+        }
+    }
+
+    /// One slot: a new control crossfades over the last while height settles.
+    /// The group makes the incoming control ride the slot, not land ahead of it.
+    private var controlSlot: some View {
+        ZStack(alignment: .top) {
+            control
+                .id(controlPhase)
+                .transition(Motion.appear)
+        }
+        .geometryGroup()
     }
 
     @ViewBuilder
@@ -506,6 +590,7 @@ struct ChallengeFromLinkView: View {
         switch link.status {
         case .resolving:
             ProgressView("Opening link…")
+                .waitingFade()
                 .frame(maxWidth: .infinity, minHeight: 200)
         case let .ready(name):
             HStack(alignment: .top, spacing: 14) {
@@ -563,25 +648,33 @@ struct ChallengeFromLinkView: View {
     @ViewBuilder
     private var control: some View {
         switch status {
-        case .ready:
+        // One arm, so the caption stays and the height holds.
+        case .ready, .creating, .sent:
             VStack(alignment: .leading, spacing: 8) {
-                Button("Send Challenge", action: send)
-                    .buttonStyle(PrimaryButtonStyle())
-                    .accessibilityIdentifier("competition.link.send")
+                ZStack {
+                    if status == .ready {
+                        Button("Send Challenge", action: send)
+                            .buttonStyle(PrimaryButtonStyle())
+                            .transition(Motion.appear)
+                            .accessibilityIdentifier("competition.link.send")
+                    } else {
+                        HStack(spacing: 10) {
+                            ProgressView()
+                                .waitingFade()
+                            Text("Sending…")
+                                .font(.subheadline.weight(.medium))
+                        }
+                        .foregroundStyle(Theme.secondary)
+                        .frame(maxWidth: .infinity, minHeight: 54)
+                        .transition(Motion.appear)
+                        .accessibilityElement(children: .combine)
+                    }
+                }
                 Text("\(name) gets it in HealthComp. Nothing to send back.")
                     .font(.caption)
                     .foregroundStyle(Theme.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-        case .creating, .sent:
-            HStack(spacing: 10) {
-                ProgressView()
-                Text("Sending…")
-                    .font(.subheadline.weight(.medium))
-            }
-            .foregroundStyle(Theme.secondary)
-            .frame(maxWidth: .infinity, minHeight: 44)
-            .accessibilityElement(children: .combine)
         case let .alreadyChallenged(challenge):
             existing("You already challenged \(challenge.opponentDisplayName).", "Open Challenge", challenge.id)
         case let .challengedYou(challenge):

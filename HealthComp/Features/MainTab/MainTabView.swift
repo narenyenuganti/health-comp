@@ -49,8 +49,8 @@ struct MainTabView: View {
         }
         .sheet(isPresented: claimSheetPresented) {
             ClaimCompetitionView(
-                status: store.inviteClaimStatus,
-                preview: store.inviteClaimPreview,
+                liveStatus: store.inviteClaimStatus,
+                livePreview: store.inviteClaimPreview,
                 now: store.inviteClaimPreviewEvaluatedAt ?? Date(),
                 hasQueuedChallenge: store.queuedClaimRoute != nil,
                 declineFailed: store.claimDeclineFailed,
@@ -82,6 +82,41 @@ struct MainTabView: View {
             if isPresented, store.competition.publication?.source == .remoteParticipants {
                 store.send(.competition(.challengeLinkRequested))
             }
+        }
+        // Here, because both sheets can close without drawing the outcome.
+        // A timeout reaches `.idle` too, so the open match is the proof.
+        .sensoryFeedback(.success, trigger: isSheetLanding) { old, new in
+            old && !new && !store.path.isEmpty
+                && store.inviteClaimStatus == .idle && store.challengeFromLink == nil
+        }
+    }
+
+    /// Accept, or Send from a link: both end by closing the sheet on the match.
+    private var isSheetLanding: Bool {
+        if store.inviteClaimStatus == .claiming
+            || store.inviteClaimStatus == .waitingForCompetition {
+            return true
+        }
+        guard store.challengeFromLink != nil else { return false }
+        return store.competition.challengeSheetStatus == .creating
+            || store.competition.challengeSheetStatus.controlPhase == .sent
+    }
+
+    /// A lifecycle change while the screen is open crossfades in place. The
+    /// result keeps its cut, because its own reveal is the transition.
+    private func competitionScreen(_ id: CompetitionID) -> some View {
+        let publication = store.competition.publication
+        let kind = publication?.dashboard.competitions.first { $0.id == id }
+            .map { competitionScreenKind($0, source: publication?.source) }
+        return ZStack {
+            destination(for: id)
+                .id(kind)
+                .transition(.opacity)
+        }
+        .animation(kind == nil || kind == .result ? nil : Motion.fade, value: kind)
+        .sensoryFeedback(trigger: kind) { old, new in
+            guard new == .underway, case let .invite(waitsOnThem)? = old else { return nil }
+            return waitsOnThem ? .impact(weight: .medium) : .success
         }
     }
 
@@ -174,7 +209,7 @@ struct MainTabView: View {
                         .toolbarRole(.editor)
                     }
                 case let .competition(id):
-                    destination(for: id)
+                    competitionScreen(id)
                         .toolbarRole(.editor)
                 }
             }
@@ -189,6 +224,7 @@ struct MainTabView: View {
                 continueTapped: { store.send(.notificationPromptTurnOnTapped) },
                 notNowTapped: { store.send(.notificationPromptNotNowTapped) }
             )
+            .presentationBackground(Theme.ground)
         }
     }
 
@@ -480,6 +516,26 @@ struct MainTabView: View {
     }
 }
 
+/// Which screen `destination(for:)` draws. `waitsOnThem` is a real challenge
+/// you sent: it can only change because they answered.
+enum CompetitionScreenKind: Hashable {
+    case invite(waitsOnThem: Bool), underway, result, closed
+}
+
+func competitionScreenKind(
+    _ competition: LocalCompetitionPresentation,
+    source: CompetitionPublicationSource?
+) -> CompetitionScreenKind {
+    switch competition.lifecycle {
+    case .completed, .archived: .result
+    case _ where competition.isPractice: .underway
+    case .scheduled, .active, .endsToday, .tallying: .underway
+    case let .pending(direction, _, _):
+        .invite(waitsOnThem: source == .remoteParticipants && direction == .outgoing)
+    case .declined, .expired, .cancelled: .closed
+    }
+}
+
 /// A challenge that closed while its screen was open, drawn in place. After
 /// a day the match leaves the dashboard and the screen pops.
 private struct CompetitionClosedChallengeView: View {
@@ -511,11 +567,7 @@ private struct CompetitionClosedChallengeView: View {
         } actions: {
             if competitionIsClosedOutgoing(competition.lifecycle), canChallengeAgain {
                 Button(action: challengeAgain) {
-                    if isInFlight {
-                        ProgressView()
-                    } else {
-                        Text("Challenge \(competition.opponentDisplayName) Again")
-                    }
+                    BusyLabel("Challenge \(competition.opponentDisplayName) Again", isBusy: isInFlight)
                 }
                 .buttonStyle(PrimaryButtonStyle())
                 .disabled(isInFlight)
