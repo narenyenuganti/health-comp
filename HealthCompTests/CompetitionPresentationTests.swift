@@ -1848,15 +1848,18 @@ final class CompetitionPresentationTests: XCTestCase {
         let belt = titleFold([(.win, 412.4), (.win, 10), (.tie, 0), (.loss, 268), (.loss, 1)]).belt
         let rows = competitionTaleOfTheTape(belt)
 
+        // Four rows about the belt: the record is the page's header.
         XCTAssertEqual(rows.map(\.label), [
-            "Record", "Title reigns", "Title defenses", "Most defenses", "Longest reign", "Biggest win",
+            "Title reigns", "Title defenses", "Longest reign", "Biggest win",
         ])
-        XCTAssertEqual(rows.map(\.you), ["2–2–1", "1", "1", "1", "3 weeks", "+412"])
-        XCTAssertEqual(rows.map(\.them), ["2–2–1", "1", "1", "1", "2 weeks", "+268"])
+        XCTAssertEqual(rows.map(\.you), ["1", "1", "3 weeks", "+412"])
+        XCTAssertEqual(rows.map(\.them), ["1", "1", "2 weeks", "+268"])
         XCTAssertEqual(
             competitionTaleOfTheTape(titleFold([(.win, 5)]).belt).map(\.them),
-            ["0–1", "0", "0", "0", "0 weeks", "–"]
+            ["0", "0", "–", "–"]
         )
+        // A win under half a point keeps its decimals rather than read +0.
+        XCTAssertEqual(competitionTaleOfTheTape(titleFold([(.win, 0.4)]).belt).map(\.you).last, "+" + competitionPointsText(0.4, fractionDigits: 2))
     }
 
     func testCeremonyForEachEventAndNothingElse() {

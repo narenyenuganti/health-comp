@@ -18,6 +18,8 @@ struct CompetitionResultView: View {
     var challengeSomeone: (() -> Void)? = nil
     /// Real matches only: your own win in a loss or a tie.
     var personalBest: String? = nil
+    /// "Your record with Sam", counting this week.
+    var recordLink: CompetitionRecordLink? = nil
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
@@ -69,6 +71,11 @@ struct CompetitionResultView: View {
                     beltBanner(text)
                         .verdictBeat(2, shown: isShown)
                         .transition(Motion.appear)
+                }
+
+                if let recordLink {
+                    CompetitionRecordLinkRow(link: recordLink)
+                        .verdictBeat(2, shown: isShown)
                 }
 
                 // The Verdict's insights sit with the belt, before the rest.

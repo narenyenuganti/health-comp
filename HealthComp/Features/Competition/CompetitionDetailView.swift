@@ -19,6 +19,9 @@ struct CompetitionDetailView: View {
     var endPractice: (() -> Void)? = nil
     /// Real matches only: Report Photo in the ••• menu, while their photo shows.
     var reportPhoto: CompetitionReportPhoto? = nil
+    /// The menu's first item, once a week with them has finished. This week
+    /// isn't in it until it has a final result.
+    var recordLink: CompetitionRecordLink? = nil
 
     @Environment(\.locale) private var locale
     @Environment(\.timeZone) private var timeZone
@@ -128,6 +131,13 @@ struct CompetitionDetailView: View {
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
+                    if let recordLink {
+                        Button(action: recordLink.open) {
+                            Label(recordLink.title, systemImage: "chart.bar")
+                        }
+                        .accessibilityLabel(recordLink.accessibilityLabel)
+                        .accessibilityIdentifier("competition.record-link")
+                    }
                     if let muteButton {
                         muteButton
                     }

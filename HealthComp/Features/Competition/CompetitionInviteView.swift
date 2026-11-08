@@ -10,6 +10,8 @@ struct CompetitionInviteView: View {
     let send: (CompetitionFeature.Action) -> Void
     /// The last accept, decline or cancel failed.
     var commandFailed = false
+    /// A challenge you received, once you've finished a week together.
+    var recordLink: CompetitionRecordLink? = nil
     @State private var showsDeclineConfirmation = false
     @State private var showsCancelConfirmation = false
     @State private var showsBlockConfirmation = false
@@ -22,6 +24,9 @@ struct CompetitionInviteView: View {
             VStack(alignment: .leading, spacing: 24) {
                 faceOff
                 invitationCopy
+                if direction == .incoming, let recordLink {
+                    CompetitionRecordLinkRow(link: recordLink)
+                }
                 CompetitionRulesCard(
                     source: source,
                     opponentName: competition.opponentDisplayName

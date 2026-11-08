@@ -2476,7 +2476,8 @@ enum RemoteCompetitionProjector {
                 remoteID: opponentID,
                 now: context.instant.wallDate,
                 terminal: terminal,
-                ownerActivity: activity
+                ownerActivity: activity,
+                ringBackfill: materialization.ringBackfill ?? [:]
             )
         } ?? []
         let ownerPoints = projection.remoteScoreLedgers[profile.id]
@@ -2540,7 +2541,8 @@ enum RemoteCompetitionProjector {
         remoteID: UUID?,
         now: Date,
         terminal: CompetitionTerminalPresentation?,
-        ownerActivity: RemoteOwnerActivity? = nil
+        ownerActivity: RemoteOwnerActivity? = nil,
+        ringBackfill: [Int64: [Int]] = [:]
     ) -> [CompetitionDayPresentation] {
         guard let days = try? schedule.calendar.sevenDayWindow(
             startingOn: schedule.startDay
@@ -2602,10 +2604,10 @@ enum RemoteCompetitionProjector {
                 ownerLatestSnapshot: activityDay?.latestSnapshot,
                 scoringPolicy: .remoteWireV1
             )
-            presentation.ownerRingPoints = owner?.ringBasisPoints?.map { Double($0) / 100 }
+            presentation.ownerRingPoints = competitionRingPoints(owner, backfill: ringBackfill)
             presentation.opponentRingPoints = future && terminal == nil
                 ? nil
-                : remote?.ringBasisPoints?.map { Double($0) / 100 }
+                : competitionRingPoints(remote, backfill: ringBackfill)
             return presentation
         }
     }
@@ -2748,4 +2750,14 @@ enum RemoteCompetitionProjector {
             )
         }.sortedNewestFirst()
     }
+}
+
+/// A row's Move, Exercise and Stand points: its own, or the backfill's for a
+/// row journaled before rows kept them.
+func competitionRingPoints(
+    _ row: RemoteAcceptedScoreRow?,
+    backfill: [Int64: [Int]]
+) -> [Double]? {
+    guard let row else { return nil }
+    return (row.ringBasisPoints ?? backfill[row.serverSequence])?.map { Double($0) / 100 }
 }
