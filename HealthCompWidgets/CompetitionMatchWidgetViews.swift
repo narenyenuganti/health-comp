@@ -383,8 +383,9 @@ private struct CircularView: View {
                 .font(.title3.weight(.heavy).width(.compressed))
                 .minimumScaleFactor(0.5)
                 .lineLimit(1)
-                // A weekday before Day 1: its own id, so the first margin fades in.
-                .scoreRoll(margin, id: match.state(at: date) == .scheduled ? nil : match.id)
+                // Per match, with a separate id for the weekday before Day 1, so
+                // the first margin fades in and switching matches never rolls.
+                .scoreRoll(margin, id: "\(match.id)/\(match.state(at: date) == .scheduled)")
                 .privacySensitive()
         }
         .padding(4)
