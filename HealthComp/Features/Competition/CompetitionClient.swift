@@ -116,6 +116,23 @@ struct CompetitionClient: Sendable {
     /// Starts a practice match on this iPhone; a failure is
     /// `commandRejected(PracticeMatch.startCommandID)`.
     var startPractice: @Sendable (OpponentDifficulty) async -> CompetitionPublication
+    /// The current photo of each of these people (yours included) that you
+    /// may see; anyone missing shows initials. Drops their stale cached files.
+    var loadProfilePhotos: @Sendable ([UUID]) async throws -> [ProfilePhotoReference]
+    /// Your own photo and whether a reviewer removed the last one.
+    var loadOwnProfilePhoto: @Sendable () async throws -> OwnProfilePhoto
+    /// The JPEG from this account's disk cache, else downloaded and cached.
+    var profilePhotoData: @Sendable (ProfilePhotoReference) async throws -> Data
+    /// Any cached photo of this person, without the network.
+    var cachedProfilePhotoData: @Sendable (UUID) async -> Data?
+    /// Uploads a `ProfilePhotoImage.jpeg(from:crop:)` result as your photo.
+    var setProfilePhoto: @Sendable (Data) async throws -> ProfilePhotoReference
+    /// Initials again, and the stored objects are deleted.
+    var removeProfilePhoto: @Sendable () async throws -> Void
+    /// Reports this person's photo; it is hidden for you from then on.
+    var reportProfilePhoto: @Sendable (UUID) async throws -> Void
+    /// Whether you reported this person's photo on this iPhone.
+    var isProfilePhotoReported: @Sendable (UUID) async -> Bool
 
     init(
         start: @escaping @Sendable () -> AsyncStream<CompetitionPublication>,
@@ -220,7 +237,26 @@ struct CompetitionClient: Sendable {
         },
         startPractice: @escaping @Sendable (
             OpponentDifficulty
-        ) async -> CompetitionPublication = { _ in .inert }
+        ) async -> CompetitionPublication = { _ in .inert },
+        loadProfilePhotos: @escaping @Sendable ([UUID]) async throws ->
+            [ProfilePhotoReference] = { _ in [] },
+        loadOwnProfilePhoto: @escaping @Sendable () async throws -> OwnProfilePhoto = {
+            OwnProfilePhoto(reference: nil, removedByReview: false)
+        },
+        profilePhotoData: @escaping @Sendable (ProfilePhotoReference) async throws -> Data = { _ in
+            throw CompetitionRemoteFailure.notFound
+        },
+        cachedProfilePhotoData: @escaping @Sendable (UUID) async -> Data? = { _ in nil },
+        setProfilePhoto: @escaping @Sendable (Data) async throws -> ProfilePhotoReference = { _ in
+            throw CompetitionRemoteFailure.operationFailed
+        },
+        removeProfilePhoto: @escaping @Sendable () async throws -> Void = {
+            throw CompetitionRemoteFailure.operationFailed
+        },
+        reportProfilePhoto: @escaping @Sendable (UUID) async throws -> Void = { _ in
+            throw CompetitionRemoteFailure.operationFailed
+        },
+        isProfilePhotoReported: @escaping @Sendable (UUID) async -> Bool = { _ in false }
     ) {
         self.start = start
         self.updates = updates
@@ -257,6 +293,14 @@ struct CompetitionClient: Sendable {
         self.nudge = nudge
         self.setReaction = setReaction
         self.startPractice = startPractice
+        self.loadProfilePhotos = loadProfilePhotos
+        self.loadOwnProfilePhoto = loadOwnProfilePhoto
+        self.profilePhotoData = profilePhotoData
+        self.cachedProfilePhotoData = cachedProfilePhotoData
+        self.setProfilePhoto = setProfilePhoto
+        self.removeProfilePhoto = removeProfilePhoto
+        self.reportProfilePhoto = reportProfilePhoto
+        self.isProfilePhotoReported = isProfilePhotoReported
     }
 
     func prepareForProfileTeardown(

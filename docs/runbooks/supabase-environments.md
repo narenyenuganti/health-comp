@@ -624,6 +624,47 @@ The migration must be in production before any build containing the switches
 reaches TestFlight. Without it the app registers through the five-argument
 call and the server keeps sending switched-off reactions and nudges.
 
+### Profile photos
+
+Migration `20261107002900` adds the private `profile-photos` bucket (512 KiB,
+`image/jpeg` only), `profiles.photo_version` and `profiles.photo_removed_by_review` (neither
+client-readable),
+`private.profile_photo_reports` (RLS on and forced, no client grants), storage
+RLS on `storage.objects`, and `set_profile_photo(uuid)`,
+`clear_profile_photo()`, `own_profile_photo()`, `list_profile_photos(uuid[])`
+and `report_profile_photo(uuid)`, plus the operator-only
+`private.remove_profile_photo_after_review(uuid)`.
+
+- Objects are `<profile id>/<version>.jpg`. The owner can write (three objects
+  at most, no overwrite), read and delete only their own folder. Anyone else
+  can read only the current version of someone they have or had a match with,
+  or who has a pending challenge out to them, and never through a block either
+  way or after reporting that person. There are no public or signed URLs in
+  the app: it downloads with the user's session, and storage RLS refuses to
+  sign anyone else's photo (`storage.operation` is `storage.object.sign` or
+  `sign_many`), so no viewer can mint a bearer link that outlives a block.
+  Uploads to one folder take an advisory lock, so the three-object limit
+  can't be raced.
+- `report_profile_photo` needs a photo the caller can see (else
+  `photo_unavailable`), records reporter, reported and version, and hides
+  that person's photos from the reporter for good. Review the rows in
+  `private.profile_photo_reports`; replacing or removing the photo deletes the
+  reported object, so look soon. To take a photo down, run
+  `select private.remove_profile_photo_after_review('<profile id>')` in the
+  SQL editor (initials for everyone; the owner's Account says the photo was
+  removed after a review until they set or remove one), then delete the
+  objects under `<profile id>/` in the Storage dashboard.
+- Starting account deletion clears the photo and the account's reports both
+  ways; `delete-account` deletes the objects before anonymizing.
+- A photo change records the existing `profile_presentation_changed` event
+  with the unchanged `{display_name, profile_id}` payload, so every build just
+  reconciles. No existing response gains a key: installed apps validate exact
+  keys.
+
+Either order works for the migration and `delete-account` (before the
+bucket exists, its listing is empty). The app build that sets photos needs
+both in production before it reaches TestFlight.
+
 ## Finalizer and notification repair schedules
 
 These schedules are hosted environment state, not proof supplied by source.

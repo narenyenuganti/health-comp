@@ -67,6 +67,7 @@ function fixture(initial: DeletionPhase = "prepared") {
         return Promise.resolve();
       },
       markAppleRevoked: () => Promise.resolve(progress("apple_revoked")),
+      removeProfilePhotos: () => Promise.resolve(),
       anonymize: () => Promise.resolve(progress("auth_delete_pending")),
       deleteAuthUser: () => {
         calls.push("delete");

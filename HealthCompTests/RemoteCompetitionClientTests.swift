@@ -6192,3 +6192,141 @@ extension RemoteCompetitionClientTests {
         await client.stop()
     }
 }
+
+extension RemoteCompetitionClientTests {
+    func testProfilePhotosCacheByVersionAndFollowVisibility() async throws {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let profile = AuthenticatedProfile(
+            id: UUID(uuidString: "8f000000-0000-4000-8000-000000000001")!,
+            displayName: "Beta Alice"
+        )
+        let opponent = UUID(uuidString: "8f000000-0000-4000-8000-000000000002")!
+        let paths = AuthenticatedProfileStoragePaths(profileID: profile.id, rootDirectory: root)
+        for directory in paths.fixedDirectories {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        }
+        let server = ProfilePhotoServerProbe(
+            opponent: ProfilePhotoReference(ownerProfileID: opponent, version: UUID()),
+            jpeg: ProfilePhotoTestLabServer.fixtureJPEG(red: 0.3, green: 0.3, blue: 0.9)
+        )
+        var api = remoteAPI(listCompetitions: { [] })
+        api.listProfilePhotos = { try await server.list($0) }
+        api.setProfilePhoto = { try await server.set($0, $1) }
+        api.ownProfilePhoto = { _ in await server.ownPhoto() }
+        api.clearProfilePhoto = { await server.record("clear") }
+        api.removeProfilePhotoObjects = { _, keeping in
+            await server.record("remove keeping \(keeping.map(\.uuidString) ?? "none")")
+        }
+        api.downloadProfilePhoto = { try await server.download($0) }
+        api.reportProfilePhoto = { await server.record("report \($0.uuidString)") }
+        let client = CompetitionClient.remote(remoteAPI: api, environment: try environment())
+
+        do {
+            _ = try await client.loadProfilePhotos([opponent])
+            XCTFail("needs a mounted account")
+        } catch {
+            XCTAssertEqual(error as? CompetitionRemoteFailure, .unauthenticated)
+        }
+        try await client.mountAuthenticatedProfile(profile, paths)
+
+        // Opponent: listed, downloaded once, then served from disk.
+        let references = try await client.loadProfilePhotos([opponent, opponent])
+        XCTAssertEqual(references.map(\.ownerProfileID), [opponent])
+        let first = try await client.profilePhotoData(references[0])
+        let second = try await client.profilePhotoData(references[0])
+        XCTAssertEqual(first, second)
+        let downloads = await server.downloads
+        XCTAssertEqual(downloads, 1)
+        let cached = await client.cachedProfilePhotoData(opponent)
+        XCTAssertEqual(cached, first)
+
+        // A block (or their removal) drops them from the list and the cache.
+        await server.hideOpponent()
+        let hidden = try await client.loadProfilePhotos([opponent])
+        XCTAssertEqual(hidden, [])
+        let afterHide = await client.cachedProfilePhotoData(opponent)
+        XCTAssertNil(afterHide)
+
+        // Reporting hides and remembers it.
+        try await client.reportProfilePhoto(opponent)
+        let reported = await client.isProfilePhotoReported(opponent)
+        XCTAssertTrue(reported)
+
+        // Your own: set clears leftovers around the upload; remove clears all.
+        let mine = try await client.setProfilePhoto(server.jpeg)
+        XCTAssertEqual(mine.ownerProfileID, profile.id)
+        let own = await client.cachedProfilePhotoData(profile.id)
+        XCTAssertEqual(own, server.jpeg)
+        let ownState = try await client.loadOwnProfilePhoto()
+        XCTAssertEqual(ownState, OwnProfilePhoto(reference: mine, removedByReview: false))
+
+        // A reviewer's removal: told once, and the cached file goes.
+        await server.removeByReview()
+        let reviewed = try await client.loadOwnProfilePhoto()
+        XCTAssertEqual(reviewed, OwnProfilePhoto(reference: nil, removedByReview: true))
+        let ownAfterReview = await client.cachedProfilePhotoData(profile.id)
+        XCTAssertNil(ownAfterReview)
+        try await client.removeProfilePhoto()
+        let ownAfterRemove = await client.cachedProfilePhotoData(profile.id)
+        XCTAssertNil(ownAfterRemove)
+        let calls = await server.calls
+        XCTAssertEqual(calls, [
+            "report \(opponent.uuidString)",
+            "remove keeping none",
+            "set \(mine.version.uuidString)",
+            "remove keeping \(mine.version.uuidString)",
+            "clear",
+            "remove keeping none",
+        ])
+        await client.stop()
+    }
+}
+
+private actor ProfilePhotoServerProbe {
+    let opponent: ProfilePhotoReference
+    nonisolated let jpeg: Data
+    private var opponentVisible = true
+    private var own: ProfilePhotoReference?
+    private var removedByReview = false
+    private(set) var downloads = 0
+    private(set) var calls: [String] = []
+
+    init(opponent: ProfilePhotoReference, jpeg: Data) {
+        self.opponent = opponent
+        self.jpeg = jpeg
+    }
+
+    func list(_ ids: [UUID]) -> [ProfilePhotoReference] {
+        ids.compactMap { id in
+            if id == opponent.ownerProfileID { return opponentVisible ? opponent : nil }
+            return own?.ownerProfileID == id ? own : nil
+        }
+    }
+
+    func set(_ reference: ProfilePhotoReference, _ data: Data) {
+        calls.append("set \(reference.version.uuidString)")
+        own = reference
+    }
+
+    func download(_ reference: ProfilePhotoReference) throws -> Data {
+        downloads += 1
+        guard reference == opponent, opponentVisible else { throw CompetitionRemoteFailure.notFound }
+        return jpeg
+    }
+
+    func hideOpponent() { opponentVisible = false }
+
+    func ownPhoto() -> OwnProfilePhoto { OwnProfilePhoto(reference: own, removedByReview: removedByReview) }
+
+    func removeByReview() {
+        own = nil
+        removedByReview = true
+    }
+
+    func record(_ call: String) {
+        calls.append(call)
+        if call == "clear" { own = nil }
+    }
+}

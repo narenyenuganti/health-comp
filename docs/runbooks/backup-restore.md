@@ -776,7 +776,7 @@ Vault secrets.
 
 Require exactly 33 native nonnegative integer fields, with no extra keys or
 output. The two fixed criteria are `receipt_version=2` and
-`application_tables_checked=21`. Version 1 receipts do not qualify this candidate.
+`application_tables_checked=22`. Version 1 receipts do not qualify this candidate.
 These 21 violation counters must all be zero on the contained recovery target:
 
 - `browser_requests_remaining`, `deletion_client_binding_invalid`
@@ -808,13 +808,13 @@ not equality of this counter with the pre-cleanup source. Preserve all durable
 state comparisons. Nonzero violation counts are rejection
 evidence even when psql exits zero. The receipt has no overall readiness field.
 
-The 21-table authorization baseline is 11 public tables with RLS/no FORCE, nine
+The 22-table authorization baseline is 11 public tables with RLS/no FORCE, ten
 private tables with both flags, and private `competition_notification_mutes`
-with neither flag but revoked raw access. The nine FORCE-protected tables are
+with neither flag but revoked raw access. The ten FORCE-protected tables are
 `competition_notification_work`, `account_deletions`, `app_attest_keys`,
 `app_attest_challenges`, `app_attest_submission_grants`,
-`apple_deletion_web_requests`, `challenge_links`, `account_blocks`, and
-`competition_reactions`. Require ordinary
+`apple_deletion_web_requests`, `challenge_links`, `account_blocks`,
+`competition_reactions`, and `profile_photo_reports`. Require ordinary
 nonpartitioned/noninherited tables with the predicate's native column types;
 unsupported/missing relations must reject qualification, not disappear from
 the denominator. Extra public/private tables, views, materialized views or
