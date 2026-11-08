@@ -962,7 +962,10 @@ private struct CompetitionScoreboardPanel: View {
                         scoreboard
                         ZStack {
                             if isProvisional {
-                                provisionalTag
+                                // The score headers already say "provisional total".
+                                CompetitionProvisionalTag()
+                                    .frame(maxWidth: .infinity)
+                                    .accessibilityHidden(true)
                                     .transition(Motion.appear)
                             } else {
                                 VStack(alignment: .leading, spacing: 16) {
@@ -1027,20 +1030,6 @@ private struct CompetitionScoreboardPanel: View {
         .accessibilityAddTraits(.isStaticText)
         .accessibilityLabel(status.line + (isMuted ? ". Muted" : ""))
         .accessibilityIdentifier("competition.status")
-    }
-
-    // The score headers already say "provisional total".
-    private var provisionalTag: some View {
-        Text("PROVISIONAL")
-            .font(.themeLabel)
-            .tracking(1.2)
-            .foregroundStyle(Theme.secondary)
-            .padding(.horizontal, 8)
-            .padding(.vertical, 2)
-            .overlay(Capsule().stroke(Theme.outline))
-            .fixedSize()
-            .frame(maxWidth: .infinity)
-            .accessibilityHidden(true)
     }
 
     private var scoreboard: some View {
@@ -1326,6 +1315,20 @@ func competitionOwnerAvailabilityText(
         case .invalidSourceData:
             "Activity data could not be used."
         }
+    }
+}
+
+/// The tag a tallying score wears, here and on the person page.
+struct CompetitionProvisionalTag: View {
+    var body: some View {
+        Text("PROVISIONAL")
+            .font(.themeLabel)
+            .tracking(1.2)
+            .foregroundStyle(Theme.secondary)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 2)
+            .overlay(Capsule().stroke(Theme.outline))
+            .fixedSize()
     }
 }
 

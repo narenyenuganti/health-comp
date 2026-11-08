@@ -504,7 +504,10 @@ struct CompetitionRecordsView: View {
     let publication: LocalCompetitionPublication
     let opponentIdentity: String
 
+    /// The drag's position; Swift Charts clears it when the finger lifts.
     @State private var selection: Date?
+    /// The last week dragged to, so its row stays to be tapped.
+    @State private var picked: Date?
     @State private var showsAllTime = false
     @Environment(\.locale) private var locale
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -554,6 +557,8 @@ struct CompetitionRecordsView: View {
                 }
             }
             .moving(Motion.settle, value: showsAllTime)
+            // The picked week may not be in the other range.
+            .onChange(of: showsAllTime) { picked = nil }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
         }
@@ -575,7 +580,7 @@ struct CompetitionRecordsView: View {
     }
 
     private func weeklyPoints(_ weeks: [LocalCompetitionPresentation], name: String) -> some View {
-        let selected = selection.flatMap { date in
+        let selected = picked.flatMap { date in
             weeks.min { abs(start($0).timeIntervalSince(date)) < abs(start($1).timeIntervalSince(date)) }
         }
         return VStack(alignment: .leading, spacing: 12) {
@@ -614,6 +619,9 @@ struct CompetitionRecordsView: View {
                 }
             }
             .chartXSelection(value: $selection)
+            .onChange(of: selection) { _, new in
+                if let new { picked = new }
+            }
             .chartYScale(domain: .automatic(includesZero: false))
             .chartXAxis {
                 AxisMarks(values: .stride(by: .month)) { _ in

@@ -1561,8 +1561,9 @@ struct CompetitionPersonView: View {
     /// open it again; a challenge's card and the button go, so Accept and
     /// Decline stay on the challenge.
     var cameFrom: CompetitionID? = nil
-    /// You blocked them: the ledger only.
-    var isBlocked = false
+    /// You blocked them: the ledger only. Nil while your block list hasn't
+    /// loaded, which also shows the ledger, without the Blocked tag.
+    var isBlocked: Bool? = false
     var unblock: (() -> Void)? = nil
     var muteButton: CompetitionMuteButton? = nil
     /// The create flow with them prefilled, from one of their matches.
@@ -1628,13 +1629,13 @@ struct CompetitionPersonView: View {
         .navigationTitle(name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            if !isDeleted(record), muteButton != nil || (isBlocked && unblock != nil) {
+            if !isDeleted(record), muteButton != nil || (isBlocked == true && unblock != nil) {
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
                         if let muteButton {
                             muteButton
                         }
-                        if isBlocked, let unblock {
+                        if isBlocked == true, let unblock {
                             Button(action: unblock) {
                                 Label("Unblock \(name)", systemImage: "hand.raised.slash")
                             }
@@ -1684,7 +1685,7 @@ struct CompetitionPersonView: View {
         }
         if let now {
             topCard(now.competition, section: now.section)
-        } else if isBlocked, !isDeleted(record) {
+        } else if isBlocked == true, !isDeleted(record) {
             quietLine("\(name) can’t challenge you.")
         } else if !isLedger(record), let last = oldestFirst.last,
                   let text = competitionLastPlayedText(last, now: publication.evaluatedAt, locale: locale) {
@@ -1725,7 +1726,7 @@ struct CompetitionPersonView: View {
     /// Someone you blocked, or a deleted account: the record, form, belt
     /// title and weeks, nothing else.
     private func isLedger(_ record: CompetitionOpponentRecord?) -> Bool {
-        isBlocked || isDeleted(record)
+        isBlocked != false || isDeleted(record)
     }
 
     private func isDeleted(_ record: CompetitionOpponentRecord?) -> Bool {
@@ -1789,12 +1790,34 @@ struct CompetitionPersonView: View {
                         dismiss: { dismissedChallengeIDs.insert(competition.id) }
                     )
                 } else if section == "THIS WEEK" {
-                    topLink(competition, opens: opens) {
-                        CompetitionHeroCard(
-                            competition: competition,
-                            source: publication.source,
-                            isCompact: !opens
-                        )
+                    // Tallying: the match screen's reason beside PROVISIONAL.
+                    let waiting = competition.tally.map {
+                        competitionTallyCopy(
+                            $0,
+                            opponentDisplayName: competition.opponentDisplayName,
+                            now: competition.evaluatedAt,
+                            locale: locale,
+                            timeZone: timeZone
+                        ).headline + "."
+                    }
+                    topLink(competition, opens: opens, spokenAfter: waiting.map { "Provisional. \($0)" }) {
+                        VStack(alignment: .leading, spacing: 16) {
+                            CompetitionHeroCard(
+                                competition: competition,
+                                source: publication.source,
+                                isCompact: !opens
+                            )
+                            if let waiting {
+                                provisionalLayout {
+                                    CompetitionProvisionalTag()
+                                    Text(waiting)
+                                        .font(.subheadline)
+                                        .foregroundStyle(Theme.secondary)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                }
+                                .transition(Motion.appear)
+                            }
+                        }
                         .padding(16)
                     }
                 } else {
@@ -1821,11 +1844,15 @@ struct CompetitionPersonView: View {
     private func topLink<Content: View>(
         _ competition: LocalCompetitionPresentation,
         opens: Bool,
+        spokenAfter: String? = nil,
         @ViewBuilder label: () -> Content
     ) -> some View {
-        let summary = sharingAccessibilitySummary(
-            competition, source: publication.source, locale: locale, timeZone: timeZone
-        )
+        let summary = [
+            sharingAccessibilitySummary(
+                competition, source: publication.source, locale: locale, timeZone: timeZone
+            ),
+            spokenAfter,
+        ].compactMap { $0 }.joined(separator: ". ")
         if opens {
             NavigationLink(value: CompetitionHomeRoute.competition(competition.id)) {
                 label()
@@ -1851,6 +1878,13 @@ struct CompetitionPersonView: View {
             : AnyLayout(HStackLayout(alignment: .center, spacing: 14))
     }
 
+    // At accessibility sizes the reason sits under PROVISIONAL.
+    private var provisionalLayout: AnyLayout {
+        dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 6))
+            : AnyLayout(HStackLayout(alignment: .center, spacing: 8))
+    }
+
     // At accessibility sizes the count sits under the title, so it doesn't
     // squeeze a wrapped title.
     private var holdLayout: AnyLayout {
@@ -1862,7 +1896,7 @@ struct CompetitionPersonView: View {
     /// Who, the record, the week count and Muted or Blocked. At accessibility
     /// sizes they stack.
     private func header(_ record: CompetitionOpponentRecord, weekCount: Int) -> some View {
-        let tag = isBlocked && !isDeleted(record) ? "Blocked" : muteButton?.isMuted == true ? "Muted" : nil
+        let tag = isBlocked == true && !isDeleted(record) ? "Blocked" : muteButton?.isMuted == true ? "Muted" : nil
         return rowLayout {
             avatar(record)
             competitionRecordText(record)

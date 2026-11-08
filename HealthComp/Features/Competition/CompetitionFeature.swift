@@ -734,6 +734,7 @@ struct CompetitionFeature {
                 guard state.commandIDsInFlight.insert(id).inserted else {
                     return .none
                 }
+                let owners = state.photoOwners
                 return .run { send in
                     let returned = await competitionClient.block(id)
                     await send(
@@ -742,6 +743,11 @@ struct CompetitionFeature {
                             expectedRevision: returned.publicationRevision
                         )
                     )
+                    // The server hides their photo now; a fresh lookup drops
+                    // it here and from the disk cache.
+                    if !owners.isEmpty {
+                        await send(.profilePhotosNeeded(owners))
+                    }
                 }
 
             case .blockedPeopleRequested:

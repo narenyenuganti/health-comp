@@ -947,11 +947,15 @@ struct CompetitionRecapPeriodCard: Equatable, Identifiable {
     var rows: [Row] = []
     var id: Kind { kind }
 
-    /// "Your record: won 3, lost 1. Won 3, lost 1 across 4 weeks, 2 rivals".
+    /// "Your record: won 3, lost 1 across 4 weeks, 2 rivals": a detail that
+    /// starts with the value carries on from it instead of repeating it.
     var accessibilityText: String {
         let spoken = switch value {
         case let .text(text, _): text
         case let .record(won, lost, tied): competitionRecapTallyWords((won: won, lost: lost, tied: tied))
+        }
+        if detail.lowercased().hasPrefix(spoken.lowercased()) {
+            return "\(label): \(spoken)\(detail.dropFirst(spoken.count))"
         }
         return "\(label): \(spoken). \(detail)"
     }
@@ -1113,7 +1117,8 @@ func competitionRecapCards(
     }
     if rivals.count > 1, let closest = rivals.min(by: { gap($0.weeks) < gap($1.weeks) }) {
         let tally = competitionRecapTally(closest.weeks)
-        let apart = "\(points(gap(closest.weeks))) points apart a week"
+        let average = points(gap(closest.weeks))
+        let apart = "\(average) \(average == "1" ? "point" : "points") apart on average"
         cards.append(Card(
             kind: .rival,
             label: "Closest rival",

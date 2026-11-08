@@ -677,11 +677,11 @@ final class CompetitionMonthRecapTests: XCTestCase {
             "Took 1, defended 2",
             "Wed, Oct 28",
             "Move 28, Exercise 13, Stand 28",
-            "Lost 1 · 112 points apart a week",
+            "Lost 1 · 112 points apart on average",
         ])
         XCTAssertEqual(
             deck[1].accessibilityText,
-            "Your record: won 3, lost 1. Won 3, lost 1 across 4 weeks, 2 rivals"
+            "Your record: won 3, lost 1 across 4 weeks, 2 rivals"
         )
     }
 
@@ -713,7 +713,7 @@ final class CompetitionMonthRecapTests: XCTestCase {
         let deck = cards(october, hidesNames: true)
         XCTAssertEqual(deck[0].detail, "Against 2 rivals")
         XCTAssertEqual(deck[5].value, .record(won: 0, lost: 1, tied: 0))
-        XCTAssertEqual(deck[5].detail, "112 points apart a week")
+        XCTAssertEqual(deck[5].detail, "112 points apart on average")
         for card in deck {
             XCTAssertFalse(card.detail.contains("Sam") || card.detail.contains("Alex"), card.detail)
         }

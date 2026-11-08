@@ -37,6 +37,13 @@ struct MainTabView: View {
         .task(id: photoOwners) {
             store.send(.competition(.profilePhotosNeeded(photoOwners)))
         }
+        // Loaded up front, so a person page rarely opens on the ledger
+        // it shows until your block list is known.
+        .task(id: store.competition.publication?.source == .remoteParticipants) {
+            if store.competition.publication?.source == .remoteParticipants {
+                store.send(.competition(.blockedPeopleRequested))
+            }
+        }
         .onChange(of: scenePhase) { _, newValue in
             store.send(.scenePhaseChanged(Self.sceneState(newValue)))
             // A photo changed or hidden while away shows without a relaunch.
@@ -287,13 +294,18 @@ struct MainTabView: View {
     ) -> some View {
         let depth = store.personPlace.depth
         let profileID = RemoteCompetitionOpponentIdentity.profileID(identity)
+        // Unknown (nil) until your block list loads, so someone you blocked
+        // never shows more than the ledger.
+        let isBlocked: Bool? = if let profileID, publication.source == .remoteParticipants {
+            store.competition.blockedPeople.map { $0.contains { $0.id == profileID } }
+        } else {
+            false
+        }
         return CompetitionPersonView(
             publication: publication,
             opponentIdentity: identity,
             cameFrom: depth > 0 && depth <= store.path.count ? store.path[depth - 1] : nil,
-            isBlocked: profileID.map { id in
-                store.competition.blockedPeople?.contains { $0.id == id } == true
-            } ?? false,
+            isBlocked: isBlocked,
             unblock: profileID.map { id in { store.send(.competition(.unblockTapped(id))) } },
             muteButton: publication.dashboard.competitions
                 .first { $0.opponentIdentity == identity }
