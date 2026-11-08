@@ -7,11 +7,15 @@ import WidgetKit
 struct MatchLiveActivityWidget: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: MatchActivityAttributes.self) { context in
-            MatchActivityLockScreenView(
-                attributes: context.attributes,
-                state: context.state.resolved(isStale: context.isStale)
-            )
-            .activityBackgroundTint(Theme.ground)
+            let state = context.state.resolved(isStale: context.isStale)
+            Group {
+                if #available(iOS 18.0, *) {
+                    MatchActivityFamilyView(attributes: context.attributes, state: state)
+                } else {
+                    MatchActivityLockScreenView(attributes: context.attributes, state: state)
+                        .activityBackgroundTint(Theme.ground)
+                }
+            }
             .activitySystemActionForegroundColor(Theme.ink)
             .widgetURL(context.attributes.url)
         } dynamicIsland: { context in
@@ -19,13 +23,13 @@ struct MatchLiveActivityWidget: Widget {
             // Dark in every region, so amber stays you on black.
             return DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
-                    MatchActivityScoreColumn(side: .you, state: state, size: matchActivityIslandScoreSize)
+                    MatchActivityScoreColumn(side: .you, attributes: context.attributes, state: state, size: matchActivityIslandScoreSize)
                         .dynamicIsland(verticalPlacement: .belowIfTooWide)
                         .padding(.horizontal, 8)
                         .matchActivityIsland()
                 }
                 DynamicIslandExpandedRegion(.trailing) {
-                    MatchActivityScoreColumn(side: .them, state: state, size: matchActivityIslandScoreSize)
+                    MatchActivityScoreColumn(side: .them, attributes: context.attributes, state: state, size: matchActivityIslandScoreSize)
                         .dynamicIsland(verticalPlacement: .belowIfTooWide)
                         .padding(.horizontal, 8)
                         .matchActivityIsland()
@@ -40,16 +44,49 @@ struct MatchLiveActivityWidget: Widget {
                         .matchActivityIsland()
                 }
             } compactLeading: {
-                MatchActivityCompactScore(side: .you, state: state)
+                MatchActivityCompactScore(side: .you, attributes: context.attributes, state: state)
                     .matchActivityIsland()
             } compactTrailing: {
-                MatchActivityCompactScore(side: .them, state: state)
+                MatchActivityCompactScore(side: .them, attributes: context.attributes, state: state)
                     .matchActivityIsland()
             } minimal: {
-                MatchActivityMinimalLead(state: state)
+                MatchActivityMinimalLead(attributes: context.attributes, state: state)
                     .matchActivityIsland()
             }
             .widgetURL(context.attributes.url)
+        }
+        .smallActivityFamily()
+    }
+}
+
+/// The Smart Stack and CarPlay card, or the Lock Screen card. `activityFamily`
+/// stays here: MatchActivityViews.swift has no WidgetKit context.
+@available(iOS 18.0, *)
+private struct MatchActivityFamilyView: View {
+    let attributes: MatchActivityAttributes
+    let state: MatchActivityAttributes.ContentState
+
+    @Environment(\.activityFamily) private var family
+
+    var body: some View {
+        if family == .small {
+            // Dark like the island, so amber stays you on black.
+            MatchActivitySmallView(attributes: attributes, state: state)
+                .matchActivityIsland()
+                .activityBackgroundTint(.black)
+        } else {
+            MatchActivityLockScreenView(attributes: attributes, state: state)
+                .activityBackgroundTint(Theme.ground)
+        }
+    }
+}
+
+private extension WidgetConfiguration {
+    func smallActivityFamily() -> some WidgetConfiguration {
+        if #available(iOS 18.0, *) {
+            return supplementalActivityFamilies([.small])
+        } else {
+            return self
         }
     }
 }

@@ -3088,7 +3088,7 @@ private enum MultiUserCompetitionTestLabFixtures {
 private struct LiveActivityPreviewView: View {
     private let client = CompetitionLiveActivityClient.live
     private let attributes: MatchActivityAttributes
-    private let live: MatchActivityAttributes.ContentState
+    @State private var live: MatchActivityAttributes.ContentState
     private let tallying: MatchActivityAttributes.ContentState
 
     init() {
@@ -3099,7 +3099,7 @@ private struct LiveActivityPreviewView: View {
         )
         let locale = Locale(identifier: "en_US")
         let timeZone = TimeZone(identifier: "America/Los_Angeles")!
-        live = CompetitionLiveActivityPlanner.content(sample.live, locale: locale, timeZone: timeZone)!
+        _live = State(initialValue: CompetitionLiveActivityPlanner.content(sample.live, locale: locale, timeZone: timeZone)!)
         tallying = CompetitionLiveActivityPlanner.content(sample.tallying, locale: locale, timeZone: timeZone)!
         // `-liveActivityPreviewSecondsLeft 60` lets a UI test watch the card go stale.
         let secondsLeft = defaults.double(forKey: "liveActivityPreviewSecondsLeft")
@@ -3124,6 +3124,23 @@ private struct LiveActivityPreviewView: View {
                 }
                 .buttonStyle(SecondaryButtonStyle())
                 .accessibilityIdentifier("liveActivity.preview.start")
+                Button("Add Points") {
+                    update { $0.userPoints += 12 }
+                }
+                .buttonStyle(SecondaryButtonStyle())
+                .accessibilityIdentifier("liveActivity.preview.update")
+                Button("Flip Lead") {
+                    update {
+                        if $0.userPoints > $0.opponentPoints {
+                            $0.opponentPoints = $0.userPoints + 5
+                        } else {
+                            $0.userPoints = $0.opponentPoints + 5
+                        }
+                    }
+                }
+                .buttonStyle(SecondaryButtonStyle())
+                .accessibilityIdentifier("liveActivity.preview.flip")
+                smallCard
             }
             .padding(16)
         }
@@ -3147,8 +3164,8 @@ private struct LiveActivityPreviewView: View {
         VStack(spacing: 8) {
             MatchActivityIslandHeader(attributes: attributes, state: live)
             HStack(alignment: .bottom) {
-                MatchActivityScoreColumn(side: .you, state: live, size: matchActivityIslandScoreSize)
-                MatchActivityScoreColumn(side: .them, state: live, size: matchActivityIslandScoreSize)
+                MatchActivityScoreColumn(side: .you, attributes: attributes, state: live, size: matchActivityIslandScoreSize)
+                MatchActivityScoreColumn(side: .them, attributes: attributes, state: live, size: matchActivityIslandScoreSize)
             }
             MatchActivityIslandBottom(state: live)
         }
@@ -3161,9 +3178,9 @@ private struct LiveActivityPreviewView: View {
 
     private var compactIsland: some View {
         HStack {
-            MatchActivityCompactScore(side: .you, state: live)
+            MatchActivityCompactScore(side: .you, attributes: attributes, state: live)
             Spacer(minLength: 60)
-            MatchActivityCompactScore(side: .them, state: live)
+            MatchActivityCompactScore(side: .them, attributes: attributes, state: live)
         }
         .padding(.horizontal, 16)
         .frame(height: 37)
@@ -3174,11 +3191,21 @@ private struct LiveActivityPreviewView: View {
     }
 
     private var minimalIsland: some View {
-        MatchActivityMinimalLead(state: live)
+        MatchActivityMinimalLead(attributes: attributes, state: live)
             .frame(width: 37, height: 37)
             .background(.black, in: Circle())
             .matchActivityIsland()
             .accessibilityIdentifier("liveActivity.preview.minimal")
+    }
+
+    /// The Smart Stack on a 41 mm Apple Watch.
+    private var smallCard: some View {
+        MatchActivitySmallView(attributes: attributes, state: live)
+            .padding(8)
+            .frame(width: 162, height: 69.5)
+            .background(.black, in: RoundedRectangle(cornerRadius: 16))
+            .matchActivityIsland()
+            .accessibilityIdentifier("liveActivity.preview.small")
     }
 
     private func endSamples() async {
@@ -3190,6 +3217,20 @@ private struct LiveActivityPreviewView: View {
     private func start() async {
         await endSamples()
         _ = await client.start(attributes, live, attributes.endsAt)
+    }
+
+    /// Changes the mocks now and the running card after
+    /// `-liveActivityPreviewUpdateDelay`, so a recording can leave the app first.
+    private func update(_ change: (inout MatchActivityAttributes.ContentState) -> Void) {
+        change(&live)
+        let state = live
+        let delay = UserDefaults.standard.double(forKey: "liveActivityPreviewUpdateDelay")
+        let background = UIApplication.shared.beginBackgroundTask()
+        Task {
+            try? await Task.sleep(for: .seconds(delay))
+            await client.update(attributes.matchID, state, attributes.endsAt)
+            UIApplication.shared.endBackgroundTask(background)
+        }
     }
 }
 

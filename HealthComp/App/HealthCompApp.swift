@@ -133,13 +133,19 @@ struct HealthCompApp: App {
         if let scenario = zip(arguments, arguments.dropFirst())
             .first(where: { $0.0 == "--widget-scenario" })?.1
         {
-            Task {
+            // `-widgetScenarioDelay 5` lets a test get back to the widget first,
+            // so a recording catches the change.
+            let delay = UserDefaults.standard.double(forKey: "widgetScenarioDelay")
+            Task { @MainActor in
+                let background = UIApplication.shared.beginBackgroundTask()
+                try? await Task.sleep(for: .seconds(delay))
                 let client = CompetitionWidgetSnapshotClient.liveValue
                 if let snapshot = CompetitionWidgetSnapshot.testLab(scenario, now: Date()) {
                     await client.write(snapshot, [])
                 } else {
                     try? await client.clear()
                 }
+                UIApplication.shared.endBackgroundTask(background)
             }
         }
     }

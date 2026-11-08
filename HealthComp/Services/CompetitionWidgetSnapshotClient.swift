@@ -243,6 +243,14 @@ extension CompetitionWidgetSnapshot {
             // Sam's result has left Home; only Alex is live.
             matches = [alex, match(5, "Sam", currentDay: 12, you: 1_840, them: 1_726, final: .win, leavesInDays: -1)]
         case "noSam": matches = [alex]
+        // A digit gained, and decimals gained, for the score roll.
+        case "almostThousand":
+            matches = [match(5, "Sam", currentDay: 5, you: 999, them: 980, youDays: week, themDays: theirs)]
+        case "thousand":
+            matches = [match(5, "Sam", currentDay: 5, you: 1_000, them: 980, youDays: week, themDays: theirs)]
+        case "closeFinal":
+            matches = [match(5, "Sam", currentDay: 9, you: 2_190.25, them: 2_190.1,
+                             youDays: week, themDays: theirs, final: .win)]
         default: return nil
         }
         return Self(matches: matches, hasIncomingChallenge: hasIncomingChallenge)

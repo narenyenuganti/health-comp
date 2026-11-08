@@ -18,7 +18,7 @@ struct MatchActivityLockScreenView: View {
             HStack(alignment: .bottom, spacing: 8) {
                 // At accessibility sizes the card has no room for a name row,
                 // so "YOU" and the name sit beside the scores.
-                MatchActivityScoreColumn(side: .you, state: state, size: 40, namesInline: isLarge)
+                MatchActivityScoreColumn(side: .you, attributes: attributes, state: state, size: 40, namesInline: isLarge)
                 if !isLarge {
                     // Home's HeroScoreboard divider.
                     Rectangle()
@@ -27,7 +27,7 @@ struct MatchActivityLockScreenView: View {
                         .rotationEffect(.degrees(12))
                         .accessibilityHidden(true)
                 }
-                MatchActivityScoreColumn(side: .them, state: state, size: 40, namesInline: isLarge)
+                MatchActivityScoreColumn(side: .them, attributes: attributes, state: state, size: 40, namesInline: isLarge)
             }
             MatchActivityBottomRows(state: state, showsFreshness: !isLarge)
         }
@@ -101,6 +101,7 @@ enum MatchActivitySide {
 /// "YOU 2,190" and "2,171 SAM", where the name gives way to the score.
 struct MatchActivityScoreColumn: View {
     let side: MatchActivitySide
+    let attributes: MatchActivityAttributes
     let state: MatchActivityAttributes.ContentState
     let size: CGFloat
     var namesInline = false
@@ -135,6 +136,7 @@ struct MatchActivityScoreColumn: View {
         Text(competitionPointsText(side.points(state)))
             .font(.score(size: size).monospacedDigit())
             .minimumScaleFactor(0.5)
+            .scoreRoll(side.points(state), id: attributes.matchID)
             .layoutPriority(1)
     }
 }
@@ -197,6 +199,7 @@ struct MatchActivityIslandBottom: View {
 /// One side's score in the compact Dynamic Island.
 struct MatchActivityCompactScore: View {
     let side: MatchActivitySide
+    let attributes: MatchActivityAttributes
     let state: MatchActivityAttributes.ContentState
 
     var body: some View {
@@ -204,12 +207,14 @@ struct MatchActivityCompactScore: View {
             .font(.headline.weight(.heavy).width(.compressed).monospacedDigit())
             .foregroundStyle(side.color)
             .lineLimit(1)
+            .scoreRoll(side.points(state), id: attributes.matchID)
             .accessibilityLabel(side.accessibilityLabel(state))
     }
 }
 
 /// "+19" in amber, "−5" in ink or "0", for the minimal Dynamic Island.
 struct MatchActivityMinimalLead: View {
+    let attributes: MatchActivityAttributes
     let state: MatchActivityAttributes.ContentState
 
     var body: some View {
@@ -223,11 +228,35 @@ struct MatchActivityMinimalLead: View {
         .foregroundStyle(margin > 0 ? Theme.you : margin < 0 ? Theme.ink : Theme.secondary)
         .lineLimit(1)
         .minimumScaleFactor(0.5)
+        .scoreRoll(margin, id: attributes.matchID)
         .accessibilityLabel(competitionLeadSentence(
             userPoints: state.userPoints,
             opponentPoints: state.opponentPoints,
             opponentDisplayName: state.opponentName
         ))
+    }
+}
+
+/// Apple Watch Smart Stack and CarPlay: the title, then both scores.
+struct MatchActivitySmallView: View {
+    let attributes: MatchActivityAttributes
+    let state: MatchActivityAttributes.ContentState
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(state.title)
+                .font(.themeLabel)
+                .tracking(1.2)
+                .textCase(.uppercase)
+                .foregroundStyle(Theme.ink)
+                .lineLimit(1)
+                .minimumScaleFactor(0.8)
+            HStack(alignment: .bottom, spacing: 8) {
+                MatchActivityScoreColumn(side: .you, attributes: attributes, state: state, size: 28)
+                MatchActivityScoreColumn(side: .them, attributes: attributes, state: state, size: 28)
+            }
+        }
+        .accessibilityElement(children: .combine)
     }
 }
 

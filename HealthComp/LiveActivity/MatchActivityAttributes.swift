@@ -2,7 +2,7 @@ import ActivityKit
 import Foundation
 
 /// The final-day Live Activity. Points, names and display strings only:
-/// no Health values, and nothing leaves the iPhone.
+/// no Health values. iOS may mirror the card to a paired Apple Watch.
 struct MatchActivityAttributes: ActivityAttributes, Hashable {
     struct ContentState: Codable, Hashable {
         enum Phase: String, Codable, Hashable { case live, pending }
