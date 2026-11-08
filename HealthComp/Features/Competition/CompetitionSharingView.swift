@@ -33,6 +33,8 @@ struct CompetitionSharingView: View {
     /// Pull to refresh. On the scroll view, not the host, so the + sheet
     /// doesn't inherit it and a downward drag closes the sheet.
     var refresh: (@Sendable () async -> Void)? = nil
+    /// Opens the month or year deck; nil hides its Home row.
+    var openRecap: ((CompetitionRecapPeriod) -> Void)? = nil
 
     // ponytail: in-memory, a dismissed row returns after relaunch within its 24 h; persist per profile if that annoys
     @State private var dismissedChallengeIDs: Set<CompetitionID> = []
@@ -163,6 +165,18 @@ struct CompetitionSharingView: View {
                         .transition(Motion.appear)
                 }
 
+                if let openRecap, let offer = recapOffer {
+                    CompetitionRecapRow(
+                        title: offer.headline(locale: locale),
+                        period: offer,
+                        competitions: publication.dashboard.competitions,
+                        isPanel: true
+                    ) { openRecap(offer) }
+                    .buttonStyle(CompetitionPressButtonStyle())
+                    .accessibilityIdentifier("competition.recap.open")
+                    .transition(Motion.appear)
+                }
+
                 if !records.isEmpty {
                     historyButton
                         .transition(Motion.appear)
@@ -177,6 +191,7 @@ struct CompetitionSharingView: View {
             .moving(Motion.settle, value: layout.allItems.map { unseen($0)?.updatedAt })
             .moving(Motion.settle, value: layout.allItems.map { beltGoingIn(for: $0, in: records)?.holder })
             .moving(Motion.settle, value: records.isEmpty)
+            .moving(Motion.settle, value: recapOffer)
         }
         .refreshable(refresh)
         .background(Theme.ground)
@@ -232,6 +247,12 @@ struct CompetitionSharingView: View {
 
     private var records: [CompetitionOpponentRecord] {
         competitionOpponentRecords(publication.dashboard.competitions)
+    }
+
+    private var recapOffer: CompetitionRecapPeriod? {
+        competitionRecapToday(publication).flatMap {
+            competitionRecapOffer(publication.dashboard.competitions, today: $0)
+        }
     }
 
     /// Who holds the belt going in; nil while an earlier match with the same
@@ -1390,6 +1411,8 @@ private struct CompetitionRecordRow: View {
 /// Finished weeks: a record per person, then every week newest first.
 struct CompetitionHistoryView: View {
     let publication: LocalCompetitionPublication
+    /// Opens a month or year deck; nil hides Recaps.
+    var openRecap: ((CompetitionRecapPeriod) -> Void)? = nil
 
     @Environment(\.locale) private var locale
     @Environment(\.timeZone) private var timeZone
@@ -1405,6 +1428,12 @@ struct CompetitionHistoryView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 } else {
                     recordSection(weeks)
+                    if let openRecap,
+                       let today = competitionRecapToday(publication),
+                       case let periods = competitionRecapPeriods(publication.dashboard.competitions, today: today),
+                       !periods.isEmpty {
+                        recapSection(periods, open: openRecap)
+                    }
                     weeksSection(weeks)
                 }
             }
@@ -1451,6 +1480,35 @@ struct CompetitionHistoryView: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("competition.rivalry")
+    }
+
+    /// Every month and year with a finished week, newest first.
+    private func recapSection(
+        _ periods: [CompetitionRecapPeriod],
+        open: @escaping (CompetitionRecapPeriod) -> Void
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            SectionLabel("RECAPS")
+                .padding(.horizontal, 4)
+            VStack(spacing: 0) {
+                ForEach(Array(periods.enumerated()), id: \.element) { index, period in
+                    if index > 0 {
+                        CompetitionRowDivider(inset: 16)
+                    }
+                    CompetitionRecapRow(
+                        title: period.title(locale: locale),
+                        period: period,
+                        competitions: publication.dashboard.competitions
+                    ) { open(period) }
+                    .buttonStyle(CompetitionRowButtonStyle())
+                    .accessibilityIdentifier("competition.recap.\(period.year)-\(period.month ?? 0)")
+                }
+            }
+            .themePanel()
+            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("competition.recaps")
     }
 
     private func weeksSection(_ weeks: [LocalCompetitionPresentation]) -> some View {

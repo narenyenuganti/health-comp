@@ -595,3 +595,156 @@ final class CompetitionRecapTests: XCTestCase {
         )
     }
 }
+
+/// Your month, your year, against the proposals page's October
+/// (`CompetitionMonthFixture`, the Test Lab's `month` scenario).
+final class CompetitionMonthRecapTests: XCTestCase {
+    private let en = Locale(identifier: "en_US")
+    private let october = CompetitionMonthFixture.october
+    private lazy var weeks = CompetitionMonthFixture.weeks()
+
+    private func day(_ year: Int, _ month: Int, _ day: Int) throws -> CompetitionDay {
+        try CompetitionDay(era: 1, year: year, month: month, day: day, timeZoneIdentifier: "America/Los_Angeles")
+    }
+
+    private func cards(
+        _ period: CompetitionRecapPeriod,
+        hidesNames: Bool = false
+    ) -> [CompetitionRecapPeriodCard] {
+        competitionRecapCards(
+            weeks, period: period, hidesNames: hidesNames, now: CompetitionMonthFixture.now, locale: en
+        )
+    }
+
+    func testWeeksCountInTheMonthTheyEnd() throws {
+        XCTAssertEqual(competitionRecapWeeks(weeks, in: october).map(\.userPoints), [2_530, 2_585, 2_418, 2_612])
+        XCTAssertEqual(
+            competitionRecapWeeks(weeks, in: CompetitionRecapPeriod(year: 2026, month: 9)).map(\.userPoints),
+            [2_130]
+        )
+        XCTAssertEqual(competitionRecapWeeks(weeks, in: CompetitionRecapPeriod(year: 2026)).count, 5)
+        XCTAssertEqual(competitionRecapSummaryLine(weeks, period: october), "4 weeks · won 3, lost 1")
+        XCTAssertEqual(october.title(locale: en), "October 2026")
+        XCTAssertEqual(october.headline(locale: en), "Your October")
+        XCTAssertEqual(CompetitionRecapPeriod(year: 2026).headline(locale: en), "Your 2026")
+    }
+
+    func testMonthsOnceEndedAndTheYearFromThe31st() throws {
+        let fixtureToday = try XCTUnwrap(competitionRecapToday(CompetitionMonthFixture.publication()))
+        XCTAssertEqual(fixtureToday, try day(2026, 11, 1))
+        XCTAssertEqual(competitionRecapPeriods(weeks, today: fixtureToday), [
+            october, CompetitionRecapPeriod(year: 2026, month: 9),
+        ])
+        XCTAssertEqual(competitionRecapPeriods(weeks, today: try day(2026, 10, 31)), [
+            CompetitionRecapPeriod(year: 2026, month: 9),
+        ])
+        XCTAssertEqual(competitionRecapPeriods(weeks, today: try day(2026, 12, 31)), [
+            CompetitionRecapPeriod(year: 2026), october, CompetitionRecapPeriod(year: 2026, month: 9),
+        ])
+        XCTAssertEqual(competitionRecapPeriods([], today: try day(2026, 12, 31)), [])
+    }
+
+    func testHomeOffersLastMonthForThreeDaysAndTheYearAcrossNewYear() throws {
+        XCTAssertEqual(competitionRecapOffer(weeks, today: try day(2026, 11, 1)), october)
+        XCTAssertEqual(competitionRecapOffer(weeks, today: try day(2026, 11, 3)), october)
+        XCTAssertNil(competitionRecapOffer(weeks, today: try day(2026, 11, 4)))
+        XCTAssertEqual(
+            competitionRecapOffer(weeks, today: try day(2026, 10, 2)),
+            CompetitionRecapPeriod(year: 2026, month: 9)
+        )
+        // August has no finished week.
+        XCTAssertNil(competitionRecapOffer(weeks, today: try day(2026, 9, 1)))
+        XCTAssertNil(competitionRecapOffer(weeks, today: try day(2026, 12, 30)))
+        XCTAssertEqual(competitionRecapOffer(weeks, today: try day(2026, 12, 31)), CompetitionRecapPeriod(year: 2026))
+        XCTAssertEqual(competitionRecapOffer(weeks, today: try day(2027, 1, 3)), CompetitionRecapPeriod(year: 2026))
+        XCTAssertNil(competitionRecapOffer(weeks, today: try day(2027, 1, 4)))
+    }
+
+    func testOctoberReadsAsTheMockDoes() throws {
+        let deck = cards(october)
+        XCTAssertEqual(deck.map(\.kind), [.weeks, .record, .belt, .bestDay, .rings, .rival])
+        XCTAssertEqual(deck.map(\.value), [
+            .text("4", side: nil),
+            .record(won: 3, lost: 1, tied: 0),
+            .text("3", side: .you),
+            .text("434", side: .you),
+            .text("69", side: .you),
+            .text("Alex", side: nil),
+        ])
+        XCTAssertEqual(deck.map(\.detail), [
+            "Against Sam and Alex",
+            "Won 3, lost 1 across 4 weeks, 2 rivals",
+            "Took 1, defended 2",
+            "Wed, Oct 28",
+            "Move 28, Exercise 13, Stand 28",
+            "Lost 1 · 112 points apart a week",
+        ])
+        XCTAssertEqual(
+            deck[1].accessibilityText,
+            "Your record: won 3, lost 1. Won 3, lost 1 across 4 weeks, 2 rivals"
+        )
+    }
+
+    func testRowsLinkToHistoryRows() throws {
+        let deck = cards(october)
+        let ids = competitionRecapWeeks(weeks, in: october).map(\.id)
+        XCTAssertEqual(deck[0].rows.map(\.title), ["Sam", "Alex"])
+        XCTAssertEqual(deck[0].rows.map(\.detail), ["3 weeks · 3–0", "1 week · 0–1"])
+        XCTAssertEqual(deck[0].rows.map(\.link), [
+            .person(CompetitionMonthFixture.samIdentity), .person(CompetitionMonthFixture.alexIdentity),
+        ])
+        XCTAssertEqual(deck[1].rows.map(\.detail), ["Beat Sam", "Beat Sam", "Lost to Alex", "Beat Sam"])
+        XCTAssertEqual(deck[1].rows.map(\.side), [.you, .you, .them, .you])
+        XCTAssertEqual(deck[1].rows.map(\.link), ids.map { .week($0) })
+        XCTAssertEqual(deck[2].rows.map(\.detail), [
+            "Took the belt", "1st title defense", "Alex took the belt", "2nd title defense",
+        ])
+        XCTAssertEqual(deck[3].rows.map(\.link), [.week(ids[3])])
+        XCTAssertTrue(deck[4].rows.isEmpty)
+        XCTAssertEqual(deck[5].rows.map(\.link), [.person(CompetitionMonthFixture.alexIdentity)])
+        XCTAssertEqual(CompetitionRecapPeriodCard.Link.week(ids[0]).historyRoutes, [.history, .competition(ids[0])])
+        XCTAssertEqual(
+            CompetitionRecapPeriodCard.Link.person("x").historyRoutes,
+            [.history, .person("x")]
+        )
+    }
+
+    func testHiddenNamesLeaveTheImageNameless() {
+        let deck = cards(october, hidesNames: true)
+        XCTAssertEqual(deck[0].detail, "Against 2 rivals")
+        XCTAssertEqual(deck[5].value, .record(won: 0, lost: 1, tied: 0))
+        XCTAssertEqual(deck[5].detail, "112 points apart a week")
+        for card in deck {
+            XCTAssertFalse(card.detail.contains("Sam") || card.detail.contains("Alex"), card.detail)
+        }
+    }
+
+    func testAThinMonthShowsOnlyWhatsTrue() {
+        // Sam took a vacant belt: no move of yours, and one rival has no closest.
+        let september = cards(CompetitionRecapPeriod(year: 2026, month: 9))
+        XCTAssertEqual(september.map(\.kind), [.weeks, .record, .bestDay, .rings])
+        XCTAssertEqual(september[0].detail, "Against Sam")
+        XCTAssertEqual(september[1].detail, "Lost 1 across 1 week")
+        XCTAssertEqual(september[3].detail, "Move 7, Exercise 0, Stand 5")
+        XCTAssertEqual(cards(CompetitionRecapPeriod(year: 2026, month: 8)), [])
+
+        let year = cards(CompetitionRecapPeriod(year: 2026))
+        XCTAssertEqual(year.map(\.kind), [.weeks, .record, .belt, .bestDay, .rings, .rival])
+        XCTAssertEqual(year[1].value, .record(won: 3, lost: 2, tied: 0))
+    }
+
+    func testRingsCloseFromYourOwnValuesOnly() throws {
+        var presentation = LocalCompetitionDayPresentation(
+            day: try day(2026, 10, 4),
+            ordinal: 1,
+            ownerAcceptedPoints: 250,
+            ownerLatestAvailability: .observed,
+            opponentRevealedPoints: 600,
+            scoringPolicy: .remoteWireV1
+        )
+        XCTAssertNil(competitionClosedRings(presentation))
+        presentation.ownerRingPoints = [100, 99.5, 50.5]
+        presentation.opponentRingPoints = [200, 200, 200]
+        XCTAssertEqual(competitionClosedRings(presentation), [true, false, false])
+    }
+}
