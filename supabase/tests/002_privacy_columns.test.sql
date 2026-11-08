@@ -3,12 +3,26 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = extensions, public, pg_catalog;
 
-select plan(26);
+select plan(28);
 
 select columns_are(
   'public', 'profiles',
-  array['id', 'auth_user_id', 'display_name', 'state', 'anonymized_at', 'created_at', 'updated_at']::name[],
+  array['id', 'auth_user_id', 'display_name', 'state', 'anonymized_at', 'created_at', 'updated_at', 'photo_version']::name[],
   'profiles exposes only approved columns'
+);
+
+select columns_are(
+  'private', 'profile_photo_reports',
+  array['reporter_profile_id', 'reported_profile_id', 'photo_version', 'created_at']::name[],
+  'photo reports store only who reported whom and which version'
+);
+
+select ok(
+  (select bool_and(not has_column_privilege(role_name, 'public.profiles', column_name, 'select'))
+   from unnest(array['anon', 'authenticated']) role_name,
+     unnest(array['auth_user_id', 'photo_version']) column_name)
+  and has_column_privilege('authenticated', 'public.profiles', 'display_name', 'select'),
+  'client roles read only the presentation-safe profile columns'
 );
 
 select columns_are(

@@ -98,6 +98,17 @@ Deno.test("web deletion factory completes and resumes using the bound web signin
           assertEquals(req.method, "DELETE");
           return Response.json({ id: user });
         }
+        if (url.pathname === "/storage/v1/object/list/profile-photos") {
+          assertEquals((await req.json()).prefix, profile);
+          return Response.json([{ name: "synthetic.jpg" }]);
+        }
+        if (url.pathname === "/storage/v1/object/profile-photos") {
+          assertEquals(req.method, "DELETE");
+          assertEquals((await req.json()).prefixes, [
+            `${profile}/synthetic.jpg`,
+          ]);
+          return Response.json([{ name: `${profile}/synthetic.jpg` }]);
+        }
         const body = await req.json();
         const name = url.pathname.split("/").at(-1);
         if (name === "begin_account_deletion") {
@@ -161,6 +172,8 @@ Deno.test("web deletion factory completes and resumes using the bound web signin
       rpc("load_account_deletion_apple_token"),
       "/auth/revoke",
       rpc("mark_account_deletion_apple_revoked"),
+      "/storage/v1/object/list/profile-photos",
+      "/storage/v1/object/profile-photos",
       rpc("anonymize_account_deletion"),
       `/auth/v1/admin/users/${user}`,
       rpc("complete_account_deletion"),

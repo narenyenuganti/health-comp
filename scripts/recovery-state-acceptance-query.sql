@@ -24,7 +24,8 @@ with expected_tables(schema_name, table_name, expected_rls, expected_force, auth
     ('private', 'app_attest_submission_grants', true, true, false),
     ('private', 'challenge_links', true, true, false),
     ('private', 'account_blocks', true, true, false),
-    ('private', 'competition_reactions', true, true, false)
+    ('private', 'competition_reactions', true, true, false),
+    ('private', 'profile_photo_reports', true, true, false)
 ),
 -- Native types for columns used by the predicates. Other columns/constraints
 -- still require exact migrated-schema compatibility; this is not its substitute.
@@ -67,7 +68,8 @@ required_column_groups(table_name, type_name, column_names) as (
     ('challenge_links', 'text', array['code']),
     ('account_blocks', 'uuid', array['blocker_profile_id','blocked_profile_id']),
     ('competition_reactions', 'uuid', array['competition_id','author_profile_id']),
-    ('competition_reactions', 'text', array['reaction'])
+    ('competition_reactions', 'text', array['reaction']),
+    ('profile_photo_reports', 'uuid', array['reporter_profile_id','reported_profile_id'])
 ),
 required_columns as (
   select g.table_name, c.column_name,

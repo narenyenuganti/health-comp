@@ -40,6 +40,8 @@ export interface DeleteAccountDependencies {
   loadAppleToken(profileID: string): Promise<string>;
   revokeAppleToken(token: string, appleClientID: string): Promise<void>;
   markAppleRevoked(profileID: string): Promise<DeletionProgress>;
+  /** Deletes every stored profile photo object; idempotent. */
+  removeProfilePhotos(profileID: string): Promise<void>;
   anonymize(profileID: string): Promise<DeletionProgress>;
   deleteAuthUser(authUserID: string): Promise<void>;
   complete(profileID: string): Promise<DeletionProgress>;
@@ -290,6 +292,8 @@ export async function continueAccountDeletion(
     }
 
     if (progress.phase === "apple_revoked") {
+      // Before anonymizing, so a failure stays in this resumable phase.
+      await dependencies.removeProfilePhotos(progress.profileId);
       progress = requirePhase(
         await dependencies.anonymize(progress.profileId),
         "auth_delete_pending",
@@ -686,6 +690,18 @@ export function createLiveDependencies(
           { target_profile_id: targetProfileID },
         ),
       ),
+    removeProfilePhotos: async (targetProfileID) => {
+      // At most three objects per folder (storage insert policy, 2900).
+      const bucket = admin.storage.from("profile-photos");
+      const { data, error } = await bucket.list(targetProfileID);
+      if (error) throw error;
+      const paths = (data ?? []).map((object) =>
+        `${targetProfileID}/${object.name}`
+      );
+      if (paths.length === 0) return;
+      const { error: removeError } = await bucket.remove(paths);
+      if (removeError) throw removeError;
+    },
     anonymize: async (targetProfileID) =>
       normalizeProgress(
         await rpc(
