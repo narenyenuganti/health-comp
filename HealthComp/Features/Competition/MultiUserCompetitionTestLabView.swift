@@ -246,6 +246,7 @@ private struct MultiUserCompetitionSharingTestLabView: View {
     private static let resetReactionsSeen: Void = {
         UserDefaults.standard.removeObject(forKey: CompetitionReactionsSeen.storageKey)
         UserDefaults.standard.removeObject(forKey: CompetitionBeltCeremoniesSeen.storageKey)
+        UserDefaults.standard.removeObject(forKey: CompetitionMotionSeen.storageKey)
     }()
 
     init(scenario: MultiUserCompetitionTestLabScenario) {
@@ -1102,8 +1103,10 @@ private final class MultiUserCompetitionNudgeTestLabServer: @unchecked Sendable 
 private struct MultiUserCompetitionFeatureRoundTestLabView: View {
     @State private var store: StoreOf<MainTabFeature>
 
-    private static let resetReactionsSeen: Void = UserDefaults.standard
-        .removeObject(forKey: CompetitionReactionsSeen.storageKey)
+    private static let resetReactionsSeen: Void = {
+        UserDefaults.standard.removeObject(forKey: CompetitionReactionsSeen.storageKey)
+        UserDefaults.standard.removeObject(forKey: CompetitionMotionSeen.storageKey)
+    }()
 
     init() {
         _ = Self.resetReactionsSeen
@@ -1191,8 +1194,10 @@ private struct MultiUserCompetitionReactionsTestLabView: View {
     @State private var store: StoreOf<MainTabFeature>
 
     /// Once per process, as in the sharing lab: the marks persist otherwise.
-    private static let resetReactionsSeen: Void = UserDefaults.standard
-        .removeObject(forKey: CompetitionReactionsSeen.storageKey)
+    private static let resetReactionsSeen: Void = {
+        UserDefaults.standard.removeObject(forKey: CompetitionReactionsSeen.storageKey)
+        UserDefaults.standard.removeObject(forKey: CompetitionMotionSeen.storageKey)
+    }()
 
     init(source: CompetitionPublicationSource) {
         _ = Self.resetReactionsSeen

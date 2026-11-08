@@ -173,6 +173,13 @@ struct MainTabView: View {
                 case let .competition(id):
                     destination(for: id)
                         .toolbarRole(.editor)
+                        // Here, as this outlives the swap to the result: the
+                        // swap moves no focus, and a push never reaches this.
+                        .onChange(of: completedResultTitle(id)) { old, title in
+                            if old == nil, let title {
+                                AccessibilityNotification.Announcement(title).post()
+                            }
+                        }
                 }
             }
         }
@@ -272,6 +279,18 @@ struct MainTabView: View {
                     break
                 }
             }
+        )
+    }
+
+    /// Nil until that match finishes.
+    private func completedResultTitle(_ id: CompetitionID) -> String? {
+        guard let competition = store.competition.publication?.dashboard.competitions
+            .first(where: { $0.id == id }),
+            case .completed = competition.lifecycle
+        else { return nil }
+        return competitionResultTitle(
+            outcome: competitionResultOutcome(competition),
+            opponentDisplayName: competition.opponentDisplayName
         )
     }
 
