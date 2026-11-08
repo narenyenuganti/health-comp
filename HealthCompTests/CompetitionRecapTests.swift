@@ -323,6 +323,54 @@ final class CompetitionRecapTests: XCTestCase {
         #endif
     }
 
+    func testStickerLineJoinsMarginAndBelt() throws {
+        XCTAssertEqual(
+            competitionRecapStickerLine(recap(try match(days()), belt: .youDefended(defenses: 2))),
+            "Won by 144 points · 2nd title defense"
+        )
+        XCTAssertEqual(
+            competitionRecapStickerLine(recap(
+                try match(days(), user: 2_268, opponent: 2_412), belt: .theyTook, hidesName: true
+            )),
+            "Lost by 144 points · They took the belt"
+        )
+        XCTAssertEqual(competitionRecapStickerLine(recap(try match(days()))), "Won by 144 points")
+        XCTAssertNil(competitionRecapStickerLine(recap(try match([], user: 3_000, opponent: 3_000))))
+    }
+
+    @MainActor
+    func testStickerImageIs1080By1350OnAClearGround() throws {
+        let shown = recap(try match(days()), belt: .youDefended(defenses: 2))
+        for lightInk in [false, true] {
+            let image = try XCTUnwrap(competitionRecapStickerImage(shown, lightInk: lightInk))
+            XCTAssertEqual(image.size, CGSize(width: 360, height: 450))
+            XCTAssertEqual(image.scale, 3)
+
+            // Pixel (3, 3) from the top left is clear.
+            let cgImage = try XCTUnwrap(image.cgImage)
+            var pixel = [UInt8](repeating: 0xFF, count: 4)
+            let space = try XCTUnwrap(CGColorSpace(name: CGColorSpace.sRGB))
+            let context = try XCTUnwrap(CGContext(
+                data: &pixel, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+                space: space, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ))
+            context.clear(CGRect(x: 0, y: 0, width: 1, height: 1))
+            context.draw(cgImage, in: CGRect(
+                x: -3, y: -CGFloat(cgImage.height - 4),
+                width: CGFloat(cgImage.width), height: CGFloat(cgImage.height)
+            ))
+            XCTAssertEqual(pixel[3], 0, "\(pixel)")
+
+            #if DEBUG
+            // Stickers for the preview artifact; not asserted.
+            let attachment = XCTAttachment(image: image)
+            attachment.name = lightInk ? "recap-sticker-light-ink" : "recap-sticker-dark-ink"
+            attachment.lifetime = .keepAlways
+            add(attachment)
+            #endif
+        }
+    }
+
     @MainActor
     func testShareItemHandsOverThePNGTitledWithTheHeadline() throws {
         let card = recap(try match(days()), belt: .youTook)
