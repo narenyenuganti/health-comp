@@ -1651,7 +1651,11 @@ final class MultiUserCompetitionUITests: XCTestCase {
         launch(.account)
         defer { app.terminate() }
         XCTAssertTrue(app.navigationBars["Account"].waitForExistence(timeout: 8))
-        element("account.health").tap()
+        // The photo header and BLOCKED sit above it, so the row can start
+        // at or below the fold.
+        let health = element("account.health")
+        scrollToElement(health)
+        health.tap()
         XCTAssertTrue(app.navigationBars["Health"].waitForExistence(timeout: 3))
         XCTAssertTrue(
             text(
