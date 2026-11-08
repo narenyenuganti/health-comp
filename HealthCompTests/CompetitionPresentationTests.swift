@@ -1312,6 +1312,40 @@ final class CompetitionPresentationTests: XCTestCase {
         XCTAssertNil(competitionNudgeDisplay(.sent(now), competition: fresh))
     }
 
+    func testLeadLineIsTheMarginAfterEachEndedDayWithAChangeAtEveryCrossing() throws {
+        func day(_ ordinal: Int, _ you: Double?, _ them: Double?, occurred: Bool = true) -> LocalCompetitionDayPresentation {
+            LocalCompetitionDayPresentation(
+                day: try! CompetitionDay(era: 1, year: 2026, month: 8, day: ordinal, timeZoneIdentifier: "UTC"),
+                ordinal: ordinal,
+                ownerAcceptedPoints: you,
+                ownerLatestAvailability: occurred ? .observed : .notYetOccurred,
+                opponentRevealedPoints: them
+            )
+        }
+        // Today (Day 7) waits until it ends.
+        let week = [
+            day(1, 124, 100), day(2, 100, 137), day(3, 100, 107), day(4, 130, 100),
+            day(5, 100, 128), day(6, 166, 100), day(7, 300, 0),
+        ]
+        let line = try XCTUnwrap(competitionLeadLine(week, currentDayOrdinal: 7))
+        XCTAssertEqual(line.margins, [0, 24, -13, -20, 10, -18, 48])
+        XCTAssertEqual(line.changes.count, 4)
+        for (change, expected) in zip(line.changes, [1 + 24.0 / 37, 3 + 20.0 / 30, 4 + 10.0 / 28, 5 + 18.0 / 66]) {
+            XCTAssertEqual(change, expected, accuracy: 0.0001)
+        }
+
+        // Through a tie, the change sits on the tie; a missing score counts 0
+        // and the line stops at the first day that hasn't happened.
+        let tied = try XCTUnwrap(competitionLeadLine(
+            [day(1, 110, 100), day(2, 90, 100), day(3, nil, 5), day(4, nil, nil, occurred: false)],
+            currentDayOrdinal: nil
+        ))
+        XCTAssertEqual(tied.margins, [0, 10, 0, -5])
+        XCTAssertEqual(tied.changes, [2])
+
+        XCTAssertNil(competitionLeadLine([day(1, 50, 0)], currentDayOrdinal: 1))
+    }
+
     func testDayListTextIsSingularPluralAndCapped() {
         let en = Locale(identifier: "en_US")
         XCTAssertEqual(competitionDayListText([7], locale: en), "Day 7")

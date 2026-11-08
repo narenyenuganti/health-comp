@@ -210,6 +210,195 @@ struct CompetitionRingLegend: View {
     }
 }
 
+/// The running margin after each day that has ended, from 0 before Day 1,
+/// in whole points as the scoreboard shows them. A side with no score counts
+/// 0 that day, as the totals do. Today waits until it ends.
+struct CompetitionLeadLine: Equatable {
+    /// `margins[k]` is your margin after Day k; `margins[0]` is 0.
+    let margins: [Double]
+    /// Where the lead changed hands, in days from the start: 2.4 is part way
+    /// along Day 3. Through a tie it is the day of the tie.
+    let changes: [Double]
+}
+
+func competitionLeadLine(
+    _ days: [LocalCompetitionDayPresentation],
+    currentDayOrdinal: Int?
+) -> CompetitionLeadLine? {
+    var raw = 0.0
+    var margins = [0.0]
+    for day in days {
+        guard day.ownerLatestAvailability != .notYetOccurred,
+              day.ordinal < currentDayOrdinal ?? .max
+        else { break }
+        raw += (day.ownerAcceptedPoints ?? 0) - (day.opponentRevealedPoints ?? 0)
+        margins.append(raw.rounded(.toNearestOrAwayFromZero))
+    }
+    guard margins.count > 1 else { return nil }
+    var changes: [Double] = []
+    var youLead: Bool?
+    for k in 1 ..< margins.count where margins[k] != 0 {
+        let a = margins[k - 1], b = margins[k]
+        if let youLead, youLead != (b > 0) {
+            changes.append(Double(k - 1) + (a == 0 ? 0 : abs(a) / (abs(a) + abs(b))))
+        }
+        youLead = b > 0
+    }
+    return CompetitionLeadLine(margins: margins, changes: changes)
+}
+
+/// The lead after each day as one line: amber above the axis while you lead,
+/// ink below while they do, a slash at every change. False `isDrawn` holds it
+/// at the start; turning true draws it out once.
+struct CompetitionLeadLineView: View {
+    let line: CompetitionLeadLine
+    let days: [LocalCompetitionDayPresentation]
+    let currentDayOrdinal: Int?
+    let opponentName: String
+    var isDrawn = true
+
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    /// A quiet week still gets room, so 10 points never reads as a rout.
+    private static let minimumScale = 50.0
+    private static let endLabelWidth: CGFloat = 48
+
+    private var last: Double { line.margins.last ?? 0 }
+    private var lastDay: Int { line.margins.count - 1 }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                SectionLabel("THE LEAD AFTER EACH DAY")
+                Spacer(minLength: 0)
+                if !line.changes.isEmpty {
+                    Text(changedText)
+                        .font(.themeLabel)
+                        .tracking(1.2)
+                        .foregroundStyle(Theme.secondary)
+                        .accessibilityHidden(true)
+                }
+            }
+            chart
+                .frame(height: 120)
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(accessibilityText)
+                .accessibilityIdentifier("competition.leadLine")
+            if dynamicTypeSize < .xxLarge {
+                weekdays
+            }
+        }
+    }
+
+    private var chart: some View {
+        GeometryReader { proxy in
+            let plot = CGRect(
+                x: 0, y: 7,
+                width: proxy.size.width - Self.endLabelWidth,
+                height: proxy.size.height - 14
+            )
+            let top = max(line.margins.max() ?? 0, Self.minimumScale)
+            let bottom = max(-(line.margins.min() ?? 0), Self.minimumScale)
+            let x: (Double) -> CGFloat = { day in
+                plot.minX + plot.width * CGFloat(day / Double(max(days.count, 1)))
+            }
+            let y: (Double) -> CGFloat = { margin in
+                plot.minY + plot.height * CGFloat((top - margin) / (top + bottom))
+            }
+            let axis = y(0)
+            let end = CGPoint(x: x(Double(lastDay)), y: y(last))
+            let path = Path { path in
+                path.addLines(line.margins.indices.map { CGPoint(x: x(Double($0)), y: y(line.margins[$0])) })
+            }
+            let drawn = path.trim(from: 0, to: isDrawn ? 1 : 0)
+
+            ZStack(alignment: .topLeading) {
+                Path { $0.addLines([CGPoint(x: 0, y: axis), CGPoint(x: end.x, y: axis)]) }
+                    .stroke(Theme.outline, lineWidth: 1.5)
+                Path { $0.addLines([CGPoint(x: end.x, y: axis), CGPoint(x: x(Double(days.count)), y: axis)]) }
+                    .stroke(Theme.outline, style: StrokeStyle(lineWidth: 1.5, dash: [3, 4]))
+                Group {
+                    drawn
+                        .stroke(Theme.youFill, style: lineStyle)
+                        .clipShape(Rectangle().path(in: CGRect(x: -8, y: -8, width: proxy.size.width + 16, height: axis + 8)))
+                    drawn
+                        .stroke(Theme.ink, style: lineStyle)
+                        .clipShape(Rectangle().path(in: CGRect(x: -8, y: axis, width: proxy.size.width + 16, height: proxy.size.height)))
+                }
+                .moving(Motion.grow, value: isDrawn)
+                ForEach(line.changes.indices, id: \.self) { index in
+                    let change = line.changes[index]
+                    SlantedBar()
+                        .fill(Theme.ink)
+                        .frame(width: 3, height: 26)
+                        .scaleEffect(y: isDrawn ? 1 : 0)
+                        .moving(arrival(change), value: isDrawn)
+                        .position(x: x(change), y: axis)
+                }
+                Circle()
+                    .fill(last > 0 ? Theme.youFill : last < 0 ? Theme.ink : Theme.outline)
+                    .overlay(Circle().stroke(Theme.ground, lineWidth: 2))
+                    .frame(width: 12, height: 12)
+                    .scaleEffect(isDrawn ? 1 : 0)
+                    .moving(arrival(Double(lastDay)), value: isDrawn)
+                    .position(end)
+                Text(competitionSignedMarginText(userPoints: last, opponentPoints: 0))
+                    .font(.footnote.weight(.bold).width(.condensed).monospacedDigit())
+                    .foregroundStyle(last > 0 ? Theme.you : last < 0 ? Theme.ink : Theme.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.7)
+                    .frame(width: Self.endLabelWidth - 10, alignment: .leading)
+                    .opacity(isDrawn ? 1 : 0)
+                    .animation(Motion.late, value: isDrawn)
+                    .position(x: end.x + 10 + (Self.endLabelWidth - 10) / 2, y: end.y)
+            }
+        }
+    }
+
+    private var lineStyle: StrokeStyle {
+        StrokeStyle(lineWidth: 4, lineCap: .round, lineJoin: .round)
+    }
+
+    /// Lands as the line's head passes, on the mark's stagger envelope.
+    private func arrival(_ day: Double) -> Animation {
+        Motion.grow(Int(day.rounded()), of: lastDay + 1)
+    }
+
+    // One label per day under its stretch of the line.
+    private var weekdays: some View {
+        HStack(spacing: 0) {
+            ForEach(days, id: \.ordinal) { day in
+                Text(day.ordinal == currentDayOrdinal ? "TODAY" : weekdayText(day.day))
+                    .textCase(.uppercase)
+                    .font(.caption2.weight(.bold).width(.condensed))
+                    .tracking(1)
+                    .foregroundStyle(day.ordinal == currentDayOrdinal ? Theme.ink : Theme.secondary)
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity)
+            }
+        }
+        .padding(.trailing, Self.endLabelWidth)
+        .accessibilityHidden(true)
+    }
+
+    private var changedText: String {
+        line.changes.count == 1 ? "CHANGED ONCE" : "CHANGED \(line.changes.count) TIMES"
+    }
+
+    private var accessibilityText: String {
+        let points = competitionPointsText(abs(last))
+        let standing = last > 0
+            ? "you led by \(points)"
+            : last < 0 ? "\(opponentName) led by \(points)" : "it was all square"
+        let changes = switch line.changes.count {
+        case 0: "The lead never changed hands."
+        case 1: "The lead changed hands once."
+        default: "The lead changed hands \(line.changes.count) times."
+        }
+        return "The lead after each day. \(changes) After Day \(lastDay), \(standing)."
+    }
+}
+
 /// "ROLL" when any day's accepted snapshot counts Roll hours, else "STAND".
 func competitionStandTitle(_ days: [LocalCompetitionDayPresentation]) -> String {
     days.contains { $0.ownerAcceptedSnapshot?.standMode == .rollHours } ? "ROLL" : "STAND"
