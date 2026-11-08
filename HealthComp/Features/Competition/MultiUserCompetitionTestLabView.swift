@@ -72,6 +72,11 @@ enum MultiUserCompetitionTestLabScenario:
     /// rematches with either belt, a long name, Day 2, and a practice.
     /// Pair with `--versus-intro`.
     case versus
+    /// Ten finished weeks with Sam, nothing live: the person page with every
+    /// piece, Records and its comeback, as on the rivalry history page.
+    case rivalry
+    /// The first five of those weeks: Records holds five rows.
+    case rivalryFive = "rivalry-5"
 }
 
 struct MultiUserCompetitionTestLabConfiguration: Equatable, Sendable {
@@ -167,7 +172,8 @@ struct MultiUserCompetitionTestLabRootView: View {
     @ViewBuilder
     private var scenarioView: some View {
         switch configuration.scenario {
-        case .sharing, .sharingCustomScheme, .whatItTakes, .belt, .beltHero, .beltCeremony:
+        case .sharing, .sharingCustomScheme, .whatItTakes, .belt, .beltHero, .beltCeremony,
+             .rivalry, .rivalryFive:
             MultiUserCompetitionSharingTestLabView(scenario: configuration.scenario)
         case .coldClaim, .warmClaim, .signedOutClaim,
              .unavailableClaim, .offlineClaim:
@@ -239,6 +245,7 @@ private struct MultiUserCompetitionSharingTestLabView: View {
     @State private var path: [CompetitionID] = []
     @State private var showsHistory = false
     @State private var historyPerson: String?
+    @State private var personPlace = CompetitionPersonPlace()
     @State private var isChallengePresented = false
     @State private var challengeStatus: CompetitionFeature.ChallengeSheetStatus = .ready
     @State private var recipientCode = ""
@@ -266,11 +273,7 @@ private struct MultiUserCompetitionSharingTestLabView: View {
     var body: some View {
         VStack(spacing: 0) {
             NavigationStack(
-                path: CompetitionHomeRoute.stack(
-                    path: $path,
-                    showsHistory: $showsHistory,
-                    person: $historyPerson
-                )
+                path: homeStack
             ) {
                 CompetitionSharingView(
                     publication: publication,
@@ -329,8 +332,13 @@ private struct MultiUserCompetitionSharingTestLabView: View {
                     case let .person(identity):
                         CompetitionPersonView(
                             publication: publication,
-                            opponentIdentity: identity
+                            opponentIdentity: identity,
+                            cameFrom: personPlace.depth > 0 && personPlace.depth <= path.count
+                                ? path[personPlace.depth - 1] : nil,
+                            challenge: { _ in isChallengePresented = true }
                         )
+                    case let .records(identity):
+                        CompetitionRecordsView(publication: publication, opponentIdentity: identity)
                     case let .competition(id):
                         destination(id)
                     }
@@ -361,6 +369,23 @@ private struct MultiUserCompetitionSharingTestLabView: View {
         .accessibilityIdentifier("multiuser.sharing.root")
     }
 
+    private var homeStack: Binding<[CompetitionHomeRoute]> {
+        CompetitionHomeRoute.stack(
+            path: $path,
+            showsHistory: $showsHistory,
+            person: $historyPerson,
+            personPlace: $personPlace
+        )
+    }
+
+    private func recordLink(_ competition: LocalCompetitionPresentation) -> CompetitionRecordLink? {
+        competitionRecordLinkRecord(for: competition, in: publication.dashboard.competitions).map { record in
+            CompetitionRecordLink(record: record) {
+                homeStack.wrappedValue.append(.person(record.opponentIdentity))
+            }
+        }
+    }
+
     @ViewBuilder
     private func destination(_ id: CompetitionID) -> some View {
         if let competition = publication.dashboard.competitions.first(
@@ -374,7 +399,8 @@ private struct MultiUserCompetitionSharingTestLabView: View {
                     nudge: CompetitionNudge(status: labNudges[id], send: {
                         labNudges[id] = .sent(MultiUserCompetitionTestLabFixtures.labNow)
                     }),
-                    reactions: reactionControl(id)
+                    reactions: reactionControl(id),
+                    recordLink: recordLink(competition)
                 )
             case .completed, .archived:
                 CompetitionResultView(
@@ -392,7 +418,8 @@ private struct MultiUserCompetitionSharingTestLabView: View {
                     personalBest: competitionPersonalBestText(
                         for: competition,
                         in: publication.dashboard.competitions
-                    )
+                    ),
+                    recordLink: recordLink(competition)
                 )
             case .pending:
                 CompetitionInviteView(
@@ -406,7 +433,8 @@ private struct MultiUserCompetitionSharingTestLabView: View {
                         ),
                         minimumRevision: 0
                     ),
-                    send: handle
+                    send: handle,
+                    recordLink: recordLink(competition)
                 )
             case .declined, .expired, .cancelled:
                 ContentUnavailableView(
@@ -425,6 +453,8 @@ private struct MultiUserCompetitionSharingTestLabView: View {
         case .belt: MultiUserCompetitionTestLabFixtures.beltPublication(heroOnly: false)
         case .beltHero: MultiUserCompetitionTestLabFixtures.beltPublication(heroOnly: true)
         case .beltCeremony: MultiUserCompetitionTestLabFixtures.beltPublication(heroOnly: false, ceremonies: true)
+        case .rivalry: CompetitionRivalryFixture.publication(weeks: 10)
+        case .rivalryFive: CompetitionRivalryFixture.publication(weeks: 5)
         default: MultiUserCompetitionTestLabFixtures.publication(
             archivedIDs: archivedIDs,
             ownReactions: ownReactions
@@ -530,7 +560,7 @@ private struct MultiUserCompetitionClaimTestLabView: View {
              .incomingChallenge, .block, .blockedAccount, .blockClaim,
              .nudge, .nudgeSimulated, .whatItTakes, .reactions, .reactionsSimulated,
              .liveActivity, .practice, .notificationChoices, .belt, .beltHero, .beltCeremony, .featureRound,
-             .versus:
+             .versus, .rivalry, .rivalryFive:
             .ready
         }
         _status = State(initialValue: initialStatus)
@@ -3457,5 +3487,137 @@ private struct LiveActivityPreviewView: View {
         }
     }
 }
+
+/// You and Sam, ten finished weeks: the rivalry history page's sample data.
+/// Per day, Move, Exercise and Stand percents, which are also the ring
+/// points; a day's points are their sum. Internal, so tests read the same
+/// weeks the Test Lab shows.
+enum CompetitionRivalryFixture {
+    static let samIdentity = "remote-profile:v1:c5000000-0000-4000-8000-000000000001"
+    private static let zone = "America/Los_Angeles"
+
+    /// Start (month, day) in 2026, then your seven days and Sam's.
+    private static let data: [(month: Int, day: Int, you: String, sam: String)] = [
+        (8, 3,
+         "155,58,95 107,121,73 95,56,77 85,68,87 84,108,83 34,129,85 88,99,93",
+         "117,67,103 82,131,88 111,94,103 111,108,65 111,86,95 147,64,99 68,93,83"),
+        (8, 10,
+         "86,177,79 73,134,83 88,94,74 52,112,89 70,124,103 83,118,88 137,91,70",
+         "86,75,98 131,20,106 151,52,98 120,49,93 101,62,114 101,64,105 114,96,101"),
+        (8, 17,
+         "94,187,81 83,123,84 102,110,81 103,172,94 107,70,99 116,97,83 119,51,88",
+         "141,40,114 120,53,88 129,20,123 109,58,93 87,20,100 101,61,107 144,102,103"),
+        (8, 24,
+         "121,140,104 77,79,108 86,111,88 71,122,103 118,91,102 61,83,110 115,124,87",
+         "124,50,106 122,79,101 118,97,109 138,28,104 141,56,99 168,71,111 121,48,98"),
+        (9, 7,
+         "88,112,84 111,121,89 67,120,113 80,87,103 117,120,96 114,125,100 123,158,95",
+         "114,48,95 101,38,87 120,103,109 156,80,104 135,20,104 136,32,96 103,38,99"),
+        (9, 14,
+         "57,89,92 68,96,91 150,135,92 117,55,70 98,31,102 85,140,95 174,74,75",
+         "101,111,121 97,129,115 128,125,89 126,68,83 102,117,110 128,57,115 97,83,88"),
+        (9, 21,
+         "92,113,104 135,140,120 88,33,84 88,90,99 105,98,82 129,125,86 94,98,84",
+         "94,79,107 115,59,105 124,48,95 139,77,96 148,79,110 122,67,113 140,85,85"),
+        (10, 5,
+         "78,63,95 134,87,110 71,137,83 130,25,92 81,90,81 74,72,96 71,151,93",
+         "119,69,92 93,66,105 100,118,111 63,86,100 110,85,100 105,54,103 126,70,100"),
+        (10, 12,
+         "103,66,87 155,61,89 129,46,92 71,24,99 124,61,105 137,137,87 120,153,94",
+         "149,44,115 149,20,85 133,81,115 102,138,111 115,67,102 115,20,95 118,31,97"),
+        (10, 26,
+         "88,52,70 105,93,97 105,138,86 79,141,76 137,140,106 108,164,80 76,173,97",
+         "162,108,105 161,63,90 128,34,116 128,43,96 113,49,98 109,66,100 101,80,89"),
+    ]
+
+    /// The first `count` weeks, oldest first. The newest is completed, the
+    /// rest archived.
+    static func weeks(_ count: Int, now: Date) -> [LocalCompetitionPresentation] {
+        let calendar = try! CompetitionCalendar(timeZoneIdentifier: zone)
+        return data.prefix(count).enumerated().map { index, week in
+            let schedule = CompetitionSchedule(
+                calendar: calendar,
+                startDay: try! CompetitionDay(
+                    era: 1, year: 2026, month: week.month, day: week.day, timeZoneIdentifier: zone
+                )
+            )
+            func rings(_ text: String) -> [[Double]] {
+                text.split(separator: " ").map { $0.split(separator: ",").map { Double($0)! } }
+            }
+            let you = rings(week.you), sam = rings(week.sam)
+            let days = try! calendar.sevenDayWindow(startingOn: schedule.startDay).enumerated().map { offset, day in
+                var presentation = LocalCompetitionDayPresentation(
+                    day: day,
+                    ordinal: offset + 1,
+                    ownerAcceptedPoints: you[offset].reduce(0, +),
+                    ownerLatestAvailability: .observed,
+                    opponentRevealedPoints: sam[offset].reduce(0, +),
+                    scoringPolicy: .remoteWireV1
+                )
+                presentation.ownerRingPoints = you[offset]
+                presentation.opponentRingPoints = sam[offset]
+                return presentation
+            }
+            let userPoints = days.compactMap(\.ownerAcceptedPoints).reduce(0, +)
+            let opponentPoints = days.compactMap(\.opponentRevealedPoints).reduce(0, +)
+            let outcome: CompetitionOutcome = userPoints > opponentPoints ? .win
+                : userPoints < opponentPoints ? .loss : .tie
+            let completedAt = competitionScheduleBoundaries(schedule)!.end.addingTimeInterval(43_200)
+            return LocalCompetitionPresentation(
+                id: CompetitionID(UUID(uuidString: String(format: "A5000000-0000-4000-8000-0000000000%02X", index + 1))!),
+                ownerDisplayName: "Beta Alice",
+                opponentDisplayName: "Sam",
+                opponentIdentity: samIdentity,
+                lifecycle: index == count - 1
+                    ? .completed(outcome: outcome, basis: .stableAcrossPostBoundaryReads, completedAt: completedAt)
+                    : .archived(
+                        outcome: outcome,
+                        basis: .stableAcrossPostBoundaryReads,
+                        completedAt: completedAt,
+                        archivedAt: completedAt.addingTimeInterval(86_400)
+                    ),
+                acceptedConfiguration: LocalCompetitionAcceptedPresentation(schedule: schedule, difficulty: .balanced),
+                userPoints: userPoints,
+                opponentPoints: opponentPoints,
+                days: days,
+                currentDayOrdinal: nil,
+                lastRefresh: nil,
+                tally: nil,
+                terminalResult: LocalCompetitionTerminalPresentation(
+                    userPoints: userPoints,
+                    opponentPoints: opponentPoints,
+                    outcome: outcome,
+                    basis: .stableAcrossPostBoundaryReads,
+                    completedAt: completedAt
+                ),
+                evaluatedAt: now,
+                timeZoneIdentifier: zone
+            )
+        }
+    }
+
+    /// Ten weeks seen on Sat Nov 7 or five on Fri Sep 18, noon in Los
+    /// Angeles: the last week has left Home, so the page offers Challenge Sam.
+    static func now(weeks: Int) -> Date {
+        Date(timeIntervalSince1970: weeks >= 10 ? 1_794_081_600 : 1_789_758_000)
+    }
+
+    static func publication(weeks count: Int) -> LocalCompetitionPublication {
+        let date = now(weeks: count)
+        return LocalCompetitionPublication(
+            publicationRevision: 1,
+            dashboard: LocalCompetitionDashboard(
+                competitions: Array(weeks(count, now: date).reversed()),
+                awards: [],
+                issues: [],
+                hiddenTerminalCompetitionCount: 0
+            ),
+            evaluatedAt: date,
+            timeZoneIdentifier: zone,
+            source: .remoteParticipants
+        )
+    }
+}
+
 
 #endif

@@ -779,6 +779,8 @@ private struct CompetitionSharingRow: View {
     var beltHolder: CompetitionBeltHolder? = nil
     /// Recent results: an unseen reaction from the other person.
     var reaction: CompetitionReaction? = nil
+    /// False on the person page's card for the match it was opened from.
+    var opensMatch = true
 
     @ScaledMetric(relativeTo: .headline) private var badgeSize: CGFloat = 40
     @Environment(\.locale) private var locale
@@ -910,7 +912,7 @@ private struct CompetitionSharingRow: View {
                 .padding(.vertical, 6)
                 .background(Theme.ink, in: Capsule())
                 .accessibilityHidden(true)
-        } else {
+        } else if opensMatch {
             Image(systemName: "chevron.right")
                 .font(.caption.weight(.bold))
                 .foregroundStyle(Theme.tertiary)
@@ -1238,7 +1240,7 @@ private func competitionHistorySummary(_ records: [CompetitionOpponentRecord]) -
     return text
 }
 
-private func competitionRecordText(_ record: CompetitionOpponentRecord) -> Text {
+func competitionRecordText(_ record: CompetitionOpponentRecord) -> Text {
     var text = Text(String(record.wins)).foregroundStyle(Theme.you).bold()
         + Text("–")
         + Text(String(record.losses)).foregroundStyle(Theme.ink)
@@ -1447,31 +1449,58 @@ struct CompetitionHistoryView: View {
     }
 }
 
-/// One person's page, opened from their History record: the record, who
-/// holds the belt and every week with them. A summary, so no primary action.
+/// One person's page: who, how it's going, the belt, the rings, Records one
+/// push away, then every week. Each piece appears once there's enough history
+/// to say something true; what's in play with them sits on top, as Home draws
+/// it, and the foot button challenges them when nothing is.
 struct CompetitionPersonView: View {
     let publication: LocalCompetitionPublication
     let opponentIdentity: String
+    /// The match under this page on the stack. Its card shows but doesn't
+    /// open it again; a challenge's card and the button go, so Accept and
+    /// Decline stay on the challenge.
+    var cameFrom: CompetitionID? = nil
+    /// You blocked them: the ledger only.
+    var isBlocked = false
+    var unblock: (() -> Void)? = nil
+    var muteButton: CompetitionMuteButton? = nil
+    /// The create flow with them prefilled, from one of their matches.
+    var challenge: ((CompetitionID) -> Void)? = nil
 
+    @AppStorage(CompetitionMotionSeen.storageKey)
+    private var motionSeen = CompetitionMotionSeen()
+    @State private var showsAllWeeks = false
+    @State private var dismissedChallengeIDs: Set<CompetitionID> = []
     @Environment(\.locale) private var locale
     @Environment(\.timeZone) private var timeZone
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @ScaledMetric(relativeTo: .largeTitle) private var recordSize: CGFloat = 64
+    @ScaledMetric(relativeTo: .largeTitle) private var avatarSize: CGFloat = 56
     @ScaledMetric(relativeTo: .title2) private var tapeValueSize: CGFloat = 21
 
     var body: some View {
         let competitions = publication.dashboard.competitions
+        let theirs = competitions.filter { $0.opponentIdentity == opponentIdentity }
         let record = competitionOpponentRecords(competitions)
             .first { $0.opponentIdentity == opponentIdentity }
-        // Newest first, like History.
-        let weeks = competitionHistoryWeeks(competitions)
-            .filter { $0.opponentIdentity == opponentIdentity }
+        let oldestFirst = competitionRivalryWeeks(competitions, opponentIdentity: opponentIdentity)
+        let unseen = competitionUnseenResult(oldestFirst, now: publication.evaluatedAt, seen: motionSeen)
+        let name = record?.opponentDisplayName ?? ""
+        let button = isLedger(record) || isFromChallenge
+            ? nil
+            : competitionPersonButtonTitle(
+                theirs.filter { !dismissedChallengeIDs.contains($0.id) },
+                opponentName: name,
+                now: publication.evaluatedAt,
+                unseenResult: unseen
+            )
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
-                if let record, !weeks.isEmpty {
-                    header(record, weekCount: weeks.count)
-                    beltPanel(record, weeks: weeks)
-                    weeksSection(record, weeks)
+                if let record, !oldestFirst.isEmpty {
+                    content(record, oldestFirst: oldestFirst, theirs: theirs, unseen: unseen)
+                    if let button, dynamicTypeSize.isAccessibilitySize {
+                        footButton(button, record: record)
+                    }
                 } else {
                     Text("Finished matches appear here.")
                         .font(.subheadline)
@@ -1485,15 +1514,240 @@ struct CompetitionPersonView: View {
             .accessibilityIdentifier("competition.person")
         }
         .background(Theme.ground)
-        .navigationTitle(record?.opponentDisplayName ?? "")
+        // The next step stays in reach, as on the Verdict.
+        .safeAreaInset(edge: .bottom) {
+            if let button, let record, !dynamicTypeSize.isAccessibilitySize {
+                footButton(button, record: record)
+                    .padding(.horizontal, 16)
+                    .padding(.top, 12)
+                    .padding(.bottom, 8)
+                    .background(Theme.ground)
+            }
+        }
+        .navigationTitle(name)
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            if !isDeleted(record), muteButton != nil || (isBlocked && unblock != nil) {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        if let muteButton {
+                            muteButton
+                        }
+                        if isBlocked, let unblock {
+                            Button(action: unblock) {
+                                Label("Unblock \(name)", systemImage: "hand.raised.slash")
+                            }
+                        }
+                    } label: {
+                        CompetitionMoreLabel()
+                    }
+                    .accessibilityIdentifier("competition.more")
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func content(
+        _ record: CompetitionOpponentRecord,
+        oldestFirst: [LocalCompetitionPresentation],
+        theirs: [LocalCompetitionPresentation],
+        unseen: CompetitionID?
+    ) -> some View {
+        let name = record.opponentDisplayName
+        let pieces = competitionRivalryPieces(weeks: oldestFirst.count, isLedger: isLedger(record))
+        let now = isFromChallenge || isLedger(record)
+            ? nil
+            : competitionPersonNow(
+                theirs.filter { !dismissedChallengeIDs.contains($0.id) },
+                now: publication.evaluatedAt,
+                unseenResult: unseen
+            )
+        // While a Verdict is unseen the belt holds at the week before it.
+        let belt = competitionPersonBelt(oldestFirst, holdingBack: unseen, isRetired: record.belt.isRetired)
+        // Newest first; the week on top isn't repeated below.
+        let weeks = oldestFirst.reversed().filter { $0.id != now?.competition.id }
+
+        header(record, weekCount: oldestFirst.count)
+        if pieces.form {
+            CompetitionFormStrip(
+                outcomes: oldestFirst.compactMap(\.terminalResult?.outcome),
+                opponentName: name,
+                isLive: theirs.contains {
+                    switch $0.lifecycle {
+                    case .active, .endsToday, .tallying: true
+                    default: false
+                    }
+                }
+            )
+        }
+        if let now {
+            topCard(now.competition, section: now.section)
+        } else if isBlocked, !isDeleted(record) {
+            quietLine("\(name) can’t challenge you.")
+        } else if !isLedger(record), let last = oldestFirst.last,
+                  let text = competitionLastPlayedText(last, now: publication.evaluatedAt, locale: locale) {
+            quietLine(text)
+        }
+        beltPanel(belt, name: name, weeks: oldestFirst, showsTape: pieces.tape)
+        if pieces.rings, let counts = competitionRingDaysWon(oldestFirst) {
+            CompetitionRingDaysPanel(counts: counts, opponentName: name)
+        }
+        if pieces.records {
+            NavigationLink(value: CompetitionHomeRoute.records(opponentIdentity)) {
+                HStack(spacing: 14) {
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Records")
+                            .font(.headline)
+                            .foregroundStyle(Theme.ink)
+                        Text("Best week, closest finish, weekly points")
+                            .font(.subheadline)
+                            .foregroundStyle(Theme.secondary)
+                    }
+                    Spacer(minLength: 8)
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(Theme.tertiary)
+                }
+                .padding(16)
+                .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)
+                .themePanel()
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(CompetitionPressButtonStyle())
+            .accessibilityHint("Opens best week, closest finish and weekly points")
+            .accessibilityIdentifier("competition.person.records")
+        }
+        weeksSection(record, belt: belt, weeks: weeks, shown: pieces.weeksShown)
+    }
+
+    /// Someone you blocked, or a deleted account: the record, form, belt
+    /// title and weeks, nothing else.
+    private func isLedger(_ record: CompetitionOpponentRecord?) -> Bool {
+        isBlocked || isDeleted(record)
+    }
+
+    private func isDeleted(_ record: CompetitionOpponentRecord?) -> Bool {
+        record?.belt.isRetired == true
+    }
+
+    /// Pushed from a challenge: Accept and Decline stay on it.
+    private var isFromChallenge: Bool {
+        guard let cameFrom,
+              let match = publication.dashboard.competitions.first(where: { $0.id == cameFrom }),
+              case .pending = match.lifecycle
+        else { return false }
+        return true
+    }
+
+    // ponytail: the initial until the profile photo branch lands; swap in
+    // PersonAvatar here (the initial stays for you-blocked and deleted).
+    private func avatar(_ name: String) -> some View {
+        Text(name.prefix(1).uppercased())
+            .font(.title2.weight(.heavy).width(.condensed))
+            .foregroundStyle(Theme.ink)
+            .frame(width: avatarSize, height: avatarSize)
+            .background(Theme.control, in: Circle())
+            .accessibilityHidden(true)
+    }
+
+    private func quietLine(_ text: String) -> some View {
+        Text(text)
+            .font(.subheadline)
+            .foregroundStyle(Theme.secondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 4)
+            .accessibilityIdentifier("competition.person.quiet")
+    }
+
+    private func footButton(_ title: String, record: CompetitionOpponentRecord) -> some View {
+        Button(title) { challenge?(record.latest.id) }
+            .buttonStyle(PrimaryButtonStyle())
+            .disabled(challenge == nil)
+            .accessibilityIdentifier("competition.person.challenge")
+    }
+
+    /// The card or row Home draws for it. The match this page came from
+    /// shows without opening it again.
+    @ViewBuilder
+    private func topCard(
+        _ competition: LocalCompetitionPresentation,
+        section: String
+    ) -> some View {
+        let opens = competition.id != cameFrom
+        VStack(alignment: .leading, spacing: 10) {
+            SectionLabel(section)
+                .padding(.horizontal, 4)
+            Group {
+                if competitionIsClosedOutgoing(competition.lifecycle) {
+                    CompetitionClosedChallengeRow(
+                        competition: competition,
+                        canChallengeAgain: false,
+                        isInFlight: false,
+                        challengeAgain: {},
+                        dismiss: { dismissedChallengeIDs.insert(competition.id) }
+                    )
+                } else if section == "THIS WEEK" {
+                    topLink(competition, opens: opens) {
+                        CompetitionHeroCard(
+                            competition: competition,
+                            source: publication.source,
+                            isCompact: !opens
+                        )
+                        .padding(16)
+                    }
+                } else {
+                    topLink(competition, opens: opens) {
+                        CompetitionSharingRow(
+                            competition: competition,
+                            source: publication.source,
+                            caption: section == "JUST FINISHED" ? "See the result" : nil,
+                            showsName: false,
+                            opensMatch: opens
+                        )
+                    }
+                }
+            }
+            .themePanel()
+            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("competition.person.now")
+        .transition(Motion.appear)
+    }
+
+    @ViewBuilder
+    private func topLink<Content: View>(
+        _ competition: LocalCompetitionPresentation,
+        opens: Bool,
+        @ViewBuilder label: () -> Content
+    ) -> some View {
+        let summary = sharingAccessibilitySummary(
+            competition, source: publication.source, locale: locale, timeZone: timeZone
+        )
+        if opens {
+            NavigationLink(value: CompetitionHomeRoute.competition(competition.id)) {
+                label()
+                    .contentShape(Rectangle())
+                    .accessibilityElement(children: .combine)
+                    .accessibilityLabel(summary)
+                    .accessibilityHint("Opens this match")
+            }
+            .buttonStyle(CompetitionRowButtonStyle())
+            .accessibilityIdentifier(competitionSharingIdentifier(competition))
+        } else {
+            label()
+                .accessibilityElement(children: .combine)
+                .accessibilityLabel(summary)
+                .accessibilityIdentifier(competitionSharingIdentifier(competition))
+        }
     }
 
     // AnyLayout, not ViewThatFits, which the Dynamic Type audit flags.
     private var rowLayout: AnyLayout {
         dynamicTypeSize.isAccessibilitySize
-            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4))
-            : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: 8))
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
+            : AnyLayout(HStackLayout(alignment: .center, spacing: 14))
     }
 
     // At accessibility sizes the count sits under the title, so it doesn't
@@ -1504,32 +1758,45 @@ struct CompetitionPersonView: View {
             : AnyLayout(HStackLayout(alignment: .bottom, spacing: 12))
     }
 
+    /// Who, the record, the week count and Muted or Blocked. At accessibility
+    /// sizes they stack.
     private func header(_ record: CompetitionOpponentRecord, weekCount: Int) -> some View {
-        rowLayout {
+        let tag = isBlocked && !isDeleted(record) ? "Blocked" : muteButton?.isMuted == true ? "Muted" : nil
+        return rowLayout {
+            avatar(record.opponentDisplayName)
             competitionRecordText(record)
                 .font(.score(size: recordSize).monospacedDigit())
             if !dynamicTypeSize.isAccessibilitySize {
                 Spacer(minLength: 8)
             }
-            Text(competitionWeeksText(weekCount).uppercased())
-                .font(.themeLabel)
-                .tracking(1.2)
-                .foregroundStyle(Theme.secondary)
+            VStack(alignment: dynamicTypeSize.isAccessibilitySize ? .leading : .trailing, spacing: 4) {
+                Text(competitionWeeksText(weekCount).uppercased())
+                if let tag {
+                    Text(tag.uppercased())
+                }
+            }
+            .font(.themeLabel)
+            .tracking(1.2)
+            .foregroundStyle(Theme.secondary)
         }
         .padding(.horizontal, 4)
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(record.accessibilityText). \(competitionWeeksText(weekCount))")
+        .accessibilityLabel(
+            ["\(record.accessibilityText)", competitionWeeksText(weekCount), tag]
+                .compactMap { $0 }
+                .joined(separator: ". ")
+        )
         .accessibilityIdentifier("competition.person.record")
     }
 
     /// The fighter card: the belt, who holds it, and the tale of the tape.
     private func beltPanel(
-        _ record: CompetitionOpponentRecord,
-        weeks: [LocalCompetitionPresentation]
+        _ belt: CompetitionBelt,
+        name: String,
+        weeks: [LocalCompetitionPresentation],
+        showsTape: Bool
     ) -> some View {
-        let belt = record.belt
-        let name = record.opponentDisplayName
-        let tape = belt.changes > 0 ? competitionTaleOfTheTape(belt) : []
+        let tape = showsTape && belt.changes > 0 && !belt.isRetired ? competitionTaleOfTheTape(belt) : []
         let title = beltTitle(belt, name: name)
         let since = belt.holder == nil ? nil : belt.current.flatMap { sinceText($0, weeks: weeks) }
         let defenses = belt.holder == nil ? 0 : belt.current?.defenses ?? 0
@@ -1676,20 +1943,24 @@ struct CompetitionPersonView: View {
         return "Since \(day) · \(competitionWeeksText(current.weeks))"
     }
 
+    /// Newest first: the latest five then "All N weeks" from six weeks.
     private func weeksSection(
         _ record: CompetitionOpponentRecord,
-        _ weeks: [LocalCompetitionPresentation]
+        belt: CompetitionBelt,
+        weeks: [LocalCompetitionPresentation],
+        shown: Int?
     ) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
+        let listed = showsAllWeeks ? weeks : Array(weeks.prefix(shown ?? weeks.count))
+        return VStack(alignment: .leading, spacing: 10) {
             SectionLabel("WEEKS")
                 .padding(.horizontal, 4)
 
             VStack(spacing: 0) {
-                ForEach(Array(weeks.enumerated()), id: \.element.id) { index, competition in
+                ForEach(Array(listed.enumerated()), id: \.element.id) { index, competition in
                     if index > 0 {
                         CompetitionRowDivider()
                     }
-                    let took = tookText(record.belt.events[competition.id], name: record.opponentDisplayName)
+                    let took = tookText(belt.events[competition.id], name: record.opponentDisplayName)
                     NavigationLink(
                         value: CompetitionHomeRoute.competition(competition.id)
                     ) {
@@ -1719,10 +1990,34 @@ struct CompetitionPersonView: View {
                     }
                     .buttonStyle(CompetitionRowButtonStyle())
                     .accessibilityIdentifier(competitionSharingIdentifier(competition))
+                    .transition(Motion.appear)
+                }
+                if listed.count < weeks.count {
+                    CompetitionRowDivider()
+                    Button {
+                        showsAllWeeks = true
+                    } label: {
+                        HStack {
+                            Text("All \(weeks.count) weeks")
+                                .font(.headline)
+                                .foregroundStyle(Theme.ink)
+                            Spacer(minLength: 8)
+                            Image(systemName: "chevron.down")
+                                .font(.caption.weight(.bold))
+                                .foregroundStyle(Theme.tertiary)
+                        }
+                        .padding(16)
+                        .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(CompetitionRowButtonStyle())
+                    .accessibilityHint("Shows every week")
+                    .accessibilityIdentifier("competition.person.allWeeks")
                 }
             }
             .themePanel()
             .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .moving(Motion.settle, value: showsAllWeeks)
         }
     }
 
@@ -1739,35 +2034,65 @@ struct CompetitionPersonView: View {
     }
 }
 
-/// Home's stack. History, while open, sits under any person page and
-/// competition opened from it.
+/// Where a person page sits on a stack: after `depth` matches, with its
+/// Records screen above it or not.
+struct CompetitionPersonPlace: Equatable, Sendable {
+    var depth = 0
+    var showsRecords = false
+}
+
+/// Home's stack. History, while open, sits at the bottom; one person page can
+/// sit anywhere above it, pushed from History, a Verdict, a match's ••• menu
+/// or a challenge.
 enum CompetitionHomeRoute: Hashable {
     case history
-    /// One person's page, by opponent identity; only pushed from History.
+    /// One person's page, by opponent identity.
     case person(String)
+    /// That person's Records, one push above their page.
+    case records(String)
     case competition(CompetitionID)
 
     /// One stack from a host's competition path, its History flag and the
-    /// person open from History, so the host keeps owning what is open.
+    /// person page with its place, so the host keeps owning what is open.
+    /// "Your record with Sam" on a stack that already holds Sam's page pops
+    /// back to it, so Verdict › record › week › Verdict ends at one level.
     static func stack(
         path: Binding<[CompetitionID]>,
         showsHistory: Binding<Bool>,
-        person: Binding<String?>
+        person: Binding<String?>,
+        personPlace: Binding<CompetitionPersonPlace> = .constant(CompetitionPersonPlace())
     ) -> Binding<[CompetitionHomeRoute]> {
         Binding(
             get: {
-                let history: [CompetitionHomeRoute] = showsHistory.wrappedValue
-                    ? [.history] + (person.wrappedValue.map { [.person($0)] } ?? [])
-                    : []
-                return history
-                    + path.wrappedValue.map(CompetitionHomeRoute.competition)
+                var routes = path.wrappedValue.map(CompetitionHomeRoute.competition)
+                if let identity = person.wrappedValue {
+                    let place = personPlace.wrappedValue
+                    routes.insert(
+                        contentsOf: [.person(identity)] + (place.showsRecords ? [.records(identity)] : []),
+                        at: min(place.depth, routes.count)
+                    )
+                }
+                return (showsHistory.wrappedValue ? [.history] : []) + routes
             },
-            set: { routes in
+            set: { newRoutes in
+                var routes = newRoutes
+                if let first = routes.firstIndex(where: \.isPerson),
+                   routes.lastIndex(of: routes[first]) != first {
+                    routes = Array(routes[...first])
+                }
+                let personIndex = routes.firstIndex(where: \.isPerson)
                 showsHistory.wrappedValue = routes.first == .history
-                person.wrappedValue = routes.lazy.compactMap { route -> String? in
-                    guard case let .person(identity) = route else { return nil }
+                person.wrappedValue = personIndex.flatMap {
+                    guard case let .person(identity) = routes[$0] else { return nil }
                     return identity
-                }.first
+                }
+                personPlace.wrappedValue = CompetitionPersonPlace(
+                    depth: personIndex.map { routes[..<$0].filter(\.isCompetition).count } ?? 0,
+                    showsRecords: personIndex != nil && routes.contains {
+                        if case .records = $0 { return true }
+                        return false
+                    }
+                )
                 path.wrappedValue = routes.compactMap { route in
                     guard case let .competition(id) = route else {
                         return nil
@@ -1776,6 +2101,16 @@ enum CompetitionHomeRoute: Hashable {
                 }
             }
         )
+    }
+
+    private var isPerson: Bool {
+        if case .person = self { return true }
+        return false
+    }
+
+    private var isCompetition: Bool {
+        if case .competition = self { return true }
+        return false
     }
 }
 
@@ -2454,18 +2789,7 @@ func competitionOpponentRecords(
             ties: outcomes.filter { $0 == .tie }.count,
             latest: latest,
             belt: competitionBelt(
-                weeks.compactMap { week in
-                    week.terminalResult.map {
-                        (
-                            id: week.id,
-                            end: week.acceptedConfiguration.flatMap {
-                                competitionScheduleBoundaries($0.schedule)?.end
-                            },
-                            outcome: $0.outcome,
-                            margin: abs($0.userPoints - $0.opponentPoints)
-                        )
-                    }
-                },
+                of: weeks,
                 isRetired: latest.opponentDisplayName == competitionFormerCompetitorName
             )
         )
@@ -2636,6 +2960,28 @@ func competitionBelt(
     )
 }
 
+/// One pair's finished weeks, folded.
+func competitionBelt(
+    of weeks: [LocalCompetitionPresentation],
+    isRetired: Bool = false
+) -> CompetitionBelt {
+    competitionBelt(
+        weeks.compactMap { week in
+            week.terminalResult.map {
+                (
+                    id: week.id,
+                    end: week.acceptedConfiguration.flatMap {
+                        competitionScheduleBoundaries($0.schedule)?.end
+                    },
+                    outcome: $0.outcome,
+                    margin: abs($0.userPoints - $0.opponentPoints)
+                )
+            }
+        },
+        isRetired: isRetired
+    )
+}
+
 /// The belt event of one finished match, from its pair's record.
 func competitionBeltEvent(
     for competition: LocalCompetitionPresentation,
@@ -2696,7 +3042,8 @@ func competitionBeltChipText(_ belt: CompetitionBelt, opponentName: String) -> S
     return defenses > 0 ? "\(standing) · \(competitionDefensesText(defenses))" : standing
 }
 
-/// The fighter card's rows, you against them.
+/// The fighter card's four rows, you against them, about the belt only:
+/// the record sits in the header and the rest in Records.
 func competitionTaleOfTheTape(
     _ belt: CompetitionBelt
 ) -> [(label: String, you: String, them: String)] {
@@ -2704,14 +3051,15 @@ func competitionTaleOfTheTape(
         (label, value(belt.you), value(belt.them))
     }
     return [
-        row("Record") {
-            ([$0.wins, $0.losses] + ($0.ties > 0 ? [$0.ties] : [])).map(String.init).joined(separator: "–")
-        },
         row("Title reigns") { String($0.reigns) },
         row("Title defenses") { String($0.defenses) },
-        row("Most defenses") { String($0.mostDefenses) },
-        row("Longest reign") { competitionWeeksText($0.longestReign) },
-        row("Biggest win") { $0.biggestWin.map { "+\(competitionPointsText($0))" } ?? "–" },
+        row("Longest reign") { $0.longestReign > 0 ? competitionWeeksText($0.longestReign) : "–" },
+        // Decimals only when whole points would read +0.
+        row("Biggest win") {
+            $0.biggestWin.map {
+                "+\(competitionPointsText($0, fractionDigits: $0.rounded() == 0 ? 2 : 0))"
+            } ?? "–"
+        },
     ]
 }
 
