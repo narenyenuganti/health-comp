@@ -15,30 +15,68 @@ struct CompetitionWeekChart: View {
     var isGrown = true
     /// Makes each day that has started open its breakdown.
     var selectDay: ((LocalCompetitionDayPresentation) -> Void)?
+    /// A clap beside each of their finished days, while day reactions are open.
+    var clap: CompetitionDayClap?
 
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         VStack(spacing: dynamicTypeSize.isAccessibilitySize ? 12 : 6) {
             ForEach(days, id: \.ordinal) { day in
-                if let selectDay, day.ownerLatestAvailability != .notYetOccurred {
-                    Button {
-                        selectDay(day)
-                    } label: {
-                        row(day)
-                            .contentShape(Rectangle())
+                // Beside the row, not in it, so the row's tap still opens the day.
+                HStack(spacing: 6) {
+                    dayRow(day)
+                    if let clap {
+                        clapSlot(day, clap)
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("competition.day.\(day.ordinal)")
-                    .accessibilityLabel(dayAccessibilityLabel(day))
-                    .accessibilityHint("Opens this day’s breakdown")
-                } else {
-                    row(day)
-                        .accessibilityElement(children: .ignore)
-                        .accessibilityIdentifier("competition.day.\(day.ordinal)")
-                        .accessibilityLabel(dayAccessibilityLabel(day))
                 }
             }
+        }
+    }
+
+    @ViewBuilder
+    private func dayRow(_ day: LocalCompetitionDayPresentation) -> some View {
+        if let selectDay, day.ownerLatestAvailability != .notYetOccurred {
+            Button {
+                selectDay(day)
+            } label: {
+                row(day)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("competition.day.\(day.ordinal)")
+            .accessibilityLabel(dayAccessibilityLabel(day))
+            .accessibilityHint("Opens this day’s breakdown")
+            .accessibilityActions {
+                if let clap, competitionDayIsClappable(day, currentDayOrdinal: currentDayOrdinal),
+                   clap.sent(day.ordinal) == nil {
+                    Button(competitionClapLabel(opponentName: opponentName, day: day.day)) {
+                        clap.send(day.ordinal)
+                    }
+                }
+            }
+        } else {
+            row(day)
+                .accessibilityElement(children: .ignore)
+                .accessibilityIdentifier("competition.day.\(day.ordinal)")
+                .accessibilityLabel(dayAccessibilityLabel(day))
+        }
+    }
+
+    /// Empty on days you can't clap, so the columns stay aligned.
+    @ViewBuilder
+    private func clapSlot(_ day: LocalCompetitionDayPresentation, _ clap: CompetitionDayClap) -> some View {
+        if competitionDayIsClappable(day, currentDayOrdinal: currentDayOrdinal) {
+            DayClapButton(
+                sent: clap.sent(day.ordinal),
+                isPending: clap.isPending(day.ordinal),
+                label: competitionClapLabel(opponentName: opponentName, day: day.day),
+                send: { clap.send(day.ordinal) },
+                open: { selectDay?(day) }
+            )
+            .accessibilityIdentifier("competition.day.\(day.ordinal).clap")
+        } else {
+            Color.clear.frame(width: 44, height: 1)
         }
     }
 
@@ -71,6 +109,79 @@ struct CompetitionWeekChart: View {
             opponentName: opponentName,
             now: now
         )
+    }
+}
+
+/// One match's claps from the Week list, through the reactions call: one per
+/// day, as in the day drawer.
+struct CompetitionDayClap {
+    /// What you sent to a day, pending included; nil when nothing.
+    let sent: (Int) -> CompetitionReactionKind?
+    let isPending: (Int) -> Bool
+    let send: (Int) -> Void
+}
+
+/// Their finished days with a score: today waits until it ends.
+func competitionDayIsClappable(
+    _ day: LocalCompetitionDayPresentation,
+    currentDayOrdinal: Int?
+) -> Bool {
+    day.ownerLatestAvailability != .notYetOccurred
+        && day.ordinal < currentDayOrdinal ?? .max
+        && day.opponentRevealedPoints != nil
+}
+
+/// "Clap for Sam’s Tuesday"
+func competitionClapLabel(
+    opponentName: String,
+    day: CompetitionDay,
+    locale: Locale = .current
+) -> String {
+    "Clap for \(opponentName)’s \(weekdayName(day, locale: locale))"
+}
+
+/// 👏 until you've sent something, then what you sent. Once sent, a tap opens
+/// the day, where all four reactions stay.
+private struct DayClapButton: View {
+    let sent: CompetitionReactionKind?
+    let isPending: Bool
+    let label: String
+    let send: () -> Void
+    let open: () -> Void
+
+    @Environment(\.competitionReactionRain) private var rain
+
+    var body: some View {
+        let isSent = sent != nil
+        Button {
+            if isSent {
+                open()
+            } else {
+                rain(.clap)
+                send()
+            }
+        } label: {
+            Text((sent ?? .clap).emoji)
+                .font(.callout)
+                .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+                .grayscale(isSent ? 0 : 1)
+                .opacity(isSent ? 1 : 0.55)
+                .frame(width: 34, height: 34)
+                .background(isSent ? Theme.control : Theme.ground, in: Circle())
+                .overlay {
+                    Circle().strokeBorder(
+                        isSent ? Theme.ink : Theme.outline,
+                        lineWidth: isSent ? 1.5 : 1
+                    )
+                }
+                .animation(Motion.fade, value: sent)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(isPending)
+        .accessibilityLabel(sent.map { "You sent \($0.spokenName)" } ?? label)
+        .accessibilityHint(isSent ? "Opens this day’s breakdown" : "")
     }
 }
 
@@ -247,6 +358,68 @@ func competitionLeadLine(
     return CompetitionLeadLine(margins: margins, changes: changes)
 }
 
+/// A numbered moment on the lead line, at the margin after Day `index`.
+struct CompetitionLeadMoment: Equatable {
+    let index: Int
+    let day: CompetitionDay
+    let isYours: Bool
+    let text: String
+}
+
+/// Two at most, in order: the biggest lead they held, then your best day.
+/// Your best day steps aside when it is the same day, so markers never stack.
+func competitionLeadMoments(
+    _ line: CompetitionLeadLine,
+    days: [LocalCompetitionDayPresentation],
+    opponentName: String
+) -> [CompetitionLeadMoment] {
+    let ended = Array(days.prefix(line.margins.count - 1))
+    var moments: [CompetitionLeadMoment] = []
+    // The first of equal minimums and maximums: the earliest day.
+    if let low = line.margins.indices.dropFirst().min(by: { line.margins[$0] < line.margins[$1] }),
+       line.margins[low] < 0 {
+        moments.append(CompetitionLeadMoment(
+            index: low,
+            day: ended[low - 1].day,
+            isYours: false,
+            text: "\(opponentName)’s biggest lead, \(competitionPointsText(-line.margins[low]))"
+        ))
+    }
+    if let best = ended.indices.filter({ (ended[$0].ownerAcceptedPoints ?? 0) > 0 })
+        .max(by: { ended[$0].ownerAcceptedPoints! < ended[$1].ownerAcceptedPoints! }),
+       !moments.contains(where: { $0.index == best + 1 }) {
+        moments.append(CompetitionLeadMoment(
+            index: best + 1,
+            day: ended[best].day,
+            isYours: true,
+            text: "Your best day, \(competitionPointsText(ended[best].ownerAcceptedPoints))"
+        ))
+    }
+    return moments
+}
+
+/// A marker's height: on the line, unless it would cover a lead-change slash
+/// (26 pt tall on the axis). Then it moves clear on its own side of the axis,
+/// or the other side when there's no room.
+func competitionLeadMomentY(
+    at point: CGPoint,
+    axis: CGFloat,
+    changes: [CGFloat],
+    height: CGFloat,
+    radius: CGFloat = 12
+) -> CGFloat {
+    // The slash's half extents, its 12 degree lean included, plus the radius.
+    let reachX = 1.5 + 13 * tan(12 * CGFloat.pi / 180) + radius
+    let reachY = 13 + radius
+    guard abs(point.y - axis) < reachY,
+          changes.contains(where: { abs($0 - point.x) < reachX })
+    else { return point.y }
+    let above = axis - reachY - 1, below = axis + reachY + 1
+    let prefersBelow = point.y > axis
+    if prefersBelow { return below <= height - radius ? below : above }
+    return above >= radius ? above : below
+}
+
 /// The lead after each day as one line: amber above the axis while you lead,
 /// ink below while they do, a slash at every change. False `isDrawn` holds it
 /// at the start; turning true draws it out once.
@@ -287,7 +460,39 @@ struct CompetitionLeadLineView: View {
             if dynamicTypeSize < .xxLarge {
                 weekdays
             }
+            if !moments.isEmpty {
+                VStack(alignment: .leading, spacing: 10) {
+                    ForEach(moments.indices, id: \.self) { index in
+                        momentRow(index, moments[index])
+                    }
+                }
+                .padding(.top, 6)
+            }
         }
+    }
+
+    private var moments: [CompetitionLeadMoment] {
+        competitionLeadMoments(line, days: days, opponentName: opponentName)
+    }
+
+    private func momentRow(_ index: Int, _ moment: CompetitionLeadMoment) -> some View {
+        HStack(spacing: 10) {
+            CompetitionLeadMomentBadge(number: index + 1, isYours: moment.isYours)
+            Text(weekdayText(moment.day))
+                .textCase(.uppercase)
+                .font(.themeLabel)
+                .tracking(1.0)
+                .foregroundStyle(Theme.secondary)
+                .fixedSize()
+            Text(moment.text)
+                .font(.subheadline)
+                .foregroundStyle(Theme.ink)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("\(weekdayName(moment.day)): \(moment.text)")
+        .accessibilityIdentifier("competition.leadLine.moment.\(index + 1)")
     }
 
     private var chart: some View {
@@ -342,6 +547,18 @@ struct CompetitionLeadLineView: View {
                     .scaleEffect(isDrawn ? 1 : 0)
                     .moving(arrival(Double(lastDay)), value: isDrawn)
                     .position(end)
+                // Over the line, moved clear of the slashes (competitionLeadMomentY).
+                ForEach(moments.indices, id: \.self) { index in
+                    let moment = moments[index]
+                    let point = CGPoint(x: x(Double(moment.index)), y: y(line.margins[moment.index]))
+                    let markerY: CGFloat = competitionLeadMomentY(
+                        at: point,
+                        axis: axis,
+                        changes: line.changes.map { x($0) },
+                        height: proxy.size.height
+                    )
+                    momentMarker(index, moment, at: CGPoint(x: point.x, y: markerY))
+                }
                 Text(competitionSignedMarginText(userPoints: last, opponentPoints: 0))
                     .font(.footnote.weight(.bold).width(.condensed).monospacedDigit())
                     .foregroundStyle(last > 0 ? Theme.you : last < 0 ? Theme.ink : Theme.secondary)
@@ -353,6 +570,15 @@ struct CompetitionLeadLineView: View {
                     .position(x: end.x + 10 + (Self.endLabelWidth - 10) / 2, y: end.y)
             }
         }
+    }
+
+    /// Lands as the line's head reaches its day, like the slashes. Reduce
+    /// Motion: there from the start.
+    private func momentMarker(_ index: Int, _ moment: CompetitionLeadMoment, at point: CGPoint) -> some View {
+        CompetitionLeadMomentBadge(number: index + 1, isYours: moment.isYours)
+            .scaleEffect(isDrawn ? 1 : 0)
+            .moving(arrival(Double(moment.index)), value: isDrawn)
+            .position(point)
     }
 
     private var lineStyle: StrokeStyle {
@@ -396,6 +622,23 @@ struct CompetitionLeadLineView: View {
         default: "The lead changed hands \(line.changes.count) times."
         }
         return "The lead after each day. \(changes) After Day \(lastDay), \(standing)."
+    }
+}
+
+/// A moment's number in your amber or their ink, on the line and in its legend.
+private struct CompetitionLeadMomentBadge: View {
+    let number: Int
+    let isYours: Bool
+
+    var body: some View {
+        Text("\(number)")
+            .font(.caption.weight(.heavy).monospacedDigit())
+            .dynamicTypeSize(...DynamicTypeSize.large)
+            .foregroundStyle(isYours ? Theme.ink : Theme.ground)
+            .frame(width: 22, height: 22)
+            .background(isYours ? Theme.youFill : Theme.ink, in: Circle())
+            .overlay(Circle().stroke(Theme.ground, lineWidth: 2))
+            .accessibilityHidden(true)
     }
 }
 
