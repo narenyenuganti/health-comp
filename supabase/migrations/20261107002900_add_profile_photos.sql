@@ -14,8 +14,11 @@ insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_typ
 values ('profile-photos', 'profile-photos', false, 524288, array['image/jpeg']);
 
 alter table public.profiles add column photo_version uuid;
--- Not granted to authenticated: counterparts read it only through
--- list_profile_photos, which applies the visibility rule.
+-- Set when a reviewer removes the photo, cleared by the owner's next set or
+-- clear; the owner reads it through own_profile_photo.
+alter table public.profiles add column photo_removed_by_review boolean not null default false;
+-- Neither is granted to authenticated: counterparts read photo_version only
+-- through list_profile_photos, which applies the visibility rule.
 alter table public.profiles add constraint profiles_photo_requires_active
   check (photo_version is null or state = 'active');
 
@@ -86,14 +89,18 @@ as $$
 $$;
 
 -- Your own folder (any object, so you can list and remove leftovers), or
--- someone's current photo that you may see.
+-- someone's current photo that you may see. Someone else's photo is never
+-- signed: a signed URL is a bearer link that would outlive a block, report
+-- or ended challenge (Storage names its operation in storage.operation).
 create function private.can_read_profile_photo_object(object_name text)
 returns boolean language sql stable security definer set search_path = ''
 as $$
   select owner_id is not null and (
     owner_id = private.current_profile_id()
     or (
-      exists (select 1 from public.profiles p
+      coalesce(pg_catalog.current_setting('storage.operation', true), '')
+        not in ('storage.object.sign', 'storage.object.sign_many')
+      and exists (select 1 from public.profiles p
         where p.id = owner_id
           and p.photo_version = private.profile_photo_object_version(object_name))
       and private.can_view_profile_photo(owner_id)
@@ -102,16 +109,25 @@ as $$
 $$;
 
 -- Your own folder, a well-formed name, and at most three objects at once
--- (the current photo, its replacement, and one leftover).
+-- (the current photo, its replacement, and one leftover). Concurrent uploads
+-- to one folder take turns, so the count can't be raced; volatile, so the
+-- count after the wait sees what the other upload committed.
 create function private.can_write_profile_photo_object(object_name text)
-returns boolean language sql stable security definer set search_path = ''
+returns boolean language plpgsql volatile security definer set search_path = ''
 as $$
-  select caller.id is not null
-    and private.profile_photo_object_owner(object_name) = caller.id
-    and (select pg_catalog.count(*) from storage.objects o
-      where o.bucket_id = 'profile-photos'
-        and o.name like caller.id::text || '/%') < 3
-  from (select private.current_profile_id() as id) caller;
+declare
+  caller_profile_id uuid := private.current_profile_id();
+begin
+  if caller_profile_id is null
+    or private.profile_photo_object_owner(object_name) is distinct from caller_profile_id then
+    return false;
+  end if;
+  perform pg_catalog.pg_advisory_xact_lock(
+    pg_catalog.hashtextextended('profile-photos/' || caller_profile_id::text, 0));
+  return (select pg_catalog.count(*) from storage.objects o
+    where o.bucket_id = 'profile-photos'
+      and o.name like caller_profile_id::text || '/%') < 3;
+end;
 $$;
 
 create policy profile_photos_read on storage.objects
@@ -146,8 +162,10 @@ begin
     raise exception 'photo_upload_required' using errcode = 'P0001';
   end if;
   update public.profiles p
-  set photo_version = input_photo_version, updated_at = pg_catalog.statement_timestamp()
-  where p.id = caller_profile_id and p.photo_version is distinct from input_photo_version;
+  set photo_version = input_photo_version, photo_removed_by_review = false,
+    updated_at = pg_catalog.statement_timestamp()
+  where p.id = caller_profile_id
+    and (p.photo_version is distinct from input_photo_version or p.photo_removed_by_review);
   return pg_catalog.jsonb_build_object('photo_version', input_photo_version);
 end;
 $$;
@@ -160,10 +178,37 @@ declare
   caller_profile_id uuid := private.require_active_caller_profile_id();
 begin
   update public.profiles p
-  set photo_version = null, updated_at = pg_catalog.statement_timestamp()
-  where p.id = caller_profile_id and p.photo_version is not null;
+  set photo_version = null, photo_removed_by_review = false,
+    updated_at = pg_catalog.statement_timestamp()
+  where p.id = caller_profile_id
+    and (p.photo_version is not null or p.photo_removed_by_review);
   return pg_catalog.jsonb_build_object('photo_version', null);
 end;
+$$;
+
+-- Exactly {photo_version, removed_by_review} for the caller's own photo.
+create function public.own_profile_photo()
+returns jsonb language plpgsql stable security definer set search_path = ''
+as $$
+declare
+  caller_profile_id uuid := private.require_active_caller_profile_id();
+begin
+  return (select pg_catalog.jsonb_build_object('photo_version', p.photo_version,
+      'removed_by_review', p.photo_removed_by_review)
+    from public.profiles p where p.id = caller_profile_id);
+end;
+$$;
+
+-- Operators only (SQL editor), after reviewing a report: initials for
+-- everyone, and the owner is told once in Account. Delete the objects in
+-- '<profile id>/' with the Storage API or dashboard afterwards.
+create function private.remove_profile_photo_after_review(target_profile_id uuid)
+returns void language sql security definer set search_path = ''
+as $$
+  update public.profiles p
+  set photo_version = null, photo_removed_by_review = true,
+    updated_at = pg_catalog.statement_timestamp()
+  where p.id = target_profile_id and p.state = 'active' and p.photo_version is not null;
 $$;
 
 -- Exactly {photos: [{profile_id, photo_version}]}: only photos the caller may
@@ -295,6 +340,10 @@ revoke all on function public.clear_profile_photo()
   from public, anon, authenticated, service_role;
 revoke all on function public.list_profile_photos(uuid[])
   from public, anon, authenticated, service_role;
+revoke all on function public.own_profile_photo()
+  from public, anon, authenticated, service_role;
+revoke all on function private.remove_profile_photo_after_review(uuid)
+  from public, anon, authenticated, service_role;
 revoke all on function public.report_profile_photo(uuid)
   from public, anon, authenticated, service_role;
 -- The storage policies run as the caller.
@@ -304,4 +353,5 @@ grant execute on function private.can_write_profile_photo_object(text) to authen
 grant execute on function public.set_profile_photo(uuid) to authenticated;
 grant execute on function public.clear_profile_photo() to authenticated;
 grant execute on function public.list_profile_photos(uuid[]) to authenticated;
+grant execute on function public.own_profile_photo() to authenticated;
 grant execute on function public.report_profile_photo(uuid) to authenticated;

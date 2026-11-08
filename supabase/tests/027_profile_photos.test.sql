@@ -12,18 +12,19 @@ select ok((
     and has_function_privilege('authenticated', p.oid, 'execute')
     and not has_function_privilege('anon', p.oid, 'execute')
     and not has_function_privilege('service_role', p.oid, 'execute')
-    and not has_function_privilege('public', p.oid, 'execute')) and count(*) = 4
+    and not has_function_privilege('public', p.oid, 'execute')) and count(*) = 5
   from pg_proc p join pg_namespace n on n.oid = p.pronamespace
-  where n.nspname = 'public' and p.proname in
-    ('set_profile_photo', 'clear_profile_photo', 'list_profile_photos', 'report_profile_photo')
+  where n.nspname = 'public' and p.proname in ('set_profile_photo', 'clear_profile_photo',
+    'list_profile_photos', 'report_profile_photo', 'own_profile_photo')
 ), 'the photo RPCs are security definers with an empty search path, for authenticated only');
 select ok((
   select bool_and(not has_function_privilege('authenticated', p.oid, 'execute')
-    and not has_function_privilege('service_role', p.oid, 'execute')) and count(*) = 3
+    and not has_function_privilege('service_role', p.oid, 'execute')) and count(*) = 4
   from pg_proc p join pg_namespace n on n.oid = p.pronamespace
   where n.nspname = 'private' and p.proname in ('can_view_profile_photo',
-    'profile_photo_object_version', 'purge_profile_photo_on_profile_deactivation')
-), 'the visibility rule and purge trigger are not callable by API roles');
+    'profile_photo_object_version', 'purge_profile_photo_on_profile_deactivation',
+    'remove_profile_photo_after_review')
+), 'the visibility rule, purge trigger and review removal are not callable by API roles');
 select ok((
   select c.relrowsecurity and c.relforcerowsecurity
   from pg_class c join pg_namespace n on n.oid = c.relnamespace
@@ -32,8 +33,10 @@ select ok((
   and not has_table_privilege('service_role', 'private.profile_photo_reports', 'select,insert,update,delete'),
   'profile_photo_reports has RLS enabled and forced and no client privileges');
 select ok(not has_column_privilege('authenticated', 'public.profiles', 'photo_version', 'select')
-  and not has_column_privilege('anon', 'public.profiles', 'photo_version', 'select'),
-  'photo_version is not readable from the profiles table');
+  and not has_column_privilege('anon', 'public.profiles', 'photo_version', 'select')
+  and not has_column_privilege('authenticated', 'public.profiles', 'photo_removed_by_review', 'select')
+  and not has_column_privilege('anon', 'public.profiles', 'photo_removed_by_review', 'select'),
+  'photo_version and photo_removed_by_review are not readable from the profiles table');
 
 -- A Naren (owner), B Maya (finished match), C Tess (Naren's pending
 -- challenge), D Dev (stranger), E Eli (Naren blocked him), F Fay (blocked
@@ -141,6 +144,18 @@ select pg_temp.as_user('2');
 select is(pg_temp.sees('1'), pg_temp.ver('1')::text || ' / 1', 'an opponent from a finished match sees it');
 select pg_temp.as_user('3');
 select is(pg_temp.sees('1'), pg_temp.ver('1')::text || ' / 1', 'the person Naren challenged sees it');
+-- What Storage sets while minting a signed URL.
+select set_config('storage.operation', 'storage.object.sign', true);
+select pg_temp.as_user('2');
+select is(pg_temp.sees('1'), pg_temp.ver('1')::text || ' / 0', 'nobody else can sign a URL for it');
+select set_config('storage.operation', 'storage.object.sign_many', true);
+select is(pg_temp.sees('1'), pg_temp.ver('1')::text || ' / 0', 'not even in a batch');
+select pg_temp.as_user('1');
+select is(pg_temp.sees('1'), pg_temp.ver('1')::text || ' / 1', 'the owner still reaches his own');
+select set_config('storage.operation', 'storage.object.get_authenticated', true);
+select pg_temp.as_user('2');
+select is(pg_temp.sees('1'), pg_temp.ver('1')::text || ' / 1', 'a download with the session still works');
+select set_config('storage.operation', '', true);
 select pg_temp.as_user('1');
 select is(pg_temp.sees('3'), 'none / 0', 'the challenger does not see the invitee''s photo before a match');
 select pg_temp.as_user('4');
@@ -175,7 +190,8 @@ select is(public.report_profile_photo(pg_temp.pid('1')), jsonb_build_object('pro
 select pg_temp.as_user('2');
 select is(pg_temp.sees('1'), pg_temp.ver('1')::text || ' / 1', 'everyone else still sees it');
 reset role;
-select results_eq($$select reporter_profile_id, reported_profile_id, photo_version from private.profile_photo_reports$$,
+select results_eq($$select reporter_profile_id, reported_profile_id, photo_version from private.profile_photo_reports
+  where reported_profile_id = pg_temp.pid('1')$$,
   $$values (pg_temp.pid('7'), pg_temp.pid('1'), pg_temp.ver('1'))$$, 'one report row names the reported version');
 
 -- Changing: the new version replaces the old for others; leftovers stay the owner's.
@@ -218,6 +234,25 @@ select is(pg_temp.sees('1'), 'none / 1', 'his object stays his own until the app
 select pg_temp.as_user('2');
 select is(pg_temp.sees('1'), 'none / 0', 'Maya sees initials');
 
+-- A reviewer's removal: initials for everyone, and the owner is told until
+-- he sets or clears a photo.
+select pg_temp.as_user('1');
+select lives_ok($$select public.set_profile_photo(pg_temp.ver('2'))$$, 'Naren sets a photo again');
+select is(public.own_profile_photo(), jsonb_build_object('photo_version', pg_temp.ver('2'), 'removed_by_review', false),
+  'Naren reads his own photo state');
+reset role;
+select lives_ok($$select private.remove_profile_photo_after_review(pg_temp.pid('1'))$$, 'an operator removes it after review');
+set local role authenticated;
+select pg_temp.as_user('2');
+select is(pg_temp.sees('1'), 'none / 0', 'Maya sees initials after the review');
+select pg_temp.as_user('1');
+select is(public.own_profile_photo(), jsonb_build_object('photo_version', null, 'removed_by_review', true),
+  'Naren is told his photo was removed after a review');
+select throws_ok($$select private.remove_profile_photo_after_review(pg_temp.pid('2'))$$,
+  '42501', null, 'no client can remove someone''s photo as a reviewer');
+select lives_ok($$select public.clear_profile_photo()$$, 'Naren dismisses it');
+select is(public.own_profile_photo() ->> 'removed_by_review', 'false', 'and the notice is gone');
+
 -- Deleting an account: its photo and its reports both ways go at once.
 reset role;
 insert into private.profile_photo_reports (reporter_profile_id, reported_profile_id, photo_version)
@@ -238,6 +273,8 @@ select is(pg_temp.sees('8'), 'none / 0', 'nobody reads a deleting account''s obj
 select pg_temp.as_user('8');
 select throws_ok($$select public.list_profile_photos(array[pg_temp.pid('1')])$$,
   '42501', 'active_profile_required', 'a deleting account reads no photos');
+select throws_ok($$select public.own_profile_photo()$$,
+  '42501', 'active_profile_required', 'not even its own');
 select throws_ok($$insert into storage.objects (bucket_id, name) values ('profile-photos', pg_temp.obj('8', '9'))$$,
   '42501', null, 'and uploads none');
 reset role;
@@ -248,6 +285,7 @@ select throws_ok($$update public.profiles set photo_version = pg_temp.ver('8') w
 set local role anon;
 select throws_ok($$select public.list_profile_photos(array[pg_temp.pid('1')])$$,
   '42501', null, 'anon cannot list photos');
+select throws_ok($$select public.own_profile_photo()$$, '42501', null, 'anon has no own photo');
 select is((select count(*) from storage.objects where bucket_id = 'profile-photos'), 0::bigint,
   'anon reads no photo objects');
 reset role;

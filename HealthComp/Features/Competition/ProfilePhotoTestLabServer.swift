@@ -39,6 +39,10 @@ final class ProfilePhotoTestLabServer: @unchecked Sendable {
         }
     }
 
+    func own() async throws -> OwnProfilePhoto {
+        lock.withLock { OwnProfilePhoto(reference: photos[ownProfileID]?.reference, removedByReview: false) }
+    }
+
     /// Lands after `latency`, so the fade over the initials can be seen.
     func data(_ reference: ProfilePhotoReference) async throws -> Data {
         try await Task.sleep(for: latency)

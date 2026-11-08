@@ -493,6 +493,35 @@ enum SupabaseCompetitionRemoteAPI {
                     throw CompetitionRemoteFailure.serverContractMismatch
                 }
             },
+            ownProfilePhoto: { ownerProfileID in
+                let response = try await sendReadOnly(
+                    .rpc(name: "own_profile_photo", parameters: try encode(EmptyParameters())),
+                    transport: transport
+                )
+                guard let object = try? JSONSerialization.jsonObject(with: response.data)
+                    as? [String: Any],
+                      Set(object.keys) == ["photo_version", "removed_by_review"],
+                      let rawVersion = object["photo_version"],
+                      let removed = object["removed_by_review"] as? NSNumber,
+                      CFGetTypeID(removed) == CFBooleanGetTypeID()
+                else {
+                    throw CompetitionRemoteFailure.serverContractMismatch
+                }
+                let version: UUID?
+                switch rawVersion {
+                case is NSNull: version = nil
+                case let value as String:
+                    guard let parsed = wireUUID(value) else {
+                        throw CompetitionRemoteFailure.serverContractMismatch
+                    }
+                    version = parsed
+                default: throw CompetitionRemoteFailure.serverContractMismatch
+                }
+                return OwnProfilePhoto(
+                    reference: version.map { ProfilePhotoReference(ownerProfileID: ownerProfileID, version: $0) },
+                    removedByReview: removed.boolValue
+                )
+            },
             clearProfilePhoto: {
                 let response = try await send(
                     .rpc(name: "clear_profile_photo", parameters: try encode(EmptyParameters())),

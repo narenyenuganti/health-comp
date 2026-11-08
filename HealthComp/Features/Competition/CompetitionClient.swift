@@ -119,6 +119,8 @@ struct CompetitionClient: Sendable {
     /// The current photo of each of these people (yours included) that you
     /// may see; anyone missing shows initials. Drops their stale cached files.
     var loadProfilePhotos: @Sendable ([UUID]) async throws -> [ProfilePhotoReference]
+    /// Your own photo and whether a reviewer removed the last one.
+    var loadOwnProfilePhoto: @Sendable () async throws -> OwnProfilePhoto
     /// The JPEG from this account's disk cache, else downloaded and cached.
     var profilePhotoData: @Sendable (ProfilePhotoReference) async throws -> Data
     /// Any cached photo of this person, without the network.
@@ -238,6 +240,9 @@ struct CompetitionClient: Sendable {
         ) async -> CompetitionPublication = { _ in .inert },
         loadProfilePhotos: @escaping @Sendable ([UUID]) async throws ->
             [ProfilePhotoReference] = { _ in [] },
+        loadOwnProfilePhoto: @escaping @Sendable () async throws -> OwnProfilePhoto = {
+            OwnProfilePhoto(reference: nil, removedByReview: false)
+        },
         profilePhotoData: @escaping @Sendable (ProfilePhotoReference) async throws -> Data = { _ in
             throw CompetitionRemoteFailure.notFound
         },
@@ -289,6 +294,7 @@ struct CompetitionClient: Sendable {
         self.setReaction = setReaction
         self.startPractice = startPractice
         self.loadProfilePhotos = loadProfilePhotos
+        self.loadOwnProfilePhoto = loadOwnProfilePhoto
         self.profilePhotoData = profilePhotoData
         self.cachedProfilePhotoData = cachedProfilePhotoData
         self.setProfilePhoto = setProfilePhoto

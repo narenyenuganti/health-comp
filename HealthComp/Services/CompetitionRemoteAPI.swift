@@ -155,6 +155,10 @@ struct CompetitionRemoteAPI: Sendable {
     var setProfilePhoto: @Sendable (ProfilePhotoReference, Data) async throws -> Void = { _, _ in
         throw CompetitionRemoteFailure.operationFailed
     }
+    /// Your own photo (`ownerProfileID` is you) and the review notice.
+    var ownProfilePhoto: @Sendable (_ ownerProfileID: UUID) async throws -> OwnProfilePhoto = { _ in
+        throw CompetitionRemoteFailure.operationFailed
+    }
     /// Shows initials from now on; the objects stay until removed.
     var clearProfilePhoto: @Sendable () async throws -> Void = {
         throw CompetitionRemoteFailure.operationFailed

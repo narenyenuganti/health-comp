@@ -177,6 +177,7 @@ extension CompetitionClient {
             },
             startPractice: { await coordinator.startPractice($0) },
             loadProfilePhotos: { try await coordinator.loadProfilePhotos($0) },
+            loadOwnProfilePhoto: { try await coordinator.loadOwnProfilePhoto() },
             profilePhotoData: { try await coordinator.profilePhotoData($0) },
             cachedProfilePhotoData: { await coordinator.cachedProfilePhotoData($0) },
             setProfilePhoto: { try await coordinator.setProfilePhoto($0) },
@@ -1097,6 +1098,15 @@ private actor RemoteCompetitionClientCoordinator {
             account.cache.retain(references, among: owners)
         }
         return references
+    }
+
+    func loadOwnProfilePhoto() async throws -> OwnProfilePhoto {
+        let account = try photoAccount()
+        let own = try await remoteAPI.ownProfilePhoto(account.id)
+        if photoCache?.directory == account.cache.directory {
+            account.cache.retain(own.reference.map { [$0] } ?? [], among: [account.id])
+        }
+        return own
     }
 
     func profilePhotoData(_ reference: ProfilePhotoReference) async throws -> Data {

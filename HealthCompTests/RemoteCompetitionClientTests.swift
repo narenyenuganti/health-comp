@@ -6214,6 +6214,7 @@ extension RemoteCompetitionClientTests {
         var api = remoteAPI(listCompetitions: { [] })
         api.listProfilePhotos = { try await server.list($0) }
         api.setProfilePhoto = { try await server.set($0, $1) }
+        api.ownProfilePhoto = { _ in await server.ownPhoto() }
         api.clearProfilePhoto = { await server.record("clear") }
         api.removeProfilePhotoObjects = { _, keeping in
             await server.record("remove keeping \(keeping.map(\.uuidString) ?? "none")")
@@ -6258,6 +6259,15 @@ extension RemoteCompetitionClientTests {
         XCTAssertEqual(mine.ownerProfileID, profile.id)
         let own = await client.cachedProfilePhotoData(profile.id)
         XCTAssertEqual(own, server.jpeg)
+        let ownState = try await client.loadOwnProfilePhoto()
+        XCTAssertEqual(ownState, OwnProfilePhoto(reference: mine, removedByReview: false))
+
+        // A reviewer's removal: told once, and the cached file goes.
+        await server.removeByReview()
+        let reviewed = try await client.loadOwnProfilePhoto()
+        XCTAssertEqual(reviewed, OwnProfilePhoto(reference: nil, removedByReview: true))
+        let ownAfterReview = await client.cachedProfilePhotoData(profile.id)
+        XCTAssertNil(ownAfterReview)
         try await client.removeProfilePhoto()
         let ownAfterRemove = await client.cachedProfilePhotoData(profile.id)
         XCTAssertNil(ownAfterRemove)
@@ -6279,6 +6289,7 @@ private actor ProfilePhotoServerProbe {
     nonisolated let jpeg: Data
     private var opponentVisible = true
     private var own: ProfilePhotoReference?
+    private var removedByReview = false
     private(set) var downloads = 0
     private(set) var calls: [String] = []
 
@@ -6306,6 +6317,13 @@ private actor ProfilePhotoServerProbe {
     }
 
     func hideOpponent() { opponentVisible = false }
+
+    func ownPhoto() -> OwnProfilePhoto { OwnProfilePhoto(reference: own, removedByReview: removedByReview) }
+
+    func removeByReview() {
+        own = nil
+        removedByReview = true
+    }
 
     func record(_ call: String) {
         calls.append(call)

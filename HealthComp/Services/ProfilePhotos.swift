@@ -15,6 +15,13 @@ struct ProfilePhotoReference: Hashable, Sendable {
     }
 }
 
+/// Your own photo as the server has it. `removedByReview`: a reviewer removed
+/// the last one; Account says so until you set or remove a photo.
+struct OwnProfilePhoto: Equatable, Sendable {
+    let reference: ProfilePhotoReference?
+    let removedByReview: Bool
+}
+
 enum ProfilePhotoFailure: Error, Equatable, Sendable {
     case unreadableImage
     case invalidCrop

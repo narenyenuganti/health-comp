@@ -691,16 +691,20 @@ export function createLiveDependencies(
         ),
       ),
     removeProfilePhotos: async (targetProfileID) => {
-      // At most three objects per folder (storage insert policy, 2900).
+      // Three objects per folder at most (storage insert policy, 2900), but
+      // keep going until the listing is empty rather than trust one page.
       const bucket = admin.storage.from("profile-photos");
-      const { data, error } = await bucket.list(targetProfileID);
-      if (error) throw error;
-      const paths = (data ?? []).map((object) =>
-        `${targetProfileID}/${object.name}`
-      );
-      if (paths.length === 0) return;
-      const { error: removeError } = await bucket.remove(paths);
-      if (removeError) throw removeError;
+      for (let page = 0; page < 20; page++) {
+        const { data, error } = await bucket.list(targetProfileID);
+        if (error) throw error;
+        const paths = (data ?? []).map((object) =>
+          `${targetProfileID}/${object.name}`
+        );
+        if (paths.length === 0) return;
+        const { error: removeError } = await bucket.remove(paths);
+        if (removeError) throw removeError;
+      }
+      throw new Error("profile_photos_not_removed");
     },
     anonymize: async (targetProfileID) =>
       normalizeProgress(

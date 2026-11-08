@@ -1636,6 +1636,31 @@ extension SupabaseCompetitionRemoteAPITests {
         try assertRPC(requests[1], name: "set_profile_photo", body: ["photo_version": photoVersion.uuidString.lowercased()])
     }
 
+    func testOwnProfilePhotoReadsVersionAndReviewNotice() async throws {
+        let version = photoVersion.uuidString.lowercased()
+        let harness = CompetitionTransportHarness(stubs: [
+            .response(200, try jsonData(["photo_version": version, "removed_by_review": false])),
+            .response(200, try jsonData(["photo_version": NSNull(), "removed_by_review": true])),
+            .response(200, try jsonData(["photo_version": NSNull(), "removed_by_review": 1])),
+            .response(200, try jsonData(["photo_version": "NOT-A-UUID", "removed_by_review": false])),
+            .response(200, try jsonData(["photo_version": NSNull()])),
+        ])
+        let api = makeAPI(harness)
+        let current = try await api.ownProfilePhoto(photoOwner)
+        XCTAssertEqual(current, OwnProfilePhoto(
+            reference: ProfilePhotoReference(ownerProfileID: photoOwner, version: photoVersion),
+            removedByReview: false
+        ))
+        let reviewed = try await api.ownProfilePhoto(photoOwner)
+        XCTAssertEqual(reviewed, OwnProfilePhoto(reference: nil, removedByReview: true))
+        for _ in 0..<3 {
+            let failure = await remoteFailure { _ = try await api.ownProfilePhoto(photoOwner) }
+            XCTAssertEqual(failure, .serverContractMismatch)
+        }
+        let requests = await harness.recordedRequests()
+        try assertRPC(requests[0], name: "own_profile_photo", body: [:])
+    }
+
     func testClearRemoveDownloadAndReportProfilePhoto() async throws {
         let jpeg = ProfilePhotoTestLabServer.fixtureJPEG(red: 0.1, green: 0.5, blue: 0.3)
         let reference = ProfilePhotoReference(ownerProfileID: photoOwner, version: photoVersion)
