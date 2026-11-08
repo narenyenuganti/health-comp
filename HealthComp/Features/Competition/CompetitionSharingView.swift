@@ -38,6 +38,8 @@ struct CompetitionSharingView: View {
     @State private var dismissedChallengeIDs: Set<CompetitionID> = []
     @AppStorage(CompetitionReactionsSeen.storageKey)
     private var reactionsSeen = CompetitionReactionsSeen()
+    @AppStorage(CompetitionMotionSeen.storageKey)
+    private var motionSeen = CompetitionMotionSeen()
 
     @Environment(\.locale) private var locale
     @Environment(\.timeZone) private var timeZone
@@ -178,6 +180,12 @@ struct CompetitionSharingView: View {
         }
         .refreshable(refresh)
         .background(Theme.ground)
+        .competitionReactionRain(
+            incoming: competitionReactionRainBatch(
+                layout.allItems, seen: reactionsSeen, motionSeen: motionSeen
+            ),
+            rained: { motionSeen = motionSeen.raining(layout.allItems) }
+        )
         .navigationTitle("Home")
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {

@@ -40,6 +40,9 @@ enum Motion {
     /// Not yet revealed, but still hittable and in the accessibility tree.
     /// At 0.001 a tap does nothing, and at 0 the element is not hittable.
     static let pendingOpacity = 0.02
+    /// A reaction's rain, in seconds: every drop has fallen clear by then.
+    /// Drops wait up to 0.7 s and fall for at least 1.3 s, so keep it ≥ 2.0.
+    static let rain = 2.3
 }
 
 extension View {

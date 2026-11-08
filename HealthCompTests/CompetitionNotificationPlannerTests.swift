@@ -1,6 +1,7 @@
 import CompetitionCore
 import Foundation
 import XCTest
+import UserNotifications
 @testable import HealthComp
 
 final class CompetitionNotificationPlannerTests: XCTestCase {
@@ -1446,6 +1447,84 @@ final class CompetitionNotificationPlannerTests: XCTestCase {
                 && $0.episodeKey == .day(5)
                 && $0.disposition == .suppressed(reason: .superseded)
         })
+    }
+
+    func testLeadChangeAndResultAlertsCarryReactionsOnTheirTarget() throws {
+        let lead = try liveMatch(
+            "24", day: 3, owner: 900, opponent: 800,
+            recorded: [(.leadChange, .leader(dayOrdinal: 2, leader: .opponent))]
+        )
+        let leadPlan = try plan(snapshot([lead]))
+        XCTAssertEqual(leadPlan.emissionDecisions.map(\.record.family), [.leadChange])
+        XCTAssertEqual(leadPlan.emissionDecisions.map(\.request.reactionTarget), [.day(3)])
+
+        let finished = try finishedMatch("24", name: "Priya", owner: 3_410, opponent: 3_180, outcome: .win)
+        let resultPlan = try plan(snapshot([finished]))
+        XCTAssertEqual(resultPlan.emissionDecisions.map(\.request.reactionTarget), [.result])
+
+        // A close score posts without them, and a muted match posts nothing.
+        let close = try liveMatch(
+            "25", day: 5, owner: 1_210, opponent: 1_200,
+            recorded: [(.leadChange, .leader(dayOrdinal: 4, leader: .opponent))]
+        )
+        let closePlan = try plan(snapshot([close]))
+        XCTAssertEqual(closePlan.emissionDecisions.map(\.record.family), [.closeScore])
+        XCTAssertEqual(closePlan.emissionDecisions.map(\.request.reactionTarget), [nil])
+        XCTAssertEqual(
+            try plan(snapshot([lead]), muted: [lead.opponentIdentity]).emissionDecisions,
+            []
+        )
+    }
+
+    func testSummarizedResultsCarryNoReactions() throws {
+        let policy = enUSPolicy()
+        let evaluation = snapshot([
+            try finishedMatch("01", name: "Priya", owner: 3_410, opponent: 3_180, outcome: .win),
+            try finishedMatch("02", name: "Jordan", owner: 3_117, opponent: 3_302, outcome: .loss),
+        ])
+        let decisions = try plan(evaluation, policy: policy).emissionDecisions
+        let requests = CompetitionNotificationPlanner(policy: policy)
+            .immediateRequests(for: decisions, in: evaluation)
+        XCTAssertEqual(requests.map(\.reactionTarget), [nil])
+    }
+
+    func testReactionAlertActionsSendTheKindToTheTargetInTheRoutesMatch() {
+        let id = competitionID("EAD172F8-531D-4327-823D-E82A4F696199")
+        let userInfo = CompetitionRoute.competition(id).userInfo
+        XCTAssertEqual(
+            CompetitionReactionAlert.request(
+                actionIdentifier: CompetitionReactionAlert.actionIdentifier(.fire),
+                categoryIdentifier: CompetitionReactionAlert.category(.day(4)),
+                userInfo: userInfo
+            ),
+            CompetitionReactionRequest(competitionID: id.rawValue, target: .day(4), kind: .fire)
+        )
+        XCTAssertEqual(
+            CompetitionReactionAlert.request(
+                actionIdentifier: CompetitionReactionAlert.actionIdentifier(.salute),
+                categoryIdentifier: CompetitionReactionAlert.category(.result),
+                userInfo: userInfo
+            )?.target,
+            .result
+        )
+        // A plain tap, an unknown category or a payload without a match sends nothing.
+        XCTAssertNil(CompetitionReactionAlert.request(
+            actionIdentifier: "com.apple.UNNotificationDefaultActionIdentifier",
+            categoryIdentifier: CompetitionReactionAlert.category(.result),
+            userInfo: userInfo
+        ))
+        XCTAssertNil(CompetitionReactionAlert.request(
+            actionIdentifier: CompetitionReactionAlert.actionIdentifier(.clap),
+            categoryIdentifier: "",
+            userInfo: userInfo
+        ))
+        XCTAssertNil(CompetitionReactionAlert.request(
+            actionIdentifier: CompetitionReactionAlert.actionIdentifier(.clap),
+            categoryIdentifier: CompetitionReactionAlert.category(.result),
+            userInfo: [:]
+        ))
+        XCTAssertEqual(CompetitionReactionAlert.categories.count, 8)
+        XCTAssertTrue(CompetitionReactionAlert.categories.allSatisfy { $0.actions.count == 4 })
     }
 
     func testTurningASwitchBackOnPostsNothingLate() throws {

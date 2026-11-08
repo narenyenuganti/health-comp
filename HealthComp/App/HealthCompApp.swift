@@ -44,6 +44,9 @@ enum HealthCompLiveComposition {
         let competitionClient = competitionClientFactory.make(
             supabaseClientProvider
         )
+        // The same client and session as the app's, for alert reactions.
+        CompetitionReactionAlert.send = SupabaseCompetitionRemoteAPI
+            .live(provider: supabaseClientProvider).setReaction
         return Store(initialState: AppFeature.State()) {
             AppFeature()
                 .dependency(\.authenticationClient, authenticationClient)
