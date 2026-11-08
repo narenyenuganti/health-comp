@@ -3180,4 +3180,93 @@ extension CompetitionPresentationTests {
         XCTAssertEqual(steps(practice), [])
         XCTAssertEqual(steps(real).count, 1)
     }
+
+    private func versusContent(
+        _ match: LocalCompetitionPresentation,
+        with others: [LocalCompetitionPresentation] = [],
+        source: CompetitionPublicationSource = .remoteParticipants
+    ) -> CompetitionVersusIntroContent? {
+        competitionVersusIntroContent(
+            match,
+            in: LocalCompetitionPublication(
+                publicationRevision: 1,
+                dashboard: LocalCompetitionDashboard(
+                    competitions: [match] + others,
+                    awards: [],
+                    issues: [],
+                    hiddenTerminalCompetitionCount: 0
+                ),
+                source: source
+            ),
+            locale: Locale(identifier: "en_US")
+        )
+    }
+
+    func testVersusIntroSaysFirstFightOrTitleOnTheLine() throws {
+        let identity = "remote-profile:v1:sam"
+        let scheduled = homePresentation(
+            id: 9, name: "Sam", identity: identity, lifecycle: .scheduled, start: (10, 31)
+        )
+
+        let first = try XCTUnwrap(versusContent(scheduled))
+        XCTAssertEqual(first.headline, "First fight")
+        XCTAssertNil(first.holder)
+        XCTAssertNil(first.yourTape)
+        XCTAssertEqual(first.announcement, "You versus Sam. Day 1 is Saturday.")
+
+        let dayOne = homePresentation(
+            id: 9, name: "Sam", identity: identity, lifecycle: .active(dayOrdinal: 1), start: (10, 31)
+        )
+        XCTAssertEqual(versusContent(dayOne)?.dayLine, "Day 1 starts now")
+
+        let weeks = [
+            beltWeek(1, .win, start: (9, 1)),
+            beltWeek(2, .loss, start: (9, 8)),
+            beltWeek(3, .loss, start: (9, 15)),
+        ]
+        let rematch = try XCTUnwrap(versusContent(scheduled, with: weeks))
+        XCTAssertEqual(rematch.headline, "Title on the line")
+        XCTAssertEqual(rematch.holder, .them)
+        XCTAssertEqual(rematch.yourTape, "1–2")
+        XCTAssertEqual(rematch.theirTape, "2–1 · 1 defense")
+
+        // Ties only: a record, but no belt to put on the line.
+        let tied = try XCTUnwrap(versusContent(scheduled, with: [beltWeek(1, .tie, start: (9, 1))]))
+        XCTAssertNil(tied.headline)
+        XCTAssertNil(tied.holder)
+        XCTAssertEqual(tied.theirTape, "0–0–1")
+
+        // An earlier match still running could move the belt: nothing is claimed.
+        let earlier = homePresentation(
+            id: 8, name: "Sam", identity: identity, lifecycle: .active(dayOrdinal: 5), start: (10, 24)
+        )
+        let waiting = try XCTUnwrap(versusContent(scheduled, with: weeks + [earlier]))
+        XCTAssertNil(waiting.headline)
+        XCTAssertNil(waiting.holder)
+        XCTAssertNil(try XCTUnwrap(versusContent(scheduled, with: [earlier])).headline)
+    }
+
+    func testVersusIntroIsOnlyForARealMatchThatHasJustBegun() {
+        let scheduled = homePresentation(id: 1, lifecycle: .scheduled)
+        XCTAssertNotNil(versusContent(scheduled))
+        XCTAssertNil(versusContent(scheduled, source: .simulatedFixture))
+        XCTAssertNil(versusContent(practicePresentation(id: 2, lifecycle: .scheduled)))
+        XCTAssertNil(versusContent(practicePresentation(id: 2, lifecycle: .active(dayOrdinal: 1))))
+        let won = LocalCompetitionLifecyclePresentation.completed(
+            outcome: .win, basis: .stableAcrossPostBoundaryReads, completedAt: homeNow
+        )
+        let closed: [LocalCompetitionLifecyclePresentation] = [
+            .pending(direction: .incoming, createdAt: homeNow, expiresAt: nil),
+            .declined(at: homeNow, direction: .incoming),
+            .expired(at: homeNow, direction: .outgoing),
+            .cancelled(at: homeNow),
+            .active(dayOrdinal: 2),
+            .endsToday,
+            .tallying(startedAt: homeNow),
+            won,
+        ]
+        for lifecycle in closed {
+            XCTAssertNil(versusContent(homePresentation(id: 1, lifecycle: lifecycle)), "\(lifecycle)")
+        }
+    }
 }

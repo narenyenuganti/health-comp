@@ -1136,6 +1136,7 @@ enum CompetitionRematchStage: Equatable {
 extension CompetitionMotionSeen {
     enum Moment: String {
         case verdict
+        case versus
     }
 
     func hasSeen(_ moment: Moment, _ id: CompetitionID) -> Bool {
