@@ -388,6 +388,11 @@ portal/dashboard readback; source configuration alone is not proof.
      com.narenyenuganti.HealthComp.staging.widgets
    - production: com.narenyenuganti.HealthComp and
      com.narenyenuganti.HealthComp.widgets
+   - Apple Watch, both environments: `<app id>.watchkitapp` and
+     `<app id>.watchkitapp.widgets`. They get App Groups with the
+     environment's group and nothing else, and need their own profiles. The
+     watch app and its appex carry the same `CFBundleShortVersionString` and
+     `CFBundleVersion` as the iPhone app.
 3. Enable Sign in with Apple, Push Notifications, HealthKit with background
    delivery, and App Attest for that App ID.
    - App Groups: register the environment's group
