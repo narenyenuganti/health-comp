@@ -147,6 +147,8 @@ private struct WatchBoardPage: View {
     /// never replays it.
     @MainActor
     private func reveal() async {
+        // The trigger can flip twice before `markSeen`; one clock, one haptic.
+        guard stage == .done else { return }
         let card = match.belt?.card
         let showsCard = cardText != nil
         stage = showsCard ? .card : .verdictHeld
