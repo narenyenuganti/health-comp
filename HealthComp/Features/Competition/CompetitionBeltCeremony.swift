@@ -39,7 +39,7 @@ func competitionBeltCeremonyScript(
             clip: "taken",
             headline: "AND NEW",
             title: "You took the belt from \(name)",
-            detail: "\(name)'s reign: \(competitionReignText(weeks: weeks, defenses: defenses))"
+            detail: "\(name)’s reign: \(competitionReignText(weeks: weeks, defenses: defenses))"
         )
     case let .took(.them, weeks?, defenses):
         return .init(

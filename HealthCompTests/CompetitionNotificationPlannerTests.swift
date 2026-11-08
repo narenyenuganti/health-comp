@@ -1490,24 +1490,32 @@ final class CompetitionNotificationPlannerTests: XCTestCase {
 
     func testReactionAlertActionsSendTheKindToTheTargetInTheRoutesMatch() {
         let id = competitionID("EAD172F8-531D-4327-823D-E82A4F696199")
-        let userInfo = CompetitionRoute.competition(id).userInfo
+        let recipient = UUID(uuidString: "6B1D2E0A-3C5F-4A71-9E2B-8D4F0C6A1B37")!
+        let routeOnly = CompetitionRoute.competition(id).userInfo
+        var userInfo = routeOnly
+        userInfo[CompetitionReactionAlert.recipientKey] = recipient.uuidString
+        let fire = CompetitionReactionAlert.request(
+            actionIdentifier: CompetitionReactionAlert.actionIdentifier(.fire),
+            categoryIdentifier: CompetitionReactionAlert.category(.day(4)),
+            userInfo: userInfo
+        )
         XCTAssertEqual(
-            CompetitionReactionAlert.request(
-                actionIdentifier: CompetitionReactionAlert.actionIdentifier(.fire),
-                categoryIdentifier: CompetitionReactionAlert.category(.day(4)),
-                userInfo: userInfo
-            ),
+            fire?.reaction,
             CompetitionReactionRequest(competitionID: id.rawValue, target: .day(4), kind: .fire)
         )
+        XCTAssertEqual(fire?.recipientUserID, recipient)
         XCTAssertEqual(
             CompetitionReactionAlert.request(
                 actionIdentifier: CompetitionReactionAlert.actionIdentifier(.salute),
                 categoryIdentifier: CompetitionReactionAlert.category(.result),
                 userInfo: userInfo
-            )?.target,
+            )?.reaction.target,
             .result
         )
-        // A plain tap, an unknown category or a payload without a match sends nothing.
+        // A tap on the alert still opens its match past the recipient key.
+        XCTAssertEqual(CompetitionReactionAlert.route(userInfo: userInfo), .competition(id))
+        // A plain tap, an unknown category, a payload without a match or an
+        // alert that names no recipient sends nothing.
         XCTAssertNil(CompetitionReactionAlert.request(
             actionIdentifier: "com.apple.UNNotificationDefaultActionIdentifier",
             categoryIdentifier: CompetitionReactionAlert.category(.result),
@@ -1522,6 +1530,11 @@ final class CompetitionNotificationPlannerTests: XCTestCase {
             actionIdentifier: CompetitionReactionAlert.actionIdentifier(.clap),
             categoryIdentifier: CompetitionReactionAlert.category(.result),
             userInfo: [:]
+        ))
+        XCTAssertNil(CompetitionReactionAlert.request(
+            actionIdentifier: CompetitionReactionAlert.actionIdentifier(.clap),
+            categoryIdentifier: CompetitionReactionAlert.category(.result),
+            userInfo: routeOnly
         ))
         XCTAssertEqual(CompetitionReactionAlert.categories.count, 8)
         XCTAssertTrue(CompetitionReactionAlert.categories.allSatisfy { $0.actions.count == 4 })

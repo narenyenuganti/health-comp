@@ -1873,7 +1873,7 @@ final class CompetitionPresentationTests: XCTestCase {
                 clip: "taken",
                 headline: "AND NEW",
                 title: "You took the belt from Sam",
-                detail: "Sam's reign: 4 weeks · 2 defenses"
+                detail: "Sam’s reign: 4 weeks · 2 defenses"
             )
         )
         XCTAssertEqual(
@@ -1979,7 +1979,7 @@ final class CompetitionPresentationTests: XCTestCase {
         )
         XCTAssertEqual(
             banner(.defended(by: .them, weeks: 5, defenses: 3)),
-            ["them", "Sam's 3rd title defense", "5 weeks in a row."]
+            ["them", "Sam’s 3rd title defense", "5 weeks in a row."]
         )
         XCTAssertEqual(
             [1, 2, 3, 4, 11, 12, 13, 21, 22].map(competitionTitleDefenseText),

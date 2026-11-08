@@ -396,6 +396,11 @@ struct SupabaseClientProvider: Sendable {
         try authenticationLifetime().client
     }
 
+    /// The signed-in auth user, from the stored session, without the network.
+    func signedInUserID() -> UUID? {
+        try? client().auth.currentSession?.user.id
+    }
+
     func authenticationLifetime() throws -> SupabaseAuthenticationLifetime {
         let owner = try sharedClient.client()
 #if HEALTHCOMP_STAGING

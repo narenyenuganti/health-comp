@@ -7,7 +7,7 @@ select plan(28);
 
 select columns_are(
   'public', 'profiles',
-  array['id', 'auth_user_id', 'display_name', 'state', 'anonymized_at', 'created_at', 'updated_at', 'photo_version', 'photo_removed_by_review']::name[],
+  array['id', 'auth_user_id', 'display_name', 'state', 'anonymized_at', 'created_at', 'updated_at', 'photo_version', 'photo_removed_by_review', 'photo_removed_version']::name[],
   'profiles exposes only approved columns'
 );
 
@@ -20,7 +20,7 @@ select columns_are(
 select ok(
   (select bool_and(not has_column_privilege(role_name, 'public.profiles', column_name, 'select'))
    from unnest(array['anon', 'authenticated']) role_name,
-     unnest(array['auth_user_id', 'photo_version', 'photo_removed_by_review']) column_name)
+     unnest(array['auth_user_id', 'photo_version', 'photo_removed_by_review', 'photo_removed_version']) column_name)
   and has_column_privilege('authenticated', 'public.profiles', 'display_name', 'select'),
   'client roles read only the presentation-safe profile columns'
 );

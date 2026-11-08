@@ -2758,7 +2758,7 @@ func competitionBeltResultText(
         )
     case let .defended(holder, weeks, defenses):
         let title = competitionTitleDefenseText(defenses)
-        return (holder, holder == .you ? title : "\(opponentName)'s \(title)", "\(weeks) weeks in a row.")
+        return (holder, holder == .you ? title : "\(opponentName)’s \(title)", "\(weeks) weeks in a row.")
     case let .kept(holder, weeks) where weeks >= 3:
         return (holder, "\(name(holder)) kept the belt", "\(weeks) weeks in a row.")
     case .kept, .vacant:

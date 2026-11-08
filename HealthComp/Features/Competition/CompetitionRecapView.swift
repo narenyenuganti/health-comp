@@ -73,7 +73,7 @@ func competitionRecapBeltText(_ belt: CompetitionRecapBelt, opponentName: String
     case .theyTook: "\(they) took the belt"
     case let .youDefended(defenses): competitionTitleDefenseText(defenses)
     case let .theyDefended(defenses):
-        "\(opponentName.map { "\($0)'s" } ?? "Their") \(competitionTitleDefenseText(defenses))"
+        "\(opponentName.map { "\($0)’s" } ?? "Their") \(competitionTitleDefenseText(defenses))"
     }
 }
 
@@ -348,11 +348,11 @@ struct CompetitionRecapCard: View {
     }
 
     /// Whole, or on its own row with the name truncated: "took the belt" /
-    /// "'s 3rd title defense" is never cut.
+    /// "’s 3rd title defense" is never cut.
     @ViewBuilder
     private func beltLine(fits: Bool) -> some View {
         if let belt = recap.belt, let text = recap.beltText {
-            let verb = text.range(of: " took the belt") ?? text.range(of: "'s ", options: .backwards)
+            let verb = text.range(of: " took the belt") ?? text.range(of: "’s ", options: .backwards)
             HStack(spacing: 8) {
                 if belt.isYours {
                     CompetitionBeltMark(holder: .you, width: 22)

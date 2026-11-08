@@ -74,7 +74,7 @@ final class BeltCeremonyUITests: XCTestCase {
         launchLab()
         for (byte, name, banner) in [
             (UInt8(0xA1), "Casey", "Casey took the belt"),
-            (0xB2, "Dana", "Dana's 1st title defense, 2 weeks in a row."),
+            (0xB2, "Dana", "Dana’s 1st title defense, 2 weeks in a row."),
         ] {
             openPerson(byte, title: name)
             tapWeek(byte)

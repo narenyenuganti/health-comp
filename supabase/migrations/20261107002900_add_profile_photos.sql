@@ -17,7 +17,11 @@ alter table public.profiles add column photo_version uuid;
 -- Set when a reviewer removes the photo, cleared by the owner's next set or
 -- clear; the owner reads it through own_profile_photo.
 alter table public.profiles add column photo_removed_by_review boolean not null default false;
--- Neither is granted to authenticated: counterparts read photo_version only
+-- The version a reviewer last removed. set_profile_photo refuses it, so the
+-- owner can't put it back before its object is deleted. Kept past the
+-- owner's next set or clear.
+alter table public.profiles add column photo_removed_version uuid;
+-- None is granted to authenticated: counterparts read photo_version only
 -- through list_profile_photos, which applies the visibility rule.
 alter table public.profiles add constraint profiles_photo_requires_active
   check (photo_version is null or state = 'active');
@@ -161,6 +165,11 @@ begin
       and o.name = caller_profile_id::text || '/' || input_photo_version::text || '.jpg') then
     raise exception 'photo_upload_required' using errcode = 'P0001';
   end if;
+  -- A photo removed after review reads as one never uploaded.
+  if exists (select 1 from public.profiles p
+    where p.id = caller_profile_id and p.photo_removed_version = input_photo_version) then
+    raise exception 'photo_upload_required' using errcode = 'P0001';
+  end if;
   update public.profiles p
   set photo_version = input_photo_version, photo_removed_by_review = false,
     updated_at = pg_catalog.statement_timestamp()
@@ -206,7 +215,7 @@ create function private.remove_profile_photo_after_review(target_profile_id uuid
 returns void language sql security definer set search_path = ''
 as $$
   update public.profiles p
-  set photo_version = null, photo_removed_by_review = true,
+  set photo_removed_version = p.photo_version, photo_version = null, photo_removed_by_review = true,
     updated_at = pg_catalog.statement_timestamp()
   where p.id = target_profile_id and p.state = 'active' and p.photo_version is not null;
 $$;
@@ -275,6 +284,7 @@ as $$
 begin
   if old.state = 'active' and new.state <> 'active' then
     new.photo_version := null;
+    new.photo_removed_version := null;
     delete from private.profile_photo_reports r
     where r.reporter_profile_id = new.id or r.reported_profile_id = new.id;
   end if;
