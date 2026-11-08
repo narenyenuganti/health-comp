@@ -415,7 +415,11 @@ struct MainTabView: View {
                     muteButton: muteButton(for: competition),
                     issue: competitionRowIssue(id, in: publication.dashboard.issues),
                     retry: retry,
-                    reactions: reactionControl(id, source: publication.source)
+                    reactions: reactionControl(id, source: publication.source),
+                    personalBest: competitionPersonalBestText(
+                        for: competition,
+                        in: publication.dashboard.competitions
+                    )
                 )
 
             case .declined, .expired, .cancelled:

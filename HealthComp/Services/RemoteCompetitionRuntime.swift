@@ -1794,7 +1794,13 @@ actor RemoteCompetitionRuntime {
                     wireContentSHA256: score.wireContentSHA256,
                     scoringPolicyIdentity: score.scoringPolicyIdentity,
                     clientRevision: score.clientRevision,
-                    serverSequence: score.serverSequence
+                    serverSequence: score.serverSequence,
+                    ringBasisPoints: competitionRingBasisPoints(
+                        score.acceptedCentiPoints,
+                        score.moveBasisPoints,
+                        score.exerciseBasisPoints,
+                        score.standBasisPoints
+                    )
                 )
                 return CompetitionDomainEvent.remoteScoreRevisionRecorded(
                     try RemoteScoreRevision(

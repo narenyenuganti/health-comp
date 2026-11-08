@@ -2523,7 +2523,8 @@ final class CompetitionPresentationTests: XCTestCase {
         identity: String? = nil,
         lifecycle: LocalCompetitionLifecyclePresentation,
         start: (month: Int, day: Int)? = (10, 28),
-        evaluatedAt: Date? = nil
+        evaluatedAt: Date? = nil,
+        userPoints: Double = 0
     ) -> LocalCompetitionPresentation {
         let zone = "America/Los_Angeles"
         let schedule = start.map {
@@ -2539,7 +2540,7 @@ final class CompetitionPresentationTests: XCTestCase {
         case let .completed(outcome, basis, completedAt),
              let .archived(outcome, basis, completedAt, _):
             LocalCompetitionTerminalPresentation(
-                userPoints: 0, opponentPoints: 0, outcome: outcome,
+                userPoints: userPoints, opponentPoints: 0, outcome: outcome,
                 basis: basis, completedAt: completedAt
             )
         default:
@@ -3128,6 +3129,88 @@ extension CompetitionPresentationTests {
             competitionHomeStatusLine(result, locale: en, timeZone: la).hasPrefix("Practice · "),
             competitionHomeStatusLine(result, locale: en, timeZone: la)
         )
+    }
+
+    func testPersonalBestComparesALossWithYourLastFourEarlierRealWeeks() {
+        func week(
+            _ id: Int, _ start: (Int, Int), _ points: Double, _ outcome: CompetitionOutcome = .loss
+        ) -> LocalCompetitionPresentation {
+            homePresentation(
+                id: id,
+                lifecycle: .completed(
+                    outcome: outcome, basis: .stableAcrossPostBoundaryReads, completedAt: homeNow
+                ),
+                start: start,
+                userPoints: points
+            )
+        }
+        let past = [
+            week(1, (9, 23), 5_000),
+            week(2, (9, 30), 1_000),
+            week(3, (10, 7), 1_100),
+            week(4, (10, 14), 900),
+            week(5, (10, 21), 1_000, .win),
+        ]
+        let practice = practicePresentation(
+            id: 9,
+            lifecycle: .completed(outcome: .win, basis: .stableAcrossPostBoundaryReads, completedAt: homeNow),
+            start: (10, 21)
+        )
+        let best = week(10, (10, 28), 1_400)
+        // Week 1 is the fifth back, so its 5,000 never counts.
+        XCTAssertEqual(
+            competitionPersonalBestText(for: best, in: past + [practice, best], locale: en),
+            "Your best week of your last 5, 400 points above your average"
+        )
+        let above = week(10, (10, 28), 1_050, .tie)
+        XCTAssertEqual(
+            competitionPersonalBestText(for: above, in: past + [above], locale: en),
+            "50 points above your average week"
+        )
+        let usual = week(10, (10, 28), 1_000)
+        XCTAssertNil(competitionPersonalBestText(for: usual, in: past + [usual], locale: en))
+        let won = week(10, (10, 28), 1_400, .win)
+        XCTAssertNil(competitionPersonalBestText(for: won, in: past + [won], locale: en))
+        // Two earlier weeks, and one that overlaps this one, aren't enough.
+        let overlapping = week(11, (10, 27), 100)
+        XCTAssertNil(
+            competitionPersonalBestText(
+                for: best, in: Array(past.suffix(2)) + [overlapping, best], locale: en
+            )
+        )
+    }
+
+    func testRingSplitAddsEachSidesAcceptedRingsOnlyWhenEveryScoredDayHasThem() throws {
+        let day = try CompetitionDay(era: 1, year: 2026, month: 10, day: 28, timeZoneIdentifier: "UTC")
+        func split(_ ordinal: Int, you: [Double]?, them: [Double]?) -> LocalCompetitionDayPresentation {
+            var presentation = LocalCompetitionDayPresentation(
+                day: day,
+                ordinal: ordinal,
+                ownerAcceptedPoints: you?.reduce(0, +),
+                ownerLatestAvailability: .observed,
+                opponentRevealedPoints: them?.reduce(0, +)
+            )
+            presentation.ownerRingPoints = you
+            presentation.opponentRingPoints = them
+            return presentation
+        }
+        let days = [
+            split(1, you: [100, 50, 25], them: [120, 20, 50]),
+            split(2, you: [80, 60, 25], them: [90, 10, 50]),
+            split(3, you: nil, them: nil),
+        ]
+        let result = try XCTUnwrap(competitionRingSplit(days))
+        XCTAssertEqual(result.you, [180, 110, 50])
+        XCTAssertEqual(result.them, [210, 30, 100])
+
+        var missing = split(4, you: [1, 1, 1], them: [1, 1, 1])
+        missing.opponentRingPoints = nil
+        XCTAssertNil(competitionRingSplit(days + [missing]))
+        XCTAssertNil(competitionRingSplit([split(1, you: nil, them: nil)]))
+
+        XCTAssertEqual(competitionRingBasisPoints(17_500, 10_000, 5_000, 2_500), [10_000, 5_000, 2_500])
+        XCTAssertNil(competitionRingBasisPoints(17_000, 10_000, 5_000, 2_500))
+        XCTAssertNil(competitionRingBasisPoints(nil, nil, nil, nil))
     }
 
     func testHistoryWeeksAndRecordsLeavePracticeOut() {

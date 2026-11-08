@@ -35,6 +35,21 @@ final class RemoteScoreLedgerTests: XCTestCase {
         XCTAssertEqual(try ledger.visibleEntry(forActiveDayOrdinal: 3), unavailable)
     }
 
+    func testRingValuesAddUpRoundTripAndLeaveAStoredRowTheSameRow() throws {
+        let rings = try RemoteAcceptedScoreRow(ordinal: 1, acceptedCentiPoints: 17_500, availabilityReason: nil, wireContentSHA256: digest("a"), clientRevision: 1, serverSequence: 2, ringBasisPoints: [10_000, 5_000, 2_500])
+        XCTAssertThrowsError(try RemoteAcceptedScoreRow(ordinal: 1, acceptedCentiPoints: 17_000, availabilityReason: nil, wireContentSHA256: digest("a"), clientRevision: 1, serverSequence: 2, ringBasisPoints: [10_000, 5_000, 2_500]))
+        XCTAssertThrowsError(try RemoteAcceptedScoreRow(ordinal: 1, acceptedCentiPoints: nil, availabilityReason: "summaryPaused", wireContentSHA256: digest("a"), clientRevision: 1, serverSequence: 2, ringBasisPoints: [0, 0, 0]))
+        let decoded = try JSONDecoder().decode(RemoteAcceptedScoreRow.self, from: JSONEncoder().encode(rings))
+        XCTAssertEqual(decoded.ringBasisPoints, [10_000, 5_000, 2_500])
+
+        // A row stored before rings were kept replays as the same row.
+        var ledger = try fixtureLedger()
+        let stored = try row(ordinal: 1, points: 17_500, revision: 1, sequence: 2)
+        XCTAssertTrue(try ledger.accept(stored))
+        XCTAssertFalse(try ledger.accept(rings))
+        XCTAssertNil(try JSONDecoder().decode(RemoteAcceptedScoreRow.self, from: JSONEncoder().encode(stored)).ringBasisPoints)
+    }
+
     func testFrozenWindowCommitmentIsSensitiveToAcceptedEvidenceAndIdentity() throws {
         let participantA = try RemoteParticipant(profileID: UUID(uuidString: "11111111-1111-1111-1111-111111111111")!)
         let participantB = try RemoteParticipant(profileID: UUID(uuidString: "22222222-2222-2222-2222-222222222222")!)

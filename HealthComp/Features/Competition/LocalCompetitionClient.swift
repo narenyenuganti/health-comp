@@ -113,6 +113,10 @@ struct LocalCompetitionDayPresentation: Equatable, Sendable {
     let ownerLatestSnapshot: ActivitySnapshot?
     /// How this day's snapshot turns into points; only used to split and preview them.
     let scoringPolicy: ActivityScoringPolicy
+    /// Move, Exercise and Stand points as the server accepted them, adding up
+    /// to each side's score. Remote only; nil when not kept for this day.
+    var ownerRingPoints: [Double]? = nil
+    var opponentRingPoints: [Double]? = nil
 
     init(
         day: CompetitionDay,
