@@ -11,6 +11,8 @@ struct CompetitionWeekChart: View {
     let now: Date
     let opponentName: String
     var showsDates = false
+    /// False holds your bars at the slash; turning true grows them, row by row.
+    var isGrown = true
     /// Makes each day that has started open its breakdown.
     var selectDay: ((LocalCompetitionDayPresentation) -> Void)?
 
@@ -54,6 +56,7 @@ struct CompetitionWeekChart: View {
                 day: day,
                 isToday: day.ordinal == currentDayOrdinal,
                 showsDates: showsDates,
+                isGrown: isGrown,
                 now: now
             )
         }
@@ -212,6 +215,7 @@ private struct HeadToHeadDayRow: View {
     let day: LocalCompetitionDayPresentation
     let isToday: Bool
     let showsDates: Bool
+    let isGrown: Bool
     let now: Date
 
     var body: some View {
@@ -232,11 +236,22 @@ private struct HeadToHeadDayRow: View {
 
     private var scoredRow: some View {
         HStack(spacing: 6) {
-            cell(chartCellText(ownerState), color: ownerColor, alignment: .leading)
-            OwnerDayBar(state: ownerState, segments: ringSegments(day))
+            cell(
+                chartCellText(ownerState),
+                points: day.ownerAcceptedPoints,
+                color: ownerColor,
+                alignment: .leading
+            )
+            OwnerDayBar(state: ownerState, segments: ringSegments(day), isGrown: isGrown)
+                .moving(Motion.grow(day.ordinal - 1, of: 7), value: isGrown)
             DayLabel(day: day, isToday: isToday, showsDates: showsDates, now: now)
             OpponentDayBar(state: opponentState, started: started)
-            cell(opponentText, color: opponentColor, alignment: .trailing)
+            cell(
+                opponentText,
+                points: day.opponentRevealedPoints,
+                color: opponentColor,
+                alignment: .trailing
+            )
         }
         .padding(.horizontal, isToday ? 6 : 0)
         .frame(minHeight: showsDates ? 38 : 30)
@@ -265,19 +280,25 @@ private struct HeadToHeadDayRow: View {
     // Numbers keep the score font; words step back.
     private func cell(
         _ text: String,
+        points: Double?,
         color: Color,
         alignment: Alignment
     ) -> some View {
         let isNumber = text.first?.isNumber == true
-        return Text(text)
-            .font(
-                isNumber
-                    ? .headline.weight(.bold).width(.condensed).monospacedDigit()
-                    : .footnote.weight(.semibold)
-            )
-            .foregroundStyle(isNumber ? color : Theme.secondary)
-            .fixedSize()
-            .frame(minWidth: 36, alignment: alignment)
+        // Words never roll: a word and a number are different ids.
+        return ZStack {
+            Text(text)
+                .font(
+                    isNumber
+                        ? .headline.weight(.bold).width(.condensed).monospacedDigit()
+                        : .footnote.weight(.semibold)
+                )
+                .foregroundStyle(isNumber ? color : Theme.secondary)
+                .fixedSize()
+                .scoreRoll(points, id: isNumber)
+        }
+        .animation(Motion.fade, value: isNumber)
+        .frame(minWidth: 36, alignment: alignment)
     }
 
     // Day winners stay bright; the other number steps back.
@@ -375,29 +396,36 @@ private struct DayLabel: View {
 private struct OwnerDayBar: View {
     let state: CompetitionChartState
     let segments: [(color: Color, points: Double)]
+    let isGrown: Bool
 
     var body: some View {
         GeometryReader { proxy in
             let unit = proxy.size.width / ActivityScore.maximumDailyPoints
+            // Width, not scale, so the 12 degree edge holds.
+            let growth: CGFloat = isGrown ? 1 : 0
             HStack(spacing: 1.5) {
                 Spacer(minLength: 0)
-                switch state {
-                case .score:
-                    ForEach(segments.indices.reversed(), id: \.self) { index in
+                Group {
+                    switch state {
+                    case .score:
+                        ForEach(segments.indices.reversed(), id: \.self) { index in
+                            SlantedBar()
+                                .fill(segments[index].color)
+                                .frame(width: max(2, segments[index].points * unit) * growth)
+                        }
+                    case let .missingWithScore(points), let .unavailableWithScore(points):
                         SlantedBar()
-                            .fill(segments[index].color)
-                            .frame(width: max(2, segments[index].points * unit))
+                            .stroke(Theme.you, style: StrokeStyle(lineWidth: 1.5, dash: [3, 2]))
+                            .frame(width: max(4, points * unit) * growth)
+                    case .future:
+                        Rectangle().fill(Theme.track).frame(height: 2)
+                    case .missing, .unavailable, .unscored:
+                        HatchBar().frame(width: 24, height: 10)
                     }
-                case let .missingWithScore(points), let .unavailableWithScore(points):
-                    SlantedBar()
-                        .stroke(Theme.you, style: StrokeStyle(lineWidth: 1.5, dash: [3, 2]))
-                        .frame(width: max(4, points * unit))
-                case .future:
-                    Rectangle().fill(Theme.track).frame(height: 2)
-                case .missing, .unavailable, .unscored:
-                    HatchBar().frame(width: 24, height: 10)
                 }
+                .transition(Motion.appear)
             }
+            .moving(Motion.settle, value: segments.map(\.points))
             .frame(height: proxy.size.height)
         }
         .frame(height: 20)
@@ -411,23 +439,27 @@ private struct OpponentDayBar: View {
     var body: some View {
         GeometryReader { proxy in
             HStack(spacing: 0) {
-                if case let .score(points) = state {
-                    SlantedBar()
-                        .fill(Theme.ink)
-                        .frame(
-                            width: max(
-                                2,
-                                points / ActivityScore.maximumDailyPoints
-                                    * proxy.size.width
+                Group {
+                    if case let .score(points) = state {
+                        SlantedBar()
+                            .fill(Theme.ink)
+                            .frame(
+                                width: max(
+                                    2,
+                                    points / ActivityScore.maximumDailyPoints
+                                        * proxy.size.width
+                                )
                             )
-                        )
-                } else if started {
-                    HatchBar().frame(width: 24, height: 10)
-                } else {
-                    Rectangle().fill(Theme.track).frame(height: 2)
+                    } else if started {
+                        HatchBar().frame(width: 24, height: 10)
+                    } else {
+                        Rectangle().fill(Theme.track).frame(height: 2)
+                    }
                 }
+                .transition(Motion.appear)
                 Spacer(minLength: 0)
             }
+            .moving(Motion.settle, value: state)
             .frame(height: proxy.size.height)
         }
         .frame(height: 20)
