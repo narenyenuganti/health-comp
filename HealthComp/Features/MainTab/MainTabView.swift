@@ -13,7 +13,7 @@ struct MainTabView: View {
     @State private var isPracticePresented = false
 
     var body: some View {
-        Group {
+        ZStack {
             if let onboarding = store.onboarding {
                 PermissionOnboardingView(
                     step: onboarding.step,
@@ -22,8 +22,11 @@ struct MainTabView: View {
                     continueTapped: { store.send(.onboardingContinueTapped) },
                     notNowTapped: {}
                 )
+                .transition(Motion.appear)
+                .zIndex(1)
             } else {
                 home
+                    .transition(.identity)
             }
         }
         .task {

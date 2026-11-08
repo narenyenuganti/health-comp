@@ -9,23 +9,40 @@ struct AccountView: View {
     /// A challenge link arrived before sign-in.
     var hasPendingChallenge = false
 
+    /// The root fades this screen off after the store has become the signed-in
+    /// account's, which isn't this screen's to draw, so it keeps its last state.
+    private final class LastDrawn {
+        var state: AccountFeature.State?
+    }
+
+    @State private var lastDrawn = LastDrawn()
+
+    private var state: AccountFeature.State {
+        let live = store.state
+        if live.mode == .authenticated { return lastDrawn.state ?? live }
+        lastDrawn.state = live
+        return live
+    }
+
     var body: some View {
         GeometryReader { proxy in
             ScrollView {
                 VStack(spacing: 24) {
                     header
-                    if store.mode == .settingUpProfile {
+                    if state.mode == .settingUpProfile {
                         displayNameField
+                            .transition(Motion.appear)
                     }
                     // Launch failure and profile conflict fold the message
                     // into the subtitle.
-                    if store.mode == .signedOut || store.mode == .settingUpProfile,
-                       let message = store.message {
+                    if state.mode == .signedOut || state.mode == .settingUpProfile,
+                       let message = state.message {
                         Text(message.text)
                             .font(.callout)
                             .foregroundStyle(Theme.ink)
                             .multilineTextAlignment(.center)
                             .accessibilityIdentifier("account.message")
+                            .transition(Motion.appear)
                     }
                     actions
                 }
@@ -37,7 +54,21 @@ struct AccountView: View {
         }
         .background(Theme.ground)
         .task { store.send(.appeared) }
-        .animation(.easeInOut(duration: 0.2), value: store.message)
+        .moving(Motion.settle, value: state.mode)
+        .moving(Motion.settle, value: state.message)
+        .moving(Motion.settle, value: hasPendingChallenge)
+        .sensoryFeedback(.error, trigger: state.message, condition: Self.isFailure)
+    }
+
+    /// Account deleted and session ended report something already done.
+    private static func isFailure(
+        _: AccountFeature.Message?,
+        _ new: AccountFeature.Message?
+    ) -> Bool {
+        switch new {
+        case nil, .accountDeleted, .sessionEnded: false
+        default: true
+        }
     }
 
     private var header: some View {
@@ -50,12 +81,17 @@ struct AccountView: View {
                     .foregroundStyle(Theme.ink)
                     .multilineTextAlignment(.center)
                     .accessibilityAddTraits(.isHeader)
+                    .contentTransition(.opacity)
+                    .animation(Motion.fade, value: title)
                 if let subtitle {
                     Text(subtitle)
                         .font(.body)
                         .foregroundStyle(Theme.secondary)
                         .multilineTextAlignment(.center)
                         .accessibilityIdentifier("account.subtitle")
+                        .contentTransition(.opacity)
+                        .animation(Motion.fade, value: subtitle)
+                        .transition(Motion.appear)
                 }
             }
         }
@@ -80,7 +116,7 @@ struct AccountView: View {
             TextField(
                 "Display name",
                 text: Binding(
-                    get: { store.displayName },
+                    get: { state.displayName },
                     set: { store.send(.displayNameChanged($0)) }
                 )
             )
@@ -100,25 +136,24 @@ struct AccountView: View {
     }
 
     private var displayNameInitial: String? {
-        store.displayName.trimmingCharacters(in: .whitespaces).first
+        state.displayName.trimmingCharacters(in: .whitespaces).first
             .map { String($0).uppercased() }
     }
 
     private var actions: some View {
         VStack(spacing: 12) {
-            primaryButton
-                .disabled(store.isRequestInFlight)
-                .overlay {
-                    if store.isRequestInFlight {
-                        ProgressView().tint(progressTint)
-                    }
-                }
-            if store.mode == .signedOut, store.isBrowserSignInAvailable {
+            // A ZStack, so two buttons never stack during the crossfade.
+            ZStack {
+                primaryButton
+                    .transition(Motion.appear)
+            }
+            .disabled(state.isRequestInFlight)
+            if state.mode == .signedOut, state.isBrowserSignInAvailable {
                 Button("Sign in with Apple in Browser") {
                     store.send(.browserSignInButtonTapped)
                 }
                 .buttonStyle(SecondaryButtonStyle())
-                .disabled(store.isRequestInFlight)
+                .disabled(state.isRequestInFlight)
                 .accessibilityIdentifier("account.sign-in-with-apple.browser")
             }
             Link(destination: URL(string: "https://healthcomp.app/privacy")!) {
@@ -134,20 +169,9 @@ struct AccountView: View {
         }
     }
 
-    // The Apple button and Sign Out keep the tested contrast rule; the
-    // neutral primary buttons carry onInk content in both modes.
-    private var progressTint: Color {
-        switch store.mode {
-        case .signedOut, .authenticated:
-            AccountProgressAppearance.tint(for: store.mode, colorScheme: colorScheme)
-        case .settingUpProfile, .launchFailure, .profileConflict:
-            Theme.onInk
-        }
-    }
-
     @ViewBuilder
     private var primaryButton: some View {
-        switch store.mode {
+        switch state.mode {
         case .signedOut:
             SignInWithAppleButton(
                 style: AppleSignInAppearance.buttonStyle(for: colorScheme)
@@ -160,29 +184,37 @@ struct AccountView: View {
             .accessibilityIdentifier("account.sign-in-with-apple")
 
         case .settingUpProfile:
-            Button("Continue") {
+            Button {
                 store.send(.submitDisplayNameButtonTapped)
+            } label: {
+                BusyLabel("Continue", isBusy: state.isRequestInFlight)
             }
             .buttonStyle(PrimaryButtonStyle())
             .accessibilityIdentifier("account.submit-display-name")
 
         case .launchFailure:
-            Button("Try Again") {
+            Button {
                 store.send(.retryButtonTapped)
+            } label: {
+                BusyLabel("Try Again", isBusy: state.isRequestInFlight)
             }
             .buttonStyle(PrimaryButtonStyle())
             .accessibilityIdentifier("account.retry")
 
         case .profileConflict:
-            Button("Sign Out to Switch") {
+            Button {
                 store.send(.signOutButtonTapped)
+            } label: {
+                BusyLabel("Sign Out to Switch", isBusy: state.isRequestInFlight)
             }
             .buttonStyle(PrimaryButtonStyle())
             .accessibilityIdentifier("account.recover-profile")
 
         case .authenticated:
-            Button("Sign Out", role: .destructive) {
+            Button(role: .destructive) {
                 store.send(.signOutButtonTapped)
+            } label: {
+                BusyLabel("Sign Out", isBusy: state.isRequestInFlight)
             }
             .buttonStyle(SecondaryButtonStyle())
             .accessibilityIdentifier("account.sign-out")
@@ -190,25 +222,25 @@ struct AccountView: View {
     }
 
     private var title: String {
-        switch store.mode {
+        switch state.mode {
         case .signedOut:
             hasPendingChallenge ? "You have a challenge" : "Welcome to HealthComp"
         case .settingUpProfile: "Choose your display name"
-        case .launchFailure: store.message?.failureTitle ?? "Couldn’t connect"
+        case .launchFailure: state.message?.failureTitle ?? "Couldn’t connect"
         case .profileConflict: "This iPhone has history for another account"
         case .authenticated: "Account"
         }
     }
 
     private var subtitle: String? {
-        switch store.mode {
+        switch state.mode {
         case .signedOut:
             hasPendingChallenge ? "Sign in with the account it was sent to." : nil
         case .settingUpProfile:
             // A new account can't be a challenge's recipient.
             "The people you play will see this name. You can change it later."
         case .launchFailure:
-            store.message?.text ?? "Check your connection and try again."
+            state.message?.text ?? "Check your connection and try again."
         case .profileConflict:
             "Only this iPhone is signed out. Saved history and your other devices are unchanged."
         case .authenticated:

@@ -128,10 +128,42 @@ struct AccountSettingsView: View {
     @AppStorage(AppAppearance.storageKey)
     private var appearance = AppAppearance.system
     @State private var showsChallengeCode = false
+    @State private var hasLoaded = false
+    @FocusState private var isNameFocused: Bool
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @ScaledMetric(relativeTo: .headline) private var blockedInitialSize: CGFloat = 34
 
+    /// What can resize the list once it's open.
+    private var listShape: [AnyHashable] {
+        [
+            AnyHashable(challengeLink?.url),
+            AnyHashable(challengeLink?.failed),
+            AnyHashable(challengeLink?.resetFailed),
+            AnyHashable(blockedPeople?.people?.map(\.id)),
+            AnyHashable(blockedPeople?.unblockFailed),
+            AnyHashable(store.isEditingDisplayName),
+            AnyHashable(store.message?.text),
+            AnyHashable(health != nil),
+        ]
+    }
+
     var body: some View {
+        scrollingList
+            .task { load() }
+            .onChange(of: store.isEditingDisplayName) { _, isEditing in
+                isNameFocused = isEditing
+            }
+            .sheet(isPresented: $showsChallengeCode) {
+                if let url = challengeLink?.url {
+                    ChallengeLinkCodeView(url: url) { showsChallengeCode = false }
+                }
+            }
+            .overlay {
+                AccountProgressOverlay(store: store)
+            }
+    }
+
+    private var list: some View {
         List {
             profileSection
             if challengeLink != nil {
@@ -144,20 +176,51 @@ struct AccountSettingsView: View {
             signOutSection
             deleteSection
         }
+        .moving(Motion.settle, value: listShape)
         .accountPageStyle(title: "Account")
-        .task {
-            store.send(.appeared)
-            challengeLink?.load()
-            blockedPeople?.load()
+    }
+
+    /// Delete is the last row, so its message lands off the bottom of the list.
+    private var scrollingList: some View {
+        ScrollViewReader { proxy in
+            listWithHaptics
+                .onChange(of: store.message) { _, message in
+                    if message?.isDeletionMessage == true {
+                        proxy.scrollTo(Self.deletionMessageID, anchor: .bottom)
+                    }
+                }
         }
-        .sheet(isPresented: $showsChallengeCode) {
-            if let url = challengeLink?.url {
-                ChallengeLinkCodeView(url: url) { showsChallengeCode = false }
-            }
-        }
-        .overlay {
-            AccountProgressOverlay(store: store)
-        }
+    }
+
+    private static let deletionMessageID = "account.deletion-message"
+
+    // Plain Bools and its own property: on the List's chain, these closures
+    // don't type-check in time. Each failure clears before the next attempt.
+    private var listWithHaptics: some View {
+        let hasMessage: Bool = store.message != nil
+        let unblockFailed: Bool = blockedPeople?.unblockFailed != nil
+        let resetFailed: Bool = challengeLink?.resetFailed ?? false
+        let linkURL: URL? = challengeLink?.url
+        return list
+            .sensoryFeedback(.error, trigger: hasMessage, condition: { _, new in new })
+            .sensoryFeedback(.error, trigger: unblockFailed, condition: { _, new in new })
+            .sensoryFeedback(.error, trigger: resetFailed, condition: { _, new in new })
+            .sensoryFeedback(.success, trigger: linkURL, condition: Self.linkWasReset)
+    }
+
+    /// First load isn't a reset.
+    private static func linkWasReset(_ old: URL?, _ new: URL?) -> Bool {
+        old != nil && new != nil
+    }
+
+    /// This runs again on pop back, and a reload would clear the failure on
+    /// screen. Hosts with no link yet can still load later.
+    private func load() {
+        store.send(.appeared)
+        guard !hasLoaded else { return }
+        hasLoaded = challengeLink != nil
+        challengeLink?.load()
+        blockedPeople?.load()
     }
 
     private var profileSection: some View {
@@ -174,6 +237,7 @@ struct AccountSettingsView: View {
                 .textInputAutocapitalization(.words)
                 .autocorrectionDisabled()
                 .submitLabel(.done)
+                .focused($isNameFocused)
                 .onSubmit {
                     store.send(.saveDisplayNameButtonTapped)
                 }
@@ -185,10 +249,13 @@ struct AccountSettingsView: View {
                     }
                     .buttonStyle(SecondaryButtonStyle())
 
-                    Button("Save") {
+                    Button {
                         store.send(.saveDisplayNameButtonTapped)
+                    } label: {
+                        BusyLabel("Save", isBusy: store.isRequestInFlight)
                     }
                     .buttonStyle(PrimaryButtonStyle())
+                    .accessibilityValue(store.isRequestInFlight ? "Saving" : "")
                     .accessibilityIdentifier(
                         "account.settings.save-display-name"
                     )
@@ -239,8 +306,10 @@ struct AccountSettingsView: View {
 
     private var challengeLinkSection: some View {
         Section {
-            VStack(alignment: .leading, spacing: 12) {
-                if let url = challengeLink?.url {
+            // Separate rows, so the List settles these. A height change inside
+            // one cell jumps, and its text runs over its neighbours.
+            if let url = challengeLink?.url {
+                VStack(alignment: .leading, spacing: 12) {
                     let isResetting = challengeLink?.isResetting == true
                     Text(Self.displayText(url))
                         .font(.callout.monospaced())
@@ -250,6 +319,8 @@ struct AccountSettingsView: View {
                         .accessibilityLabel("Your challenge link")
                         .accessibilityValue(Self.displayText(url))
                         .accessibilityIdentifier("account.challenge-link.url")
+                        .contentTransition(.opacity)
+                        .animation(Motion.fade, value: url)
                     let buttons = Group {
                         Button {
                             showsChallengeCode = true
@@ -293,30 +364,35 @@ struct AccountSettingsView: View {
                         } message: {
                             Text("Your old link stops working. Challenges already sent stay.")
                         }
-                    if challengeLink?.resetFailed == true {
-                        Text("Couldn’t reset your link. Try again.")
-                            .font(.callout)
-                            .foregroundStyle(Theme.ink)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .accessibilityIdentifier("account.challenge-link.reset-error")
-                    }
                     Text("Anyone with this link can challenge you. Reset it to turn off the old one; challenges already sent stay.")
                         .font(.caption)
                         .foregroundStyle(Theme.secondary)
                         .fixedSize(horizontal: false, vertical: true)
-                } else if challengeLink?.failed == true {
+                }
+                .padding(.vertical, 4)
+                if challengeLink?.resetFailed == true {
+                    Text("Couldn’t reset your link. Try again.")
+                        .font(.callout)
+                        .foregroundStyle(Theme.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("account.challenge-link.reset-error")
+                        .listRowSeparator(.hidden, edges: .top)
+                }
+            } else if challengeLink?.failed == true {
+                VStack(alignment: .leading, spacing: 12) {
                     Text("Couldn’t load your link.")
                         .font(.callout)
                         .foregroundStyle(Theme.ink)
                     Button("Try Again") { challengeLink?.load() }
                         .buttonStyle(SecondaryButtonStyle())
                         .accessibilityIdentifier("account.challenge-link.retry")
-                } else {
-                    ProgressView("Loading your link…")
-                        .frame(maxWidth: .infinity, minHeight: 44)
                 }
+                .padding(.vertical, 4)
+            } else {
+                ProgressView("Loading your link…")
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .padding(.vertical, 4)
             }
-            .padding(.vertical, 4)
         } header: {
             SectionLabel("YOUR CHALLENGE LINK")
         }
@@ -328,7 +404,19 @@ struct AccountSettingsView: View {
         _ people: [AuthenticatedProfile]
     ) -> some View {
         Section {
-            ForEach(people, id: \.id) { blockedRow($0, blocked) }
+            ForEach(people, id: \.id) { person in
+                blockedRow(person, blocked)
+                // Under the person, so it shows where the tap was even when
+                // the list runs past the screen.
+                if blocked.unblockFailed == person.id {
+                    Text("Couldn’t unblock. Check your connection and try again.")
+                        .font(.callout)
+                        .foregroundStyle(Theme.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("account.blocked.error")
+                        .listRowSeparator(.hidden, edges: .top)
+                }
+            }
         } header: {
             SectionLabel("BLOCKED")
         } footer: {
@@ -347,46 +435,36 @@ struct AccountSettingsView: View {
         let layout = isAccessibilitySize
             ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
             : AnyLayout(HStackLayout(spacing: 12))
-        return VStack(alignment: .leading, spacing: 4) {
-            layout {
-                HStack(spacing: 12) {
-                    // At accessibility sizes the initial would squeeze the
-                    // name into a narrow column, so the name gets the width.
-                    if !isAccessibilitySize {
-                        Text(person.displayName.first.map { String($0).uppercased() } ?? "")
-                            .font(.headline.width(.condensed))
-                            .foregroundStyle(Theme.ink)
-                            .frame(width: blockedInitialSize, height: blockedInitialSize)
-                            .background(Theme.control, in: Circle())
-                            .accessibilityHidden(true)
-                    }
-                    Text(person.displayName)
+        return layout {
+            HStack(spacing: 12) {
+                // At accessibility sizes the initial would squeeze the
+                // name into a narrow column, so the name gets the width.
+                if !isAccessibilitySize {
+                    Text(person.displayName.first.map { String($0).uppercased() } ?? "")
+                        .font(.headline.width(.condensed))
                         .foregroundStyle(Theme.ink)
-                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(width: blockedInitialSize, height: blockedInitialSize)
+                        .background(Theme.control, in: Circle())
+                        .accessibilityHidden(true)
                 }
-                .frame(maxWidth: .infinity, alignment: .leading)
-                Button { blocked.unblock(person.id) } label: {
-                    // The ink tint doesn't dim when disabled, so saving shows here.
-                    Text("Unblock")
-                        .foregroundStyle(isUnblocking ? Theme.secondary : Theme.ink)
-                        .frame(minHeight: 44)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.borderless)
-                .disabled(isUnblocking)
-                .accessibilityLabel("Unblock \(person.displayName)")
-                .accessibilityValue(isUnblocking ? "Unblocking" : "")
-                .accessibilityIdentifier("account.blocked.unblock")
-            }
-            // In the row it belongs to, so it shows where the tap was even
-            // when the list runs past the screen.
-            if blocked.unblockFailed == person.id {
-                Text("Couldn’t unblock. Check your connection and try again.")
-                    .font(.callout)
+                Text(person.displayName)
                     .foregroundStyle(Theme.ink)
                     .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityIdentifier("account.blocked.error")
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            Button { blocked.unblock(person.id) } label: {
+                // The ink tint doesn't dim when disabled, so saving shows here.
+                Text("Unblock")
+                    .foregroundStyle(isUnblocking ? Theme.secondary : Theme.ink)
+                    .animation(Motion.fade, value: isUnblocking)
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.borderless)
+            .disabled(isUnblocking)
+            .accessibilityLabel("Unblock \(person.displayName)")
+            .accessibilityValue(isUnblocking ? "Unblocking" : "")
+            .accessibilityIdentifier("account.blocked.unblock")
         }
     }
 
@@ -535,6 +613,7 @@ struct AccountSettingsView: View {
                     .font(.callout)
                     .foregroundStyle(Theme.ink)
                     .accessibilityIdentifier("account.message")
+                    .id(Self.deletionMessageID)
             }
         }
         .listRowBackground(Theme.panel)
@@ -615,7 +694,8 @@ private struct AccountNotificationsPage: View {
     @Environment(\.openURL) private var openURL
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @ScaledMetric(relativeTo: .headline) private var initialSize: CGFloat = 34
-    @State private var systemLiveActivitiesEnabled = true
+    // Read up front, so the rows it adds are there on the push.
+    @State private var systemLiveActivitiesEnabled = ActivityAuthorizationInfo().areActivitiesEnabled
 
     private var liveActivitiesEnabled: Bool {
         settings.liveActivitiesEnabled ?? systemLiveActivitiesEnabled
@@ -675,6 +755,9 @@ private struct AccountNotificationsPage: View {
                 .listRowBackground(Theme.panel)
             }
         }
+        .moving(Motion.settle, value: settings.authorization)
+        .moving(Motion.settle, value: settings.mutedPeople)
+        .moving(Motion.settle, value: liveActivitiesEnabled)
         .accountPageStyle(title: "Notifications")
         .task {
             guard settings.liveActivitiesEnabled == nil else { return }
@@ -726,6 +809,7 @@ private struct AccountNotificationsPage: View {
         let layout = isAccessibilitySize
             ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
             : AnyLayout(HStackLayout(spacing: 12))
+        let isUnmuting = settings.mutesInFlight.contains(person.id)
         return layout {
             HStack(spacing: 12) {
                 if !isAccessibilitySize {
@@ -744,12 +828,15 @@ private struct AccountNotificationsPage: View {
             // The frame sits inside the label so the tap area, not just the
             // layout, stays 44pt at the smallest text sizes.
             Button { settings.unmute(person.id) } label: {
+                // The ink tint doesn't dim when disabled, so saving shows here.
                 Text("Unmute")
+                    .foregroundStyle(isUnmuting ? Theme.secondary : Theme.ink)
+                    .animation(Motion.fade, value: isUnmuting)
                     .frame(minWidth: 44, minHeight: 44)
                     .contentShape(Rectangle())
             }
                 .buttonStyle(.borderless)
-                .disabled(settings.mutesInFlight.contains(person.id))
+                .disabled(isUnmuting)
                 .accessibilityLabel("Unmute \(person.name)")
                 .accessibilityIdentifier("account.notifications.unmute")
         }
@@ -807,7 +894,8 @@ private struct AccountProgressOverlay: View {
     let store: StoreOf<AccountFeature>
 
     var body: some View {
-        if store.isRequestInFlight {
+        // Save waits in its own button.
+        if store.isRequestInFlight, !store.isEditingDisplayName {
             ProgressView()
                 .tint(Theme.ink)
                 .accessibilityLabel(
@@ -815,6 +903,8 @@ private struct AccountProgressOverlay: View {
                         ? "Deleting account"
                         : "Saving account changes"
                 )
+                .waitingFade()
+                .transition(Motion.appear)
         }
     }
 }
@@ -996,7 +1086,7 @@ private struct AppearancePicker: View {
         layout {
             ForEach(AppAppearance.allCases) { option in
                 Button {
-                    selection = option
+                    choose(option)
                 } label: {
                     VStack(spacing: 8) {
                         AppearanceThumbnail(
@@ -1015,6 +1105,7 @@ private struct AppearancePicker: View {
                         .foregroundStyle(
                             selection == option ? Theme.ink : Theme.tertiary
                         )
+                        .contentTransition(.opacity)
                     }
                     .frame(maxWidth: .infinity, minHeight: 44)
                     .contentShape(Rectangle())
@@ -1025,6 +1116,28 @@ private struct AppearancePicker: View {
             }
         }
         .padding(.vertical, 8)
+        .animation(Motion.fade, value: selection)
+        .sensoryFeedback(.selection, trigger: selection)
+    }
+
+    /// The whole window changes, and dynamic colours don't interpolate through
+    /// a transaction, so it crossfades from a snapshot: `Motion.fade` in UIKit.
+    private func choose(_ option: AppAppearance) {
+        guard option != selection else { return }
+        let window = UIApplication.shared.connectedScenes
+            .compactMap { ($0 as? UIWindowScene)?.keyWindow }.first
+        let snapshot = window?.snapshotView(afterScreenUpdates: false)
+        if let snapshot {
+            snapshot.isUserInteractionEnabled = false
+            snapshot.accessibilityElementsHidden = true
+            window?.addSubview(snapshot)
+        }
+        selection = option
+        UIView.animate(withDuration: 0.2, delay: 0, options: .curveEaseOut) {
+            snapshot?.alpha = 0
+        } completion: { _ in
+            snapshot?.removeFromSuperview()
+        }
     }
 }
 
@@ -1119,13 +1232,15 @@ private struct ChallengeLinkCodeView: View {
     }
 }
 
+private let challengeLinkQRContext = CIContext()
+
 private func challengeLinkQRCode(_ url: URL) -> UIImage? {
     let filter = CIFilter.qrCodeGenerator()
     filter.message = Data(url.absoluteString.utf8)
     filter.correctionLevel = "M"
     guard let output = filter.outputImage?
         .transformed(by: CGAffineTransform(scaleX: 10, y: 10)),
-          let cgImage = CIContext().createCGImage(output, from: output.extent)
+          let cgImage = challengeLinkQRContext.createCGImage(output, from: output.extent)
     else {
         return nil
     }

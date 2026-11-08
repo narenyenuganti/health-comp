@@ -359,6 +359,31 @@ final class AccountDeletionTests: XCTestCase {
     }
 
     @MainActor
+    func testDeleteConfirmationClosesOpenNameEditor() async {
+        var state = AccountFeature.State(
+            mode: .authenticated,
+            displayName: "Taylor"
+        )
+        state.isEditingDisplayName = true
+        state.displayName = "Tay"
+        let store = TestStore(initialState: state) {
+            AccountFeature()
+        }
+
+        await store.send(.deleteAccountButtonTapped) {
+            $0.isDeleteConfirmationPresented = true
+        }
+        await store.send(.deleteAccountConfirmationAccepted) {
+            $0.isDeleteConfirmationPresented = false
+            $0.displayName = "Taylor"
+            $0.isEditingDisplayName = false
+            $0.isRequestInFlight = true
+            $0.isDeletingAccount = true
+        }
+        await store.receive(.delegate(.deleteAccountRequested))
+    }
+
+    @MainActor
     func testDeletionFailureClearsProgressWithSpecificMessage() async {
         var state = AccountFeature.State(
             mode: .authenticated,

@@ -1489,6 +1489,9 @@ final class MultiUserCompetitionUITests: XCTestCase {
             message.label,
             "Couldn’t delete your account. Check your connection and try again."
         )
+        // Delete is the last row, so the list scrolls to show all of it.
+        let isOnScreen = NSPredicate { _, _ in message.frame.maxY <= self.app.frame.maxY }
+        wait(for: [XCTNSPredicateExpectation(predicate: isOnScreen, object: nil)], timeout: 3)
         XCTAssertTrue(app.buttons["account.delete"].isEnabled)
         XCTAssertFalse(app.progressIndicators["Deleting account"].exists)
     }

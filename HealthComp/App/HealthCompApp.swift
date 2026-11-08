@@ -236,19 +236,27 @@ struct AppRootView: View {
     private var appearance = AppAppearance.system
 
     var body: some View {
-        Group {
+        // Layers, so only the one on top fades. Main never does: it hosts the
+        // sheets and UIKit bars, and its state goes nil with the phase.
+        ZStack {
+            Theme.ground.ignoresSafeArea()
             switch store.phase {
-            case .launching, .bootstrappingProfile:
-                AppProgressView(title: "Connecting…")
-
-            case .tearingDown:
-                AppProgressView(title: "Signing out…")
+            // One branch, so the wait doesn't restart between these phases.
+            case .launching, .bootstrappingProfile, .tearingDown:
+                AppProgressView(
+                    title: Self.progressTitle(store.pendingTeardown?.reason),
+                    waits: true
+                )
+                .transition(Motion.appear)
+                .zIndex(2)
 
             case .signedOut, .settingUpProfile, .launchFailure:
                 AccountView(
                     store: store.scope(state: \.account, action: \.account),
                     hasPendingChallenge: store.hasPendingChallenge
                 )
+                .transition(Motion.appear)
+                .zIndex(1)
 
             case .authenticated:
                 if let mainStore = store.scope(
@@ -262,6 +270,7 @@ struct AppRootView: View {
                             action: \.account
                         )
                     )
+                    .transition(.identity)
                 }
             }
         }
@@ -275,19 +284,47 @@ struct AppRootView: View {
             _ = CompetitionRoutingEnvironment.liveHub.enqueue(route)
         }
     }
+
+    /// Cleaning up after a session that never opened isn't signing out.
+    static func progressTitle(_ teardown: AppFeature.TeardownReason?) -> String {
+        switch teardown {
+        case nil, .restoredWithoutSession, .cancelledAuthentication:
+            "Connecting…"
+        case .userRequested, .sessionEnded, .accountDeleted, .profileConflict:
+            "Signing out…"
+        }
+    }
 }
 
-private struct AppProgressView: View {
+/// The mark holding still. The root and Home draw the same one at window
+/// centre, keyboard or not, so it stays put as one hands over to the other.
+struct AppProgressView: View {
     let title: String
+    /// The first loader waits 200 ms. Home's takes over from it, so it can't.
+    var waits = false
 
     var body: some View {
+        Group {
+            if waits {
+                content.waitingFade()
+            } else {
+                content
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Theme.ground)
+        .ignoresSafeArea()
+        // One flat layer: faded in parts, the mark dips over its twin below.
+        .compositingGroup()
+        .allowsHitTesting(false)
+    }
+
+    private var content: some View {
         VStack(spacing: 20) {
             BrandMark().frame(width: 88)
             ProgressView(title)
                 .foregroundStyle(Theme.secondary)
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Theme.ground)
     }
 }
 
@@ -323,6 +360,16 @@ private struct AccountSheet: View {
     let accountStore: StoreOf<AccountFeature>
     let done: () -> Void
 
+    @AppStorage(AppAppearance.storageKey)
+    private var appearance = AppAppearance.system
+
+    /// A nil preference doesn't reach an open sheet, so going back to System
+    /// here names the iPhone's own setting instead.
+    private var colorScheme: ColorScheme {
+        appearance.colorScheme
+            ?? (UIScreen.main.traitCollection.userInterfaceStyle == .dark ? .dark : .light)
+    }
+
     var body: some View {
         NavigationStack {
             accountSettings
@@ -332,6 +379,7 @@ private struct AccountSheet: View {
                 }
             }
         }
+        .preferredColorScheme(colorScheme)
         .task { mainStore.send(.refreshHealthAccess) }
     }
 
