@@ -84,9 +84,46 @@ final class HealthCompWatchUITests: XCTestCase {
         XCTAssertEqual(hittable().count, 1)
         XCTAssertTrue(hittable()[0].label.hasPrefix("Sam, Day 5 of 7."), hittable()[0].label)
 
-        XCUIDevice.shared.rotateDigitalCrown(delta: 0.3)
+        // Half a turn or less snaps back; a full turn pages twice.
+        XCUIDevice.shared.rotateDigitalCrown(delta: 0.75)
         sleep(2)
         XCTAssertEqual(hittable().count, 1)
         XCTAssertTrue(hittable()[0].label.hasPrefix("Alex, Day 2 of 7."), hittable()[0].label)
+    }
+
+    /// The default face's bottom slot reads the file the app just wrote. The
+    /// other shapes need a face with their slots, so they're checked by eye.
+    func testComplicationOnTheFace() {
+        XCTAssertTrue(element(launch("live"), "watch.match").waitForExistence(timeout: 15))
+        let face = XCUIApplication(bundleIdentifier: "com.apple.Carousel")
+        XCUIDevice.shared.press(.home)  // Home toggles face and app grid: never press it twice.
+        sleep(3)
+        face.press(forDuration: 2)
+        sleep(3)
+        face.buttons["Edit"].firstMatch.tap()
+        sleep(3)
+        face.swipeLeft()
+        sleep(2)
+        face.swipeLeft()
+        sleep(2)
+        let bottom = face.buttons["Bottom complication"].firstMatch
+        if (bottom.value as? String)?.contains("HealthComp") != true {
+            bottom.tap()
+            sleep(3)
+            let ours = face.cells["AppGroupCell -- HealthComp"]
+            for _ in 0..<14 where !(ours.exists && ours.isHittable) {
+                face.swipeUp()
+                sleep(1)
+            }
+            XCTAssertTrue(ours.exists, "HealthComp is not in the picker")
+            ours.tap()
+            sleep(3)
+            face.cells["ComplicationListCell -- Match"].firstMatch.tap()
+            sleep(3)
+        }
+        XCTAssertEqual(face.descendants(matching: .any)["bottom-center"].firstMatch.label, "HealthComp")
+        let score = face.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS '54'")).firstMatch
+        XCTAssertTrue(score.waitForExistence(timeout: 10), face.debugDescription)
+        XCUIDevice.shared.press(.home)
     }
 }
