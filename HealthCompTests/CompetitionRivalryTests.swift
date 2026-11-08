@@ -7,6 +7,7 @@ import XCTest
 /// you and Sam, ten finished weeks (the Test Lab's `rivalry` fixture).
 final class CompetitionRivalryTests: XCTestCase {
     private let locale = Locale(identifier: "en_US")
+    private let zone = TimeZone(identifier: "America/Los_Angeles")!
     private lazy var ten = CompetitionRivalryFixture.weeks(10, now: CompetitionRivalryFixture.now(weeks: 10))
     private lazy var five = CompetitionRivalryFixture.weeks(5, now: CompetitionRivalryFixture.now(weeks: 5))
 
@@ -71,6 +72,73 @@ final class CompetitionRivalryTests: XCTestCase {
         XCTAssertEqual(competitionClosestFinish(five)?.id, five[3].id)
         XCTAssertEqual(competitionFormLine(five.compactMap(\.terminalResult?.outcome), opponentName: "Sam"),
                        "You won the last 4")
+    }
+
+    func testThisYearsRecordsUseOnlyThisYearsWeeks() throws {
+        let now = CompetitionRivalryFixture.now(weeks: 10)
+        let weeks = CompetitionRivalryFixture.weeks(10, now: now, lastYear: 5)
+        let year = try XCTUnwrap(competitionYearWeeks(weeks, now: now, timeZone: zone))
+        XCTAssertEqual(year.year, 2026)
+        XCTAssertEqual(year.weeks.map(\.id), weeks.suffix(5).map(\.id))
+
+        let rows = competitionRivalryRecords(year.weeks, opponentName: "Sam", now: now, year: year.year, locale: locale)
+        // No first match: that's All time's.
+        XCTAssertEqual(rows.map(\.label), [
+            "Best week", "Best day", "Day record", "Closest finish", "Biggest comeback",
+        ])
+        XCTAssertEqual(rows.map(\.value), [
+            .sides(you: "2,211", them: "2,190"),
+            .sides(you: "395", them: "375"),
+            .tally(won: 17, lost: 18, tied: 0),
+            .text("You by 38", holder: .you),
+            .text("You, from 220 down", holder: .you),
+        ])
+        XCTAssertEqual(rows[2].detail, "Days won, 2026")
+        XCTAssertEqual(
+            competitionAllTimeBestWeekNote(all: weeks, year: year.weeks, locale: locale),
+            "All time still shows your 2,223 week from September 2025."
+        )
+        // All time is unchanged by the years.
+        XCTAssertEqual(
+            competitionRivalryRecords(weeks, opponentName: "Sam", now: now, locale: locale).map(\.value),
+            competitionRivalryRecords(ten, opponentName: "Sam", now: now, locale: locale).map(\.value)
+        )
+        // Your best week this year is your best ever: no note.
+        let allThisYear = try XCTUnwrap(competitionYearWeeks(ten, now: now, timeZone: zone))
+        XCTAssertEqual(allThisYear.weeks.count, 10)
+        XCTAssertNil(competitionAllTimeBestWeekNote(all: ten, year: allThisYear.weeks, locale: locale))
+    }
+
+    func testYearTabWaitsForThreeWeeksThisYear() {
+        let now = CompetitionRivalryFixture.now(weeks: 10)
+        XCTAssertNil(competitionYearWeeks(CompetitionRivalryFixture.weeks(10, now: now, lastYear: 8), now: now, timeZone: zone))
+        XCTAssertEqual(
+            competitionYearWeeks(CompetitionRivalryFixture.weeks(10, now: now, lastYear: 7), now: now, timeZone: zone)?.weeks.count,
+            3
+        )
+        XCTAssertNil(competitionYearWeeks([], now: now, timeZone: zone))
+    }
+
+    func testAWeekCountsInTheYearItEndsAndNowInItsOwnZone() {
+        let starts: [(year: Int, month: Int, day: Int)] = [
+            (2026, 12, 14), (2026, 12, 21), (2026, 12, 28), (2027, 1, 4), (2027, 1, 11),
+        ]
+        let finished = LocalCompetitionLifecyclePresentation.archived(
+            outcome: .win, basis: .stableAcrossPostBoundaryReads,
+            completedAt: .distantPast, archivedAt: .distantPast
+        )
+        let weeks = starts.indices.map { match(id: UInt8(10 + $0), lifecycle: finished, now: .distantPast, start: starts[$0]) }
+        // Wed Jan 20, 2027: Dec 28 – Jan 3 ends in 2027.
+        let january = Date(timeIntervalSince1970: 1_800_475_200)
+        XCTAssertEqual(competitionYearWeeks(weeks, now: january, timeZone: zone)?.weeks.map(\.id), weeks.suffix(3).map(\.id))
+        XCTAssertNil(competitionYearWeeks(Array(weeks.dropLast()), now: january, timeZone: zone))
+        // Thu Dec 31, 2026: only two weeks end in 2026.
+        XCTAssertNil(competitionYearWeeks(weeks, now: Date(timeIntervalSince1970: 1_798_747_200), timeZone: zone))
+        // 10 PM on Dec 31 in Los Angeles is already 2027 in UTC.
+        let lateDecember = Date(timeIntervalSince1970: 1_798_783_200)
+        let fixture = CompetitionRivalryFixture.weeks(10, now: lateDecember, lastYear: 5)
+        XCTAssertEqual(competitionYearWeeks(fixture, now: lateDecember, timeZone: zone)?.year, 2026)
+        XCTAssertNil(competitionYearWeeks(fixture, now: lateDecember, timeZone: TimeZone(identifier: "UTC")!))
     }
 
     func testPiecesWaitForEnoughWeeksAndTheLedgerKeepsOnlyTheRecord() {
@@ -269,7 +337,8 @@ final class CompetitionRivalryTests: XCTestCase {
         id: UInt8,
         lifecycle: LocalCompetitionLifecyclePresentation,
         now: Date,
-        name: String = "Sam"
+        name: String = "Sam",
+        start: (year: Int, month: Int, day: Int) = (2026, 11, 3)
     ) -> LocalCompetitionPresentation {
         let zone = "America/Los_Angeles"
         return LocalCompetitionPresentation(
@@ -281,7 +350,9 @@ final class CompetitionRivalryTests: XCTestCase {
             acceptedConfiguration: LocalCompetitionAcceptedPresentation(
                 schedule: CompetitionSchedule(
                     calendar: try! CompetitionCalendar(timeZoneIdentifier: zone),
-                    startDay: try! CompetitionDay(era: 1, year: 2026, month: 11, day: 3, timeZoneIdentifier: zone)
+                    startDay: try! CompetitionDay(
+                        era: 1, year: start.year, month: start.month, day: start.day, timeZoneIdentifier: zone
+                    )
                 ),
                 difficulty: .balanced
             ),

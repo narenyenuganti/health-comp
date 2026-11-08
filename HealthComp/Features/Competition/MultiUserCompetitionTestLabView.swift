@@ -77,6 +77,9 @@ enum MultiUserCompetitionTestLabScenario:
     case rivalry
     /// The first five of those weeks: Records holds five rows.
     case rivalryFive = "rivalry-5"
+    /// The ten weeks with the first five in 2025: Records offers 2026 or
+    /// All time, and 2026 notes your best week from September 2025.
+    case rivalryYears = "rivalry-years"
 }
 
 struct MultiUserCompetitionTestLabConfiguration: Equatable, Sendable {
@@ -173,7 +176,7 @@ struct MultiUserCompetitionTestLabRootView: View {
     private var scenarioView: some View {
         switch configuration.scenario {
         case .sharing, .sharingCustomScheme, .whatItTakes, .belt, .beltHero, .beltCeremony,
-             .rivalry, .rivalryFive:
+             .rivalry, .rivalryFive, .rivalryYears:
             MultiUserCompetitionSharingTestLabView(scenario: configuration.scenario)
         case .coldClaim, .warmClaim, .signedOutClaim,
              .unavailableClaim, .offlineClaim:
@@ -455,6 +458,7 @@ private struct MultiUserCompetitionSharingTestLabView: View {
         case .beltCeremony: MultiUserCompetitionTestLabFixtures.beltPublication(heroOnly: false, ceremonies: true)
         case .rivalry: CompetitionRivalryFixture.publication(weeks: 10)
         case .rivalryFive: CompetitionRivalryFixture.publication(weeks: 5)
+        case .rivalryYears: CompetitionRivalryFixture.publication(weeks: 10, lastYear: 5)
         default: MultiUserCompetitionTestLabFixtures.publication(
             archivedIDs: archivedIDs,
             ownReactions: ownReactions
@@ -560,7 +564,7 @@ private struct MultiUserCompetitionClaimTestLabView: View {
              .incomingChallenge, .block, .blockedAccount, .blockClaim,
              .nudge, .nudgeSimulated, .whatItTakes, .reactions, .reactionsSimulated,
              .liveActivity, .practice, .notificationChoices, .belt, .beltHero, .beltCeremony, .featureRound,
-             .versus, .rivalry, .rivalryFive:
+             .versus, .rivalry, .rivalryFive, .rivalryYears:
             .ready
         }
         _status = State(initialValue: initialStatus)
@@ -3621,15 +3625,15 @@ enum CompetitionRivalryFixture {
          "162,108,105 161,63,90 128,34,116 128,43,96 113,49,98 109,66,100 101,80,89"),
     ]
 
-    /// The first `count` weeks, oldest first. The newest is completed, the
-    /// rest archived.
-    static func weeks(_ count: Int, now: Date) -> [LocalCompetitionPresentation] {
+    /// The first `count` weeks, oldest first, the first `lastYear` of them a
+    /// year earlier, in 2025. The newest is completed, the rest archived.
+    static func weeks(_ count: Int, now: Date, lastYear: Int = 0) -> [LocalCompetitionPresentation] {
         let calendar = try! CompetitionCalendar(timeZoneIdentifier: zone)
         return data.prefix(count).enumerated().map { index, week in
             let schedule = CompetitionSchedule(
                 calendar: calendar,
                 startDay: try! CompetitionDay(
-                    era: 1, year: 2026, month: week.month, day: week.day, timeZoneIdentifier: zone
+                    era: 1, year: index < lastYear ? 2025 : 2026, month: week.month, day: week.day, timeZoneIdentifier: zone
                 )
             )
             func rings(_ text: String) -> [[Double]] {
@@ -3693,12 +3697,12 @@ enum CompetitionRivalryFixture {
         Date(timeIntervalSince1970: weeks >= 10 ? 1_794_081_600 : 1_789_758_000)
     }
 
-    static func publication(weeks count: Int) -> LocalCompetitionPublication {
+    static func publication(weeks count: Int, lastYear: Int = 0) -> LocalCompetitionPublication {
         let date = now(weeks: count)
         return LocalCompetitionPublication(
             publicationRevision: 1,
             dashboard: LocalCompetitionDashboard(
-                competitions: Array(weeks(count, now: date).reversed()),
+                competitions: Array(weeks(count, now: date, lastYear: lastYear).reversed()),
                 awards: [],
                 issues: [],
                 hiddenTerminalCompetitionCount: 0

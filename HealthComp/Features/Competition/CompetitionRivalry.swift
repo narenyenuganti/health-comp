@@ -162,10 +162,12 @@ struct CompetitionRivalryRecord: Equatable {
 
 /// Best week, best day, day record, closest finish, biggest comebacks and,
 /// once that week is behind "All N weeks", the first match. Weeks oldest first.
+/// With a `year`, the weeks are that year's and there's no first match.
 func competitionRivalryRecords(
     _ weeks: [LocalCompetitionPresentation],
     opponentName: String,
     now: Date,
+    year: Int? = nil,
     locale: Locale = .current
 ) -> [CompetitionRivalryRecord] {
     guard !weeks.isEmpty else { return [] }
@@ -209,7 +211,7 @@ func competitionRivalryRecords(
         rows.append(.init(
             label: "Day record",
             value: .tally(won: record.won, lost: record.lost, tied: record.tied),
-            detail: "Days won, all weeks"
+            detail: "Days won, \(year.map { "\($0)" } ?? "all weeks")"
         ))
     }
 
@@ -231,7 +233,7 @@ func competitionRivalryRecords(
         ))
     }
 
-    if weeks.count > 5, let first = weeks.first, let outcome = first.terminalResult?.outcome {
+    if year == nil, weeks.count > 5, let first = weeks.first, let outcome = first.terminalResult?.outcome {
         let holder: CompetitionBeltHolder? = switch outcome {
         case .win: .you
         case .loss: .them
@@ -258,6 +260,45 @@ func competitionRivalryRecordAccessibilityText(
     case let .text(text, _): text
     }
     return "\(record.label): \(value). \(record.detail)"
+}
+
+/// This calendar year's weeks, oldest first, by the year each week ends in.
+/// Nil until 3 have been played with them, so early January shows All time only.
+func competitionYearWeeks(
+    _ weeks: [LocalCompetitionPresentation],
+    now: Date,
+    timeZone: TimeZone = .current
+) -> (year: Int, weeks: [LocalCompetitionPresentation])? {
+    var calendar = Calendar(identifier: .gregorian)
+    calendar.timeZone = timeZone
+    let year = calendar.component(.year, from: now)
+    let played = weeks.filter { week in
+        let lastDay = week.acceptedConfiguration.flatMap {
+            try? $0.schedule.calendar.sevenDayWindow(startingOn: $0.schedule.startDay).last
+        }
+        return (lastDay?.year ?? week.terminalResult.map { calendar.component(.year, from: $0.completedAt) }) == year
+    }
+    return played.count >= 3 ? (year, played) : nil
+}
+
+/// "All time still shows your 2,730 week from June 2025.", while your best
+/// week is from before this year's weeks.
+func competitionAllTimeBestWeekNote(
+    all: [LocalCompetitionPresentation],
+    year: [LocalCompetitionPresentation],
+    locale: Locale = .current
+) -> String? {
+    // The later week holds it on a tie, as in Records.
+    guard let top = all.map(\.userPoints).max(),
+          let best = all.last(where: { $0.userPoints == top }),
+          !year.contains(where: { $0.id == best.id }),
+          let start = best.acceptedConfiguration?.schedule.startDay
+    else { return nil }
+    var gmt = Calendar(identifier: .gregorian)
+    gmt.timeZone = .gmt
+    guard let date = gmt.date(from: DateComponents(year: start.year, month: start.month, day: start.day)) else { return nil }
+    let month = date.formatted(Date.FormatStyle(locale: locale, calendar: gmt, timeZone: .gmt).month(.wide).year())
+    return "All time still shows your \(competitionPointsText(best.userPoints, locale: locale)) week from \(month)."
 }
 
 private func competitionMargin(_ week: LocalCompetitionPresentation) -> Double {
@@ -458,26 +499,39 @@ struct CompetitionRingDaysPanel: View {
 
 /// One push from the person page: weekly points as the timeline (drag to
 /// pick a week; its row opens the Verdict), then each record once it exists.
+/// After 3 weeks with them this year, a year / All time picker filters both.
 struct CompetitionRecordsView: View {
     let publication: LocalCompetitionPublication
     let opponentIdentity: String
 
     @State private var selection: Date?
+    @State private var showsAllTime = false
     @Environment(\.locale) private var locale
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
-        let weeks = competitionRivalryWeeks(publication.dashboard.competitions, opponentIdentity: opponentIdentity)
-        let name = weeks.last?.opponentDisplayName ?? ""
+        let allWeeks = competitionRivalryWeeks(publication.dashboard.competitions, opponentIdentity: opponentIdentity)
+        let thisYear = competitionYearWeeks(allWeeks, now: publication.evaluatedAt)
+        let shown = showsAllTime ? nil : thisYear
+        let weeks = shown?.weeks ?? allWeeks
+        let name = allWeeks.last?.opponentDisplayName ?? ""
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
+                if let thisYear {
+                    Picker("Records from", selection: $showsAllTime) {
+                        Text(String(thisYear.year)).tag(false)
+                        Text("All time").tag(true)
+                    }
+                    .pickerStyle(.segmented)
+                    .accessibilityIdentifier("competition.records.year")
+                }
                 weeklyPoints(weeks, name: name)
                 let records = competitionRivalryRecords(
-                    weeks, opponentName: name, now: publication.evaluatedAt, locale: locale
+                    weeks, opponentName: name, now: publication.evaluatedAt, year: shown?.year, locale: locale
                 )
                 if !records.isEmpty {
                     VStack(alignment: .leading, spacing: 10) {
-                        SectionLabel("RECORDS")
+                        SectionLabel(shown.map { "RECORDS · \($0.year)" } ?? "RECORDS")
                             .padding(.horizontal, 4)
                         VStack(spacing: 0) {
                             ForEach(Array(records.enumerated()), id: \.offset) { index, record in
@@ -489,9 +543,17 @@ struct CompetitionRecordsView: View {
                         }
                         .padding(.horizontal, 16)
                         .themePanel()
+                        if let shown, let note = competitionAllTimeBestWeekNote(all: allWeeks, year: shown.weeks, locale: locale) {
+                            Text(note)
+                                .font(.footnote)
+                                .foregroundStyle(Theme.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .padding(.horizontal, 4)
+                        }
                     }
                 }
             }
+            .moving(Motion.settle, value: showsAllTime)
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
         }
