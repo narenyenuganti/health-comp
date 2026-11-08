@@ -3726,7 +3726,7 @@ enum CompetitionRivalryFixture {
     }
 }
 
-/// Your October, from the strava proposals page's example week: you took
+/// Your October, from the proposals page's example week: you took
 /// Sam's belt Oct 4–10 (Sam won Sep 20–26), defended it Oct 11–17 and
 /// Oct 25–31 (2,612–2,502), and lost Oct 18–24 to Alex (2,418–2,530). Seen
 /// Sun Nov 1, 6 pm in Los Angeles. Ring points split each day 38/28/34, so
