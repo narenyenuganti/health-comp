@@ -345,17 +345,30 @@ struct CompetitionSharingView: View {
         let caption = competitionResultLeavesHome(competition).map {
             "Moves to History \(weekdayText($0.day, locale: locale))"
         }
+        let competitions = publication.dashboard.competitions
+        let highlight = competitionHeadline(
+            belt: competitionRecapBelt(
+                competitionBeltEvent(for: competition, in: competitions),
+                outcome: competitionResultOutcome(competition),
+                isRetired: !competitionRecapAllowsNameChoice(competition)
+            ),
+            personalBest: competitionPersonalBestText(for: competition, in: competitions, locale: locale),
+            days: competition.days,
+            opponentName: competition.opponentDisplayName
+        )
+        let spoken = [highlight?.text, caption].compactMap { $0 }.joined(separator: ". ")
         CompetitionArchiveSwipeRow(
             id: competition.id,
             isInFlight: commandIDsInFlight.contains(competition.id),
             label: "Archive. \(competition.opponentDisplayName). \(competitionHomeStatusLine(competition, locale: locale, timeZone: timeZone))",
             archive: { archive(competition.id) }
         ) {
-            competitionButton(competition, caption: homeCaption(caption, competition)) {
+            competitionButton(competition, caption: homeCaption(spoken.isEmpty ? nil : spoken, competition)) {
                 CompetitionSharingRow(
                     competition: competition,
                     source: publication.source,
                     caption: caption,
+                    highlight: highlight,
                     reaction: unseen(competition)
                 )
             }
@@ -784,6 +797,8 @@ private struct CompetitionSharingRow: View {
     let competition: LocalCompetitionPresentation
     let source: CompetitionPublicationSource
     var caption: String? = nil
+    /// Recent results: the card's one highlight line.
+    var highlight: CompetitionHeadline? = nil
     /// The person page lists one person's weeks, so it drops the name.
     var showsName = true
     /// The person page marks the weeks the belt changed hands.
@@ -873,6 +888,9 @@ private struct CompetitionSharingRow: View {
             Text(statusText)
                 .font(showsName ? .subheadline.weight(.medium) : .headline)
                 .foregroundStyle(statusColor)
+            if let highlight {
+                highlightLine(highlight)
+            }
             if let caption {
                 Text(caption)
                     .font(.caption)
@@ -888,6 +906,22 @@ private struct CompetitionSharingRow: View {
             }
         }
         .multilineTextAlignment(.leading)
+    }
+
+    /// The belt mark for a belt line, an amber slash for your personal best.
+    private func highlightLine(_ line: CompetitionHeadline) -> some View {
+        HStack(spacing: 6) {
+            if line.isBelt, let holder = line.holder {
+                CompetitionBeltMark(holder: holder, width: 22)
+            } else if line.kind == .personalBest {
+                SlantedBar().fill(Theme.youFill).frame(width: 6, height: 12)
+            }
+            Text(line.text)
+                .font(.subheadline)
+                .foregroundStyle(line.kind == .personalBest ? Theme.you : Theme.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .accessibilityElement(children: .combine)
     }
 
     // A finished week carries its dates, so repeat opponents stay apart.

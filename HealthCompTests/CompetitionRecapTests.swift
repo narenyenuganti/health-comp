@@ -44,7 +44,8 @@ final class CompetitionRecapTests: XCTestCase {
         outcome: CompetitionOutcome? = nil,
         basis: FinalizationBasis = .stableAcrossPostBoundaryReads,
         name: String = "Sam",
-        terminal: Bool = true
+        terminal: Bool = true,
+        startDay: Int = 2
     ) throws -> LocalCompetitionPresentation {
         let user = user ?? days.reduce(0) { $0 + ($1.ownerAcceptedPoints ?? 0) }
         let opponent = opponent ?? days.reduce(0) { $0 + ($1.opponentRevealedPoints ?? 0) }
@@ -53,7 +54,7 @@ final class CompetitionRecapTests: XCTestCase {
         let calendar = try CompetitionCalendar(timeZoneIdentifier: "UTC")
         let schedule = CompetitionSchedule(
             calendar: calendar,
-            startDay: try CompetitionDay(era: 1, year: 2026, month: 11, day: 2, timeZoneIdentifier: "UTC")
+            startDay: try CompetitionDay(era: 1, year: 2026, month: 11, day: startDay, timeZoneIdentifier: "UTC")
         )
         return LocalCompetitionPresentation(
             id: CompetitionID(UUID()),
@@ -347,5 +348,192 @@ final class CompetitionRecapTests: XCTestCase {
         XCTAssertEqual(competitionResultOutcome(try match(days(), terminal: false)), .win)
         XCTAssertEqual(competitionResultOutcome(try match(days(), user: 1, opponent: 2, terminal: false)), .loss)
         XCTAssertEqual(competitionResultOutcome(try match(days(), user: 2, opponent: 2, terminal: false)), .tie)
+    }
+
+    // MARK: One headline per card
+
+    /// Ledger days from (you, them) pairs, Monday first.
+    private func ledger(_ pairs: [(Double, Double)]) throws -> [LocalCompetitionDayPresentation] {
+        try pairs.enumerated().map { try day($0.offset + 1, $0.element.0, $0.element.1) }
+    }
+
+    /// Every day with its ring split: you take Move, Exercise and Stand.
+    private func sweptDays() throws -> [LocalCompetitionDayPresentation] {
+        try (1...7).map { ordinal in
+            var presentation = try day(ordinal, 350, 300)
+            presentation.ownerRingPoints = [200, 100, 50]
+            presentation.opponentRingPoints = [180, 80, 40]
+            return presentation
+        }
+    }
+
+    private func headline(
+        belt: CompetitionRecapBelt? = nil,
+        personalBest: String? = nil,
+        days: [LocalCompetitionDayPresentation],
+        name: String? = "Sam"
+    ) -> [String]? {
+        competitionHeadline(belt: belt, personalBest: personalBest, days: days, opponentName: name)
+            .map { ["\($0.kind)", $0.text] }
+    }
+
+    func testHeadlineTakesTheFirstTrueLineInTheFixedOrder() throws {
+        let best = "50 points above your average week"
+        // The belt changing hands beats everything.
+        XCTAssertEqual(
+            headline(belt: .theyTook, personalBest: best, days: try sweptDays()),
+            ["tookBelt", "Sam took the belt"]
+        )
+        // Then your personal best, over all three rings and a defense.
+        XCTAssertEqual(
+            headline(belt: .theyDefended(defenses: 2), personalBest: best, days: try sweptDays()),
+            ["personalBest", best]
+        )
+        // All three rings over a title defense (the card's Oct 11–17).
+        XCTAssertEqual(
+            headline(belt: .youDefended(defenses: 1), days: try sweptDays()),
+            ["allThreeRings", "Took all three rings"]
+        )
+        // No ring split: the defense.
+        XCTAssertEqual(
+            headline(belt: .youDefended(defenses: 2), days: try days()),
+            ["titleDefense", "2nd title defense"]
+        )
+        // Then the lead: 30, −40, −86, 126, 176, 132, 144 changes hands twice.
+        XCTAssertEqual(headline(days: try days()), ["lead", "The lead changed hands twice"])
+        XCTAssertEqual(
+            headline(days: try ledger([(350, 300), (300, 400), (400, 300), (300, 400)])),
+            ["lead", "The lead changed hands 3 times"]
+        )
+        XCTAssertEqual(
+            headline(days: try ledger(Array(repeating: (250, 300), count: 7)), name: nil),
+            ["lead", "They led after every day"]
+        )
+        // Sam took Stand, so no sweep, and led after every day.
+        var split = try sweptDays()
+        split[0] = try day(1, 350, 660)
+        split[0].ownerRingPoints = [200, 100, 50]
+        split[0].opponentRingPoints = [180, 80, 400]
+        XCTAssertEqual(headline(days: split), ["lead", "Sam led after every day"])
+        // Nothing true, nothing shown.
+        XCTAssertNil(headline(days: try ledger(Array(repeating: (300, 300), count: 7))))
+        XCTAssertNil(headline(days: []))
+    }
+
+    func testRecapFooterShowsTheSameHeadline() throws {
+        let loss = try match(days(), user: 2_268, opponent: 2_412)
+        let best = "50 points above your average week"
+        let shown = competitionRecap(
+            loss, belt: .theyDefended(defenses: 2), hidesName: false, personalBest: best, locale: en
+        )
+        XCTAssertEqual(shown.line?.text, best)
+        // The belt fact stays on the recap for anything else that reads it.
+        XCTAssertEqual(shown.beltText, "Sam's 2nd title defense")
+        XCTAssertTrue(shown.accessibilityText.hasSuffix("\(best)."))
+        XCTAssertFalse(shown.accessibilityText.contains("title defense"))
+        // Hidden name: "They".
+        let hidden = recap(loss, belt: .theyTook, hidesName: true)
+        XCTAssertEqual(hidden.line?.text, "They took the belt")
+    }
+
+    // MARK: How it was won
+
+    private func howItWasWon(_ competition: LocalCompetitionPresentation) -> [String] {
+        competitionHowItWasWonLines(competition, locale: en).map(\.text)
+    }
+
+    func testHowItWasWonEveryDay() throws {
+        let lines = howItWasWon(try match(ledger(Array(repeating: (300, 250), count: 7))))
+        XCTAssertEqual(lines.first, "You won all 7 days.")
+    }
+
+    func testHowItWasWonWithFewerDays() throws {
+        // +100, −20, −20, −20, −20, +100, +100: won 3, lost 4, by 220.
+        let lines = howItWasWon(try match(ledger([
+            (400, 300), (300, 320), (300, 320), (300, 320), (300, 320), (400, 300), (400, 300),
+        ])))
+        XCTAssertEqual(lines.first, "Sam won more days, 4 to 3, but you won the week by 220.")
+    }
+
+    func testHowItWasWonOnTheLastDay() throws {
+        // 30, 60, 90, −10, −10, −10, 40: 10 down going into Sunday.
+        let lines = howItWasWon(try match(ledger([
+            (330, 300), (330, 300), (330, 300), (200, 300), (300, 300), (300, 300), (350, 300),
+        ])))
+        XCTAssertEqual(lines.first, "Sunday decided it: you went in 10 down and won the day by 50.")
+    }
+
+    func testHowItWasWonAsAComeback() throws {
+        // The base week: 86 down after Wednesday, won by 144.
+        let lines = howItWasWon(try match(days()))
+        XCTAssertEqual(lines.first, "You were 86 down after Wednesday and came back to win by 144.")
+        // Their side reads the same way round.
+        let flipped = try ledger(try days().map { ($0.opponentRevealedPoints ?? 0, $0.ownerAcceptedPoints ?? 0) })
+        XCTAssertEqual(
+            howItWasWon(try match(flipped)).first,
+            "Sam was 86 down after Wednesday and came back to win by 144."
+        )
+    }
+
+    func testHowItWasWonWireToWire() throws {
+        // 50, 40, 90, 140, 130, 180, 230.
+        let lines = howItWasWon(try match(ledger([
+            (350, 300), (290, 300), (350, 300), (350, 300), (290, 300), (350, 300), (350, 300),
+        ])))
+        XCTAssertEqual(lines.first, "You led after every day and won by 230.")
+    }
+
+    func testHowItWasWonOnTheDecidingDay() throws {
+        // The proposal's week, Monday first: 18, −12, −40, −6, 52, 70, 110.
+        let lines = howItWasWon(try match(ledger([
+            (412, 394), (365, 395), (301, 329), (434, 400), (420, 362), (330, 312), (350, 310),
+        ])))
+        XCTAssertEqual(lines.first, "Friday decided it: you won it by 58 and never trailed again.")
+    }
+
+    func testHowItWasWonNeverTrailed() throws {
+        // Level after Monday, then ahead: 0, 20, 40, 60, 80, 100, 120.
+        let lines = howItWasWon(try match(ledger([(300, 300)] + Array(repeating: (320, 300), count: 6))))
+        XCTAssertEqual(lines, ["You never trailed and won by 120."])
+    }
+
+    func testHowItWasWonSaysNothingUnlessItIsTrue() throws {
+        // A tie, totals the days don't add up to, no result.
+        XCTAssertEqual(howItWasWon(try match(ledger(Array(repeating: (300, 300), count: 7)))), [])
+        XCTAssertEqual(howItWasWon(try match(days(), user: 2_500)), [])
+        XCTAssertEqual(howItWasWon(try match(days(), terminal: false)), [])
+    }
+
+    func testHowItWasWonNeverRepeatsLastWeeksTemplateWithTheSamePerson() throws {
+        let first = try match(days())
+        let second = try match(days(), startDay: 9)
+        let third = try match(days(), startDay: 16)
+        let all = [third, first, second]
+        XCTAssertEqual(
+            competitionHowItWasWon(for: first, in: all, locale: en),
+            "You were 86 down after Wednesday and came back to win by 144."
+        )
+        XCTAssertEqual(
+            competitionHowItWasWon(for: second, in: all, locale: en),
+            "Thursday decided it: you won it by 212 and never trailed again."
+        )
+        // Last week showed the deciding day, so the comeback is back.
+        XCTAssertEqual(
+            competitionHowItWasWon(for: third, in: all, locale: en),
+            "You were 86 down after Wednesday and came back to win by 144."
+        )
+        // Someone else's week doesn't count.
+        let alex = try match(days(), name: "Alex", startDay: 9)
+        let other = LocalCompetitionPresentation(
+            id: alex.id, ownerDisplayName: alex.ownerDisplayName, opponentDisplayName: "Alex",
+            opponentIdentity: "alex", lifecycle: alex.lifecycle,
+            acceptedConfiguration: alex.acceptedConfiguration, userPoints: alex.userPoints,
+            opponentPoints: alex.opponentPoints, days: alex.days, currentDayOrdinal: nil,
+            lastRefresh: nil, tally: nil, terminalResult: alex.terminalResult
+        )
+        XCTAssertEqual(
+            competitionHowItWasWon(for: other, in: [first, other], locale: en),
+            "You were 86 down after Wednesday and came back to win by 144."
+        )
     }
 }

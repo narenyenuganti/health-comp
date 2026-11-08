@@ -419,6 +419,10 @@ private struct MultiUserCompetitionSharingTestLabView: View {
                         for: competition,
                         in: publication.dashboard.competitions
                     ),
+                    howItWasWon: competitionHowItWasWon(
+                        for: competition,
+                        in: publication.dashboard.competitions
+                    ),
                     recordLink: recordLink(competition)
                 )
             case .pending:
