@@ -835,6 +835,7 @@ private struct StackedDayRow: View {
             Text(isToday ? "Day \(day.ordinal) · Today" : "Day \(day.ordinal)")
                 .font(.headline)
                 .foregroundStyle(Theme.ink)
+                .fixedSize(horizontal: false, vertical: true)
             Text(competitionDayText(day.day, now: now))
                 .font(.subheadline.monospacedDigit())
                 .foregroundStyle(Theme.secondary)
