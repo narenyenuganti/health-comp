@@ -25,7 +25,11 @@ with expected_tables(schema_name, table_name, expected_rls, expected_force, auth
     ('private', 'challenge_links', true, true, false),
     ('private', 'account_blocks', true, true, false),
     ('private', 'competition_reactions', true, true, false),
-    ('private', 'profile_photo_reports', true, true, false)
+    ('private', 'profile_photo_reports', true, true, false),
+    ('private', 'friendships', true, true, false),
+    ('private', 'friend_requests', true, true, false),
+    ('private', 'profile_reports', true, true, false),
+    ('private', 'people_search_limits', true, true, false)
 ),
 -- Native types for columns used by the predicates. Other columns/constraints
 -- still require exact migrated-schema compatibility; this is not its substitute.
@@ -69,7 +73,13 @@ required_column_groups(table_name, type_name, column_names) as (
     ('account_blocks', 'uuid', array['blocker_profile_id','blocked_profile_id']),
     ('competition_reactions', 'uuid', array['competition_id','author_profile_id']),
     ('competition_reactions', 'text', array['reaction']),
-    ('profile_photo_reports', 'uuid', array['reporter_profile_id','reported_profile_id'])
+    ('profile_photo_reports', 'uuid', array['reporter_profile_id','reported_profile_id']),
+    ('friendships', 'uuid', array['profile_low','profile_high']),
+    ('friend_requests', 'uuid', array['sender_profile_id','recipient_profile_id']),
+    ('profile_reports', 'uuid', array['reporter_profile_id','reported_profile_id']),
+    ('people_search_limits', 'uuid', array['profile_id']),
+    ('people_search_limits', 'timestamptz', array['window_started_at']),
+    ('people_search_limits', 'int4', array['used'])
 ),
 required_columns as (
   select g.table_name, c.column_name,
