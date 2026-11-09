@@ -280,12 +280,10 @@ struct CompetitionRecapCard: View {
 
             VStack(alignment: .leading, spacing: 8) {
                 Text(recap.headline)
-                    .textCase(.uppercase)
-                    .font(.system(size: 13, weight: .bold).width(.condensed))
-                    .tracking(1.2)
+                    .font(.score(size: 44))
                     .foregroundStyle(Theme.ink)
-                    .lineLimit(2)
-                    .minimumScaleFactor(0.5)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.4)
                 HStack(alignment: .lastTextBaseline, spacing: 16) {
                     side(label: "You", points: recap.userPointsText, tint: Theme.you, alignment: .leading)
                     Spacer(minLength: 0)
@@ -735,8 +733,8 @@ struct CompetitionRecapSheet: View {
                 .font(.body)
                 .foregroundStyle(Theme.ink)
                 .frame(minHeight: 44)
-                // Q-notifs-5: the inherited ink tint hides the On thumb in dark mode.
-                .tint(Color(uiColor: .systemGreen))
+                // Amber, not the inherited ink, which hides the On thumb in dark mode.
+                .tint(Theme.youFill)
                 .accessibilityIdentifier(id)
         }
     }
@@ -1155,10 +1153,10 @@ private func competitionRecapValueText(_ value: CompetitionRecapPeriodCard.Value
         Text(text).foregroundStyle(side == .you ? Theme.you : side == .even ? Theme.secondary : Theme.ink)
     case let .record(won, lost, tied):
         Text(String(won)).foregroundStyle(Theme.you)
-            + Text("–").foregroundStyle(Theme.faint)
+            + Text("–").fontWeight(.light).foregroundStyle(Theme.faint)
             + Text(String(lost)).foregroundStyle(Theme.ink)
             + (tied > 0
-                ? Text("–").foregroundStyle(Theme.faint) + Text(String(tied)).foregroundStyle(Theme.secondary)
+                ? Text("–").fontWeight(.light).foregroundStyle(Theme.faint) + Text(String(tied)).foregroundStyle(Theme.secondary)
                 : Text(""))
     }
 }
@@ -1232,7 +1230,7 @@ struct CompetitionRecapDeck: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.locale) private var locale
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @ScaledMetric(relativeTo: .largeTitle) private var valueSize: CGFloat = 112
+    @ScaledMetric(relativeTo: .largeTitle) private var valueSize: CGFloat = 148
 
     var body: some View {
         let cards = competitionRecapCards(
@@ -1313,7 +1311,7 @@ struct CompetitionRecapDeck: View {
                     .foregroundStyle(Theme.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            .padding(.top, 24)
+            .padding(.top, 56)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(card.accessibilityText)
             .accessibilityIdentifier("competition.recap.\(card.kind.rawValue)")
