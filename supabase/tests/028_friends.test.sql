@@ -120,7 +120,11 @@ update public.profiles set username='alice', display_name='Exact' where id=pg_te
 update public.profiles set username='alice_more' where id=pg_temp.pid(6);
 update public.profiles set username='literal_abc' where id=pg_temp.pid(7);
 update public.profiles set username='literalxabc' where id=pg_temp.pid(8);
-update public.profiles set state='deleting' where id=pg_temp.pid(9);
+-- Preserve a matching friendship so only the search state filter excludes it.
+insert into private.friendships values(least(pg_temp.pid(1),pg_temp.pid(9)),greatest(pg_temp.pid(1),pg_temp.pid(9)),now());
+alter table public.profiles disable trigger purge_friends_on_profile_deactivation;
+update public.profiles set state='deleting',username=null,display_name='Inactive Search Counterpart' where id=pg_temp.pid(9);
+alter table public.profiles enable trigger purge_friends_on_profile_deactivation;
 update public.profiles set photo_version=md5('search-photo')::uuid where id=pg_temp.pid(5);
 insert into private.account_blocks values(pg_temp.pid(1),pg_temp.pid(10),now()),(pg_temp.pid(11),pg_temp.pid(1),now());
 set local role authenticated;
@@ -132,7 +136,13 @@ select is(pg_temp.people('literal_'),array[pg_temp.pid(7)],'underscore escaped')
 select is(pg_temp.people('ali%'),array[]::uuid[],'percent escaped');
 select is(pg_temp.people(E'ali\\'),array[]::uuid[],'backslash escaped');
 select is(cardinality(pg_temp.people('person')),20,'search capped at twenty');
-select ok(not pg_temp.people('@person_') && array[pg_temp.pid(9),pg_temp.pid(10),pg_temp.pid(11)],'deleted and both block directions excluded');
+select is(pg_temp.people('inactive search'),array[]::uuid[],'otherwise-matching non-active friend excluded');
+select ok(not pg_temp.people('@person_') && array[pg_temp.pid(10),pg_temp.pid(11)],'both block directions excluded');
+reset role;
+delete from private.friendships where profile_low=least(pg_temp.pid(1),pg_temp.pid(9))
+  and profile_high=greatest(pg_temp.pid(1),pg_temp.pid(9));
+set local role authenticated;
+select pg_temp.as_user(1);
 select throws_ok($$select public.send_friend_request(pg_temp.pid(10))$$,'P0001','recipient_unavailable','blocked target');
 select throws_ok($$select public.send_friend_request(pg_temp.pid(11))$$,'P0001','recipient_unavailable','target blocked caller');
 select throws_ok($$select public.send_friend_request(pg_temp.pid(9))$$,'P0001','recipient_unavailable','deleting target');
@@ -228,6 +238,31 @@ select lives_ok($$select public.block_profile(pg_temp.pid(41))$$,'block own pend
 reset role;
 select ok((select lifecycle='cancelled' and closed_by_profile_id=pg_temp.pid(1) and closed_at is not null
   from public.competitions where id=(select id from r where label='outgoing-cancel')),'block cancels caller pending challenge');
+-- The incoming path must match block_challenger's decline and durable push.
+insert into public.device_installations(id,profile_id,installation_id,apns_token,environment,state,supports_challenges)
+values(gen_random_uuid(),pg_temp.pid(42),gen_random_uuid(),repeat('d2',32),'sandbox','active',true);
+insert into r values('incoming-decline',pg_temp.challenge(42,1));
+set local role authenticated;
+select pg_temp.as_user(1);
+select lives_ok($$select public.block_profile(pg_temp.pid(42))$$,'block pending incoming challenger by profile');
+reset role;
+select ok((select c.lifecycle='declined' and c.closed_by_profile_id=pg_temp.pid(1)
+    and c.closed_at is not null and c.updated_at=c.closed_at and p.state='pending'
+  from public.competitions c join public.competition_participants p
+    on p.competition_id=c.id and p.role='invitee'
+  where c.id=(select id from r where label='incoming-decline')),
+  'profile block declines the incoming challenge with the same state as block_challenger');
+select results_eq($$select recipient_profile_id,source_profile_id,state from private.competition_notification_work
+  where competition_id=(select id from r where label='incoming-decline') and kind='challenge_declined'$$,
+  $$values (pg_temp.pid(42),pg_temp.pid(1),'pending'::text)$$,
+  'profile block queues exactly one challenge_declined push to the sender');
+set local role authenticated;
+select pg_temp.as_user(1);
+select lives_ok($$select public.block_profile(pg_temp.pid(42))$$,'re-block incoming challenger');
+reset role;
+select is((select count(*) from private.competition_notification_work
+  where competition_id=(select id from r where label='incoming-decline') and kind='challenge_declined'),
+  1::bigint,'re-block does not queue another decline push');
 -- Rate validation precedes accounting; shared quota resets after a minute.
 delete from private.people_search_limits where profile_id=pg_temp.pid(1);
 set local role authenticated;

@@ -257,6 +257,8 @@ begin
 end;
 $$;
 
+-- shortcut: scans profiles (~130 ms at 100k rows, measured in review); when the
+-- table grows, upgrade to trigram GIN indexes on username and lower(display_name).
 create function public.search_people(query text)
 returns jsonb language plpgsql security definer set search_path = ''
 as $$

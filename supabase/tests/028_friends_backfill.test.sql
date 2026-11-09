@@ -10,10 +10,15 @@ select pg_temp.pid(n),pg_temp.uid(n),'Backfill Person '||n,'active' from generat
 -- Six accepted lifecycle pairs, cancelled/pending/declined/expired exclusions,
 -- nonaccepted participant, inactive profile and both block directions.
 do $$
-declare c uuid; life text; n integer := 2;
+declare c uuid; life text; n integer;
 begin
-  foreach life in array array['scheduled','active','ends_today','tallying','completed','archived',
-    'cancelled','pending','declined','expired','completed','completed','completed','completed'] loop
+  for n, life in select * from (values
+    (2,'scheduled'),(3,'active'),(4,'ends_today'),(5,'tallying'),(6,'completed'),(7,'archived'),
+    (8,'cancelled'),(9,'pending'),(10,'declined'),(11,'expired'),
+    (12,'completed'),(13,'completed'),(14,'completed'),(15,'completed'),
+    (16,'completed'),(17,'completed'),(18,'completed'),
+    (2,'cancelled'),(2,'completed'),(2,'archived'),(19,'pending'),(19,'declined')
+  ) fixtures(profile_number,lifecycle) loop
     c := gen_random_uuid();
     insert into public.competitions(id,creator_profile_id,invited_profile_id,time_zone_identifier,
       scoring_policy_identity,lifecycle,invitation_expires_at,start_day,best_available_deadline,
@@ -25,12 +30,16 @@ begin
       case when life in ('cancelled','declined') then pg_temp.pid(1) end,
       case when life in ('cancelled','declined') then now() end);
     insert into public.competition_participants(competition_id,profile_id,role,state)
-    values(c,pg_temp.pid(1),'creator','accepted'),(c,pg_temp.pid(n),'invitee',case when n=12 then 'pending' else 'accepted' end);
-    n := n+1;
+    values(c,pg_temp.pid(1),'creator','accepted'),(c,pg_temp.pid(n),'invitee',
+      case when n=12 then 'pending' when n=18 then 'anonymized' else 'accepted' end);
   end loop;
 end;
 $$;
 update public.profiles set state='deleting' where id=pg_temp.pid(13);
+-- pid(16) sorts below pid(1); pid(13) above it, exercising both profile joins.
+update public.profiles set state='deleting' where id=pg_temp.pid(16);
+update public.profiles set state='anonymized',auth_user_id=null,
+  display_name='Former competitor',anonymized_at=now() where id=pg_temp.pid(17);
 insert into private.account_blocks values(pg_temp.pid(1),pg_temp.pid(14),now()),(pg_temp.pid(15),pg_temp.pid(1),now());
 -- Remove only 030's objects within this transaction, then replay the exact
 -- migration against the preexisting fixture. No copied backfill implementation.
@@ -76,6 +85,17 @@ select results_eq($$select case when profile_low=pg_temp.pid(1) then profile_hig
   from private.friendships order by 1$$,
   $$select pg_temp.pid(n) from generate_series(2,7) n order by 1$$,
   'backfill all six lifecycles; excludes cancelled, pending, declined, expired, unaccepted, inactive, blocks both ways');
+select ok(not exists(select 1 from private.friendships where pg_temp.pid(16) in(profile_low,profile_high)),
+  'backfill excludes a pair whose lower-id profile is non-active');
+select ok(not exists(select 1 from private.friendships where pg_temp.pid(17) in(profile_low,profile_high)),
+  'backfill excludes an anonymized profile even with accepted participant history');
+select ok(not exists(select 1 from private.friendships where pg_temp.pid(18) in(profile_low,profile_high)),
+  'backfill excludes an anonymized participant even with an active profile');
+select is((select count(*) from private.friendships
+  where profile_low=least(pg_temp.pid(1),pg_temp.pid(2)) and profile_high=greatest(pg_temp.pid(1),pg_temp.pid(2))),
+  1::bigint,'several qualifying and cancelled competitions produce exactly one friendship');
+select ok(not exists(select 1 from private.friendships where pg_temp.pid(19) in(profile_low,profile_high)),
+  'a pair with only pending and declined competitions is not backfilled');
 select set_config('request.jwt.claims',jsonb_build_object('role','authenticated','sub',pg_temp.uid(1))::text,true);
 set local role authenticated;
 select is(public.remove_friend(pg_temp.pid(2)),'{"relationship":"none"}'::jsonb,'backfilled friendship removable');
