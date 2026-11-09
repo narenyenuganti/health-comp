@@ -150,6 +150,7 @@ struct CompetitionFeature {
         var reportedPhotoOwners: Set<UUID> = []
         var photoReportsInFlight: Set<UUID> = []
         var ownPhoto = OwnPhotoState()
+        var group = GroupMatchFeature.State()
 
         init(
             publication: CompetitionPublication? = nil,
@@ -199,7 +200,9 @@ struct CompetitionFeature {
         var photoOwners: [UUID] {
             guard publication?.source == .remoteParticipants else { return [] }
             let others = publication?.dashboard.competitions.compactMap(\.opponentProfileID) ?? []
-            return Array(Set(others + [ownProfile?.id].compactMap { $0 }))
+            let groupSeats = publication?.dashboard.groupMatches
+                .flatMap { $0.seats.compactMap(\.profileID) } ?? []
+            return Array(Set(others + groupSeats + [ownProfile?.id].compactMap { $0 }))
                 .sorted { $0.uuidString < $1.uuidString }
         }
 
@@ -310,6 +313,7 @@ struct CompetitionFeature {
         case ownPhotoRemoveFinished(succeeded: Bool)
         case photoReportConfirmed(UUID)
         case photoReportFinished(UUID, succeeded: Bool)
+        case group(GroupMatchFeature.Action)
     }
 
     @Dependency(\.competitionClient) var competitionClient
@@ -330,8 +334,17 @@ struct CompetitionFeature {
     }
 
     var body: some ReducerOf<Self> {
+        Scope(state: \.group, action: \.group) {
+            GroupMatchFeature()
+        }
         Reduce { state, action in
             switch action {
+            case let .group(.delegate(.published(publication))):
+                return .send(.publication(publication))
+
+            case .group:
+                return .none
+
             case .task:
                 let currentAuthorization = state.notificationAuthorizationState
                 return .merge(
@@ -1026,6 +1039,7 @@ struct CompetitionFeature {
                 return reconcile(trigger: .timeZoneChange)
 
             case .stop:
+                state.group = GroupMatchFeature.State()
                 state.inviteCreations = [:]
                 state.inviteLinks = [:]
                 state.inviteRecipient = nil

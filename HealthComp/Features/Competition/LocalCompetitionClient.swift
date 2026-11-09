@@ -305,6 +305,8 @@ struct LocalCompetitionDashboard: Equatable, Sendable {
     let awards: [LocalCompetitionAward]
     let issues: [LocalCompetitionClientIssue]
     let hiddenTerminalCompetitionCount: Int
+    /// Kept apart from `competitions` so no duel-only surface can receive one.
+    var groupMatches: [GroupMatchPresentation] = []
 }
 
 /// Closed challenges stay a day so Home and an open challenge screen can say what happened.
@@ -347,25 +349,34 @@ extension LocalCompetitionDashboard {
                 keptIDs.contains($0.competitionID)
             }).sortedNewestFirst(),
             issues: issues,
-            hiddenTerminalCompetitionCount: hiddenTerminalCompetitionCount
+            hiddenTerminalCompetitionCount: hiddenTerminalCompetitionCount,
+            groupMatches: groupMatches
         )
     }
 
     /// The next instant Home changes on its own: a pending challenge lapses,
     /// a closed one leaves after a day, or a result moves to History.
     func nextHomeBoundary(after now: Date) -> Date? {
-        competitions.compactMap { competition -> Date? in
-            switch competition.lifecycle {
-            case let .pending(_, _, expiresAt):
-                expiresAt
-            case let .declined(at, _), let .expired(at, _), let .cancelled(at):
-                at.addingTimeInterval(competitionClosedChallengeRetention)
-            case .completed:
-                competitionResultLeavesHome(competition)?.at
-            default:
-                nil
+        let duels = competitions.compactMap { competition -> Date? in
+            if case .completed = competition.lifecycle {
+                return competitionResultLeavesHome(competition)?.at
             }
-        }.filter { $0 > now }.min()
+            return competitionInviteBoundary(competition.lifecycle)
+        }
+        return (duels + groupMatches.compactMap { competitionInviteBoundary($0.lifecycle) })
+            .filter { $0 > now }.min()
+    }
+}
+
+/// When a pending challenge lapses or a closed one leaves Home.
+private func competitionInviteBoundary(_ lifecycle: LocalCompetitionLifecyclePresentation) -> Date? {
+    switch lifecycle {
+    case let .pending(_, _, expiresAt):
+        expiresAt
+    case let .declined(at, _), let .expired(at, _), let .cancelled(at):
+        at.addingTimeInterval(competitionClosedChallengeRetention)
+    default:
+        nil
     }
 }
 

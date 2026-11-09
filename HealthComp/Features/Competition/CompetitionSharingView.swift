@@ -2577,7 +2577,11 @@ func competitionShouldShowScores(
 func competitionSharingIdentifier(
     _ competition: LocalCompetitionPresentation
 ) -> String {
-    let lifecycle: String = switch competition.lifecycle {
+    "competition.sharing.\(competitionSharingState(competition.lifecycle)).\(competition.id.rawValue.uuidString.lowercased())"
+}
+
+func competitionSharingState(_ lifecycle: LocalCompetitionLifecyclePresentation) -> String {
+    switch lifecycle {
     case .pending: "pending"
     case .declined: "declined"
     case .expired: "expired"
@@ -2589,7 +2593,6 @@ func competitionSharingIdentifier(
     case .completed: "completed"
     case .archived: "archived"
     }
-    return "competition.sharing.\(lifecycle).\(competition.id.rawValue.uuidString.lowercased())"
 }
 
 /// The top banner: only problems that affect everything, or a match that
