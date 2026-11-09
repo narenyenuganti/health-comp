@@ -576,6 +576,64 @@ enum SupabaseCompetitionRemoteAPI {
                 else {
                     throw CompetitionRemoteFailure.serverContractMismatch
                 }
+            },
+            getFriendSettings: {
+                let response = try await sendReadOnly(
+                    .rpc(name: "get_friend_settings", parameters: try encode(EmptyParameters())),
+                    transport: transport
+                )
+                return try decodeFriendSettings(response.data)
+            },
+            setUsername: { username in
+                guard FriendSettings.isValidUsername(username) else {
+                    throw CompetitionRemoteFailure.invalidUsername
+                }
+                let response = try await send(
+                    .rpc(name: "set_username", parameters: try encode(["username": username])),
+                    transport: transport
+                )
+                let settings = try decodeFriendSettings(response.data)
+                guard settings.username == username else {
+                    throw CompetitionRemoteFailure.serverContractMismatch
+                }
+                return settings
+            },
+            usernameAvailable: { username in
+                guard FriendSettings.isValidUsername(username) else {
+                    throw CompetitionRemoteFailure.invalidUsername
+                }
+                let response = try await send(
+                    .rpc(name: "username_available", parameters: try encode(["username": username])),
+                    transport: transport
+                )
+                // Exactly `{available}`.
+                guard let object = try? JSONSerialization.jsonObject(with: response.data)
+                    as? [String: Any],
+                      Set(object.keys) == ["available"],
+                      let available = strictBool(object["available"])
+                else {
+                    throw CompetitionRemoteFailure.serverContractMismatch
+                }
+                return available
+            },
+            updateFriendSettings: { showInSearch, challengePolicy in
+                let response = try await send(
+                    .rpc(
+                        name: "update_friend_settings",
+                        parameters: try encode(UpdateFriendSettingsParameters(
+                            showInSearch: showInSearch,
+                            challengePolicy: challengePolicy.rawValue
+                        ))
+                    ),
+                    transport: transport
+                )
+                let settings = try decodeFriendSettings(response.data)
+                guard settings.showInSearch == showInSearch,
+                      settings.challengePolicy == challengePolicy
+                else {
+                    throw CompetitionRemoteFailure.serverContractMismatch
+                }
+                return settings
             }
         )
     }
@@ -787,6 +845,18 @@ enum SupabaseCompetitionRemoteAPI {
         }
         if identifiers.contains("own_challenge_link") {
             return .ownChallengeLink
+        }
+        if identifiers.contains("invalid_username") {
+            return .invalidUsername
+        }
+        if identifiers.contains("username_unavailable") {
+            return .usernameUnavailable
+        }
+        if identifiers.contains("search_rate_limited") {
+            return .searchRateLimited
+        }
+        if identifiers.contains("invalid_friend_settings") {
+            return .invalidFriendSettings
         }
         let isClaimContext = context == .claimInvite || context == .previewInvite
         // Your own link says so; every other claim failure stays collapsed.
@@ -1033,6 +1103,37 @@ enum SupabaseCompetitionRemoteAPI {
             throw CompetitionRemoteFailure.serverContractMismatch
         }
         return rows.compactMap { challengeProfile($0, idKey: "id", nameKey: "display_name") }
+    }
+
+    /// Exactly `{username, show_in_search, challenge_policy}`.
+    private static func decodeFriendSettings(_ data: Data) throws -> FriendSettings {
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              Set(object.keys) == ["username", "show_in_search", "challenge_policy"],
+              let showInSearch = strictBool(object["show_in_search"]),
+              let challengePolicy = (object["challenge_policy"] as? String)
+                .flatMap(FriendChallengePolicy.init(rawValue:))
+        else {
+            throw CompetitionRemoteFailure.serverContractMismatch
+        }
+        let username = object["username"] as? String
+        guard object["username"] is NSNull
+                || username.map(FriendSettings.isValidUsername) == true
+        else {
+            throw CompetitionRemoteFailure.serverContractMismatch
+        }
+        return FriendSettings(
+            username: username,
+            showInSearch: showInSearch,
+            challengePolicy: challengePolicy
+        )
+    }
+
+    /// JSON `true`/`false` only: `as? Bool` also accepts 0 and 1.
+    private static func strictBool(_ value: Any?) -> Bool? {
+        guard let number = value as? NSNumber,
+              CFGetTypeID(number) == CFBooleanGetTypeID()
+        else { return nil }
+        return number.boolValue
     }
 
     private static func challengeProfile(
@@ -1304,6 +1405,16 @@ private struct NotificationMuteMutationResponse: Decodable {
     enum CodingKeys: String, CodingKey {
         case opponentProfileID = "opponent_profile_id"
         case isMuted = "is_muted"
+    }
+}
+
+private struct UpdateFriendSettingsParameters: Encodable {
+    let showInSearch: Bool
+    let challengePolicy: String
+
+    enum CodingKeys: String, CodingKey {
+        case showInSearch = "show_in_search"
+        case challengePolicy = "challenge_policy"
     }
 }
 

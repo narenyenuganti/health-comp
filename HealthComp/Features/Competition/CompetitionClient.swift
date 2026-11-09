@@ -95,6 +95,10 @@ struct CompetitionClient: Sendable {
     var loadBlockedProfiles: @Sendable () async throws -> [AuthenticatedProfile]
     /// Takes a profile id.
     var unblock: @Sendable (UUID) async throws -> Void
+    var getFriendSettings: @Sendable () async throws -> FriendSettings
+    var setUsername: @Sendable (String) async throws -> FriendSettings
+    var usernameAvailable: @Sendable (String) async throws -> Bool
+    var updateFriendSettings: @Sendable (Bool, FriendChallengePolicy) async throws -> FriendSettings
     var previewInvite: @Sendable (
         CompetitionInviteClaimRequest
     ) async throws -> CompetitionInvitePreview
@@ -207,6 +211,21 @@ struct CompetitionClient: Sendable {
         unblock: @escaping @Sendable (UUID) async throws -> Void = { _ in
             throw CompetitionRemoteFailure.operationFailed
         },
+        getFriendSettings: @escaping @Sendable () async throws -> FriendSettings = {
+            throw CompetitionRemoteFailure.operationFailed
+        },
+        setUsername: @escaping @Sendable (String) async throws -> FriendSettings = { _ in
+            throw CompetitionRemoteFailure.operationFailed
+        },
+        usernameAvailable: @escaping @Sendable (String) async throws -> Bool = { _ in
+            throw CompetitionRemoteFailure.operationFailed
+        },
+        updateFriendSettings: @escaping @Sendable (
+            Bool,
+            FriendChallengePolicy
+        ) async throws -> FriendSettings = { _, _ in
+            throw CompetitionRemoteFailure.operationFailed
+        },
         previewInvite: @escaping @Sendable (
             CompetitionInviteClaimRequest
         ) async throws -> CompetitionInvitePreview = { _ in
@@ -286,6 +305,10 @@ struct CompetitionClient: Sendable {
         self.block = block
         self.loadBlockedProfiles = loadBlockedProfiles
         self.unblock = unblock
+        self.getFriendSettings = getFriendSettings
+        self.setUsername = setUsername
+        self.usernameAvailable = usernameAvailable
+        self.updateFriendSettings = updateFriendSettings
         self.previewInvite = previewInvite
         self.loadChallengeLinkCode = loadChallengeLinkCode
         self.resetChallengeLinkCode = resetChallengeLinkCode

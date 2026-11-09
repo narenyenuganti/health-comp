@@ -25,6 +25,11 @@ enum CompetitionRemoteFailure: Error, Equatable, Sendable {
     case appAttestRejected
     case appAttestContextUnavailable
     case appAttestProofConflict
+    case invalidUsername
+    /// Taken or reserved; the server doesn't say which.
+    case usernameUnavailable
+    case searchRateLimited
+    case invalidFriendSettings
     case operationFailed
 }
 
@@ -176,6 +181,21 @@ struct CompetitionRemoteAPI: Sendable {
     }
     /// Reports this person's photo and hides their photos from you for good.
     var reportProfilePhoto: @Sendable (UUID) async throws -> Void = { _ in
+        throw CompetitionRemoteFailure.operationFailed
+    }
+    var getFriendSettings: @Sendable () async throws -> FriendSettings = {
+        throw CompetitionRemoteFailure.operationFailed
+    }
+    var setUsername: @Sendable (String) async throws -> FriendSettings = { _ in
+        throw CompetitionRemoteFailure.operationFailed
+    }
+    var usernameAvailable: @Sendable (String) async throws -> Bool = { _ in
+        throw CompetitionRemoteFailure.operationFailed
+    }
+    var updateFriendSettings: @Sendable (
+        _ showInSearch: Bool,
+        _ challengePolicy: FriendChallengePolicy
+    ) async throws -> FriendSettings = { _, _ in
         throw CompetitionRemoteFailure.operationFailed
     }
 }

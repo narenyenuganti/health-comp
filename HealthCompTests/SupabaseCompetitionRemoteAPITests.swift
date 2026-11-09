@@ -1065,6 +1065,127 @@ final class SupabaseCompetitionRemoteAPITests: XCTestCase {
         try assertRPC(requests[0], name: "unblock_profile", body: ["profile_id": id.uuidString.lowercased()])
     }
 
+    private func friendSettingsBody(
+        username: Any = NSNull(),
+        show: Any = true,
+        policy: Any = "friends_and_link"
+    ) -> [String: Any] {
+        ["username": username, "show_in_search": show, "challenge_policy": policy]
+    }
+
+    func testGetFriendSettingsDecodesExactKeys() async throws {
+        var extra = friendSettingsBody()
+        extra["extra"] = 1
+        var missing = friendSettingsBody()
+        missing.removeValue(forKey: "username")
+        let harness = CompetitionTransportHarness(stubs: [
+            .response(200, try jsonData(friendSettingsBody())),
+            .response(200, try jsonData(friendSettingsBody(username: "alice_1", show: false, policy: "friends_only"))),
+            .response(200, try jsonData(extra)),
+            .response(200, try jsonData(missing)),
+            .response(200, try jsonData(friendSettingsBody(username: "Not Valid"))),
+            .response(200, try jsonData(friendSettingsBody(show: 1))),
+            .response(200, try jsonData(friendSettingsBody(policy: "everyone"))),
+        ])
+        let api = makeAPI(harness)
+        let unset = try await api.getFriendSettings()
+        XCTAssertEqual(unset, FriendSettings(username: nil, showInSearch: true, challengePolicy: .friendsAndLink))
+        let set = try await api.getFriendSettings()
+        XCTAssertEqual(set, FriendSettings(username: "alice_1", showInSearch: false, challengePolicy: .friendsOnly))
+        for _ in 0..<5 {
+            let failure = await remoteFailure { _ = try await api.getFriendSettings() }
+            XCTAssertEqual(failure, .serverContractMismatch)
+        }
+        let requests = await harness.recordedRequests()
+        try assertRPC(requests[0], name: "get_friend_settings", body: [:])
+    }
+
+    func testSetUsernameSendsTheNameAndValidatesEcho() async throws {
+        var extra = friendSettingsBody(username: "alice")
+        extra["extra"] = 1
+        let harness = CompetitionTransportHarness(stubs: [
+            .response(200, try jsonData(friendSettingsBody(username: "alice"))),
+            .response(200, try jsonData(friendSettingsBody(username: "someone_else"))),
+            .response(200, try jsonData(extra)),
+        ])
+        let api = makeAPI(harness)
+        let saved = try await api.setUsername("alice")
+        XCTAssertEqual(saved.username, "alice")
+        let other = await remoteFailure { _ = try await api.setUsername("alice") }
+        XCTAssertEqual(other, .serverContractMismatch)
+        let extraKey = await remoteFailure { _ = try await api.setUsername("alice") }
+        XCTAssertEqual(extraKey, .serverContractMismatch)
+        let requests = await harness.recordedRequests()
+        try assertRPC(requests[0], name: "set_username", body: ["username": "alice"])
+        // An invalid name never reaches the server.
+        let invalid = await remoteFailure { _ = try await api.setUsername("Al") }
+        XCTAssertEqual(invalid, .invalidUsername)
+        let requestCount = await harness.requestCount()
+        XCTAssertEqual(requestCount, 3)
+    }
+
+    func testUsernameAvailableDecodesExactlyAvailable() async throws {
+        let harness = CompetitionTransportHarness(stubs: [
+            .response(200, try jsonData(["available": true])),
+            .response(200, try jsonData(["available": false])),
+            .response(200, try jsonData(["available": 1])),
+            .response(200, try jsonData(["available": true, "extra": 1])),
+        ])
+        let api = makeAPI(harness)
+        let yes = try await api.usernameAvailable("alice")
+        XCTAssertTrue(yes)
+        let no = try await api.usernameAvailable("alice")
+        XCTAssertFalse(no)
+        let wrongType = await remoteFailure { _ = try await api.usernameAvailable("alice") }
+        XCTAssertEqual(wrongType, .serverContractMismatch)
+        let extra = await remoteFailure { _ = try await api.usernameAvailable("alice") }
+        XCTAssertEqual(extra, .serverContractMismatch)
+        let requests = await harness.recordedRequests()
+        try assertRPC(requests[0], name: "username_available", body: ["username": "alice"])
+    }
+
+    func testUpdateFriendSettingsSendsBothValuesAndValidatesEcho() async throws {
+        var extra = friendSettingsBody(show: false, policy: "friends_only")
+        extra["extra"] = 1
+        let harness = CompetitionTransportHarness(stubs: [
+            .response(200, try jsonData(friendSettingsBody(username: "alice", show: false, policy: "friends_only"))),
+            .response(200, try jsonData(friendSettingsBody(show: true, policy: "friends_only"))),
+            .response(200, try jsonData(friendSettingsBody(show: false, policy: "friends_and_link"))),
+            .response(200, try jsonData(extra)),
+        ])
+        let api = makeAPI(harness)
+        let saved = try await api.updateFriendSettings(false, .friendsOnly)
+        XCTAssertEqual(saved, FriendSettings(username: "alice", showInSearch: false, challengePolicy: .friendsOnly))
+        for _ in 0..<3 {
+            let failure = await remoteFailure { _ = try await api.updateFriendSettings(false, .friendsOnly) }
+            XCTAssertEqual(failure, .serverContractMismatch)
+        }
+        let requests = await harness.recordedRequests()
+        try assertRPC(
+            requests[0],
+            name: "update_friend_settings",
+            body: ["show_in_search": false, "challenge_policy": "friends_only"]
+        )
+    }
+
+    func testFriendSettingsErrorsMapToTypedFailures() async throws {
+        let cases: [(String, CompetitionRemoteFailure)] = [
+            ("invalid_username", .invalidUsername),
+            ("username_unavailable", .usernameUnavailable),
+            ("search_rate_limited", .searchRateLimited),
+            ("invalid_friend_settings", .invalidFriendSettings),
+        ]
+        for (code, expected) in cases {
+            let harness = CompetitionTransportHarness(stubs: [
+                .response(400, try errorData(code: code)),
+            ])
+            let failure = await remoteFailure {
+                _ = try await makeAPI(harness).setUsername("alice")
+            }
+            XCTAssertEqual(failure, expected, code)
+        }
+    }
+
     func testChallengeLinkCodeAndResolve() async throws {
         let profile = "12000000-0000-4000-8000-0000000000a3"
         let harness = CompetitionTransportHarness(stubs: [
