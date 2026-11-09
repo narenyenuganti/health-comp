@@ -1,0 +1,294 @@
+import XCTest
+
+/// Account → Privacy's username and friend settings, through the app's own
+/// root view. The `friends-account` Test Lab scenario scripts the server:
+/// no username yet, every call takes 0.3 s, `taken_name` is taken,
+/// `late_taken` passes the check and fails on save, `offline_name` fails to
+/// save once, and the first save that changes Show Me in Search fails.
+final class FriendsAccountUITests: XCTestCase {
+    private var app: XCUIApplication!
+
+    private static let saveError = "Couldn’t save. Check your connection and try again."
+    private static let footer = "Off: only people with your link can add you. Search shows your name, photo and username, never your rings."
+    private static let everyone = "account.privacy.challenge.friends_and_link"
+    private static let friendsOnly = "account.privacy.challenge.friends_only"
+    /// Wrapped or single-line text the clipping audit flags anyway, seen
+    /// whole in the attached screenshots: tracked section labels, the page's
+    /// older rows, and the section footer.
+    private static let readsClippedToTheAudit: Set<String> = [
+        "USERNAME", "FINDING YOU", "WHO CAN CHALLENGE YOU", footer,
+        "Raw Health data stays on this iPhone",
+        "The other person gets your daily points, rounded Activity percentages and modes",
+    ]
+
+    override func setUpWithError() throws {
+        continueAfterFailure = false
+        app = XCUIApplication()
+    }
+
+    override func tearDownWithError() throws {
+        if app.state != .notRunning { app.terminate() }
+        XCUIDevice.shared.appearance = .light
+        app = nil
+    }
+
+    func testChooseAUsername() {
+        openPrivacy()
+        XCTAssertTrue(app.staticTexts["USERNAME"].exists)
+        XCTAssertTrue(app.staticTexts["FINDING YOU"].exists)
+        XCTAssertTrue(app.staticTexts["WHO CAN CHALLENGE YOU"].exists)
+        XCTAssertTrue(app.staticTexts[Self.footer].exists)
+        openSheet("account.privacy.username.choose")
+        XCTAssertTrue(app.staticTexts["Pick a username"].exists)
+        XCTAssertTrue(app.staticTexts["Friends find you by it."].exists)
+        XCTAssertFalse(continueButton.isEnabled)
+
+        // Case and anything outside a-z 0-9 _ never reach the field.
+        field.typeText("Be-ta Alice!")
+        XCTAssertEqual(field.value as? String, "betaalice")
+        XCTAssertTrue(status.waitForExistence(timeout: 5))
+        XCTAssertEqual(status.label, "Available")
+        XCTAssertTrue(continueButton.isEnabled)
+        continueButton.tap()
+
+        XCTAssertTrue(field.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(element("account.privacy.username").waitForExistence(timeout: 3))
+        XCTAssertEqual(element("account.privacy.username").label, "@betaalice")
+    }
+
+    func testTakenUsernameKeepsTheSheetOpen() {
+        openPrivacy()
+        openSheet("account.privacy.username.choose")
+        field.typeText("taken_name")
+        XCTAssertTrue(status.waitForExistence(timeout: 5))
+        XCTAssertEqual(status.label, "Taken")
+        XCTAssertFalse(continueButton.isEnabled)
+
+        // Another character asks again.
+        field.typeText("2")
+        XCTAssertTrue(waitUntil(5) { self.status.exists && self.status.label == "Available" })
+
+        // Someone else can claim a name between the check and the save.
+        clearField()
+        field.typeText("late_taken")
+        XCTAssertTrue(status.waitForExistence(timeout: 5))
+        XCTAssertEqual(status.label, "Available")
+        continueButton.tap()
+        XCTAssertTrue(waitUntil(5) { self.status.exists && self.status.label == "Taken" })
+        XCTAssertTrue(field.exists)
+
+        // A connection failure stays inline; the same tap works next time.
+        clearField()
+        field.typeText("offline_name")
+        XCTAssertTrue(waitUntil(5) { self.status.exists && self.status.label == "Available" })
+        continueButton.tap()
+        let error = element("account.username.error")
+        XCTAssertTrue(error.waitForExistence(timeout: 5))
+        XCTAssertEqual(error.label, Self.saveError)
+        XCTAssertEqual(app.alerts.count, 0)
+        continueButton.tap()
+        XCTAssertTrue(field.waitForNonExistence(timeout: 5))
+        XCTAssertEqual(element("account.privacy.username").label, "@offline_name")
+    }
+
+    func testNotNowLeavesTheUsernameUnset() {
+        openPrivacy()
+        openSheet("account.privacy.username.choose")
+        field.typeText("betaalice")
+        app.buttons["account.username.not-now"].tap()
+        XCTAssertTrue(field.waitForNonExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["account.privacy.username.choose"].exists)
+    }
+
+    func testEditAUsername() {
+        openPrivacy()
+        openSheet("account.privacy.username.choose")
+        field.typeText("betaalice")
+        XCTAssertTrue(status.waitForExistence(timeout: 5))
+        continueButton.tap()
+        XCTAssertTrue(field.waitForNonExistence(timeout: 5))
+
+        openSheet("account.privacy.username.edit")
+        XCTAssertEqual(field.value as? String, "betaalice")
+        // Your own name isn't checked, and saving it again is harmless.
+        XCTAssertFalse(status.exists)
+        XCTAssertTrue(continueButton.isEnabled)
+        clearField()
+        field.typeText("alice_b")
+        XCTAssertTrue(status.waitForExistence(timeout: 5))
+        continueButton.tap()
+        XCTAssertTrue(field.waitForNonExistence(timeout: 5))
+        XCTAssertEqual(element("account.privacy.username").label, "@alice_b")
+    }
+
+    func testFailedSearchSaveRollsBackThenRetries() {
+        openPrivacy()
+        let toggle = app.switches["account.privacy.show-in-search"].firstMatch
+        XCTAssertEqual(toggle.value as? String, "1")
+
+        flip(toggle)
+        let error = element("account.privacy.error")
+        XCTAssertTrue(error.waitForExistence(timeout: 5))
+        XCTAssertEqual(error.label, Self.saveError)
+        XCTAssertEqual(toggle.value as? String, "1")
+        XCTAssertEqual(app.alerts.count, 0)
+
+        flip(toggle)
+        XCTAssertTrue(error.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(waitUntil(5) { toggle.value as? String == "0" && toggle.isEnabled })
+    }
+
+    func testChangeWhoCanChallengeYou() {
+        openPrivacy()
+        let everyone = app.buttons[Self.everyone]
+        let friendsOnly = app.buttons[Self.friendsOnly]
+        XCTAssertTrue(everyone.isSelected)
+        XCTAssertFalse(friendsOnly.isSelected)
+        XCTAssertEqual(everyone.label, "Friends and anyone with my link")
+        XCTAssertEqual(friendsOnly.label, "Friends only")
+
+        friendsOnly.tap()
+        XCTAssertTrue(waitUntil(5) { friendsOnly.isSelected && !everyone.isSelected && friendsOnly.isEnabled })
+        XCTAssertFalse(element("account.privacy.error").exists)
+
+        everyone.tap()
+        XCTAssertTrue(waitUntil(5) { everyone.isSelected && !friendsOnly.isSelected })
+    }
+
+    /// `privacy-<light|dark>-<default|ax5>`, and the same for the sheet.
+    /// Hit regions, clipping and labels are audited in every combination.
+    func testAppearancesAndLargestTextSize() throws {
+        let sizes = [("default", "UICTContentSizeCategoryL"), ("ax5", "UICTContentSizeCategoryAccessibilityXXXL")]
+        for appearance in ["Light", "Dark"] {
+            for (sizeName, size) in sizes {
+                let suffix = "\(appearance.lowercased())-\(sizeName)"
+                openPrivacy(arguments: [
+                    "-AppleInterfaceStyle", appearance,
+                    "-UIPreferredContentSizeCategoryName", size,
+                ])
+                shot("privacy-\(suffix)")
+                try audit("privacy \(suffix)")
+                openSheet("account.privacy.username.choose")
+                field.typeText("betaalice")
+                XCTAssertTrue(status.waitForExistence(timeout: 5))
+                shot("username-available-\(suffix)")
+                // The keyboard covers the buttons at AX5, as it does a pinned
+                // sheet's content; the audit reads what's on screen.
+                try audit("username \(suffix)")
+                clearField()
+                field.typeText("taken_name")
+                XCTAssertTrue(waitUntil(5) { self.status.exists && self.status.label == "Taken" })
+                shot("username-taken-\(suffix)")
+            }
+        }
+    }
+
+    // MARK: Helpers
+
+    private var field: XCUIElement { app.textFields["account.username.field"] }
+    private var status: XCUIElement { element("account.username.status") }
+    private var continueButton: XCUIElement { app.buttons["account.username.continue"] }
+
+    private func element(_ identifier: String) -> XCUIElement {
+        app.descendants(matching: .any).matching(identifier: identifier).firstMatch
+    }
+
+    private func openPrivacy(arguments: [String] = []) {
+        if app.state != .notRunning { app.terminate() }
+        app = XCUIApplication()
+        app.launchEnvironment["TZ"] = "America/Los_Angeles"
+        app.launchArguments = [
+            "--multi-user-competition-test-lab",
+            "--multi-user-competition-scenario", "friends-account",
+            "-healthcomp.colorHintSeen", "YES",
+            "-AppleLanguages", "(en)",
+            "-AppleLocale", "en_US",
+        ] + arguments
+        app.launch()
+        XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 10))
+        app.buttons["app.account"].tap()
+        XCTAssertTrue(app.navigationBars["Account"].waitForExistence(timeout: 3))
+        let privacy = app.buttons["account.privacy"]
+        scrollTo(privacy)
+        privacy.tap()
+        XCTAssertTrue(app.navigationBars["Privacy"].waitForExistence(timeout: 3))
+        XCTAssertTrue(
+            app.buttons["account.privacy.username.choose"].waitForExistence(timeout: 5),
+            "The rows appear once the server answers."
+        )
+    }
+
+    private func openSheet(_ identifier: String) {
+        let button = app.buttons[identifier]
+        XCTAssertTrue(button.waitForExistence(timeout: 5), identifier)
+        button.tap()
+        XCTAssertTrue(field.waitForExistence(timeout: 3))
+        // The field takes focus when the sheet opens.
+        XCTAssertTrue(waitUntil(3) { self.app.keyboards.firstMatch.exists })
+    }
+
+    private func flip(_ toggle: XCUIElement) {
+        let knob = toggle.switches.firstMatch
+        if knob.exists {
+            knob.tap()
+        } else {
+            toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.93, dy: 0.5)).tap()
+        }
+    }
+
+    private func clearField() {
+        guard let value = field.value as? String, !value.isEmpty else { return }
+        field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: value.count))
+    }
+
+    private func waitUntil(_ timeout: TimeInterval, _ condition: () -> Bool) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        repeat {
+            if condition() { return true }
+            Thread.sleep(forTimeInterval: 0.1)
+        } while Date() < deadline
+        return condition()
+    }
+
+    private func scrollTo(_ element: XCUIElement) {
+        for _ in 0..<12 where !(element.exists && element.isHittable) {
+            app.collectionViews.firstMatch.swipeUp()
+        }
+        XCTAssertTrue(element.isHittable, "\(element)")
+    }
+
+    private func shot(_ name: String) {
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
+    private func audit(_ name: String) throws {
+        try XCTContext.runActivity(named: "audit \(name)") { activity in
+            let screen = app.windows.firstMatch.frame
+            var skipped: [String] = []
+            try app.performAccessibilityAudit(
+                for: [.textClipped, .hitRegion, .sufficientElementDescription]
+            ) { issue in
+                if issue.auditType == .textClipped,
+                   let label = issue.element?.label,
+                   Self.readsClippedToTheAudit.contains(label) {
+                    return true
+                }
+                guard let element = issue.element, !screen.contains(element.frame) else {
+                    guard issue.element != nil else {
+                        skipped.append(issue.detailedDescription)
+                        return true
+                    }
+                    return false
+                }
+                skipped.append(element.debugDescription)
+                return true
+            }
+            if !skipped.isEmpty {
+                activity.add(XCTAttachment(string: skipped.joined(separator: "\n\n")))
+            }
+        }
+    }
+}

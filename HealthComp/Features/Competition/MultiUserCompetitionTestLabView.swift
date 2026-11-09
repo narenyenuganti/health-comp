@@ -36,6 +36,9 @@ enum MultiUserCompetitionTestLabScenario:
     case blockedAccount = "blocked-account"
     /// The same, with Naren's challenge link opened in the claim sheet.
     case blockClaim = "block-claim"
+    /// Account → Privacy through the real app root: no username yet. See
+    /// `FriendSettingsTestLabServer`.
+    case friendsAccount = "friends-account"
     /// Match screens with a nudge to send, run through Home's own reducer.
     case nudge
     /// The same matches published as the simulated fixture: never a nudge.
@@ -209,7 +212,7 @@ struct MultiUserCompetitionTestLabRootView: View {
             MultiUserCompetitionPreHealthClaimTestLabView()
         case .incomingChallenge:
             MultiUserCompetitionIncomingChallengeTestLabView()
-        case .block, .blockedAccount, .blockClaim:
+        case .block, .blockedAccount, .blockClaim, .friendsAccount:
             MultiUserCompetitionBlockTestLabView(scenario: configuration.scenario)
         case .nudge:
             MultiUserCompetitionNudgeTestLabView(source: .remoteParticipants)
@@ -573,7 +576,7 @@ private struct MultiUserCompetitionClaimTestLabView: View {
         case .sharing, .sharingCustomScheme, .coldClaim, .warmClaim,
              .signedOutClaim, .challengeLink, .account, .welcome, .welcomeChallenge,
              .healthOnboarding, .healthOnboardingChallenge, .healthOnboardingClaim,
-             .incomingChallenge, .block, .blockedAccount, .blockClaim,
+             .incomingChallenge, .block, .blockedAccount, .blockClaim, .friendsAccount,
              .nudge, .nudgeSimulated, .whatItTakes, .reactions, .reactionsSimulated,
              .liveActivity, .practice, .notificationChoices, .belt, .beltHero, .beltCeremony, .featureRound,
              .versus, .rivalry, .rivalryFive, .rivalryYears, .month:
@@ -752,6 +755,7 @@ private struct MultiUserCompetitionBlockTestLabView: View {
             displayName: "Beta Alice"
         )
         let claims = scenario == .blockClaim
+        let friends = FriendSettingsTestLabServer()
         _mainStore = State(initialValue: Store(initialState: state) {
             MainTabFeature()
         } withDependencies: {
@@ -773,6 +777,10 @@ private struct MultiUserCompetitionBlockTestLabView: View {
                 block: { await server.close($0, block: true) },
                 loadBlockedProfiles: { try await server.blockedProfiles() },
                 unblock: { try await server.unblock($0) },
+                getFriendSettings: { try await friends.settings() },
+                setUsername: { try await friends.setUsername($0) },
+                usernameAvailable: { try await friends.isAvailable($0) },
+                updateFriendSettings: { try await friends.update($0, $1) },
                 previewInvite: { _ in Fixtures.claimPreview },
                 loadChallengeLinkCode: {
                     CompetitionChallengeLinkCode(rawValue: Fixtures.ownLinkCode)!
@@ -888,6 +896,53 @@ private final class MultiUserCompetitionBlockTestLabServer: @unchecked Sendable 
             }
             blocked.removeAll { $0.id == id }
         }
+    }
+}
+
+/// Every call takes 0.3 s. `taken_name` is taken; `late_taken` passes the
+/// check and is taken by the time it's saved; `offline_name` fails to save
+/// once. The first save that changes Show Me in Search fails.
+private actor FriendSettingsTestLabServer {
+    private var current = FriendSettings(
+        username: nil,
+        showInSearch: true,
+        challengePolicy: .friendsAndLink
+    )
+    private var searchSaveFailed = false
+    private var usernameSaveFailed = false
+
+    func settings() async throws -> FriendSettings {
+        try await Task.sleep(for: .milliseconds(300))
+        return current
+    }
+
+    func isAvailable(_ username: String) async throws -> Bool {
+        try await Task.sleep(for: .milliseconds(300))
+        return username != "taken_name"
+    }
+
+    func setUsername(_ username: String) async throws -> FriendSettings {
+        try await Task.sleep(for: .milliseconds(300))
+        if username == "taken_name" || username == "late_taken" {
+            throw CompetitionRemoteFailure.usernameUnavailable
+        }
+        if username == "offline_name", !usernameSaveFailed {
+            usernameSaveFailed = true
+            throw CompetitionRemoteFailure.retryableTransport
+        }
+        current.username = username
+        return current
+    }
+
+    func update(_ showInSearch: Bool, _ policy: FriendChallengePolicy) async throws -> FriendSettings {
+        try await Task.sleep(for: .milliseconds(300))
+        if showInSearch != current.showInSearch, !searchSaveFailed {
+            searchSaveFailed = true
+            throw CompetitionRemoteFailure.retryableTransport
+        }
+        current.showInSearch = showInSearch
+        current.challengePolicy = policy
+        return current
     }
 }
 

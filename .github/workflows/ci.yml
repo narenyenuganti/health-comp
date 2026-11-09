@@ -235,6 +235,7 @@ jobs:
             -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testNotificationsPageOpensSettingsAndUnmutes \
             -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testHealthPageOpensSettings \
             -only-testing:HealthCompUITests/BlockChallengerUITests/testDeclineAndBlockDisablesTheScreenThenLeavesHomeAndListsThemInAccount \
+            -only-testing:HealthCompUITests/FriendsAccountUITests \
             -only-testing:HealthCompUITests/WhatItTakesUITests/testWhatItTakesPanelForEveryRemoteState \
             -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testBeltShowsOnHomeHistoryAndThePersonPage \
             -only-testing:HealthCompUITests/BeltUITests/testHistoryRecordsPassTheAuditAtAccessibility5 \
