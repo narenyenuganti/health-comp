@@ -960,7 +960,7 @@ final class MultiUserCompetitionUITests: XCTestCase {
         XCTAssertEqual(url.value as? String, "invites.ui.healthcomp.test/c/Xb3kP9qL2mN8vR4tY6wZ1a")
         XCTAssertTrue(
             app.staticTexts[
-                "Anyone with this link can challenge you. Reset it to turn off the old one; challenges already sent stay."
+                "Anyone with this link can challenge you, unless you only allow friends. Reset it to turn off the old one; challenges already sent stay."
             ].exists
         )
 
