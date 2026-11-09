@@ -1,0 +1,257 @@
+import ComposableArchitecture
+import XCTest
+
+@testable import HealthComp
+
+@MainActor
+final class FriendsSettingsFeatureTests: XCTestCase {
+    private typealias Feature = FriendSettingsFeature
+
+    private let unset = FriendSettings(username: nil, showInSearch: true, challengePolicy: .friendsAndLink)
+    private let named = FriendSettings(username: "alice", showInSearch: true, challengePolicy: .friendsAndLink)
+
+    private func makeStore(
+        _ state: Feature.State? = nil,
+        clock: any Clock<Duration> = ImmediateClock(),
+        client configure: (inout CompetitionClient) -> Void = { _ in }
+    ) -> TestStoreOf<Feature> {
+        var client = CompetitionClient.testValue
+        configure(&client)
+        return TestStore(initialState: state ?? Feature.State(saved: unset)) { Feature() } withDependencies: {
+            $0.competitionClient = client
+            $0.continuousClock = clock
+        }
+    }
+
+    func testUsernameRules() {
+        XCTAssertEqual(FriendSettings.sanitizedUsername("Be-ta Alice!"), "betaalice")
+        XCTAssertEqual(FriendSettings.sanitizedUsername("été_9"), "t_9")
+        XCTAssertEqual(FriendSettings.sanitizedUsername(String(repeating: "a", count: 25)).count, 20)
+        for good in ["abc", "a_1", String(repeating: "z", count: 20)] {
+            XCTAssertTrue(FriendSettings.isValidUsername(good), good)
+        }
+        for bad in ["", "ab", "Abc", "a b", "ab-c", "abç", String(repeating: "z", count: 21)] {
+            XCTAssertFalse(FriendSettings.isValidUsername(bad), bad)
+        }
+    }
+
+    func testLoadShowsTheRowsAndAFailedRefreshKeepsThem() async {
+        let answers = LockIsolated<[Result<FriendSettings, CompetitionRemoteFailure>]>([
+            .failure(.notFound), .success(named), .failure(.retryableTransport),
+        ])
+        let store = makeStore(.init()) { client in
+            client.getFriendSettings = { try answers.withValue { $0.removeFirst() }.get() }
+        }
+        // A server without Friends leaves the rows hidden.
+        await store.send(.requested)
+        await store.receive(.loaded(nil))
+        await store.send(.requested)
+        await store.receive(.loaded(named)) { $0.saved = self.named }
+        await store.send(.requested)
+        await store.receive(.loaded(nil))
+    }
+
+    func testSearchSaveShowsTheChangeWhileSavingThenKeepsTheServersAnswer() async {
+        var off = unset
+        off.showInSearch = false
+        let sent = LockIsolated<[Bool]>([])
+        let store = makeStore { client in
+            client.updateFriendSettings = { show, policy in
+                sent.withValue { $0.append(show) }
+                return FriendSettings(username: nil, showInSearch: show, challengePolicy: policy)
+            }
+        }
+        await store.send(.showInSearchChanged(false)) { $0.saving = off }
+        XCTAssertEqual(store.state.shown, off)
+        await store.receive(.saveFinished(off)) {
+            $0.saving = nil
+            $0.saved = off
+        }
+        XCTAssertEqual(sent.value, [false])
+    }
+
+    func testFailedSavesRollBackAndNameTheRowThatFailed() async {
+        let store = makeStore { client in
+            client.updateFriendSettings = { _, _ in throw CompetitionRemoteFailure.invalidFriendSettings }
+        }
+        var off = unset
+        off.showInSearch = false
+        await store.send(.showInSearchChanged(false)) { $0.saving = off }
+        await store.receive(.saveFinished(nil)) {
+            $0.saving = nil
+            $0.failedField = .showInSearch
+        }
+        XCTAssertEqual(store.state.shown, unset)
+
+        var friendsOnly = unset
+        friendsOnly.challengePolicy = .friendsOnly
+        await store.send(.challengePolicyChanged(.friendsOnly)) {
+            $0.saving = friendsOnly
+            $0.failedField = nil
+        }
+        await store.receive(.saveFinished(nil)) {
+            $0.saving = nil
+            $0.failedField = .challengePolicy
+        }
+        XCTAssertEqual(store.state.shown, unset)
+    }
+
+    func testNoSecondSaveOrRefreshRunsWhileOneIsSaving() async {
+        let gate = AsyncStream<Void>.makeStream()
+        let calls = LockIsolated(0)
+        var off = unset
+        off.showInSearch = false
+        let store = makeStore { client in
+            client.updateFriendSettings = { show, policy in
+                calls.withValue { $0 += 1 }
+                for await _ in gate.stream { break }
+                return FriendSettings(username: nil, showInSearch: show, challengePolicy: policy)
+            }
+        }
+        await store.send(.showInSearchChanged(false)) { $0.saving = off }
+        await store.send(.challengePolicyChanged(.friendsOnly))
+        await store.send(.requested)
+        await store.send(.usernameSheetOpened)
+        gate.continuation.yield()
+        await store.receive(.saveFinished(off)) {
+            $0.saving = nil
+            $0.saved = off
+        }
+        XCTAssertEqual(calls.value, 1)
+    }
+
+    func testAvailabilityWaitsForTypingToStopAndAsksOnlyAboutTheLastName() async {
+        let clock = TestClock()
+        let asked = LockIsolated<[String]>([])
+        let store = makeStore(clock: clock) { client in
+            client.usernameAvailable = { name in
+                asked.withValue { $0.append(name) }
+                return true
+            }
+        }
+        await store.send(.usernameSheetOpened) { $0.sheet = .init() }
+        await store.send(.usernameChanged("nar")) { $0.sheet?.draft = "nar" }
+        await clock.advance(by: .milliseconds(200))
+        await store.send(.usernameChanged("nare")) { $0.sheet?.draft = "nare" }
+        await clock.advance(by: .milliseconds(399))
+        XCTAssertEqual(asked.value, [])
+        await clock.advance(by: .milliseconds(1))
+        await store.receive(.usernameChecked("nare", isAvailable: true)) {
+            $0.sheet?.availability = .available
+        }
+        XCTAssertEqual(asked.value, ["nare"])
+
+        // An edit clears the answer, and an invalid name never asks.
+        await store.send(.usernameChanged("na")) {
+            $0.sheet?.draft = "na"
+            $0.sheet?.availability = .unknown
+        }
+        await clock.run()
+        XCTAssertEqual(asked.value, ["nare"])
+    }
+
+    func testAnAnswerAboutAnOlderDraftIsDropped() async {
+        var state = Feature.State(saved: unset)
+        state.sheet = .init(draft: "newer")
+        let store = makeStore(state)
+        await store.send(.usernameChecked("older", isAvailable: false))
+        await store.send(.usernameChecked("newer", isAvailable: nil))
+        XCTAssertEqual(store.state.sheet?.availability, .unknown)
+    }
+
+    func testYourOwnNameIsNotChecked() async {
+        var state = Feature.State(saved: named)
+        state.sheet = .init(draft: "alice2", availability: .taken)
+        let store = makeStore(state) { client in
+            client.usernameAvailable = { _ in
+                XCTFail("Should not ask about your own name")
+                return false
+            }
+        }
+        await store.send(.usernameChanged("alice")) {
+            $0.sheet?.draft = "alice"
+            $0.sheet?.availability = .unknown
+        }
+    }
+
+    func testTakenNameCantContinue() async {
+        var state = Feature.State(saved: unset)
+        state.sheet = .init(draft: "taken", availability: .taken)
+        let store = makeStore(state)
+        XCTAssertFalse(store.state.sheet?.canContinue ?? true)
+        await store.send(.usernameContinueTapped)
+    }
+
+    func testContinueSavesAndClosesTheSheet() async {
+        var state = Feature.State(saved: unset)
+        state.sheet = .init(draft: "alice", availability: .available)
+        let store = makeStore(state) { client in
+            client.setUsername = { name in
+                FriendSettings(username: name, showInSearch: true, challengePolicy: .friendsAndLink)
+            }
+        }
+        await store.send(.usernameContinueTapped) { $0.sheet?.isSaving = true }
+        await store.receive(.usernameSaveFinished(.success(named))) {
+            $0.saved = self.named
+            $0.sheet = nil
+        }
+    }
+
+    func testTheSheetCantCloseOrEditWhileSaving() async {
+        let gate = AsyncStream<Void>.makeStream()
+        var state = Feature.State(saved: unset)
+        state.sheet = .init(draft: "alice", availability: .available)
+        let named = self.named
+        let store = makeStore(state) { client in
+            client.setUsername = { _ in
+                for await _ in gate.stream { break }
+                return named
+            }
+        }
+        await store.send(.usernameContinueTapped) { $0.sheet?.isSaving = true }
+        await store.send(.usernameSheetClosed)
+        await store.send(.usernameChanged("other"))
+        gate.continuation.yield()
+        await store.receive(.usernameSaveFinished(.success(named))) {
+            $0.saved = named
+            $0.sheet = nil
+        }
+    }
+
+    func testAnUnansweredCheckDoesntHoldUpContinue() {
+        let sheet = Feature.UsernameSheet(draft: "alice", availability: .unknown)
+        XCTAssertTrue(sheet.canContinue)
+    }
+
+    func testSaveErrorsStayOnTheSheet() async {
+        let cases: [(CompetitionRemoteFailure, Feature.UsernameAvailability, Feature.UsernameFailure?)] = [
+            (.usernameUnavailable, .taken, nil),
+            (.invalidUsername, .available, .invalid),
+            (.retryableTransport, .available, .failed),
+        ]
+        for (failure, availability, expected) in cases {
+            var state = Feature.State(saved: unset)
+            state.sheet = .init(draft: "alice", availability: .available)
+            let store = makeStore(state) { client in
+                client.setUsername = { _ in throw failure }
+            }
+            await store.send(.usernameContinueTapped) { $0.sheet?.isSaving = true }
+            await store.receive(.usernameSaveFinished(.failure(failure))) {
+                $0.sheet?.isSaving = false
+                $0.sheet?.availability = availability
+                $0.sheet?.failure = expected
+            }
+        }
+    }
+
+    func testSignOutClearsTheSettingsAndALateSaveIsDropped() async {
+        var initial = CompetitionFeature.State()
+        initial.friendSettings = .init(saved: named, saving: unset)
+        let store = TestStore(initialState: initial) { CompetitionFeature() }
+            withDependencies: { $0.competitionClient = .testValue }
+        await store.send(.stop) { $0.friendSettings = .init() }
+        await store.send(.friendSettings(.saveFinished(named)))
+        await store.send(.friendSettings(.usernameSaveFinished(.success(named))))
+        await store.finish()
+    }
+}

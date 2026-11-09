@@ -150,6 +150,7 @@ struct CompetitionFeature {
         var reportedPhotoOwners: Set<UUID> = []
         var photoReportsInFlight: Set<UUID> = []
         var ownPhoto = OwnPhotoState()
+        var friendSettings = FriendSettingsFeature.State()
 
         init(
             publication: CompetitionPublication? = nil,
@@ -310,6 +311,7 @@ struct CompetitionFeature {
         case ownPhotoRemoveFinished(succeeded: Bool)
         case photoReportConfirmed(UUID)
         case photoReportFinished(UUID, succeeded: Bool)
+        case friendSettings(FriendSettingsFeature.Action)
     }
 
     @Dependency(\.competitionClient) var competitionClient
@@ -330,8 +332,12 @@ struct CompetitionFeature {
     }
 
     var body: some ReducerOf<Self> {
+        Scope(state: \.friendSettings, action: \.friendSettings) { FriendSettingsFeature() }
         Reduce { state, action in
             switch action {
+            case .friendSettings:
+                return .none
+
             case .task:
                 let currentAuthorization = state.notificationAuthorizationState
                 return .merge(
@@ -1045,8 +1051,12 @@ struct CompetitionFeature {
                 state.reportedPhotoOwners = []
                 state.photoReportsInFlight = []
                 state.ownPhoto = OwnPhotoState()
+                state.friendSettings = FriendSettingsFeature.State()
                 return .concatenate(
                     .merge(
+                        .cancel(id: FriendSettingsFeature.CancelID.load),
+                        .cancel(id: FriendSettingsFeature.CancelID.save),
+                        .cancel(id: FriendSettingsFeature.CancelID.availability),
                         .cancel(id: CancelID.profilePhotos),
                         .cancel(id: CancelID.ownPhoto),
                         .cancel(id: CancelID.reaction),
