@@ -30,6 +30,13 @@ struct CompetitionWeekChart: View {
                         clapSlot(day, clap)
                     }
                 }
+                .background {
+                    if day.ordinal == currentDayOrdinal, !dynamicTypeSize.isAccessibilitySize {
+                        RoundedRectangle(cornerRadius: 8, style: .continuous)
+                            .fill(Theme.panel)
+                            .padding(.horizontal, -6)
+                    }
+                }
             }
         }
     }
@@ -259,21 +266,33 @@ struct CompetitionRingLegend: View {
 
     var body: some View {
         if !dynamicTypeSize.isAccessibilitySize {
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 12) { rings }
+            ViewThatFits(in: .horizontal) {
                 HStack(spacing: 12) {
-                    swatch(Theme.ink, opponentName.uppercased())
-                    if showsNoData {
-                        HStack(spacing: 5) {
-                            HatchBar().frame(width: 10, height: 10)
-                            Text("NO DATA").font(.themeLabel).tracking(1.1)
-                        }
-                    }
+                    rings
+                    others
+                }
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 12) { rings }
+                    HStack(spacing: 12) { others }
                 }
             }
+            // A one-line legend is otherwise too short for VoiceOver's target.
+            .frame(minHeight: 34)
+            .contentShape(.accessibility, Rectangle())
             .foregroundStyle(Theme.secondary)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel(accessibilityText)
+        }
+    }
+
+    @ViewBuilder
+    private var others: some View {
+        swatch(Theme.ink, opponentName.uppercased())
+        if showsNoData {
+            HStack(spacing: 5) {
+                HatchBar().frame(width: 10, height: 10)
+                Text("NO DATA").font(.themeLabel).tracking(1.1)
+            }
         }
     }
 
@@ -437,6 +456,7 @@ struct CompetitionLeadLineView: View {
 
     /// A quiet week still gets room, so 10 points never reads as a rout.
     private static let minimumScale = 50.0
+    private static let unusedScale = 10.0
     /// The end label grows with its text, and stays inside the chart's
     /// frame when the line ends at the top or bottom of the scale.
     @ScaledMetric(relativeTo: .footnote) private var endLabelWidth: CGFloat = 48
@@ -472,6 +492,12 @@ struct CompetitionLeadLineView: View {
             }
             if dynamicTypeSize < .xxLarge {
                 weekdays
+            }
+            if let throughText {
+                Text(throughText)
+                    .font(.caption)
+                    .foregroundStyle(Theme.secondary)
+                    .accessibilityHidden(true)
             }
             if !moments.isEmpty {
                 VStack(alignment: .leading, spacing: 10) {
@@ -517,8 +543,10 @@ struct CompetitionLeadLineView: View {
                 width: proxy.size.width - endLabelWidth,
                 height: proxy.size.height - 14
             )
-            let top = max(line.margins.max() ?? 0, Self.minimumScale)
-            let bottom = max(-(line.margins.min() ?? 0), Self.minimumScale)
+            let high = line.margins.max() ?? 0, low = line.margins.min() ?? 0
+            let collapses = sideLabels == nil
+            let top = collapses && high <= 0 && low < 0 ? Self.unusedScale : max(high, Self.minimumScale)
+            let bottom = collapses && low >= 0 ? Self.unusedScale : max(-low, Self.minimumScale)
             let x: (Double) -> CGFloat = { day in
                 plot.minX + plot.width * CGFloat(day / Double(max(days.count, 1)))
             }
@@ -538,12 +566,16 @@ struct CompetitionLeadLineView: View {
                 Path { $0.addLines([CGPoint(x: end.x, y: axis), CGPoint(x: x(Double(days.count)), y: axis)]) }
                     .stroke(Theme.outline, style: StrokeStyle(lineWidth: 1.5, dash: [3, 4]))
                 Group {
-                    drawn
-                        .stroke(Theme.youFill, style: lineStyle)
-                        .clipShape(Rectangle().path(in: CGRect(x: -8, y: -8, width: proxy.size.width + 16, height: axis + 8)))
-                    drawn
-                        .stroke(Theme.ink, style: lineStyle)
-                        .clipShape(Rectangle().path(in: CGRect(x: -8, y: axis, width: proxy.size.width + 16, height: proxy.size.height)))
+                    if low >= 0 || high > 0 {
+                        drawn
+                            .stroke(Theme.youFill, style: lineStyle)
+                            .clipShape(Rectangle().path(in: CGRect(x: -8, y: -8, width: proxy.size.width + 16, height: axis + 8)))
+                    }
+                    if low < 0 {
+                        drawn
+                            .stroke(Theme.ink, style: lineStyle)
+                            .clipShape(Rectangle().path(in: CGRect(x: -8, y: axis, width: proxy.size.width + 16, height: proxy.size.height)))
+                    }
                 }
                 .moving(Motion.grow, value: isDrawn)
                 ForEach(line.changes.indices, id: \.self) { index in
@@ -583,7 +615,7 @@ struct CompetitionLeadLineView: View {
                     .opacity(isDrawn ? 1 : 0)
                     .animation(Motion.late, value: isDrawn)
                     .position(
-                        x: end.x + 10 + (endLabelWidth - 10) / 2,
+                        x: end.x + (moments.contains { $0.index == lastDay } ? 16 : 10) + (endLabelWidth - 10) / 2,
                         y: min(max(end.y, endLabelHalfHeight), proxy.size.height - endLabelHalfHeight)
                     )
             }
@@ -635,6 +667,17 @@ struct CompetitionLeadLineView: View {
         .accessibilityHidden(true)
     }
 
+    /// The line stops at the last finished day; the score above includes today.
+    private var throughText: String? {
+        guard sideLabels == nil,
+              let currentDayOrdinal,
+              lastDay > 0,
+              lastDay == currentDayOrdinal - 1,
+              let day = days.first(where: { $0.ordinal == lastDay })
+        else { return nil }
+        return "Through \(weekdayText(day.day)), before today’s points."
+    }
+
     private var changedText: String {
         line.changes.count == 1 ? "CHANGED ONCE" : "CHANGED \(line.changes.count) TIMES"
     }
@@ -684,14 +727,15 @@ private struct HeadToHeadDayRow: View {
 
     var body: some View {
         if ownerState == .future, !isToday {
-            HStack(spacing: 10) {
+            HStack(spacing: 6) {
+                Color.clear.frame(maxWidth: .infinity, maxHeight: 1)
                 DayLabel(day: day, isToday: false, showsDates: showsDates, now: now)
                 Text("Upcoming")
                     .font(.footnote.weight(.semibold))
                     .foregroundStyle(Theme.tertiary)
                     .fixedSize()
+                    .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .frame(maxWidth: .infinity)
             .frame(minHeight: showsDates ? 38 : 30)
         } else {
             scoredRow
@@ -717,12 +761,7 @@ private struct HeadToHeadDayRow: View {
                 alignment: .trailing
             )
         }
-        .padding(.horizontal, isToday ? 6 : 0)
         .frame(minHeight: showsDates ? 38 : 30)
-        .background(
-            isToday ? Theme.panel : .clear,
-            in: RoundedRectangle(cornerRadius: 8, style: .continuous)
-        )
     }
 
     private var ownerState: CompetitionChartState {
@@ -838,6 +877,8 @@ private struct DayLabel: View {
     let showsDates: Bool
     let now: Date
 
+    @ScaledMetric(relativeTo: .footnote) private var width: CGFloat = 96
+
     var body: some View {
         VStack(spacing: 0) {
             Text(isToday ? "Day \(day.ordinal) · Today" : "Day \(day.ordinal) · \(weekdayText(day.day))")
@@ -852,8 +893,7 @@ private struct DayLabel: View {
             }
         }
         .fixedSize()
-        .padding(.horizontal, 4)
-        .frame(minWidth: 44)
+        .frame(width: width)
     }
 }
 

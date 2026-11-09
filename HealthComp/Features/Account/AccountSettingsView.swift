@@ -208,10 +208,10 @@ struct AccountSettingsView: View {
             if challengeLink != nil {
                 challengeLinkSection
             }
+            settingsSection
             if let blocked = blockedPeople, let people = blocked.people, !people.isEmpty {
                 blockedSection(blocked, people)
             }
-            settingsSection
             footerSection
         }
         .moving(Motion.settle, value: listShape)
@@ -513,8 +513,8 @@ struct AccountSettingsView: View {
                 VStack(alignment: .leading, spacing: 12) {
                     let isResetting = challengeLink?.isResetting == true
                     Text(Self.displayText(url))
-                        .font(.callout.monospaced())
-                        .foregroundStyle(Theme.ink)
+                        .font(.footnote.monospaced())
+                        .foregroundStyle(Theme.secondary)
                         .textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityLabel("Your challenge link")
@@ -549,9 +549,9 @@ struct AccountSettingsView: View {
                     }
                     // The 44 pt frame sits inside the label so the hit area gets it too.
                     Button { isResetLinkConfirmationPresented = true } label: {
-                        Text("Reset Link").frame(minHeight: 44).contentShape(Rectangle())
+                        Text("Reset Link")
                     }
-                        .buttonStyle(.borderless)
+                        .buttonStyle(QuietButtonStyle(color: Theme.ink))
                         .disabled(isResetting)
                         .accessibilityValue(isResetting ? "Resetting" : "")
                         .accessibilityIdentifier("account.challenge-link.reset")
@@ -947,15 +947,14 @@ private struct AccountNotificationsPage: View {
 
             if !settings.mutedPeople.isEmpty {
                 Section {
-                    VStack(alignment: .leading, spacing: 12) {
-                        SectionLabel("MUTED")
-                        ForEach(settings.mutedPeople) { person in
-                            mutedRow(person)
-                        }
-                        Text("Muting someone silences all your matches with them.")
-                            .font(.footnote)
-                            .foregroundStyle(Theme.secondary)
+                    ForEach(settings.mutedPeople) { person in
+                        mutedRow(person)
                     }
+                } header: {
+                    SectionLabel("MUTED")
+                } footer: {
+                    Text("Muting someone silences all your matches with them.")
+                        .foregroundStyle(Theme.secondary)
                 }
                 .listRowBackground(Theme.panel)
             }
@@ -980,8 +979,11 @@ private struct AccountNotificationsPage: View {
     ) -> some View {
         Section {
             ForEach(choices, id: \.self) { choice in
-                NotificationChoiceToggle(choice: choice, changed: settings.choicesChanged)
-                    .disabled(choice == .liveActivity && !liveActivitiesEnabled)
+                NotificationChoiceToggle(
+                    choice: choice,
+                    isForcedOff: choice == .liveActivity && !liveActivitiesEnabled,
+                    changed: settings.choicesChanged
+                )
                 if choice == .liveActivity && !liveActivitiesEnabled {
                     Text("Live Activities are off for HealthComp in iOS Settings.")
                         .foregroundStyle(Theme.secondary)
@@ -1052,19 +1054,22 @@ private struct AccountNotificationsPage: View {
 
 private struct NotificationChoiceToggle: View {
     let choice: CompetitionNotificationChoice
+    let isForcedOff: Bool
     let changed: () -> Void
     @AppStorage private var isOn: Bool
 
-    init(choice: CompetitionNotificationChoice, changed: @escaping () -> Void) {
+    init(choice: CompetitionNotificationChoice, isForcedOff: Bool, changed: @escaping () -> Void) {
         self.choice = choice
+        self.isForcedOff = isForcedOff
         self.changed = changed
         _isOn = AppStorage(wrappedValue: true, choice.storageKey)
     }
 
     var body: some View {
-        Toggle(choice.title, isOn: $isOn)
-            // Q-notifs-5: the page's ink tint hides the thumb in dark mode.
-            .tint(Color(uiColor: .systemGreen))
+        Toggle(choice.title, isOn: isForcedOff ? .constant(false) : $isOn)
+            .disabled(isForcedOff)
+            // Amber, not the page's ink, which hides the thumb in dark mode.
+            .tint(Theme.youFill)
             .onChange(of: isOn) { changed() }
             .accessibilityIdentifier("account.notifications.choice.\(choice.rawValue)")
     }

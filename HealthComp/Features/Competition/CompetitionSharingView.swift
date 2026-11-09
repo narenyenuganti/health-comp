@@ -561,7 +561,7 @@ struct CompetitionSharingView: View {
             .animation(Motion.fade, value: summary)
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(14)
-            .themePanel(cornerRadius: 16)
+            .themePanel()
             .accessibilityLabel("Match status. \(summary)")
     }
 }
@@ -638,6 +638,7 @@ private struct CompetitionHeroCard: View {
                         .font(.footnote.weight(.bold))
                 }
                 .foregroundStyle(Theme.ink)
+                .frame(maxWidth: .infinity, alignment: .trailing)
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -866,23 +867,33 @@ private struct CompetitionSharingRow: View {
             }
 
             VStack(alignment: .leading, spacing: 14) {
-                HStack(alignment: .top, spacing: 14) {
+                HStack(alignment: showsName ? .top : .center, spacing: 14) {
                     badge
                     identity
                     Spacer(minLength: 0)
+                    if !hasScoreRow {
+                        trailingMark
+                            .frame(minHeight: badgeSize)
+                    }
                 }
-                HStack {
-                    if let beltHolder {
-                        CompetitionBeltMark(holder: beltHolder)
+                if hasScoreRow {
+                    HStack {
+                        if competitionShouldShowScores(competition.lifecycle) {
+                            trailingScore
+                        }
+                        Spacer()
+                        if let beltHolder {
+                            CompetitionBeltMark(holder: beltHolder)
+                        }
+                        trailingMark
                     }
-                    if competitionShouldShowScores(competition.lifecycle) {
-                        trailingScore
-                    }
-                    Spacer()
-                    trailingMark
                 }
             }
         }
+    }
+
+    private var hasScoreRow: Bool {
+        beltHolder != nil || competitionShouldShowScores(competition.lifecycle)
     }
 
     @ViewBuilder
@@ -1943,7 +1954,7 @@ struct CompetitionPersonView: View {
                     .padding(.horizontal, 8)
                     .padding(.vertical, 16)
                     .frame(maxWidth: .infinity)
-                    .background { Theme.ground.environment(\.colorScheme, .dark) }
+                    .background { Theme.beltWell }
                     .accessibilityHidden(true)
             }
             VStack(alignment: .leading, spacing: 12) {
@@ -2054,6 +2065,7 @@ struct CompetitionPersonView: View {
                 .font(.themeLabel)
                 .tracking(1.1)
                 .foregroundStyle(Theme.secondary)
+                .layoutPriority(1)
             Text(them)
                 .font(valueFont)
                 .foregroundStyle(Theme.ink)

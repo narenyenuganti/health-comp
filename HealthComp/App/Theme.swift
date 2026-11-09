@@ -29,6 +29,9 @@ enum Theme {
     static let hairline = dynamic(light: 0xDEDED8, dark: 0x2C2C30)
     static let track = dynamic(light: 0xE2E2DC, dark: 0x26262A)
     static let outline = dynamic(light: 0xCFCFC9, dark: 0x3A3A40)
+    /// Behind the belt art: the dark ground in light mode, the panel in dark,
+    /// where the ground would erase the card's top edge.
+    static let beltWell = dynamic(light: 0x0F0F10, dark: 0x19191B)
 
     private static func dynamic(light: UInt32, dark: UInt32) -> Color {
         Color(uiColor: UIColor(light: light, dark: dark))

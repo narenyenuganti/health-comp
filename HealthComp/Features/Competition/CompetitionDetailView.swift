@@ -1,6 +1,42 @@
 import CompetitionCore
 import SwiftUI
 
+/// Flat segments in the app's own surfaces, in place of the system's picker.
+private struct CompetitionSegments<Selection: Hashable>: View {
+    @Binding var selection: Selection
+    let options: [(value: Selection, title: String)]
+
+    @Namespace private var thumb
+
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(options, id: \.value) { option in
+                let isSelected = option.value == selection
+                Button { selection = option.value } label: {
+                    Text(option.title)
+                        .font(.subheadline.weight(.semibold).width(.condensed))
+                        .foregroundStyle(isSelected ? Theme.ink : Theme.secondary)
+                        .multilineTextAlignment(.center)
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .background {
+                            if isSelected {
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .fill(Theme.ground)
+                                    .matchedGeometryEffect(id: "thumb", in: thumb)
+                            }
+                        }
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(isSelected ? .isSelected : [])
+            }
+        }
+        .padding(3)
+        .background(Theme.control, in: RoundedRectangle(cornerRadius: 13, style: .continuous))
+        .moving(Motion.settle, value: selection)
+    }
+}
+
 struct CompetitionDetailView: View {
     let competition: LocalCompetitionPresentation
     let source: CompetitionPublicationSource
@@ -93,11 +129,10 @@ struct CompetitionDetailView: View {
                 tallyPanel
 
                 if competitionShouldShowScores(competition.lifecycle) {
-                    Picker("Match view", selection: $page) {
-                        Text(todayTabTitle).tag(Page.today)
-                        Text("Week").tag(Page.week)
-                    }
-                    .pickerStyle(.segmented)
+                    CompetitionSegments(
+                        selection: $page,
+                        options: [(Page.today, todayTabTitle), (Page.week, "Week")]
+                    )
                     .transition(Motion.appear)
 
                     ZStack(alignment: .topLeading) {
@@ -402,7 +437,7 @@ struct CompetitionDetailView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(16)
-            .themePanel(cornerRadius: 16)
+            .themePanel()
             .transition(Motion.appear)
         }
     }
@@ -718,7 +753,7 @@ struct CompetitionDetailView: View {
             }
             .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .themePanel(cornerRadius: 18)
+            .themePanel()
         }
     }
 

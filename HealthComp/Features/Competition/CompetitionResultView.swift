@@ -311,7 +311,7 @@ struct CompetitionResultView: View {
         HStack(alignment: .top, spacing: 12) {
             SlantedBar()
                 .fill(outcome == .win ? Theme.youFill : Theme.ink)
-                .frame(width: 4, height: 40)
+                .frame(width: 4)
                 .accessibilityHidden(true)
             Text(sentence)
                 .font(.body.weight(.medium))
@@ -319,6 +319,7 @@ struct CompetitionResultView: View {
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
         }
+        .fixedSize(horizontal: false, vertical: true)
         .padding(.horizontal, 6)
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("competition.result.howItWasWon")
@@ -413,7 +414,7 @@ struct CompetitionResultView: View {
         }
         .frame(maxWidth: .infinity)
         .padding(20)
-        .themePanel(cornerRadius: 24)
+        .themePanel()
         .accessibilityElement(children: .ignore)
         .accessibilityIdentifier("competition.result")
         .accessibilityLabel(
@@ -430,9 +431,10 @@ struct CompetitionResultView: View {
             fractionDigits: digits,
             tint: Theme.you
         )
-        Text("–")
-            .font(.title2.weight(.medium))
-            .foregroundStyle(Theme.faint)
+        Rectangle()
+            .fill(Theme.outline)
+            .frame(width: 2, height: 52)
+            .rotationEffect(.degrees(12))
             .accessibilityHidden(true)
         FinalScoreOwner(
             name: competition.opponentDisplayName,
@@ -1435,7 +1437,7 @@ struct CompetitionFinalScoreLayout: Layout {
         proposal: ProposedViewSize,
         subviews: Subviews
     ) -> AnyLayout {
-        let horizontal = AnyLayout(HStackLayout(spacing: 24))
+        let horizontal = AnyLayout(HStackLayout(alignment: .bottom, spacing: 24))
         guard let width = proposal.width, width.isFinite else {
             return horizontal
         }
@@ -1458,7 +1460,6 @@ private struct FinalScoreOwner: View {
     let tint: Color
 
     @ScaledMetric(relativeTo: .largeTitle) private var scoreSize: CGFloat = 52
-
     var body: some View {
         VStack(spacing: 4) {
             // A late photo fades in where it sits; the beat doesn't wait.
@@ -1469,9 +1470,6 @@ private struct FinalScoreOwner: View {
             Text(competitionPointsText(points, fractionDigits: fractionDigits))
                 .font(.score(size: scoreSize))
                 .monospacedDigit()
-            Text("points")
-                .font(.caption)
-                .foregroundStyle(Theme.secondary)
         }
         .foregroundStyle(tint)
         .frame(maxWidth: .infinity)
