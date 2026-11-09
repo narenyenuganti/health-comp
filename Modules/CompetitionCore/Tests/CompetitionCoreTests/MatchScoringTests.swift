@@ -100,7 +100,81 @@ final class MatchScoringTests: XCTestCase {
         XCTAssertEqual(try MatchScoring.standings(configuration: config, days: bank + later + [explicit], throughDay: 7), projection)
         XCTAssertEqual(try MatchScoring.dayWinners(configuration: config, days: bank + later, ordinal: 2, throughDay: 7), .winners([.team(1)]))
         let missingBank = Array(bank.dropFirst()) + later
-        XCTAssertTrue(try MatchScoring.standings(configuration: config, days: missingBank, throughDay: 7).isProvisional)
+        XCTAssertFalse(try MatchScoring.standings(configuration: config, days: missingBank, throughDay: 7).isProvisional)
+    }
+
+    func testLeaversMissingBankedDaysAreSealedZeros() throws {
+        let config = try configuration(cutoffs: [ids[0]: 3])
+        let bank = try scores([100, 0, 0]) + scores([100, 0, 0], day: 2)
+        let remaining = try (3...7).flatMap { day in
+            try (1...2).map { try MatchDayScore(seatID: ids[$0], ordinal: day, value: .centipoints($0 * 10)) }
+        }
+        for sealedValue in [nil, MatchDayValue.notSynced, .unavailable] {
+            let sealed = try sealedValue.map { [try MatchDayScore(seatID: ids[0], ordinal: 3, value: $0)] } ?? []
+            let days = bank + remaining + sealed
+            let projection = try MatchScoring.standings(configuration: config, days: days, throughDay: 7)
+            XCTAssertFalse(projection.isProvisional)
+            XCTAssertEqual(projection.seatTotals[ids[0]], 200)
+            XCTAssertEqual(try MatchScoring.dayWinners(configuration: config, days: days, ordinal: 3, throughDay: 7),
+                           .winners([.seat(ids[2])]))
+        }
+    }
+
+    func testBotsCannotLeaveIncludingDuringDecoding() throws {
+        XCTAssertThrowsError(try configuration(cutoffs: [ids[2]: 3], bot: true)) {
+            XCTAssertEqual($0 as? MatchScoringError, .invalidLeaveCutoff)
+        }
+        let data = try JSONEncoder().encode(configuration(bot: true))
+        var object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        object["leaveCutoffs"] = [ids[2].uuidString, 3]
+        XCTAssertThrowsError(try JSONDecoder().decode(MatchConfiguration.self, from: JSONSerialization.data(withJSONObject: object))) {
+            XCTAssertEqual($0 as? MatchScoringError, .invalidLeaveCutoff)
+        }
+    }
+
+    func testDayWinnersUseOnlyTheRequestedDay() throws {
+        for doubles in [false, true] {
+            let config = try configuration(doubles ? 4 : 3, doubles: doubles)
+            let days = try scores(doubles ? [1_000, 0, 0, 0] : [1_000, 0, 0])
+                + scores(doubles ? [0, 0, 10, 0] : [0, 10, 0], day: 2)
+            let winner: MatchStandingSubject = doubles ? .team(1) : .seat(ids[1])
+            XCTAssertEqual(try MatchScoring.dayWinners(configuration: config, days: days, ordinal: 2, throughDay: 2),
+                           .winners([winner]))
+        }
+    }
+
+    func testUnavailableAloneKeepsActiveSeatProvisional() throws {
+        let config = try configuration()
+        let days = try scores([100, 200]) + [MatchDayScore(seatID: ids[2], ordinal: 1, value: .unavailable)]
+        XCTAssertTrue(try MatchScoring.standings(configuration: config, days: days, throughDay: 1).isProvisional)
+        XCTAssertEqual(try MatchScoring.dayWinners(configuration: config, days: days, ordinal: 1, throughDay: 1), .unresolved)
+    }
+
+    func testTeamShareExcludesAcceptedFutureRows() throws {
+        let config = try configuration(4, doubles: true)
+        let days = try scores([1, 2, 0, 0]) + scores([100, 0, 0, 0], day: 2)
+        let share = try MatchScoring.teamShare(seat: ids[0], configuration: config, days: days, throughDay: 1)
+        XCTAssertEqual(share?.numerator, 1)
+        XCTAssertEqual(share?.denominator, 3)
+        let later = try MatchScoring.teamShare(seat: ids[0], configuration: config, days: days, throughDay: 2)
+        XCTAssertEqual(later?.numerator, 101)
+        XCTAssertEqual(later?.denominator, 103)
+    }
+
+    func testSeatIdentityMustBeUniqueEvenWithDifferentProfiles() throws {
+        let seats = try [MatchSeat(id: ids[0], kind: .human(ids[0])),
+                         MatchSeat(id: ids[0], kind: .human(ids[1])),
+                         MatchSeat(id: ids[2], kind: .human(ids[2]))]
+        XCTAssertThrowsError(try MatchConfiguration(format: .freeForAll, seats: seats)) {
+            XCTAssertEqual($0 as? MatchScoringError, .invalidRoster)
+        }
+    }
+
+    func testDoublesRejectTwoUnassignedSeats() throws {
+        let seats = try (0..<4).map { try MatchSeat(id: ids[$0], kind: .human(ids[$0]), team: $0 < 2 ? nil : 1) }
+        XCTAssertThrowsError(try MatchConfiguration(format: .doubles, seats: seats)) {
+            XCTAssertEqual($0 as? MatchScoringError, .invalidTeams)
+        }
     }
 
     func testTeamShareIsExactIncludingZeroMemberAndProvisionalTotals() throws {

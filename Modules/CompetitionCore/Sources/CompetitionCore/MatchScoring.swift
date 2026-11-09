@@ -42,7 +42,7 @@ public struct MatchSeat: Codable, Equatable, Sendable {
 public struct MatchConfiguration: Codable, Equatable, Sendable {
     public let format: MatchFormat
     public let seats: [MatchSeat]
-    /// Inclusive last banked day; later days are resolved zero contributions.
+    /// Inclusive last banked day; missing banked scores and later days are resolved zero contributions.
     public let leaveCutoffs: [UUID: Int]
 
     public init(format: MatchFormat, seats: [MatchSeat], leaveCutoffs: [UUID: Int] = [:]) throws {
@@ -62,8 +62,8 @@ public struct MatchConfiguration: Codable, Equatable, Sendable {
             guard seats.count == 4, teams.count == 2, teams[nil] == nil,
                   teams.values.allSatisfy({ $0.count == 2 }) else { throw MatchScoringError.invalidTeams }
         }
-        let ids = Set(seats.map(\.id))
-        guard leaveCutoffs.allSatisfy({ ids.contains($0.key) && (1...7).contains($0.value) }) else {
+        let humanSeatIDs = Set(seats.filter { $0.kind != .bot }.map(\.id))
+        guard leaveCutoffs.allSatisfy({ humanSeatIDs.contains($0.key) && (1...7).contains($0.value) }) else {
             throw MatchScoringError.invalidLeaveCutoff
         }
         self.format = format
@@ -238,7 +238,9 @@ public enum MatchScoring {
                 let value = values[seat.id]?[ordinal] ?? (afterLeave ? .afterLeave : .notSynced)
                 switch value {
                 case let .centipoints(points): total += points
-                case .notSynced, .unavailable: provisional = true
+                case .notSynced, .unavailable:
+                    // Leaving seals the bank: no later upload can fill a missing score.
+                    if configuration.leaveCutoffs[seat.id] == nil { provisional = true }
                 case .afterLeave: break
                 }
             }
