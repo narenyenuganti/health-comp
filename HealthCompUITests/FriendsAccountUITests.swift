@@ -46,8 +46,7 @@ final class FriendsAccountUITests: XCTestCase {
         // Case and anything outside a-z 0-9 _ never reach the field.
         field.typeText("Be-ta Alice!")
         XCTAssertEqual(field.value as? String, "betaalice")
-        XCTAssertTrue(status.waitForExistence(timeout: 5))
-        XCTAssertEqual(status.label, "Available")
+        waitForStatus("Available")
         XCTAssertTrue(continueButton.isEnabled)
         continueButton.tap()
 
@@ -59,28 +58,24 @@ final class FriendsAccountUITests: XCTestCase {
     func testTakenUsernameKeepsTheSheetOpen() {
         openPrivacy()
         openSheet("account.privacy.username.choose")
-        field.typeText("taken_name")
-        XCTAssertTrue(status.waitForExistence(timeout: 5))
-        XCTAssertEqual(status.label, "Taken")
+        enter("taken_name")
+        waitForStatus("Taken")
         XCTAssertFalse(continueButton.isEnabled)
 
         // Another character asks again.
-        field.typeText("2")
-        XCTAssertTrue(waitUntil(5) { self.status.exists && self.status.label == "Available" })
+        enter("taken_name2")
+        waitForStatus("Available")
 
         // Someone else can claim a name between the check and the save.
-        clearField()
-        field.typeText("late_taken")
-        XCTAssertTrue(status.waitForExistence(timeout: 5))
-        XCTAssertEqual(status.label, "Available")
+        enter("late_taken")
+        waitForStatus("Available")
         continueButton.tap()
-        XCTAssertTrue(waitUntil(5) { self.status.exists && self.status.label == "Taken" })
+        waitForStatus("Taken")
         XCTAssertTrue(field.exists)
 
         // A connection failure stays inline; the same tap works next time.
-        clearField()
-        field.typeText("offline_name")
-        XCTAssertTrue(waitUntil(5) { self.status.exists && self.status.label == "Available" })
+        enter("offline_name")
+        waitForStatus("Available")
         continueButton.tap()
         let error = element("account.username.error")
         XCTAssertTrue(error.waitForExistence(timeout: 5))
@@ -94,7 +89,7 @@ final class FriendsAccountUITests: XCTestCase {
     func testNotNowLeavesTheUsernameUnset() {
         openPrivacy()
         openSheet("account.privacy.username.choose")
-        field.typeText("betaalice")
+        enter("betaalice")
         app.buttons["account.username.not-now"].tap()
         XCTAssertTrue(field.waitForNonExistence(timeout: 3))
         XCTAssertTrue(app.buttons["account.privacy.username.choose"].exists)
@@ -103,8 +98,8 @@ final class FriendsAccountUITests: XCTestCase {
     func testEditAUsername() {
         openPrivacy()
         openSheet("account.privacy.username.choose")
-        field.typeText("betaalice")
-        XCTAssertTrue(status.waitForExistence(timeout: 5))
+        enter("betaalice")
+        waitForStatus("Available")
         continueButton.tap()
         XCTAssertTrue(field.waitForNonExistence(timeout: 5))
 
@@ -113,9 +108,8 @@ final class FriendsAccountUITests: XCTestCase {
         // Your own name isn't checked, and saving it again is harmless.
         XCTAssertFalse(status.exists)
         XCTAssertTrue(continueButton.isEnabled)
-        clearField()
-        field.typeText("alice_b")
-        XCTAssertTrue(status.waitForExistence(timeout: 5))
+        enter("alice_b")
+        waitForStatus("Available")
         continueButton.tap()
         XCTAssertTrue(field.waitForNonExistence(timeout: 5))
         XCTAssertEqual(element("account.privacy.username").label, "@alice_b")
@@ -172,14 +166,13 @@ final class FriendsAccountUITests: XCTestCase {
                 shot("privacy-\(suffix)")
                 try audit("privacy \(suffix)")
                 openSheet("account.privacy.username.choose")
-                field.typeText("betaalice")
-                XCTAssertTrue(status.waitForExistence(timeout: 5))
+                enter("betaalice")
+                waitForStatus("Available")
                 shot("username-available-\(suffix)")
                 // Only what's above the keyboard; the next test reaches the rest.
                 try audit("username \(suffix)")
-                clearField()
-                field.typeText("taken_name")
-                XCTAssertTrue(waitUntil(5) { self.status.exists && self.status.label == "Taken" })
+                enter("taken_name")
+                waitForStatus("Taken")
                 shot("username-taken-\(suffix)")
             }
         }
@@ -190,8 +183,8 @@ final class FriendsAccountUITests: XCTestCase {
     func testContinueAndNotNowAreReachableWithTheKeyboardUpAtLargestTextSize() {
         openPrivacy(arguments: ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"])
         openSheet("account.privacy.username.choose")
-        field.typeText("betaalice")
-        XCTAssertTrue(status.waitForExistence(timeout: 5))
+        enter("betaalice")
+        waitForStatus("Available")
         scrollAboveTheKeyboard(continueButton)
         shot("username-continue-reached-ax5")
         continueButton.tap()
@@ -199,9 +192,8 @@ final class FriendsAccountUITests: XCTestCase {
         XCTAssertEqual(element("account.privacy.username").label, "@betaalice")
 
         openSheet("account.privacy.username.edit")
-        clearField()
-        field.typeText("not_saved")
-        XCTAssertTrue(status.waitForExistence(timeout: 5))
+        enter("not_saved")
+        waitForStatus("Available")
         let notNow = app.buttons["account.username.not-now"]
         scrollAboveTheKeyboard(notNow)
         shot("username-not-now-reached-ax5")
@@ -282,9 +274,40 @@ final class FriendsAccountUITests: XCTestCase {
         XCTAssertTrue(keyboard.exists, "The keyboard stays up.")
     }
 
-    private func clearField() {
-        guard let value = field.value as? String, !value.isEmpty else { return }
-        field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: value.count))
+    /// What the field holds; an empty field reports its empty prompt.
+    private var fieldValue: String {
+        let value = field.value as? String ?? ""
+        return value == field.placeholderValue ? "" : value
+    }
+
+    /// Replaces the field's text and waits until it shows exactly that, so a
+    /// dropped key fails here instead of as a wrong status later.
+    private func enter(_ text: String, file: StaticString = #filePath, line: UInt = #line) {
+        clearField(file: file, line: line)
+        field.typeText(text)
+        XCTAssertTrue(
+            waitUntil(5) { self.fieldValue == text },
+            "The field shows '\(fieldValue)' after typing '\(text)'",
+            file: file, line: line
+        )
+    }
+
+    /// Deletes only remove what's before the caret, so the caret goes to
+    /// the end first, and it repeats until nothing is left.
+    private func clearField(file: StaticString = #filePath, line: UInt = #line) {
+        for _ in 0..<4 where !fieldValue.isEmpty {
+            field.coordinate(withNormalizedOffset: CGVector(dx: 0.98, dy: 0.5)).tap()
+            field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: fieldValue.count))
+        }
+        XCTAssertEqual(fieldValue, "", "The field still shows '\(fieldValue)'", file: file, line: line)
+    }
+
+    private func waitForStatus(_ expected: String, file: StaticString = #filePath, line: UInt = #line) {
+        XCTAssertTrue(
+            waitUntil(5) { self.status.exists && self.status.label == expected },
+            "Expected '\(expected)'; status is \(status.exists ? "'\(status.label)'" : "absent") for '\(fieldValue)'",
+            file: file, line: line
+        )
     }
 
     private func waitUntil(_ timeout: TimeInterval, _ condition: () -> Bool) -> Bool {
