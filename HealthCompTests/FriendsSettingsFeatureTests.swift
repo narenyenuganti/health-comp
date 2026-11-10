@@ -244,14 +244,131 @@ final class FriendsSettingsFeatureTests: XCTestCase {
         }
     }
 
-    func testSignOutClearsTheSettingsAndALateSaveIsDropped() async {
+    // MARK: Sign-out
+
+    /// A server call held open until released, recording its cancellation.
+    private final class HeldCall: Sendable {
+        private let isEntered = LockIsolated(false)
+        private let isCancelled = LockIsolated(false)
+        private let gate = AsyncStream<Void>.makeStream()
+
+        var wasCancelled: Bool { isCancelled.value }
+
+        func hold() async {
+            isEntered.setValue(true)
+            await withTaskCancellationHandler {
+                for await _ in gate.stream { break }
+            } onCancel: { [isCancelled] in
+                isCancelled.setValue(true)
+            }
+        }
+
+        func waitUntilEntered() async {
+            for _ in 0..<500 where !isEntered.value {
+                try? await Task.sleep(for: .milliseconds(10))
+            }
+            XCTAssertTrue(isEntered.value, "The call never started.")
+        }
+
+        func release() { gate.continuation.yield() }
+    }
+
+    private func makeSignOutStore(
+        _ friendSettings: Feature.State = .init(),
+        client configure: (inout CompetitionClient) -> Void
+    ) -> TestStoreOf<CompetitionFeature> {
+        var client = CompetitionClient.testValue
+        configure(&client)
         var initial = CompetitionFeature.State()
-        initial.friendSettings = .init(saved: named, saving: unset)
-        let store = TestStore(initialState: initial) { CompetitionFeature() }
-            withDependencies: { $0.competitionClient = .testValue }
-        await store.send(.stop) { $0.friendSettings = .init() }
-        await store.send(.friendSettings(.saveFinished(named)))
-        await store.send(.friendSettings(.usernameSaveFinished(.success(named))))
+        initial.friendSettings = friendSettings
+        return TestStore(initialState: initial) { CompetitionFeature() } withDependencies: {
+            $0.competitionClient = client
+            $0.continuousClock = ImmediateClock()
+        }
+    }
+
+    /// The last account's answer, arriving after the next account's, is dropped.
+    func testSignOutCancelsAHeldLoad() async {
+        let held = HeldCall()
+        let calls = LockIsolated(0)
+        let (first, second) = (named, FriendSettings(
+            username: "bob", showInSearch: false, challengePolicy: .friendsOnly
+        ))
+        let store = makeSignOutStore { client in
+            client.getFriendSettings = {
+                guard calls.withValue({ $0 += 1; return $0 }) == 1 else { return second }
+                await held.hold()
+                return first
+            }
+        }
+        await store.send(.friendSettings(.requested))
+        await held.waitUntilEntered()
+        await store.send(.stop)
+        await store.send(.friendSettings(.requested))
+        await store.receive(.friendSettings(.loaded(second))) { $0.friendSettings.saved = second }
+        held.release()
         await store.finish()
+        XCTAssertTrue(held.wasCancelled)
+        XCTAssertEqual(store.state.friendSettings.saved, second)
+    }
+
+    func testSignOutCancelsAHeldSave() async {
+        let held = HeldCall()
+        var off = unset
+        off.showInSearch = false
+        let store = makeSignOutStore(.init(saved: unset)) { client in
+            client.updateFriendSettings = { [off] _, _ in
+                await held.hold()
+                return off
+            }
+        }
+        await store.send(.friendSettings(.showInSearchChanged(false))) {
+            $0.friendSettings.saving = off
+        }
+        await held.waitUntilEntered()
+        await store.send(.stop) { $0.friendSettings = .init() }
+        held.release()
+        await store.finish()
+        XCTAssertTrue(held.wasCancelled)
+    }
+
+    func testSignOutCancelsAHeldUsernameSave() async {
+        let held = HeldCall()
+        var state = Feature.State(saved: unset)
+        state.sheet = .init(draft: "alice", availability: .available)
+        let store = makeSignOutStore(state) { [named] client in
+            client.setUsername = { _ in
+                await held.hold()
+                return named
+            }
+        }
+        await store.send(.friendSettings(.usernameContinueTapped)) {
+            $0.friendSettings.sheet?.isSaving = true
+        }
+        await held.waitUntilEntered()
+        await store.send(.stop) { $0.friendSettings = .init() }
+        held.release()
+        await store.finish()
+        XCTAssertTrue(held.wasCancelled)
+    }
+
+    func testSignOutCancelsAHeldAvailabilityCheck() async {
+        let held = HeldCall()
+        var state = Feature.State(saved: unset)
+        state.sheet = .init()
+        let store = makeSignOutStore(state) { client in
+            client.usernameAvailable = { _ in
+                await held.hold()
+                return true
+            }
+        }
+        await store.send(.friendSettings(.usernameChanged("alice"))) {
+            $0.friendSettings.sheet?.draft = "alice"
+        }
+        await held.waitUntilEntered()
+        await store.send(.stop) { $0.friendSettings = .init() }
+        held.release()
+        await store.finish()
+        XCTAssertTrue(held.wasCancelled)
     }
 }
