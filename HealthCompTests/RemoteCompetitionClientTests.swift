@@ -5992,7 +5992,7 @@ extension RemoteCompetitionClientTests {
         let listsBefore = await probe.listCount()
         let fetchesBefore = fetches.count
 
-        let publication = await client.startPractice(.balanced)
+        let publication = await client.startPractice(.pacer)
 
         let listsAfter = await probe.listCount()
         XCTAssertEqual(listsAfter, listsBefore)
@@ -6013,7 +6013,7 @@ extension RemoteCompetitionClientTests {
         XCTAssertEqual(spy.writes.last?.snapshot.matches, [])
 
         // One at a time.
-        let again = await client.startPractice(.relaxed)
+        let again = await client.startPractice(.chill)
         XCTAssertTrue(again.dashboard.issues.contains(.commandRejected(PracticeMatch.startCommandID)))
         XCTAssertEqual(again.dashboard.competitions.filter(\.isPractice).map(\.id), practice.map(\.id))
         await client.stop()
@@ -6029,7 +6029,7 @@ extension RemoteCompetitionClientTests {
         try await client.mountAuthenticatedProfile(profile, paths)
         var iterator = client.start().makeAsyncIterator()
         _ = await iterator.next()
-        _ = await client.startPractice(.balanced)
+        _ = await client.startPractice(.pacer)
 
         // Midnight starts Day 1 with no tap: the boundary republish refreshes practice.
         try await fixture.source.advance(to: practiceDay(14, in: fixture.calendar))
@@ -6059,7 +6059,7 @@ extension RemoteCompetitionClientTests {
         try await client.mountAuthenticatedProfile(profile, paths)
         var iterator = client.start().makeAsyncIterator()
         _ = await iterator.next()
-        let started = await client.startPractice(.balanced)
+        let started = await client.startPractice(.pacer)
         let id = try XCTUnwrap(started.dashboard.competitions.first(where: \.isPractice)?.id)
 
         let ended = await client.delete(id)
@@ -6071,7 +6071,7 @@ extension RemoteCompetitionClientTests {
         XCTAssertTrue(rejected.dashboard.issues.contains(.commandRejected(other)))
 
         // Nothing is underway any more.
-        let restarted = await client.startPractice(.relaxed)
+        let restarted = await client.startPractice(.chill)
         let next = try XCTUnwrap(restarted.dashboard.competitions.first(where: \.isPractice))
         XCTAssertNotEqual(next.id, id)
         await client.stop()
@@ -6087,12 +6087,12 @@ extension RemoteCompetitionClientTests {
         try await client.mountAuthenticatedProfile(profile, paths)
         var iterator = client.start().makeAsyncIterator()
         _ = await iterator.next()
-        let started = await client.startPractice(.balanced)
+        let started = await client.startPractice(.pacer)
         let id = try XCTUnwrap(started.dashboard.competitions.first(where: \.isPractice)?.id)
 
         try await client.prepareForProfileTeardown(requireRemoteInstallationRemoval: false)
         let ended = await client.delete(id)
-        let restarted = await client.startPractice(.balanced)
+        let restarted = await client.startPractice(.pacer)
 
         XCTAssertEqual(ended.publicationRevision, restarted.publicationRevision)
         XCTAssertFalse(ended.dashboard.issues.contains(.commandRejected(id)))
@@ -6112,7 +6112,7 @@ extension RemoteCompetitionClientTests {
         try await client.mountAuthenticatedProfile(profile, paths)
         var iterator = client.start().makeAsyncIterator()
         _ = await iterator.next()
-        _ = await client.startPractice(.balanced)
+        _ = await client.startPractice(.pacer)
 
         // The week ends Aug 21; best available after 24 h of tallying.
         let end = try practiceDay(21, in: fixture.calendar)
@@ -6149,7 +6149,7 @@ extension RemoteCompetitionClientTests {
         try await client.mountAuthenticatedProfile(profile, paths)
         var iterator = client.start().makeAsyncIterator()
         _ = await iterator.next()
-        _ = await client.startPractice(.balanced)
+        _ = await client.startPractice(.pacer)
         try await fixture.source.advance(
             to: practiceDay(20, in: fixture.calendar).addingTimeInterval(9 * 3_600)
         )
@@ -6178,7 +6178,7 @@ extension RemoteCompetitionClientTests {
         try await client.mountAuthenticatedProfile(profile, paths)
         var iterator = client.start().makeAsyncIterator()
         _ = await iterator.next()
-        let started = await client.startPractice(.balanced)
+        let started = await client.startPractice(.pacer)
         XCTAssertTrue(started.dashboard.competitions.contains(where: \.isPractice))
         let subscribers = await fixture.source.signalSubscriberCount()
         XCTAssertEqual(subscribers, 1)

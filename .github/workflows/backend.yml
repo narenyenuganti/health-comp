@@ -18,6 +18,9 @@ jobs:
     name: Supabase and Deno
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    env:
+      HEALTHCOMP_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+      HEALTHCOMP_TEST_FUNCTIONS_URL: http://127.0.0.1:54321/functions/v1
 
     steps:
       - name: Check out repository
@@ -220,7 +223,7 @@ jobs:
             exit 1
           fi
           bash scripts/test-recovery-state-acceptance.sh --check-empty-receipt <"$state_output"
-          echo "State schema compatibility passed: exact v2 empty receipt, 22 application tables."
+          echo "State schema compatibility passed: exact v2 empty receipt, 28 application tables."
 
           deno test \
             --config supabase/functions/deno.json \

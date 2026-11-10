@@ -1,3 +1,4 @@
+import CompetitionCore
 import ComposableArchitecture
 import SwiftUI
 
@@ -11,7 +12,7 @@ struct GroupMatchPlayer: Hashable, Sendable {
 struct GroupMatchLineup: Equatable {
     enum Entry: Hashable {
         case person(GroupMatchPlayer)
-        case bot(GroupMatchBotMode)
+        case bot(BotMode)
 
         var name: String {
             switch self {
@@ -129,7 +130,7 @@ struct GroupMatchCreateView: View {
     /// Nil is Duel.
     @State private var selection: GroupMatchFormat?
     @State private var lineup: GroupMatchLineup
-    @State private var bot: GroupMatchBotMode = .pacer
+    @State private var bot: BotMode = .pacer
     /// Waiting for a team in doubles while both have room.
     @State private var pendingEntry: GroupMatchLineup.Entry?
     @State private var asksTeam = false
@@ -390,7 +391,7 @@ struct GroupMatchCreateView: View {
 
     // MARK: Bots
 
-    private static let bots: [(GroupMatchBotMode, String, [CGFloat])] = [
+    private static let bots: [(BotMode, String, [CGFloat])] = [
         (.pacer, "The usual week, steady every day.", [18, 19, 18, 19, 18, 19, 18]),
         (.chill, "A little under the usual. Starts slow.", [8, 9, 10, 11, 12, 13, 14]),
         (.erratic, "Huge days and off days. Hard to read.", [26, 6, 24, 10, 28, 5, 20]),

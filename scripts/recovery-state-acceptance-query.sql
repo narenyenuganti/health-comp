@@ -12,6 +12,8 @@ with expected_tables(schema_name, table_name, expected_rls, expected_force, auth
     ('public', 'daily_score_revisions', true, false, true),
     ('public', 'participant_finalization_attestations', true, false, true),
     ('public', 'competition_results', true, false, true),
+    ('public', 'competition_seats', true, false, false),
+    ('public', 'competition_group_results', true, false, false),
     ('public', 'competition_awards', true, false, true),
     ('public', 'device_installations', true, false, false),
     ('public', 'support_events', true, false, false),
@@ -25,7 +27,11 @@ with expected_tables(schema_name, table_name, expected_rls, expected_force, auth
     ('private', 'challenge_links', true, true, false),
     ('private', 'account_blocks', true, true, false),
     ('private', 'competition_reactions', true, true, false),
-    ('private', 'profile_photo_reports', true, true, false)
+    ('private', 'profile_photo_reports', true, true, false),
+    ('private', 'friendships', true, true, false),
+    ('private', 'friend_requests', true, true, false),
+    ('private', 'profile_reports', true, true, false),
+    ('private', 'people_search_limits', true, true, false)
 ),
 -- Native types for columns used by the predicates. Other columns/constraints
 -- still require exact migrated-schema compatibility; this is not its substitute.
@@ -38,6 +44,7 @@ required_column_groups(table_name, type_name, column_names) as (
     ('competitions', 'text', array['lifecycle']),
     ('competition_participants', 'uuid', array['competition_id','profile_id']),
     ('competition_participants', 'text', array['state']),
+    ('competition_participants', 'timestamptz', array['left_at']),
     ('competition_invites', 'uuid', array['id','competition_id']),
     ('competition_invites', 'timestamptz', array['consumed_at']),
     ('competition_change_log', 'uuid', array['competition_id']),
@@ -69,7 +76,13 @@ required_column_groups(table_name, type_name, column_names) as (
     ('account_blocks', 'uuid', array['blocker_profile_id','blocked_profile_id']),
     ('competition_reactions', 'uuid', array['competition_id','author_profile_id']),
     ('competition_reactions', 'text', array['reaction']),
-    ('profile_photo_reports', 'uuid', array['reporter_profile_id','reported_profile_id'])
+    ('profile_photo_reports', 'uuid', array['reporter_profile_id','reported_profile_id']),
+    ('friendships', 'uuid', array['profile_low','profile_high']),
+    ('friend_requests', 'uuid', array['sender_profile_id','recipient_profile_id']),
+    ('profile_reports', 'uuid', array['reporter_profile_id','reported_profile_id']),
+    ('people_search_limits', 'uuid', array['profile_id']),
+    ('people_search_limits', 'timestamptz', array['window_started_at']),
+    ('people_search_limits', 'int4', array['used'])
 ),
 required_columns as (
   select g.table_name, c.column_name,
@@ -240,7 +253,7 @@ select pg_catalog.json_build_object(
       where cp.profile_id = p.id and cp.state is distinct from 'anonymized')),
   'deactivated_profiles_with_unfinished_competitions', (select count(*) from deactivated p where exists (
     select 1 from only public.competition_participants cp join only public.competitions c on c.id = cp.competition_id
-    where cp.profile_id = p.id and c.lifecycle in ('pending','scheduled','active','ends_today','tallying'))),
+    where cp.profile_id = p.id and cp.left_at is null and c.lifecycle in ('pending','scheduled','active','ends_today','tallying'))),
   'deactivated_profiles_with_unconsumed_cancelled_invites', (select count(*) from deactivated p where exists (
     select 1 from only public.competition_participants cp join only public.competitions c on c.id = cp.competition_id
     join only public.competition_invites i on i.competition_id = c.id

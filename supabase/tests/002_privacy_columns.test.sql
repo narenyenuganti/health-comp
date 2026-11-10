@@ -7,7 +7,7 @@ select plan(28);
 
 select columns_are(
   'public', 'profiles',
-  array['id', 'auth_user_id', 'display_name', 'state', 'anonymized_at', 'created_at', 'updated_at', 'photo_version', 'photo_removed_by_review', 'photo_removed_version']::name[],
+  array['id', 'auth_user_id', 'display_name', 'state', 'anonymized_at', 'created_at', 'updated_at', 'photo_version', 'photo_removed_by_review', 'photo_removed_version', 'username', 'show_in_search', 'challenge_policy']::name[],
   'profiles exposes only approved columns'
 );
 
@@ -20,20 +20,20 @@ select columns_are(
 select ok(
   (select bool_and(not has_column_privilege(role_name, 'public.profiles', column_name, 'select'))
    from unnest(array['anon', 'authenticated']) role_name,
-     unnest(array['auth_user_id', 'photo_version', 'photo_removed_by_review', 'photo_removed_version']) column_name)
+     unnest(array['auth_user_id', 'photo_version', 'photo_removed_by_review', 'photo_removed_version', 'username', 'show_in_search', 'challenge_policy']) column_name)
   and has_column_privilege('authenticated', 'public.profiles', 'display_name', 'select'),
   'client roles read only the presentation-safe profile columns'
 );
 
 select columns_are(
   'public', 'competitions',
-  array['id', 'creator_profile_id', 'invited_profile_id', 'time_zone_identifier', 'start_day', 'scoring_policy_identity', 'lifecycle', 'invitation_expires_at', 'best_available_deadline', 'rematch_parent_id', 'next_server_seq', 'created_at', 'updated_at', 'invite_creation_idempotency_key', 'invite_token_derivation_version', 'closed_by_profile_id', 'closed_at']::name[],
+  array['id', 'creator_profile_id', 'invited_profile_id', 'time_zone_identifier', 'start_day', 'scoring_policy_identity', 'lifecycle', 'invitation_expires_at', 'best_available_deadline', 'rematch_parent_id', 'next_server_seq', 'created_at', 'updated_at', 'invite_creation_idempotency_key', 'invite_token_derivation_version', 'closed_by_profile_id', 'closed_at', 'format', 'seat_count', 'group_creation_request_sha256']::name[],
   'competitions exposes only approved columns'
 );
 
 select columns_are(
   'public', 'competition_participants',
-  array['competition_id', 'profile_id', 'role', 'state', 'joined_at', 'updated_at']::name[],
+  array['competition_id', 'profile_id', 'role', 'state', 'joined_at', 'updated_at', 'seat_index', 'team_number', 'left_at', 'frozen_through_day', 'frozen_revisions']::name[],
   'competition participants expose only approved columns'
 );
 
@@ -69,7 +69,7 @@ select columns_are(
 
 select columns_are(
   'public', 'device_installations',
-  array['id', 'profile_id', 'apns_token', 'environment', 'state', 'created_at', 'updated_at', 'installation_id', 'supports_challenges', 'supports_reactions', 'muted_push_kinds']::name[],
+  array['id', 'profile_id', 'apns_token', 'environment', 'state', 'created_at', 'updated_at', 'installation_id', 'supports_challenges', 'supports_reactions', 'muted_push_kinds', 'supports_friends', 'supports_group_matches']::name[],
   'device installations expose only approved columns'
 );
 

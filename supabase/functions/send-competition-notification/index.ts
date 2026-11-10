@@ -27,13 +27,16 @@ const workKinds = [
   "match_cancelled",
   "nudge",
   "reaction",
+  "friend_request",
+  "friend_accepted",
 ] as const;
 
 interface NotificationWorkItem {
   workId: string;
   leaseToken: string;
   semanticId: string;
-  competitionId: string;
+  competitionId: string | null;
+  supportsFriends?: true;
   kind: typeof workKinds[number];
   apnsToken: string;
   environment: "sandbox" | "production";
@@ -160,13 +163,19 @@ function parseWorkItem(value: unknown): NotificationWorkItem | null {
     "semanticId",
     "workId",
   ];
+  const isFriend = value.kind === "friend_request" ||
+    value.kind === "friend_accepted";
+  if (isFriend) keys.push("supportsFriends");
   if (!hasExactKeys(value, keys)) return null;
+  if (
+    isFriend && (value.competitionId !== null || value.supportsFriends !== true)
+  ) return null;
   if (
     typeof value.workId !== "string" || !uuidPattern.test(value.workId) ||
     typeof value.leaseToken !== "string" ||
     !uuidPattern.test(value.leaseToken) ||
-    typeof value.competitionId !== "string" ||
-    !uuidPattern.test(value.competitionId) ||
+    (!isFriend && (typeof value.competitionId !== "string" ||
+      !uuidPattern.test(value.competitionId))) ||
     typeof value.semanticId !== "string" ||
     !value.semanticId.startsWith(semanticPrefix) ||
     value.semanticId.length > 255 ||
@@ -283,6 +292,8 @@ const genericAlerts: Partial<
     body: "Open HealthComp to update your match.",
   },
   reaction: { title: "New reaction" },
+  friend_request: { title: "You have a new friend request." },
+  friend_accepted: { title: "Your friend request was accepted." },
 };
 
 export function competitionNotificationPayload(
@@ -290,6 +301,13 @@ export function competitionNotificationPayload(
 ): Record<string, unknown> | null {
   const alert = genericAlerts[item.kind];
   if (!alert) return null;
+  if (item.kind === "friend_request" || item.kind === "friend_accepted") {
+    return {
+      aps: { alert, sound: "default", "thread-id": "friends" },
+      "healthcomp.route.v": 1,
+      "healthcomp.route.kind": "friends",
+    };
+  }
   return {
     aps: {
       alert,
@@ -323,7 +341,9 @@ function apnsRequest(
         Math.floor(Date.now() / 1000) + expirationSeconds,
       ),
       "apns-id": item.workId,
-      "apns-collapse-id": `healthcomp:${item.competitionId}`,
+      "apns-collapse-id": item.competitionId === null
+        ? `healthcomp:${item.kind}`
+        : `healthcomp:${item.competitionId}`,
     },
     body: JSON.stringify(payload),
     signal: AbortSignal.timeout(10_000),
@@ -436,10 +456,18 @@ export async function sendCompetitionNotificationHandler(
     );
   }
 
-  const leased = await client.rpc("lease_competition_notification_work", {
+  let leased = await client.rpc("lease_competition_notification_work", {
     batch_size: batchSize,
     lease_seconds: leaseSeconds,
+    supports_friends: true,
   });
+  // Before the migration, only the old overload exists in the schema cache.
+  if (leased.error?.code === "PGRST202") {
+    leased = await client.rpc("lease_competition_notification_work", {
+      batch_size: batchSize,
+      lease_seconds: leaseSeconds,
+    });
+  }
   if (leased.error) {
     return error(
       502,

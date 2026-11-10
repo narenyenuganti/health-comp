@@ -10,8 +10,8 @@ final class VersusIntroUITests: XCTestCase {
     private var app: XCUIApplication!
 
     private static let longName = "Maximiliana Featherstonehaugh-Worthington"
-    /// Past the intro's 2.72 s, with room for a slow simulator.
-    private static let played: TimeInterval = 6
+    /// Past the intro's 4 s, with room for a slow simulator.
+    private static let played: TimeInterval = 8
 
     override func setUpWithError() throws {
         continueAfterFailure = false
@@ -97,6 +97,34 @@ final class VersusIntroUITests: XCTestCase {
         }
     }
 
+    func testMenuReplaysRepeatedlyWithoutReenablingAutoplay() {
+        launch()
+        open("scheduled", 0x03)
+        XCTAssertTrue(intro.waitForExistence(timeout: 3))
+        let announcement = intro.label
+        skip()
+
+        for _ in 0..<2 {
+            replay()
+            XCTAssertTrue(intro.waitForExistence(timeout: 3))
+            XCTAssertEqual(intro.label, announcement)
+            skip()
+        }
+        goHome()
+        open("scheduled", 0x03)
+        assertDoesNotPlay(title: "Riley")
+    }
+
+    func testMenuReplaysAfterDayOne() {
+        launch()
+        open("active", 0x07)
+        assertDoesNotPlay(title: "Casey")
+        replay()
+        XCTAssertTrue(intro.waitForExistence(timeout: 3))
+        XCTAssertEqual(intro.label, "You versus Casey. Day 2 of 7.")
+        skip()
+    }
+
     func testEveryMatchupComposes() {
         launch()
         for (state, byte, title) in Self.matchups {
@@ -127,6 +155,9 @@ final class VersusIntroUITests: XCTestCase {
         open("active", 0x04)
         XCTAssertTrue(intro.waitForExistence(timeout: 3))
         capture("Reduce Motion")
+        skip()
+        replay()
+        XCTAssertTrue(intro.waitForExistence(timeout: 3))
         skip()
     }
 
@@ -184,6 +215,15 @@ final class VersusIntroUITests: XCTestCase {
     private func skip(file: StaticString = #filePath, line: UInt = #line) {
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         assertEnds(file: file, line: line)
+    }
+
+    private func replay(file: StaticString = #filePath, line: UInt = #line) {
+        // A touch at its centre, as a person's: Xcode 16.4 reports the menu's
+        // own inner button there, calls ••• not hittable and won't tap it.
+        app.buttons["competition.more"].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        let replay = app.buttons["competition.versus.replay"]
+        XCTAssertTrue(replay.waitForExistence(timeout: 3), file: file, line: line)
+        replay.tap()
     }
 
     private func assertEnds(file: StaticString = #filePath, line: UInt = #line) {

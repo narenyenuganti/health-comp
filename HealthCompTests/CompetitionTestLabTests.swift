@@ -188,6 +188,33 @@ final class CompetitionTestLabTests: XCTestCase {
         XCTAssertEqual(poisonedLive.callCount, 0)
     }
 
+    func testLabUsesV3ForBotsAndV1OnlyForOldPaces() {
+        for bot in [OpponentDifficulty.pacer, .chill, .erratic, .beast] {
+            let request = OpponentPlanGenerationRequest.testLab(seed: 7, difficulty: bot)
+            XCTAssertEqual(request.generatorVersion, .v3)
+            XCTAssertEqual(request.baselineDailyPoints, 300)
+        }
+        let old = OpponentPlanGenerationRequest.testLab(seed: 7, difficulty: .balanced)
+        XCTAssertEqual(old.generatorVersion, .v1)
+        XCTAssertNil(old.baselineDailyPoints)
+    }
+
+    func testBotCatalogBuilds() throws {
+        for bot in [OpponentDifficulty.pacer, .chill, .erratic, .beast] {
+            XCTAssertNoThrow(
+                try CompetitionTestLabFixtureCatalog.make(
+                    configuration: CompetitionTestLabConfiguration(
+                        fixture: .lateSync,
+                        seed: 7,
+                        difficulty: bot,
+                        direction: .outgoing,
+                        runID: "catalog-test"
+                    )
+                )
+            )
+        }
+    }
+
     func testLateSyncCatalogHasOrderedLifecycleCheckpoints() throws {
         let catalog = try CompetitionTestLabFixtureCatalog.make(
             configuration: CompetitionTestLabConfiguration(

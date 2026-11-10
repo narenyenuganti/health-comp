@@ -32,9 +32,9 @@ final class PracticeMatchTests: XCTestCase {
 
     // MARK: Start
 
-    func testStartCreatesOneScheduledV2PracticeStartingTomorrow() async throws {
+    func testStartCreatesOneScheduledV3PracticeStartingTomorrow() async throws {
         let (runtime, environment, _) = try makeRuntime(dailyPoints: 400)
-        let id = try await PracticeMatch.start(.challenging, runtime: runtime, environment: environment)
+        let id = try await PracticeMatch.start(.beast, runtime: runtime, environment: environment)
 
         let journals = await runtime.loadAll().successfulJournals
         XCTAssertEqual(journals.map(\.projection.competition.id), [id])
@@ -45,26 +45,52 @@ final class PracticeMatchTests: XCTestCase {
             try calendar.day(after: calendar.day(containing: startedAt))
         )
         let plan = try XCTUnwrap(competition.opponentPlan)
-        XCTAssertEqual(plan.generatorVersion, .v2)
-        XCTAssertEqual(plan.difficulty, .challenging)
-        // Baseline 400: challenging is 1.10–1.30 of it.
+        XCTAssertEqual(plan.generatorVersion, .v3)
+        XCTAssertEqual(plan.difficulty, .beast)
+        // Baseline 400: Beast is 1.25–1.50 of it.
         for day in plan.days {
-            XCTAssertTrue((440...520).contains(day.finalPoints), "\(day.finalPoints)")
+            XCTAssertTrue((500...600).contains(day.finalPoints), "\(day.finalPoints)")
         }
+    }
+
+    func testEachBotNamesItsPracticeAndAStoredOldPaceStaysPacer() async throws {
+        for (mode, name) in [
+            (OpponentDifficulty.pacer, "Pacer"), (.chill, "Chill"), (.erratic, "Erratic"), (.beast, "Beast"),
+        ] {
+            let (runtime, environment, _) = try makeRuntime(dailyPoints: 300)
+            _ = try await PracticeMatch.start(mode, runtime: runtime, environment: environment)
+            let shown = try await presentation(runtime, environment)
+            XCTAssertEqual(shown.opponentDisplayName, name)
+        }
+
+        let (runtime, environment, _) = try makeRuntime(dailyPoints: 300)
+        let id = CompetitionID(UUID())
+        try await runtime.create(try genesis(id))
+        try await runtime.accept(
+            competitionID: id,
+            opponent: OpponentPlanGenerationRequest(
+                seed: 42,
+                generatorVersion: .v2,
+                difficulty: .challenging,
+                baselineDailyPoints: 300
+            )
+        )
+        let old = try await presentation(runtime, environment)
+        XCTAssertEqual(old.opponentDisplayName, "Pacer")
     }
 
     func testStartRefusesWhileAPracticeIsUnderwayAndReplacesAFinishedOne() async throws {
         let (runtime, environment, source) = try makeRuntime(dailyPoints: 300)
-        let first = try await PracticeMatch.start(.balanced, runtime: runtime, environment: environment)
+        let first = try await PracticeMatch.start(.pacer, runtime: runtime, environment: environment)
         do {
-            _ = try await PracticeMatch.start(.relaxed, runtime: runtime, environment: environment)
+            _ = try await PracticeMatch.start(.chill, runtime: runtime, environment: environment)
             XCTFail("A second practice started")
         } catch {
             XCTAssertEqual(error as? PracticeMatchError, .alreadyUnderway)
         }
 
         try await finish(runtime: runtime, source: source)
-        let second = try await PracticeMatch.start(.relaxed, runtime: runtime, environment: environment)
+        let second = try await PracticeMatch.start(.chill, runtime: runtime, environment: environment)
 
         XCTAssertNotEqual(first, second)
         let ids = await runtime.loadAll().successfulJournals.map(\.projection.competition.id)
@@ -76,7 +102,7 @@ final class PracticeMatchTests: XCTestCase {
         let interrupted = CompetitionID(UUID())
         try await runtime.create(try genesis(interrupted))
 
-        let id = try await PracticeMatch.start(.balanced, runtime: runtime, environment: environment)
+        let id = try await PracticeMatch.start(.pacer, runtime: runtime, environment: environment)
 
         let journals = await runtime.loadAll().successfulJournals
         XCTAssertEqual(journals.map(\.projection.competition.id), [id])
@@ -87,7 +113,7 @@ final class PracticeMatchTests: XCTestCase {
 
     func testPracticePresentationsUsePacerIdentityAndHidePendingJournals() async throws {
         let (runtime, environment, _) = try makeRuntime(dailyPoints: 300)
-        let id = try await PracticeMatch.start(.balanced, runtime: runtime, environment: environment)
+        let id = try await PracticeMatch.start(.pacer, runtime: runtime, environment: environment)
         try await runtime.create(try genesis(CompetitionID(UUID())))
         let journals = await runtime.loadAll().successfulJournals
         XCTAssertEqual(journals.count, 2)
@@ -110,7 +136,7 @@ final class PracticeMatchTests: XCTestCase {
 
     func testNextPacerRevealIsTheNextCheckpointAndAtLeastFiveMinutesOut() async throws {
         let (runtime, environment, source) = try makeRuntime(dailyPoints: 300)
-        _ = try await PracticeMatch.start(.balanced, runtime: runtime, environment: environment)
+        _ = try await PracticeMatch.start(.pacer, runtime: runtime, environment: environment)
         let scheduled = await runtime.loadAll().successfulJournals
         XCTAssertNil(PracticeMatch.nextPacerReveal(journals: scheduled, now: startedAt))
 
@@ -140,7 +166,7 @@ final class PracticeMatchTests: XCTestCase {
 
     func testExpiredResultsListsACompletedPracticePastItsLeaveHomeTime() async throws {
         let (runtime, environment, source) = try makeRuntime(dailyPoints: 300)
-        let id = try await PracticeMatch.start(.balanced, runtime: runtime, environment: environment)
+        let id = try await PracticeMatch.start(.pacer, runtime: runtime, environment: environment)
         try await finish(runtime: runtime, source: source)
         let journals = await runtime.loadAll().successfulJournals
         let competition = try XCTUnwrap(journals.first?.projection.competition)
@@ -162,6 +188,22 @@ final class PracticeMatchTests: XCTestCase {
     }
 
     // MARK: Helpers
+
+    private func presentation(
+        _ runtime: LocalCompetitionRuntime,
+        _ environment: CompetitionEnvironmentClient
+    ) async throws -> LocalCompetitionPresentation {
+        let journals = await runtime.loadAll().successfulJournals
+        let context = await environment.context()
+        return try XCTUnwrap(
+            LocalCompetitionProjector.practicePresentations(
+                journals: journals,
+                context: context,
+                configuration: .live,
+                ownerDisplayName: "Beta Alice"
+            ).first
+        )
+    }
 
     private func makeRuntime(
         dailyPoints: Double
