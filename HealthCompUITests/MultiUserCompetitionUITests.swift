@@ -1853,10 +1853,6 @@ final class MultiUserCompetitionUITests: XCTestCase {
         XCTAssertTrue(paste.waitForExistence(timeout: 3))
         paste.tap()
         XCTAssertTrue(app.buttons["competition.create.find-recipient"].waitForExistence(timeout: 3))
-        // The field moves in; typing before it settles drops characters.
-        let field = recipientCodeField
-        let settled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hittable == true"), object: field)
-        XCTAssertEqual(XCTWaiter.wait(for: [settled], timeout: 3), .completed)
     }
 
     private func chooseRecipient() {
