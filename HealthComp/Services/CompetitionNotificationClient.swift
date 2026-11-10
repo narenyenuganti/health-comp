@@ -602,11 +602,14 @@ extension CompetitionNotificationClient: DependencyKey {
             speakableGroupName: nil, conversationIdentifier: content.threadIdentifier,
             serviceName: nil, sender: person, attachments: nil
         )
+        // iOS replaces the title with the sender's name; retain the teaser in the body.
+        guard let communicationContent = content.mutableCopy() as? UNMutableNotificationContent else { return content }
+        communicationContent.body = "\(notification.title)\n\(notification.body)"
         let interaction = INInteraction(intent: intent, response: nil)
         interaction.direction = .incoming
         do {
             try await interaction.donate()
-            return try content.updating(from: intent)
+            return try communicationContent.updating(from: intent)
         } catch {
             // Decoration must never prevent the original alert from being queued.
             return content
