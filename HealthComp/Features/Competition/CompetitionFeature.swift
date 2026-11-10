@@ -380,6 +380,12 @@ struct CompetitionFeature {
                     owners.isEmpty ? .none : .send(.profilePhotosNeeded(owners))
                 )
 
+            case .friends(.blockFinished(_, .failure)):
+                // A connection lost after sending may hide a block the server
+                // applied: ask it rather than assume either way. Friends
+                // reloads its list as well.
+                return .send(.blockedPeopleRequested)
+
             case .friendSettings, .friends:
                 return .none
 
@@ -1109,6 +1115,7 @@ struct CompetitionFeature {
                         .cancel(id: FriendsFeature.CancelID.load),
                         .cancel(id: FriendsFeature.CancelID.search),
                         .cancel(id: FriendsFeature.CancelID.change),
+                        .cancel(id: FriendsFeature.CancelID.safety),
                         .cancel(id: FriendSettingsFeature.CancelID.load),
                         .cancel(id: FriendSettingsFeature.CancelID.save),
                         .cancel(id: FriendSettingsFeature.CancelID.availability),

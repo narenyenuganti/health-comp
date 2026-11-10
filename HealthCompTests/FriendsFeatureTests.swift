@@ -329,9 +329,13 @@ final class FriendsFeatureTests: XCTestCase {
             }
             client.listFriends = { FriendsList() }
         }
-        await store.send(.blockTapped(dev)) { $0.inFlight = [dev.id] }
+        await store.send(.blockTapped(dev)) {
+            $0.inFlight = [dev.id]
+            $0.safetyInFlight = [dev.id]
+        }
         await store.receive(.blockFinished(dev, .success(AuthenticatedProfile(id: dev.id, displayName: "Dev")))) {
             $0.inFlight = []
+            $0.safetyInFlight = []
             $0.people[dev.id] = devNone
             $0.list = FriendsList()
             $0.results = []
@@ -351,9 +355,13 @@ final class FriendsFeatureTests: XCTestCase {
                 client.blockProfile = { _ in throw error }
                 client.listFriends = { FriendsList(friends: [dev]) }
             }
-            await store.send(.blockTapped(dev)) { $0.inFlight = [dev.id] }
+            await store.send(.blockTapped(dev)) {
+                $0.inFlight = [dev.id]
+                $0.safetyInFlight = [dev.id]
+            }
             await store.receive(.blockFinished(dev, .failure(error))) {
                 $0.inFlight = []
+                $0.safetyInFlight = []
                 $0.failure = Feature.PersonFailure(id: dev.id, failure: expected)
             }
             await store.receive(.requested)
@@ -369,9 +377,13 @@ final class FriendsFeatureTests: XCTestCase {
         let store = makeStore(.init(list: FriendsList(friends: [dev]))) { client in
             client.reportProfile = { _ in calls.withValue { $0.append("report") } }
         }
-        await store.send(.reportTapped(dev, andBlock: false)) { $0.inFlight = [dev.id] }
+        await store.send(.reportTapped(dev, andBlock: false)) {
+            $0.inFlight = [dev.id]
+            $0.safetyInFlight = [dev.id]
+        }
         await store.receive(.reportFinished(dev, andBlock: false, failure: nil)) {
             $0.inFlight = []
+            $0.safetyInFlight = []
             $0.reported = [dev.id]
         }
         XCTAssertEqual(calls.value, ["report"])
@@ -391,14 +403,22 @@ final class FriendsFeatureTests: XCTestCase {
             }
             client.listFriends = { FriendsList() }
         }
-        await store.send(.reportTapped(dev, andBlock: true)) { $0.inFlight = [dev.id] }
+        await store.send(.reportTapped(dev, andBlock: true)) {
+            $0.inFlight = [dev.id]
+            $0.safetyInFlight = [dev.id]
+        }
         await store.receive(.reportFinished(dev, andBlock: true, failure: nil)) {
             $0.inFlight = []
+            $0.safetyInFlight = []
             $0.reported = [dev.id]
         }
-        await store.receive(.blockTapped(dev)) { $0.inFlight = [dev.id] }
+        await store.receive(.blockTapped(dev)) {
+            $0.inFlight = [dev.id]
+            $0.safetyInFlight = [dev.id]
+        }
         await store.receive(.blockFinished(dev, .success(profile))) {
             $0.inFlight = []
+            $0.safetyInFlight = []
             $0.people[dev.id] = devNone
             $0.list = FriendsList()
         }
@@ -413,11 +433,217 @@ final class FriendsFeatureTests: XCTestCase {
             client.reportProfile = { _ in throw CompetitionRemoteFailure.retryableTransport }
             // blockProfile stays unimplemented: a call would fail the test.
         }
-        await store.send(.reportTapped(dev, andBlock: true)) { $0.inFlight = [dev.id] }
+        await store.send(.reportTapped(dev, andBlock: true)) {
+            $0.inFlight = [dev.id]
+            $0.safetyInFlight = [dev.id]
+        }
         await store.receive(.reportFinished(dev, andBlock: true, failure: .retryableTransport)) {
             $0.inFlight = []
+            $0.safetyInFlight = []
             $0.failure = Feature.PersonFailure(id: dev.id, failure: .connection)
         }
+    }
+
+    // The server applies each call a second before its answer arrives, so
+    // closing Friends in between is the case that loses a receipt.
+    private func makeSlowSafetyStore(
+        _ dev: FriendPerson,
+        clock: TestClock<Duration>,
+        calls: LockIsolated<[String]>,
+        reportFails: Bool = false,
+        blockFailures: Int = 0
+    ) -> TestStoreOf<Feature> {
+        let blockFailuresLeft = LockIsolated<Int>(blockFailures)
+        let isBlocked = LockIsolated<Bool>(false)
+        return makeStore(.init(list: FriendsList(friends: [dev])), clock: clock) { client in
+            client.reportProfile = { _ in
+                if !reportFails { calls.withValue { $0.append("report") } }
+                try await clock.sleep(for: .seconds(1))
+                if reportFails { throw CompetitionRemoteFailure.retryableTransport }
+            }
+            client.blockProfile = { id in
+                let fails: Bool = blockFailuresLeft.withValue { left in
+                    defer { left -= 1 }
+                    return left > 0
+                }
+                if !fails {
+                    calls.withValue { $0.append("block") }
+                    isBlocked.setValue(true)
+                }
+                try await clock.sleep(for: .seconds(1))
+                if fails { throw CompetitionRemoteFailure.retryableTransport }
+                return AuthenticatedProfile(id: id, displayName: dev.displayName)
+            }
+            client.listFriends = {
+                isBlocked.value ? FriendsList() : FriendsList(friends: [dev])
+            }
+        }
+    }
+
+    func testClosingDuringReportAndBlockStillReportsThenBlocks() async {
+        let clock = TestClock()
+        let dev = person(1, "Dev", .friend)
+        var devNone = dev
+        devNone.relationship = .none
+        let profile = AuthenticatedProfile(id: dev.id, displayName: "Dev")
+        let calls = LockIsolated<[String]>([])
+        let store = makeSlowSafetyStore(dev, clock: clock, calls: calls)
+        await store.send(.reportTapped(dev, andBlock: true)) {
+            $0.inFlight = [dev.id]
+            $0.safetyInFlight = [dev.id]
+        }
+        // Closing keeps the report's in-flight mark and its effect.
+        await store.send(.closed)
+        await clock.advance(by: .seconds(1))
+        await store.receive(.reportFinished(dev, andBlock: true, failure: nil)) {
+            $0.inFlight = []
+            $0.safetyInFlight = []
+            $0.reported = [dev.id]
+        }
+        await store.receive(.blockTapped(dev)) {
+            $0.inFlight = [dev.id]
+            $0.safetyInFlight = [dev.id]
+        }
+        await clock.advance(by: .seconds(1))
+        await store.receive(.blockFinished(dev, .success(profile))) {
+            $0.inFlight = []
+            $0.safetyInFlight = []
+            $0.people[dev.id] = devNone
+            $0.list = FriendsList()
+        }
+        await store.receive(.requested)
+        await store.receive(.loaded(FriendsList()))
+        XCTAssertEqual(calls.value, ["report", "block"])
+    }
+
+    func testClosingDuringABlockKeepsItsAnswer() async {
+        let clock = TestClock()
+        let dev = person(1, "Dev", .friend)
+        var devNone = dev
+        devNone.relationship = .none
+        let profile = AuthenticatedProfile(id: dev.id, displayName: "Dev")
+        let calls = LockIsolated<[String]>([])
+        let store = makeSlowSafetyStore(dev, clock: clock, calls: calls)
+        await store.send(.blockTapped(dev)) {
+            $0.inFlight = [dev.id]
+            $0.safetyInFlight = [dev.id]
+        }
+        await store.send(.closed)
+        await clock.advance(by: .seconds(1))
+        await store.receive(.blockFinished(dev, .success(profile))) {
+            $0.inFlight = []
+            $0.safetyInFlight = []
+            $0.people[dev.id] = devNone
+            $0.list = FriendsList()
+        }
+        await store.receive(.requested)
+        await store.receive(.loaded(FriendsList()))
+        XCTAssertEqual(calls.value, ["block"])
+    }
+
+    func testReportSavedThenBlockFailsKeepsTheReportAndBlockCanBeRetried() async {
+        let clock = TestClock()
+        let dev = person(1, "Dev", .friend)
+        var devNone = dev
+        devNone.relationship = .none
+        let profile = AuthenticatedProfile(id: dev.id, displayName: "Dev")
+        let calls = LockIsolated<[String]>([])
+        let store = makeSlowSafetyStore(dev, clock: clock, calls: calls, blockFailures: 1)
+        await store.send(.reportTapped(dev, andBlock: true)) {
+            $0.inFlight = [dev.id]
+            $0.safetyInFlight = [dev.id]
+        }
+        await store.send(.closed)
+        await clock.advance(by: .seconds(1))
+        await store.receive(.reportFinished(dev, andBlock: true, failure: nil)) {
+            $0.inFlight = []
+            $0.safetyInFlight = []
+            $0.reported = [dev.id]
+        }
+        await store.receive(.blockTapped(dev)) {
+            $0.inFlight = [dev.id]
+            $0.safetyInFlight = [dev.id]
+        }
+        await clock.advance(by: .seconds(1))
+        await store.receive(.blockFinished(dev, .failure(.retryableTransport))) {
+            $0.inFlight = []
+            $0.safetyInFlight = []
+            $0.failure = Feature.PersonFailure(id: dev.id, failure: .connection)
+        }
+        // Still a friend, still reported.
+        await store.receive(.requested)
+        await store.receive(.loaded(FriendsList(friends: [dev]))) {
+            $0.people = [dev.id: dev]
+        }
+
+        await store.send(.blockTapped(dev)) {
+            $0.inFlight = [dev.id]
+            $0.safetyInFlight = [dev.id]
+            $0.failure = nil
+        }
+        await clock.advance(by: .seconds(1))
+        await store.receive(.blockFinished(dev, .success(profile))) {
+            $0.inFlight = []
+            $0.safetyInFlight = []
+            $0.people[dev.id] = devNone
+            $0.list = FriendsList()
+        }
+        await store.receive(.requested)
+        await store.receive(.loaded(FriendsList()))
+        XCTAssertEqual(calls.value, ["report", "block"])
+    }
+
+    func testAReportThatFailsAfterClosingNeverBlocks() async {
+        let clock = TestClock()
+        let dev = person(1, "Dev", .friend)
+        let calls = LockIsolated<[String]>([])
+        let store = makeSlowSafetyStore(dev, clock: clock, calls: calls, reportFails: true)
+        await store.send(.reportTapped(dev, andBlock: true)) {
+            $0.inFlight = [dev.id]
+            $0.safetyInFlight = [dev.id]
+        }
+        await store.send(.closed)
+        await clock.advance(by: .seconds(1))
+        await store.receive(.reportFinished(dev, andBlock: true, failure: .retryableTransport)) {
+            $0.inFlight = []
+            $0.safetyInFlight = []
+            $0.failure = Feature.PersonFailure(id: dev.id, failure: .connection)
+        }
+        await clock.run()
+        XCTAssertEqual(calls.value, [])
+    }
+
+    func testAFailedBlockAsksTheServerWhoIsBlocked() async {
+        let dev = person(1, "Dev", .friend)
+        let profile = AuthenticatedProfile(id: dev.id, displayName: "Dev")
+        var initial = CompetitionFeature.State()
+        initial.friends = Feature.State(list: FriendsList(friends: [dev]))
+        initial.blockedPeople = []
+        let store = TestStore(initialState: initial) { CompetitionFeature() } withDependencies: {
+            $0.competitionClient = CompetitionClient.testValue
+            // The block landed; only its answer was lost.
+            $0.competitionClient.blockProfile = { _ in throw CompetitionRemoteFailure.retryableTransport }
+            $0.competitionClient.loadBlockedProfiles = { [profile] }
+            $0.competitionClient.listFriends = { FriendsList() }
+        }
+        store.exhaustivity = .off(showSkippedAssertions: false)
+        await store.send(.friends(.blockTapped(dev)))
+        await store.receive(.blockedPeopleResponse([profile])) {
+            $0.blockedPeople = [profile]
+        }
+        await store.finish()
+    }
+
+    func testTheMenuOffersCancelRequestAlwaysAndAddFriendOnlyOncePlayed() {
+        typealias Menu = PersonFriendMenuItems
+        XCTAssertEqual(Menu.requestItem(.requested, hasPlayed: false), .cancel)
+        XCTAssertEqual(Menu.requestItem(.requested, hasPlayed: true), .cancel)
+        XCTAssertEqual(Menu.requestItem(FriendRelationship.none, hasPlayed: true), .add)
+        XCTAssertNil(Menu.requestItem(FriendRelationship.none, hasPlayed: false))
+        XCTAssertNil(Menu.requestItem(.friend, hasPlayed: true))
+        XCTAssertNil(Menu.requestItem(.incoming, hasPlayed: true))
+        // Before the list loads, neither.
+        XCTAssertNil(Menu.requestItem(nil, hasPlayed: true))
     }
 
     func testSearchPeopleFromTheChallengeSheetFocusesTheFieldOnce() async {

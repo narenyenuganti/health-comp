@@ -32,6 +32,9 @@ struct FriendsFeature {
         /// list or the results.
         var people: [UUID: FriendPerson] = [:]
         var inFlight: Set<UUID> = []
+        /// The part of `inFlight` that is a block or report: these finish
+        /// even after Friends closes, as Unblock does.
+        var safetyInFlight: Set<UUID> = []
         var failure: PersonFailure?
         /// Reported from this iPhone since sign-in.
         var reported: Set<UUID> = []
@@ -112,7 +115,8 @@ struct FriendsFeature {
         case searchFocusRequested(Bool)
     }
 
-    enum CancelID { case load, search, change }
+    /// `safety` is Block and Report: sign-out cancels it, closing doesn't.
+    enum CancelID { case load, search, change, safety }
 
     static let searchDebounce = Duration.milliseconds(300)
 
@@ -226,12 +230,13 @@ struct FriendsFeature {
             case .closed:
                 // A cancelled change may still have landed, so Home's badge
                 // reloads after one; reopening reloads anyway.
-                let interrupted = !state.inFlight.isEmpty
+                // A block or report finishes and reloads by itself.
+                let interrupted: Bool = !state.inFlight.subtracting(state.safetyInFlight).isEmpty
                 state.query = ""
                 state.results = nil
                 state.isSearching = false
                 state.searchFailure = nil
-                state.inFlight = []
+                state.inFlight = state.safetyInFlight
                 state.failure = nil
                 return .merge(
                     .cancel(id: CancelID.search),
@@ -241,7 +246,10 @@ struct FriendsFeature {
 
             case let .blockTapped(person):
                 guard state.inFlight.insert(person.id).inserted else { return .none }
+                state.safetyInFlight.insert(person.id)
                 state.failure = nil
+                // Once sent, the server may apply it, so its answer must land
+                // wherever the user has gone: only sign-out cancels it.
                 return .merge(
                     .cancel(id: CancelID.load),
                     .run { send in
@@ -254,11 +262,12 @@ struct FriendsFeature {
                             )))
                         }
                     }
-                    .cancellable(id: CancelID.change)
+                    .cancellable(id: CancelID.safety)
                 )
 
             case let .blockFinished(person, result):
                 guard state.inFlight.remove(person.id) != nil else { return .none }
+                state.safetyInFlight.remove(person.id)
                 switch result {
                 case .success:
                     // Blocking ends the friendship and any request, and drops
@@ -272,7 +281,10 @@ struct FriendsFeature {
 
             case let .reportTapped(person, andBlock):
                 guard state.inFlight.insert(person.id).inserted else { return .none }
+                state.safetyInFlight.insert(person.id)
                 state.failure = nil
+                // As a block: Report and Block goes on to the block after
+                // Friends closes.
                 return .run { send in
                     do {
                         try await competitionClient.reportProfile(person.id)
@@ -285,10 +297,11 @@ struct FriendsFeature {
                         ))
                     }
                 }
-                .cancellable(id: CancelID.change)
+                .cancellable(id: CancelID.safety)
 
             case let .reportFinished(person, andBlock, failure):
                 guard state.inFlight.remove(person.id) != nil else { return .none }
+                state.safetyInFlight.remove(person.id)
                 if let failure {
                     // Not blocked either: the report comes first, so Try Again
                     // does both.
