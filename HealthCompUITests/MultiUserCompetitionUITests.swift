@@ -958,10 +958,12 @@ final class MultiUserCompetitionUITests: XCTestCase {
         let reset = element("account.challenge-link.reset")
         scrollToElement(reset)
         XCTAssertEqual(url.value as? String, "invites.ui.healthcomp.test/c/Xb3kP9qL2mN8vR4tY6wZ1a")
+        // A predicate: a subscript query can't be longer than 128 characters.
         XCTAssertTrue(
-            app.staticTexts[
+            app.staticTexts.matching(NSPredicate(
+                format: "label == %@",
                 "Anyone with this link can challenge you, unless you only allow friends. Reset it to turn off the old one; challenges already sent stay."
-            ].exists
+            )).firstMatch.exists
         )
 
         // Cancel keeps the link.
