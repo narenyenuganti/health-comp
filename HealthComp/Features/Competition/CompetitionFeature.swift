@@ -152,6 +152,7 @@ struct CompetitionFeature {
         var ownPhoto = OwnPhotoState()
         var friendSettings = FriendSettingsFeature.State()
         var friends = FriendsFeature.State()
+        var group = GroupMatchFeature.State()
 
         init(
             publication: CompetitionPublication? = nil,
@@ -200,8 +201,9 @@ struct CompetitionFeature {
         var photoOwners: [UUID] { photoOwners(claimSender: nil) }
 
         /// You, the sender of a challenge being claimed (they sent it to
-        /// you, so you may see theirs), everyone on a real match, your
-        /// Friends lists and the search results, sorted so it can key a task.
+        /// you, so you may see theirs), everyone on a real match or group
+        /// match, your Friends lists and the search results, sorted so it
+        /// can key a task.
         func photoOwners(claimSender: UUID?) -> [UUID] {
             guard publication?.source == .remoteParticipants else {
                 return claimSender.map { [$0] } ?? []
@@ -217,6 +219,8 @@ struct CompetitionFeature {
             owners += list.incoming.map(\.id)
             let competitions: [LocalCompetitionPresentation] = publication?.dashboard.competitions ?? []
             owners += competitions.compactMap(\.opponentProfileID)
+            let groupMatches: [GroupMatchPresentation] = publication?.dashboard.groupMatches ?? []
+            owners += groupMatches.flatMap { $0.seats.compactMap(\.profileID) }
             owners += list.friends.map(\.id)
             owners += list.outgoing.map(\.id)
             // ponytail: past 200 people the rest stay initials; page the
@@ -336,6 +340,7 @@ struct CompetitionFeature {
         case photoReportFinished(UUID, succeeded: Bool)
         case friendSettings(FriendSettingsFeature.Action)
         case friends(FriendsFeature.Action)
+        case group(GroupMatchFeature.Action)
     }
 
     /// `list_profile_photos` takes at most this many ids.
@@ -361,6 +366,9 @@ struct CompetitionFeature {
     var body: some ReducerOf<Self> {
         Scope(state: \.friendSettings, action: \.friendSettings) { FriendSettingsFeature() }
         Scope(state: \.friends, action: \.friends) { FriendsFeature() }
+        Scope(state: \.group, action: \.group) {
+            GroupMatchFeature()
+        }
         Reduce { state, action in
             switch action {
             // A list load already running may have read before this block
@@ -386,7 +394,10 @@ struct CompetitionFeature {
                 // reloads its list as well.
                 return .send(.blockedPeopleRequested)
 
-            case .friendSettings, .friends:
+            case let .group(.delegate(.published(publication))):
+                return .send(.publication(publication))
+
+            case .friendSettings, .friends, .group:
                 return .none
 
             case .task:
@@ -1089,6 +1100,7 @@ struct CompetitionFeature {
                 return reconcile(trigger: .timeZoneChange)
 
             case .stop:
+                state.group = GroupMatchFeature.State()
                 state.inviteCreations = [:]
                 state.inviteLinks = [:]
                 state.inviteRecipient = nil
@@ -1129,7 +1141,8 @@ struct CompetitionFeature {
                         .cancel(id: CancelID.challengeLink),
                         .cancel(id: CancelID.challengeLinkReset),
                         .cancel(id: CancelID.blockedPeople),
-                        .cancel(id: CancelID.nudge)
+                        .cancel(id: CancelID.nudge),
+                        .cancel(id: GroupMatchFeature.CancelID.commands)
                     ),
                     .run { _ in await competitionClient.stop() }
                 )

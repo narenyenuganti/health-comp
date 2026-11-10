@@ -278,6 +278,21 @@ struct CompetitionTestLabCheckpoint: Equatable, Sendable {
     }
 }
 
+extension OpponentPlanGenerationRequest {
+    /// A bot week on v3, at the practice fallback baseline; v1 only to replay
+    /// a fixture launched with an old pace.
+    static func testLab(seed: UInt64, difficulty: OpponentDifficulty) -> Self {
+        BotMode(rawValue: difficulty.rawValue) == nil
+            ? Self(seed: seed, generatorVersion: .v1, difficulty: difficulty)
+            : Self(
+                seed: seed,
+                generatorVersion: .v3,
+                difficulty: difficulty,
+                baselineDailyPoints: PracticeMatch.fallbackBaselineDailyPoints
+            )
+    }
+}
+
 struct CompetitionTestLabFixtureCatalog: Equatable, Sendable {
     let fixture: ActivityFixture
     let checkpoints: [CompetitionTestLabCheckpoint]
@@ -293,11 +308,16 @@ struct CompetitionTestLabFixtureCatalog: Equatable, Sendable {
             calendar: calendar,
             startDay: startDay
         )
-        let opponentPlan = try OpponentPlanGenerator.generate(
+        let request = OpponentPlanGenerationRequest.testLab(
             seed: configuration.seed,
-            generatorVersion: .v1,
-            difficulty: configuration.difficulty,
-            schedule: schedule
+            difficulty: configuration.difficulty
+        )
+        let opponentPlan = try OpponentPlanGenerator.generate(
+            seed: request.seed,
+            generatorVersion: request.generatorVersion,
+            difficulty: request.difficulty,
+            schedule: schedule,
+            baselineDailyPoints: request.baselineDailyPoints
         )
         let boundaries = try days.map(calendar.startOfDay)
         let endBoundary = try calendar.startOfDay(
@@ -633,11 +653,7 @@ struct CompetitionTestLabClientFactory {
             configuration: configuration,
             bootstrapDirection: direction,
             opponentRequest: { _ in
-                OpponentPlanGenerationRequest(
-                    seed: seed,
-                    generatorVersion: .v1,
-                    difficulty: difficulty
-                )
+                .testLab(seed: seed, difficulty: difficulty)
             }
         )
     }
@@ -1130,6 +1146,14 @@ private struct CompetitionTestLabCheckpointButtonStyle: ButtonStyle {
 
 private struct CompetitionTestLabConfigurationView: View {
     @ObservedObject var controller: CompetitionTestLabController
+
+    /// An old pace is listed only while a fixture launched with it is loaded.
+    private var difficultyChoices: [OpponentDifficulty] {
+        let bots: [OpponentDifficulty] = [.pacer, .chill, .erratic, .beast]
+        return bots.contains(controller.draftDifficulty)
+            ? bots
+            : [controller.draftDifficulty] + bots
+    }
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -1145,7 +1169,7 @@ private struct CompetitionTestLabConfigurationView: View {
                     .keyboardType(.numberPad)
                     .accessibilityIdentifier("testlab.seed")
                 Picker("Difficulty", selection: $controller.draftDifficulty) {
-                    ForEach(OpponentDifficulty.allCases, id: \.self) {
+                    ForEach(difficultyChoices, id: \.self) {
                         Text($0.rawValue.capitalized).tag($0)
                     }
                 }

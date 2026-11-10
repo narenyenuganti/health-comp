@@ -644,15 +644,15 @@ final class MultiUserCompetitionUITests: XCTestCase {
         app.buttons["competition.practice.open"].tap()
 
         XCTAssertTrue(element("competition.practice.sheet").waitForExistence(timeout: 3))
-        let balanced = app.buttons["competition.practice.pace.balanced"]
-        XCTAssertTrue(balanced.isSelected)
+        let pacer = app.buttons["competition.practice.pace.pacer"]
+        XCTAssertTrue(pacer.isSelected)
         XCTAssertFalse(element("competition.practice.error").exists)
         attachScreenshot("practice-sheet")
         try app.performAccessibilityAudit(for: audit)
-        let challenging = app.buttons["competition.practice.pace.challenging"]
-        challenging.tap()
-        XCTAssertTrue(challenging.isSelected)
-        XCTAssertFalse(balanced.isSelected)
+        let beast = app.buttons["competition.practice.pace.beast"]
+        beast.tap()
+        XCTAssertTrue(beast.isSelected)
+        XCTAssertFalse(pacer.isSelected)
         app.buttons["competition.practice.start"].tap()
 
         let card = sharingCard(state: "active", name: "Pacer")

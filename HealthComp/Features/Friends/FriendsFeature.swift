@@ -24,6 +24,9 @@ struct FriendsFeature {
         var list: FriendsList?
         var loadFailed = false
         var query = ""
+        /// Bumped on every edit, so a wait or answer from an earlier visit
+        /// to the same text (mar → marc → mar) is still known as stale.
+        var searchGeneration = 0
         /// Nil under 3 characters and until the first answer.
         var results: [FriendPerson]?
         var isSearching = false
@@ -101,7 +104,9 @@ struct FriendsFeature {
         case requested
         case loaded(FriendsList?)
         case queryChanged(String)
-        case searchFinished(String, Result<[FriendPerson], CompetitionRemoteFailure>)
+        /// The debounce for this searchable text, from this edit, ended.
+        case searchDebounced(String, generation: Int)
+        case searchFinished(String, generation: Int, Result<[FriendPerson], CompetitionRemoteFailure>)
         case changeTapped(FriendPerson, Change)
         case changeFinished(FriendPerson, Result<FriendRelationship, CompetitionRemoteFailure>)
         /// The screen left the stack.
@@ -154,6 +159,7 @@ struct FriendsFeature {
             case let .queryChanged(query):
                 guard query != state.query else { return .none }
                 state.query = query
+                state.searchGeneration += 1
                 state.searchFailure = nil
                 guard let searchable = Self.searchableQuery(query) else {
                     state.results = nil
@@ -161,21 +167,33 @@ struct FriendsFeature {
                     return .cancel(id: CancelID.search)
                 }
                 state.isSearching = true
+                let generation: Int = state.searchGeneration
+                // No cancelInFlight: it cancels when the new effect's task
+                // starts, so a busy main thread could let an older keystroke
+                // cancel the newest one and leave the spinner up. Every wait
+                // ends instead, and only the one for what's typed searches.
                 return .run { send in
                     try await clock.sleep(for: Self.searchDebounce)
+                    await send(.searchDebounced(searchable, generation: generation))
+                }
+                .cancellable(id: CancelID.search)
+
+            case let .searchDebounced(searchable, generation):
+                guard generation == state.searchGeneration else { return .none }
+                return .run { send in
                     do {
                         let people = try await competitionClient.searchPeople(searchable)
-                        await send(.searchFinished(searchable, .success(people)))
+                        await send(.searchFinished(searchable, generation: generation, .success(people)))
                     } catch {
-                        await send(.searchFinished(searchable, .failure(
+                        await send(.searchFinished(searchable, generation: generation, .failure(
                             error as? CompetitionRemoteFailure ?? .operationFailed
                         )))
                     }
                 }
-                .cancellable(id: CancelID.search, cancelInFlight: true)
+                .cancellable(id: CancelID.search)
 
-            case let .searchFinished(query, result):
-                guard Self.searchableQuery(state.query) == query else { return .none }
+            case let .searchFinished(_, generation, result):
+                guard generation == state.searchGeneration else { return .none }
                 state.isSearching = false
                 switch result {
                 case let .success(people):

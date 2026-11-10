@@ -61,12 +61,14 @@ extension LocalCompetitionPresentation {
 /// amber ring. A photo that arrives after first paint fades in; one already
 /// in memory is there on the first frame. Reduce Motion shows it at once.
 /// Always hidden from VoiceOver: the name next to it says who it is.
+/// A bot is a rounded square and never has a photo or the amber ring.
 struct PersonAvatar: View {
     let name: String
     /// Their profile id; ignored when `isYou`.
     var photo: UUID? = nil
     let size: CGFloat
     var isYou = false
+    var isBot = false
     /// The initial's font at this call site.
     var initialFont: Font = .headline.weight(.heavy).width(.condensed)
 
@@ -99,7 +101,7 @@ struct PersonAvatar: View {
         }
         .frame(width: size, height: size)
         .background(Theme.control)
-        .clipShape(Circle())
+        .clipShape(isBot ? AnyShape(RoundedRectangle(cornerRadius: size * 0.28)) : AnyShape(Circle()))
         .animation(reduceMotion ? nil : Motion.fade, value: shown)
         .accessibilityHidden(true)
     }

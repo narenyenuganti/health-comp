@@ -160,7 +160,7 @@ select is((
     and column_row.table_name = 'competition_notification_work'
 ), array[
   'apns_development_delivery_log_id', 'attempt_count', 'available_at', 'competition_id', 'completed_at',
-  'created_at', 'id', 'installation_id', 'kind', 'lease_expires_at',
+  'created_at', 'friend_event_id', 'id', 'installation_id', 'kind', 'lease_expires_at',
   'lease_token', 'leased_apns_token_sha256', 'nudge_day', 'recipient_profile_id',
   'semantic_id', 'server_seq', 'source_profile_id', 'state', 'updated_at'
 ]::text[], 'work rows store routing metadata and token hashes, never APNs tokens or health values');

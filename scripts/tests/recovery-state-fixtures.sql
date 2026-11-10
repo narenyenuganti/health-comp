@@ -13,7 +13,7 @@ create table public.profiles (
   anonymized_at timestamptz, created_at timestamptz, updated_at timestamptz
 );
 create table public.competitions (id uuid, creator_profile_id uuid, lifecycle text);
-create table public.competition_participants (competition_id uuid, profile_id uuid, state text);
+create table public.competition_participants (competition_id uuid, profile_id uuid, state text, left_at timestamptz);
 create table public.competition_invites (id uuid, competition_id uuid, consumed_at timestamptz);
 create table public.competition_change_log (competition_id uuid, server_seq bigint);
 create table public.daily_score_revisions (competition_id uuid);
@@ -21,6 +21,8 @@ create table public.participant_finalization_attestations (competition_id uuid);
 create table public.competition_results (
   competition_id uuid, participant_a_profile_id uuid, participant_b_profile_id uuid
 );
+create table public.competition_seats (competition_id uuid);
+create table public.competition_group_results (competition_id uuid);
 create table public.competition_awards (competition_id uuid);
 create table public.device_installations (
   id uuid, profile_id uuid, installation_id uuid, state text
@@ -48,6 +50,11 @@ create table private.account_blocks (blocker_profile_id uuid, blocked_profile_id
 create table private.competition_reactions (competition_id uuid, author_profile_id uuid, reaction text);
 create table private.profile_photo_reports (reporter_profile_id uuid, reported_profile_id uuid);
 
+create table private.friendships (profile_low uuid, profile_high uuid, created_at timestamptz);
+create table private.friend_requests (sender_profile_id uuid, recipient_profile_id uuid, created_at timestamptz);
+create table private.profile_reports (reporter_profile_id uuid, reported_profile_id uuid, created_at timestamptz);
+create table private.people_search_limits (profile_id uuid, window_started_at timestamptz, used integer);
+
 -- Policy expressions are copied at runtime from immutable migration 00200,
 -- never from the operator oracle. These signature-only fixture helpers MUST NOT
 -- execute during an aggregate catalog inspection (helper implementation is outside
@@ -72,6 +79,8 @@ alter table public.daily_score_revisions enable row level security;
 alter table public.participant_finalization_attestations enable row level security;
 alter table public.competition_results enable row level security;
 alter table public.competition_awards enable row level security;
+alter table public.competition_seats enable row level security;
+alter table public.competition_group_results enable row level security;
 alter table public.device_installations enable row level security;
 alter table public.support_events enable row level security;
 alter table private.account_deletions enable row level security;
@@ -94,6 +103,14 @@ alter table private.competition_reactions enable row level security;
 alter table private.competition_reactions force row level security;
 alter table private.profile_photo_reports enable row level security;
 alter table private.profile_photo_reports force row level security;
+alter table private.friendships enable row level security;
+alter table private.friendships force row level security;
+alter table private.friend_requests enable row level security;
+alter table private.friend_requests force row level security;
+alter table private.profile_reports enable row level security;
+alter table private.profile_reports force row level security;
+alter table private.people_search_limits enable row level security;
+alter table private.people_search_limits force row level security;
 revoke all on all tables in schema public, private from public, anon, authenticated, service_role;
 grant select (id, display_name) on public.profiles to authenticated;
 grant select on public.competitions, public.competition_participants,
@@ -105,12 +122,13 @@ grant select on public.competitions, public.competition_participants,
 truncate public.profiles, public.competitions, public.competition_participants,
   public.competition_invites, public.competition_change_log, public.daily_score_revisions,
   public.participant_finalization_attestations, public.competition_results,
-  public.competition_awards, public.device_installations, public.support_events,
+  public.competition_awards, public.competition_seats, public.competition_group_results, public.device_installations, public.support_events,
   private.competition_notification_mutes, private.competition_notification_work,
   private.account_deletions, private.app_attest_keys, private.app_attest_challenges,
   private.app_attest_submission_grants, private.apple_deletion_web_requests,
   private.challenge_links, private.account_blocks, private.competition_reactions,
-  private.profile_photo_reports;
+  private.profile_photo_reports, private.friendships, private.friend_requests,
+  private.profile_reports, private.people_search_limits;
 insert into public.profiles
 select md5('profile-' || n)::uuid,
   case when n in (4, 5) then null else md5('auth-' || n)::uuid end,
@@ -136,7 +154,7 @@ select md5('competition-' || n)::uuid, md5('profile-6')::uuid,
   case n when 102 then 'archived' when 103 then 'cancelled'
     when 104 then 'active' when 105 then 'cancelled' else 'completed' end
 from generate_series(100, 105) n;
-insert into public.competition_participants
+insert into public.competition_participants(competition_id,profile_id,state)
 select md5('competition-' || c)::uuid, md5('profile-' || p)::uuid,
   case when p in (4, 5) then 'anonymized' else 'accepted' end
 from (values (100,5),(100,6),(101,4),(101,7),(102,5),(102,7),

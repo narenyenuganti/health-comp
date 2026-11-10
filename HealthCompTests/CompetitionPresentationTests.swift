@@ -3541,7 +3541,8 @@ extension CompetitionPresentationTests {
     private func versusContent(
         _ match: LocalCompetitionPresentation,
         with others: [LocalCompetitionPresentation] = [],
-        source: CompetitionPublicationSource = .remoteParticipants
+        source: CompetitionPublicationSource = .remoteParticipants,
+        isReplay: Bool = false
     ) -> CompetitionVersusIntroContent? {
         competitionVersusIntroContent(
             match,
@@ -3555,8 +3556,48 @@ extension CompetitionPresentationTests {
                 ),
                 source: source
             ),
-            locale: Locale(identifier: "en_US")
+            locale: Locale(identifier: "en_US"),
+            isReplay: isReplay
         )
+    }
+
+    func testVersusReplayShowsTheCurrentDayWithoutEnablingAutoplay() throws {
+        let cases: [(LocalCompetitionLifecyclePresentation, String)] = [
+            (.scheduled, "Day 1 is Wednesday"),
+            (.active(dayOrdinal: 1), "Day 1 starts now"),
+            (.active(dayOrdinal: 2), "Day 2 of 7"),
+            (.endsToday, "Last day"),
+            (.tallying(startedAt: homeNow), "Final score pending"),
+        ]
+        for (lifecycle, line) in cases {
+            let match = homePresentation(id: 1, lifecycle: lifecycle)
+            let replay = try XCTUnwrap(versusContent(match, isReplay: true))
+            XCTAssertEqual(replay.dayLine, line)
+            XCTAssertEqual(replay.id, match.id)
+        }
+        XCTAssertNil(versusContent(homePresentation(id: 1, lifecycle: .active(dayOrdinal: 2))))
+    }
+
+    func testVersusReplayRejectsPracticeFixturesAndClosedMatches() {
+        XCTAssertNil(versusContent(
+            homePresentation(id: 1, lifecycle: .scheduled), source: .simulatedFixture, isReplay: true
+        ))
+        XCTAssertNil(versusContent(practicePresentation(id: 1, lifecycle: .scheduled), isReplay: true))
+        XCTAssertNil(versusContent(practicePresentation(id: 1, lifecycle: .active(dayOrdinal: 2)), isReplay: true))
+        let lifecycles: [LocalCompetitionLifecyclePresentation] = [
+            .pending(direction: .incoming, createdAt: homeNow, expiresAt: nil),
+            .declined(at: homeNow, direction: .incoming),
+            .expired(at: homeNow, direction: .outgoing),
+            .cancelled(at: homeNow),
+            .completed(outcome: .win, basis: .stableAcrossPostBoundaryReads, completedAt: homeNow),
+            .archived(
+                outcome: .win, basis: .stableAcrossPostBoundaryReads,
+                completedAt: homeNow, archivedAt: homeNow
+            ),
+        ]
+        for lifecycle in lifecycles {
+            XCTAssertNil(versusContent(homePresentation(id: 1, lifecycle: lifecycle), isReplay: true))
+        }
     }
 
     func testVersusIntroSaysFirstFightOrTitleOnTheLine() throws {
