@@ -133,6 +133,7 @@ struct CompetitionClient: Sendable {
     var reportProfilePhoto: @Sendable (UUID) async throws -> Void
     /// Whether you reported this person's photo on this iPhone.
     var isProfilePhotoReported: @Sendable (UUID) async -> Bool
+    var groupMatchCommand: @Sendable (GroupMatchCommand) async throws -> CompetitionPublication
 
     init(
         start: @escaping @Sendable () -> AsyncStream<CompetitionPublication>,
@@ -256,7 +257,11 @@ struct CompetitionClient: Sendable {
         reportProfilePhoto: @escaping @Sendable (UUID) async throws -> Void = { _ in
             throw CompetitionRemoteFailure.operationFailed
         },
-        isProfilePhotoReported: @escaping @Sendable (UUID) async -> Bool = { _ in false }
+        isProfilePhotoReported: @escaping @Sendable (UUID) async -> Bool = { _ in false },
+        groupMatchCommand: @escaping @Sendable (GroupMatchCommand) async throws ->
+            CompetitionPublication = { _ in
+            throw CompetitionRemoteFailure.operationFailed
+        }
     ) {
         self.start = start
         self.updates = updates
@@ -301,6 +306,7 @@ struct CompetitionClient: Sendable {
         self.removeProfilePhoto = removeProfilePhoto
         self.reportProfilePhoto = reportProfilePhoto
         self.isProfilePhotoReported = isProfilePhotoReported
+        self.groupMatchCommand = groupMatchCommand
     }
 
     func prepareForProfileTeardown(

@@ -173,7 +173,8 @@ extension LocalCompetitionDashboard {
             },
             awards: awards,
             issues: issues,
-            hiddenTerminalCompetitionCount: hiddenTerminalCompetitionCount
+            hiddenTerminalCompetitionCount: hiddenTerminalCompetitionCount,
+            groupMatches: groupMatches
         )
     }
 }

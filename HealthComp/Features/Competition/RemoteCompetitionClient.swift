@@ -1234,7 +1234,8 @@ private actor RemoteCompetitionClientCoordinator {
                     latestPublication.dashboard.issues + [issue]
                 ),
                 hiddenTerminalCompetitionCount: latestPublication.dashboard
-                    .hiddenTerminalCompetitionCount
+                    .hiddenTerminalCompetitionCount,
+                groupMatches: latestPublication.dashboard.groupMatches
             ),
             evaluatedAt: latestPublication.evaluatedAt,
             timeZoneIdentifier: latestPublication.timeZoneIdentifier

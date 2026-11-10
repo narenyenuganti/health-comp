@@ -83,6 +83,8 @@ enum MultiUserCompetitionTestLabScenario:
     /// Sun Nov 1: October with Sam and Alex, its deck open over Home with
     /// its row; History lists October and September.
     case month
+    /// Group match screens; `-groupLab <setup>` picks one (see `GroupMatchLabSetup`).
+    case groupMatches = "group-matches"
 }
 
 struct MultiUserCompetitionTestLabConfiguration: Equatable, Sendable {
@@ -229,6 +231,8 @@ struct MultiUserCompetitionTestLabRootView: View {
             MultiUserCompetitionFeatureRoundTestLabView()
         case .versus:
             MultiUserCompetitionVersusTestLabView()
+        case .groupMatches:
+            GroupMatchTestLabView()
         }
     }
 }
@@ -576,7 +580,7 @@ private struct MultiUserCompetitionClaimTestLabView: View {
              .incomingChallenge, .block, .blockedAccount, .blockClaim,
              .nudge, .nudgeSimulated, .whatItTakes, .reactions, .reactionsSimulated,
              .liveActivity, .practice, .notificationChoices, .belt, .beltHero, .beltCeremony, .featureRound,
-             .versus, .rivalry, .rivalryFive, .rivalryYears, .month:
+             .versus, .rivalry, .rivalryFive, .rivalryYears, .month, .groupMatches:
             .ready
         }
         _status = State(initialValue: initialStatus)
@@ -1856,7 +1860,7 @@ private struct MultiUserCompetitionAccountTestLabView: View {
     }
 }
 
-private enum MultiUserCompetitionTestLabFixtures {
+enum MultiUserCompetitionTestLabFixtures {
     static let scheduledID = CompetitionID(
         UUID(uuidString: "A1000000-0000-4000-8000-000000000001")!
     )

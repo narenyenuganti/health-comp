@@ -432,7 +432,14 @@ struct MainTabView: View {
 
     @ViewBuilder
     private func destination(for id: CompetitionID) -> some View {
-        if let publication = store.competition.publication,
+        if let match = store.competition.publication?.dashboard.groupMatches.first(
+            where: { $0.id == id }
+        ) {
+            GroupMatchDestination(
+                match: match,
+                store: store.scope(state: \.competition.group, action: \.competition.group)
+            )
+        } else if let publication = store.competition.publication,
            let competition = publication.dashboard.competitions.first(
                where: { $0.id == id }
            ),
