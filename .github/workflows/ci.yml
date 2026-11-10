@@ -253,6 +253,7 @@ jobs:
             -only-testing:HealthCompUITests/GroupMatchCreateUITests/testFormatPickerOffersEveryFormat \
             -only-testing:HealthCompUITests/GroupMatchJoinUITests/testInviteShowsTheLineupAndAnswers \
             -only-testing:HealthCompUITests/GroupMatchLiveUITests/testLiveFreeForAllShowsStandingsAndTheWeek \
+            -only-testing:HealthCompUITests/GroupMatchLiveUITests/testLeaveMatchConfirmsAndShowsYouLeft \
             -only-testing:HealthCompUITests/GroupMatchLiveDoublesUITests/testLiveDoublesShowsBothTeams \
             -only-testing:HealthCompUITests/GroupMatchResultUITests/testTiedResultSaysNoBelt \
             -only-testing:HealthCompUITests/GroupMatchResultUITests/testFreeForAllResultShowsSharedPlacesAndRematch \

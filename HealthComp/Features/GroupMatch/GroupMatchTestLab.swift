@@ -90,7 +90,13 @@ enum GroupMatchFixtures {
 
     /// The match a setup opens through `MainTabView`, or nil for one drawn on its own.
     static func routed(_ setup: GroupMatchLabSetup) -> GroupMatchPresentation? {
-        switch setup {
+        routed(setup, youLeft: false)
+    }
+
+    /// `youLeft`: as after Leave Match on the live day.
+    static func routed(_ setup: GroupMatchLabSetup, youLeft: Bool) -> GroupMatchPresentation? {
+        let left: [Player: Int] = youLeft ? [.you: 4] : [:]
+        return switch setup {
         case .lobbyHost:
             match(
                 1, .fourWay,
@@ -111,9 +117,9 @@ enum GroupMatchFixtures {
                 viewerInvite: .invited,
                 invites: [.leo: .invited]
             )
-        case .liveFFA: match(4, .fourWay, live, ffaLineup, scores: fourDays)
-        case .liveDoubles: doubles(5, live, scores: fourDays)
-        case .liveBot: match(6, .fourWay, live, [.you, .sam, .erratic, .leo], scores: fourDays)
+        case .liveFFA: match(4, .fourWay, live, ffaLineup, scores: fourDays, left: left)
+        case .liveDoubles: doubles(5, live, scores: fourDays, left: left)
+        case .liveBot: match(6, .fourWay, live, [.you, .sam, .erratic, .leo], scores: fourDays, left: left)
         case .banter: doubles(7, live, scores: fourDays)
         case .resultFFAWon: match(8, .fourWay, won, ffaLineup, scores: week, isFrozen: true)
         case .resultFFATied:
@@ -198,7 +204,9 @@ enum GroupMatchFixtures {
     static var versusFFA: GroupMatchPresentation { match(11, .fourWay, .scheduled, ffaLineup) }
     static var versusDoubles: GroupMatchPresentation { doubles(12, .scheduled) }
 
-    static func publication(revision: UInt64, setup: GroupMatchLabSetup) -> LocalCompetitionPublication {
+    static func publication(
+        revision: UInt64, setup: GroupMatchLabSetup, youLeft: Bool = false
+    ) -> LocalCompetitionPublication {
         LocalCompetitionPublication(
             publicationRevision: revision,
             dashboard: LocalCompetitionDashboard(
@@ -206,7 +214,7 @@ enum GroupMatchFixtures {
                 awards: [],
                 issues: [],
                 hiddenTerminalCompetitionCount: 0,
-                groupMatches: [routed(setup)].compactMap { $0 }
+                groupMatches: [routed(setup, youLeft: youLeft)].compactMap { $0 }
             ),
             evaluatedAt: now,
             timeZoneIdentifier: zone,
@@ -218,12 +226,13 @@ enum GroupMatchFixtures {
         _ id: Int,
         _ lifecycle: LocalCompetitionLifecyclePresentation,
         scores: [Player: [Int]] = [:],
-        isFrozen: Bool = false
+        isFrozen: Bool = false,
+        left: [Player: Int] = [:]
     ) -> GroupMatchPresentation {
         match(
             id, .doubles, lifecycle, doublesLineup.map(\.0),
             teams: Dictionary(uniqueKeysWithValues: doublesLineup.map { ($0.0, $0.1) }),
-            scores: scores, isFrozen: isFrozen
+            scores: scores, isFrozen: isFrozen, left: left
         )
     }
 
@@ -238,7 +247,8 @@ enum GroupMatchFixtures {
         teams: [Player: Int] = [:],
         scores: [Player: [Int]] = [:],
         isFrozen: Bool = false,
-        start: (month: Int, day: Int) = (8, 13)
+        start: (month: Int, day: Int) = (8, 13),
+        left: [Player: Int] = [:]
     ) -> GroupMatchPresentation {
         let seats = lineup.enumerated().map { index, player in
             GroupMatchSeat(
@@ -282,6 +292,7 @@ enum GroupMatchFixtures {
                 schedule: schedule(month: start.month, day: start.day),
                 days: days,
                 rings: rings,
+                leaveCutoffs: Dictionary(uniqueKeysWithValues: left.map { ($0.key.seatID, $0.value) }),
                 frozenStandings: frozen?.standingRows,
                 frozenSeatTotals: frozen?.projection.seatTotals,
                 frozenDays: frozen?.days
@@ -303,6 +314,7 @@ struct GroupMatchTestLabView: View {
         self.setup = setup
         let first = GroupMatchFixtures.publication(revision: 1, setup: setup)
         let answer = GroupMatchFixtures.publication(revision: 2, setup: setup)
+        let left = GroupMatchFixtures.publication(revision: 2, setup: setup, youLeft: true)
         _store = State(initialValue: Store(
             initialState: MainTabFeature.State(
                 competition: CompetitionFeature.State(publication: first),
@@ -322,7 +334,10 @@ struct GroupMatchTestLabView: View {
                 reinvite: { first },
                 waitUntil: { _ in },
                 stop: {},
-                groupMatchCommand: { _ in answer }
+                groupMatchCommand: { command in
+                    if case .leave = command { return left }
+                    return answer
+                }
             )
             $0.competitionRoutingClient = CompetitionRoutingClient(
                 routes: { AsyncStream { _ in } },
@@ -352,7 +367,9 @@ struct GroupMatchTestLabView: View {
                 GroupMatchHomeCards(matches: [.liveFFA, .liveDoubles].compactMap(GroupMatchFixtures.routed))
             }
         case .day:
-            GroupMatchFixtures.routed(.liveFFA).map { GroupMatchDayView(match: $0, ordinal: 3) }
+            GroupMatchFixtures.routed(.liveFFA).map { match in
+                NavigationStack { GroupMatchDayView(match: match, ordinal: 3, store: group) }
+            }
         case .history, .historyDuels:
             NavigationStack {
                 CompetitionHistoryView(publication: GroupMatchFixtures.historyPublication(duelsOnly: setup == .historyDuels))
