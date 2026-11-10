@@ -71,24 +71,29 @@ struct UsernameSheet: View {
         .onChange(of: sheet.isSaving) { _, isSaving in
             if !isSaving { isFocused = true }
         }
-        // Only redraws the field without a filtered character; the store
-        // hears about every edit from `textBinding`.
+        // Takes a filtered character back out of the field; the store
+        // already heard the name without it from `textBinding`.
         .onChange(of: text) { _, newValue in
             let sanitized = FriendSettings.sanitizedUsername(newValue)
             if sanitized != newValue { text = sanitized }
         }
     }
 
-    /// Tells the store from the setter, not from `onChange(of: text)`: on a
-    /// busy iPhone SwiftUI can skip the onChange for the last keystroke of a
-    /// quick burst, leaving the store checking and saving a shorter name than
-    /// the field shows.
+    /// Every edit reaches the store from here, not from
+    /// `onChange(of: text)`: on a busy iPhone SwiftUI can skip that onChange
+    /// for the last keystroke of a quick burst, so the store checked and
+    /// saved a shorter name than the field showed. The send waits for the
+    /// next main-queue turn, in order, so the field's own update happens
+    /// just as it does with `$text`.
     private var textBinding: Binding<String> {
         Binding(
             get: { text },
             set: { newValue in
                 text = newValue
-                friends.send(.usernameChanged(FriendSettings.sanitizedUsername(newValue)))
+                let send = friends.send
+                DispatchQueue.main.async {
+                    send(.usernameChanged(FriendSettings.sanitizedUsername(newValue)))
+                }
             }
         )
     }
