@@ -22,6 +22,14 @@ public enum MatchBanter {
     public struct Template: Equatable, Sendable {
         public let thirdPerson: String
         public let secondPerson: String
+        /// Hand-written line for the named partner or leader. Nil when the template names neither.
+        public let namedViewer: String?
+
+        init(thirdPerson: String, secondPerson: String, namedViewer: String? = nil) {
+            self.thirdPerson = thirdPerson
+            self.secondPerson = secondPerson
+            self.namedViewer = namedViewer
+        }
     }
 
     public struct Line: Equatable, Sendable {
@@ -52,21 +60,32 @@ public enum MatchBanter {
                         dayOrdinal: dayOrdinal, botModes: botModes, hash: hash)
     }
 
-    /// Second person when the viewer is the subject. Everyone else, including a bot seat, gets third person.
+    /// Second person when the viewer is the subject. The named partner or leader gets that
+    /// template's own wording, so a viewer never sees their own name. Everyone else,
+    /// including a bot seat, gets third person.
     public static func render(_ line: Line, names: [UUID: String], viewerSeatID: UUID) -> String {
         let bank = templates(for: line.kind)
         precondition(line.subjectSeatIDs.isEmpty == false && bank.indices.contains(line.templateIndex))
+        let template = bank[line.templateIndex]
         let subject = line.subjectSeatIDs[0]
-        var text = viewerSeatID == subject ? bank[line.templateIndex].secondPerson : bank[line.templateIndex].thirdPerson
-        if let percent = line.percent { text = text.replacingOccurrences(of: "{percent}", with: String(percent)) }
-        if let points = line.points { text = text.replacingOccurrences(of: "{points}", with: String(points)) }
-        text = text.replacingOccurrences(of: "{subject}", with: names[subject] ?? "")
+        let text: String
+        if viewerSeatID == subject {
+            text = template.secondPerson
+        } else if line.subjectSeatIDs.count > 1, viewerSeatID == line.subjectSeatIDs[1], let named = template.namedViewer {
+            text = named
+        } else {
+            text = template.thirdPerson
+        }
+        var rendered = text
+        if let percent = line.percent { rendered = rendered.replacingOccurrences(of: "{percent}", with: String(percent)) }
+        if let points = line.points { rendered = rendered.replacingOccurrences(of: "{points}", with: String(points)) }
+        rendered = rendered.replacingOccurrences(of: "{subject}", with: names[subject] ?? "")
         if line.subjectSeatIDs.count > 1 {
             let other = names[line.subjectSeatIDs[1]] ?? ""
-            text = text.replacingOccurrences(of: "{partner}", with: other)
-            text = text.replacingOccurrences(of: "{leader}", with: other)
+            rendered = rendered.replacingOccurrences(of: "{partner}", with: other)
+            rendered = rendered.replacingOccurrences(of: "{leader}", with: other)
         }
-        return text
+        return rendered
     }
 
     public static func templates(for kind: Kind) -> [Template] {
@@ -173,7 +192,8 @@ public enum MatchBanter {
                     percent: nil, points: (lead - subject.1) / 100)
     }
 
-    /// Strictly ahead on week-to-date seat totals. Tied pairs break by bot seat id, then the human's.
+    /// At least one whole point (100 centipoints) ahead on week-to-date seat totals.
+    /// A smaller lead would render as zero. Tied pairs break by bot seat id, then the human's.
     private static func botAhead(configuration: MatchConfiguration, projection: MatchScoreProjection,
                                  days: [MatchDayScore], dayOrdinal: Int, botModes: [UUID: String], hash: UInt64) -> Line? {
         var pairs: [(bot: UUID, human: UUID, mode: String, points: Int)] = []
@@ -181,7 +201,7 @@ public enum MatchBanter {
             guard case .bot = seat.kind, let mode = botModes[seat.id], templates(for: .botAhead(mode)).isEmpty == false,
                   let botTotal = projection.seatTotals[seat.id] else { continue }
             for human in configuration.seats where isHuman(human) && hasAcceptedScore(days, seatID: human.id, ordinal: dayOrdinal) {
-                guard let humanTotal = projection.seatTotals[human.id], botTotal > humanTotal else { continue }
+                guard let humanTotal = projection.seatTotals[human.id], botTotal - humanTotal >= 100 else { continue }
                 pairs.append((seat.id, human.id, mode, (botTotal - humanTotal) / 100))
             }
         }
@@ -222,49 +242,62 @@ public enum MatchBanter {
 
 /// Line bank. Edit the copy here. Selection does not read the words.
 /// Placeholders: {subject} {partner} {leader} {percent} {points}.
+/// `namedViewer` is written out for the partner or leader, and does not use their placeholder.
 private enum MatchBanterCopy {
     static let hardCarry: [MatchBanter.Template] = [
         .init(thirdPerson: "{subject} has {percent}% of the team's points. A permit may be required.",
               secondPerson: "You have {percent}% of your team's points. A permit may be required."),
         .init(thirdPerson: "{subject} has {percent}% of the team's points. {partner} is here in spirit.",
-              secondPerson: "You have {percent}% of your team's points. {partner} is here in spirit."),
+              secondPerson: "You have {percent}% of your team's points. {partner} is here in spirit.",
+              namedViewer: "{subject} has {percent}% of the team's points. You are here in spirit."),
         .init(thirdPerson: "{subject} has {percent}% of the team's points. Solo, with a plus-one.",
               secondPerson: "You have {percent}% of your team's points. Solo, with a plus-one."),
         .init(thirdPerson: "{subject} has {percent}% of the team's points. The trophy fits one name.",
               secondPerson: "You have {percent}% of your team's points. The trophy fits one name."),
         .init(thirdPerson: "{subject} has {percent}% of the team's points. {partner} is on mute.",
-              secondPerson: "You have {percent}% of your team's points. {partner} is on mute."),
+              secondPerson: "You have {percent}% of your team's points. {partner} is on mute.",
+              namedViewer: "{subject} has {percent}% of the team's points. You are on mute."),
         .init(thirdPerson: "{subject} has {percent}% of the team's points. {partner} brought a camera.",
-              secondPerson: "You have {percent}% of your team's points. {partner} brought a camera."),
+              secondPerson: "You have {percent}% of your team's points. {partner} brought a camera.",
+              namedViewer: "{subject} has {percent}% of the team's points. You brought a camera."),
         .init(thirdPerson: "{subject} has {percent}% of the team's points. {partner} is nearby, allegedly.",
-              secondPerson: "You have {percent}% of your team's points. {partner} is nearby, allegedly."),
+              secondPerson: "You have {percent}% of your team's points. {partner} is nearby, allegedly.",
+              namedViewer: "{subject} has {percent}% of the team's points. You are nearby, allegedly."),
         .init(thirdPerson: "{subject} has {percent}% of the team's points. Special thanks to {partner}.",
-              secondPerson: "You have {percent}% of your team's points. Special thanks to {partner}."),
+              secondPerson: "You have {percent}% of your team's points. Special thanks to {partner}.",
+              namedViewer: "{subject} has {percent}% of the team's points. Special thanks to you."),
         .init(thirdPerson: "{subject} has {percent}% of the team's points. {partner} is on the sideline.",
-              secondPerson: "You have {percent}% of your team's points. {partner} is on the sideline."),
+              secondPerson: "You have {percent}% of your team's points. {partner} is on the sideline.",
+              namedViewer: "{subject} has {percent}% of the team's points. You are on the sideline."),
     ]
 
     static let deadweight: [MatchBanter.Template] = [
         .init(thirdPerson: "{subject} has {percent}% of the team's points. {partner} did not agree to this.",
-              secondPerson: "You have {percent}% of your team's points. {partner} did not agree to this."),
+              secondPerson: "You have {percent}% of your team's points. {partner} did not agree to this.",
+              namedViewer: "{subject} has {percent}% of the team's points. You did not agree to this."),
         .init(thirdPerson: "{subject} has {percent}% of the team's points. The pie chart is rude.",
               secondPerson: "You have {percent}% of your team's points. The pie chart is rude."),
         .init(thirdPerson: "{subject} has {percent}% of the team's points. A cameo, at best.",
               secondPerson: "You have {percent}% of your team's points. A cameo, at best."),
         .init(thirdPerson: "{subject} has {percent}% of the team's points. {partner} requested a recount.",
-              secondPerson: "You have {percent}% of your team's points. {partner} requested a recount."),
+              secondPerson: "You have {percent}% of your team's points. {partner} requested a recount.",
+              namedViewer: "{subject} has {percent}% of the team's points. You requested a recount."),
         .init(thirdPerson: "{subject} has {percent}% of the team's points. Blink and it is gone.",
               secondPerson: "You have {percent}% of your team's points. Blink and it is gone."),
         .init(thirdPerson: "{subject} has {percent}% of the team's points. Credits list {subject} last.",
               secondPerson: "You have {percent}% of your team's points. Credits list you last."),
         .init(thirdPerson: "{subject} has {percent}% of the team's points. {partner} has the highlights.",
-              secondPerson: "You have {percent}% of your team's points. {partner} has the highlights."),
+              secondPerson: "You have {percent}% of your team's points. {partner} has the highlights.",
+              namedViewer: "{subject} has {percent}% of the team's points. You have the highlights."),
         .init(thirdPerson: "{subject} has {percent}% of the team's points. {partner} has questions.",
-              secondPerson: "You have {percent}% of your team's points. {partner} has questions."),
+              secondPerson: "You have {percent}% of your team's points. {partner} has questions.",
+              namedViewer: "{subject} has {percent}% of the team's points. You have questions."),
         .init(thirdPerson: "{subject} has {percent}% of the team's points. {partner} took a victory lap.",
-              secondPerson: "You have {percent}% of your team's points. {partner} took a victory lap."),
+              secondPerson: "You have {percent}% of your team's points. {partner} took a victory lap.",
+              namedViewer: "{subject} has {percent}% of the team's points. You took a victory lap."),
         .init(thirdPerson: "{subject} has {percent}% of the team's points. {partner} has the wheel.",
-              secondPerson: "You have {percent}% of your team's points. {partner} has the wheel."),
+              secondPerson: "You have {percent}% of your team's points. {partner} has the wheel.",
+              namedViewer: "{subject} has {percent}% of the team's points. You have the wheel."),
     ]
 
     static let farOffLead: [MatchBanter.Template] = [
@@ -275,17 +308,20 @@ private enum MatchBanterCopy {
         .init(thirdPerson: "{subject} is {points} off the lead. Bring binoculars.",
               secondPerson: "You are {points} off the lead. Bring binoculars."),
         .init(thirdPerson: "{subject} is {points} off the lead. {leader} is in a different week.",
-              secondPerson: "You are {points} off the lead. {leader} is in a different week."),
+              secondPerson: "You are {points} off the lead. {leader} is in a different week.",
+              namedViewer: "{subject} is {points} off the lead. You are in a different week."),
         .init(thirdPerson: "{subject} is {points} off the lead. The map gave up.",
               secondPerson: "You are {points} off the lead. The map gave up."),
         .init(thirdPerson: "{subject} is {points} off the lead. Still on the same app, somehow.",
               secondPerson: "You are {points} off the lead. Still on the same app, somehow."),
         .init(thirdPerson: "{subject} is {points} off the lead. {leader} cannot hear {subject}.",
-              secondPerson: "You are {points} off the lead. {leader} cannot hear you."),
+              secondPerson: "You are {points} off the lead. {leader} cannot hear you.",
+              namedViewer: "{subject} is {points} off the lead. You cannot hear {subject}."),
         .init(thirdPerson: "{subject} is {points} off the lead. That is a valley, not a gap.",
               secondPerson: "You are {points} off the lead. That is a valley, not a gap."),
         .init(thirdPerson: "{subject} is {points} off the lead. {leader} is a rumor from here.",
-              secondPerson: "You are {points} off the lead. {leader} is a rumor from here."),
+              secondPerson: "You are {points} off the lead. {leader} is a rumor from here.",
+              namedViewer: "{subject} is {points} off the lead. You are a rumor from here."),
         .init(thirdPerson: "{subject} is {points} off the lead. Someone check the units.",
               secondPerson: "You are {points} off the lead. Someone check the units."),
     ]
