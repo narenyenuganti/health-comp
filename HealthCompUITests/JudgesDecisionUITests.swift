@@ -42,7 +42,10 @@ final class JudgesDecisionUITests: XCTestCase {
         XCTAssertTrue(soon(3) { self.app.staticTexts[decision].exists }, decision)
         XCTAssertTrue(soon(5) { self.app.staticTexts[winner].exists }, winner)
         if let belt { XCTAssertTrue(soon(10) { self.app.staticTexts[belt].exists }, belt) }
-        XCTAssertTrue(element("competition.result").waitForExistence(timeout: 10))
+        XCTAssertTrue(soon(10) {
+            !self.element("competition.judges.reveal").exists && !self.element("competition.belt.ceremony").exists
+        })
+        XCTAssertTrue(element("competition.result").waitForExistence(timeout: 3))
         // Leave a settled Verdict at the end of each recording.
         Thread.sleep(forTimeInterval: 2)
     }
@@ -66,7 +69,7 @@ final class JudgesDecisionUITests: XCTestCase {
         let week = element("competition.sharing.completed.\(uuid(0x75))")
         scrollTo(week); week.tap()
         XCTAssertTrue(element("competition.result").waitForExistence(timeout: 3))
-        XCTAssertFalse(element("competition.judges.reveal").exists)
+        XCTAssertFalse(element("competition.judges.reveal").waitForExistence(timeout: 1))
     }
 
     func testNotifications() {
@@ -82,7 +85,11 @@ final class JudgesDecisionUITests: XCTestCase {
 
     private func soon(_ seconds: TimeInterval, _ condition: () -> Bool) -> Bool {
         let deadline = Date().addingTimeInterval(seconds)
-        repeat { if condition() { return true } } while Date() < deadline
+        repeat {
+            if condition() { return true }
+            // Leave the display server time to render between accessibility snapshots.
+            Thread.sleep(forTimeInterval: 0.1)
+        } while Date() < deadline
         return false
     }
     private func scrollTo(_ target: XCUIElement) {

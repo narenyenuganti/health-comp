@@ -647,6 +647,7 @@ private struct CompetitionJudgesReveal: View {
         .background(Theme.ground.ignoresSafeArea())
         .contentShape(Rectangle())
         .onTapGesture { if stage > 0 || !breakingSeal { onSkip() } }
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("competition.judges.reveal")
         .sensoryFeedback(.impact(weight: .light), trigger: ticks)
         .sensoryFeedback(.impact(weight: .heavy), trigger: thuds)
@@ -689,7 +690,7 @@ private struct CompetitionJudgesReveal: View {
                 raised = true
             } else {
                 guard (try? await Task.sleep(for: .seconds(1))) != nil else { return }
-                withAnimation(Motion.grow) { raised = true }
+                raised = true
                 thuds += 1
             }
             guard (try? await Task.sleep(for: .seconds(2))) != nil else { return }
@@ -823,7 +824,8 @@ private struct CompetitionJudgesReveal: View {
 
     private func total(_ value: Double?, wins: Bool, own: Bool) -> some View {
         Text(value.map { competitionPointsText($0) } ?? "—")
-            .font(.score(size: 27)).minimumScaleFactor(0.5).lineLimit(1)
+            .font(.score(size: 27)).lineLimit(1)
+            .fixedSize(horizontal: false, vertical: true)
             .foregroundStyle(own ? Theme.you : Theme.ink)
             .padding(.vertical, 8).frame(maxWidth: .infinity)
             .overlay { if wins { Ellipse().stroke(own ? Theme.youFill : Theme.ink, lineWidth: 2) } }
@@ -853,6 +855,7 @@ private struct CompetitionJudgesReveal: View {
                 leftLost: raised && decision.outcome == .loss,
                 rightLost: raised && decision.outcome == .win
             )
+            .moving(Motion.grow, value: raised)
             .frame(height: 310)
             .background(Theme.beltWell, in: RoundedRectangle(cornerRadius: 20))
             .accessibilityHidden(true)
