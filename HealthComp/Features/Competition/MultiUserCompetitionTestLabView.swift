@@ -4,6 +4,7 @@ import CompetitionCore
 import ComposableArchitecture
 import Foundation
 import SwiftUI
+import UserNotifications
 
 enum MultiUserCompetitionTestLabScenario:
     String,
@@ -282,6 +283,8 @@ private struct MultiUserCompetitionSharingTestLabView: View {
     @State private var labNudges: [CompetitionID: CompetitionFeature.NudgeStatus] = [:]
     @State private var ownReactions: [CompetitionReactionKey: CompetitionReactionKind] = [:]
     @State private var recapPeriod: CompetitionRecapPeriod?
+    @State private var judgesNotificationStatus = "Loading sample photos"
+    @State private var judgesPhotos = ProfilePhotoImages(ownID: MultiUserCompetitionTestLabFixtures.ownProfileID)
 
     /// Once per process, never per init: SwiftUI re-runs child inits
     /// whenever the root re-evaluates. Launch arguments can't do this: an
@@ -398,7 +401,63 @@ private struct MultiUserCompetitionSharingTestLabView: View {
                 .background(.regularMaterial)
             }
         }
+        .overlay(alignment: .bottom) {
+            if ProcessInfo.processInfo.arguments.contains("--judges-notifications") {
+                Text(judgesNotificationStatus)
+            }
+        }
         .accessibilityIdentifier("multiuser.sharing.root")
+        .environment(\.profilePhotos, judgesPhotos)
+        .task {
+            guard scenario == .beltCeremony, ProcessInfo.processInfo.arguments.contains("--judges-decision") else { return }
+            let server = MultiUserCompetitionTestLabFixtures.judgesPhotos
+            let owners = [MultiUserCompetitionTestLabFixtures.ownProfileID]
+                + publication.dashboard.competitions.compactMap(\.opponentProfileID)
+            guard let visible = try? await server.load(Array(Set(owners))) else { return }
+            for reference in visible {
+                if let jpeg = try? await server.data(reference),
+                   let photo = ProfilePhoto(jpeg: jpeg, version: reference.version) {
+                    judgesPhotos.photos[reference.ownerProfileID] = photo
+                }
+            }
+            if ProcessInfo.processInfo.arguments.contains("--judges-notifications") {
+                await scheduleJudgesPhotoNotification()
+            }
+        }
+    }
+
+    private func scheduleJudgesPhotoNotification() async {
+        guard let match = publication.dashboard.competitions.first(where: {
+            $0.id.rawValue == UUID(uuidString: "a3000000-0000-4000-8000-000000000075")!
+        }) else { judgesNotificationStatus = "Sample match missing"; return }
+        guard let owner = match.opponentProfileID, let photo = judgesPhotos.photo(owner)
+        else { judgesNotificationStatus = "Sample photo missing"; return }
+        guard (try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])) == true
+        else { judgesNotificationStatus = "Notifications not allowed"; return }
+        judgesNotificationStatus = "Preparing communication notification"
+        let message = CompetitionNotificationMessage(
+            family: .opportunistic(.result), competitionID: match.id,
+            opponentDisplayName: match.opponentDisplayName,
+            ownerPoints: nil, opponentPoints: nil, outcome: nil
+        )
+        let sender = CompetitionNotificationSender.judges(
+            family: message.family, identity: match.opponentIdentity, name: match.opponentDisplayName
+        )?.permitted(ownProfileID: MultiUserCompetitionTestLabFixtures.ownProfileID,
+                     cachedJPEG: photo.image.jpegData(compressionQuality: 0.9), isVisible: true)
+        let request = await CompetitionNotificationClient.makeRequest(CompetitionImmediateNotificationRequest(
+            identifier: "judges-local-photo-demo",
+            content: CompetitionNotificationPolicy.liveV1.content(message), route: .competition(match.id),
+            reactionTarget: .result, recipientUserID: MultiUserCompetitionTestLabFixtures.ownProfileID,
+            sender: sender
+        ))
+        // iOS owns the delay, so the alert fires even after the lab backgrounds.
+        do {
+            try await UNUserNotificationCenter.current().add(UNNotificationRequest(
+                identifier: request.identifier, content: request.content,
+                trigger: UNTimeIntervalNotificationTrigger(timeInterval: 12, repeats: false)
+            ))
+            judgesNotificationStatus = "Notification queued"
+        } catch { assertionFailure("Could not queue the lab notification: \(error)") }
     }
 
     private var homeStack: Binding<[CompetitionHomeRoute]> {
@@ -2215,6 +2274,17 @@ enum MultiUserCompetitionTestLabFixtures {
     static let hermesProfileID = UUID(
         uuidString: "a1000000-0000-4000-8000-0000000000c1"
     )!
+    /// Original illustrated fixtures, served through the same visibility filter.
+    /// Riley is intentionally absent to show the initial fallback on the win close-up.
+    @MainActor static let judgesPhotos = ProfilePhotoTestLabServer(
+        ownProfileID: ownProfileID,
+        photos: [
+            ownProfileID: ProfilePhotoTestLabServer.illustratedPortrait(0),
+            UUID(uuidString: "c3000000-0000-4000-8000-000000000001")!: ProfilePhotoTestLabServer.illustratedPortrait(1),
+            UUID(uuidString: "c3000000-0000-4000-8000-000000000009")!: ProfilePhotoTestLabServer.illustratedPortrait(2),
+            UUID(uuidString: "c3000000-0000-4000-8000-00000000000c")!: ProfilePhotoTestLabServer.illustratedPortrait(3),
+        ]
+    )
     /// Feature round: Sam has a photo, Jordan none, and Riley's is reported.
     static let featureRoundPhotos = ProfilePhotoTestLabServer(
         ownProfileID: ownProfileID,
@@ -3298,12 +3368,39 @@ enum MultiUserCompetitionTestLabFixtures {
             _ outcome: CompetitionOutcome,
             completed: Bool = false
         ) -> LocalCompetitionPresentation {
-            let (user, opponent): (Double, Double) = switch outcome {
+            let judges = ProcessInfo.processInfo.arguments.contains("--judges-decision") && completed
+            let actualStart = judges ? startDay + 2 : startDay
+            var you: [[Double]] = [
+                [142, 150, 138, 160, 150, 145, 147],
+                [160, 170, 150, 180, 165, 155, 160],
+                [100, 105, 102, 110, 108, 107, 110],
+            ]
+            var them: [[Double]] = [
+                [120, 130, 110, 140, 125, 120, 125],
+                [170, 180, 160, 190, 175, 165, 170],
+                [75, 80, 78, 82, 85, 80, 80],
+            ]
+            if byte == 0x94 { them[1] = [140, 150, 130, 160, 145, 135, 140] }
+            if outcome == .loss { swap(&you, &them) }
+            if outcome == .tie {
+                you = [[140, 150, 130, 160, 140, 130, 150], [140, 150, 130, 160, 140, 130, 150], [100, 100, 101, 100, 100, 100, 100]]
+                them = [[125, 130, 120, 140, 130, 125, 130], [150, 160, 150, 170, 160, 150, 160], [100, 100, 101, 100, 100, 100, 100]]
+            }
+            let ownDays = (0..<7).map { day in you.reduce(0) { $0 + $1[day] } }
+            let otherDays = (0..<7).map { day in them.reduce(0) { $0 + $1[day] } }
+            let (baseUser, baseOpponent): (Double, Double) = switch outcome {
             case .win: (3_210, 3_050)
             case .loss: (2_980, 3_140)
             case .tie: (3_000, 3_000)
             }
-            let end = competitionScheduleBoundaries(schedule(startDay: startDay, month: month))!.end
+            let user = judges ? ownDays.reduce(0, +) : baseUser
+            let opponent = judges ? otherDays.reduce(0, +) : baseOpponent
+            var days = judges ? completedDays(startDay: actualStart, owner: ownDays, opponent: otherDays) : []
+            for index in days.indices {
+                days[index].ownerRingPoints = you.map { $0[index] }
+                days[index].opponentRingPoints = them.map { $0[index] }
+            }
+            let end = competitionScheduleBoundaries(schedule(startDay: actualStart, month: month))!.end
             let completedAt = end.addingTimeInterval(43_200)
             return presentation(
                 id: id(byte),
@@ -3322,7 +3419,7 @@ enum MultiUserCompetitionTestLabFixtures {
                     ),
                 userPoints: user,
                 opponentPoints: opponent,
-                days: [],
+                days: days,
                 currentDayOrdinal: nil,
                 terminal: LocalCompetitionTerminalPresentation(
                     userPoints: user,
@@ -3331,7 +3428,7 @@ enum MultiUserCompetitionTestLabFixtures {
                     basis: .stableAcrossPostBoundaryReads,
                     completedAt: completedAt
                 ),
-                startDay: startDay,
+                startDay: actualStart,
                 month: month,
                 opponentIdentity: identity
             )

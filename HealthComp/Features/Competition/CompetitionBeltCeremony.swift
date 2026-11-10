@@ -112,15 +112,19 @@ extension View {
     func competitionBeltCeremony(
         event: CompetitionBeltEvent?,
         opponentName: String,
+        competition: LocalCompetitionPresentation? = nil,
         isFirstView: Bool,
         replay: Binding<Bool> = .constant(false),
+        judgesReplay: Binding<Bool> = .constant(false),
         onFinished: @escaping () -> Void
     ) -> some View {
         modifier(CompetitionBeltCeremony(
             event: event,
             opponentName: opponentName,
+            competition: competition,
             isFirstView: isFirstView,
             replay: replay,
+            judgesReplay: judgesReplay,
             onFinished: onFinished
         ))
     }
@@ -129,45 +133,71 @@ extension View {
 private struct CompetitionBeltCeremony: ViewModifier {
     let event: CompetitionBeltEvent?
     let opponentName: String
+    let competition: LocalCompetitionPresentation?
     let isFirstView: Bool
     @Binding var replay: Bool
+    @Binding var judgesReplay: Bool
     let onFinished: () -> Void
 
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
-    /// Latches the first-view decision: `isFirstView` flips when the seen
-    /// store is written.
+    @AppStorage(CompetitionMotionSeen.storageKey) private var seen = CompetitionMotionSeen()
     @State private var didStart = false
-    @State private var showing: CompetitionBeltCeremonyScript?
-    /// Black under the cover, so the result isn't read before it comes up.
-    @State private var isBlacked = false
+    @State private var isShowing = false
+    @State private var isCovered = false
+    @State private var pendingAnnouncement: String?
+    @State private var showsJudges = false
     @State private var isReplay = false
 
     private var script: CompetitionBeltCeremonyScript? {
         competitionBeltCeremonyCanPlay(event, opponentName: opponentName)
-            ? competitionBeltCeremonyScript(event, opponentName: opponentName)
-            : nil
+            ? competitionBeltCeremonyScript(event, opponentName: opponentName) : nil
+    }
+
+    private var judgesAreOn: Bool {
+        #if DEBUG
+        let args = ProcessInfo.processInfo.arguments
+        if args.contains(where: { $0.hasSuffix("-competition-test-lab") }) {
+            return args.contains("--judges-decision")
+        }
+        #endif
+        return true
     }
 
     func body(content: Content) -> some View {
         content
             .overlay {
-                if isBlacked || (!didStart && isFirstView && script != nil && !voiceOver) {
-                    Color.black.ignoresSafeArea()
+                if isCovered || (!didStart && isFirstView && (judgesAreOn || script != nil) && !voiceOver) {
+                    Theme.beltWell.ignoresSafeArea()
                 }
             }
-            .fullScreenCover(item: $showing) { script in
-                CompetitionBeltCeremonyPlayer(
-                    script: script,
-                    onLeaving: finished,
-                    onGone: { present(nil) }
-                )
-                .presentationBackground(.clear)
+            .fullScreenCover(isPresented: $isShowing, onDismiss: announcePending) {
+                if showsJudges, let competition {
+                    CompetitionJudgesReveal(
+                        competition: competition,
+                        onFinished: finishJudges,
+                        onSkip: finishJudges,
+                        onBackground: {
+                            mark(.judges)
+                            finish()
+                        }
+                    )
+                    .presentationBackground(Theme.ground)
+                } else if let script {
+                    CompetitionBeltCeremonyPlayer(
+                        script: script,
+                        onLeaving: finishBelt,
+                        onGone: { present(false) }
+                    )
+                    .presentationBackground(.clear)
+                }
             }
             .onAppear {
                 guard !didStart else { return }
                 didStart = true
-                if isFirstView, let script {
-                    play(script)
+                if judgesAreOn, let competition, !seen.hasSeen(.judges, competition.id), isFirstView {
+                    playJudges()
+                } else if hasPendingBelt {
+                    playBelt()
                 } else {
                     onFinished()
                 }
@@ -176,31 +206,95 @@ private struct CompetitionBeltCeremony: ViewModifier {
                 guard isOn else { return }
                 replay = false
                 isReplay = true
-                if let script { play(script) }
+                playBelt()
+            }
+            .onChange(of: judgesReplay) { _, isOn in
+                guard isOn else { return }
+                judgesReplay = false
+                isReplay = true
+                playJudges()
             }
     }
 
-    private func play(_ script: CompetitionBeltCeremonyScript) {
-        if voiceOver {
-            AccessibilityNotification.Announcement(script.announcement).post()
-            finished()
+    private var hasPendingBelt: Bool {
+        guard script != nil else { return false }
+        guard let competition else { return isFirstView }
+        if case .archived = competition.lifecycle { return false }
+        return !seen.hasSeen(.belt, competition.id)
+            && (isFirstView || seen.hasSeen(.judges, competition.id))
+    }
+
+    private func mark(_ moment: CompetitionMotionSeen.Moment) {
+        guard let competition else { return }
+        seen = seen.marking(moment, competition.id)
+    }
+
+    private func playJudges() {
+        guard competition != nil else { return }
+        showsJudges = true
+        isCovered = true
+        present(true)
+    }
+
+    private func finishJudges() {
+        mark(.judges)
+        if voiceOver, let competition {
+            let decision = competitionJudgesDecision(days: competition.days, you: competition.userPoints, them: competition.opponentPoints)
+            let result = decision.outcome == .win ? "You win" : decision.outcome == .loss ? "\(opponentName) wins" : "It is a draw"
+            let belt = !isReplay ? script.map { ", \($0.title.lowercased())" } ?? "" : ""
+            pendingAnnouncement = "\(result), \(decision.label.lowercased()), \(competitionPointsText(competition.userPoints)) to \(competitionPointsText(competition.opponentPoints))\(belt)."
+            if !isReplay, script != nil { mark(.belt) }
+            finish()
+        } else if isReplay {
+            finish()
         } else {
-            isBlacked = true
-            present(script)
+            playBelt()
         }
     }
 
-    private func finished() {
-        isBlacked = false
+    private func finishBelt() {
+        mark(.belt)
+        verdict()
+    }
+
+    private func announcePending() {
+        guard let pendingAnnouncement else { return }
+        AccessibilityNotification.Announcement(pendingAnnouncement).post()
+        self.pendingAnnouncement = nil
+    }
+
+    private func playBelt() {
+        showsJudges = false
+        if let script {
+            if voiceOver {
+                pendingAnnouncement = script.announcement
+                mark(.belt)
+                if !isShowing { announcePending() }
+                finish()
+            } else {
+                isCovered = true
+                present(true)
+            }
+        } else {
+            finish()
+        }
+    }
+
+    private func verdict() {
+        isCovered = false
         if !isReplay { onFinished() }
         isReplay = false
     }
 
-    // The cover has its own fade, so the system's slide is switched off.
-    private func present(_ script: CompetitionBeltCeremonyScript?) {
+    private func finish() {
+        verdict()
+        present(false)
+    }
+
+    private func present(_ shown: Bool) {
         var transaction = Transaction()
         transaction.disablesAnimations = true
-        withTransaction(transaction) { showing = script }
+        withTransaction(transaction) { isShowing = shown }
     }
 }
 
@@ -434,4 +528,595 @@ private struct CompetitionBeltCeremonyVideo: UIViewRepresentable {
     }
 
     func updateUIView(_ view: PlayerView, context: Context) {}
+}
+
+// MARK: Judges' decision
+
+struct CompetitionJudgeCard: Equatable {
+    let you: [Double?]
+    let them: [Double?]
+    var yourTotal: Double? { total(you) }
+    var theirTotal: Double? { total(them) }
+    private func total(_ points: [Double?]) -> Double? {
+        points.count == 7 && points.allSatisfy { $0 != nil } ? points.compactMap { $0 }.reduce(0, +) : nil
+    }
+}
+
+struct CompetitionJudgesDecision: Equatable {
+    let cards: [CompetitionJudgeCard]
+    let outcome: CompetitionOutcome
+    let label: String
+}
+
+/// Cards describe the week; final total points always decide the match.
+func competitionJudgesDecision(
+    days: [LocalCompetitionDayPresentation], you: Double, them: Double
+) -> CompetitionJudgesDecision {
+    let ordered = days.sorted { $0.ordinal < $1.ordinal }
+    func points(_ day: LocalCompetitionDayPresentation, own: Bool, ring: Int) -> Double? {
+        let rings = own ? day.ownerRingPoints : day.opponentRingPoints
+        let score = own ? day.ownerAcceptedPoints : day.opponentRevealedPoints
+        guard let rings, rings.count == 3, rings.allSatisfy({ $0.isFinite && $0 >= 0 }),
+              let score, abs(rings.reduce(0, +) - score) < 0.001 else { return nil }
+        return rings[ring]
+    }
+    let cards = (0..<3).map { ring in
+        CompetitionJudgeCard(
+            you: ordered.map { points($0, own: true, ring: ring) },
+            them: ordered.map { points($0, own: false, ring: ring) }
+        )
+    }
+    let outcome: CompetitionOutcome = you == them ? .tie : you > them ? .win : .loss
+    var label = outcome == .tie ? "DRAW" : "BY TOTAL POINTS"
+    let complete = Set(ordered.map(\.ordinal)) == Set(1...7) && ordered.count == 7
+        && cards.allSatisfy { $0.yourTotal != nil && $0.theirTotal != nil }
+    if complete, outcome != .tie {
+        let own = cards.compactMap(\.yourTotal), other = cards.compactMap(\.theirTotal)
+        if abs(own.reduce(0, +) - you) < 0.001 && abs(other.reduce(0, +) - them) < 0.001 {
+            let wins = zip(own, other).filter { pair in
+                outcome == .win ? pair.0 > pair.1 : pair.1 > pair.0
+            }.count
+            let even = zip(own, other).filter { $0.0 == $0.1 }.count
+            if wins == 3 { label = "UNANIMOUS DECISION" }
+            else if wins == 2 { label = even == 1 ? "MAJORITY DECISION" : "SPLIT DECISION" }
+        }
+    }
+    return .init(cards: cards, outcome: outcome, label: label)
+}
+
+/// The reveal's editorial clock: a 0.9 s hold, three 1.2 s cards, stamp,
+/// one held beat and the raise. Animation curves still belong to Motion.
+private struct CompetitionJudgesReveal: View {
+    let competition: LocalCompetitionPresentation
+    let onFinished: () -> Void
+    let onSkip: () -> Void
+    let onBackground: () -> Void
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var stage = 0
+    @State private var pressing = false
+    @State private var breakingSeal = false
+    @State private var progress = 0.0
+    @State private var tapOpens = false
+    @State private var cardIndex = 0
+    @State private var rows = 0
+    @State private var stamped = false
+    @State private var raised = false
+    @State private var focused = false
+    @State private var ticks = 0
+    @State private var thuds = 0
+
+    private var decision: CompetitionJudgesDecision {
+        competitionJudgesDecision(days: competition.days, you: competition.userPoints, them: competition.opponentPoints)
+    }
+    private var winner: String {
+        switch decision.outcome {
+        case .win: "YOUR WINNER"
+        case .loss: "THE WINNER, \(competition.opponentDisplayName.uppercased())"
+        case .tie: "IT’S A DRAW"
+        }
+    }
+
+    var body: some View {
+        VStack(spacing: 16) {
+            HStack {
+                Text("HEALTHCOMP /").foregroundStyle(Theme.ink)
+                Spacer()
+                Text("7 ROUNDS").foregroundStyle(Theme.secondary)
+            }
+            .font(.themeLabel).tracking(1.3)
+            GeometryReader { geometry in
+                ScrollView {
+                    ZStack {
+                        if stage == 0 { seal.transition(.opacity) }
+                        if stage == 1 { scorecards.transition(.opacity) }
+                        if stage == 2 { handRaise.transition(.opacity) }
+                    }
+                    .frame(maxWidth: .infinity, minHeight: geometry.size.height)
+                }
+                .scrollIndicators(.hidden)
+            }
+            Button(action: onSkip) {
+                Text("Skip reveal")
+                    .font(.themeLabel)
+                    .foregroundStyle(Theme.secondary)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .contentShape(Rectangle())
+            }
+            .accessibilityIdentifier("competition.judges.skip")
+        }
+        .padding(24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Theme.ground.ignoresSafeArea())
+        .contentShape(Rectangle())
+        .onTapGesture { if stage > 0 || !breakingSeal { onSkip() } }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("competition.judges.reveal")
+        .sensoryFeedback(.impact(weight: .light), trigger: ticks)
+        .sensoryFeedback(.impact(weight: .heavy), trigger: thuds)
+        .task {
+            guard (try? await Task.sleep(for: .seconds(3))) != nil else { return }
+            tapOpens = true
+        }
+        .task(id: pressing) {
+            guard pressing else { progress = breakingSeal ? 1 : 0; return }
+            for tick in 1...9 {
+                guard (try? await Task.sleep(for: .seconds(0.1))) != nil, pressing else { return }
+                progress = Double(tick) / 9
+                if tick % 3 == 0 { ticks += 1 }
+            }
+        }
+        .task(id: breakingSeal) {
+            guard breakingSeal else { return }
+            guard (try? await Task.sleep(for: .seconds(0.3))) != nil else { return }
+            withAnimation(Motion.fade) { stage = 1 }
+        }
+        .task(id: stage) {
+            guard stage == 1 else { return }
+            for card in 0..<3 {
+                cardIndex = card
+                rows = reduceMotion ? 7 : 0
+                for row in 1...7 {
+                    guard (try? await Task.sleep(for: .seconds(0.1))) != nil else { return }
+                    if !reduceMotion { rows = row }
+                }
+                guard (try? await Task.sleep(for: .seconds(0.5))) != nil else { return }
+            }
+            withAnimation(reduceMotion ? Motion.fade : Motion.grow) { stamped = true }
+            thuds += 1
+            guard (try? await Task.sleep(for: .seconds(1))) != nil else { return }
+            withAnimation(Motion.fade) { stage = 2 }
+        }
+        .task(id: stage == 2) {
+            guard stage == 2 else { return }
+            if reduceMotion {
+                raised = true
+            } else {
+                guard (try? await Task.sleep(for: .seconds(1))) != nil else { return }
+                raised = true
+                thuds += 1
+            }
+            // Let the raise settle and hold before the personal close-up.
+            guard (try? await Task.sleep(for: .seconds(reduceMotion ? 0.8 : 1.25))) != nil else { return }
+            focused = true
+            guard (try? await Task.sleep(for: .seconds(1.5))) != nil else { return }
+            onFinished()
+        }
+        .onChange(of: scenePhase) { _, phase in if phase == .background { onBackground() } }
+    }
+
+    private var seal: some View {
+        VStack(alignment: .leading, spacing: 24) {
+            Text("YOU VS \(competition.opponentDisplayName.uppercased()) · FINAL BELL")
+                .font(.themeLabel).foregroundStyle(Theme.secondary)
+            Text("The decision.\nUnder seal.")
+                .font(.score(size: 52)).foregroundStyle(Theme.ink)
+                .minimumScaleFactor(0.6)
+            Text("After seven rounds…\nwe go to the judges’ scorecards.")
+                .foregroundStyle(Theme.secondary)
+            VStack(spacing: 28) {
+                Text("OFFICIAL SCORECARDS").font(.themeLabel).tracking(2)
+                    .foregroundStyle(Theme.secondary)
+                    .environment(\.colorScheme, .dark)
+                ZStack {
+                    RoundedRectangle(cornerRadius: 8).stroke(Theme.faint.opacity(0.5), lineWidth: 1)
+                        .frame(height: 150).rotationEffect(.degrees(-4))
+                    SlantedBar().fill(Theme.faint.opacity(0.2)).frame(width: 2, height: 145)
+                        .rotationEffect(.degrees(12))
+                    HStack(spacing: -14) {
+                        avatar(own: true, size: 72)
+                            .offset(x: breakingSeal && !reduceMotion ? -32 : 0, y: -6)
+                        avatar(own: false, size: 72)
+                            .offset(x: breakingSeal && !reduceMotion ? 32 : 0, y: 6)
+                    }
+                    .moving(Motion.grow, value: breakingSeal)
+                    Rectangle().fill(Theme.beltWell).frame(width: breakingSeal ? 8 : 3, height: 140)
+                        .rotationEffect(.degrees(12))
+                    Circle().trim(from: 0, to: progress).stroke(Theme.youFill, style: StrokeStyle(lineWidth: 3, lineCap: .round))
+                        .frame(width: 156, height: 156).rotationEffect(.degrees(-90))
+                        .opacity(progress > 0 ? 1 : 0)
+                        .animation(reduceMotion ? nil : Motion.press, value: progress)
+                    if breakingSeal {
+                        Rectangle().fill(Theme.beltWell).frame(width: 8, height: 160)
+                            .rotationEffect(.degrees(12)).transition(.opacity)
+                    }
+                }
+                .contentShape(Rectangle())
+                .onLongPressGesture(minimumDuration: 0.9, maximumDistance: 60, pressing: { pressing = $0 }, perform: open)
+                .onTapGesture { if tapOpens || voiceOver { open() } }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel("Hold to open")
+                .accessibilityHint("Opens the judges’ decision")
+                .accessibilityAddTraits(.isButton)
+                .accessibilityAction(.default, open)
+                .accessibilityIdentifier("competition.judges.seal")
+                Text("THREE RINGS. THREE JUDGES.").font(.themeLabel).tracking(1.5)
+                    .foregroundStyle(Theme.secondary)
+                    .environment(\.colorScheme, .dark)
+            }
+            .padding(28).background(Theme.beltWell, in: RoundedRectangle(cornerRadius: 20))
+            Text(tapOpens ? "Hold or tap to open" : "Hold to open")
+                .font(.themeLabel).frame(maxWidth: .infinity).foregroundStyle(Theme.ink)
+        }
+    }
+
+    private func open() {
+        guard stage == 0, !breakingSeal else { return }
+        progress = 1
+        withAnimation(Motion.fade) { breakingSeal = true }
+    }
+
+    private var scorecards: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Every round.\nOn the record.").font(.score(size: 46)).foregroundStyle(Theme.ink)
+            HStack {
+                Text("Three rings. Three judges.")
+                Spacer()
+                Text("0\(cardIndex + 1) / 03").monospacedDigit()
+            }.font(.themeLabel).foregroundStyle(Theme.secondary)
+            ZStack {
+                card(decision.cards[cardIndex], index: cardIndex).id(cardIndex).transition(.opacity)
+            }
+            .animation(Motion.fade, value: cardIndex)
+            ZStack {
+                if stamped {
+                    Text(decision.label)
+                        .font(.score(size: 30)).minimumScaleFactor(0.5).lineLimit(1)
+                        .padding(.horizontal, 12).padding(.vertical, 8)
+                        .foregroundStyle(Theme.ink)
+                        .overlay(Rectangle().stroke(Theme.ink, lineWidth: 3))
+                        .transition(reduceMotion ? .opacity : .scale(scale: 1.15).combined(with: .opacity))
+                        .accessibilityIdentifier("competition.judges.stamp")
+                } else {
+                    HStack {
+                        ForEach(0..<3) { index in
+                            Text(["MOVE", "EXERCISE", "STAND"][index])
+                                .foregroundStyle(index <= cardIndex ? Theme.ink : Theme.faint)
+                            if index < 2 { Spacer() }
+                        }
+                    }.font(.themeLabel)
+                }
+            }
+            .frame(height: 60)
+        }
+    }
+
+    private func card(_ card: CompetitionJudgeCard, index: Int) -> some View {
+        VStack(spacing: 6) {
+            HStack {
+                Circle().fill([Theme.move, Theme.exercise, Theme.stand][index]).frame(width: 10, height: 10)
+                Text("Judge \(["Move", "Exercise", "Stand"][index])").font(.themeLabel)
+                Spacer()
+                Text("OFFICIAL").font(.themeLabel).foregroundStyle(Theme.secondary)
+            }
+            if card.yourTotal == nil || card.theirTotal == nil {
+                Text("Ring breakdown unavailable").font(.footnote).foregroundStyle(Theme.secondary)
+            }
+            Divider()
+            HStack {
+                Text("ROUND").frame(maxWidth: .infinity, alignment: .leading)
+                VStack(spacing: 4) {
+                    avatar(own: true, size: 24)
+                    Text("YOU").foregroundStyle(Theme.you)
+                }.frame(maxWidth: .infinity)
+                VStack(spacing: 4) {
+                    avatar(own: false, size: 24)
+                    Text(competition.opponentDisplayName.uppercased())
+                }.frame(maxWidth: .infinity)
+            }.font(.themeLabel).lineLimit(1).minimumScaleFactor(0.5)
+            ForEach(0..<7) { row in
+                HStack {
+                    Text(dayLabel(row)).font(.themeLabel).foregroundStyle(Theme.secondary)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    Text(row < rows ? score(card.you, row) : "—")
+                        .foregroundStyle(Theme.you).frame(maxWidth: .infinity)
+                    Text(row < rows ? score(card.them, row) : "—")
+                        .frame(maxWidth: .infinity)
+                }.font(.score(size: 24).monospacedDigit())
+            }
+            Divider()
+            HStack {
+                Text("TOTAL").font(.themeLabel).frame(maxWidth: .infinity, alignment: .leading)
+                total(card.yourTotal, wins: (card.yourTotal ?? -1) > (card.theirTotal ?? .infinity), own: true)
+                total(card.theirTotal, wins: (card.theirTotal ?? -1) > (card.yourTotal ?? .infinity), own: false)
+            }.opacity(rows == 7 ? 1 : 0)
+        }
+        .foregroundStyle(Theme.ink).padding(20)
+        .background(Theme.panel, in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    private func total(_ value: Double?, wins: Bool, own: Bool) -> some View {
+        Text(value.map { competitionPointsText($0) } ?? "—")
+            .font(.score(size: 27)).lineLimit(1)
+            .fixedSize(horizontal: false, vertical: true)
+            .foregroundStyle(own ? Theme.you : Theme.ink)
+            .padding(.vertical, 8).frame(maxWidth: .infinity)
+            .overlay { if wins { Ellipse().stroke(own ? Theme.youFill : Theme.ink, lineWidth: 2) } }
+    }
+
+    private func score(_ values: [Double?], _ row: Int) -> String {
+        values.indices.contains(row) ? values[row].map { competitionPointsText($0) } ?? "—" : "—"
+    }
+
+    private func dayLabel(_ row: Int) -> String {
+        let days = competition.days.sorted { $0.ordinal < $1.ordinal }
+        guard days.indices.contains(row) else { return "\(row + 1)" }
+        return String(weekdayName(days[row].day).prefix(3))
+    }
+
+    private func avatar(own: Bool, size: CGFloat) -> some View {
+        PersonAvatar(
+            name: own ? competition.ownerDisplayName : competition.opponentDisplayName,
+            photo: own ? nil : competition.opponentProfileID,
+            size: size, isYou: own,
+            initialFont: .score(size: size * 0.5)
+        )
+    }
+
+    private var handRaise: some View {
+        VStack(spacing: 20) {
+            Text(raised ? winner : "THE DECISION…")
+                .font(.score(size: 44)).multilineTextAlignment(.center)
+                .foregroundStyle(decision.outcome == .win ? Theme.you : Theme.ink)
+                .minimumScaleFactor(0.5).lineLimit(2)
+                .accessibilityIdentifier("competition.judges.winner")
+            Text(decision.label).font(.themeLabel).tracking(2).foregroundStyle(Theme.secondary)
+            CompetitionJudgesFigures(
+                yourName: competition.ownerDisplayName,
+                opponentName: competition.opponentDisplayName,
+                opponentPhoto: competition.opponentProfileID,
+                focused: focused,
+                leftRaised: raised && decision.outcome != .loss,
+                rightRaised: raised && decision.outcome != .win,
+                leftLost: raised && decision.outcome == .loss,
+                rightLost: raised && decision.outcome == .win
+            )
+            .moving(Motion.grow, value: raised)
+            .id(reduceMotion && focused)
+            .transition(.opacity)
+            .animation(reduceMotion ? Motion.fade : Motion.grow, value: focused)
+            .frame(height: 310)
+            .background(Theme.beltWell, in: RoundedRectangle(cornerRadius: 20))
+            .accessibilityHidden(true)
+            HStack {
+                VStack { Text("YOU").font(.themeLabel); Text(competitionPointsText(competition.userPoints)).font(.score(size: 42)) }
+                    .foregroundStyle(Theme.you)
+                Spacer()
+                Text("—").foregroundStyle(Theme.secondary)
+                Spacer()
+                VStack { Text(competition.opponentDisplayName.uppercased()).font(.themeLabel); Text(competitionPointsText(competition.opponentPoints)).font(.score(size: 42)) }
+                    .foregroundStyle(Theme.ink)
+            }
+            Text("The combined ring points decide the match.").font(.footnote).foregroundStyle(Theme.secondary)
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier(focused ? "competition.judges.payoff" : "competition.judges.stage")
+    }
+}
+
+/// Two fixed-length arm segments: the shoulder rotates first, then the
+/// elbow straightens late. The referee uses this exact wrist endpoint.
+func competitionJudgeArm(
+    shoulder: CGPoint, inward: CGFloat, raised: Double
+) -> (elbow: CGPoint, wrist: CGPoint) {
+    let progress = min(1.08, max(0, raised))
+    let upper = 0.2 + 2.6 * progress
+    let forearm = upper + 0.75 * (1 - progress * progress)
+    let elbow = CGPoint(
+        x: shoulder.x + inward * CGFloat(sin(upper)) * 35,
+        y: shoulder.y + CGFloat(cos(upper)) * 35
+    )
+    let wrist = CGPoint(
+        x: elbow.x + inward * CGFloat(sin(forearm)) * 35,
+        y: elbow.y + CGFloat(cos(forearm)) * 35
+    )
+    return (elbow, wrist)
+}
+
+/// Original athletic silhouettes; no image assets. The quiet 2.5-second
+/// breathing cycle is an editorial beat, stopped at the raise or Reduce Motion.
+private struct CompetitionJudgesFigures: View, Animatable {
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let yourName: String
+    let opponentName: String
+    let opponentPhoto: UUID?
+    private var focus: Double
+    private var left: Double
+    private var right: Double
+    private var leftDrop: Double
+    private var rightDrop: Double
+    private let isHolding: Bool
+
+    init(yourName: String, opponentName: String, opponentPhoto: UUID?, focused: Bool,
+         leftRaised: Bool, rightRaised: Bool, leftLost: Bool, rightLost: Bool) {
+        self.yourName = yourName; self.opponentName = opponentName; self.opponentPhoto = opponentPhoto
+        focus = focused ? 1 : 0
+        left = leftRaised ? 1 : 0; right = rightRaised ? 1 : 0
+        leftDrop = leftLost ? 1 : 0; rightDrop = rightLost ? 1 : 0
+        isHolding = !leftRaised && !rightRaised
+    }
+    var animatableData: AnimatablePair<AnimatablePair<AnimatablePair<Double, Double>, AnimatablePair<Double, Double>>, Double> {
+        get { .init(.init(.init(left, right), .init(leftDrop, rightDrop)), focus) }
+        set {
+            left = newValue.first.first.first; right = newValue.first.first.second
+            leftDrop = newValue.first.second.first; rightDrop = newValue.first.second.second
+            focus = newValue.second
+        }
+    }
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1 / 30, paused: reduceMotion || !isHolding)) { timeline in
+            GeometryReader { geometry in
+                ZStack {
+                    Canvas { context, size in
+                        context.scaleBy(x: size.width / 360, y: size.height / 340)
+                        let phase = timeline.date.timeIntervalSinceReferenceDate * 2 * .pi / 2.5
+                        let breath = reduceMotion ? 0 : sin(phase) * max(0, 1 - max(left, right))
+                        func line(_ points: [CGPoint], color: Color, width: CGFloat) {
+                            var path = Path(); path.addLines(points)
+                            context.stroke(path, with: .color(color), style: StrokeStyle(lineWidth: width, lineCap: .round, lineJoin: .round))
+                        }
+                        func ellipse(_ rect: CGRect, color: Color) { context.fill(Path(ellipseIn: rect), with: .color(color)) }
+                        func rounded(_ rect: CGRect, radius: CGFloat, color: Color) {
+                            context.fill(Path(roundedRect: rect, cornerRadius: radius), with: .color(color))
+                        }
+                        func glove(_ point: CGPoint, inward: CGFloat, color: Color) {
+                            rounded(CGRect(x: point.x - 11, y: point.y - 15, width: 22, height: 27), radius: 8, color: color)
+                            ellipse(CGRect(x: point.x - inward * 11 - 4, y: point.y - 3, width: 9, height: 13), color: color)
+                            line([.init(x: point.x - 6, y: point.y - 6), .init(x: point.x + 6, y: point.y - 6)], color: Theme.beltWell.opacity(0.25), width: 2)
+                            rounded(CGRect(x: point.x - 8, y: point.y + 9, width: 16, height: 6), radius: 2, color: Theme.ink.opacity(0.65))
+                        }
+
+                        var cone = Path()
+                        cone.move(to: .init(x: 155, y: -30)); cone.addLine(to: .init(x: 205, y: -30))
+                        cone.addLine(to: .init(x: 355, y: 320)); cone.addLine(to: .init(x: 5, y: 320)); cone.closeSubpath()
+                        context.fill(cone, with: .linearGradient(
+                            Gradient(colors: [Theme.secondary.opacity(0.22), Theme.secondary.opacity(0)]),
+                            startPoint: .init(x: 180, y: 0), endPoint: .init(x: 180, y: 320)
+                        ))
+                        ellipse(CGRect(x: 35, y: 305, width: 290, height: 20), color: Theme.secondary.opacity(0.1))
+                        line([.init(x: 20, y: 316), .init(x: 340, y: 316)], color: Theme.secondary.opacity(0.2), width: 1)
+
+                        // The referee stays upright and quieter than either corner.
+                        line([.init(x: 170, y: 226), .init(x: 167, y: 273), .init(x: 165, y: 312)], color: Theme.tertiary, width: 14)
+                        line([.init(x: 190, y: 226), .init(x: 193, y: 273), .init(x: 195, y: 312)], color: Theme.tertiary, width: 14)
+                        rounded(CGRect(x: 154, y: 308, width: 20, height: 9), radius: 3, color: Theme.tertiary)
+                        rounded(CGRect(x: 186, y: 308, width: 20, height: 9), radius: 3, color: Theme.tertiary)
+                        var shirt = Path()
+                        shirt.move(to: .init(x: 159, y: 148))
+                        shirt.addQuadCurve(to: .init(x: 201, y: 148), control: .init(x: 180, y: 140))
+                        shirt.addLine(to: .init(x: 194, y: 230)); shirt.addLine(to: .init(x: 166, y: 230)); shirt.closeSubpath()
+                        context.fill(shirt, with: .color(Theme.tertiary))
+                        for x in [169.0, 180, 191] {
+                            line([.init(x: x, y: 155), .init(x: x, y: 222)], color: Theme.beltWell.opacity(0.45), width: 3)
+                        }
+                        rounded(CGRect(x: 175, y: 134, width: 10, height: 14), radius: 4, color: Theme.tertiary)
+                        ellipse(CGRect(x: 167, y: 104, width: 26, height: 34), color: Theme.tertiary)
+                        var collar = Path()
+                        collar.addLines([.init(x: 171, y: 146), .init(x: 180, y: 154), .init(x: 189, y: 146)])
+                        context.stroke(collar, with: .color(Theme.ink.opacity(0.65)), lineWidth: 3)
+                        var tie = Path()
+                        tie.addLines([.init(x: 174, y: 153), .init(x: 186, y: 160), .init(x: 186, y: 153), .init(x: 174, y: 160)])
+                        tie.closeSubpath(); context.fill(tie, with: .color(Theme.beltWell))
+
+                        var wrists: [CGPoint] = []
+                        for index in 0..<2 {
+                            let inward: CGFloat = index == 0 ? 1 : -1
+                            let rise = CGFloat(index == 0 ? left : right)
+                            let drop = CGFloat(index == 0 ? leftDrop : rightDrop)
+                            let sway = CGFloat(breath) * (index == 0 ? 1.2 : -1.2)
+                            let x: CGFloat = (index == 0 ? 72 : 288) + sway - inward * 7 * drop
+                            let shoulderY: CGFloat = 145 - 5 * rise + 8 * drop - CGFloat(breath)
+                            let width: CGFloat = 31 * (1 + 0.025 * CGFloat(breath))
+                            let color = index == 0 ? Theme.youFill : Theme.secondary
+                            let waistY: CGFloat = 211 + 3 * drop
+                            let backFoot = CGPoint(x: x - inward * 24, y: 311 + 2 * drop)
+                            let frontFoot = CGPoint(x: x + inward * 24, y: 313 - 2 * drop)
+                            line([.init(x: x - inward * 13, y: 236), .init(x: x - inward * 22, y: 273), backFoot], color: color, width: 18)
+                            line([.init(x: x + inward * 13, y: 236), .init(x: x + inward * 16, y: 274), frontFoot], color: color, width: 20)
+                            rounded(CGRect(x: backFoot.x - 11, y: backFoot.y - 4, width: 26, height: 10), radius: 4, color: color)
+                            rounded(CGRect(x: frontFoot.x - 13, y: frontFoot.y - 4, width: 28, height: 10), radius: 4, color: color)
+
+                            var torso = Path()
+                            torso.move(to: .init(x: x - 9, y: shoulderY - 8))
+                            torso.addQuadCurve(to: .init(x: x - width, y: shoulderY + 3), control: .init(x: x - 23, y: shoulderY - 7))
+                            torso.addCurve(to: .init(x: x - 18, y: waistY), control1: .init(x: x - width + 2, y: shoulderY + 31), control2: .init(x: x - 20, y: waistY - 20))
+                            torso.addLine(to: .init(x: x + 18, y: waistY))
+                            torso.addCurve(to: .init(x: x + width, y: shoulderY + 3), control1: .init(x: x + 20, y: waistY - 20), control2: .init(x: x + width - 2, y: shoulderY + 31))
+                            torso.addQuadCurve(to: .init(x: x + 9, y: shoulderY - 8), control: .init(x: x + 23, y: shoulderY - 7))
+                            torso.closeSubpath(); context.fill(torso, with: .color(color))
+                            line([.init(x: x - 17, y: shoulderY + 19), .init(x: x - 3, y: shoulderY + 23)], color: Theme.beltWell.opacity(0.18), width: 2)
+                            line([.init(x: x + 17, y: shoulderY + 19), .init(x: x + 3, y: shoulderY + 23)], color: Theme.beltWell.opacity(0.18), width: 2)
+                            rounded(CGRect(x: x - 8, y: shoulderY - 24, width: 16, height: 20), radius: 5, color: color)
+
+                            var shorts = Path()
+                            shorts.addLines([
+                                .init(x: x - 21, y: waistY - 3), .init(x: x + 21, y: waistY - 3),
+                                .init(x: x + 27, y: 248), .init(x: x + 4, y: 247),
+                                .init(x: x, y: 234), .init(x: x - 4, y: 247), .init(x: x - 27, y: 248),
+                            ])
+                            shorts.closeSubpath(); context.fill(shorts, with: .color(Theme.beltWell))
+                            context.stroke(shorts, with: .color(color.opacity(0.7)), lineWidth: 2)
+                            rounded(CGRect(x: x - 21, y: waistY - 3, width: 42, height: 7), radius: 2, color: color)
+                            line([.init(x: x + inward * 17, y: waistY + 10), .init(x: x + inward * 14, y: 242)], color: color, width: 3)
+
+                            let arm = competitionJudgeArm(shoulder: .init(x: x + inward * 25, y: shoulderY + 2), inward: inward, raised: Double(rise))
+                            line([.init(x: x + inward * 25, y: shoulderY + 2), arm.elbow], color: color, width: 17)
+                            line([arm.elbow, arm.wrist], color: color, width: 14)
+                            glove(arm.wrist, inward: inward, color: color)
+                            wrists.append(arm.wrist)
+                            let freeElbow = CGPoint(x: x - inward * (40 + 5 * rise), y: shoulderY + 39)
+                            let freeWrist = CGPoint(x: x - inward * (30 + 13 * rise), y: shoulderY + 65 - 38 * rise + 3 * drop)
+                            line([.init(x: x - inward * 26, y: shoulderY + 3), freeElbow], color: color, width: 17)
+                            line([freeElbow, freeWrist], color: color, width: 14)
+                            glove(freeWrist, inward: -inward, color: color)
+                        }
+                        for (index, wrist) in wrists.enumerated() {
+                            let shoulder = CGPoint(x: index == 0 ? 162 : 198, y: 154)
+                            let rise = CGFloat(index == 0 ? left : right)
+                            let elbow = CGPoint(x: shoulder.x + (wrist.x - shoulder.x) * 0.65, y: (154 + wrist.y) / 2 + 17 * (1 - rise))
+                            line([shoulder, elbow, wrist], color: Theme.tertiary, width: 11)
+                            ellipse(CGRect(x: wrist.x - 7, y: wrist.y + 5, width: 14, height: 13), color: Theme.tertiary)
+                            line([.init(x: wrist.x - 4, y: wrist.y + 11), .init(x: wrist.x + 4, y: wrist.y + 11)], color: Theme.beltWell.opacity(0.3), width: 1)
+                        }
+                    }
+                    .opacity(1 - focus)
+                    RadialGradient(colors: [Theme.secondary.opacity(0.18), Theme.secondary.opacity(0)],
+                                   center: .center, startRadius: 20, endRadius: 180)
+                        .opacity(focus)
+                    ForEach(0..<2) { index in
+                        head(index, size: geometry.size, date: timeline.date)
+                    }
+                }
+            }
+        }
+        .environment(\.colorScheme, .dark)
+    }
+
+    private func head(_ index: Int, size: CGSize, date: Date) -> some View {
+        let own = index == 0
+        let inward: CGFloat = own ? 1 : -1
+        let rise = own ? left : right
+        let drop = own ? leftDrop : rightDrop
+        let phase = date.timeIntervalSinceReferenceDate * 2 * .pi / 2.5
+        let breath = reduceMotion ? 0 : sin(phase) * max(0, 1 - max(left, right))
+        let x = (own ? 72.0 : 288) + breath * (own ? 1.2 : -1.2) - Double(inward) * 4 * drop
+        let y = 104 - 5 * rise + 13 * drop - breath
+        let isWinner = drop < 0.5
+        let draw = left > 0.5 && right > 0.5
+        let targetX = draw ? (own ? 110.0 : 250) : 180
+        let zoom = isWinner ? focus : 0
+        return PersonAvatar(name: own ? yourName : opponentName, photo: own ? nil : opponentPhoto,
+                         size: 44 + 76 * CGFloat(zoom), isYou: own, initialFont: .score(size: 22 + 38 * CGFloat(zoom)))
+                .overlay(Circle().stroke(own ? Theme.youFill : Theme.ink.opacity(0.2), lineWidth: own ? 2 : 1))
+                .overlay(alignment: .bottom) {
+                    Text(own ? "YOU" : opponentName.uppercased())
+                        .font(.themeLabel).tracking(1.5).foregroundStyle(own ? Theme.youFill : Theme.ink)
+                        .fixedSize().offset(y: 28).opacity(isWinner ? focus : 0)
+                }
+        .opacity(isWinner ? 1 : 1 - focus)
+        .position(x: CGFloat(x + (targetX - x) * zoom) * size.width / 360,
+                  y: CGFloat(y + (165 - y) * zoom) * size.height / 340)
+    }
 }

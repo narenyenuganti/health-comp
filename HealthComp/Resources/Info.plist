@@ -45,6 +45,10 @@
 	<string>HealthComp saves your match result image to Photos when you choose Save Image.</string>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
+	<key>NSUserActivityTypes</key>
+	<array>
+		<string>INSendMessageIntent</string>
+	</array>
 	<key>SUPABASE_PUBLISHABLE_KEY</key>
 	<string>$(SUPABASE_PUBLISHABLE_KEY)</string>
 	<key>SUPABASE_URL</key>
