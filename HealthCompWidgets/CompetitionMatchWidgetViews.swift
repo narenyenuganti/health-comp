@@ -403,7 +403,7 @@ private struct GroupMediumView: View {
                     Text(row.name)
                         .font(.subheadline.weight(row.isYou ? .bold : .regular))
                         .lineLimit(1)
-                        .privacySensitive(!row.isYou)
+                        .privacySensitive(row.namesSomeone)
                     Spacer(minLength: 4)
                     Text(competitionPointsText(row.points))
                         .font(.score(size: rowSize))

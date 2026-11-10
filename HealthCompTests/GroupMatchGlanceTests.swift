@@ -134,9 +134,51 @@ final class GroupMatchGlanceTests: XCTestCase {
 
     // MARK: Home
 
-    func testHomeShowsEveryGroupMatchButArchivedOnes() {
+    private let now = MultiUserCompetitionTestLabFixtures.labNow
+
+    func testHomeShowsEveryStateInOrder() {
         let matches = GroupMatchFixtures.homeSetups.map(fixture)
-        XCTAssertEqual(GroupMatchHomeCards.shown(matches).map(\.id), matches.map(\.id))
+        XCTAssertEqual(GroupMatchHomeCards.shown(matches, now: now).map(\.id), matches.map(\.id))
+        // Whatever order the dashboard brings.
+        XCTAssertEqual(GroupMatchHomeCards.shown(matches.reversed(), now: now).map(\.id), [
+            GroupMatchLabSetup.inviteFFA, .lobbyHost, .liveDoubles, .liveFFA, .resultDoubles, .resultFFAWon,
+            .lobbyDeclined,
+        ].map { fixture($0).id })
+    }
+
+    func testResultsAndClosedMatchesLeaveHomeOnTheDuelsClock() throws {
+        let result = fixture(.resultFFAWon)
+        guard case let .completed(_, _, completedAt) = result.lifecycle else { return XCTFail() }
+        let leaves = try XCTUnwrap(
+            competitionResultLeavesHome(schedule: XCTUnwrap(result.schedule), completedAt: completedAt)?.at
+        )
+        XCTAssertEqual(GroupMatchHomeCards.shown([result], now: leaves.addingTimeInterval(-1)).count, 1)
+        XCTAssertTrue(GroupMatchHomeCards.shown([result], now: leaves).isEmpty)
+
+        let closed = fixture(.lobbyDeclined)
+        let retained = now.addingTimeInterval(competitionClosedChallengeRetention)
+        XCTAssertEqual(GroupMatchHomeCards.shown([closed], now: retained.addingTimeInterval(-1)).count, 1)
+        XCTAssertTrue(GroupMatchHomeCards.shown([closed], now: retained).isEmpty)
+    }
+
+    func testALeftMatchLeavesHomeAndGlanceButKeepsItsScreenAndPoints() throws {
+        let left = try XCTUnwrap(GroupMatchFixtures.routed(.liveFFA, youLeft: true))
+        XCTAssertTrue(GroupMatchHomeCards.shown([left], now: now).isEmpty)
+        XCTAssertNil(CompetitionWidgetSnapshot.Match(group: left))
+        XCTAssertEqual(left.screen, .liveFreeForAll)
+        XCTAssertEqual(left.projection.seatTotals[GroupMatchFixtures.Player.you.seatID], 166_400)
+        let doubles = try XCTUnwrap(GroupMatchFixtures.routed(.liveDoubles, youLeft: true))
+        XCTAssertTrue(GroupMatchHomeCards.shown([doubles], now: now).isEmpty)
+        XCTAssertNil(CompetitionWidgetSnapshot.Match(group: doubles))
+    }
+
+    // MARK: Privacy
+
+    func testOnlyALoneYouShowsOnALockedScreen() throws {
+        let doubles = try XCTUnwrap(CompetitionWidgetSnapshot.Match(group: fixture(.liveDoubles))?.group)
+        XCTAssertEqual(doubles.rows.map(\.namesSomeone), [true, true])  // "You + Priya", "Sam + Leo"
+        let ffa = try XCTUnwrap(CompetitionWidgetSnapshot.Match(group: fixture(.liveFFA))?.group)
+        XCTAssertEqual(ffa.rows.map(\.namesSomeone), [true, false, true, true])
     }
 }
 #endif

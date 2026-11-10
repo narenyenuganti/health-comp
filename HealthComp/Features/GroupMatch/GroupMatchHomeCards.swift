@@ -3,18 +3,41 @@ import SwiftUI
 
 /// Group matches on Home, one card each, in their own block: they never
 /// enter the duel layout, so no duel rule (belt, hero, recent results) can
-/// pick one up. Archived matches stay in History.
+/// pick one up. They leave Home on the duels' clock; their detail, History
+/// and record keep them.
 struct GroupMatchHomeCards: View {
     let matches: [GroupMatchPresentation]
+    let now: Date
     var select: (CompetitionID) -> Void = { _ in }
 
-    static func shown(_ matches: [GroupMatchPresentation]) -> [GroupMatchPresentation] {
-        matches.filter { if case .archived = $0.lifecycle { false } else { true } }
+    /// Invites, then waiting, live, scheduled, results and didn't-start, each
+    /// in the dashboard's order. A result leaves when a duel's would, a match
+    /// that didn't start when a closed challenge would, and a live match once
+    /// you've left it.
+    static func shown(_ matches: [GroupMatchPresentation], now: Date) -> [GroupMatchPresentation] {
+        func rank(_ match: GroupMatchPresentation) -> Int? {
+            switch match.lifecycle {
+            case .pending: match.viewer.invite == .invited ? 0 : 1
+            case .active, .endsToday, .tallying: match.hasLeft(match.viewer) ? nil : 2
+            case .scheduled: 3
+            case let .completed(_, _, completedAt):
+                now < (match.schedule.flatMap {
+                    competitionResultLeavesHome(schedule: $0, completedAt: completedAt)?.at
+                } ?? .distantFuture) ? 4 : nil
+            case .declined, .expired, .cancelled:
+                competitionIsRetainedOnDashboard(match.lifecycle, now: now) ? 5 : nil
+            case .archived: nil
+            }
+        }
+        return matches.enumerated()
+            .compactMap { index, match in rank(match).map { ($0, index, match) } }
+            .sorted { ($0.0, $0.1) < ($1.0, $1.1) }
+            .map(\.2)
     }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
-            ForEach(Self.shown(matches)) { match in
+            ForEach(Self.shown(matches, now: now)) { match in
                 Button { select(match.id) } label: {
                     GroupMatchHomeCard(match: match)
                 }

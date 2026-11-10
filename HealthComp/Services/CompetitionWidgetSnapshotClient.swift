@@ -157,7 +157,8 @@ extension CompetitionWidgetSnapshot.Match {
     /// team totals, for an older watch. No belt, chase or record.
     init?(group m: GroupMatchPresentation) {
         switch m.lifecycle {
-        case .active, .endsToday, .tallying: break
+        // Once you've left, it's no longer yours to watch live.
+        case .active, .endsToday, .tallying: guard !m.hasLeft(m.viewer) else { return nil }
         default: return nil
         }
         guard let schedule = m.schedule,

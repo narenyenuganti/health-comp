@@ -62,6 +62,10 @@ struct CompetitionWidgetSnapshot: Codable, Equatable, Sendable {
             var name: String
             var points: Double
             var isYou: Bool
+
+            /// Hidden on a locked screen: anything but a lone "You", so your
+            /// team's name hides your partner too.
+            var namesSomeone: Bool { name != "You" }
         }
 
         var yourPlace: Int? { rows.first(where: \.isYou)?.place }
