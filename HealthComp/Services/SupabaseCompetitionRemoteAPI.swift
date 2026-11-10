@@ -249,7 +249,7 @@ enum SupabaseCompetitionRemoteAPI {
             registerInstallation: { request in
                 // Newest call first. A server without that overload answers
                 // PGRST202 (notFound), so fall back: 7 args (group matches,
-                // live builds only), 6 (muted push kinds), then 5 (reactions), 4 (challenges) and the original 3.
+                // only where `GroupMatchRollout` shows them), 6 (muted push kinds), then 5 (reactions), 4 (challenges) and the original 3.
                 let current = try encodeWire(request, contract: .installationRequest)
                 let bodies = (supportsGroupMatches ? [try groupInstallationBody(current)] : []) + [
                     current,
@@ -638,13 +638,7 @@ enum SupabaseCompetitionRemoteAPI {
             }
             return id
         case let .leave(id):
-            guard Set(object.keys) == ["left_at", "frozen_through_day", "accepted_revisions", "bank"],
-                  (object["left_at"] as? String).flatMap({ try? CompetitionWireCodec.date($0) }) != nil,
-                  let through = object["frozen_through_day"] as? Int, (0...7).contains(through),
-                  let revisions = object["accepted_revisions"] as? [String], revisions.count == 7,
-                  revisions.allSatisfy({ $0.range(of: "^(0|[1-9][0-9]{0,18})$", options: .regularExpression) != nil }),
-                  object["bank"] is [String: Any]
-            else { throw CompetitionRemoteFailure.serverContractMismatch }
+            try GroupMatchWire.validateLeave(response.data)
             return id
         case let .nudge(id, _):
             guard Set(object.keys) == ["nudged_at"],
@@ -730,7 +724,9 @@ enum SupabaseCompetitionRemoteAPI {
     static func live(
         provider: SupabaseClientProvider
     ) -> CompetitionRemoteAPI {
-        make(transport: .live(provider: provider), supportsGroupMatches: true)
+        // Only a build that shows group matches may say so: the server
+        // admits invites and leases group pushes on this flag.
+        make(transport: .live(provider: provider), supportsGroupMatches: GroupMatchRollout.showsFormatPicker)
     }
 
     private static func sendReadOnly(

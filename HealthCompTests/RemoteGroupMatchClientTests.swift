@@ -1351,9 +1351,32 @@ extension RemoteGroupMatchClientTests {
             .person(profileID: Self.sam, team: 1), .person(profileID: Self.leo, team: 2), .bot(.beast, team: 2),
         ])
         let echo: [String: Any] = ["competition_id": id.uuidString.lowercased()]
+        // As `participant_projection_v2` builds it: day 1 points, day 2 an
+        // accepted unavailable day, the rest never sent.
+        let digest = String(repeating: "ab", count: 32)
+        let bankDays: [[String: Any]] = (1...7).map { ordinal in
+            var day: [String: Any] = [
+                "ordinal": ordinal, "status": "unavailable", "source": "deadline_missing", "reason": "missing",
+                "centi_points": NSNull(), "wire_content_sha256": NSNull(), "client_revision": NSNull(),
+                "server_seq": NSNull(), "scoring_policy_identity": NSNull(),
+            ]
+            if ordinal <= 2 {
+                day.merge([
+                    "source": "accepted_revision", "wire_content_sha256": digest, "client_revision": ordinal == 1 ? "1" : "3",
+                    "server_seq": "\(ordinal + 6)", "scoring_policy_identity": "healthcomp.activity-score.v1",
+                ]) { $1 }
+            }
+            if ordinal == 1 { day.merge(["status": "points", "reason": NSNull(), "centi_points": 25_000]) { $1 } }
+            if ordinal == 2 { day["reason"] = "healthDataUnavailable" }
+            return day
+        }
+        let bank: [String: Any] = [
+            "profile_id": viewer.uuidString.lowercased(), "total_centi_points": 25_000,
+            "window_commitment_sha256": digest, "days": bankDays,
+        ]
         let leave: [String: Any] = [
             "left_at": "2026-11-10T12:00:00+00:00", "frozen_through_day": 3,
-            "accepted_revisions": ["1", "3", "0", "0", "0", "0", "0"], "bank": ["days": []],
+            "accepted_revisions": ["1", "3", "0", "0", "0", "0", "0"], "bank": bank,
         ]
         let react: [String: Any] = ["competition_id": id.uuidString.lowercased(), "day_ordinal": 2, "reaction": "fire"]
         let transport = StubTransport([
@@ -1412,6 +1435,11 @@ extension RemoteGroupMatchClientTests {
             (.cancel(id), echo.merging(["extra": 1]) { $1 }),
             (.leave(id), leave.merging(["accepted_revisions": ["1"]]) { $1 }),
             (.leave(id), leave.merging(["frozen_through_day": 8]) { $1 }),
+            (.leave(id), leave.merging(["frozen_through_day": true]) { $1 }),
+            (.leave(id), leave.merging(["accepted_revisions": Array(repeating: "9999999999999999999", count: 7)]) { $1 }),
+            (.leave(id), leave.merging(["bank": [String: Any]()]) { $1 }),
+            (.leave(id), leave.merging(["bank": bank.merging(["total_centi_points": 25_001]) { $1 }]) { $1 }),
+            (.leave(id), leave.merging(["accepted_revisions": ["2", "3", "0", "0", "0", "0", "0"]]) { $1 }),
             (.nudge(id, recipient: Self.sam), ["nudged_at": "yesterday"]),
             (.react(id, target: Self.leo, ordinal: 2, nil), react),
         ]
@@ -1481,6 +1509,13 @@ extension RemoteGroupMatchClientTests {
         XCTAssertEqual(sent[0].body as NSDictionary, current.merging(["supports_group_matches": true]) { $1 } as NSDictionary)
         XCTAssertEqual(sent[1].body as NSDictionary, sent[0].body as NSDictionary)
         XCTAssertEqual(sent[2].body as NSDictionary, current as NSDictionary, "a server without the group overload")
+
+        // Gate off (Release until group matches ship): never advertised.
+        let off = StubTransport([.response(200, active)])
+        _ = try await SupabaseCompetitionRemoteAPI.make(transport: off.transport, supportsGroupMatches: false)
+            .registerInstallation(request)
+        let offSent = await off.sent
+        XCTAssertEqual(offSent.map { $0.body as NSDictionary }, [current as NSDictionary])
     }
 
     func testARetriedCreateReusesItsKeyAndEverySuccessRefreshesTheList() async throws {
@@ -1572,6 +1607,103 @@ extension RemoteGroupMatchClientTests {
         await client.stop()
     }
 
+    /// Leave sends this phone's days first and only then banks: the RPC waits
+    /// for a held upload.
+    func testLeaveWaitsForTheUploadPassBeforeBanking() async throws {
+        let server = try FakeGroupServer(fixture: fixture(), matchID: doublesID, viewer: viewer)
+        let order = OrderLog()
+        let held = Gate()
+        let uploading = expectation(description: "an upload is in flight")
+        await server.onFirstAppend {
+            uploading.fulfill()
+            await held.wait()
+        }
+        let client = try await leaveClient(server: server, order: order, leave: { await order.add("leave") })
+        let leaving = Task { try await client.groupMatchCommand(.leave(CompetitionID(doublesID))) }
+        await fulfillment(of: [uploading], timeout: 10)
+        try await Task.sleep(for: .milliseconds(200))
+        let whileHeld = await order.entries
+        XCTAssertFalse(whileHeld.contains("leave"), "no bank while an upload is still open")
+        await held.open()
+        _ = try await leaving.value
+        let entries = await order.entries
+        let leaveIndex = try XCTUnwrap(entries.firstIndex(of: "leave"))
+        XCTAssertEqual(entries.filter { $0 == "leave" }.count, 1)
+        XCTAssertTrue(entries[..<leaveIndex].contains("append"))
+        await client.stop()
+    }
+
+    /// The uploads fail but the server answers: Leave goes ahead and banks
+    /// what the server has (the confirmation said unsent points won't count).
+    func testLeaveAfterAFailedUploadStillBanksOnline() async throws {
+        let server = try FakeGroupServer(fixture: fixture(), matchID: doublesID, viewer: viewer)
+        await server.setFailingAppends(true)
+        let order = OrderLog()
+        let client = try await leaveClient(server: server, order: order, leave: { await order.add("leave") })
+        _ = try await client.groupMatchCommand(.leave(CompetitionID(doublesID)))
+        let attempts = await server.attemptedRequests()
+        XCTAssertFalse(attempts.isEmpty, "it tried to upload first")
+        let accepted = await server.acceptedRequests()
+        XCTAssertEqual(accepted, [])
+        let entries = await order.entries
+        let leaveIndex = try XCTUnwrap(entries.firstIndex(of: "leave"))
+        XCTAssertTrue(entries[..<leaveIndex].contains("append"), "the failed upload came first")
+        await client.stop()
+    }
+
+    /// Offline: Leave fails out loud and nothing is queued to bank later.
+    func testLeaveOfflineFailsAndDoesNotQueue() async throws {
+        let server = try FakeGroupServer(fixture: fixture(), matchID: doublesID, viewer: viewer)
+        await server.setFailingAppends(true)
+        let order = OrderLog()
+        let client = try await leaveClient(server: server, order: order, listFails: true, leave: {
+            await order.add("leave")
+            throw CompetitionRemoteFailure.retryableTransport
+        })
+        do {
+            _ = try await client.groupMatchCommand(.leave(CompetitionID(doublesID)))
+            XCTFail("an offline leave must fail")
+        } catch {
+            XCTAssertEqual(error as? CompetitionRemoteFailure, .retryableTransport)
+            XCTAssertNil(GroupMatchFailure(error), "the generic connection line")
+        }
+        _ = await client.reconcileAll(.pullToRefresh)
+        let entries = await order.entries
+        XCTAssertEqual(entries.filter { $0 == "leave" }.count, 1, "no retry or queued leave")
+        await client.stop()
+    }
+
+    private func leaveClient(
+        server: FakeGroupServer, order: OrderLog, listFails: Bool = false,
+        leave: @escaping @Sendable () async throws -> Void
+    ) async throws -> CompetitionClient {
+        let root = try makeDirectory()
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let paths = AuthenticatedProfileStoragePaths(profileID: viewer, rootDirectory: root)
+        for directory in paths.fixedDirectories {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        }
+        var api = server.api()
+        let list = api.listGroupMatches
+        let append = api.appendScoreRevision
+        api.listGroupMatches = {
+            if listFails { throw CompetitionRemoteFailure.retryableTransport }
+            return try await list()
+        }
+        api.appendScoreRevision = { request in
+            await order.add("append")
+            return try await append(request)
+        }
+        api.sendGroupMatchCommand = { command in
+            guard case let .leave(id) = command else { throw CompetitionRemoteFailure.operationFailed }
+            try await leave()
+            return id
+        }
+        let client = CompetitionClient.remote(remoteAPI: api, environment: try health(startDay: (2026, 11, 8), days: 3))
+        try await client.mountAuthenticatedProfile(AuthenticatedProfile(id: viewer, displayName: "Player 1"), paths)
+        return client
+    }
+
     private func failure(
         of command: GroupMatchRemoteCommand, answering answer: StubTransport.Answer
     ) async -> CompetitionRemoteFailure? {
@@ -1650,4 +1782,9 @@ private actor FakeCommandServer {
             return id
         }
     }
+}
+
+private actor OrderLog {
+    private(set) var entries: [String] = []
+    func add(_ entry: String) { entries.append(entry) }
 }
