@@ -25,6 +25,11 @@ enum CompetitionRemoteFailure: Error, Equatable, Sendable {
     case appAttestRejected
     case appAttestContextUnavailable
     case appAttestProofConflict
+    /// A named person has no installation that can show group matches; the
+    /// server names the first such seat's profile.
+    case groupUpdateRequired(profileID: UUID?)
+    /// You already have five pending or live group matches.
+    case groupCreationLimit
     case operationFailed
 }
 
@@ -182,6 +187,10 @@ struct CompetitionRemoteAPI: Sendable {
     var listGroupMatches: @Sendable () async throws -> Data = {
         throw CompetitionRemoteFailure.operationFailed
     }
+    /// One group match RPC; answers the match's id.
+    var sendGroupMatchCommand: @Sendable (GroupMatchRemoteCommand) async throws -> UUID = { _ in
+        throw CompetitionRemoteFailure.operationFailed
+    }
 }
 
 /// What the person a challenge was sent to may see before accepting it.
@@ -259,7 +268,8 @@ enum CompetitionRemoteTransportFailure: Error, Equatable, Sendable {
     case cancelled
     case network
     case relay
-    case server(statusCode: Int?, code: String?, message: String)
+    /// `detail` is PostgREST's `details` (a group update names the profile).
+    case server(statusCode: Int?, code: String?, message: String, detail: String? = nil)
     case other
 }
 

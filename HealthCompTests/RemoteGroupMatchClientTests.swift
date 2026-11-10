@@ -1371,3 +1371,454 @@ private actor GroupAppAttestService: AppAttestServiceProtocol {
     func attestKey(_ keyID: String, clientDataHash: Data) -> Data { Data("attestation".utf8) }
     func generateAssertion(_ keyID: String, clientDataHash: Data) -> Data { Data("assertion".utf8) }
 }
+
+// MARK: - Commands (I3)
+
+extension RemoteGroupMatchClientTests {
+    private static let sam = UUID(uuidString: "4000ca96-a5d0-db44-3b89-bbfb6bc44e19")!
+    private static let leo = UUID(uuidString: "758901eb-c557-7975-e585-97488b2a907e")!
+
+    func testCommandsSendTheSQLParametersAndAcceptOnlyTheExactAnswers() async throws {
+        let id = pendingID
+        let key = UUID(uuidString: "84000000-0000-4000-8000-000000000001")!
+        let draft = GroupMatchDraft(format: .doubles, seats: [
+            .person(profileID: Self.sam, team: 1), .person(profileID: Self.leo, team: 2), .bot(.beast, team: 2),
+        ])
+        let echo: [String: Any] = ["competition_id": id.uuidString.lowercased()]
+        // As `participant_projection_v2` builds it: day 1 points, day 2 an
+        // accepted unavailable day, the rest never sent.
+        let digest = String(repeating: "ab", count: 32)
+        let bankDays: [[String: Any]] = (1...7).map { ordinal in
+            var day: [String: Any] = [
+                "ordinal": ordinal, "status": "unavailable", "source": "deadline_missing", "reason": "missing",
+                "centi_points": NSNull(), "wire_content_sha256": NSNull(), "client_revision": NSNull(),
+                "server_seq": NSNull(), "scoring_policy_identity": NSNull(),
+            ]
+            if ordinal <= 2 {
+                day.merge([
+                    "source": "accepted_revision", "wire_content_sha256": digest, "client_revision": ordinal == 1 ? "1" : "3",
+                    "server_seq": "\(ordinal + 6)", "scoring_policy_identity": "healthcomp.activity-score.v1",
+                ]) { $1 }
+            }
+            if ordinal == 1 { day.merge(["status": "points", "reason": NSNull(), "centi_points": 25_000]) { $1 } }
+            if ordinal == 2 { day["reason"] = "healthDataUnavailable" }
+            return day
+        }
+        let bank: [String: Any] = [
+            "profile_id": viewer.uuidString.lowercased(), "total_centi_points": 25_000,
+            "window_commitment_sha256": digest, "days": bankDays,
+        ]
+        let leave: [String: Any] = [
+            "left_at": "2026-11-10T12:00:00+00:00", "frozen_through_day": 3,
+            "accepted_revisions": ["1", "3", "0", "0", "0", "0", "0"], "bank": bank,
+        ]
+        let react: [String: Any] = ["competition_id": id.uuidString.lowercased(), "day_ordinal": 2, "reaction": "fire"]
+        let transport = StubTransport([
+            .success(echo), .success(echo.merging(["state": "scheduled"]) { $1 }), .success(echo), .success(echo),
+            .success(leave), .success(["nudged_at": "2026-11-10T12:00:00.5+00:00"]), .success(react),
+        ])
+        let api = SupabaseCompetitionRemoteAPI.make(transport: transport.transport)
+        let commands: [GroupMatchRemoteCommand] = [
+            .create(creator: viewer, draft, timeZoneIdentifier: "America/Los_Angeles", idempotencyKey: key),
+            .accept(id), .decline(id), .cancel(id), .leave(id),
+            .nudge(id, recipient: Self.sam), .react(id, target: Self.leo, ordinal: 2, .fire),
+        ]
+        for command in commands {
+            let answered = try await api.sendGroupMatchCommand(command)
+            XCTAssertEqual(answered, id)
+        }
+        let sent = await transport.sent
+        func wire(_ value: UUID) -> String { value.uuidString.lowercased() }
+        XCTAssertEqual(sent.map(\.name), [
+            "create_group_match", "accept_group_match", "decline_group_match", "cancel_group_match",
+            "leave_group_match", "nudge_competition_participant", "set_competition_reaction",
+        ])
+        XCTAssertEqual(sent[0].body as NSDictionary, [
+            "format": "doubles", "time_zone_identifier": "America/Los_Angeles", "creation_idempotency_key": wire(key),
+            "seats": [
+                ["kind": "human", "profile_id": wire(viewer), "team_number": 1],
+                ["kind": "human", "profile_id": wire(Self.sam), "team_number": 1],
+                ["kind": "human", "profile_id": wire(Self.leo), "team_number": 2],
+                ["kind": "bot", "bot_mode": "beast", "team_number": 2],
+            ],
+        ] as NSDictionary)
+        XCTAssertEqual(sent[1].body as NSDictionary, ["competition_id": wire(pendingID)] as NSDictionary)
+        XCTAssertEqual(sent[5].body as NSDictionary, ["competition_id": wire(pendingID), "recipient_profile_id": wire(Self.sam)] as NSDictionary)
+        XCTAssertEqual(sent[6].body as NSDictionary, [
+            "competition_id": wire(pendingID), "day_ordinal": 2, "reaction": "fire", "target_profile_id": wire(Self.leo),
+        ] as NSDictionary)
+
+        // Free-for-all seats carry no team_number key at all.
+        let ffa = try GroupMatchRemoteCommand.create(
+            creator: viewer, GroupMatchDraft(format: .threeWay, seats: [.person(profileID: Self.sam, team: nil), .bot(.chill, team: nil)]),
+            timeZoneIdentifier: "UTC", idempotencyKey: key
+        ).rpc()
+        XCTAssertEqual(ffa.parameters["format"] as? String, "three_way")
+        XCTAssertEqual((ffa.parameters["seats"] as? [[String: Any]])?.map { Set($0.keys) }, [
+            ["kind", "profile_id"], ["kind", "profile_id"], ["kind", "bot_mode"],
+        ])
+        XCTAssertThrowsError(try GroupMatchRemoteCommand.create(
+            creator: viewer, GroupMatchDraft(format: .fourWay, seats: [.person(profileID: Self.sam, team: nil)]),
+            timeZoneIdentifier: "UTC", idempotencyKey: key
+        ).rpc(), "a seat count the format can't hold")
+
+        // Anything but the exact answer is a contract mismatch.
+        let wrong: [(GroupMatchRemoteCommand, [String: Any])] = [
+            (.accept(id), echo.merging(["state": "active"]) { $1 }),
+            (.decline(id), ["competition_id": wire(UUID())]),
+            (.cancel(id), echo.merging(["extra": 1]) { $1 }),
+            (.leave(id), leave.merging(["accepted_revisions": ["1"]]) { $1 }),
+            (.leave(id), leave.merging(["frozen_through_day": 8]) { $1 }),
+            (.leave(id), leave.merging(["frozen_through_day": true]) { $1 }),
+            (.leave(id), leave.merging(["accepted_revisions": Array(repeating: "9999999999999999999", count: 7)]) { $1 }),
+            (.leave(id), leave.merging(["bank": [String: Any]()]) { $1 }),
+            (.leave(id), leave.merging(["bank": bank.merging(["total_centi_points": 25_001]) { $1 }]) { $1 }),
+            (.leave(id), leave.merging(["accepted_revisions": ["2", "3", "0", "0", "0", "0", "0"]]) { $1 }),
+            (.nudge(id, recipient: Self.sam), ["nudged_at": "yesterday"]),
+            (.react(id, target: Self.leo, ordinal: 2, nil), react),
+        ]
+        for (command, body) in wrong {
+            let failure = await failure(of: command, answering: .success(body))
+            XCTAssertEqual(failure, .serverContractMismatch, "\(command)")
+        }
+        // A lapsed invite answers 200 with state expired before cleanup.
+        let expired = await failure(of: .accept(id), answering: .success(echo.merging(["state": "expired"]) { $1 }))
+        XCTAssertEqual(expired, .inviteUnavailable)
+    }
+
+    func testGroupErrorsMapToTheReasonsTheScreensShow() async throws {
+        let cases: [(String, String?, CompetitionRemoteFailure, GroupMatchFailure?)] = [
+            ("recipient_unavailable", nil, .recipientUnavailable, .recipientUnavailable),
+            ("group_update_required", Self.leo.uuidString.lowercased(), .groupUpdateRequired(profileID: Self.leo), .updateRequired(profileID: Self.leo)),
+            ("group_update_required", "not-a-uuid", .groupUpdateRequired(profileID: nil), .updateRequired(profileID: nil)),
+            ("group_creation_limit", nil, .groupCreationLimit, .creationLimit),
+            ("group_match_unavailable", nil, .inviteUnavailable, .closed),
+            ("withdraw_not_allowed", nil, .forbidden, nil),
+            ("leave_not_allowed", nil, .forbidden, nil),
+            ("invalid_group_seat", nil, .serverContractMismatch, nil),
+            ("idempotency_conflict", nil, .divergentDuplicate, nil),
+        ]
+        for (message, detail, expected, reason) in cases {
+            let failure = await failure(
+                of: .accept(pendingID),
+                answering: .failure(.server(statusCode: nil, code: "P0001", message: message, detail: detail))
+            )
+            XCTAssertEqual(failure, expected, message)
+            XCTAssertEqual(failure.flatMap { GroupMatchFailure($0) }, reason, message)
+        }
+        // The REST error body's `details` names the profile too.
+        let body = try JSONSerialization.data(withJSONObject: [
+            "code": "P0001", "message": "group_update_required", "details": Self.sam.uuidString.lowercased(),
+        ])
+        let rest = StubTransport([.response(400, body)])
+        do {
+            _ = try await SupabaseCompetitionRemoteAPI.make(transport: rest.transport).sendGroupMatchCommand(.accept(pendingID))
+            XCTFail("expected a failure")
+        } catch {
+            XCTAssertEqual(error as? CompetitionRemoteFailure, .groupUpdateRequired(profileID: Self.sam))
+        }
+        XCTAssertNil(GroupMatchFailure(CompetitionRemoteFailure.retryableTransport), "offline keeps the generic line")
+        XCTAssertEqual(GroupMatchFailure.updateRequired(profileID: Self.leo).message(name: "Leo"), "Leo needs to update HealthComp first.")
+    }
+
+    func testLiveBuildsRegisterForGroupPushesAndFallBackOnOlderServers() async throws {
+        let installationID = UUID(uuidString: "84000000-0000-4000-8000-0000000000c1")!
+        let active = try JSONSerialization.data(withJSONObject: [
+            "installation_id": installationID.uuidString.lowercased(), "environment": "sandbox", "state": "active",
+        ])
+        let notFound = try JSONSerialization.data(withJSONObject: ["code": "PGRST202", "message": "redacted"])
+        let transport = StubTransport([.response(200, active), .response(404, notFound), .response(200, active)])
+        let api = SupabaseCompetitionRemoteAPI.make(transport: transport.transport, supportsGroupMatches: true)
+        let request = try CompetitionInstallationRequest(
+            installationID: installationID, apnsToken: String(repeating: "a1", count: 32), environment: .sandbox
+        )
+        _ = try await api.registerInstallation(request)
+        _ = try await api.registerInstallation(request)
+        let sent = await transport.sent
+        XCTAssertEqual(sent.count, 3)
+        let current: [String: Any] = [
+            "installation_id": installationID.uuidString.lowercased(), "apns_token": String(repeating: "a1", count: 32),
+            "environment": "sandbox", "supports_challenges": true, "supports_reactions": true, "muted_push_kinds": [String](),
+        ]
+        XCTAssertEqual(sent[0].body as NSDictionary, current.merging(["supports_group_matches": true]) { $1 } as NSDictionary)
+        XCTAssertEqual(sent[1].body as NSDictionary, sent[0].body as NSDictionary)
+        XCTAssertEqual(sent[2].body as NSDictionary, current as NSDictionary, "a server without the group overload")
+
+        // Gate off (Release until group matches ship): never advertised.
+        let off = StubTransport([.response(200, active)])
+        _ = try await SupabaseCompetitionRemoteAPI.make(transport: off.transport, supportsGroupMatches: false)
+            .registerInstallation(request)
+        let offSent = await off.sent
+        XCTAssertEqual(offSent.map { $0.body as NSDictionary }, [current as NSDictionary])
+    }
+
+    func testARetriedCreateReusesItsKeyAndEverySuccessRefreshesTheList() async throws {
+        let root = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let profile = AuthenticatedProfile(id: viewer, displayName: "Player 1")
+        let paths = AuthenticatedProfileStoragePaths(profileID: viewer, rootDirectory: root)
+        for directory in paths.fixedDirectories {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        }
+        let all = try fixtureMatches()
+        let finishedOnly = try listBody(all.filter { $0["competition_id"] as? String == finishedID.uuidString.lowercased() })
+        let withPending = try listBody(all.filter { $0["competition_id"] as? String != doublesID.uuidString.lowercased() })
+        let server = FakeCommandServer(lists: [finishedOnly, withPending], failFirst: 1)
+        var api = groupTestAPI(listGroupMatches: { await server.list() })
+        api.sendGroupMatchCommand = { try await server.send($0) }
+        let client = CompetitionClient.remote(remoteAPI: api, environment: try health(startDay: (2026, 11, 8), days: 3))
+        try await client.mountAuthenticatedProfile(profile, paths)
+        let updates = client.updates()
+        _ = await client.reconcileAll(.pullToRefresh)
+        _ = await firstPublication(updates) { !$0.dashboard.groupMatches.isEmpty }
+
+        let draft = GroupMatchDraft(format: .threeWay, seats: [.person(profileID: Self.sam, team: nil), .bot(.pacer, team: nil)])
+        do {
+            _ = try await client.groupMatchCommand(.create(draft))
+            XCTFail("the first try is offline")
+        } catch {}
+        let listsBefore = await server.listCount
+        let published = try await client.groupMatchCommand(.create(draft))
+        let listsAfter = await server.listCount
+        XCTAssertGreaterThan(listsAfter, listsBefore, "a success refreshes the list")
+        XCTAssertTrue(published.dashboard.groupMatches.contains { $0.id.rawValue == pendingID }, "and publishes it")
+        _ = try await client.groupMatchCommand(.create(draft))
+
+        let sent = await server.commands
+        guard sent.count == 3,
+              case let .create(_, _, zone0, key0) = sent[0], case let .create(creator, sentDraft, zone1, key1) = sent[1],
+              case let .create(_, _, _, key2) = sent[2]
+        else { return XCTFail("\(sent)") }
+        XCTAssertEqual(key0, key1, "the retry sends the same idempotency key")
+        XCTAssertEqual(zone0, zone1)
+        XCTAssertNotEqual(key1, key2, "a new match after a success gets a new key")
+        XCTAssertEqual(creator, viewer)
+        XCTAssertEqual(sentDraft, draft)
+
+        // Rematch never sends; it opens Create prefilled.
+        do {
+            _ = try await client.groupMatchCommand(.rematch(CompetitionID(finishedID)))
+            XCTFail("rematch is not a server command")
+        } catch {}
+        let afterRematch = await server.commands.count
+        XCTAssertEqual(afterRematch, 3)
+        await client.stop()
+    }
+
+    func testNudgeAndReactionsAddressPeopleBySeat() async throws {
+        let root = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let profile = AuthenticatedProfile(id: viewer, displayName: "Player 1")
+        let paths = AuthenticatedProfileStoragePaths(profileID: viewer, rootDirectory: root)
+        for directory in paths.fixedDirectories {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        }
+        let server = FakeCommandServer(lists: [try fixture()], failFirst: 0)
+        var api = groupTestAPI(listGroupMatches: { await server.list() })
+        api.sendGroupMatchCommand = { try await server.send($0) }
+        let client = CompetitionClient.remote(remoteAPI: api, environment: try health(startDay: (2026, 11, 8), days: 3))
+        try await client.mountAuthenticatedProfile(profile, paths)
+        let updates = client.updates()
+        _ = await client.reconcileAll(.pullToRefresh)
+        let first = try await XCTUnwrapAsync(await firstPublication(updates) { !$0.dashboard.groupMatches.isEmpty })
+        let doubles = try XCTUnwrap(first.dashboard.groupMatches.first { $0.id.rawValue == doublesID })
+        let leoSeat = try XCTUnwrap(doubles.seats.first { $0.number == 3 })
+        let botSeat = try XCTUnwrap(doubles.seats.first { $0.number == 4 })
+
+        _ = try await client.groupMatchCommand(.nudge(doubles.id))
+        _ = try await client.groupMatchCommand(.react(doubles.id, seatID: leoSeat.id, ordinal: 2, .clap))
+        _ = try await client.groupMatchCommand(.withdraw(CompetitionID(pendingID)))
+        do {
+            _ = try await client.groupMatchCommand(.react(doubles.id, seatID: botSeat.id, ordinal: 2, .clap))
+            XCTFail("a bot can't be reacted to")
+        } catch {}
+        let sent = await server.commands
+        XCTAssertEqual(sent, [
+            .nudge(doublesID, recipient: Self.sam),
+            .react(doublesID, target: Self.leo, ordinal: 2, .clap),
+            .decline(pendingID),
+        ])
+        await client.stop()
+    }
+
+    /// Leave sends this phone's days first and only then banks: the RPC waits
+    /// for a held upload.
+    func testLeaveWaitsForTheUploadPassBeforeBanking() async throws {
+        let server = try FakeGroupServer(fixture: fixture(), matchID: doublesID, viewer: viewer)
+        let order = OrderLog()
+        let held = Gate()
+        let uploading = expectation(description: "an upload is in flight")
+        await server.onFirstAppend {
+            uploading.fulfill()
+            await held.wait()
+        }
+        let client = try await leaveClient(server: server, order: order, leave: { await order.add("leave") })
+        let leaving = Task { try await client.groupMatchCommand(.leave(CompetitionID(doublesID))) }
+        await fulfillment(of: [uploading], timeout: 10)
+        try await Task.sleep(for: .milliseconds(200))
+        let whileHeld = await order.entries
+        XCTAssertFalse(whileHeld.contains("leave"), "no bank while an upload is still open")
+        await held.open()
+        _ = try await leaving.value
+        let entries = await order.entries
+        let leaveIndex = try XCTUnwrap(entries.firstIndex(of: "leave"))
+        XCTAssertEqual(entries.filter { $0 == "leave" }.count, 1)
+        XCTAssertTrue(entries[..<leaveIndex].contains("append"))
+        await client.stop()
+    }
+
+    /// The uploads fail but the server answers: Leave goes ahead and banks
+    /// what the server has (the confirmation said unsent points won't count).
+    func testLeaveAfterAFailedUploadStillBanksOnline() async throws {
+        let server = try FakeGroupServer(fixture: fixture(), matchID: doublesID, viewer: viewer)
+        await server.setFailingAppends(true)
+        let order = OrderLog()
+        let client = try await leaveClient(server: server, order: order, leave: { await order.add("leave") })
+        _ = try await client.groupMatchCommand(.leave(CompetitionID(doublesID)))
+        let attempts = await server.attemptedRequests()
+        XCTAssertFalse(attempts.isEmpty, "it tried to upload first")
+        let accepted = await server.acceptedRequests()
+        XCTAssertEqual(accepted, [])
+        let entries = await order.entries
+        let leaveIndex = try XCTUnwrap(entries.firstIndex(of: "leave"))
+        XCTAssertTrue(entries[..<leaveIndex].contains("append"), "the failed upload came first")
+        await client.stop()
+    }
+
+    /// Offline: Leave fails out loud and nothing is queued to bank later.
+    func testLeaveOfflineFailsAndDoesNotQueue() async throws {
+        let server = try FakeGroupServer(fixture: fixture(), matchID: doublesID, viewer: viewer)
+        await server.setFailingAppends(true)
+        let order = OrderLog()
+        let client = try await leaveClient(server: server, order: order, listFails: true, leave: {
+            await order.add("leave")
+            throw CompetitionRemoteFailure.retryableTransport
+        })
+        do {
+            _ = try await client.groupMatchCommand(.leave(CompetitionID(doublesID)))
+            XCTFail("an offline leave must fail")
+        } catch {
+            XCTAssertEqual(error as? CompetitionRemoteFailure, .retryableTransport)
+            XCTAssertNil(GroupMatchFailure(error), "the generic connection line")
+        }
+        _ = await client.reconcileAll(.pullToRefresh)
+        let entries = await order.entries
+        XCTAssertEqual(entries.filter { $0 == "leave" }.count, 1, "no retry or queued leave")
+        await client.stop()
+    }
+
+    private func leaveClient(
+        server: FakeGroupServer, order: OrderLog, listFails: Bool = false,
+        leave: @escaping @Sendable () async throws -> Void
+    ) async throws -> CompetitionClient {
+        let root = try makeDirectory()
+        addTeardownBlock { try? FileManager.default.removeItem(at: root) }
+        let paths = AuthenticatedProfileStoragePaths(profileID: viewer, rootDirectory: root)
+        for directory in paths.fixedDirectories {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        }
+        var api = server.api()
+        let list = api.listGroupMatches
+        let append = api.appendScoreRevision
+        api.listGroupMatches = {
+            if listFails { throw CompetitionRemoteFailure.retryableTransport }
+            return try await list()
+        }
+        api.appendScoreRevision = { request in
+            await order.add("append")
+            return try await append(request)
+        }
+        api.sendGroupMatchCommand = { command in
+            guard case let .leave(id) = command else { throw CompetitionRemoteFailure.operationFailed }
+            try await leave()
+            return id
+        }
+        let client = CompetitionClient.remote(remoteAPI: api, environment: try health(startDay: (2026, 11, 8), days: 3))
+        try await client.mountAuthenticatedProfile(AuthenticatedProfile(id: viewer, displayName: "Player 1"), paths)
+        return client
+    }
+
+    private func failure(
+        of command: GroupMatchRemoteCommand, answering answer: StubTransport.Answer
+    ) async -> CompetitionRemoteFailure? {
+        let transport = StubTransport([answer])
+        do {
+            _ = try await SupabaseCompetitionRemoteAPI.make(transport: transport.transport).sendGroupMatchCommand(command)
+            return nil
+        } catch {
+            return error as? CompetitionRemoteFailure
+        }
+    }
+}
+
+/// Answers RPCs in order and records what was sent.
+private actor StubTransport {
+    enum Answer {
+        case success([String: Any])
+        case response(Int, Data)
+        case failure(CompetitionRemoteTransportFailure)
+    }
+
+    private var answers: [Answer]
+    private(set) var sent: [(name: String, body: [String: Any])] = []
+
+    init(_ answers: [Answer]) { self.answers = answers }
+
+    nonisolated var transport: CompetitionRemoteTransport {
+        CompetitionRemoteTransport { try await self.answer($0) }
+    }
+
+    private func answer(_ request: CompetitionRemoteTransportRequest) throws -> CompetitionRemoteTransportResponse {
+        guard case let .rpc(name, parameters) = request,
+              let body = try JSONSerialization.jsonObject(with: parameters) as? [String: Any]
+        else { throw CompetitionRemoteTransportFailure.other }
+        sent.append((name, body))
+        switch answers.removeFirst() {
+        case let .success(object):
+            return CompetitionRemoteTransportResponse(statusCode: 200, data: try JSONSerialization.data(withJSONObject: object))
+        case let .response(status, data):
+            return CompetitionRemoteTransportResponse(statusCode: status, data: data)
+        case let .failure(failure):
+            throw failure
+        }
+    }
+}
+
+/// `list_group_matches` bodies in turn (the last repeats once a command has
+/// succeeded), and the group commands it was sent.
+private actor FakeCommandServer {
+    private let lists: [Data]
+    private var failuresLeft: Int
+    private var succeeded = 0
+    private(set) var listCount = 0
+    private(set) var commands: [GroupMatchRemoteCommand] = []
+
+    init(lists: [Data], failFirst: Int) {
+        self.lists = lists
+        self.failuresLeft = failFirst
+    }
+
+    func list() -> Data {
+        listCount += 1
+        return lists[min(succeeded, lists.count - 1)]
+    }
+
+    func send(_ command: GroupMatchRemoteCommand) throws -> UUID {
+        commands.append(command)
+        if failuresLeft > 0 {
+            failuresLeft -= 1
+            throw CompetitionRemoteFailure.retryableTransport
+        }
+        succeeded += 1
+        switch command {
+        case .create: return UUID(uuidString: "57bb50d9-30f0-4a8f-afc1-9978cf9c52e8")!
+        case let .accept(id), let .decline(id), let .cancel(id), let .leave(id), let .nudge(id, _), let .react(id, _, _, _):
+            return id
+        }
+    }
+}
+
+private actor OrderLog {
+    private(set) var entries: [String] = []
+    func add(_ entry: String) { entries.append(entry) }
+}

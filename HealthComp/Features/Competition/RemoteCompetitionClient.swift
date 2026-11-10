@@ -192,7 +192,8 @@ extension CompetitionClient {
             setProfilePhoto: { try await coordinator.setProfilePhoto($0) },
             removeProfilePhoto: { try await coordinator.removeProfilePhoto() },
             reportProfilePhoto: { try await coordinator.reportProfilePhoto($0) },
-            isProfilePhotoReported: { await coordinator.isProfilePhotoReported($0) }
+            isProfilePhotoReported: { await coordinator.isProfilePhotoReported($0) },
+            groupMatchCommand: { try await coordinator.groupMatchCommand($0) }
         )
     }
 }
@@ -478,6 +479,10 @@ private actor RemoteCompetitionClientCoordinator {
     private var latestGroupMatches: [GroupMatchReadModel] = []
     /// The group pass in flight and whether another was asked for meanwhile.
     private var groupSync: (runtime: RemoteCompetitionRuntime, again: Bool)?
+    private var groupSyncTask: Task<Void, Never>?
+    /// A create that failed keeps its key, so tapping again can't make two.
+    /// ponytail: memory only; a relaunch between tries mints a new key (persist like `inviteRequests` if that bites).
+    private var groupCreationKeys: [GroupMatchDraft: (key: UUID, zone: String)] = [:]
     private var hasStarted = false
     private var isStopped = false
     private var healthAuthorizationIssue: CompetitionClientIssue?
@@ -894,7 +899,7 @@ private actor RemoteCompetitionClientCoordinator {
             return
         }
         groupSync = (runtime, false)
-        Task { [weak self] in
+        groupSyncTask = Task { [weak self] in
             var again = true
             while again {
                 let matches = await runtime.synchronizeGroupMatches()
@@ -919,6 +924,75 @@ private actor RemoteCompetitionClientCoordinator {
             groupSync = current.again ? (runtime, false) : nil
             return current.again
         }
+    }
+
+    /// One group pass (list, own uploads), published when it lands.
+    private func syncGroupMatchesNow() async {
+        guard let runtime else { return }
+        startGroupSync(runtime)
+        await groupSyncTask?.value
+    }
+
+    /// The server command, then a fresh group list. Leave first sends what
+    /// this phone has: the server banks only what it accepted.
+    func groupMatchCommand(_ command: GroupMatchCommand) async throws -> CompetitionPublication {
+        if case .leave = command { await syncGroupMatchesNow() }
+        try await withCancellableOperationGate {
+            guard terminalTeardown == nil else {
+                throw EnvironmentSignalOwnershipError.activeOwnerNotRetired
+            }
+            guard runtime != nil, let profile else { throw CompetitionRemoteFailure.unauthenticated }
+            if case let .block(id) = command {
+                try await remoteAPI.blockChallenger(id.rawValue)
+                return
+            }
+            // Rematch opens Create prefilled; only its Create Match sends.
+            if case .rematch = command { throw CompetitionRemoteFailure.operationFailed }
+            var draft: GroupMatchDraft?
+            if case let .create(created) = command { draft = created }
+            let remote: GroupMatchRemoteCommand
+            if let draft {
+                var saved = groupCreationKeys[draft]
+                if saved == nil {
+                    saved = (UUID(), await environment.context().timeZoneIdentifier)
+                    groupCreationKeys[draft] = saved
+                }
+                guard let saved else { return }
+                remote = .create(creator: profile.id, draft, timeZoneIdentifier: saved.zone, idempotencyKey: saved.key)
+            } else {
+                switch command {
+                case let .accept(id): remote = .accept(id.rawValue)
+                case let .decline(id), let .withdraw(id): remote = .decline(id.rawValue)
+                case let .cancel(id): remote = .cancel(id.rawValue)
+                case let .leave(id): remote = .leave(id.rawValue)
+                case let .nudge(id):
+                    let match = try group(id)
+                    let team = match.seats.first { $0.profileID == profile.id }?.team
+                    guard let team,
+                          let partner = match.seats.first(where: { $0.team == team && $0.profileID != profile.id })?.profileID
+                    else { throw CompetitionRemoteFailure.forbidden }
+                    remote = .nudge(id.rawValue, recipient: partner)
+                case let .react(id, seatID, ordinal, kind):
+                    guard let target = try group(id).seats.first(where: { $0.id == seatID })?.profileID else {
+                        throw CompetitionRemoteFailure.forbidden
+                    }
+                    remote = .react(id.rawValue, target: target, ordinal: ordinal, kind)
+                case .create, .rematch, .block:
+                    return
+                }
+            }
+            _ = try await remoteAPI.sendGroupMatchCommand(remote)
+            if let draft { groupCreationKeys[draft] = nil }
+        }
+        await syncGroupMatchesNow()
+        return await withOperationGate { latestPublication ?? unpublishedPublication(issues: []) }
+    }
+
+    private func group(_ id: CompetitionID) throws -> GroupMatchReadModel {
+        guard let match = latestGroupMatches.first(where: { $0.id == id.rawValue }) else {
+            throw CompetitionRemoteFailure.inviteUnavailable
+        }
+        return match
     }
 
     func reconcileNotifications() async {

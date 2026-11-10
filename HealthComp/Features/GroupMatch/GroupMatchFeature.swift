@@ -26,6 +26,39 @@ enum GroupMatchCommand: Hashable, Sendable {
     /// Nil removes your reaction to that seat's day.
     case react(CompetitionID, seatID: UUID, ordinal: Int, CompetitionReactionKind?)
     case rematch(CompetitionID)
+    /// From an invite: declines it and blocks whoever sent it.
+    case block(CompetitionID)
+}
+
+/// Why a command failed, for the line under its button. Anything else
+/// (offline, server error) has no reason and keeps the screen's generic line.
+enum GroupMatchFailure: Hashable, Sendable {
+    case recipientUnavailable
+    /// The server names the first person who needs a newer app.
+    case updateRequired(profileID: UUID?)
+    case creationLimit
+    /// Closed, expired or no longer yours to answer.
+    case closed
+
+    init?(_ error: Error) {
+        switch error as? CompetitionRemoteFailure {
+        case .recipientUnavailable?: self = .recipientUnavailable
+        case let .groupUpdateRequired(profileID)?: self = .updateRequired(profileID: profileID)
+        case .groupCreationLimit?: self = .creationLimit
+        case .inviteUnavailable?: self = .closed
+        default: return nil
+        }
+    }
+
+    /// `name` is the display name of the person an update names, if known.
+    func message(name: String? = nil) -> String {
+        switch self {
+        case .recipientUnavailable: "Someone in this lineup can’t be invited. Check the players and try again."
+        case .updateRequired: "\(name ?? "Someone in this lineup") needs to update HealthComp first."
+        case .creationLimit: "You already have 5 group matches waiting or live. Finish or cancel one first."
+        case .closed: "This match is no longer open."
+        }
+    }
 }
 
 /// Commands for group matches, so screens add no reducer code. The published
@@ -36,6 +69,8 @@ struct GroupMatchFeature {
     struct State: Equatable {
         var inFlight: Set<GroupMatchCommand> = []
         var failed: Set<GroupMatchCommand> = []
+        /// Why a command in `failed` failed, when the server said.
+        var failureReasons: [GroupMatchCommand: GroupMatchFailure] = [:]
     }
 
     enum Action: Equatable, Sendable {
@@ -46,8 +81,8 @@ struct GroupMatchFeature {
         }
 
         case commandTapped(GroupMatchCommand)
-        /// Nil when the command failed.
-        case commandFinished(GroupMatchCommand, CompetitionPublication?)
+        /// Nil publication when the command failed, with the reason if known.
+        case commandFinished(GroupMatchCommand, CompetitionPublication?, GroupMatchFailure? = nil)
         case rematchEveryoneTapped(CompetitionID)
         case delegate(Delegate)
     }
@@ -63,16 +98,22 @@ struct GroupMatchFeature {
             case let .commandTapped(command):
                 guard state.inFlight.insert(command).inserted else { return .none }
                 state.failed.remove(command)
+                state.failureReasons[command] = nil
                 return .run { send in
-                    let published = try? await competitionClient.groupMatchCommand(command)
-                    await send(.commandFinished(command, published))
+                    do {
+                        let published = try await competitionClient.groupMatchCommand(command)
+                        await send(.commandFinished(command, published))
+                    } catch {
+                        await send(.commandFinished(command, nil, GroupMatchFailure(error)))
+                    }
                 }
                 .cancellable(id: CancelID.commands)
 
-            case let .commandFinished(command, published):
+            case let .commandFinished(command, published, reason):
                 state.inFlight.remove(command)
                 guard let published else {
                     state.failed.insert(command)
+                    state.failureReasons[command] = reason
                     return .none
                 }
                 return .send(.delegate(.published(published)))

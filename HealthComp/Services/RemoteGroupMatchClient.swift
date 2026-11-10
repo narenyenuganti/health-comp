@@ -402,6 +402,47 @@ enum GroupMatchWire {
         }
     }
 
+    /// `leave_group_match`'s answer exactly: the frozen vector and the bank
+    /// `private.participant_projection_v2` builds from it.
+    static func validateLeave(_ data: Data) throws {
+        do {
+            let top = try WireObject(
+                try JSONSerialization.jsonObject(with: data),
+                keys: ["left_at", "frozen_through_day", "accepted_revisions", "bank"]
+            )
+            _ = try top.date("left_at")
+            let revisions = try top.int64Array("accepted_revisions")
+            let bank = try WireObject(top.values["bank"], keys: ["profile_id", "total_centi_points", "window_commitment_sha256", "days"])
+            _ = try bank.uuid("profile_id")
+            let days = try bank.array("days").map {
+                try WireObject($0, keys: [
+                    "ordinal", "status", "source", "reason", "centi_points", "wire_content_sha256",
+                    "client_revision", "server_seq", "scoring_policy_identity",
+                ])
+            }
+            guard (0...7).contains(try top.int("frozen_through_day")),
+                  revisions.count == 7, revisions.allSatisfy({ $0 >= 0 }),
+                  isHexDigest(try bank.string("window_commitment_sha256")),
+                  days.count == 7
+            else { throw CompetitionRemoteFailure.serverContractMismatch }
+            var total = 0
+            for (index, day) in days.enumerated() {
+                let points = try day.optional("centi_points", day.int)
+                let revision = try day.optional("client_revision", day.int64)
+                guard try day.int("ordinal") == index + 1,
+                      revision == (revisions[index] == 0 ? nil : revisions[index]),
+                      (try day.string("source")) == (revision == nil ? "deadline_missing" : "accepted_revision"),
+                      (try day.string("status") == "points") == (points != nil),
+                      (0...60_000).contains(points ?? 0)
+                else { throw CompetitionRemoteFailure.serverContractMismatch }
+                total += points ?? 0
+            }
+            guard try bank.int("total_centi_points") == total else { throw CompetitionRemoteFailure.serverContractMismatch }
+        } catch {
+            throw CompetitionRemoteFailure.serverContractMismatch
+        }
+    }
+
     static func isHexDigest(_ value: String) -> Bool {
         value.range(of: "^[0-9a-f]{64}$", options: .regularExpression) != nil
     }
@@ -1172,5 +1213,63 @@ extension GroupMatchReadModel {
             frozenSeatTotals: frozenSeatTotals,
             frozenDays: frozenDays
         )
+    }
+}
+
+// MARK: - Commands
+
+/// A group match RPC as the server takes it.
+enum GroupMatchRemoteCommand: Equatable, Sendable {
+    /// Seat 1 is the creator; `draft` holds everyone else in seat order.
+    case create(creator: UUID, GroupMatchDraft, timeZoneIdentifier: String, idempotencyKey: UUID)
+    /// Decline before accepting, or withdraw after (both before the start).
+    case accept(UUID), decline(UUID), cancel(UUID), leave(UUID)
+    case nudge(UUID, recipient: UUID)
+    /// Nil removes your reaction to that person's day.
+    case react(UUID, target: UUID, ordinal: Int, CompetitionReactionKind?)
+
+    /// The RPC name and its JSON parameters.
+    func rpc() throws -> (name: String, parameters: [String: Any]) {
+        func id(_ value: UUID) -> String { value.uuidString.lowercased() }
+        switch self {
+        case let .create(creator, draft, zone, key):
+            let format = switch draft.format {
+            case .threeWay: "three_way"
+            case .fourWay: "four_way"
+            case .doubles: "doubles"
+            }
+            var seats: [[String: Any]] = [["kind": "human", "profile_id": id(creator)]]
+            if draft.format == .doubles { seats[0]["team_number"] = 1 }
+            for seat in draft.seats {
+                var entry: [String: Any]
+                let team: Int?
+                switch seat {
+                case let .person(profileID, seatTeam):
+                    entry = ["kind": "human", "profile_id": id(profileID)]
+                    team = seatTeam
+                case let .bot(mode, seatTeam):
+                    entry = ["kind": "bot", "bot_mode": mode.rawValue]
+                    team = seatTeam
+                }
+                if let team { entry["team_number"] = team }
+                seats.append(entry)
+            }
+            guard seats.count == draft.format.seatCount else { throw CompetitionRemoteFailure.serverContractMismatch }
+            return ("create_group_match", [
+                "format": format, "seats": seats, "time_zone_identifier": zone,
+                "creation_idempotency_key": id(key),
+            ])
+        case let .accept(match): return ("accept_group_match", ["competition_id": id(match)])
+        case let .decline(match): return ("decline_group_match", ["competition_id": id(match)])
+        case let .cancel(match): return ("cancel_group_match", ["competition_id": id(match)])
+        case let .leave(match): return ("leave_group_match", ["competition_id": id(match)])
+        case let .nudge(match, recipient):
+            return ("nudge_competition_participant", ["competition_id": id(match), "recipient_profile_id": id(recipient)])
+        case let .react(match, target, ordinal, kind):
+            return ("set_competition_reaction", [
+                "competition_id": id(match), "day_ordinal": ordinal,
+                "reaction": kind?.rawValue ?? NSNull(), "target_profile_id": id(target),
+            ])
+        }
     }
 }
