@@ -480,6 +480,7 @@ final class SupabaseCompetitionRemoteAPITests: XCTestCase {
             .response(404, notFound),
             .response(404, notFound),
             .response(404, notFound),
+            .response(404, notFound),
             .response(200, try jsonData([
                 "installation_id": installationID.uuidString.lowercased(),
                 "environment": "sandbox",
@@ -497,7 +498,7 @@ final class SupabaseCompetitionRemoteAPITests: XCTestCase {
 
         XCTAssertEqual(installation.state, .active)
         let requests = await harness.recordedRequests()
-        XCTAssertEqual(requests.count, 4)
+        XCTAssertEqual(requests.count, 5)
         let legacyBody: [String: Any] = [
             "installation_id": installationID.uuidString.lowercased(),
             "apns_token": String(repeating: "a1", count: 32),
@@ -507,9 +508,11 @@ final class SupabaseCompetitionRemoteAPITests: XCTestCase {
         challengeBody["supports_challenges"] = true
         var reactionBody = challengeBody
         reactionBody["supports_reactions"] = true
-        var currentBody = reactionBody
-        currentBody["muted_push_kinds"] = [String]()
-        for (request, body) in zip(requests, [currentBody, reactionBody, challengeBody, legacyBody]) {
+        var mutedBody = reactionBody
+        mutedBody["muted_push_kinds"] = [String]()
+        var currentBody = mutedBody
+        currentBody["supports_friends"] = true
+        for (request, body) in zip(requests, [currentBody, mutedBody, reactionBody, challengeBody, legacyBody]) {
             try assertRPC(request, name: "register_current_device_installation", body: body)
         }
     }
@@ -521,15 +524,18 @@ final class SupabaseCompetitionRemoteAPITests: XCTestCase {
             "environment": "sandbox",
             "state": "active",
         ])
-        // A server with the five-argument call answers the first fallback, one
-        // with the four-argument call the second; four 404s in a row surface
-        // as notFound.
+        // A server with the five-argument call answers the second fallback,
+        // one with the four-argument call the third; five 404s in a row
+        // surface as notFound.
         let harness = CompetitionTransportHarness(stubs: [
             .response(404, notFound),
+            .response(404, notFound),
             .response(200, active),
             .response(404, notFound),
             .response(404, notFound),
+            .response(404, notFound),
             .response(200, active),
+            .response(404, notFound),
             .response(404, notFound),
             .response(404, notFound),
             .response(404, notFound),
@@ -550,7 +556,7 @@ final class SupabaseCompetitionRemoteAPITests: XCTestCase {
         XCTAssertEqual(exhausted, .notFound)
 
         let requests = await harness.recordedRequests()
-        XCTAssertEqual(requests.count, 9)
+        XCTAssertEqual(requests.count, 12)
         let challengeBody: [String: Any] = [
             "installation_id": installationID.uuidString.lowercased(),
             "apns_token": String(repeating: "a1", count: 32),
@@ -559,14 +565,15 @@ final class SupabaseCompetitionRemoteAPITests: XCTestCase {
         ]
         var reactionBody = challengeBody
         reactionBody["supports_reactions"] = true
-        try assertRPC(requests[1], name: "register_current_device_installation", body: reactionBody)
-        try assertRPC(requests[3], name: "register_current_device_installation", body: reactionBody)
-        try assertRPC(requests[4], name: "register_current_device_installation", body: challengeBody)
+        try assertRPC(requests[2], name: "register_current_device_installation", body: reactionBody)
+        try assertRPC(requests[5], name: "register_current_device_installation", body: reactionBody)
+        try assertRPC(requests[6], name: "register_current_device_installation", body: challengeBody)
     }
 
     func testRegisterInstallationFallsBackWithoutMutedPushKinds() async throws {
         let notFound = try jsonData(["code": "PGRST202", "message": "redacted"])
         let harness = CompetitionTransportHarness(stubs: [
+            .response(404, notFound),
             .response(404, notFound),
             .response(200, try jsonData([
                 "installation_id": installationID.uuidString.lowercased(),
@@ -584,7 +591,7 @@ final class SupabaseCompetitionRemoteAPITests: XCTestCase {
         _ = try await makeAPI(harness).registerInstallation(request)
 
         let requests = await harness.recordedRequests()
-        XCTAssertEqual(requests.count, 2)
+        XCTAssertEqual(requests.count, 3)
         let reactionBody: [String: Any] = [
             "installation_id": installationID.uuidString.lowercased(),
             "apns_token": String(repeating: "a1", count: 32),
@@ -592,10 +599,59 @@ final class SupabaseCompetitionRemoteAPITests: XCTestCase {
             "supports_challenges": true,
             "supports_reactions": true,
         ]
-        var currentBody = reactionBody
-        currentBody["muted_push_kinds"] = ["nudge"]
+        var mutedBody = reactionBody
+        mutedBody["muted_push_kinds"] = ["nudge"]
+        var currentBody = mutedBody
+        currentBody["supports_friends"] = true
         try assertRPC(requests[0], name: "register_current_device_installation", body: currentBody)
-        try assertRPC(requests[1], name: "register_current_device_installation", body: reactionBody)
+        try assertRPC(requests[1], name: "register_current_device_installation", body: mutedBody)
+        try assertRPC(requests[2], name: "register_current_device_installation", body: reactionBody)
+    }
+
+    /// Before 20261109003100 the six-argument call rejects Friends mutes, so
+    /// the fallback drops them and keeps the rest; once the server has the
+    /// seven-argument call, the next registration sends every mute again.
+    func testRegisterInstallationFallbackDropsFriendMutesThenSendsThemOnceMigrated() async throws {
+        let notFound = try jsonData(["code": "PGRST202", "message": "redacted"])
+        let active = try jsonData([
+            "installation_id": installationID.uuidString.lowercased(),
+            "environment": "sandbox",
+            "state": "active",
+        ])
+        let harness = CompetitionTransportHarness(stubs: [
+            .response(404, notFound),
+            .response(200, active),
+            .response(200, active),
+        ])
+        let request = try CompetitionInstallationRequest(
+            installationID: installationID,
+            apnsToken: String(repeating: "a1", count: 32),
+            environment: .sandbox,
+            mutedPushKinds: ["friend_accepted", "friend_request", "nudge", "reaction"]
+        )
+        let api = makeAPI(harness)
+
+        let beforeMigration = try await api.registerInstallation(request)
+        XCTAssertEqual(beforeMigration.state, .active)
+        let afterMigration = try await api.registerInstallation(request)
+        XCTAssertEqual(afterMigration.state, .active)
+
+        let requests = await harness.recordedRequests()
+        XCTAssertEqual(requests.count, 3)
+        let mutedBody: [String: Any] = [
+            "installation_id": installationID.uuidString.lowercased(),
+            "apns_token": String(repeating: "a1", count: 32),
+            "environment": "sandbox",
+            "supports_challenges": true,
+            "supports_reactions": true,
+            "muted_push_kinds": ["nudge", "reaction"],
+        ]
+        var currentBody = mutedBody
+        currentBody["supports_friends"] = true
+        currentBody["muted_push_kinds"] = ["friend_accepted", "friend_request", "nudge", "reaction"]
+        try assertRPC(requests[0], name: "register_current_device_installation", body: currentBody)
+        try assertRPC(requests[1], name: "register_current_device_installation", body: mutedBody)
+        try assertRPC(requests[2], name: "register_current_device_installation", body: currentBody)
     }
 
     func testReactionsRouteThroughExactRPCs() async throws {

@@ -1560,6 +1560,48 @@ final class MainTabFeatureTests: XCTestCase {
         XCTAssertEqual(routing.consumedSequences, [3])
     }
 
+    /// A Friends push: like a match route it clears what covers Home, then
+    /// opens Friends on its own and reloads the list.
+    @MainActor
+    func testFriendsRouteClosesWhatCoversHomeOpensFriendsAndReloads() async {
+        let id = competitionID("81000000-0000-0000-0000-00000000000B")
+        let routing = MainTabRoutingRecorder()
+        let list = FriendsList()
+        var initial = MainTabFeature.State(
+            competition: CompetitionFeature.State(publication: publication(revision: 1, visibleID: id)),
+            path: [id],
+            showsHistory: true,
+            isAccountPresented: true
+        )
+        initial.historyPersonIdentity = "remote-profile:v1:x"
+        var client = CompetitionClient.testValue
+        client.listFriends = { list }
+        let store = TestStore(initialState: initial) {
+            MainTabFeature()
+        } withDependencies: {
+            $0.competitionRoutingClient = routing.client
+            $0.competitionClient = client
+        }
+
+        await store.send(.routeReceived(CompetitionRouteEnvelope(sequence: 4, route: .friends))) {
+            $0.showsHistory = false
+            $0.showsFriends = true
+            $0.historyPersonIdentity = nil
+            $0.isAccountPresented = false
+            $0.path = []
+            $0.lastHandledRouteSequence = 4
+        }
+        await store.receive(.competition(.friends(.requested)))
+        await store.receive(.competition(.friends(.loaded(list)))) {
+            $0.competition.friends.list = list
+        }
+        await store.finish()
+        XCTAssertEqual(routing.consumedSequences, [4])
+
+        // The same push again does nothing.
+        await store.send(.routeReceived(CompetitionRouteEnvelope(sequence: 4, route: .friends)))
+    }
+
     @MainActor
     func testHistoryAndAccountPresentationActionsSetState() async {
         let store = TestStore(initialState: MainTabFeature.State()) {

@@ -945,13 +945,14 @@ private struct AccountNotificationsPage: View {
                     EmptyView()
                 }
             } footer: {
-                Text("HealthComp only sends match moments, like lead changes and results. To mute someone, open your match with them.")
+                Text("HealthComp sends match moments, like lead changes and results, and friend requests. To mute someone, open your match with them.")
                     .foregroundStyle(Theme.secondary)
             }
             .listRowBackground(Theme.panel)
 
             choiceSection("DURING A MATCH", CompetitionNotificationChoice.allCases.filter { !$0.isServerSent })
-            choiceSection("FROM THE OTHER PERSON", CompetitionNotificationChoice.allCases.filter(\.isServerSent))
+            choiceSection("FROM THE OTHER PERSON", CompetitionNotificationChoice.allCases.filter { $0.isServerSent && !$0.isFriends })
+            choiceSection("FRIENDS", CompetitionNotificationChoice.allCases.filter(\.isFriends))
 
             if !settings.mutedPeople.isEmpty {
                 Section {

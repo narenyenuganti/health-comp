@@ -1,6 +1,6 @@
 import XCTest
 
-/// Account → Notifications: seven switches in two sections. `account` is the
+/// Account → Notifications: nine switches in three sections. `account` is the
 /// standalone Account fixture (iOS notifications and Live Activities off).
 /// `notification-choices` is the real app root with notifications on, the
 /// long-named challenger muted, and the real installation coordinator
@@ -14,8 +14,9 @@ final class NotificationChoicesUITests: XCTestCase {
         ("lead-change", "Lead changes"), ("close-score", "Close scores"),
         ("what-it-takes", "What it takes"), ("final-day", "Last day"), ("live-activity", "Live Activity"),
         ("reaction", "Reactions"), ("nudge", "Nudges"),
+        ("friend_request", "Friend requests"), ("friend_accepted", "Accepted requests"),
     ]
-    private static let footer = "HealthComp only sends match moments, like lead changes and results. To mute someone, open your match with them."
+    private static let footer = "HealthComp sends match moments, like lead changes and results, and friend requests. To mute someone, open your match with them."
     private static let liveActivitiesOff = "Live Activities are off for HealthComp in iOS Settings."
     private static let longName = "Alexandria Montgomery-Featherstonehaugh"
 
@@ -32,7 +33,7 @@ final class NotificationChoicesUITests: XCTestCase {
 
     // MARK: Page
 
-    func testPageListsSevenSwitchesInOrderWithLiveActivitiesOffInIOS() {
+    func testPageListsNineSwitchesInOrderWithLiveActivitiesOffInIOS() {
         launch(.account)
         openNotificationsFromAccount()
         XCTAssertTrue(app.staticTexts["Turned off in iOS Settings"].exists)
@@ -50,6 +51,11 @@ final class NotificationChoicesUITests: XCTestCase {
                 scrollToElement(header)
                 XCTAssertGreaterThan(header.frame.minY, liveActivityCaption().frame.minY)
             }
+            if row.id == "friend_request" {
+                let header = app.staticTexts["FRIENDS"]
+                scrollToElement(header)
+                XCTAssertGreaterThan(header.frame.minY, choice("nudge").frame.maxY - 1)
+            }
             let toggle = choice(row.id)
             scrollToElement(toggle)
             XCTAssertEqual(toggle.label, row.label)
@@ -59,6 +65,7 @@ final class NotificationChoicesUITests: XCTestCase {
             XCTAssertGreaterThanOrEqual(toggle.frame.height, 43.5, row.id)
             XCTAssertEqual(toggle.isEnabled, row.id != "live-activity", row.id)
             if row.id == "reaction" { previous = app.staticTexts["FROM THE OTHER PERSON"] }
+            if row.id == "friend_request" { previous = app.staticTexts["FRIENDS"] }
             XCTAssertTrue(previous.exists, row.id)
             XCTAssertGreaterThan(toggle.frame.minY, previous.frame.minY, "\(row.id) is out of order")
             previous = toggle
@@ -85,7 +92,7 @@ final class NotificationChoicesUITests: XCTestCase {
         // MUTED stays last.
         let muted = app.staticTexts["MUTED"]
         scrollToElement(muted)
-        XCTAssertGreaterThan(muted.frame.minY, choice("nudge").frame.maxY)
+        XCTAssertGreaterThan(muted.frame.minY, choice("friend_accepted").frame.maxY)
         XCTAssertTrue(text("Muting someone silences all your matches with them.").exists)
 
         // The Live Activity Open Settings opens this app's settings page.
@@ -191,9 +198,32 @@ final class NotificationChoicesUITests: XCTestCase {
         }
         closeNotificationsAndAccount()
         XCTAssertTrue(waitForServer("none", registrations: 6, failures: 1))
+
+        // FRIENDS: both server-held, under their own header after the others.
+        openAccount()
+        openNotifications()
+        let friendsHeader = app.staticTexts["FRIENDS"]
+        scrollToElement(friendsHeader)
+        let friendRequests = choice("friend_request")
+        scrollToElement(friendRequests)
+        XCTAssertGreaterThan(friendRequests.frame.minY, friendsHeader.frame.minY)
+        flip(friendRequests)
+        XCTAssertEqual(friendRequests.value as? String, "0")
+        flip(choice("friend_accepted"))
+        XCTAssertEqual(choice("friend_accepted").value as? String, "0")
+        closeNotificationsAndAccount()
+        XCTAssertTrue(waitForServer("friend_accepted, friend_request", registrations: 7, failures: 1))
+        openAccount()
+        openNotifications()
+        flip(choice("friend_request"))
+        flip(choice("friend_accepted"))
+        XCTAssertEqual(choice("friend_request").value as? String, "1")
+        XCTAssertEqual(choice("friend_accepted").value as? String, "1")
+        closeNotificationsAndAccount()
+        XCTAssertTrue(waitForServer("none", registrations: 8, failures: 1))
         // And nothing more follows.
         Thread.sleep(forTimeInterval: 3)
-        XCTAssertEqual(serverLabel(), summary("none", registrations: 6, failures: 1))
+        XCTAssertEqual(serverLabel(), summary("none", registrations: 8, failures: 1))
     }
 
     func testQuickOffAndOnLeavesNudgesOnAtTheServer() {
@@ -265,6 +295,30 @@ final class NotificationChoicesUITests: XCTestCase {
                 flip(closeScores)
                 XCTAssertEqual(closeScores.value as? String, "1")
             }
+        }
+    }
+
+    /// Not in CI: the FRIENDS section, light, dark and the largest size.
+    func testFriendsSectionScreenshots() throws {
+        let configs: [(String, String, String)] = [
+            ("light", "Light", "UICTContentSizeCategoryL"),
+            ("dark", "Dark", "UICTContentSizeCategoryL"),
+            ("light-ax5", "Light", "UICTContentSizeCategoryAccessibilityXXXL"),
+        ]
+        for (suffix, appearance, size) in configs {
+            launch(.account, arguments: [
+                "-AppleInterfaceStyle", appearance, "-healthcomp.appearance", appearance.lowercased(),
+                "-UIPreferredContentSizeCategoryName", size,
+            ])
+            openNotificationsFromAccount()
+            let accepted = choice("friend_accepted")
+            scrollToElement(accepted)
+            XCTAssertTrue(app.staticTexts["FRIENDS"].exists, suffix)
+            // Earlier interrupted runs may have left it off.
+            if accepted.value as? String != "1" { flip(accepted) }
+            XCTAssertEqual(accepted.value as? String, "1", suffix)
+            shot("notifications-friends-\(suffix)")
+            try audit("notifications-friends-\(suffix)")
         }
     }
 

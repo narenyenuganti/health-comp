@@ -976,6 +976,29 @@ struct MainTabFeature {
                     ? notificationPromptBlockerChanged(isOpen: false, state: &state)
                     : .none
             )
+        case .friends:
+            // Like a match route: close what covers Home, then Friends on its
+            // own and a fresh list, open or not.
+            state.pendingRoute = nil
+            state.heldRouteSequence = nil
+            state.lastHandledRouteSequence = envelope.sequence
+            state.showsHistory = false
+            state.historyPersonIdentity = nil
+            state.personPlace = CompetitionPersonPlace()
+            let closesAccount = state.isAccountPresented
+            state.isAccountPresented = false
+            state.path = []
+            state.showsFriends = true
+            return .merge(
+                .send(.competition(.friends(.requested))),
+                .cancel(id: CancelID.routeHold),
+                .run { _ in
+                    competitionRoutingClient.consume(envelope.sequence)
+                },
+                closesAccount
+                    ? notificationPromptBlockerChanged(isOpen: false, state: &state)
+                    : .none
+            )
         case .claimInvite:
             // Claim routes remain pending in the process-rooted hub until the
             // authenticated claim flow explicitly accepts or rejects them.

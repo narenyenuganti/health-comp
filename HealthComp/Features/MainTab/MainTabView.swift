@@ -68,6 +68,13 @@ struct MainTabView: View {
         ) { _ in
             store.send(.timeZoneChanged)
         }
+        .onReceive(
+            NotificationCenter.default.publisher(for: .healthCompFriendsPushReceived)
+        ) { _ in
+            if store.competition.publication?.source == .remoteParticipants {
+                store.send(.competition(.friends(.requested)))
+            }
+        }
         .sheet(isPresented: claimSheetPresented) {
             ClaimCompetitionView(
                 liveStatus: store.inviteClaimStatus,

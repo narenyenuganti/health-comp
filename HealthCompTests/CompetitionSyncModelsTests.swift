@@ -350,6 +350,7 @@ final class CompetitionSyncModelsTests: XCTestCase {
                 "apns_token": String(repeating: "a1", count: 32),
                 "environment": "sandbox",
                 "supports_challenges": true,
+                "supports_friends": true,
                 "supports_reactions": true,
                 "muted_push_kinds": [],
             ] as NSDictionary
@@ -369,6 +370,7 @@ final class CompetitionSyncModelsTests: XCTestCase {
                 "apns_token": String(repeating: "a1", count: 32),
                 "environment": "sandbox",
                 "supports_challenges": true,
+                "supports_friends": true,
                 "supports_reactions": false,
                 "muted_push_kinds": [],
             ] as NSDictionary
@@ -388,10 +390,21 @@ final class CompetitionSyncModelsTests: XCTestCase {
                 "apns_token": String(repeating: "a1", count: 32),
                 "environment": "sandbox",
                 "supports_challenges": true,
+                "supports_friends": true,
                 "supports_reactions": true,
                 "muted_push_kinds": ["nudge"],
             ] as NSDictionary
         )
+        let mutingFriends = try CompetitionInstallationRequest(
+            installationID: installationID,
+            apnsToken: String(repeating: "a1", count: 32),
+            environment: .sandbox,
+            mutedPushKinds: ["friend_accepted", "friend_request"]
+        )
+        let mutingFriendsBody = try jsonObject(
+            CompetitionWireCodec.encode(mutingFriends, contract: .installationRequest)
+        ) as? NSDictionary
+        XCTAssertEqual(mutingFriendsBody?["muted_push_kinds"] as? [String], ["friend_accepted", "friend_request"])
         XCTAssertThrowsError(
             try CompetitionInstallationRequest(
                 installationID: installationID,

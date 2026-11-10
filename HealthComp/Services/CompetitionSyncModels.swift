@@ -1536,6 +1536,7 @@ struct CompetitionInstallationRequest: Codable, Equatable, Sendable {
         case environment
         case supportsChallenges = "supports_challenges"
         case supportsReactions = "supports_reactions"
+        case supportsFriends = "supports_friends"
         case mutedPushKinds = "muted_push_kinds"
     }
 
@@ -1561,6 +1562,8 @@ struct CompetitionInstallationRequest: Codable, Equatable, Sendable {
         // Opts this install into challenge pushes; 1.0.2 omits it.
         try container.encode(true, forKey: .supportsChallenges)
         try container.encode(supportsReactions, forKey: .supportsReactions)
+        // Opts into Friends pushes (20261109003100); older servers fall back.
+        try container.encode(true, forKey: .supportsFriends)
         try container.encode(mutedPushKinds, forKey: .mutedPushKinds)
     }
 }
@@ -3640,7 +3643,8 @@ private enum CompetitionWireValidator {
             value,
             keys: [
                 "apns_token", "environment", "installation_id",
-                "muted_push_kinds", "supports_challenges", "supports_reactions",
+                "muted_push_kinds", "supports_challenges", "supports_friends",
+                "supports_reactions",
             ]
         )
         guard uuid(object["installation_id"]),
@@ -3648,6 +3652,7 @@ private enum CompetitionWireValidator {
               boolean(object["supports_challenges"]),
               boolean(object["supports_reactions"]),
               object["supports_challenges"] as? Bool == true,
+              object["supports_friends"] as? Bool == true,
               let token = object["apns_token"] as? String,
               token.range(
                   of: "^[0-9a-f]{64,200}$",

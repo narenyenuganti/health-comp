@@ -1557,11 +1557,12 @@ final class MultiUserCompetitionUITests: XCTestCase {
                 .waitForExistence(timeout: 3)
         )
 
-        // Seven switches, all on by default, in page order.
+        // Nine switches, all on by default, in page order.
         let rows: [(String, String)] = [
             ("lead-change", "Lead changes"), ("close-score", "Close scores"),
             ("what-it-takes", "What it takes"), ("final-day", "Last day"), ("live-activity", "Live Activity"),
             ("reaction", "Reactions"), ("nudge", "Nudges"),
+            ("friend_request", "Friend requests"), ("friend_accepted", "Accepted requests"),
         ]
         for (raw, label) in rows {
             let toggle = app.switches["account.notifications.choice.\(raw)"].firstMatch
@@ -1569,7 +1570,7 @@ final class MultiUserCompetitionUITests: XCTestCase {
             XCTAssertTrue(toggle.exists, raw)
             XCTAssertEqual(toggle.label, label)
         }
-        XCTAssertTrue(app.staticTexts["FROM THE OTHER PERSON"].exists)
+        XCTAssertTrue(app.staticTexts["FRIENDS"].exists)
 
         // The fixture has Live Activities off in iOS.
         let liveActivity = app.switches["account.notifications.choice.live-activity"].firstMatch

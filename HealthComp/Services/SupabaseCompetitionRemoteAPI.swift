@@ -245,10 +245,12 @@ enum SupabaseCompetitionRemoteAPI {
             },
             registerInstallation: { request in
                 // Newest call first. A server without that overload answers
-                // PGRST202 (notFound), so fall back: 6 args (muted push kinds),
-                // then 5 (reactions), 4 (challenges) and the original 3.
+                // PGRST202 (notFound), so fall back: 6 args (muted push kinds,
+                // no Friends), then 5 (reactions), 4 (challenges) and the
+                // original 3.
                 let bodies = [
                     try encodeWire(request, contract: .installationRequest),
+                    try encode(MutedKindsInstallationParameters(request)),
                     try encode(ReactionInstallationParameters(request)),
                     try encode(ChallengeInstallationParameters(request)),
                     try encode(LegacyInstallationParameters(request)),
@@ -1497,6 +1499,36 @@ private struct ChallengeInstallationParameters: Encodable {
         case apnsToken = "apns_token"
         case environment
         case supportsChallenges = "supports_challenges"
+    }
+}
+
+/// The six-argument registration body, for servers before 20261109003100.
+/// They reject Friends mutes, and never send Friends pushes anyway.
+private struct MutedKindsInstallationParameters: Encodable {
+    let installationID: String
+    let apnsToken: String
+    let environment: CompetitionInstallationEnvironment
+    let supportsChallenges = true
+    let supportsReactions: Bool
+    let mutedPushKinds: [String]
+
+    init(_ request: CompetitionInstallationRequest) {
+        installationID = request.installationID.uuidString.lowercased()
+        apnsToken = request.apnsToken
+        environment = request.environment
+        supportsReactions = request.supportsReactions
+        mutedPushKinds = request.mutedPushKinds.filter { kind in
+            CompetitionNotificationChoice(rawValue: kind)?.isFriends != true
+        }
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case installationID = "installation_id"
+        case apnsToken = "apns_token"
+        case environment
+        case supportsChallenges = "supports_challenges"
+        case supportsReactions = "supports_reactions"
+        case mutedPushKinds = "muted_push_kinds"
     }
 }
 
