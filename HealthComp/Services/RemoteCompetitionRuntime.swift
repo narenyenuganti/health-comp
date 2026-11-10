@@ -535,6 +535,7 @@ actor RemoteCompetitionRuntime {
     private let environment: CompetitionEnvironmentClient?
     private let outboxStore: (any CompetitionOutboxStore)?
     private let syncCoordinator: CompetitionSyncCoordinator?
+    private let groupSyncCoordinator: CompetitionSyncCoordinator?
     private let cacheStore: (any RemoteCompetitionCacheStore)?
     private let groupMatches: RemoteGroupMatchSync?
     private let groupMatchStore: GroupMatchStore?
@@ -560,10 +561,13 @@ actor RemoteCompetitionRuntime {
         self.outboxStore = outboxStore
         self.cacheStore = cacheStore
         self.now = now
-        let syncCoordinator = outboxStore.map { outboxStore in
+        // With group matches, each family drains its own share of the outbox.
+        self.syncCoordinator = outboxStore.map { outboxStore in
             CompetitionSyncCoordinator(
                 profileID: profileID,
-                outboxStore: outboxStore,
+                outboxStore: groupMatchStore.map {
+                    GroupOutboxPartition(base: outboxStore, groups: $0, holdsGroups: false)
+                } ?? outboxStore,
                 remoteAPI: remoteAPI,
                 acceptedScorePersistence: groupMatchStore.map {
                     .routing(groups: $0, duels: store)
@@ -571,7 +575,18 @@ actor RemoteCompetitionRuntime {
                 now: now
             )
         }
-        self.syncCoordinator = syncCoordinator
+        let groupSyncCoordinator: CompetitionSyncCoordinator? = groupMatchStore.flatMap { groups in
+            outboxStore.map { outboxStore in
+                CompetitionSyncCoordinator(
+                    profileID: profileID,
+                    outboxStore: GroupOutboxPartition(base: outboxStore, groups: groups, holdsGroups: true),
+                    remoteAPI: remoteAPI,
+                    acceptedScorePersistence: .routing(groups: groups, duels: store),
+                    now: now
+                )
+            }
+        }
+        self.groupSyncCoordinator = groupSyncCoordinator
         self.groupMatchStore = groupMatchStore
         self.groupMatches = groupMatchStore.map {
             RemoteGroupMatchSync(
@@ -580,7 +595,7 @@ actor RemoteCompetitionRuntime {
                 remoteAPI: remoteAPI,
                 environment: environment,
                 outboxStore: outboxStore,
-                syncCoordinator: syncCoordinator,
+                syncCoordinator: groupSyncCoordinator,
                 now: now
             )
         }
@@ -594,9 +609,16 @@ actor RemoteCompetitionRuntime {
         return await groupMatches.run()
     }
 
+    /// The last good group list on disk, for a publication before the
+    /// network answers.
+    func cachedGroupMatches() async -> [GroupMatchReadModel] {
+        await groupMatchStore?.readModel() ?? []
+    }
+
     func stop() async {
         isStopped = true
         await syncCoordinator?.stop()
+        await groupSyncCoordinator?.stop()
     }
 
     func commitNotificationDecisions(

@@ -476,6 +476,8 @@ private actor RemoteCompetitionClientCoordinator {
     private var latestReactions: [CompetitionReactionRecord] = []
     /// The group read model: the last good server list, or the disk cache.
     private var latestGroupMatches: [GroupMatchReadModel] = []
+    /// The group pass in flight and whether another was asked for meanwhile.
+    private var groupSync: (runtime: RemoteCompetitionRuntime, again: Bool)?
     private var hasStarted = false
     private var isStopped = false
     private var healthAuthorizationIssue: CompetitionClientIssue?
@@ -841,10 +843,11 @@ private actor RemoteCompetitionClientCoordinator {
             return publication
         }
         await installationCoordinator?.reconcile()
-        // Side by side, so neither can fail or hold up the other.
-        async let groupMatches = runtime.synchronizeGroupMatches()
+        if latestGroupMatches.isEmpty {
+            latestGroupMatches = await runtime.cachedGroupMatches()
+        }
+        startGroupSync(runtime)
         let outcome = await runtime.synchronizeAll()
-        latestGroupMatches = await groupMatches
         await refreshPractice(.reconciliationProbe)
         if let challenges = try? await remoteAPI.listChallenges() {
             latestChallenges = challenges
@@ -881,6 +884,41 @@ private actor RemoteCompetitionClientCoordinator {
         )
         await completePendingObserverDeliveries(using: publication)
         return publication
+    }
+
+    /// Group matches sync beside the duels and republish when they land, so
+    /// a slow group list or Health read never holds up a duel publication.
+    private func startGroupSync(_ runtime: RemoteCompetitionRuntime) {
+        if let current = groupSync, current.runtime === runtime {
+            groupSync = (runtime, true)
+            return
+        }
+        groupSync = (runtime, false)
+        Task { [weak self] in
+            var again = true
+            while again {
+                let matches = await runtime.synchronizeGroupMatches()
+                again = await self?.applyGroupMatches(matches, from: runtime) ?? false
+            }
+        }
+    }
+
+    /// Publishes a finished group pass; true when another pass was asked for.
+    private func applyGroupMatches(_ matches: [GroupMatchReadModel], from runtime: RemoteCompetitionRuntime) async -> Bool {
+        await withOperationGate {
+            // A pass from a torn-down runtime publishes nothing.
+            guard self.runtime === runtime, let current = groupSync, current.runtime === runtime else { return false }
+            guard terminalTeardown == nil, !isStopped else {
+                groupSync = nil
+                return false
+            }
+            if matches != latestGroupMatches {
+                latestGroupMatches = matches
+                if lastPublishInputs != nil { _ = await republishLastInputs() }
+            }
+            groupSync = current.again ? (runtime, false) : nil
+            return current.again
+        }
     }
 
     func reconcileNotifications() async {

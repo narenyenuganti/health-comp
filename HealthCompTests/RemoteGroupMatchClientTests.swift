@@ -371,7 +371,9 @@ final class RemoteGroupMatchClientTests: XCTestCase {
             environment: try health(startDay: (2026, 11, 8), days: 3)
         )
         try await client.mountAuthenticatedProfile(profile, paths)
-        let publication = await client.reconcileAll(.pullToRefresh)
+        let updates = client.updates()
+        _ = await client.reconcileAll(.pullToRefresh)
+        let publication = try await XCTUnwrapAsync(await firstPublication(updates) { !$0.dashboard.groupMatches.isEmpty })
         XCTAssertEqual(Set(publication.dashboard.groupMatches.map(\.id.rawValue)), [finishedID, pendingID])
         XCTAssertEqual(publication.dashboard.competitions, [])
         XCTAssertEqual(CompetitionWidgetSnapshot(dashboard: publication.dashboard).matches, [])
@@ -397,8 +399,233 @@ final class RemoteGroupMatchClientTests: XCTestCase {
         )
         try await relaunched.mountAuthenticatedProfile(profile, paths)
         let offline = await relaunched.reconcileAll(.pullToRefresh)
-        XCTAssertEqual(Set(offline.dashboard.groupMatches.map(\.id.rawValue)), [finishedID, pendingID])
+        XCTAssertEqual(
+            Set(offline.dashboard.groupMatches.map(\.id.rawValue)), [finishedID, pendingID],
+            "the cache shows in the first publication, before the network answers"
+        )
         await relaunched.stop()
+    }
+
+    // MARK: Review findings (PR #243)
+
+    /// Finding 1: the read finished at 23:59:59 on day 7 and the uploads
+    /// crossed midnight. The week may only be sealed on a read started after
+    /// it ended, so a late Watch sync for day 7 still counts.
+    func testAReadBeforeMidnightNeverSealsTheWeek() async throws {
+        let harness = try Harness()
+        let server = try FakeGroupServer(
+            fixture: fixture(), matchID: doublesID, viewer: viewer,
+            startDay: "2026-11-03", deadline: "2026-11-12T00:00:00+00:00"
+        )
+        let midnight = Date(timeIntervalSince1970: 1_794_268_800)  // 2026-11-10T00:00Z
+        let clock = TestClock(midnight.addingTimeInterval(-1))
+        let source = FixtureActivitySource(fixture: try weekFixture(
+            startDay: (2026, 11, 3), at: clock.now,
+            changes: [try FixtureActivityChange(
+                at: midnight.addingTimeInterval(1),
+                updates: [.snapshot(day: try weekDays((2026, 11, 3))[6], snapshot: snapshot(move: 500))],
+                triggers: []
+            )]
+        ))
+        await server.onFirstAppend {
+            clock.now = midnight.addingTimeInterval(5)
+            try? await source.advance(to: midnight.addingTimeInterval(5))
+        }
+        let sync = harness.sync(api: server.api(), environment: .accelerated(source: source), now: { clock.now })
+        _ = await sync.run()
+        let attestation = try await XCTUnwrapAsync(await server.attestations.first)
+        XCTAssertEqual(attestation.basis, .stable)
+        XCTAssertEqual(attestation.acceptedRevisions, [4, 5, 6, 7, 8, 9, 11], "day 7 from the read after midnight")
+    }
+
+    /// Finding 2: this device queued revisions 4-10, another device moved the
+    /// high-water to 20, and the server rejected them as a regression. The
+    /// same readings go out again above 20 and the week still seals.
+    func testARejectedUploadIsReplacedAboveTheNewHighWater() async throws {
+        let harness = try Harness()
+        let server = try FakeGroupServer(
+            fixture: fixture(), matchID: doublesID, viewer: viewer,
+            startDay: "2026-11-03", deadline: "2026-11-12T00:00:00+00:00"
+        )
+        await server.setFailingAppends(true)
+        let clock = TestClock(dayThreeNoon)
+        let sync = harness.sync(
+            api: server.api(), environment: try health(startDay: (2026, 11, 3), days: 7), now: { clock.now }
+        )
+        _ = await sync.run()
+        await server.setFailingAppends(false)
+        await server.setHighWater(20)
+        for minutes in [10.0, 20, 30] {
+            clock.now = dayThreeNoon.addingTimeInterval(minutes * 60)
+            _ = await sync.run()
+        }
+        let accepted = await server.acceptedRequests()
+        XCTAssertEqual(accepted.map(\.clientRevision), Array(21...27))
+        let attestation = try await XCTUnwrapAsync(await server.attestations.first)
+        XCTAssertEqual(attestation.basis, .stable)
+        XCTAssertEqual(attestation.acceptedRevisions, Array(21...27))
+        let outbox = try await harness.outbox.entries()
+        XCTAssertEqual(outbox, [], "the rejected requests leave once replaced")
+    }
+
+    /// Finding 3: day 7 was accepted as A (revision 10), B (revision 11) is
+    /// still queued, and the final read says A again. A goes out above B, so
+    /// the sealed week matches the last read.
+    func testAnInFlightValueNeverOutlivesTheFinalReading() async throws {
+        let harness = try Harness()
+        let server = try FakeGroupServer(
+            fixture: fixture(), matchID: doublesID, viewer: viewer,
+            startDay: "2026-11-03", deadline: "2026-11-12T00:00:00+00:00"
+        )
+        let daySevenNoon = dayThreeNoon.addingTimeInterval(-86_400)
+        let clock = TestClock(daySevenNoon)
+        func sync(daySevenMove: Double) throws -> RemoteGroupMatchSync {
+            harness.sync(
+                api: server.api(),
+                environment: try health(startDay: (2026, 11, 3), days: 7, lastDayMove: daySevenMove),
+                now: { clock.now }
+            )
+        }
+        _ = try await sync(daySevenMove: 420).run()
+        // B never lands while the final read is compared.
+        await server.setFailingRevisions([11])
+        clock.now = daySevenNoon.addingTimeInterval(60)
+        _ = try await sync(daySevenMove: 500).run()
+        clock.now = dayThreeNoon
+        _ = try await sync(daySevenMove: 420).run()
+        var accepted = await server.acceptedRequests()
+        XCTAssertEqual(accepted.map(\.clientRevision), [4, 5, 6, 7, 8, 9, 10, 12], "A goes out above B")
+        XCTAssertEqual(accepted.last?.moveBasisPoints, accepted[6].moveBasisPoints)
+
+        // B finally reaches the server and is refused under A.
+        await server.setFailingRevisions([])
+        clock.now = dayThreeNoon.addingTimeInterval(3_600)
+        _ = try await sync(daySevenMove: 420).run()
+        accepted = await server.acceptedRequests()
+        XCTAssertEqual(accepted.map(\.clientRevision).last, 12)
+        let attestation = try await XCTUnwrapAsync(await server.attestations.first)
+        XCTAssertEqual(attestation.basis, .stable)
+        XCTAssertEqual(attestation.acceptedRevisions, [4, 5, 6, 7, 8, 9, 12])
+    }
+
+    /// Finding 4: a group upload stuck on the network comes first in the
+    /// outbox. The duel upload behind it still goes out.
+    func testAStalledGroupUploadNeverHoldsUpADuelUpload() async throws {
+        let harness = try Harness()
+        _ = try await harness.store.allocateRevision(doublesID, atLeast: 3)
+        _ = try await harness.outbox.enqueue(.scoreRevision(try groupRequest(revision: 4)), enqueuedAt: dayThreeNoon)
+        let duelID = UUID()
+        _ = try await harness.outbox.enqueue(
+            .scoreRevision(try groupRequest(revision: 4, competitionID: duelID, semanticEventID: UUID())),
+            enqueuedAt: dayThreeNoon
+        )
+        let stalled = Gate()
+        let duelSent = expectation(description: "the duel upload goes out")
+        duelSent.assertForOverFulfill = false
+        let runtime = RemoteCompetitionRuntime(
+            profileID: viewer,
+            store: harness.events,
+            remoteAPI: groupTestAPI(
+                listGroupMatches: { throw CompetitionRemoteFailure.retryableTransport },
+                competitionExists: { _ in true },
+                appendScoreRevision: { request in
+                    if request.competitionID == duelID {
+                        duelSent.fulfill()
+                    } else {
+                        await stalled.wait()
+                    }
+                    return try CompetitionScoreRevisionResponse(
+                        disposition: .rejected, rejectionCode: .revisionRegression, acceptedCentiPoints: nil,
+                        wireContentSHA256: nil, acceptedServerSequence: nil, competitionCursor: 1
+                    )
+                }
+            ),
+            outboxStore: harness.outbox,
+            groupMatchStore: harness.store,
+            now: { self.dayThreeNoon }
+        )
+        let groups = Task { await runtime.synchronizeGroupMatches() }
+        let duels = Task { await runtime.synchronizeAll() }
+        await fulfillment(of: [duelSent], timeout: 10)
+        await stalled.open()
+        _ = await groups.value
+        _ = await duels.value
+        await runtime.stop()
+    }
+
+    /// Finding 4: the group list hangs. The duel publication still goes out,
+    /// and the groups follow once the list answers.
+    func testASlowGroupListNeverHoldsUpTheDuelPublication() async throws {
+        let root = try makeDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let profile = AuthenticatedProfile(id: viewer, displayName: "Player 1")
+        let paths = AuthenticatedProfileStoragePaths(profileID: viewer, rootDirectory: root)
+        for directory in paths.fixedDirectories {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        }
+        let body = try listBody(fixtureMatches().filter { ($0["competition_id"] as? String) != doublesID.uuidString.lowercased() })
+        let slow = Gate()
+        let client = CompetitionClient.remote(
+            remoteAPI: groupTestAPI(listGroupMatches: {
+                await slow.wait()
+                return body
+            }),
+            environment: try health(startDay: (2026, 11, 8), days: 3)
+        )
+        try await client.mountAuthenticatedProfile(profile, paths)
+        let updates = client.updates()
+        let published = expectation(description: "the duel publication goes out")
+        let reconcile = Task {
+            let publication = await client.reconcileAll(.pullToRefresh)
+            published.fulfill()
+            return publication
+        }
+        await fulfillment(of: [published], timeout: 10)
+        await slow.open()
+        let first = await reconcile.value
+        XCTAssertTrue(first.dashboard.groupMatches.isEmpty)
+        let later = await firstPublication(updates) { !$0.dashboard.groupMatches.isEmpty }
+        XCTAssertEqual(Set(later?.dashboard.groupMatches.map(\.id.rawValue) ?? []), [finishedID, pendingID])
+        await client.stop()
+    }
+
+    /// Finding 5: revision 4 was accepted and left the outbox, then a power
+    /// cut lost the owner document's update. Offline, nothing is queued on
+    /// the old high-water; online, the next revision is 5.
+    func testALostOwnerWriteNeverReusesAnAcceptedRevision() async throws {
+        let harness = try Harness()
+        let server = try FakeGroupServer(fixture: fixture(), matchID: doublesID, viewer: viewer)
+        let clock = TestClock(dayThreeNoon)
+        _ = await harness.sync(
+            api: server.api(), environment: try health(startDay: (2026, 11, 8), days: 1), now: { clock.now }
+        ).run()
+        let first = await server.acceptedRequests()
+        XCTAssertEqual(first.map(\.clientRevision), [4, 5, 6])
+        let cachedHighWater = await harness.store.readModel().first { $0.id == doublesID }?.ownerRevisionHighWater
+        XCTAssertEqual(cachedHighWater, 3)
+        // The power cut: the owner document's updates are gone.
+        try FileManager.default.removeItem(at: harness.groupDirectory.appendingPathComponent(
+            "owner-\(doublesID.uuidString.lowercased()).json"
+        ))
+
+        clock.now = dayThreeNoon.addingTimeInterval(60)
+        let offline = harness.sync(
+            api: groupTestAPI(
+                listGroupMatches: { throw CompetitionRemoteFailure.retryableTransport },
+                appendScoreRevision: { _ in throw CompetitionRemoteFailure.retryableTransport }
+            ),
+            environment: try health(startDay: (2026, 11, 8), days: 2), now: { clock.now }
+        )
+        _ = await offline.run()
+        let queuedOffline = try await harness.outbox.entries()
+        XCTAssertEqual(queuedOffline, [], "no revision is spent on a cached high-water")
+
+        clock.now = dayThreeNoon.addingTimeInterval(120)
+        _ = await harness.sync(
+            api: server.api(), environment: try health(startDay: (2026, 11, 8), days: 2), now: { clock.now }
+        ).run()
+        let second = await server.acceptedRequests()
+        XCTAssertEqual(second.map(\.clientRevision), [4, 5, 6, 7], "day 2 goes out as 7")
     }
 
     // MARK: Helpers
@@ -481,17 +708,21 @@ final class RemoteGroupMatchClientTests: XCTestCase {
         match["seats"] = seats
     }
 
-    private func groupRequest(revision: Int64) throws -> CompetitionScoreRevisionRequest {
+    private func groupRequest(
+        revision: Int64, competitionID: UUID? = nil, semanticEventID: UUID? = nil
+    ) throws -> CompetitionScoreRevisionRequest {
+        let competitionID = competitionID ?? doublesID
         let wire = try RemoteScoreRevisionWireV1(
-            competitionID: doublesID, participantID: viewer, dayOrdinal: 1,
+            competitionID: competitionID, participantID: viewer, dayOrdinal: 1,
             moveMode: "activeEnergyKilocalories", standMode: "standHours",
             moveBasisPoints: 10_000, exerciseBasisPoints: 5_000, standBasisPoints: 3_000,
             availabilityReason: "available", scoringPolicyIdentity: RemoteScoringWireV1.policyIdentity,
             clientRevision: revision
         )
         return try CompetitionScoreRevisionRequest(
-            competitionID: doublesID,
-            semanticEventID: RemoteGroupMatchSync.semanticEventID(wireContentSHA256: wire.wireContentSHA256),
+            competitionID: competitionID,
+            semanticEventID: semanticEventID
+                ?? RemoteGroupMatchSync.semanticEventID(wireContentSHA256: wire.wireContentSHA256),
             dayOrdinal: 1, clientRevision: revision, evaluatedAt: dayThreeNoon,
             moveMode: wire.moveMode, standMode: wire.standMode,
             moveBasisPoints: wire.moveBasisPoints, exerciseBasisPoints: wire.exerciseBasisPoints,
@@ -502,33 +733,68 @@ final class RemoteGroupMatchClientTests: XCTestCase {
 
     /// Health with a reading on the first `days` days of a UTC week.
     private func health(
-        startDay: (Int, Int, Int), days count: Int, readFails: Bool = false
+        startDay: (Int, Int, Int), days count: Int, readFails: Bool = false, lastDayMove: Double = 420
     ) throws -> CompetitionEnvironmentClient {
-        let calendar = try CompetitionCalendar(timeZoneIdentifier: "UTC")
-        let start = try CompetitionDay(
+        .accelerated(fixture: try weekFixture(
+            startDay: startDay, at: dayThreeNoon, days: count, readFails: readFails, lastDayMove: lastDayMove
+        ))
+    }
+
+    private func weekDays(_ startDay: (Int, Int, Int)) throws -> [CompetitionDay] {
+        try CompetitionCalendar(timeZoneIdentifier: "UTC").sevenDayWindow(startingOn: CompetitionDay(
             era: 1, year: startDay.0, month: startDay.1, day: startDay.2, timeZoneIdentifier: "UTC"
-        )
-        let days = try calendar.sevenDayWindow(startingOn: start)
-        let snapshot = ActivitySnapshot(
+        ))
+    }
+
+    private func snapshot(move: Double) throws -> ActivitySnapshot {
+        ActivitySnapshot(
             moveMode: .activeEnergyKilocalories,
             standMode: .standHours,
-            move: try ActivityRingReading(value: 420, goal: 600),
+            move: try ActivityRingReading(value: move, goal: 600),
             exercise: try ActivityRingReading(value: 24, goal: 30),
             standOrRoll: try ActivityRingReading(value: 10, goal: 12),
             pauseState: .running
         )
-        return .accelerated(fixture: try ActivityFixture(
+    }
+
+    private func weekFixture(
+        startDay: (Int, Int, Int), at instant: Date, days count: Int = 7, readFails: Bool = false,
+        lastDayMove: Double = 420, changes: [FixtureActivityChange] = []
+    ) throws -> ActivityFixture {
+        try ActivityFixture(
             initialInstant: EnvironmentInstant(
-                wallDate: dayThreeNoon,
+                wallDate: instant,
                 monotonic: MonotonicInstant(epochID: "group-uploads", nanoseconds: 1)
             ),
             timeZoneIdentifier: "UTC",
-            initialDays: days.enumerated().map { index, day in
-                index < count ? .snapshot(day: day, snapshot: snapshot) : .missing(day: day)
+            initialDays: try weekDays(startDay).enumerated().map { index, day in
+                index < count
+                    ? .snapshot(day: day, snapshot: try snapshot(move: index == 6 ? lastDayMove : 420))
+                    : .missing(day: day)
             },
             initialReadState: readFails ? .failure(.healthDataUnavailable) : .available,
-            changes: []
-        ))
+            changes: changes
+        )
+    }
+
+    /// The first publication matching `predicate`, or nil after 10 seconds.
+    private func firstPublication(
+        _ updates: AsyncStream<CompetitionPublication>,
+        where predicate: @escaping @Sendable (CompetitionPublication) -> Bool
+    ) async -> CompetitionPublication? {
+        await withTaskGroup(of: CompetitionPublication?.self) { group in
+            group.addTask {
+                for await publication in updates where predicate(publication) { return publication }
+                return nil
+            }
+            group.addTask {
+                try? await Task.sleep(for: .seconds(10))
+                return nil
+            }
+            let first = await group.next() ?? nil
+            group.cancelAll()
+            return first
+        }
     }
 
     private func makeDirectory() throws -> URL {
@@ -581,6 +847,23 @@ private final class TestClock: @unchecked Sendable {
     }
 }
 
+/// Holds callers until opened.
+private actor Gate {
+    private var isOpen = false
+    private var waiters: [CheckedContinuation<Void, Never>] = []
+
+    func wait() async {
+        guard !isOpen else { return }
+        await withCheckedContinuation { waiters.append($0) }
+    }
+
+    func open() {
+        isOpen = true
+        waiters.forEach { $0.resume() }
+        waiters = []
+    }
+}
+
 private actor PresenceProbe {
     var ids: [UUID] = []
     func record(_ id: UUID) { ids.append(id) }
@@ -595,6 +878,9 @@ private actor FakeGroupServer {
     private var sequence: Int64 = 100
     private var attestation: [String: Any]?
     private var failsAppends = false
+    private var failingRevisions: Set<Int64> = []
+    private var firstAppend: (@Sendable () async -> Void)?
+    private var acceptedDigests: [Int64: (digest: String, sequence: Int64)] = [:]
     private let viewer: UUID
     private(set) var log: [String] = []
     private(set) var attempts: [CompetitionScoreRevisionRequest] = []
@@ -624,6 +910,10 @@ private actor FakeGroupServer {
     }
 
     func setFailingAppends(_ value: Bool) { failsAppends = value }
+    /// Another device's upload moved the participant's high-water.
+    func setHighWater(_ value: Int64) { highWater = value }
+    func setFailingRevisions(_ value: Set<Int64>) { failingRevisions = value }
+    func onFirstAppend(_ action: @escaping @Sendable () async -> Void) { firstAppend = action }
     func clearLog() { log = [] }
     func attemptedRequests() -> [CompetitionScoreRevisionRequest] { attempts }
     func acceptedRequests() -> [CompetitionScoreRevisionRequest] { accepted }
@@ -647,10 +937,28 @@ private actor FakeGroupServer {
         return try! JSONSerialization.data(withJSONObject: ["version": 1, "matches": [match]])
     }
 
-    private func append(_ request: CompetitionScoreRevisionRequest) throws -> CompetitionScoreRevisionResponse {
+    private func append(_ request: CompetitionScoreRevisionRequest) async throws -> CompetitionScoreRevisionResponse {
+        if let action = firstAppend {
+            firstAppend = nil
+            await action()
+        }
         log.append("append")
         attempts.append(request)
-        if failsAppends { throw CompetitionRemoteFailure.retryableTransport }
+        if failsAppends || failingRevisions.contains(request.clientRevision) {
+            throw CompetitionRemoteFailure.retryableTransport
+        }
+        // The SQL's rules: an exact retry is a duplicate, anything else at or
+        // below the high-water is refused.
+        if let prior = acceptedDigests[request.clientRevision] {
+            guard prior.digest == request.wireContentSHA256 else {
+                return try .rejected(.divergentDuplicate, cursor: sequence)
+            }
+            return try CompetitionScoreRevisionResponse(
+                disposition: .duplicate, rejectionCode: nil, acceptedCentiPoints: nil,
+                wireContentSHA256: prior.digest, acceptedServerSequence: prior.sequence, competitionCursor: sequence
+            )
+        }
+        guard request.clientRevision > highWater else { return try .rejected(.revisionRegression, cursor: sequence) }
         accepted.append(request)
         sequence += 1
         let points = request.availabilityReason == "available"
@@ -679,6 +987,7 @@ private actor FakeGroupServer {
             "received_at": stamp,
         ])
         highWater = max(highWater, request.clientRevision)
+        acceptedDigests[request.clientRevision] = (request.wireContentSHA256, sequence)
         return try CompetitionScoreRevisionResponse(
             disposition: .appended, rejectionCode: nil, acceptedCentiPoints: points,
             wireContentSHA256: request.wireContentSHA256, acceptedServerSequence: sequence, competitionCursor: sequence
@@ -703,6 +1012,15 @@ private actor FakeGroupServer {
         ]
         return try CompetitionAttestationReceipt(
             disposition: .appended, windowCommitmentSHA256: request.windowCommitmentSHA256, entityServerSequence: sequence
+        )
+    }
+}
+
+private extension CompetitionScoreRevisionResponse {
+    static func rejected(_ code: CompetitionScoreRevisionRejectionCode, cursor: Int64) throws -> Self {
+        try Self(
+            disposition: .rejected, rejectionCode: code, acceptedCentiPoints: nil,
+            wireContentSHA256: nil, acceptedServerSequence: nil, competitionCursor: cursor
         )
     }
 }

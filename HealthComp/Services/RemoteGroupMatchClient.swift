@@ -654,6 +654,37 @@ extension CompetitionAcceptedScorePersistence {
     }
 }
 
+/// One family's view of the shared outbox, so group and duel uploads drain
+/// on their own coordinators: a stalled request or failed write in one
+/// never holds up the other. Writes go to the shared store unchanged.
+struct GroupOutboxPartition: CompetitionOutboxStore {
+    let base: any CompetitionOutboxStore
+    let groups: GroupMatchStore
+    let holdsGroups: Bool
+
+    func enqueue(_ payload: CompetitionOutboxPayload, enqueuedAt: Date) async throws -> CompetitionOutboxEntry {
+        try await base.enqueue(payload, enqueuedAt: enqueuedAt)
+    }
+
+    func entries() async throws -> [CompetitionOutboxEntry] {
+        var mine: [CompetitionOutboxEntry] = []
+        for entry in try await base.entries() where await groups.owns(entry) == holdsGroups {
+            mine.append(entry)
+        }
+        return mine
+    }
+
+    func update(
+        _ semanticEventID: UUID, expectedGeneration: UInt64, state: CompetitionOutboxState
+    ) async throws -> CompetitionOutboxEntry {
+        try await base.update(semanticEventID, expectedGeneration: expectedGeneration, state: state)
+    }
+
+    func remove(_ semanticEventID: UUID, expectedGeneration: UInt64) async throws {
+        try await base.remove(semanticEventID, expectedGeneration: expectedGeneration)
+    }
+}
+
 // MARK: - Sync
 
 /// One pass over the signed-in person's group matches: refresh the read
@@ -670,13 +701,24 @@ struct RemoteGroupMatchSync: Sendable {
 
     func run() async -> [GroupMatchReadModel] {
         await syncCoordinator?.wake()
-        var matches = await refresh().matches
+        let listed = await refresh()
+        var matches = listed.matches
+        // Uploads need the server's current high-water: a cached one can
+        // trail a revision accepted just before a power cut.
+        guard listed.isFresh else {
+            try? await removeMaterializedAcknowledgments(matches)
+            return matches
+        }
         var finalWindows: [(id: UUID, readSucceeded: Bool)] = []
         for match in matches {
-            guard let window = uploadWindow(match) else { continue }
-            let readSucceeded = (try? await upload(match, window: window)) ?? false
-            if (try? now() >= window.calendar.startOfDay(window.calendar.day(after: window.days[6]))) == true {
-                finalWindows.append((match.id, readSucceeded))
+            guard let window = uploadWindow(match),
+                  let end = try? window.calendar.startOfDay(window.calendar.day(after: window.days[6]))
+            else { continue }
+            var readAt = try? await upload(match, window: window)
+            if now() >= end {
+                // Only a read that started after the week ended can seal it.
+                if let started = readAt, started < end { readAt = try? await upload(match, window: window) }
+                finalWindows.append((match.id, readAt.map { $0 >= end } ?? false))
             }
         }
         if !finalWindows.isEmpty, let syncCoordinator {
@@ -736,18 +778,21 @@ struct RemoteGroupMatchSync: Sendable {
     }
 
     /// Reads Health once and queues each started day whose reading changed.
-    /// Returns false when the read failed.
-    private func upload(_ match: GroupMatchReadModel, window: CompetitionActivityWindow) async throws -> Bool {
+    /// Returns when the read started, or nil when it failed.
+    private func upload(_ match: GroupMatchReadModel, window: CompetitionActivityWindow) async throws -> Date? {
+        let readStartedAt = now()
         guard let environment, let outboxStore, let syncCoordinator,
               let seat = match.seats.first(where: { $0.profileID == profileID }),
               let read = try? await environment.read(window)
-        else { return false }
+        else { return nil }
         let evaluatedAt = now()
         // Outbox first, then the document: an upload accepted in between
         // writes its row before leaving the outbox, so it shows in one of them.
-        let pending = try await outboxStore.entries().compactMap { entry -> CompetitionScoreRevisionRequest? in
-            guard case let .scoreRevision(request) = entry.payload, request.competitionID == match.id else { return nil }
-            return request
+        var live: [CompetitionScoreRevisionRequest] = []
+        var terminal: [CompetitionOutboxEntry] = []
+        for entry in try await outboxStore.entries() {
+            guard case let .scoreRevision(request) = entry.payload, request.competitionID == match.id else { continue }
+            if case .permanentFailure = entry.state { terminal.append(entry) } else { live.append(request) }
         }
         let document = try await store.rehydrate(
             match.id,
@@ -774,16 +819,25 @@ struct RemoteGroupMatchSync: Sendable {
                     evidence: evidence, clientRevision: revision
                 ).wireContentSHA256
             }
-            if let queued = pending.filter({ $0.dayOrdinal == ordinal }).max(by: { $0.clientRevision < $1.clientRevision }),
-               try digest(at: queued.clientRevision) == queued.wireContentSHA256 {
+            // A rejected request is never retried, so it can't stand in for
+            // this reading; only a live one can.
+            let queued = live.filter { $0.dayOrdinal == ordinal }.max { $0.clientRevision < $1.clientRevision }
+            if let queued, try digest(at: queued.clientRevision) == queued.wireContentSHA256 {
                 continue
             }
-            if let accepted = document.accepted.first(where: { $0.ordinal == ordinal }),
+            let accepted = document.accepted.first { $0.ordinal == ordinal }
+            // A newer different value still in flight would land over the
+            // accepted one, so the accepted match only counts without it.
+            if let accepted, queued.map({ $0.clientRevision < accepted.clientRevision }) ?? true,
                try digest(at: accepted.clientRevision) == accepted.wireContentSHA256 {
+                try await removeSettledFailures(terminal, ordinal: ordinal, through: .max, outboxStore)
                 continue
             }
             let revision = try await store.allocateRevision(
-                match.id, atLeast: pending.map(\.clientRevision).max() ?? 0
+                match.id, atLeast: (live.map(\.clientRevision) + terminal.compactMap { entry -> Int64? in
+                    guard case let .scoreRevision(request) = entry.payload else { return nil }
+                    return request.clientRevision
+                }).max() ?? 0
             )
             let wire = try RemoteCompetitionRuntime.wire(
                 competitionID: match.id, profileID: profileID, ordinal: ordinal,
@@ -809,7 +863,20 @@ struct RemoteGroupMatchSync: Sendable {
             )
         }
         await syncCoordinator.waitUntilIdle()
-        return true
+        return readStartedAt
+    }
+
+    /// Drops a day's rejected uploads at or below `revision`.
+    private func removeSettledFailures(
+        _ terminal: [CompetitionOutboxEntry], ordinal: Int, through revision: Int64,
+        _ outboxStore: any CompetitionOutboxStore
+    ) async throws {
+        for entry in terminal {
+            guard case let .scoreRevision(request) = entry.payload,
+                  request.dayOrdinal == ordinal, request.clientRevision <= revision
+            else { continue }
+            try await outboxStore.remove(entry.semanticEventID, expectedGeneration: entry.generation)
+        }
     }
 
     /// The final window over the server's own heads. Stable needs a fresh
@@ -820,14 +887,15 @@ struct RemoteGroupMatchSync: Sendable {
               let seat = match.seats.first(where: { $0.profileID == profileID })
         else { return }
         let entries = try await outboxStore.entries().filter { $0.payload.competitionID == match.id }
-        var hasFailedUpload = false
-        for entry in entries {
-            guard case .scoreRevision = entry.payload else { continue }
-            guard case .permanentFailure = entry.state else { return }
-            hasFailedUpload = true
-        }
         let rows = (1...7).map { ordinal in seat.days.first { $0.ordinal == ordinal } }
         let revisions = rows.map { $0?.clientRevision ?? 0 }
+        var hasFailedUpload = false
+        for entry in entries {
+            guard case let .scoreRevision(request) = entry.payload else { continue }
+            guard case .permanentFailure = entry.state else { return }
+            // A newer accepted row for that day replaced the rejected one.
+            if revisions[request.dayOrdinal - 1] < request.clientRevision { hasFailedUpload = true }
+        }
         let basis: CompetitionAttestationBasis
         if headsAreFresh, !hasFailedUpload, revisions.allSatisfy({ $0 > 0 }) {
             basis = .stable
@@ -887,10 +955,19 @@ struct RemoteGroupMatchSync: Sendable {
         await syncCoordinator.waitUntilIdle()
     }
 
-    /// An acknowledged attestation leaves the outbox once the read model shows it.
+    /// An acknowledged attestation leaves the outbox once the read model
+    /// shows it, and a rejected upload once a newer row for its day is in.
     private func removeMaterializedAcknowledgments(_ matches: [GroupMatchReadModel]) async throws {
         guard let outboxStore else { return }
         for entry in try await outboxStore.entries() {
+            if case let .scoreRevision(request) = entry.payload, case .permanentFailure = entry.state,
+               let head = matches.first(where: { $0.id == request.competitionID })?
+                   .seats.first(where: { $0.profileID == profileID })?
+                   .days.first(where: { $0.ordinal == request.dayOrdinal }),
+               head.clientRevision > request.clientRevision {
+                try await outboxStore.remove(entry.semanticEventID, expectedGeneration: entry.generation)
+                continue
+            }
             guard case let .finalWindowAttestation(request) = entry.payload,
                   case let .attestationAcknowledged(receipt, _) = entry.state,
                   let attestation = matches.first(where: { $0.id == request.competitionID })?.ownerAttestation,
