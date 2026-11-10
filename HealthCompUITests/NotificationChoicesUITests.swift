@@ -194,9 +194,7 @@ final class NotificationChoicesUITests: XCTestCase {
         openAccount()
         openNotifications()
         flip(choice("reaction"))
-        for row in Self.rows {
-            XCTAssertEqual(choice(row.id).value as? String, "1", row.id)
-        }
+        assertAll(Self.rows, on: true)
         closeNotificationsAndAccount()
         XCTAssertTrue(waitForServer("none", registrations: 6, failures: 1))
 
