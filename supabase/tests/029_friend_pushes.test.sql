@@ -42,7 +42,7 @@ select ok(has_function_privilege('authenticated','public.register_current_device
  and not has_function_privilege('anon','public.register_current_device_installation(uuid,text,text,boolean,boolean,boolean,text[])','execute')
  and not has_function_privilege('service_role','public.register_current_device_installation(uuid,text,text,boolean,boolean,boolean,text[])','execute'),'registration grant boundary');
 select pg_temp.as_user(2);
-select throws_ok($$select public.register_current_device_installation(pg_temp.iid(3),repeat('ab',32),'sandbox',true,true,null,'{}')$$,'22023','invalid_installation_request','null capability rejected');
+select throws_ok($$select public.register_current_device_installation(pg_temp.iid(3),repeat('ab',32),'sandbox',true,true,null::boolean,'{}')$$,'22023','invalid_installation_request','null capability rejected');
 select throws_ok($$select public.register_current_device_installation(pg_temp.iid(3),repeat('ab',32),'sandbox',true,true,true,array['unknown'])$$,'22023','invalid_installation_request','unknown mute rejected');
 select is(pg_temp.send(1,2),' {"relationship":"requested"}'::jsonb,'send new request');
 select is((select count(*) from private.competition_notification_work where kind='friend_request'),3::bigint,'only capable installations queued');
