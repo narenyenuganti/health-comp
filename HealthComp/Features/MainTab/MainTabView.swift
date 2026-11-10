@@ -43,6 +43,7 @@ struct MainTabView: View {
         .task(id: store.competition.publication?.source == .remoteParticipants) {
             if store.competition.publication?.source == .remoteParticipants {
                 store.send(.competition(.blockedPeopleRequested))
+                store.send(.competition(.friends(.requested)))
             }
         }
         .onChange(of: scenePhase) { _, newValue in
@@ -50,6 +51,9 @@ struct MainTabView: View {
             // A photo changed or hidden while away shows without a relaunch.
             if newValue == .active {
                 store.send(.competition(.profilePhotosNeeded(photoOwners)))
+                if store.competition.publication?.source == .remoteParticipants {
+                    store.send(.competition(.friends(.requested)))
+                }
             }
         }
         // Keeps the notifications prompt from presenting under the
@@ -64,6 +68,13 @@ struct MainTabView: View {
             )
         ) { _ in
             store.send(.timeZoneChanged)
+        }
+        .onReceive(
+            NotificationCenter.default.publisher(for: .healthCompFriendsPushReceived)
+        ) { _ in
+            if store.competition.publication?.source == .remoteParticipants {
+                store.send(.competition(.friends(.requested)))
+            }
         }
         .sheet(isPresented: claimSheetPresented) {
             ClaimCompetitionView(
@@ -97,6 +108,12 @@ struct MainTabView: View {
                 close: { store.send(.dismissChallengeFromLink) }
             )
         }
+        // A Friends push opens Friends in front of everything.
+        .onChange(of: store.friendsRouteCount) { _, _ in
+            isChallengePresented = false
+            isPracticePresented = false
+            recapPeriod = nil
+        }
         .onChange(of: isChallengePresented) { _, isPresented in
             if isPresented, store.competition.publication?.source == .remoteParticipants {
                 store.send(.competition(.challengeLinkRequested))
@@ -112,14 +129,8 @@ struct MainTabView: View {
         .environment(\.profilePhotos, store.competition.profilePhotoImages)
     }
 
-    /// Everyone whose photo could show, with the sender of a challenge
-    /// being claimed: they sent it to you, so you may see theirs.
     private var photoOwners: [UUID] {
-        let owners = store.competition.photoOwners
-        guard let sender = store.inviteClaimPreview?.sender.id, !owners.contains(sender) else {
-            return owners
-        }
-        return owners + [sender]
+        store.competition.photoOwners(claimSender: store.inviteClaimPreview?.sender.id)
     }
 
     /// Accept, or Send from a link: both end by closing the sheet on the match.
@@ -175,6 +186,17 @@ struct MainTabView: View {
                             store.send(.competition(.createInviteTapped))
                         },
                         isChallengePresented: $isChallengePresented,
+                        friends: store.competition.friends.list?.friends ?? [],
+                        chooseFriend: { friend in
+                            store.send(.competition(.challengeRecipientChosen(.init(
+                                AuthenticatedProfile(id: friend.id, displayName: friend.displayName)
+                            ))))
+                        },
+                        searchPeople: {
+                            isChallengePresented = false
+                            store.send(.competition(.friends(.searchFocusRequested(true))))
+                            store.send(.friendsPresentationChanged(true))
+                        },
                         selectCompetition: {
                             store.send(.pathChanged([$0]))
                         },
@@ -224,6 +246,9 @@ struct MainTabView: View {
                         CompetitionHistoryView(publication: publication, openRecap: { recapPeriod = $0 })
                             .toolbarRole(.editor)
                     }
+                case .friends:
+                    FriendsView(store: store)
+                        .toolbarRole(.editor)
                 case let .person(identity):
                     if let publication = store.competition.publication {
                         personScreen(identity, publication: publication)
@@ -284,13 +309,43 @@ struct MainTabView: View {
             personPlace: Binding(
                 get: { store.personPlace },
                 set: { store.send(.personPlaceChanged($0)) }
+            ),
+            showsFriends: Binding(
+                get: { store.showsFriends },
+                set: { store.send(.friendsPresentationChanged($0)) }
             )
         )
     }
 
     /// The person page, with the match under it on the stack, whether you
-    /// blocked them, and their mute.
+    /// blocked them, and their mute. Someone with no finished match gets
+    /// their small page, when search or Friends has told us who they are.
+    @ViewBuilder
     private func personScreen(
+        _ identity: String,
+        publication: LocalCompetitionPublication
+    ) -> some View {
+        if let id = RemoteCompetitionOpponentIdentity.profileID(identity),
+           let person = store.competition.friends.people[id],
+           competitionRivalryWeeks(publication.dashboard.competitions, opponentIdentity: identity).isEmpty {
+            FriendProfileView(
+                controls: friendControls(id, displayName: person.displayName),
+                isBlocked: store.competition.blockedPeople.map { $0.contains { $0.id == id } },
+                unblock: { store.send(.competition(.unblockTapped(id))) },
+                challenge: {
+                    store.send(.competition(.challengeRecipientChosen(.init(
+                        AuthenticatedProfile(id: id, displayName: person.displayName)
+                    ))))
+                    isChallengePresented = true
+                },
+                hasPlayed: publication.dashboard.competitions.contains { $0.opponentIdentity == identity }
+            )
+        } else {
+            matchedPersonScreen(identity, publication: publication)
+        }
+    }
+
+    private func matchedPersonScreen(
         _ identity: String,
         publication: LocalCompetitionPublication
     ) -> some View {
@@ -312,7 +367,14 @@ struct MainTabView: View {
             muteButton: publication.dashboard.competitions
                 .first { $0.opponentIdentity == identity }
                 .flatMap(muteButton(for:)),
-            challenge: challengeAgain
+            challenge: challengeAgain,
+            friend: profileID.flatMap { id in
+                guard publication.source == .remoteParticipants,
+                      let name = publication.dashboard.competitions
+                        .first(where: { $0.opponentIdentity == identity })?.opponentDisplayName
+                else { return nil }
+                return friendControls(id, displayName: name)
+            }
         )
         // Your own blocks only; the phone never learns who blocked you.
         .task(id: identity) {
@@ -320,6 +382,30 @@ struct MainTabView: View {
                 store.send(.competition(.blockedPeopleRequested))
             }
         }
+    }
+
+    /// Friending, Block and Report for one person, as the Friends reducer
+    /// has them. Someone it hasn't seen is nobody to you once the list loads.
+    private func friendControls(_ id: UUID, displayName: String) -> PersonFriendControls {
+        let friends = store.competition.friends
+        let known = friends.people[id]
+        let relationship = known?.relationship ?? (friends.list == nil ? nil : FriendRelationship.none)
+        let person = known ?? FriendPerson(
+            id: id,
+            displayName: displayName,
+            username: nil,
+            relationship: relationship ?? .none
+        )
+        return PersonFriendControls(
+            person: person,
+            relationship: relationship,
+            isInFlight: friends.inFlight.contains(id),
+            failure: friends.failure(for: id),
+            isReported: friends.reported.contains(id),
+            change: { store.send(.competition(.friends(.changeTapped(person, $0)))) },
+            block: { store.send(.competition(.friends(.blockTapped(person)))) },
+            report: { store.send(.competition(.friends(.reportTapped(person, andBlock: $0)))) }
+        )
     }
 
     /// "Your record with Sam" on a match: pushes their page, or pops back to
@@ -354,6 +440,9 @@ struct MainTabView: View {
         ToolbarItemGroup(placement: .topBarTrailing) {
             // Invitations are private links between real people.
             if store.competition.publication?.source == .remoteParticipants {
+                FriendsToolbarButton(requestCount: store.competition.friends.requestCount) {
+                    store.send(.friendsPresentationChanged(true))
+                }
                 CompetitionChallengeButton { isChallengePresented = true }
             }
             if let openAccount {

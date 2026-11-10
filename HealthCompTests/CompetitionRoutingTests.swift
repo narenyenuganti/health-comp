@@ -314,6 +314,70 @@ final class CompetitionRoutingTests: XCTestCase {
         XCTAssertNil(CompetitionRoute(userInfo: payload))
     }
 
+    /// Exactly what the server sends for friend_request and friend_accepted.
+    func testFriendsPayloadDecodesStrictlyAndEncodesBack() {
+        let route = CompetitionRoute.friends
+        XCTAssertEqual(
+            route.userInfo as NSDictionary,
+            ["healthcomp.route.v": 1, "healthcomp.route.kind": "friends"] as NSDictionary
+        )
+        XCTAssertEqual(CompetitionRoute(userInfo: route.userInfo), route)
+        XCTAssertEqual(route.kind, .friends)
+        XCTAssertNil(route.url)
+
+        var payload = route.userInfo
+        payload["aps"] = [
+            "alert": ["title": "You have a new friend request."],
+            "sound": "default",
+            "thread-id": "friends",
+        ]
+        XCTAssertEqual(CompetitionRoute(userInfo: payload), .friends)
+        XCTAssertEqual(CompetitionReactionAlert.route(userInfo: payload), .friends)
+
+        // Malformed: an id, any extra key, a bad aps, another version.
+        var withID = payload
+        withID["healthcomp.route.competitionID"] = "ead172f8-531d-4327-823d-e82a4f696051"
+        XCTAssertNil(CompetitionRoute(userInfo: withID))
+        var extra = payload
+        extra["profileID"] = "ead172f8-531d-4327-823d-e82a4f696051"
+        XCTAssertNil(CompetitionRoute(userInfo: extra))
+        var nonString = payload
+        nonString[AnyHashable(7)] = "unexpected"
+        XCTAssertNil(CompetitionRoute(userInfo: nonString))
+        var badAPS = payload
+        badAPS["aps"] = "not-an-aps-dictionary"
+        XCTAssertNil(CompetitionRoute(userInfo: badAPS))
+        var version2 = payload
+        version2["healthcomp.route.v"] = 2
+        XCTAssertNil(CompetitionRoute(userInfo: version2))
+        var missingVersion = payload
+        missingVersion["healthcomp.route.v"] = nil
+        XCTAssertNil(CompetitionRoute(userInfo: missingVersion))
+        var wrongCase = payload
+        wrongCase["healthcomp.route.kind"] = "Friends"
+        XCTAssertNil(CompetitionRoute(userInfo: wrongCase))
+    }
+
+    /// A kind this build doesn't know opens the app where it was.
+    func testUnknownRouteKindFailsClosed() {
+        for kind in ["friend", "profile", "", "competitions"] {
+            XCTAssertNil(CompetitionRoute(userInfo: [
+                "aps": ["alert": ["title": "x"]],
+                "healthcomp.route.v": 1,
+                "healthcomp.route.kind": kind,
+            ]), kind)
+        }
+        XCTAssertNil(CompetitionRoute(userInfo: [
+            "healthcomp.route.v": 1,
+            "healthcomp.route.kind": 3,
+        ]))
+        // A competition route still needs its id.
+        XCTAssertNil(CompetitionRoute(userInfo: [
+            "healthcomp.route.v": 1,
+            "healthcomp.route.kind": "competition",
+        ]))
+    }
+
     func testHubBuffersReplaysAndConsumesOnlyMatchingSequence() async {
         let hub = CompetitionRouteHub()
         let firstRoute = CompetitionRoute.competition(

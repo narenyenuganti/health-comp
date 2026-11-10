@@ -164,6 +164,43 @@ extension CompetitionClient {
             unblock: { profileID in
                 try await coordinator.remote { try await $0.unblockProfile(profileID) }
             },
+            getFriendSettings: {
+                try await coordinator.remote { try await $0.getFriendSettings() }
+            },
+            setUsername: { username in
+                try await coordinator.remote { try await $0.setUsername(username) }
+            },
+            usernameAvailable: { username in
+                try await coordinator.remote { try await $0.usernameAvailable(username) }
+            },
+            updateFriendSettings: { showInSearch, challengePolicy in
+                try await coordinator.remote {
+                    try await $0.updateFriendSettings(showInSearch, challengePolicy)
+                }
+            },
+            listFriends: {
+                try await coordinator.remote { try await $0.listFriends() }
+            },
+            searchPeople: { query in
+                try await coordinator.remote { try await $0.searchPeople(query) }
+            },
+            sendFriendRequest: { profileID in
+                try await coordinator.remote { try await $0.sendFriendRequest(profileID) }
+            },
+            respondToFriendRequest: { profileID, accept in
+                try await coordinator.remote {
+                    try await $0.respondToFriendRequest(profileID, accept)
+                }
+            },
+            removeFriend: { profileID in
+                try await coordinator.remote { try await $0.removeFriend(profileID) }
+            },
+            blockProfile: { profileID in
+                try await coordinator.remote { try await $0.blockProfile(profileID) }
+            },
+            reportProfile: { profileID in
+                try await coordinator.remote { try await $0.reportProfile(profileID) }
+            },
             previewInvite: { request in
                 try await coordinator.remote { try await $0.previewInvite(request) }
             },

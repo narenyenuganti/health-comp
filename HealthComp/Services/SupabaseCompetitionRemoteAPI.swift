@@ -248,24 +248,31 @@ enum SupabaseCompetitionRemoteAPI {
             },
             registerInstallation: { request in
                 // Newest call first. A server without that overload answers
-                // PGRST202 (notFound), so fall back: 7 args (group matches,
-                // only where `GroupMatchRollout` shows them), 6 (muted push kinds), then 5 (reactions), 4 (challenges) and the original 3.
+                // PGRST202 (function not found), with or without an HTTP
+                // status, and only that falls back: 8 args (group matches,
+                // only where `GroupMatchRollout` shows them), 7 (Friends),
+                // 6 (muted push kinds, no Friends), then 5 (reactions),
+                // 4 (challenges) and the original 3. Any other failure,
+                // 404s included, is thrown.
                 let current = try encodeWire(request, contract: .installationRequest)
                 let bodies = (supportsGroupMatches ? [try groupInstallationBody(current)] : []) + [
                     current,
+                    try encode(MutedKindsInstallationParameters(request)),
                     try encode(ReactionInstallationParameters(request)),
                     try encode(ChallengeInstallationParameters(request)),
                     try encode(LegacyInstallationParameters(request)),
                 ]
                 var response: CompetitionRemoteTransportResponse?
                 for (index, body) in bodies.enumerated() {
+                    let isLast: Bool = index == bodies.count - 1
                     do {
                         response = try await send(
                             .rpc(name: "register_current_device_installation", parameters: body),
-                            transport: transport
+                            transport: transport,
+                            context: isLast ? .general : .overloadFallback
                         )
                         break
-                    } catch CompetitionRemoteFailure.notFound where index < bodies.count - 1 {
+                    } catch is MissingRPCFunction {
                         continue
                     }
                 }
@@ -581,6 +588,144 @@ enum SupabaseCompetitionRemoteAPI {
                     throw CompetitionRemoteFailure.serverContractMismatch
                 }
             },
+            getFriendSettings: {
+                let response = try await sendReadOnly(
+                    .rpc(name: "get_friend_settings", parameters: try encode(EmptyParameters())),
+                    transport: transport
+                )
+                return try decodeFriendSettings(response.data)
+            },
+            setUsername: { username in
+                guard FriendSettings.isValidUsername(username) else {
+                    throw CompetitionRemoteFailure.invalidUsername
+                }
+                let response = try await send(
+                    .rpc(name: "set_username", parameters: try encode(["username": username])),
+                    transport: transport
+                )
+                let settings = try decodeFriendSettings(response.data)
+                guard settings.username == username else {
+                    throw CompetitionRemoteFailure.serverContractMismatch
+                }
+                return settings
+            },
+            usernameAvailable: { username in
+                guard FriendSettings.isValidUsername(username) else {
+                    throw CompetitionRemoteFailure.invalidUsername
+                }
+                let response = try await send(
+                    .rpc(name: "username_available", parameters: try encode(["username": username])),
+                    transport: transport
+                )
+                // Exactly `{available}`.
+                guard let object = try? JSONSerialization.jsonObject(with: response.data)
+                    as? [String: Any],
+                      Set(object.keys) == ["available"],
+                      let available = strictBool(object["available"])
+                else {
+                    throw CompetitionRemoteFailure.serverContractMismatch
+                }
+                return available
+            },
+            updateFriendSettings: { showInSearch, challengePolicy in
+                let response = try await send(
+                    .rpc(
+                        name: "update_friend_settings",
+                        parameters: try encode(UpdateFriendSettingsParameters(
+                            showInSearch: showInSearch,
+                            challengePolicy: challengePolicy.rawValue
+                        ))
+                    ),
+                    transport: transport
+                )
+                let settings = try decodeFriendSettings(response.data)
+                guard settings.showInSearch == showInSearch,
+                      settings.challengePolicy == challengePolicy
+                else {
+                    throw CompetitionRemoteFailure.serverContractMismatch
+                }
+                return settings
+            },
+            listFriends: {
+                let response = try await sendReadOnly(
+                    .rpc(name: "list_friends", parameters: try encode(EmptyParameters())),
+                    transport: transport
+                )
+                return try decodeFriendsList(response.data)
+            },
+            searchPeople: { query in
+                // Not read-only: each search counts against the limit.
+                let response = try await send(
+                    .rpc(name: "search_people", parameters: try encode(["query": query])),
+                    transport: transport
+                )
+                guard let object = try? JSONSerialization.jsonObject(with: response.data)
+                    as? [String: Any],
+                      Set(object.keys) == ["people"]
+                else {
+                    throw CompetitionRemoteFailure.serverContractMismatch
+                }
+                return try decodeFriendPeople(object["people"])
+            },
+            sendFriendRequest: { profileID in
+                try await friendCommand(
+                    "send_friend_request",
+                    profileID,
+                    allowed: [.requested, .friend],
+                    transport
+                )
+            },
+            respondToFriendRequest: { profileID, accept in
+                try validateUUID(profileID)
+                let response = try await send(
+                    .rpc(name: "respond_to_friend_request", parameters: try encode(
+                        RespondToFriendRequestParameters(
+                            profileID: profileID.uuidString.lowercased(),
+                            accept: accept
+                        )
+                    )),
+                    transport: transport
+                )
+                // Declining someone who is already a friend changes nothing.
+                return try decodeRelationship(response.data, allowed: accept ? [.friend] : [.none, .friend])
+            },
+            removeFriend: { profileID in
+                try await friendCommand("remove_friend", profileID, allowed: [.none], transport)
+            },
+            blockProfile: { profileID in
+                try validateUUID(profileID)
+                let response = try await send(
+                    .rpc(name: "block_profile", parameters: try encode(
+                        ["profile_id": profileID.uuidString.lowercased()]
+                    )),
+                    transport: transport
+                )
+                // Exactly a `list_blocked_profiles` row, for this person.
+                guard let object = try? JSONSerialization.jsonObject(with: response.data),
+                      let profile = challengeProfile(object, idKey: "id", nameKey: "display_name"),
+                      profile.id == profileID
+                else {
+                    throw CompetitionRemoteFailure.serverContractMismatch
+                }
+                return profile
+            },
+            reportProfile: { profileID in
+                try validateUUID(profileID)
+                let response = try await send(
+                    .rpc(name: "report_profile", parameters: try encode(
+                        ["profile_id": profileID.uuidString.lowercased()]
+                    )),
+                    transport: transport
+                )
+                // Exactly `{reported: true}`.
+                guard let object = try? JSONSerialization.jsonObject(with: response.data)
+                    as? [String: Any],
+                      Set(object.keys) == ["reported"],
+                      strictBool(object["reported"]) == true
+                else {
+                    throw CompetitionRemoteFailure.serverContractMismatch
+                }
+            },
             listGroupMatches: {
                 try await sendReadOnly(
                     .rpc(name: "list_group_matches", parameters: try encode(EmptyParameters())),
@@ -593,7 +738,7 @@ enum SupabaseCompetitionRemoteAPI {
         )
     }
 
-    /// The seven-argument registration: the current body plus
+    /// The eight-argument registration: the current body plus
     /// `supports_group_matches` (20261110003500).
     private static func groupInstallationBody(_ current: Data) throws -> Data {
         guard var object = try? JSONSerialization.jsonObject(with: current) as? [String: Any] else {
@@ -751,6 +896,15 @@ enum SupabaseCompetitionRemoteAPI {
         case previewInvite
         case appAttestChallenge
         case appAttestSubmission
+        /// An RPC with an older overload to try: PGRST202 throws
+        /// MissingRPCFunction instead of a CompetitionRemoteFailure.
+        case overloadFallback
+    }
+
+    private struct MissingRPCFunction: Error {}
+
+    private static func isMissingRPCFunction(code: String?, context: ErrorContext) -> Bool {
+        context == .overloadFallback && code?.uppercased() == "PGRST202"
     }
 
     private static func send(
@@ -766,6 +920,13 @@ enum SupabaseCompetitionRemoteAPI {
             guard (200..<300).contains(response.statusCode)
                     || acceptConflict && response.statusCode == 409
             else {
+                let envelope: RemoteErrorEnvelope? = try? JSONDecoder().decode(
+                    RemoteErrorEnvelope.self,
+                    from: response.data
+                )
+                if isMissingRPCFunction(code: envelope?.code, context: context) {
+                    throw MissingRPCFunction()
+                }
                 throw classify(
                     statusCode: response.statusCode,
                     data: response.data,
@@ -775,6 +936,8 @@ enum SupabaseCompetitionRemoteAPI {
             return response
         } catch let failure as CompetitionRemoteFailure {
             throw failure
+        } catch let missing as MissingRPCFunction {
+            throw missing
         } catch is CancellationError {
             throw CompetitionRemoteFailure.cancelled
         } catch let failure as CompetitionRemoteTransportFailure {
@@ -784,6 +947,9 @@ enum SupabaseCompetitionRemoteAPI {
             case .network, .relay:
                 throw CompetitionRemoteFailure.retryableTransport
             case let .server(statusCode, code, message, detail):
+                if isMissingRPCFunction(code: code, context: context) {
+                    throw MissingRPCFunction()
+                }
                 throw classify(
                     statusCode: statusCode,
                     code: code,
@@ -878,6 +1044,33 @@ enum SupabaseCompetitionRemoteAPI {
         // Closed, expired, gone, or hidden by a block: one answer.
         if identifiers.contains("group_match_unavailable") {
             return .inviteUnavailable
+        }
+        if identifiers.contains("invalid_username") {
+            return .invalidUsername
+        }
+        if identifiers.contains("username_unavailable") {
+            return .usernameUnavailable
+        }
+        if identifiers.contains("search_rate_limited") {
+            return .searchRateLimited
+        }
+        if identifiers.contains("invalid_friend_settings") {
+            return .invalidFriendSettings
+        }
+        if identifiers.contains("invalid_query") {
+            return .invalidQuery
+        }
+        if identifiers.contains("invalid_profile_id") {
+            return .invalidProfileID
+        }
+        if identifiers.contains("invalid_friend_request_response") {
+            return .invalidFriendRequestResponse
+        }
+        if identifiers.contains("friend_request_limit") {
+            return .friendRequestLimit
+        }
+        if identifiers.contains("request_unavailable") {
+            return .requestUnavailable
         }
         let isClaimContext = context == .claimInvite || context == .previewInvite
         // Your own link says so; every other claim failure stays collapsed.
@@ -1130,6 +1323,115 @@ enum SupabaseCompetitionRemoteAPI {
         return rows.compactMap { challengeProfile($0, idKey: "id", nameKey: "display_name") }
     }
 
+    /// Exactly `{username, show_in_search, challenge_policy}`.
+    private static func decodeFriendSettings(_ data: Data) throws -> FriendSettings {
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              Set(object.keys) == ["username", "show_in_search", "challenge_policy"],
+              let showInSearch = strictBool(object["show_in_search"]),
+              let challengePolicy = (object["challenge_policy"] as? String)
+                .flatMap(FriendChallengePolicy.init(rawValue:))
+        else {
+            throw CompetitionRemoteFailure.serverContractMismatch
+        }
+        let username = object["username"] as? String
+        guard object["username"] is NSNull
+                || username.map(FriendSettings.isValidUsername) == true
+        else {
+            throw CompetitionRemoteFailure.serverContractMismatch
+        }
+        return FriendSettings(
+            username: username,
+            showInSearch: showInSearch,
+            challengePolicy: challengePolicy
+        )
+    }
+
+    private static func friendCommand(
+        _ name: String,
+        _ profileID: UUID,
+        allowed: Set<FriendRelationship>,
+        _ transport: CompetitionRemoteTransport
+    ) async throws -> FriendRelationship {
+        try validateUUID(profileID)
+        let response = try await send(
+            .rpc(name: name, parameters: try encode(["profile_id": profileID.uuidString.lowercased()])),
+            transport: transport
+        )
+        return try decodeRelationship(response.data, allowed: allowed)
+    }
+
+    /// Exactly `{relationship}`, and a value this command can answer.
+    private static func decodeRelationship(
+        _ data: Data,
+        allowed: Set<FriendRelationship>
+    ) throws -> FriendRelationship {
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              Set(object.keys) == ["relationship"],
+              let relationship = (object["relationship"] as? String)
+                .flatMap(FriendRelationship.init(rawValue:)),
+              allowed.contains(relationship)
+        else {
+            throw CompetitionRemoteFailure.serverContractMismatch
+        }
+        return relationship
+    }
+
+    /// Exactly `{friends, incoming, outgoing}`, each row in its own list.
+    private static func decodeFriendsList(_ data: Data) throws -> FriendsList {
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              Set(object.keys) == ["friends", "incoming", "outgoing"]
+        else {
+            throw CompetitionRemoteFailure.serverContractMismatch
+        }
+        let list = FriendsList(
+            friends: try decodeFriendPeople(object["friends"]),
+            incoming: try decodeFriendPeople(object["incoming"]),
+            outgoing: try decodeFriendPeople(object["outgoing"])
+        )
+        guard list.friends.allSatisfy({ $0.relationship == .friend }),
+              list.incoming.allSatisfy({ $0.relationship == .incoming }),
+              list.outgoing.allSatisfy({ $0.relationship == .requested })
+        else {
+            throw CompetitionRemoteFailure.serverContractMismatch
+        }
+        return list
+    }
+
+    private static func decodeFriendPeople(_ value: Any?) throws -> [FriendPerson] {
+        guard let rows = value as? [Any] else {
+            throw CompetitionRemoteFailure.serverContractMismatch
+        }
+        return try rows.map { row in
+            // `{id, display_name}` is the profile rule; these two keys are new.
+            guard var object = row as? [String: Any],
+                  let usernameValue = object.removeValue(forKey: "username"),
+                  let relationship = (object.removeValue(forKey: "relationship") as? String)
+                    .flatMap(FriendRelationship.init(rawValue:)),
+                  let profile = challengeProfile(object, idKey: "id", nameKey: "display_name")
+            else {
+                throw CompetitionRemoteFailure.serverContractMismatch
+            }
+            let username = usernameValue as? String
+            guard usernameValue is NSNull || username.map(FriendSettings.isValidUsername) == true else {
+                throw CompetitionRemoteFailure.serverContractMismatch
+            }
+            return FriendPerson(
+                id: profile.id,
+                displayName: profile.displayName,
+                username: username,
+                relationship: relationship
+            )
+        }
+    }
+
+    /// JSON `true`/`false` only: `as? Bool` also accepts 0 and 1.
+    private static func strictBool(_ value: Any?) -> Bool? {
+        guard let number = value as? NSNumber,
+              CFGetTypeID(number) == CFBooleanGetTypeID()
+        else { return nil }
+        return number.boolValue
+    }
+
     private static func challengeProfile(
         _ value: Any?,
         idKey: String,
@@ -1321,6 +1623,36 @@ private struct ChallengeInstallationParameters: Encodable {
     }
 }
 
+/// The six-argument registration body, for servers before 20261109003100.
+/// They reject Friends mutes, and never send Friends pushes anyway.
+private struct MutedKindsInstallationParameters: Encodable {
+    let installationID: String
+    let apnsToken: String
+    let environment: CompetitionInstallationEnvironment
+    let supportsChallenges = true
+    let supportsReactions: Bool
+    let mutedPushKinds: [String]
+
+    init(_ request: CompetitionInstallationRequest) {
+        installationID = request.installationID.uuidString.lowercased()
+        apnsToken = request.apnsToken
+        environment = request.environment
+        supportsReactions = request.supportsReactions
+        mutedPushKinds = request.mutedPushKinds.filter { kind in
+            CompetitionNotificationChoice(rawValue: kind)?.isFriends != true
+        }
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case installationID = "installation_id"
+        case apnsToken = "apns_token"
+        case environment
+        case supportsChallenges = "supports_challenges"
+        case supportsReactions = "supports_reactions"
+        case mutedPushKinds = "muted_push_kinds"
+    }
+}
+
 /// The five-argument registration body, for servers before 20261103002800.
 private struct ReactionInstallationParameters: Encodable {
     let installationID: String
@@ -1399,6 +1731,26 @@ private struct NotificationMuteMutationResponse: Decodable {
     enum CodingKeys: String, CodingKey {
         case opponentProfileID = "opponent_profile_id"
         case isMuted = "is_muted"
+    }
+}
+
+private struct RespondToFriendRequestParameters: Encodable {
+    let profileID: String
+    let accept: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case profileID = "profile_id"
+        case accept
+    }
+}
+
+private struct UpdateFriendSettingsParameters: Encodable {
+    let showInSearch: Bool
+    let challengePolicy: String
+
+    enum CodingKeys: String, CodingKey {
+        case showInSearch = "show_in_search"
+        case challengePolicy = "challenge_policy"
     }
 }
 

@@ -36,6 +36,19 @@ enum MultiUserCompetitionTestLabScenario:
     case blockedAccount = "blocked-account"
     /// The same, with Naren's challenge link opened in the claim sheet.
     case blockClaim = "block-claim"
+    /// Account → Privacy through the real app root: no username yet. See
+    /// `FriendSettingsTestLabServer`.
+    case friendsAccount = "friends-account"
+    /// Friends through the real app root: two requests, friends with and
+    /// without matches, a username. See `FriendsTestLabServer`.
+    case friends
+    /// The same with nobody on the lists.
+    case friendsEmpty = "friends-empty"
+    /// The same lists, with no username yet and the first-open sheet unspent.
+    case friendsNoUsername = "friends-no-username"
+    /// The same, with Priya a friend you already challenged: the Challenge
+    /// sheet's friends, Remove, Block and Report. See `FriendsTestLabServer`.
+    case challengeFriend = "challenge-friend"
     /// Match screens with a nudge to send, run through Home's own reducer.
     case nudge
     /// The same matches published as the simulated fixture: never a nudge.
@@ -211,8 +224,10 @@ struct MultiUserCompetitionTestLabRootView: View {
             MultiUserCompetitionPreHealthClaimTestLabView()
         case .incomingChallenge:
             MultiUserCompetitionIncomingChallengeTestLabView()
-        case .block, .blockedAccount, .blockClaim:
+        case .block, .blockedAccount, .blockClaim, .friendsAccount:
             MultiUserCompetitionBlockTestLabView(scenario: configuration.scenario)
+        case .friends, .friendsEmpty, .friendsNoUsername, .challengeFriend:
+            MultiUserCompetitionFriendsTestLabView(scenario: configuration.scenario)
         case .nudge:
             MultiUserCompetitionNudgeTestLabView(source: .remoteParticipants)
         case .nudgeSimulated:
@@ -342,6 +357,9 @@ private struct MultiUserCompetitionSharingTestLabView: View {
                     switch route {
                     case .history:
                         CompetitionHistoryView(publication: publication, openRecap: { recapPeriod = $0 })
+                    case .friends:
+                        // The sharing lab has no friends.
+                        EmptyView()
                     case let .person(identity):
                         CompetitionPersonView(
                             publication: publication,
@@ -577,7 +595,8 @@ private struct MultiUserCompetitionClaimTestLabView: View {
         case .sharing, .sharingCustomScheme, .coldClaim, .warmClaim,
              .signedOutClaim, .challengeLink, .account, .welcome, .welcomeChallenge,
              .healthOnboarding, .healthOnboardingChallenge, .healthOnboardingClaim,
-             .incomingChallenge, .block, .blockedAccount, .blockClaim,
+             .incomingChallenge, .block, .blockedAccount, .blockClaim, .friendsAccount,
+             .friends, .friendsEmpty, .friendsNoUsername, .challengeFriend,
              .nudge, .nudgeSimulated, .whatItTakes, .reactions, .reactionsSimulated,
              .liveActivity, .practice, .notificationChoices, .belt, .beltHero, .beltCeremony, .featureRound,
              .versus, .rivalry, .rivalryFive, .rivalryYears, .month, .groupMatches:
@@ -756,6 +775,7 @@ private struct MultiUserCompetitionBlockTestLabView: View {
             displayName: "Beta Alice"
         )
         let claims = scenario == .blockClaim
+        let friends = FriendSettingsTestLabServer()
         _mainStore = State(initialValue: Store(initialState: state) {
             MainTabFeature()
         } withDependencies: {
@@ -777,6 +797,10 @@ private struct MultiUserCompetitionBlockTestLabView: View {
                 block: { await server.close($0, block: true) },
                 loadBlockedProfiles: { try await server.blockedProfiles() },
                 unblock: { try await server.unblock($0) },
+                getFriendSettings: { try await friends.settings() },
+                setUsername: { try await friends.setUsername($0) },
+                usernameAvailable: { try await friends.isAvailable($0) },
+                updateFriendSettings: { try await friends.update($0, $1) },
                 previewInvite: { _ in Fixtures.claimPreview },
                 loadChallengeLinkCode: {
                     CompetitionChallengeLinkCode(rawValue: Fixtures.ownLinkCode)!
@@ -892,6 +916,307 @@ private final class MultiUserCompetitionBlockTestLabServer: @unchecked Sendable 
             }
             blocked.removeAll { $0.id == id }
         }
+    }
+}
+
+/// Every call takes 0.3 s. `taken_name` is taken; `late_taken` passes the
+/// check and is taken by the time it's saved; `offline_name` fails to save
+/// once. The first save that changes Show Me in Search fails.
+private actor FriendSettingsTestLabServer {
+    private var current: FriendSettings
+    private var searchSaveFailed = false
+    private var usernameSaveFailed = false
+
+    init(username: String? = nil) {
+        current = FriendSettings(username: username, showInSearch: true, challengePolicy: .friendsAndLink)
+    }
+
+    func settings() async throws -> FriendSettings {
+        try await Task.sleep(for: .milliseconds(300))
+        return current
+    }
+
+    func isAvailable(_ username: String) async throws -> Bool {
+        try await Task.sleep(for: .milliseconds(300))
+        return username != "taken_name"
+    }
+
+    func setUsername(_ username: String) async throws -> FriendSettings {
+        try await Task.sleep(for: .milliseconds(300))
+        if username == "taken_name" || username == "late_taken" {
+            throw CompetitionRemoteFailure.usernameUnavailable
+        }
+        if username == "offline_name", !usernameSaveFailed {
+            usernameSaveFailed = true
+            throw CompetitionRemoteFailure.retryableTransport
+        }
+        current.username = username
+        return current
+    }
+
+    func update(_ showInSearch: Bool, _ policy: FriendChallengePolicy) async throws -> FriendSettings {
+        try await Task.sleep(for: .milliseconds(300))
+        if showInSearch != current.showInSearch, !searchSaveFailed {
+            searchSaveFailed = true
+            throw CompetitionRemoteFailure.retryableTransport
+        }
+        current.showInSearch = showInSearch
+        current.challengePolicy = policy
+        return current
+    }
+}
+
+/// Friends through the app's own root, Home and Account reducers; only the
+/// server is a stand-in (see `FriendsTestLabServer`).
+private struct MultiUserCompetitionFriendsTestLabView: View {
+    @State private var mainStore: StoreOf<MainTabFeature>
+    @State private var accountStore: StoreOf<AccountFeature>
+
+    init(scenario: MultiUserCompetitionTestLabScenario) {
+        typealias Fixtures = MultiUserCompetitionTestLabFixtures
+        let hub = LocalCompetitionPublicationHub()
+        let server = FriendsTestLabServer(
+            seeded: scenario != .friendsEmpty,
+            priyaIsAFriend: scenario == .challengeFriend
+        )
+        let publication = scenario == .challengeFriend
+            ? Fixtures.challengeFriendPublication
+            : Fixtures.friendsPublication
+        let settings = FriendSettingsTestLabServer(
+            username: scenario == .friendsNoUsername ? nil : "beta_alice"
+        )
+        let photos = ProfilePhotoTestLabServer(
+            ownProfileID: Fixtures.ownProfileID,
+            photos: [
+                FriendsTestLabServer.maya.id: ProfilePhotoTestLabServer.fixtureJPEG(red: 0.2, green: 0.5, blue: 0.8),
+                FriendsTestLabServer.jordan.id: ProfilePhotoTestLabServer.fixtureJPEG(red: 0.8, green: 0.4, blue: 0.3),
+                FriendsTestLabServer.marcus.id: ProfilePhotoTestLabServer.fixtureJPEG(red: 0.3, green: 0.7, blue: 0.4),
+            ]
+        )
+        if scenario == .friendsNoUsername {
+            UserDefaults.standard.removeObject(forKey: FriendsView.usernamePromptKey(Fixtures.ownProfileID))
+        }
+        var state = MainTabFeature.State()
+        state.competition.ownProfile = AuthenticatedProfile(
+            id: Fixtures.ownProfileID,
+            displayName: "Beta Alice"
+        )
+        _mainStore = State(initialValue: Store(initialState: state) {
+            MainTabFeature()
+        } withDependencies: {
+            $0.competitionClient = CompetitionClient(
+                start: {
+                    let stream = hub.stream()
+                    hub.publish(publication)
+                    return stream
+                },
+                updates: { hub.stream() },
+                reconcileAll: { _ in
+                    hub.publish(publication)
+                    return publication
+                },
+                accept: { _ in publication },
+                decline: { _ in publication },
+                archive: { _ in publication },
+                rematch: { _ in publication },
+                reinvite: { publication },
+                waitUntil: { _ in },
+                stop: { hub.finish() },
+                createInvite: { try await server.challenge($0) },
+                loadBlockedProfiles: { try await server.blockedProfiles() },
+                unblock: { try await server.unblock($0) },
+                getFriendSettings: { try await settings.settings() },
+                setUsername: { try await settings.setUsername($0) },
+                usernameAvailable: { try await settings.isAvailable($0) },
+                updateFriendSettings: { try await settings.update($0, $1) },
+                listFriends: { try await server.list() },
+                searchPeople: { try await server.search($0) },
+                sendFriendRequest: { try await server.add($0) },
+                respondToFriendRequest: { try await server.respond($0, accept: $1) },
+                removeFriend: { try await server.remove($0) },
+                blockProfile: { try await server.block($0) },
+                reportProfile: { try await server.report($0) },
+                loadChallengeLinkCode: {
+                    CompetitionChallengeLinkCode(rawValue: Fixtures.ownLinkCode)!
+                },
+                resolveChallengeLink: { code in
+                    guard code.rawValue == Fixtures.samLinkCode else {
+                        throw CompetitionRemoteFailure.recipientUnavailable
+                    }
+                    return "Sam Okafor"
+                },
+                loadProfilePhotos: photos.load,
+                loadOwnProfilePhoto: photos.own,
+                profilePhotoData: photos.data
+            )
+            $0.competitionInviteLinkClient.makeChallengeLink = {
+                URL(string: "https://invites.ui.healthcomp.test/c/\($0.rawValue)")
+            }
+            $0.competitionInviteLinkClient.canCreateShareLink = { true }
+            $0.competitionInviteLinkClient.makeShareLink = { raw in
+                CompetitionInviteClaimToken(rawValue: raw).flatMap {
+                    CompetitionInviteShareLink(host: "invites.ui.healthcomp.test", token: $0)
+                }
+            }
+            $0.competitionInviteLinkClient.makeIdempotencyKey = { UUID() }
+            $0.competitionInviteLinkClient.currentTimeZoneIdentifier = { "America/Los_Angeles" }
+            $0.competitionRoutingClient = CompetitionRoutingClient(
+                routes: { AsyncStream { _ in } },
+                enqueue: { _ in },
+                consume: { _ in }
+            )
+            $0.permissionOnboardingClient = .inert
+            $0.date = .constant(Fixtures.labNow)
+        })
+        _accountStore = State(initialValue: Store(
+            initialState: AccountFeature.State(mode: .authenticated, displayName: "Beta Alice")
+        ) {
+            AccountFeature()
+        } withDependencies: {
+            $0.authenticationClient = .testValue
+        })
+    }
+
+    var body: some View {
+        AuthenticatedRootView(mainStore: mainStore, accountStore: accountStore)
+            .accessibilityIdentifier("multiuser.friends.root")
+    }
+}
+
+/// Every call takes 0.3 s. Search matches name and username prefixes across
+/// the cast below; `ratelimit` hits the search limit; adding Mara fails once.
+/// Challenging Kai is refused, as when someone accepts friends only and
+/// stopped being one; any other challenge is sent. Blocking ends the
+/// friendship, as on the server, and a blocked person can't be reported.
+private actor FriendsTestLabServer {
+    private static func person(
+        _ byte: UInt8,
+        _ name: String,
+        _ username: String?,
+        _ relationship: FriendRelationship
+    ) -> FriendPerson {
+        FriendPerson(
+            id: UUID(uuidString: String(format: "d1000000-0000-4000-8000-0000000000%02x", byte))!,
+            displayName: name,
+            username: username,
+            relationship: relationship
+        )
+    }
+
+    nonisolated static let jordan = person(0xa1, "Jordan Lee", "jordanlee", .incoming)
+    nonisolated static let priya = person(0xa2, "Priya Shah", "priya", .incoming)
+    nonisolated static let maya = person(0xb1, "Maya Chen", "mayac", .friend)
+    nonisolated static let sam = person(0xb2, "Sam Okafor", "samo", .friend)
+    nonisolated static let dev = person(0xb3, "Dev Patel", "devp", .friend)
+    nonisolated static let kai = person(0xb4, "Kai Ito", "kaito", .friend)
+    nonisolated static let marcus = person(0xc1, "Marcus Hill", "marcush", .none)
+    nonisolated static let mateo = person(0xc2, "Mateo Ruiz", "mateo", .requested)
+    nonisolated static let mara = person(0xc3, "Mara Lind", "maral", .none)
+
+    private var people: [FriendPerson]
+    private var addFailed = false
+    private var blocked: [AuthenticatedProfile] = []
+
+    init(seeded: Bool, priyaIsAFriend: Bool = false) {
+        var priya = Self.priya
+        if priyaIsAFriend { priya.relationship = .friend }
+        people = seeded
+            ? [Self.jordan, priya, Self.dev, Self.kai, Self.maya, Self.sam, Self.marcus, Self.mateo, Self.mara]
+            : [Self.marcus, Self.mara]
+    }
+
+    private func wait() async throws { try await Task.sleep(for: .milliseconds(300)) }
+
+    func list() async throws -> FriendsList {
+        try await wait()
+        return FriendsList(
+            friends: people.filter { $0.relationship == .friend },
+            incoming: people.filter { $0.relationship == .incoming },
+            outgoing: people.filter { $0.relationship == .requested }
+        )
+    }
+
+    func search(_ query: String) async throws -> [FriendPerson] {
+        try await wait()
+        if query == "ratelimit" { throw CompetitionRemoteFailure.searchRateLimited }
+        let needle = query.lowercased()
+        return people.filter {
+            $0.displayName.lowercased().hasPrefix(needle) || $0.username?.hasPrefix(needle) == true
+        }
+    }
+
+    private func set(_ id: UUID, _ relationship: FriendRelationship) -> FriendRelationship {
+        if let index = people.firstIndex(where: { $0.id == id }) {
+            people[index].relationship = relationship
+        }
+        return relationship
+    }
+
+    func add(_ id: UUID) async throws -> FriendRelationship {
+        try await wait()
+        if id == Self.mara.id, !addFailed {
+            addFailed = true
+            throw CompetitionRemoteFailure.retryableTransport
+        }
+        return set(id, .requested)
+    }
+
+    func respond(_ id: UUID, accept: Bool) async throws -> FriendRelationship {
+        try await wait()
+        return set(id, accept ? .friend : .none)
+    }
+
+    func remove(_ id: UUID) async throws -> FriendRelationship {
+        try await wait()
+        return set(id, .none)
+    }
+
+    func challenge(_ request: CompetitionInviteCreationRequest) async throws -> CompetitionInviteCreationOutcome {
+        try await wait()
+        if request.recipientProfileID == Self.kai.id {
+            throw CompetitionRemoteFailure.recipientUnavailable
+        }
+        return CompetitionInviteCreationOutcome(
+            invite: try CompetitionInvite(
+                competitionID: UUID(uuidString: "D2000000-0000-4000-8000-0000000000c1")!,
+                // 32 bytes, base64url without padding, as the server mints it.
+                token: Data(repeating: 0x53, count: 32).base64EncodedString()
+                    .replacingOccurrences(of: "+", with: "-")
+                    .replacingOccurrences(of: "/", with: "_")
+                    .replacingOccurrences(of: "=", with: "")
+            ),
+            // Past the lab's publication, which never shows the new
+            // challenge: the link is kept until it would.
+            expectedPublicationRevision: 2
+        )
+    }
+
+    func block(_ id: UUID) async throws -> AuthenticatedProfile {
+        try await wait()
+        guard let person = people.first(where: { $0.id == id }) else {
+            throw CompetitionRemoteFailure.recipientUnavailable
+        }
+        people.removeAll { $0.id == id }
+        let profile = AuthenticatedProfile(id: id, displayName: person.displayName)
+        blocked.insert(profile, at: 0)
+        return profile
+    }
+
+    func report(_ id: UUID) async throws {
+        try await wait()
+        guard people.contains(where: { $0.id == id }) else {
+            throw CompetitionRemoteFailure.recipientUnavailable
+        }
+    }
+
+    func blockedProfiles() async throws -> [AuthenticatedProfile] {
+        try await wait()
+        return blocked
+    }
+
+    func unblock(_ id: UUID) async throws {
+        try await wait()
+        blocked.removeAll { $0.id == id }
     }
 }
 
@@ -2044,6 +2369,108 @@ enum MultiUserCompetitionTestLabFixtures {
                 hiddenTerminalCompetitionCount: 0
             ),
             evaluatedAt: evaluatedAt,
+            timeZoneIdentifier: "America/Los_Angeles",
+            source: .remoteParticipants
+        )
+    }
+
+    /// `friendsPublication` with your challenge to Priya waiting.
+    static var challengeFriendPublication: LocalCompetitionPublication {
+        let base = friendsPublication
+        let toPriya = presentation(
+            id: CompetitionID(UUID(uuidString: "D2000000-0000-4000-8000-000000000004")!),
+            opponentName: "Priya Shah",
+            lifecycle: .pending(
+                direction: .outgoing,
+                createdAt: labNow.addingTimeInterval(-3_600),
+                expiresAt: labNow.addingTimeInterval(20 * 3_600)
+            ),
+            userPoints: 0,
+            opponentPoints: 0,
+            days: [],
+            currentDayOrdinal: nil,
+            terminal: nil,
+            opponentIdentity: "remote-profile:v1:d1000000-0000-4000-8000-0000000000a2"
+        )
+        return LocalCompetitionPublication(
+            publicationRevision: base.publicationRevision,
+            dashboard: LocalCompetitionDashboard(
+                competitions: base.dashboard.competitions + [toPriya],
+                awards: [],
+                issues: [],
+                hiddenTerminalCompetitionCount: 0
+            ),
+            evaluatedAt: base.evaluatedAt,
+            timeZoneIdentifier: base.timeZoneIdentifier,
+            source: .remoteParticipants
+        )
+    }
+
+    /// Maya live, Sam starting, one finished week with Dev.
+    static var friendsPublication: LocalCompetitionPublication {
+        func identity(_ byte: UInt8) -> String {
+            "remote-profile:v1:" + String(format: "d1000000-0000-4000-8000-0000000000%02x", byte)
+        }
+        func id(_ n: Int) -> CompetitionID {
+            CompetitionID(UUID(uuidString: String(format: "D2000000-0000-4000-8000-%012d", n))!)
+        }
+        let completedAt = labNow.addingTimeInterval(-3 * 86_400)
+        let competitions = [
+            presentation(
+                id: id(1),
+                opponentName: "Maya Chen",
+                lifecycle: .active(dayOrdinal: 3),
+                userPoints: 412,
+                opponentPoints: 388,
+                days: activeDays(),
+                currentDayOrdinal: 3,
+                terminal: nil,
+                opponentIdentity: identity(0xb1)
+            ),
+            presentation(
+                id: id(2),
+                opponentName: "Sam Okafor",
+                lifecycle: .scheduled,
+                userPoints: 0,
+                opponentPoints: 0,
+                days: [],
+                currentDayOrdinal: nil,
+                terminal: nil,
+                startDay: 20,
+                opponentIdentity: identity(0xb2)
+            ),
+            presentation(
+                id: id(3),
+                opponentName: "Dev Patel",
+                lifecycle: .completed(
+                    outcome: .win,
+                    basis: .stableAcrossPostBoundaryReads,
+                    completedAt: completedAt
+                ),
+                userPoints: 3_050,
+                opponentPoints: 2_900,
+                days: [],
+                currentDayOrdinal: nil,
+                terminal: LocalCompetitionTerminalPresentation(
+                    userPoints: 3_050,
+                    opponentPoints: 2_900,
+                    outcome: .win,
+                    basis: .stableAcrossPostBoundaryReads,
+                    completedAt: completedAt
+                ),
+                startDay: 3,
+                opponentIdentity: identity(0xb3)
+            ),
+        ]
+        return LocalCompetitionPublication(
+            publicationRevision: 1,
+            dashboard: LocalCompetitionDashboard(
+                competitions: competitions,
+                awards: [],
+                issues: [],
+                hiddenTerminalCompetitionCount: 0
+            ),
+            evaluatedAt: labNow,
             timeZoneIdentifier: "America/Los_Angeles",
             source: .remoteParticipants
         )
