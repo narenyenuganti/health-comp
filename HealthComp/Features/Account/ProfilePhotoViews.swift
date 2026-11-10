@@ -61,7 +61,7 @@ extension LocalCompetitionPresentation {
 /// amber ring. A photo that arrives after first paint fades in; one already
 /// in memory is there on the first frame. Reduce Motion shows it at once.
 /// Always hidden from VoiceOver: the name next to it says who it is.
-/// A bot is a rounded square and never has a photo or the amber ring.
+/// A bot is an ink rounded square and never has a photo or the amber ring.
 struct PersonAvatar: View {
     let name: String
     /// Their profile id; ignored when `isYou`.
@@ -80,7 +80,7 @@ struct PersonAvatar: View {
         ZStack {
             Text(name.first.map { String($0).uppercased() } ?? "")
                 .font(initialFont)
-                .foregroundStyle(isYou ? Theme.you : Theme.ink)
+                .foregroundStyle(isBot ? Theme.onInk : isYou ? Theme.you : Theme.ink)
             if let shown {
                 Image(uiImage: shown.image)
                     // A toolbar would tint it otherwise.
@@ -100,7 +100,7 @@ struct PersonAvatar: View {
             }
         }
         .frame(width: size, height: size)
-        .background(Theme.control)
+        .background(isBot ? Theme.ink : Theme.control)
         .clipShape(isBot ? AnyShape(RoundedRectangle(cornerRadius: size * 0.28)) : AnyShape(Circle()))
         .animation(reduceMotion ? nil : Motion.fade, value: shown)
         .accessibilityHidden(true)

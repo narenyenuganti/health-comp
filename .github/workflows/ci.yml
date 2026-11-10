@@ -255,9 +255,12 @@ jobs:
             -only-testing:HealthCompUITests/GroupMatchLiveUITests/testLiveFreeForAllShowsStandingsAndTheWeek \
             -only-testing:HealthCompUITests/GroupMatchLiveDoublesUITests/testLiveDoublesShowsBothTeams \
             -only-testing:HealthCompUITests/GroupMatchResultUITests/testTiedResultSaysNoBelt \
+            -only-testing:HealthCompUITests/GroupMatchResultUITests/testFreeForAllResultShowsSharedPlacesAndRematch \
+            -only-testing:HealthCompUITests/GroupMatchResultUITests/testDoublesResultShowsTeamsTiesAndWhoCarried \
             -only-testing:HealthCompUITests/GroupMatchHomeUITests/testHomeCardsCarryTheirState \
             -only-testing:HealthCompUITests/GroupMatchVersusUITests/testVersusIntroShowsTheLineup \
             -only-testing:HealthCompUITests/GroupMatchHistoryUITests/testRecordShowsEachKindOfMatch \
+            -only-testing:HealthCompUITests/GroupMatchHistoryUITests/testGroupMatchesSitBelowTheDuelRecordOnlyWhenThereAreSome \
             -only-testing:HealthCompUITests/VersusIntroUITests/testEveryMatchupEndsByItself \
             -only-testing:HealthCompUITests/VersusIntroUITests/testMenuReplaysRepeatedlyWithoutReenablingAutoplay \
             -only-testing:HealthCompUITests/VersusIntroUITests/testMenuReplaysAfterDayOne \
