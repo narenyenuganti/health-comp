@@ -1,3 +1,4 @@
+import CompetitionCore
 import ComposableArchitecture
 import SwiftUI
 
@@ -39,7 +40,7 @@ struct GroupMatchCreateView: View {
                     Button("Paste Link") {}.accessibilityIdentifier("competition.group.paste-link")
                     Button("Create Match") {}.accessibilityIdentifier("competition.group.create")
                 case .bots:
-                    ForEach(GroupMatchBotMode.allCases, id: \.self) { mode in
+                    ForEach(BotMode.allCases, id: \.self) { mode in
                         Button(mode.name) {}.accessibilityIdentifier("competition.group.bot.\(mode.rawValue)")
                     }
                     Button("Add Bot") {}.accessibilityIdentifier("competition.group.bot.add")

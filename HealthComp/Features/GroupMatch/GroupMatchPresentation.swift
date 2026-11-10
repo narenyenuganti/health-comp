@@ -26,10 +26,7 @@ enum GroupMatchFormat: String, CaseIterable, Hashable, Sendable {
     var matchFormat: MatchFormat { self == .doubles ? .doubles : .freeForAll }
 }
 
-// ponytail: replace with CompetitionCore's BotMode once the bot PR is in this branch's base.
-enum GroupMatchBotMode: String, CaseIterable, Hashable, Sendable {
-    case pacer, chill, erratic, beast
-
+extension BotMode {
     var name: String { rawValue.capitalized }
 }
 
@@ -40,7 +37,7 @@ enum GroupMatchInviteState: Equatable, Sendable {
 struct GroupMatchSeat: Identifiable, Equatable, Sendable {
     enum Occupant: Equatable, Sendable {
         case person(profileID: UUID, invite: GroupMatchInviteState)
-        case bot(GroupMatchBotMode)
+        case bot(BotMode)
     }
 
     let id: UUID

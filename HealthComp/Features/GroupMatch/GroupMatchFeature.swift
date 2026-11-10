@@ -6,7 +6,7 @@ import Foundation
 struct GroupMatchDraft: Hashable, Sendable {
     enum Seat: Hashable, Sendable {
         case person(profileID: UUID, team: Int?)
-        case bot(GroupMatchBotMode, team: Int?)
+        case bot(BotMode, team: Int?)
     }
 
     let format: GroupMatchFormat
