@@ -224,11 +224,15 @@ struct CreateCompetitionView: View {
     // MARK: Picker
 
     private var picker: some View {
-        VStack(alignment: .leading, spacing: 22) {
+        // Accessibility sizes stack the avatar or icon above the text, so
+        // dividers start at the row's edge, as on Friends.
+        let friendInset: CGFloat = dynamicTypeSize.isAccessibilitySize ? 14 : 66
+        let actionInset: CGFloat = dynamicTypeSize.isAccessibilitySize ? 14 : 50
+        return VStack(alignment: .leading, spacing: 22) {
             if !friends.isEmpty {
                 pickerGroup("A FRIEND", id: "competition.create.friends") {
                     ForEach(Array(friends.enumerated()), id: \.element.id) { index, friend in
-                        if index > 0 { CompetitionRowDivider(inset: 66) }
+                        if index > 0 { CompetitionRowDivider(inset: friendInset) }
                         friendRow(friend)
                     }
                 }
@@ -240,7 +244,7 @@ struct CreateCompetitionView: View {
                     }
                     .buttonStyle(CompetitionRowButtonStyle())
                     .accessibilityIdentifier("competition.create.search-people")
-                    CompetitionRowDivider(inset: 50)
+                    CompetitionRowDivider(inset: actionInset)
                 }
                 Button { entersLink = true } label: {
                     pickerRowLabel("Paste Their Challenge Link", systemImage: "link", opens: true)
@@ -248,7 +252,7 @@ struct CreateCompetitionView: View {
                 .buttonStyle(CompetitionRowButtonStyle())
                 .accessibilityIdentifier("competition.create.paste-link")
                 if let ownChallengeLink {
-                    CompetitionRowDivider(inset: 50)
+                    CompetitionRowDivider(inset: actionInset)
                     ShareLink(
                         item: ownChallengeLink,
                         subject: Text("My HealthComp challenge link"),
@@ -265,14 +269,25 @@ struct CreateCompetitionView: View {
     }
 
     /// A friend you're already playing or challenging is dimmed and says so.
+    /// The whole row dims from ink, as one image, so the reason stays
+    /// readable and a photo never shows the initial behind it.
     private func friendRow(_ friend: FriendPerson) -> some View {
-        let blocker = friendChallengeBlocker(identity: friend.identity, competitions: competitions)
-        let detail = blocker
-            ?? friendStatusLine(identity: friend.identity, competitions: competitions, locale: locale, timeZone: timeZone)
-            ?? "No matches yet"
+        let blocker: String? = friendChallengeBlocker(identity: friend.identity, competitions: competitions)
+        let status: String? = friendStatusLine(
+            identity: friend.identity,
+            competitions: competitions,
+            locale: locale,
+            timeZone: timeZone
+        )
+        let detail: String = blocker ?? status ?? "No matches yet"
+        let isDimmed: Bool = blocker != nil
         return Button { chooseFriend?(friend) } label: {
             HStack(spacing: 12) {
-                FriendsPersonLabel(person: friend, detail: detail)
+                FriendsPersonLabel(
+                    person: friend,
+                    detail: detail,
+                    detailColor: isDimmed ? Theme.ink : Theme.secondary
+                )
                 if blocker == nil {
                     Image(systemName: "chevron.right")
                         .font(.caption.weight(.bold))
@@ -285,21 +300,30 @@ struct CreateCompetitionView: View {
             .contentShape(Rectangle())
         }
         .buttonStyle(CompetitionRowButtonStyle())
-        .disabled(blocker != nil || chooseFriend == nil)
-        .opacity(blocker == nil ? 1 : 0.45)
+        .disabled(isDimmed || chooseFriend == nil)
+        .compositingGroup()
+        .opacity(isDimmed ? 0.55 : 1)
         .accessibilityIdentifier("competition.create.friend.\(friend.id.uuidString.lowercased())")
     }
 
+    /// The icon sits above the title at accessibility sizes, as a friend's
+    /// avatar does, so neither squeezes the other.
     private func pickerRowLabel(_ title: String, systemImage: String, opens: Bool) -> some View {
-        HStack(spacing: 12) {
-            Image(systemName: systemImage)
-                .font(.body.weight(.semibold))
-                .frame(width: 24)
-                .accessibilityHidden(true)
-            Text(title)
-                .font(.body)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
+        let stacks: Bool = dynamicTypeSize.isAccessibilitySize
+        let layout: AnyLayout = stacks
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
+            : AnyLayout(HStackLayout(spacing: 12))
+        return HStack(spacing: 12) {
+            layout {
+                Image(systemName: systemImage)
+                    .font(.body.weight(.semibold))
+                    .frame(minWidth: 24)
+                    .accessibilityHidden(true)
+                Text(title)
+                    .font(.body)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
             if opens {
                 Image(systemName: "chevron.right")
                     .font(.caption.weight(.bold))
@@ -308,6 +332,7 @@ struct CreateCompetitionView: View {
             }
         }
         .foregroundStyle(Theme.ink)
+        .padding(.vertical, 12)
         .padding(.horizontal, 14)
         .frame(minHeight: 56)
         .contentShape(Rectangle())

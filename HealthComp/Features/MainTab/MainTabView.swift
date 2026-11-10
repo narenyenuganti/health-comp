@@ -322,7 +322,8 @@ struct MainTabView: View {
                         AuthenticatedProfile(id: id, displayName: person.displayName)
                     ))))
                     isChallengePresented = true
-                }
+                },
+                hasPlayed: publication.dashboard.competitions.contains { $0.opponentIdentity == identity }
             )
         } else {
             matchedPersonScreen(identity, publication: publication)
