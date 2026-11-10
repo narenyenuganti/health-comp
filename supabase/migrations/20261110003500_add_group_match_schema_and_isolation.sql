@@ -1262,6 +1262,19 @@ end; $$;
 revoke all on function public.register_current_device_installation(uuid,text,text,boolean,boolean,text[],boolean) from public, anon, authenticated, service_role;
 grant execute on function public.register_current_device_installation(uuid,text,text,boolean,boolean,text[],boolean) to authenticated;
 
+-- A third party's pending lineup grants no direct challenge credentials to its co-invitees.
+create function private.has_direct_challenge_history(caller uuid, recipient uuid)
+returns boolean language sql stable security definer set search_path = '' as $$
+  select exists (select 1 from public.competitions c
+    join public.competition_participants a on a.competition_id = c.id and a.profile_id = caller
+    join public.competition_participants b on b.competition_id = c.id and b.profile_id = recipient
+    where c.format = 'duel' or c.creator_profile_id = caller
+      or (a.state = 'accepted' and b.state = 'accepted' and exists (
+        select 1 from public.competition_change_log l where l.competition_id = c.id
+          and l.change_kind = 'competition_lifecycle_changed' and l.payload_snapshot->>'lifecycle' = 'scheduled')));
+$$;
+revoke all on function private.has_direct_challenge_history(uuid,uuid) from public,anon,authenticated,service_role;
+
 -- A group result can never be the parent of a legacy duel rematch.
 create or replace function private.create_competition_invite_v2(
   token_digest bytea,
@@ -1359,9 +1372,7 @@ begin
   -- Search discovery is not a challenge link; shipped Challenge Again has history.
   if input_rematch_parent_id is null and input_link_code is null and not f
      and exists (select 1 from public.profiles p where p.id = input_recipient_profile_id and p.username is not null)
-     and not exists (select 1 from public.competition_participants a
-       join public.competition_participants b on b.competition_id = a.competition_id
-       where a.profile_id = caller_profile_id and b.profile_id = input_recipient_profile_id) then
+     and not private.has_direct_challenge_history(caller_profile_id,input_recipient_profile_id) then
     raise exception 'recipient_unavailable' using errcode = 'P0001';
   end if;
   if input_rematch_parent_id is null then

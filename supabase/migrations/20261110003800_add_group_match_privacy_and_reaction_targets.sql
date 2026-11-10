@@ -472,6 +472,130 @@ $$;
 revoke all on function public.nudge_competition_participant(uuid,uuid),public.set_competition_reaction(uuid,integer,text,uuid) from public,anon,authenticated,service_role;
 grant execute on function public.nudge_competition_participant(uuid,uuid),public.set_competition_reaction(uuid,integer,text,uuid) to authenticated;
 
+-- Keep the friends entry points within the same group consent and block boundaries.
+create or replace function public.resolve_invitation_recipient(profile_id uuid)
+returns jsonb language plpgsql security definer set search_path = ''
+as $$
+declare
+  input_profile_id alias for profile_id;
+  caller_profile_id uuid;
+  recipient jsonb;
+begin
+  if (select auth.role()) is distinct from 'authenticated'
+     or (select auth.uid()) is null then
+    raise exception 'authentication_required' using errcode = '42501';
+  end if;
+  caller_profile_id := private.current_profile_id();
+  if caller_profile_id is null then
+    raise exception 'active_profile_required' using errcode = '42501';
+  end if;
+  select pg_catalog.jsonb_build_object('id', p.id, 'display_name', p.display_name)
+  into recipient from public.profiles p
+  where p.id = input_profile_id and p.id <> caller_profile_id and p.state = 'active';
+  if recipient is null
+     or (not private.are_friends(caller_profile_id, input_profile_id)
+       and (private.challenge_link_revoked_v1(caller_profile_id, input_profile_id)
+         or exists (select 1 from public.profiles p where p.id = input_profile_id
+           and p.challenge_policy = 'friends_only')
+         or (exists (select 1 from public.profiles p where p.id = input_profile_id and p.username is not null)
+           and not private.has_direct_challenge_history(caller_profile_id,input_profile_id))))
+     or exists (select 1 from private.account_blocks b
+       where b.blocker_profile_id = input_profile_id
+         and b.blocked_profile_id = caller_profile_id) then
+    raise exception 'recipient_unavailable' using errcode = 'P0001';
+  end if;
+  return recipient;
+end;
+$$;
+
+create or replace function private.person_reachable(caller uuid, target uuid)
+returns boolean language sql stable security definer set search_path = ''
+as $$
+  select exists (select 1 from public.profiles p
+    where p.id = target and p.id <> caller and p.state = 'active'
+      and not private.people_blocked(caller, target)
+      and ((p.username is not null and p.show_in_search)
+        or private.are_friends(caller, target)
+        or exists (select 1 from private.friend_requests r
+          where (r.sender_profile_id = caller and r.recipient_profile_id = target)
+             or (r.sender_profile_id = target and r.recipient_profile_id = caller))
+        or exists (select 1 from public.competitions c
+          join public.competition_participants a on a.competition_id = c.id
+            and a.profile_id = caller and a.state = 'accepted'
+          join public.competition_participants b on b.competition_id = c.id
+            and b.profile_id = target and b.state = 'accepted'
+          where c.lifecycle in ('scheduled','active','ends_today','tallying','completed','archived','cancelled')
+            and (c.format = 'duel' or exists (select 1 from public.competition_change_log l
+              where l.competition_id = c.id and l.change_kind = 'competition_lifecycle_changed'
+                and l.payload_snapshot->>'lifecycle' = 'scheduled')))
+        or exists (select 1 from public.competitions c
+          where c.creator_profile_id = target and (c.invited_profile_id = caller
+            or (c.format <> 'duel' and exists (select 1 from public.competition_participants p
+              where p.competition_id = c.id and p.profile_id = caller))))));
+$$;
+
+create or replace function public.block_profile(profile_id uuid)
+returns jsonb language plpgsql security definer set search_path = ''
+as $$
+declare
+  target alias for profile_id;
+  caller uuid := private.require_active_caller_profile_id();
+  decision_time timestamptz;
+  declined record;
+  recipient uuid;
+begin
+  if target is null then
+    raise exception 'invalid_profile_id' using errcode = '22023';
+  end if;
+  perform private.lock_friend_pair(caller, target);
+  if target = caller or not exists (select 1 from public.profiles p
+    where p.id = target and p.state = 'active')
+    or (not exists (select 1 from private.account_blocks b
+      where b.blocker_profile_id = caller and b.blocked_profile_id = target)
+      and not private.person_reachable(caller, target)) then
+    raise exception 'recipient_unavailable' using errcode = 'P0001';
+  end if;
+  decision_time := pg_catalog.clock_timestamp();
+  insert into private.account_blocks (blocker_profile_id, blocked_profile_id)
+    values (caller, target) on conflict do nothing;
+  for declined in
+    update public.competitions c set lifecycle = 'declined',
+      closed_by_profile_id = caller, closed_at = decision_time, updated_at = decision_time
+    where c.creator_profile_id = target and c.invited_profile_id = caller
+      and c.lifecycle = 'pending' and c.invitation_expires_at > decision_time
+    returning c.id
+  loop
+    perform private.enqueue_challenge_notification(declined.id, 'challenge_declined', target, caller);
+  end loop;
+  update public.competitions c set lifecycle = 'cancelled',
+    closed_by_profile_id = caller, closed_at = decision_time, updated_at = decision_time
+  where c.creator_profile_id = caller and c.invited_profile_id = target and c.lifecycle = 'pending';
+  for declined in
+    update public.competitions c set
+      lifecycle = case when c.invitation_expires_at <= decision_time then 'expired'
+        when c.creator_profile_id = caller then 'cancelled' else 'declined' end,
+      closed_by_profile_id = case when c.invitation_expires_at <= decision_time then null else caller end,
+      closed_at = case when c.invitation_expires_at <= decision_time then null else decision_time end,
+      updated_at = decision_time
+    where c.format <> 'duel' and c.lifecycle = 'pending'
+      and exists (select 1 from public.competition_participants p where p.competition_id = c.id and p.profile_id = caller)
+      and exists (select 1 from public.competition_participants p where p.competition_id = c.id and p.profile_id = target)
+    returning c.id,c.lifecycle
+  loop
+    if declined.lifecycle <> 'expired' then
+      for recipient in select p.profile_id from public.competition_participants p
+        where p.competition_id = declined.id and p.profile_id <> caller loop
+        perform private.enqueue_challenge_notification(declined.id,
+          case when declined.lifecycle = 'cancelled' then 'match_cancelled' else 'challenge_declined' end,
+          recipient,caller);
+      end loop;
+    end if;
+  end loop;
+  return (select pg_catalog.jsonb_build_object('id', p.id, 'display_name', p.display_name)
+    from public.profiles p where p.id = target);
+end;
+$$;
+
 -- Backfill duel targets after all DDL and trigger installation.
 update private.competition_reactions r set target_profile_id = p.profile_id
 from public.competition_participants p where p.competition_id = r.competition_id and p.profile_id <> r.author_profile_id;

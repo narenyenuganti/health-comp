@@ -145,9 +145,7 @@ begin
         and not private.are_friends(caller,recipient.id)
         and (recipient.challenge_policy = 'friends_only'
           or (e->>'challenge_link_code' is null and recipient.username is not null
-            and not exists (select 1 from public.competition_participants a
-              join public.competition_participants b on b.competition_id = a.competition_id
-              where a.profile_id = caller and b.profile_id = recipient.id))))
+            and not private.has_direct_challenge_history(caller,recipient.id))))
     or exists (select 1 from private.account_blocks b where b.blocker_profile_id = any(humans) and b.blocked_profile_id = any(humans)) then
     raise exception 'recipient_unavailable' using errcode = 'P0001';
   end if;
