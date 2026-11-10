@@ -132,12 +132,15 @@ struct CompetitionResultView: View {
                     .transition(Motion.appear)
                 }
 
-                Button("Watch the decision again", systemImage: "arrow.counterclockwise") {
+                Button {
                     replaysJudges = true
+                } label: {
+                    Label("Watch the decision again", systemImage: "arrow.counterclockwise")
+                        .font(.themeLabel)
+                        .foregroundStyle(Theme.ink)
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .contentShape(Rectangle())
                 }
-                .font(.themeLabel)
-                .foregroundStyle(Theme.ink)
-                .frame(maxWidth: .infinity, minHeight: 44)
                 .accessibilityIdentifier("competition.judges.replay")
 
                 // Real matches only; practice also renders as remote.

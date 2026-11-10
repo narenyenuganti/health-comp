@@ -3629,6 +3629,19 @@ final class CompetitionJudgesDecisionTests: XCTestCase {
         XCTAssertTrue(decision.cards.allSatisfy { $0.yourTotal == nil && $0.theirTotal == nil })
     }
 
+    func testArticulatedRaiseKeepsArmLengthsAndMirrorsBothCorners() {
+        let leftShoulder = CGPoint(x: 100, y: 145)
+        for progress in [0.0, 0.25, 0.5, 0.75, 1] {
+            let left = competitionJudgeArm(shoulder: leftShoulder, inward: 1, raised: progress)
+            let right = competitionJudgeArm(shoulder: CGPoint(x: 260, y: 145), inward: -1, raised: progress)
+            XCTAssertEqual(left.wrist.x + right.wrist.x, 360, accuracy: 0.001)
+            XCTAssertEqual(left.wrist.y, right.wrist.y, accuracy: 0.001)
+            XCTAssertEqual(hypot(left.elbow.x - leftShoulder.x, left.elbow.y - leftShoulder.y), 35, accuracy: 0.001)
+            XCTAssertEqual(hypot(left.wrist.x - left.elbow.x, left.wrist.y - left.elbow.y), 35, accuracy: 0.001)
+        }
+        XCTAssertLessThan(competitionJudgeArm(shoulder: leftShoulder, inward: 1, raised: 1).wrist.y, 90)
+    }
+
     func testSeenMarkIsPerMatchAndIndependentOfVerdict() {
         let id = CompetitionID(UUID())
         let marked = CompetitionMotionSeen().marking(.judges, id)
