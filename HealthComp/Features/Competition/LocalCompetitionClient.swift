@@ -1300,7 +1300,7 @@ enum LocalCompetitionProjector {
         )
     }
 
-    /// Practice journals as matches against the Pacer. A pending journal
+    /// Practice journals as matches against their bot. A pending journal
     /// (an interrupted start) never shows.
     static func practicePresentations(
         journals: [LoadedCompetitionJournal],
@@ -1316,7 +1316,9 @@ enum LocalCompetitionProjector {
                     context: context,
                     configuration: configuration,
                     ownerDisplayName: ownerDisplayName,
-                    opponentDisplayName: PracticeMatch.opponentDisplayName,
+                    opponentDisplayName: PracticeMatch.opponentDisplayName(
+                        for: loaded.projection.competition.opponentPlan?.difficulty
+                    ),
                     opponentIdentity: PracticeMatch.opponentIdentity
                 )
             case .pendingInvitation, .declined, .expired, .archived:

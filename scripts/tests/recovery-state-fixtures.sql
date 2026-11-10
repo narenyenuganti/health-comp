@@ -13,7 +13,7 @@ create table public.profiles (
   anonymized_at timestamptz, created_at timestamptz, updated_at timestamptz
 );
 create table public.competitions (id uuid, creator_profile_id uuid, lifecycle text);
-create table public.competition_participants (competition_id uuid, profile_id uuid, state text);
+create table public.competition_participants (competition_id uuid, profile_id uuid, state text, left_at timestamptz);
 create table public.competition_invites (id uuid, competition_id uuid, consumed_at timestamptz);
 create table public.competition_change_log (competition_id uuid, server_seq bigint);
 create table public.daily_score_revisions (competition_id uuid);
@@ -21,6 +21,8 @@ create table public.participant_finalization_attestations (competition_id uuid);
 create table public.competition_results (
   competition_id uuid, participant_a_profile_id uuid, participant_b_profile_id uuid
 );
+create table public.competition_seats (competition_id uuid);
+create table public.competition_group_results (competition_id uuid);
 create table public.competition_awards (competition_id uuid);
 create table public.device_installations (
   id uuid, profile_id uuid, installation_id uuid, state text
@@ -77,6 +79,8 @@ alter table public.daily_score_revisions enable row level security;
 alter table public.participant_finalization_attestations enable row level security;
 alter table public.competition_results enable row level security;
 alter table public.competition_awards enable row level security;
+alter table public.competition_seats enable row level security;
+alter table public.competition_group_results enable row level security;
 alter table public.device_installations enable row level security;
 alter table public.support_events enable row level security;
 alter table private.account_deletions enable row level security;
@@ -118,7 +122,7 @@ grant select on public.competitions, public.competition_participants,
 truncate public.profiles, public.competitions, public.competition_participants,
   public.competition_invites, public.competition_change_log, public.daily_score_revisions,
   public.participant_finalization_attestations, public.competition_results,
-  public.competition_awards, public.device_installations, public.support_events,
+  public.competition_awards, public.competition_seats, public.competition_group_results, public.device_installations, public.support_events,
   private.competition_notification_mutes, private.competition_notification_work,
   private.account_deletions, private.app_attest_keys, private.app_attest_challenges,
   private.app_attest_submission_grants, private.apple_deletion_web_requests,
@@ -150,7 +154,7 @@ select md5('competition-' || n)::uuid, md5('profile-6')::uuid,
   case n when 102 then 'archived' when 103 then 'cancelled'
     when 104 then 'active' when 105 then 'cancelled' else 'completed' end
 from generate_series(100, 105) n;
-insert into public.competition_participants
+insert into public.competition_participants(competition_id,profile_id,state)
 select md5('competition-' || c)::uuid, md5('profile-' || p)::uuid,
   case when p in (4, 5) then 'anonymized' else 'accepted' end
 from (values (100,5),(100,6),(101,4),(101,7),(102,5),(102,7),

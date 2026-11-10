@@ -776,7 +776,7 @@ Vault secrets.
 
 Require exactly 33 native nonnegative integer fields, with no extra keys or
 output. The two fixed criteria are `receipt_version=2` and
-`application_tables_checked=26`. Version 1 receipts do not qualify this candidate.
+`application_tables_checked=28`. Version 1 receipts do not qualify this candidate.
 These 21 violation counters must all be zero on the contained recovery target:
 
 - `browser_requests_remaining`, `deletion_client_binding_invalid`
@@ -808,7 +808,7 @@ not equality of this counter with the pre-cleanup source. Preserve all durable
 state comparisons. Nonzero violation counts are rejection
 evidence even when psql exits zero. The receipt has no overall readiness field.
 
-The 26-table authorization baseline is 11 public tables with RLS/no FORCE, 14
+The 28-table authorization baseline is 13 public tables with RLS/no FORCE, fourteen
 private tables with both flags, and private `competition_notification_mutes`
 with neither flag but revoked raw access. The 14 FORCE-protected tables are
 `competition_notification_work`, `account_deletions`, `app_attest_keys`,
