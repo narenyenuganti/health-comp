@@ -1568,7 +1568,9 @@ final class MainTabFeatureTests: XCTestCase {
         let routing = MainTabRoutingRecorder()
         let list = FriendsList()
         var initial = MainTabFeature.State(
-            competition: CompetitionFeature.State(publication: publication(revision: 1, visibleID: id)),
+            competition: CompetitionFeature.State(
+                publication: publication(revision: 1, visibleID: id, source: .remoteParticipants)
+            ),
             path: [id],
             showsHistory: true,
             isAccountPresented: true
@@ -1590,6 +1592,7 @@ final class MainTabFeatureTests: XCTestCase {
             $0.isAccountPresented = false
             $0.path = []
             $0.lastHandledRouteSequence = 4
+            $0.friendsRouteCount = 1
         }
         await store.receive(.competition(.friends(.requested)))
         await store.receive(.competition(.friends(.loaded(list)))) {
@@ -1600,6 +1603,88 @@ final class MainTabFeatureTests: XCTestCase {
 
         // The same push again does nothing.
         await store.send(.routeReceived(CompetitionRouteEnvelope(sequence: 4, route: .friends)))
+    }
+
+    /// A Friends push closes the challenge-link sheet and the claim sheet
+    /// and drops their pending, queued and in-flight work, so neither
+    /// reopens or navigates away from Friends later.
+    @MainActor
+    func testFriendsRouteClosesLinkAndClaimSheetsAndIgnoresLateResponses() async throws {
+        let id = competitionID("81000000-0000-0000-0000-00000000000C")
+        let routing = MainTabRoutingRecorder()
+        let list = FriendsList()
+        let code = try XCTUnwrap(CompetitionChallengeLinkCode(rawValue: "Xb3kP9qL2mN8vR4tY6wZ1a"))
+        let pending = try claimEnvelope(sequence: 5)
+        let queued = try claimEnvelope(sequence: 6, token: "QQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQQ")
+        var initial = MainTabFeature.State(
+            competition: CompetitionFeature.State(
+                publication: publication(revision: 1, visibleID: id, source: .remoteParticipants)
+            ),
+            pendingClaimRoute: pending,
+            claimRouteSequenceInFlight: 5,
+            pendingClaimNavigation: MainTabFeature.PendingClaimNavigation(competitionID: id, expectedPublicationRevision: 2),
+            inviteClaimStatus: .waitingForCompetition
+        )
+        initial.queuedClaimRoute = queued
+        initial.challengeFromLink = .init(sequence: 4, code: code, status: .resolving)
+        var client = CompetitionClient.testValue
+        client.listFriends = { list }
+        let store = TestStore(initialState: initial) {
+            MainTabFeature()
+        } withDependencies: {
+            $0.competitionRoutingClient = routing.client
+            $0.competitionClient = client
+        }
+
+        await store.send(.routeReceived(CompetitionRouteEnvelope(sequence: 7, route: .friends))) {
+            $0.challengeFromLink = nil
+            $0.pendingClaimRoute = nil
+            $0.queuedClaimRoute = nil
+            $0.lastHandledClaimRouteSequence = 6
+            $0.claimRouteSequenceInFlight = nil
+            $0.pendingClaimNavigation = nil
+            $0.inviteClaimStatus = .idle
+            $0.showsFriends = true
+            $0.lastHandledRouteSequence = 7
+            $0.friendsRouteCount = 1
+        }
+        await store.receive(.competition(.friends(.requested)))
+        await store.receive(.competition(.challengeSheetDismissed))
+        await store.receive(.competition(.friends(.loaded(list)))) {
+            $0.competition.friends.list = list
+        }
+        await store.finish()
+        XCTAssertEqual(Set(routing.consumedSequences), [5, 6, 7])
+
+        // Answers that arrive after the tap change nothing.
+        await store.send(.challengeLinkResolved(sequence: 4, .success("Maya")))
+        await store.send(.claimInviteResponse(sequence: 5, .success(id, expectedRevision: 2)))
+        await store.send(.claimConfirmationTimedOut(MainTabFeature.PendingClaimNavigation(competitionID: id, expectedPublicationRevision: 2)))
+    }
+
+    /// Practice and simulated matches have no Friends: the push only
+    /// opened the app.
+    @MainActor
+    func testFriendsRouteWithoutRemoteAccountOnlyOpensTheApp() async {
+        let id = competitionID("81000000-0000-0000-0000-00000000000D")
+        let routing = MainTabRoutingRecorder()
+        let initial = MainTabFeature.State(
+            competition: CompetitionFeature.State(publication: publication(revision: 1, visibleID: id)),
+            path: [id],
+            showsHistory: true
+        )
+        let store = TestStore(initialState: initial) {
+            MainTabFeature()
+        } withDependencies: {
+            $0.competitionRoutingClient = routing.client
+            $0.competitionClient = CompetitionClient.testValue
+        }
+
+        await store.send(.routeReceived(CompetitionRouteEnvelope(sequence: 4, route: .friends))) {
+            $0.lastHandledRouteSequence = 4
+        }
+        await store.finish()
+        XCTAssertEqual(routing.consumedSequences, [4])
     }
 
     @MainActor
@@ -2682,19 +2767,22 @@ final class MainTabFeatureTests: XCTestCase {
     private func publication(
         revision: UInt64,
         visibleID: CompetitionID,
-        lifecycle: LocalCompetitionLifecyclePresentation = .scheduled
+        lifecycle: LocalCompetitionLifecyclePresentation = .scheduled,
+        source: CompetitionPublicationSource = .simulatedFixture
     ) -> LocalCompetitionPublication {
         publication(
             revision: revision,
             visibleIDs: [visibleID],
-            lifecycle: lifecycle
+            lifecycle: lifecycle,
+            source: source
         )
     }
 
     private func publication(
         revision: UInt64,
         visibleIDs: [CompetitionID],
-        lifecycle: LocalCompetitionLifecyclePresentation = .scheduled
+        lifecycle: LocalCompetitionLifecyclePresentation = .scheduled,
+        source: CompetitionPublicationSource = .simulatedFixture
     ) -> LocalCompetitionPublication {
         LocalCompetitionPublication(
             publicationRevision: revision,
@@ -2718,7 +2806,8 @@ final class MainTabFeatureTests: XCTestCase {
                 awards: [],
                 issues: [],
                 hiddenTerminalCompetitionCount: 0
-            )
+            ),
+            source: source
         )
     }
 

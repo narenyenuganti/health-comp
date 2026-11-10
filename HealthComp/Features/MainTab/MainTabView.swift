@@ -107,6 +107,12 @@ struct MainTabView: View {
                 close: { store.send(.dismissChallengeFromLink) }
             )
         }
+        // A Friends push opens Friends in front of everything.
+        .onChange(of: store.friendsRouteCount) { _, _ in
+            isChallengePresented = false
+            isPracticePresented = false
+            recapPeriod = nil
+        }
         .onChange(of: isChallengePresented) { _, isPresented in
             if isPresented, store.competition.publication?.source == .remoteParticipants {
                 store.send(.competition(.challengeLinkRequested))

@@ -111,6 +111,9 @@ struct MainTabFeature {
         var queuedClaimRoute: CompetitionRouteEnvelope?
         var claimDeclineFailed = false
         var challengeFromLink: ChallengeFromLink?
+        /// Counts Friends pushes that opened Friends; MainTabView closes its
+        /// own sheets (Challenge, practice, recap) when it changes.
+        var friendsRouteCount = 0
 
         init(
             competition: CompetitionFeature.State = CompetitionFeature.State(),
@@ -977,25 +980,38 @@ struct MainTabFeature {
                     : .none
             )
         case .friends:
-            // Like a match route: close what covers Home, then Friends on its
-            // own and a fresh list, open or not.
             state.pendingRoute = nil
             state.heldRouteSequence = nil
             state.lastHandledRouteSequence = envelope.sequence
-            state.showsHistory = false
-            state.historyPersonIdentity = nil
-            state.personPlace = CompetitionPersonPlace()
-            let closesAccount = state.isAccountPresented
-            state.isAccountPresented = false
-            state.path = []
-            state.showsFriends = true
-            return .merge(
-                .send(.competition(.friends(.requested))),
+            let consumes: Effect<Action> = .merge(
                 .cancel(id: CancelID.routeHold),
                 .run { _ in
                     competitionRoutingClient.consume(envelope.sequence)
-                },
-                closesAccount
+                }
+            )
+            // No Friends without a remote account (practice, simulated):
+            // the push just opened the app.
+            guard state.competition.publication?.source == .remoteParticipants else {
+                return consumes
+            }
+            // Like a match route: close what covers Home, the link and claim
+            // sheets and the view's own sheets too, then Friends on its own
+            // and a fresh list, open or not.
+            state.showsHistory = false
+            state.historyPersonIdentity = nil
+            state.personPlace = CompetitionPersonPlace()
+            let closesAccount: Bool = state.isAccountPresented
+            state.isAccountPresented = false
+            let closesClaim: Bool = state.inviteClaimStatus != .idle
+            let closesLinks: Effect<Action> = closeLinkAndClaim(state: &state)
+            state.path = []
+            state.showsFriends = true
+            state.friendsRouteCount += 1
+            return .merge(
+                .send(.competition(.friends(.requested))),
+                consumes,
+                closesLinks,
+                closesAccount || closesClaim
                     ? notificationPromptBlockerChanged(isOpen: false, state: &state)
                     : .none
             )
@@ -1055,6 +1071,32 @@ struct MainTabFeature {
         state.personPlace = CompetitionPersonPlace()
         state.path = [id]
         return .merge(closesFriends, .send(.competition(.challengeSheetDismissed)))
+    }
+
+    /// Closes the challenge-link and claim sheets as Close and Not now do,
+    /// and drops their queued and in-flight work, so nothing reopens or
+    /// navigates over Friends later.
+    private func closeLinkAndClaim(state: inout State) -> Effect<Action> {
+        var effects: [Effect<Action>] = [
+            .cancel(id: CancelID.inviteClaim),
+            .cancel(id: CancelID.claimConfirmationTimeout),
+        ]
+        if state.challengeFromLink != nil {
+            state.challengeFromLink = nil
+            effects.append(.cancel(id: CancelID.challengeLink))
+            effects.append(.send(.competition(.challengeSheetDismissed)))
+        }
+        let routes: [CompetitionRouteEnvelope] = [state.pendingClaimRoute, state.queuedClaimRoute].compactMap { $0 }
+        for route in routes {
+            effects.append(consumeClaimRoute(route.sequence, state: &state))
+        }
+        state.queuedClaimRoute = nil
+        state.claimRouteSequenceInFlight = nil
+        state.pendingClaimNavigation = nil
+        state.inviteClaimStatus = .idle
+        state.acceptsClaimOnStart = false
+        state.claimDeclineFailed = false
+        return .merge(effects)
     }
 
     /// Friends leaving the stack stops its search, load and changes.
