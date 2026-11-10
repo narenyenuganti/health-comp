@@ -58,6 +58,7 @@ struct CompetitionDetailView: View {
     /// The menu's first item, once a week with them has finished. This week
     /// isn't in it until it has a final result.
     var recordLink: CompetitionRecordLink? = nil
+    var replayIntro: (() -> Void)? = nil
 
     @Environment(\.locale) private var locale
     @Environment(\.timeZone) private var timeZone
@@ -174,6 +175,12 @@ struct CompetitionDetailView: View {
                         }
                         .accessibilityLabel(recordLink.accessibilityLabel)
                         .accessibilityIdentifier("competition.record-link")
+                    }
+                    if let replayIntro {
+                        Button(action: replayIntro) {
+                            Label("Replay intro", systemImage: "arrow.counterclockwise")
+                        }
+                        .accessibilityIdentifier("competition.versus.replay")
                     }
                     if let muteButton {
                         muteButton

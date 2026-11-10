@@ -1,12 +1,18 @@
 import CompetitionCore
 import Foundation
 
-/// A solo week on this iPhone against the pacer. It runs on the local
+/// A solo week on this iPhone against a bot. It runs on the local
 /// engine beside the real matches, reads Health only through the runtime's
 /// own reads, never takes HealthKit signal ownership and sends nothing.
 enum PracticeMatch {
     static let opponentDisplayName = "Pacer"
     static let opponentIdentity = "practice-pacer:v1"
+    /// The bot's name. A practice stored with an old pace stays "Pacer".
+    static func opponentDisplayName(for difficulty: OpponentDifficulty?) -> String {
+        difficulty.flatMap { BotMode(rawValue: $0.rawValue) }?.rawValue.capitalized
+            ?? opponentDisplayName
+    }
+
     /// In-flight and rejection key for Start. Never a journal id.
     static let startCommandID = CompetitionID(
         UUID(uuidString: "5A3C0000-0000-4000-8000-000000000001")!
@@ -52,7 +58,7 @@ enum PracticeMatch {
         return reads
     }
 
-    /// Starts tomorrow against a pacer scaled to your last 2 weeks.
+    /// Starts tomorrow against a bot scaled to your last 2 weeks.
     static func start(
         _ difficulty: OpponentDifficulty,
         runtime: LocalCompetitionRuntime,
@@ -95,7 +101,7 @@ enum PracticeMatch {
             competitionID: id,
             opponent: OpponentPlanGenerationRequest(
                 seed: .random(in: .min ... .max),
-                generatorVersion: .v2,
+                generatorVersion: .v3,
                 difficulty: difficulty,
                 baselineDailyPoints: baseline
             )
@@ -167,7 +173,8 @@ extension LocalCompetitionDashboard {
             },
             awards: awards,
             issues: issues,
-            hiddenTerminalCompetitionCount: hiddenTerminalCompetitionCount
+            hiddenTerminalCompetitionCount: hiddenTerminalCompetitionCount,
+            groupMatches: groupMatches
         )
     }
 }

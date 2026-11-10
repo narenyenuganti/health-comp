@@ -12,6 +12,7 @@ struct MainTabView: View {
     @State private var isChallengePresented = false
     @State private var isPracticePresented = false
     @State private var isVersusPlaying = false
+    @State private var replaysVersus = false
     @State private var recapPeriod: CompetitionRecapPeriod?
 
     var body: some View {
@@ -265,7 +266,8 @@ struct MainTabView: View {
         .competitionVersusIntro(
             matchID: store.path.last,
             publication: store.competition.publication,
-            isPlaying: $isVersusPlaying
+            isPlaying: $isVersusPlaying,
+            replay: $replaysVersus
         )
     }
 
@@ -458,7 +460,14 @@ struct MainTabView: View {
 
     @ViewBuilder
     private func destination(for id: CompetitionID) -> some View {
-        if let publication = store.competition.publication,
+        if let match = store.competition.publication?.dashboard.groupMatches.first(
+            where: { $0.id == id }
+        ) {
+            GroupMatchDestination(
+                match: match,
+                store: store.scope(state: \.competition.group, action: \.competition.group)
+            )
+        } else if let publication = store.competition.publication,
            let competition = publication.dashboard.competitions.first(
                where: { $0.id == id }
            ),
@@ -517,7 +526,10 @@ struct MainTabView: View {
                             report: { store.send(.competition(.photoReportConfirmed(owner))) }
                         )
                     },
-                    recordLink: recordLink(competition, in: publication)
+                    recordLink: recordLink(competition, in: publication),
+                    replayIntro: CompetitionVersusIntroGate.isEnabled
+                        && competitionVersusIntroContent(competition, in: publication, isReplay: true) != nil
+                        ? { replaysVersus = true } : nil
                 )
 
             case .completed, .archived:

@@ -424,59 +424,69 @@ Deno.test("create maps divergent idempotency reuse without database details", as
 });
 
 Deno.test("create reports pending, overlap, reciprocal and unavailable recipients safely", async () => {
+  // Friend privacy refusals use the same opaque response on id and link paths.
   for (
-    const [code, status, message] of [
-      [
-        "pending_invitation_exists",
-        409,
-        "An invitation to this account is already pending",
-      ],
-      [
-        "active_match_exists",
-        409,
-        "A match with this account is in progress",
-      ],
-      [
-        "incoming_challenge_exists",
-        409,
-        "This account already challenged you",
-      ],
-      ["recipient_unavailable", 404, "Recipient unavailable"],
-    ] as const
+    const recipient of [
+      { recipientProfileId: "42000000-0000-4000-8000-000000000002" },
+      { challengeLinkCode: "abcdefghijklmnopqrstuv" },
+    ]
   ) {
-    const response = await createCompetitionInviteHandler(
-      request({
-        timeZoneIdentifier: "UTC",
-        idempotencyKey: "84000000-0000-4000-8000-000000000001",
-        recipientProfileId: "42000000-0000-4000-8000-000000000002",
-      }),
-      {
-        createUserClient: () => ({
-          auth: {
-            getUser: () =>
+    for (
+      const [code, status, message] of [
+        [
+          "pending_invitation_exists",
+          409,
+          "An invitation to this account is already pending",
+        ],
+        [
+          "active_match_exists",
+          409,
+          "A match with this account is in progress",
+        ],
+        [
+          "incoming_challenge_exists",
+          409,
+          "This account already challenged you",
+        ],
+        ["recipient_unavailable", 404, "Recipient unavailable"],
+      ] as const
+    ) {
+      const response = await createCompetitionInviteHandler(
+        request({
+          timeZoneIdentifier: "UTC",
+          idempotencyKey: "84000000-0000-4000-8000-000000000001",
+          ...recipient,
+        }),
+        {
+          createUserClient: () => ({
+            auth: {
+              getUser: () =>
+                Promise.resolve({
+                  data: {
+                    user: { id: "41000000-0000-4000-8000-000000000001" },
+                  },
+                  error: null,
+                }),
+            },
+            rpc: () => Promise.reject(new Error("not used")),
+          }),
+          createServiceClient: () => ({
+            auth: { getUser: () => Promise.reject(new Error("not used")) },
+            rpc: () =>
               Promise.resolve({
-                data: { user: { id: "41000000-0000-4000-8000-000000000001" } },
-                error: null,
+                data: null,
+                error: {
+                  message: code,
+                  code: "P0001",
+                  details: "private database detail",
+                },
               }),
-          },
-          rpc: () => Promise.reject(new Error("not used")),
-        }),
-        createServiceClient: () => ({
-          auth: { getUser: () => Promise.reject(new Error("not used")) },
-          rpc: () =>
-            Promise.resolve({
-              data: null,
-              error: {
-                message: code,
-                code: "P0001",
-                details: "private database detail",
-              },
-            }),
-        }),
-        deriveToken: () => Promise.resolve(new Uint8Array(32)),
-      },
-    );
-    assertEquals(response.status, status);
-    assertEquals(await response.json(), { error: { code, message } });
+          }),
+          deriveToken: () => Promise.resolve(new Uint8Array(32)),
+        },
+      );
+      assertEquals(response.status, status);
+      assertEquals(await response.json(), { error: { code, message } });
+    }
   }
 });

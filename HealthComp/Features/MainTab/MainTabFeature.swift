@@ -1130,9 +1130,10 @@ struct MainTabFeature {
     }
 
     private func visibleCompetitionIDs(in state: State) -> Set<CompetitionID> {
-        Set(
-            state.competition.publication?.dashboard.competitions.map(\.id)
-                ?? []
+        let dashboard = state.competition.publication?.dashboard
+        return Set(
+            (dashboard?.competitions.map(\.id) ?? [])
+                + (dashboard?.groupMatches.map(\.id) ?? [])
         )
     }
 
