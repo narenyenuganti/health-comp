@@ -73,7 +73,10 @@ final class MultiUserCompetitionUITests: XCTestCase {
             let field = recipientCodeField
             XCTAssertTrue(field.waitForExistence(timeout: 3))
             field.tap()
-            field.typeText(code + "\n")
+            // Bulk Simulator typing can drop a repeated character.
+            for character in code { field.typeText(String(character)) }
+            XCTAssertEqual(field.value as? String, code)
+            field.typeText("\n")
         }
 
         submit("abc")
@@ -1850,6 +1853,10 @@ final class MultiUserCompetitionUITests: XCTestCase {
         XCTAssertTrue(paste.waitForExistence(timeout: 3))
         paste.tap()
         XCTAssertTrue(app.buttons["competition.create.find-recipient"].waitForExistence(timeout: 3))
+        // The field moves in; typing before it settles drops characters.
+        let field = recipientCodeField
+        let settled = XCTNSPredicateExpectation(predicate: NSPredicate(format: "hittable == true"), object: field)
+        XCTAssertEqual(XCTWaiter.wait(for: [settled], timeout: 3), .completed)
     }
 
     private func chooseRecipient() {
