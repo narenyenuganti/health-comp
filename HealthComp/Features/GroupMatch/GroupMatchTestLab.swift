@@ -11,6 +11,9 @@ enum GroupMatchLabSetup: String, CaseIterable, Sendable {
     case botPicker = "bot-picker"
     case lobbyHost = "lobby-host"
     case lobbyDeclined = "lobby-declined"
+    case lobbyInvitee = "lobby-invitee"
+    case lobbyExpired = "lobby-expired"
+    case lobbyShortInvitee = "lobby-short-invitee"
     case inviteFFA = "invite-ffa"
     case versusFFA = "versus-ffa"
     case versusDoubles = "versus-doubles"
@@ -46,7 +49,11 @@ enum GroupMatchFixtures {
         var profileID: UUID { UUID(uuidString: "c2000000-0000-4000-8000-00000000000\(rawValue)")! }
     }
 
-    static let samProfile = Player.sam.profileID
+    static func player(_ player: Player) -> GroupMatchPlayer {
+        GroupMatchPlayer(profileID: player.profileID, name: player.name)
+    }
+
+    static let shareLink = URL(string: "https://invites.ui.healthcomp.test/c/Gm4tR8vX2pL6kN3wB9cY5z")!
 
     private static let now = MultiUserCompetitionTestLabFixtures.labNow
     private static let zone = "America/Los_Angeles"
@@ -77,6 +84,13 @@ enum GroupMatchFixtures {
     private static let ffaLineup: [Player] = [.you, .sam, .priya, .leo]
     private static let doublesLineup: [(Player, Int)] = [(.you, 1), (.sam, 2), (.priya, 1), (.leo, 2)]
     private static let live = LocalCompetitionLifecyclePresentation.active(dayOrdinal: 4)
+    /// Answer by Sun 8 PM in Los Angeles.
+    private static let waiting = LocalCompetitionLifecyclePresentation.pending(
+        direction: .outgoing, createdAt: now, expiresAt: now.addingTimeInterval(19 * 3_600)
+    )
+    private static let waitingIncoming = LocalCompetitionLifecyclePresentation.pending(
+        direction: .incoming, createdAt: now, expiresAt: now.addingTimeInterval(19 * 3_600)
+    )
     private static let won = LocalCompetitionLifecyclePresentation.completed(
         outcome: .win, basis: .stableAcrossPostBoundaryReads, completedAt: now
     )
@@ -86,8 +100,7 @@ enum GroupMatchFixtures {
         switch setup {
         case .lobbyHost:
             match(
-                1, .fourWay,
-                .pending(direction: .outgoing, createdAt: now, expiresAt: now.addingTimeInterval(86_400)),
+                1, .fourWay, waiting,
                 ffaLineup,
                 invites: [.priya: .invited, .leo: .invited]
             )
@@ -98,11 +111,23 @@ enum GroupMatchFixtures {
             )
         case .inviteFFA:
             match(
-                3, .fourWay,
-                .pending(direction: .incoming, createdAt: now, expiresAt: now.addingTimeInterval(86_400)),
+                3, .fourWay, waitingIncoming,
                 [.sam, .priya, .leo, .you],
                 viewerInvite: .invited,
                 invites: [.leo: .invited]
+            )
+        case .lobbyInvitee:
+            match(13, .fourWay, waitingIncoming, [.sam, .you, .priya, .leo], invites: [.leo: .invited])
+        case .lobbyExpired:
+            match(
+                14, .doubles, .expired(at: now, direction: .outgoing), doublesLineup.map(\.0),
+                invites: [.leo: .invited],
+                teams: Dictionary(uniqueKeysWithValues: doublesLineup.map { ($0.0, $0.1) })
+            )
+        case .lobbyShortInvitee:
+            match(
+                15, .fourWay, .declined(at: now, direction: .incoming), [.sam, .you, .priya, .leo],
+                invites: [.leo: .declined]
             )
         case .liveFFA: match(4, .fourWay, live, ffaLineup, scores: fourDays)
         case .liveDoubles: doubles(5, live, scores: fourDays)
@@ -225,12 +250,14 @@ struct GroupMatchTestLabView: View {
         self.setup = setup
         let first = GroupMatchFixtures.publication(revision: 1, setup: setup)
         let answer = GroupMatchFixtures.publication(revision: 2, setup: setup)
-        _store = State(initialValue: Store(
-            initialState: MainTabFeature.State(
-                competition: CompetitionFeature.State(publication: first),
-                path: first.dashboard.groupMatches.map(\.id)
-            )
-        ) {
+        var state = MainTabFeature.State(
+            competition: CompetitionFeature.State(publication: first),
+            path: first.dashboard.groupMatches.map(\.id)
+        )
+        for match in first.dashboard.groupMatches {
+            state.competition.group.shareLinks[match.id] = GroupMatchFixtures.shareLink
+        }
+        _store = State(initialValue: Store(initialState: state) {
             MainTabFeature()
         } withDependencies: {
             $0.competitionClient = CompetitionClient(
@@ -261,11 +288,38 @@ struct GroupMatchTestLabView: View {
     }
 
     var body: some View {
+        // Fixture times read in the match's zone, whatever the simulator's.
+        content.environment(\.timeZone, TimeZone(identifier: "America/Los_Angeles")!)
+    }
+
+    @ViewBuilder
+    private var content: some View {
         switch setup {
-        case .formatPicker: GroupMatchCreateView(step: .format, store: group)
-        case .lineupFFA: GroupMatchCreateView(step: .lineup(.fourWay), store: group, people: [GroupMatchFixtures.samProfile])
-        case .lineupDoubles: GroupMatchCreateView(step: .lineup(.doubles), store: group, people: [GroupMatchFixtures.samProfile])
-        case .botPicker: GroupMatchCreateView(step: .bots, store: group)
+        case .formatPicker:
+            GroupMatchCreateView(store: group, people: [GroupMatchFixtures.Player.sam, .priya, .leo].map(GroupMatchFixtures.player))
+        case .lineupFFA:
+            GroupMatchCreateView(
+                store: group,
+                people: [GroupMatchFixtures.Player.priya, .leo].map(GroupMatchFixtures.player),
+                lineup: GroupMatchLineup(format: .fourWay, entries: [.person(GroupMatchFixtures.player(.sam))]),
+                opensAt: [.lineup]
+            )
+        case .lineupDoubles:
+            GroupMatchCreateView(
+                store: group,
+                people: [GroupMatchFixtures.player(.leo)],
+                lineup: GroupMatchLineup(
+                    format: .doubles, entries: [GroupMatchFixtures.Player.priya, .sam].map { .person(GroupMatchFixtures.player($0)) }
+                ),
+                opensAt: [.lineup]
+            )
+        case .botPicker:
+            GroupMatchCreateView(
+                store: group,
+                people: [GroupMatchFixtures.Player.priya, .leo].map(GroupMatchFixtures.player),
+                lineup: GroupMatchLineup(format: .fourWay, entries: [.person(GroupMatchFixtures.player(.sam))]),
+                opensAt: [.lineup, .bots]
+            )
         // In a ScrollView: the lab root's identifier otherwise replaces a bare stack's.
         case .versusFFA: ScrollView { GroupMatchVersusIntro(match: GroupMatchFixtures.versusFFA) }
         case .versusDoubles: ScrollView { GroupMatchVersusIntro(match: GroupMatchFixtures.versusDoubles) }
@@ -276,7 +330,7 @@ struct GroupMatchTestLabView: View {
         case .day:
             GroupMatchFixtures.routed(.liveFFA).map { GroupMatchDayView(match: $0, ordinal: 3) }
         case .history: ScrollView { GroupMatchRecord() }
-        case .lobbyHost, .lobbyDeclined, .inviteFFA, .liveFFA, .liveDoubles, .liveBot, .banter,
+        case .lobbyHost, .lobbyDeclined, .lobbyInvitee, .lobbyExpired, .lobbyShortInvitee, .inviteFFA, .liveFFA, .liveDoubles, .liveBot, .banter,
              .resultFFAWon, .resultFFATied, .resultDoubles:
             MainTabView(store: store)
         }
