@@ -35,6 +35,7 @@ struct CompetitionResultView: View {
     @State private var showsWeek = false
     @State private var showsShare = false
     @State private var replaysCeremony = false
+    @State private var replaysJudges = false
     @AppStorage(CompetitionReactionsSeen.storageKey)
     private var reactionsSeen = CompetitionReactionsSeen()
     @AppStorage(CompetitionMotionSeen.storageKey)
@@ -132,7 +133,7 @@ struct CompetitionResultView: View {
                 }
 
                 Button("Watch the decision again", systemImage: "arrow.counterclockwise") {
-                    replaysCeremony = true
+                    replaysJudges = true
                 }
                 .font(.themeLabel)
                 .foregroundStyle(Theme.ink)
@@ -241,6 +242,7 @@ struct CompetitionResultView: View {
             competition: competition,
             isFirstView: isFirstView,
             replay: $replaysCeremony,
+            judgesReplay: $replaysJudges,
             onFinished: startVerdict
         )
         // Yours only: what you got already rained on Home.
@@ -1526,6 +1528,7 @@ extension CompetitionMotionSeen {
     enum Moment: String {
         case verdict
         case judges
+        case belt
         case versus
     }
 

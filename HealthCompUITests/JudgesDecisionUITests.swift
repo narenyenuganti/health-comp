@@ -15,6 +15,7 @@ final class JudgesDecisionUITests: XCTestCase {
         app.launchArguments = [
             "--multi-user-competition-test-lab", "--multi-user-competition-scenario", "belt-ceremony",
             "--belt-ceremonies", "--judges-decision", "-healthcomp.colorHintSeen", "YES",
+            "-healthcomp.appearance", "system",
         ] + arguments
         app.launch()
         XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 15))
@@ -49,8 +50,14 @@ final class JudgesDecisionUITests: XCTestCase {
     func testSkipReplayAndSeenOnNextVisit() {
         launch(); open(0x75, "Sam")
         element("competition.judges.skip").tap()
+        XCTAssertTrue(element("competition.belt.ceremony").waitForExistence(timeout: 3))
+        element("competition.belt.ceremony").tap()
         XCTAssertTrue(element("competition.result").waitForExistence(timeout: 3))
-        XCTAssertFalse(element("competition.belt.ceremony").exists)
+        let banner = element("competition.result.belt")
+        scrollTo(banner); banner.tap()
+        XCTAssertTrue(element("competition.belt.ceremony").waitForExistence(timeout: 3))
+        XCTAssertFalse(element("competition.judges.seal").exists)
+        element("competition.belt.ceremony").tap()
         let replay = element("competition.judges.replay")
         scrollTo(replay); replay.tap()
         XCTAssertTrue(element("competition.judges.seal").waitForExistence(timeout: 3))

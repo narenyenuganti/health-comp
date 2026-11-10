@@ -3634,6 +3634,8 @@ final class CompetitionJudgesDecisionTests: XCTestCase {
         let marked = CompetitionMotionSeen().marking(.judges, id)
         XCTAssertTrue(CompetitionMotionSeen(rawValue: marked.rawValue)!.hasSeen(.judges, id))
         XCTAssertFalse(marked.hasSeen(.verdict, id))
+        XCTAssertFalse(marked.hasSeen(.belt, id))
+        XCTAssertTrue(marked.marking(.belt, id).hasSeen(.judges, id))
         XCTAssertFalse(marked.hasSeen(.judges, CompetitionID(UUID())))
     }
 }

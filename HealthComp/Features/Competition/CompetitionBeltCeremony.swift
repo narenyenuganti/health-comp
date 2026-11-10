@@ -115,6 +115,7 @@ extension View {
         competition: LocalCompetitionPresentation? = nil,
         isFirstView: Bool,
         replay: Binding<Bool> = .constant(false),
+        judgesReplay: Binding<Bool> = .constant(false),
         onFinished: @escaping () -> Void
     ) -> some View {
         modifier(CompetitionBeltCeremony(
@@ -123,6 +124,7 @@ extension View {
             competition: competition,
             isFirstView: isFirstView,
             replay: replay,
+            judgesReplay: judgesReplay,
             onFinished: onFinished
         ))
     }
@@ -134,12 +136,15 @@ private struct CompetitionBeltCeremony: ViewModifier {
     let competition: LocalCompetitionPresentation?
     let isFirstView: Bool
     @Binding var replay: Bool
+    @Binding var judgesReplay: Bool
     let onFinished: () -> Void
 
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
     @AppStorage(CompetitionMotionSeen.storageKey) private var seen = CompetitionMotionSeen()
     @State private var didStart = false
     @State private var isShowing = false
+    @State private var isCovered = false
+    @State private var pendingAnnouncement: String?
     @State private var showsJudges = false
     @State private var isReplay = false
 
@@ -161,22 +166,26 @@ private struct CompetitionBeltCeremony: ViewModifier {
     func body(content: Content) -> some View {
         content
             .overlay {
-                if isShowing || (!didStart && isFirstView && (judgesAreOn || script != nil)) {
+                if isCovered || (!didStart && isFirstView && (judgesAreOn || script != nil) && !voiceOver) {
                     Theme.beltWell.ignoresSafeArea()
                 }
             }
-            .fullScreenCover(isPresented: $isShowing) {
+            .fullScreenCover(isPresented: $isShowing, onDismiss: announcePending) {
                 if showsJudges, let competition {
                     CompetitionJudgesReveal(
                         competition: competition,
-                        onFinished: playBelt,
-                        onSkip: finish
+                        onFinished: finishJudges,
+                        onSkip: finishJudges,
+                        onBackground: {
+                            mark(.judges)
+                            finish()
+                        }
                     )
                     .presentationBackground(Theme.ground)
                 } else if let script {
                     CompetitionBeltCeremonyPlayer(
                         script: script,
-                        onLeaving: verdict,
+                        onLeaving: finishBelt,
                         onGone: { present(false) }
                     )
                     .presentationBackground(.clear)
@@ -187,7 +196,7 @@ private struct CompetitionBeltCeremony: ViewModifier {
                 didStart = true
                 if judgesAreOn, let competition, !seen.hasSeen(.judges, competition.id), isFirstView {
                     playJudges()
-                } else if isFirstView {
+                } else if isFirstView || hasPendingBelt {
                     playBelt()
                 } else {
                     onFinished()
@@ -197,25 +206,70 @@ private struct CompetitionBeltCeremony: ViewModifier {
                 guard isOn else { return }
                 replay = false
                 isReplay = true
-                if judgesAreOn, competition != nil { playJudges() } else { playBelt() }
+                playBelt()
+            }
+            .onChange(of: judgesReplay) { _, isOn in
+                guard isOn else { return }
+                judgesReplay = false
+                isReplay = true
+                playJudges()
             }
     }
 
-    private func playJudges() {
+    private var hasPendingBelt: Bool {
+        guard let competition, script != nil else { return false }
+        return seen.hasSeen(.judges, competition.id) && !seen.hasSeen(.belt, competition.id)
+    }
+
+    private func mark(_ moment: CompetitionMotionSeen.Moment) {
         guard let competition else { return }
-        // Latch before presenting: backgrounding or closing never repeats the reveal.
-        seen = seen.marking(.judges, competition.id)
+        seen = seen.marking(moment, competition.id)
+    }
+
+    private func playJudges() {
+        guard competition != nil else { return }
         showsJudges = true
+        isCovered = true
         present(true)
+    }
+
+    private func finishJudges() {
+        mark(.judges)
+        if voiceOver, let competition {
+            let decision = competitionJudgesDecision(days: competition.days, you: competition.userPoints, them: competition.opponentPoints)
+            let result = decision.outcome == .win ? "You win" : decision.outcome == .loss ? "\(opponentName) wins" : "It is a draw"
+            let belt = !isReplay ? script.map { ", \($0.title.lowercased())" } ?? "" : ""
+            pendingAnnouncement = "\(result), \(decision.label.lowercased()), \(competitionPointsText(competition.userPoints)) to \(competitionPointsText(competition.opponentPoints))\(belt)."
+            if !isReplay, script != nil { mark(.belt) }
+            finish()
+        } else if isReplay {
+            finish()
+        } else {
+            playBelt()
+        }
+    }
+
+    private func finishBelt() {
+        mark(.belt)
+        verdict()
+    }
+
+    private func announcePending() {
+        guard let pendingAnnouncement else { return }
+        AccessibilityNotification.Announcement(pendingAnnouncement).post()
+        self.pendingAnnouncement = nil
     }
 
     private func playBelt() {
         showsJudges = false
         if let script {
             if voiceOver {
-                AccessibilityNotification.Announcement(script.announcement).post()
+                pendingAnnouncement = script.announcement
+                mark(.belt)
+                if !isShowing { announcePending() }
                 finish()
             } else {
+                isCovered = true
                 present(true)
             }
         } else {
@@ -224,6 +278,7 @@ private struct CompetitionBeltCeremony: ViewModifier {
     }
 
     private func verdict() {
+        isCovered = false
         if !isReplay { onFinished() }
         isReplay = false
     }
@@ -530,6 +585,7 @@ private struct CompetitionJudgesReveal: View {
     let competition: LocalCompetitionPresentation
     let onFinished: () -> Void
     let onSkip: () -> Void
+    let onBackground: () -> Void
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
     @Environment(\.scenePhase) private var scenePhase
@@ -585,7 +641,7 @@ private struct CompetitionJudgesReveal: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.ground.ignoresSafeArea())
         .contentShape(Rectangle())
-        .onTapGesture { if stage > 0 { onSkip() } }
+        .onTapGesture { if stage > 0 || !breakingSeal { onSkip() } }
         .accessibilityIdentifier("competition.judges.reveal")
         .sensoryFeedback(.impact(weight: .light), trigger: ticks)
         .sensoryFeedback(.impact(weight: .heavy), trigger: thuds)
@@ -594,7 +650,7 @@ private struct CompetitionJudgesReveal: View {
             tapOpens = true
         }
         .task(id: pressing) {
-            guard pressing else { progress = 0; return }
+            guard pressing else { progress = breakingSeal ? 1 : 0; return }
             for tick in 1...9 {
                 guard (try? await Task.sleep(for: .seconds(0.1))) != nil, pressing else { return }
                 progress = Double(tick) / 9
@@ -624,19 +680,17 @@ private struct CompetitionJudgesReveal: View {
         }
         .task(id: stage == 2) {
             guard stage == 2 else { return }
-            if reduceMotion { raised = true }
-            guard (try? await Task.sleep(for: .seconds(1))) != nil else { return }
-            withAnimation(reduceMotion ? Motion.fade : Motion.grow) { raised = true }
-            thuds += 1
-            if voiceOver {
-                AccessibilityNotification.Announcement(
-                    "\(winner), \(decision.label.lowercased()), \(competitionPointsText(competition.userPoints)) to \(competitionPointsText(competition.opponentPoints))."
-                ).post()
+            if reduceMotion {
+                raised = true
+            } else {
+                guard (try? await Task.sleep(for: .seconds(1))) != nil else { return }
+                withAnimation(Motion.grow) { raised = true }
+                thuds += 1
             }
             guard (try? await Task.sleep(for: .seconds(2))) != nil else { return }
             onFinished()
         }
-        .onChange(of: scenePhase) { _, phase in if phase != .active { onSkip() } }
+        .onChange(of: scenePhase) { _, phase in if phase == .background { onBackground() } }
     }
 
     private var seal: some View {
@@ -686,6 +740,7 @@ private struct CompetitionJudgesReveal: View {
 
     private func open() {
         guard stage == 0, !breakingSeal else { return }
+        progress = 1
         withAnimation(Motion.fade) { breakingSeal = true }
     }
 
