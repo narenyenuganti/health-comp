@@ -41,7 +41,8 @@ final class JudgesDecisionUITests: XCTestCase {
         }
         XCTAssertTrue(soon(3) { self.app.staticTexts[decision].exists }, decision)
         XCTAssertTrue(soon(5) { self.app.staticTexts[winner].exists }, winner)
-        Thread.sleep(forTimeInterval: 1.4)
+        XCTAssertTrue(soon(3) { self.element("competition.judges.payoff").exists })
+        Thread.sleep(forTimeInterval: 0.8)
         if let belt { XCTAssertTrue(soon(10) { self.app.staticTexts[belt].exists }, belt) }
         XCTAssertTrue(soon(10) {
             !self.element("competition.judges.reveal").exists && !self.element("competition.belt.ceremony").exists

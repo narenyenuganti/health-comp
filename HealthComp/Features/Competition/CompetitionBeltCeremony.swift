@@ -603,6 +603,7 @@ private struct CompetitionJudgesReveal: View {
     @State private var rows = 0
     @State private var stamped = false
     @State private var raised = false
+    @State private var focused = false
     @State private var ticks = 0
     @State private var thuds = 0
 
@@ -696,8 +697,10 @@ private struct CompetitionJudgesReveal: View {
                 raised = true
                 thuds += 1
             }
-            // The 0.45 s raise settles, then the final pose holds for 1.75 s.
-            guard (try? await Task.sleep(for: .seconds(2.2))) != nil else { return }
+            // Let the raise settle and hold before the personal close-up.
+            guard (try? await Task.sleep(for: .seconds(reduceMotion ? 0.8 : 1.25))) != nil else { return }
+            focused = true
+            guard (try? await Task.sleep(for: .seconds(1.5))) != nil else { return }
             onFinished()
         }
         .onChange(of: scenePhase) { _, phase in if phase == .background { onBackground() } }
@@ -721,12 +724,19 @@ private struct CompetitionJudgesReveal: View {
                         .frame(height: 150).rotationEffect(.degrees(-4))
                     SlantedBar().fill(Theme.faint.opacity(0.2)).frame(width: 2, height: 145)
                         .rotationEffect(.degrees(12))
-                    Circle().fill(Theme.youFill).frame(width: 92, height: 92)
+                    HStack(spacing: -14) {
+                        avatar(own: true, size: 72)
+                            .offset(x: breakingSeal && !reduceMotion ? -32 : 0, y: -6)
+                        avatar(own: false, size: 72)
+                            .offset(x: breakingSeal && !reduceMotion ? 32 : 0, y: 6)
+                    }
+                    .moving(Motion.grow, value: breakingSeal)
+                    Rectangle().fill(Theme.beltWell).frame(width: breakingSeal ? 8 : 3, height: 140)
+                        .rotationEffect(.degrees(12))
                     Circle().trim(from: 0, to: progress).stroke(Theme.youFill, style: StrokeStyle(lineWidth: 3, lineCap: .round))
-                        .frame(width: 106, height: 106).rotationEffect(.degrees(-90))
+                        .frame(width: 156, height: 156).rotationEffect(.degrees(-90))
                         .opacity(progress > 0 ? 1 : 0)
                         .animation(reduceMotion ? nil : Motion.press, value: progress)
-                    Text("H/").font(.score(size: 36)).foregroundStyle(Theme.onYouFill)
                     if breakingSeal {
                         Rectangle().fill(Theme.beltWell).frame(width: 8, height: 160)
                             .rotationEffect(.degrees(12)).transition(.opacity)
@@ -793,7 +803,7 @@ private struct CompetitionJudgesReveal: View {
     }
 
     private func card(_ card: CompetitionJudgeCard, index: Int) -> some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 6) {
             HStack {
                 Circle().fill([Theme.move, Theme.exercise, Theme.stand][index]).frame(width: 10, height: 10)
                 Text("Judge \(["Move", "Exercise", "Stand"][index])").font(.themeLabel)
@@ -806,8 +816,14 @@ private struct CompetitionJudgesReveal: View {
             Divider()
             HStack {
                 Text("ROUND").frame(maxWidth: .infinity, alignment: .leading)
-                Text("YOU").foregroundStyle(Theme.you).frame(maxWidth: .infinity)
-                Text(competition.opponentDisplayName.uppercased()).frame(maxWidth: .infinity)
+                VStack(spacing: 4) {
+                    avatar(own: true, size: 24)
+                    Text("YOU").foregroundStyle(Theme.you)
+                }.frame(maxWidth: .infinity)
+                VStack(spacing: 4) {
+                    avatar(own: false, size: 24)
+                    Text(competition.opponentDisplayName.uppercased())
+                }.frame(maxWidth: .infinity)
             }.font(.themeLabel).lineLimit(1).minimumScaleFactor(0.5)
             ForEach(0..<7) { row in
                 HStack {
@@ -849,6 +865,15 @@ private struct CompetitionJudgesReveal: View {
         return String(weekdayName(days[row].day).prefix(3))
     }
 
+    private func avatar(own: Bool, size: CGFloat) -> some View {
+        PersonAvatar(
+            name: own ? competition.ownerDisplayName : competition.opponentDisplayName,
+            photo: own ? nil : competition.opponentProfileID,
+            size: size, isYou: own,
+            initialFont: .score(size: size * 0.5)
+        )
+    }
+
     private var handRaise: some View {
         VStack(spacing: 20) {
             Text(raised ? winner : "THE DECISION…")
@@ -858,12 +883,19 @@ private struct CompetitionJudgesReveal: View {
                 .accessibilityIdentifier("competition.judges.winner")
             Text(decision.label).font(.themeLabel).tracking(2).foregroundStyle(Theme.secondary)
             CompetitionJudgesFigures(
+                yourName: competition.ownerDisplayName,
+                opponentName: competition.opponentDisplayName,
+                opponentPhoto: competition.opponentProfileID,
+                focused: focused,
                 leftRaised: raised && decision.outcome != .loss,
                 rightRaised: raised && decision.outcome != .win,
                 leftLost: raised && decision.outcome == .loss,
                 rightLost: raised && decision.outcome == .win
             )
             .moving(Motion.grow, value: raised)
+            .id(reduceMotion && focused)
+            .transition(.opacity)
+            .animation(reduceMotion ? Motion.fade : Motion.grow, value: focused)
             .frame(height: 310)
             .background(Theme.beltWell, in: RoundedRectangle(cornerRadius: 20))
             .accessibilityHidden(true)
@@ -878,6 +910,8 @@ private struct CompetitionJudgesReveal: View {
             }
             Text("The combined ring points decide the match.").font(.footnote).foregroundStyle(Theme.secondary)
         }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier(focused ? "competition.judges.payoff" : "competition.judges.stage")
     }
 }
 
@@ -904,139 +938,185 @@ func competitionJudgeArm(
 /// breathing cycle is an editorial beat, stopped at the raise or Reduce Motion.
 private struct CompetitionJudgesFigures: View, Animatable {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    let yourName: String
+    let opponentName: String
+    let opponentPhoto: UUID?
+    private var focus: Double
     private var left: Double
     private var right: Double
     private var leftDrop: Double
     private var rightDrop: Double
     private let isHolding: Bool
 
-    init(leftRaised: Bool, rightRaised: Bool, leftLost: Bool, rightLost: Bool) {
+    init(yourName: String, opponentName: String, opponentPhoto: UUID?, focused: Bool,
+         leftRaised: Bool, rightRaised: Bool, leftLost: Bool, rightLost: Bool) {
+        self.yourName = yourName; self.opponentName = opponentName; self.opponentPhoto = opponentPhoto
+        focus = focused ? 1 : 0
         left = leftRaised ? 1 : 0; right = rightRaised ? 1 : 0
         leftDrop = leftLost ? 1 : 0; rightDrop = rightLost ? 1 : 0
         isHolding = !leftRaised && !rightRaised
     }
-    var animatableData: AnimatablePair<AnimatablePair<Double, Double>, AnimatablePair<Double, Double>> {
-        get { .init(.init(left, right), .init(leftDrop, rightDrop)) }
-        set { left = newValue.first.first; right = newValue.first.second; leftDrop = newValue.second.first; rightDrop = newValue.second.second }
+    var animatableData: AnimatablePair<AnimatablePair<AnimatablePair<Double, Double>, AnimatablePair<Double, Double>>, Double> {
+        get { .init(.init(.init(left, right), .init(leftDrop, rightDrop)), focus) }
+        set {
+            left = newValue.first.first.first; right = newValue.first.first.second
+            leftDrop = newValue.first.second.first; rightDrop = newValue.first.second.second
+            focus = newValue.second
+        }
     }
 
     var body: some View {
         TimelineView(.animation(minimumInterval: 1 / 30, paused: reduceMotion || !isHolding)) { timeline in
-            Canvas { context, size in
-                context.scaleBy(x: size.width / 360, y: size.height / 340)
-                let phase = timeline.date.timeIntervalSinceReferenceDate * 2 * .pi / 2.5
-                let breath = reduceMotion ? 0 : sin(phase) * max(0, 1 - max(left, right))
-                func line(_ points: [CGPoint], color: Color, width: CGFloat) {
-                    var path = Path(); path.addLines(points)
-                    context.stroke(path, with: .color(color), style: StrokeStyle(lineWidth: width, lineCap: .round, lineJoin: .round))
-                }
-                func ellipse(_ rect: CGRect, color: Color) { context.fill(Path(ellipseIn: rect), with: .color(color)) }
-                func rounded(_ rect: CGRect, radius: CGFloat, color: Color) {
-                    context.fill(Path(roundedRect: rect, cornerRadius: radius), with: .color(color))
-                }
-                func glove(_ point: CGPoint, inward: CGFloat, color: Color) {
-                    rounded(CGRect(x: point.x - 11, y: point.y - 15, width: 22, height: 27), radius: 8, color: color)
-                    ellipse(CGRect(x: point.x - inward * 11 - 4, y: point.y - 3, width: 9, height: 13), color: color)
-                    line([.init(x: point.x - 6, y: point.y - 6), .init(x: point.x + 6, y: point.y - 6)], color: Theme.beltWell.opacity(0.25), width: 2)
-                    rounded(CGRect(x: point.x - 8, y: point.y + 9, width: 16, height: 6), radius: 2, color: Theme.ink.opacity(0.65))
-                }
+            GeometryReader { geometry in
+                ZStack {
+                    Canvas { context, size in
+                        context.scaleBy(x: size.width / 360, y: size.height / 340)
+                        let phase = timeline.date.timeIntervalSinceReferenceDate * 2 * .pi / 2.5
+                        let breath = reduceMotion ? 0 : sin(phase) * max(0, 1 - max(left, right))
+                        func line(_ points: [CGPoint], color: Color, width: CGFloat) {
+                            var path = Path(); path.addLines(points)
+                            context.stroke(path, with: .color(color), style: StrokeStyle(lineWidth: width, lineCap: .round, lineJoin: .round))
+                        }
+                        func ellipse(_ rect: CGRect, color: Color) { context.fill(Path(ellipseIn: rect), with: .color(color)) }
+                        func rounded(_ rect: CGRect, radius: CGFloat, color: Color) {
+                            context.fill(Path(roundedRect: rect, cornerRadius: radius), with: .color(color))
+                        }
+                        func glove(_ point: CGPoint, inward: CGFloat, color: Color) {
+                            rounded(CGRect(x: point.x - 11, y: point.y - 15, width: 22, height: 27), radius: 8, color: color)
+                            ellipse(CGRect(x: point.x - inward * 11 - 4, y: point.y - 3, width: 9, height: 13), color: color)
+                            line([.init(x: point.x - 6, y: point.y - 6), .init(x: point.x + 6, y: point.y - 6)], color: Theme.beltWell.opacity(0.25), width: 2)
+                            rounded(CGRect(x: point.x - 8, y: point.y + 9, width: 16, height: 6), radius: 2, color: Theme.ink.opacity(0.65))
+                        }
 
-                var cone = Path()
-                cone.move(to: .init(x: 155, y: -30)); cone.addLine(to: .init(x: 205, y: -30))
-                cone.addLine(to: .init(x: 355, y: 320)); cone.addLine(to: .init(x: 5, y: 320)); cone.closeSubpath()
-                context.fill(cone, with: .linearGradient(
-                    Gradient(colors: [Theme.secondary.opacity(0.22), Theme.secondary.opacity(0)]),
-                    startPoint: .init(x: 180, y: 0), endPoint: .init(x: 180, y: 320)
-                ))
-                ellipse(CGRect(x: 35, y: 305, width: 290, height: 20), color: Theme.secondary.opacity(0.1))
-                line([.init(x: 20, y: 316), .init(x: 340, y: 316)], color: Theme.secondary.opacity(0.2), width: 1)
+                        var cone = Path()
+                        cone.move(to: .init(x: 155, y: -30)); cone.addLine(to: .init(x: 205, y: -30))
+                        cone.addLine(to: .init(x: 355, y: 320)); cone.addLine(to: .init(x: 5, y: 320)); cone.closeSubpath()
+                        context.fill(cone, with: .linearGradient(
+                            Gradient(colors: [Theme.secondary.opacity(0.22), Theme.secondary.opacity(0)]),
+                            startPoint: .init(x: 180, y: 0), endPoint: .init(x: 180, y: 320)
+                        ))
+                        ellipse(CGRect(x: 35, y: 305, width: 290, height: 20), color: Theme.secondary.opacity(0.1))
+                        line([.init(x: 20, y: 316), .init(x: 340, y: 316)], color: Theme.secondary.opacity(0.2), width: 1)
 
-                // The referee stays upright and quieter than either corner.
-                line([.init(x: 170, y: 226), .init(x: 167, y: 273), .init(x: 165, y: 312)], color: Theme.tertiary, width: 14)
-                line([.init(x: 190, y: 226), .init(x: 193, y: 273), .init(x: 195, y: 312)], color: Theme.tertiary, width: 14)
-                rounded(CGRect(x: 154, y: 308, width: 20, height: 9), radius: 3, color: Theme.tertiary)
-                rounded(CGRect(x: 186, y: 308, width: 20, height: 9), radius: 3, color: Theme.tertiary)
-                var shirt = Path()
-                shirt.move(to: .init(x: 159, y: 148))
-                shirt.addQuadCurve(to: .init(x: 201, y: 148), control: .init(x: 180, y: 140))
-                shirt.addLine(to: .init(x: 194, y: 230)); shirt.addLine(to: .init(x: 166, y: 230)); shirt.closeSubpath()
-                context.fill(shirt, with: .color(Theme.tertiary))
-                for x in [169.0, 180, 191] {
-                    line([.init(x: x, y: 155), .init(x: x, y: 222)], color: Theme.beltWell.opacity(0.45), width: 3)
-                }
-                rounded(CGRect(x: 175, y: 134, width: 10, height: 14), radius: 4, color: Theme.tertiary)
-                ellipse(CGRect(x: 167, y: 104, width: 26, height: 34), color: Theme.tertiary)
-                var collar = Path()
-                collar.addLines([.init(x: 171, y: 146), .init(x: 180, y: 154), .init(x: 189, y: 146)])
-                context.stroke(collar, with: .color(Theme.ink.opacity(0.65)), lineWidth: 3)
-                var tie = Path()
-                tie.addLines([.init(x: 174, y: 153), .init(x: 186, y: 160), .init(x: 186, y: 153), .init(x: 174, y: 160)])
-                tie.closeSubpath(); context.fill(tie, with: .color(Theme.beltWell))
+                        // The referee stays upright and quieter than either corner.
+                        line([.init(x: 170, y: 226), .init(x: 167, y: 273), .init(x: 165, y: 312)], color: Theme.tertiary, width: 14)
+                        line([.init(x: 190, y: 226), .init(x: 193, y: 273), .init(x: 195, y: 312)], color: Theme.tertiary, width: 14)
+                        rounded(CGRect(x: 154, y: 308, width: 20, height: 9), radius: 3, color: Theme.tertiary)
+                        rounded(CGRect(x: 186, y: 308, width: 20, height: 9), radius: 3, color: Theme.tertiary)
+                        var shirt = Path()
+                        shirt.move(to: .init(x: 159, y: 148))
+                        shirt.addQuadCurve(to: .init(x: 201, y: 148), control: .init(x: 180, y: 140))
+                        shirt.addLine(to: .init(x: 194, y: 230)); shirt.addLine(to: .init(x: 166, y: 230)); shirt.closeSubpath()
+                        context.fill(shirt, with: .color(Theme.tertiary))
+                        for x in [169.0, 180, 191] {
+                            line([.init(x: x, y: 155), .init(x: x, y: 222)], color: Theme.beltWell.opacity(0.45), width: 3)
+                        }
+                        rounded(CGRect(x: 175, y: 134, width: 10, height: 14), radius: 4, color: Theme.tertiary)
+                        ellipse(CGRect(x: 167, y: 104, width: 26, height: 34), color: Theme.tertiary)
+                        var collar = Path()
+                        collar.addLines([.init(x: 171, y: 146), .init(x: 180, y: 154), .init(x: 189, y: 146)])
+                        context.stroke(collar, with: .color(Theme.ink.opacity(0.65)), lineWidth: 3)
+                        var tie = Path()
+                        tie.addLines([.init(x: 174, y: 153), .init(x: 186, y: 160), .init(x: 186, y: 153), .init(x: 174, y: 160)])
+                        tie.closeSubpath(); context.fill(tie, with: .color(Theme.beltWell))
 
-                var wrists: [CGPoint] = []
-                for index in 0..<2 {
-                    let inward: CGFloat = index == 0 ? 1 : -1
-                    let rise = CGFloat(index == 0 ? left : right)
-                    let drop = CGFloat(index == 0 ? leftDrop : rightDrop)
-                    let sway = CGFloat(breath) * (index == 0 ? 1.2 : -1.2)
-                    let x: CGFloat = (index == 0 ? 72 : 288) + sway - inward * 7 * drop
-                    let shoulderY: CGFloat = 145 - 5 * rise + 8 * drop - CGFloat(breath)
-                    let width: CGFloat = 31 * (1 + 0.025 * CGFloat(breath))
-                    let color = index == 0 ? Theme.youFill : Theme.secondary
-                    let waistY: CGFloat = 211 + 3 * drop
-                    let backFoot = CGPoint(x: x - inward * 24, y: 311 + 2 * drop)
-                    let frontFoot = CGPoint(x: x + inward * 24, y: 313 - 2 * drop)
-                    line([.init(x: x - inward * 13, y: 236), .init(x: x - inward * 22, y: 273), backFoot], color: color, width: 18)
-                    line([.init(x: x + inward * 13, y: 236), .init(x: x + inward * 16, y: 274), frontFoot], color: color, width: 20)
-                    rounded(CGRect(x: backFoot.x - 11, y: backFoot.y - 4, width: 26, height: 10), radius: 4, color: color)
-                    rounded(CGRect(x: frontFoot.x - 13, y: frontFoot.y - 4, width: 28, height: 10), radius: 4, color: color)
+                        var wrists: [CGPoint] = []
+                        for index in 0..<2 {
+                            let inward: CGFloat = index == 0 ? 1 : -1
+                            let rise = CGFloat(index == 0 ? left : right)
+                            let drop = CGFloat(index == 0 ? leftDrop : rightDrop)
+                            let sway = CGFloat(breath) * (index == 0 ? 1.2 : -1.2)
+                            let x: CGFloat = (index == 0 ? 72 : 288) + sway - inward * 7 * drop
+                            let shoulderY: CGFloat = 145 - 5 * rise + 8 * drop - CGFloat(breath)
+                            let width: CGFloat = 31 * (1 + 0.025 * CGFloat(breath))
+                            let color = index == 0 ? Theme.youFill : Theme.secondary
+                            let waistY: CGFloat = 211 + 3 * drop
+                            let backFoot = CGPoint(x: x - inward * 24, y: 311 + 2 * drop)
+                            let frontFoot = CGPoint(x: x + inward * 24, y: 313 - 2 * drop)
+                            line([.init(x: x - inward * 13, y: 236), .init(x: x - inward * 22, y: 273), backFoot], color: color, width: 18)
+                            line([.init(x: x + inward * 13, y: 236), .init(x: x + inward * 16, y: 274), frontFoot], color: color, width: 20)
+                            rounded(CGRect(x: backFoot.x - 11, y: backFoot.y - 4, width: 26, height: 10), radius: 4, color: color)
+                            rounded(CGRect(x: frontFoot.x - 13, y: frontFoot.y - 4, width: 28, height: 10), radius: 4, color: color)
 
-                    var torso = Path()
-                    torso.move(to: .init(x: x - 9, y: shoulderY - 8))
-                    torso.addQuadCurve(to: .init(x: x - width, y: shoulderY + 3), control: .init(x: x - 23, y: shoulderY - 7))
-                    torso.addCurve(to: .init(x: x - 18, y: waistY), control1: .init(x: x - width + 2, y: shoulderY + 31), control2: .init(x: x - 20, y: waistY - 20))
-                    torso.addLine(to: .init(x: x + 18, y: waistY))
-                    torso.addCurve(to: .init(x: x + width, y: shoulderY + 3), control1: .init(x: x + 20, y: waistY - 20), control2: .init(x: x + width - 2, y: shoulderY + 31))
-                    torso.addQuadCurve(to: .init(x: x + 9, y: shoulderY - 8), control: .init(x: x + 23, y: shoulderY - 7))
-                    torso.closeSubpath(); context.fill(torso, with: .color(color))
-                    line([.init(x: x - 17, y: shoulderY + 19), .init(x: x - 3, y: shoulderY + 23)], color: Theme.beltWell.opacity(0.18), width: 2)
-                    line([.init(x: x + 17, y: shoulderY + 19), .init(x: x + 3, y: shoulderY + 23)], color: Theme.beltWell.opacity(0.18), width: 2)
-                    rounded(CGRect(x: x - 8, y: shoulderY - 24, width: 16, height: 20), radius: 5, color: color)
-                    ellipse(CGRect(x: x - 16 + inward * 3 * drop, y: shoulderY - 61 + 5 * drop, width: 32, height: 40), color: color)
-                    line([.init(x: x - 10, y: shoulderY - 26 + 5 * drop), .init(x: x + 10, y: shoulderY - 26 + 5 * drop)], color: Theme.beltWell.opacity(0.2), width: 2)
+                            var torso = Path()
+                            torso.move(to: .init(x: x - 9, y: shoulderY - 8))
+                            torso.addQuadCurve(to: .init(x: x - width, y: shoulderY + 3), control: .init(x: x - 23, y: shoulderY - 7))
+                            torso.addCurve(to: .init(x: x - 18, y: waistY), control1: .init(x: x - width + 2, y: shoulderY + 31), control2: .init(x: x - 20, y: waistY - 20))
+                            torso.addLine(to: .init(x: x + 18, y: waistY))
+                            torso.addCurve(to: .init(x: x + width, y: shoulderY + 3), control1: .init(x: x + 20, y: waistY - 20), control2: .init(x: x + width - 2, y: shoulderY + 31))
+                            torso.addQuadCurve(to: .init(x: x + 9, y: shoulderY - 8), control: .init(x: x + 23, y: shoulderY - 7))
+                            torso.closeSubpath(); context.fill(torso, with: .color(color))
+                            line([.init(x: x - 17, y: shoulderY + 19), .init(x: x - 3, y: shoulderY + 23)], color: Theme.beltWell.opacity(0.18), width: 2)
+                            line([.init(x: x + 17, y: shoulderY + 19), .init(x: x + 3, y: shoulderY + 23)], color: Theme.beltWell.opacity(0.18), width: 2)
+                            rounded(CGRect(x: x - 8, y: shoulderY - 24, width: 16, height: 20), radius: 5, color: color)
 
-                    var shorts = Path()
-                    shorts.addLines([
-                        .init(x: x - 21, y: waistY - 3), .init(x: x + 21, y: waistY - 3),
-                        .init(x: x + 27, y: 248), .init(x: x + 4, y: 247),
-                        .init(x: x, y: 234), .init(x: x - 4, y: 247), .init(x: x - 27, y: 248),
-                    ])
-                    shorts.closeSubpath(); context.fill(shorts, with: .color(Theme.beltWell))
-                    context.stroke(shorts, with: .color(color.opacity(0.7)), lineWidth: 2)
-                    rounded(CGRect(x: x - 21, y: waistY - 3, width: 42, height: 7), radius: 2, color: color)
-                    line([.init(x: x + inward * 17, y: waistY + 10), .init(x: x + inward * 14, y: 242)], color: color, width: 3)
+                            var shorts = Path()
+                            shorts.addLines([
+                                .init(x: x - 21, y: waistY - 3), .init(x: x + 21, y: waistY - 3),
+                                .init(x: x + 27, y: 248), .init(x: x + 4, y: 247),
+                                .init(x: x, y: 234), .init(x: x - 4, y: 247), .init(x: x - 27, y: 248),
+                            ])
+                            shorts.closeSubpath(); context.fill(shorts, with: .color(Theme.beltWell))
+                            context.stroke(shorts, with: .color(color.opacity(0.7)), lineWidth: 2)
+                            rounded(CGRect(x: x - 21, y: waistY - 3, width: 42, height: 7), radius: 2, color: color)
+                            line([.init(x: x + inward * 17, y: waistY + 10), .init(x: x + inward * 14, y: 242)], color: color, width: 3)
 
-                    let arm = competitionJudgeArm(shoulder: .init(x: x + inward * 25, y: shoulderY + 2), inward: inward, raised: Double(rise))
-                    line([.init(x: x + inward * 25, y: shoulderY + 2), arm.elbow], color: color, width: 17)
-                    line([arm.elbow, arm.wrist], color: color, width: 14)
-                    glove(arm.wrist, inward: inward, color: color)
-                    wrists.append(arm.wrist)
-                    let freeElbow = CGPoint(x: x - inward * (40 + 5 * rise), y: shoulderY + 39)
-                    let freeWrist = CGPoint(x: x - inward * (30 + 13 * rise), y: shoulderY + 65 - 38 * rise + 3 * drop)
-                    line([.init(x: x - inward * 26, y: shoulderY + 3), freeElbow], color: color, width: 17)
-                    line([freeElbow, freeWrist], color: color, width: 14)
-                    glove(freeWrist, inward: -inward, color: color)
-                }
-                for (index, wrist) in wrists.enumerated() {
-                    let shoulder = CGPoint(x: index == 0 ? 162 : 198, y: 154)
-                    let rise = CGFloat(index == 0 ? left : right)
-                    let elbow = CGPoint(x: shoulder.x + (wrist.x - shoulder.x) * 0.65, y: (154 + wrist.y) / 2 + 17 * (1 - rise))
-                    line([shoulder, elbow, wrist], color: Theme.tertiary, width: 11)
-                    ellipse(CGRect(x: wrist.x - 7, y: wrist.y + 5, width: 14, height: 13), color: Theme.tertiary)
-                    line([.init(x: wrist.x - 4, y: wrist.y + 11), .init(x: wrist.x + 4, y: wrist.y + 11)], color: Theme.beltWell.opacity(0.3), width: 1)
+                            let arm = competitionJudgeArm(shoulder: .init(x: x + inward * 25, y: shoulderY + 2), inward: inward, raised: Double(rise))
+                            line([.init(x: x + inward * 25, y: shoulderY + 2), arm.elbow], color: color, width: 17)
+                            line([arm.elbow, arm.wrist], color: color, width: 14)
+                            glove(arm.wrist, inward: inward, color: color)
+                            wrists.append(arm.wrist)
+                            let freeElbow = CGPoint(x: x - inward * (40 + 5 * rise), y: shoulderY + 39)
+                            let freeWrist = CGPoint(x: x - inward * (30 + 13 * rise), y: shoulderY + 65 - 38 * rise + 3 * drop)
+                            line([.init(x: x - inward * 26, y: shoulderY + 3), freeElbow], color: color, width: 17)
+                            line([freeElbow, freeWrist], color: color, width: 14)
+                            glove(freeWrist, inward: -inward, color: color)
+                        }
+                        for (index, wrist) in wrists.enumerated() {
+                            let shoulder = CGPoint(x: index == 0 ? 162 : 198, y: 154)
+                            let rise = CGFloat(index == 0 ? left : right)
+                            let elbow = CGPoint(x: shoulder.x + (wrist.x - shoulder.x) * 0.65, y: (154 + wrist.y) / 2 + 17 * (1 - rise))
+                            line([shoulder, elbow, wrist], color: Theme.tertiary, width: 11)
+                            ellipse(CGRect(x: wrist.x - 7, y: wrist.y + 5, width: 14, height: 13), color: Theme.tertiary)
+                            line([.init(x: wrist.x - 4, y: wrist.y + 11), .init(x: wrist.x + 4, y: wrist.y + 11)], color: Theme.beltWell.opacity(0.3), width: 1)
+                        }
+                    }
+                    .opacity(1 - focus)
+                    RadialGradient(colors: [Theme.secondary.opacity(0.18), Theme.secondary.opacity(0)],
+                                   center: .center, startRadius: 20, endRadius: 180)
+                        .opacity(focus)
+                    ForEach(0..<2) { index in
+                        head(index, size: geometry.size, date: timeline.date)
+                    }
                 }
             }
         }
         .environment(\.colorScheme, .dark)
+    }
+
+    private func head(_ index: Int, size: CGSize, date: Date) -> some View {
+        let own = index == 0
+        let inward: CGFloat = own ? 1 : -1
+        let rise = own ? left : right
+        let drop = own ? leftDrop : rightDrop
+        let phase = date.timeIntervalSinceReferenceDate * 2 * .pi / 2.5
+        let breath = reduceMotion ? 0 : sin(phase) * max(0, 1 - max(left, right))
+        let x = (own ? 72.0 : 288) + breath * (own ? 1.2 : -1.2) - Double(inward) * 4 * drop
+        let y = 104 - 5 * rise + 13 * drop - breath
+        let isWinner = drop < 0.5
+        let draw = left > 0.5 && right > 0.5
+        let targetX = draw ? (own ? 110.0 : 250) : 180
+        let zoom = isWinner ? focus : 0
+        return PersonAvatar(name: own ? yourName : opponentName, photo: own ? nil : opponentPhoto,
+                         size: 44 + 76 * CGFloat(zoom), isYou: own, initialFont: .score(size: 22 + 38 * CGFloat(zoom)))
+                .overlay(Circle().stroke(own ? Theme.youFill : Theme.ink.opacity(0.2), lineWidth: own ? 2 : 1))
+                .overlay(alignment: .bottom) {
+                    Text(own ? "YOU" : opponentName.uppercased())
+                        .font(.themeLabel).tracking(1.5).foregroundStyle(own ? Theme.youFill : Theme.ink)
+                        .fixedSize().offset(y: 28).opacity(isWinner ? focus : 0)
+                }
+        .opacity(isWinner ? 1 : 1 - focus)
+        .position(x: CGFloat(x + (targetX - x) * zoom) * size.width / 360,
+                  y: CGFloat(y + (165 - y) * zoom) * size.height / 340)
     }
 }

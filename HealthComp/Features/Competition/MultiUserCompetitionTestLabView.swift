@@ -267,6 +267,7 @@ private struct MultiUserCompetitionSharingTestLabView: View {
     @State private var labNudges: [CompetitionID: CompetitionFeature.NudgeStatus] = [:]
     @State private var ownReactions: [CompetitionReactionKey: CompetitionReactionKind] = [:]
     @State private var recapPeriod: CompetitionRecapPeriod?
+    @State private var judgesPhotos = ProfilePhotoImages(ownID: MultiUserCompetitionTestLabFixtures.ownProfileID)
 
     /// Once per process, never per init: SwiftUI re-runs child inits
     /// whenever the root re-evaluates. Launch arguments can't do this: an
@@ -381,6 +382,20 @@ private struct MultiUserCompetitionSharingTestLabView: View {
             }
         }
         .accessibilityIdentifier("multiuser.sharing.root")
+        .environment(\.profilePhotos, judgesPhotos)
+        .task {
+            guard scenario == .beltCeremony, ProcessInfo.processInfo.arguments.contains("--judges-decision") else { return }
+            let server = MultiUserCompetitionTestLabFixtures.judgesPhotos
+            let owners = [MultiUserCompetitionTestLabFixtures.ownProfileID]
+                + publication.dashboard.competitions.compactMap(\.opponentProfileID)
+            guard let visible = try? await server.load(Array(Set(owners))) else { return }
+            for reference in visible {
+                if let jpeg = try? await server.data(reference),
+                   let photo = ProfilePhoto(jpeg: jpeg, version: reference.version) {
+                    judgesPhotos.photos[reference.ownerProfileID] = photo
+                }
+            }
+        }
     }
 
     private var homeStack: Binding<[CompetitionHomeRoute]> {
@@ -1890,6 +1905,17 @@ enum MultiUserCompetitionTestLabFixtures {
     static let hermesProfileID = UUID(
         uuidString: "a1000000-0000-4000-8000-0000000000c1"
     )!
+    /// Original illustrated fixtures, served through the same visibility filter.
+    /// Riley is intentionally absent to show the initial fallback on the win close-up.
+    @MainActor static let judgesPhotos = ProfilePhotoTestLabServer(
+        ownProfileID: ownProfileID,
+        photos: [
+            ownProfileID: ProfilePhotoTestLabServer.illustratedPortrait(0),
+            UUID(uuidString: "c3000000-0000-4000-8000-000000000001")!: ProfilePhotoTestLabServer.illustratedPortrait(1),
+            UUID(uuidString: "c3000000-0000-4000-8000-000000000009")!: ProfilePhotoTestLabServer.illustratedPortrait(2),
+            UUID(uuidString: "c3000000-0000-4000-8000-00000000000c")!: ProfilePhotoTestLabServer.illustratedPortrait(3),
+        ]
+    )
     /// Feature round: Sam has a photo, Jordan none, and Riley's is reported.
     static let featureRoundPhotos = ProfilePhotoTestLabServer(
         ownProfileID: ownProfileID,
