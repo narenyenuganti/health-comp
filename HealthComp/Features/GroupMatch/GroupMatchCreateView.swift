@@ -303,6 +303,7 @@ struct GroupMatchCreateView: View {
             .disabled(!lineup.canCreate || isCreating)
             .accessibilityIdentifier("competition.group.create")
         }
+        .moving(Motion.settle, value: lineup)
         .navigationTitle(lineup.format.title)
         .navigationBarTitleDisplayMode(.inline)
     }
@@ -342,7 +343,7 @@ struct GroupMatchCreateView: View {
             .accessibilityIdentifier("competition.group.seat.\(number)")
             if entry != nil || lineup.canRemoveSeat(index) {
                 Button("Remove") {
-                    withAnimation(Motion.settle) { lineup.remove(seat: index) }
+                    lineup.remove(seat: index)
                 }
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(Theme.secondary)
@@ -383,7 +384,7 @@ struct GroupMatchCreateView: View {
     }
 
     private func place(_ entry: GroupMatchLineup.Entry, team: Int?) {
-        withAnimation(Motion.settle) { lineup.add(entry, team: team) }
+        lineup.add(entry, team: team)
         if path.last == .bots { path.removeLast() }
     }
 
