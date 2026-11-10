@@ -268,7 +268,6 @@ private struct MultiUserCompetitionSharingTestLabView: View {
     @State private var labNudges: [CompetitionID: CompetitionFeature.NudgeStatus] = [:]
     @State private var ownReactions: [CompetitionReactionKey: CompetitionReactionKind] = [:]
     @State private var recapPeriod: CompetitionRecapPeriod?
-    @State private var judgesNotificationQueued = false
     @State private var judgesNotificationStatus = "Loading sample photos"
     @State private var judgesPhotos = ProfilePhotoImages(ownID: MultiUserCompetitionTestLabFixtures.ownProfileID)
 
@@ -387,7 +386,6 @@ private struct MultiUserCompetitionSharingTestLabView: View {
         .overlay(alignment: .bottom) {
             if ProcessInfo.processInfo.arguments.contains("--judges-notifications") {
                 Text(judgesNotificationStatus)
-                    .accessibilityIdentifier(judgesNotificationQueued ? "judges.notification.queued" : "judges.notification.preparing")
             }
         }
         .accessibilityIdentifier("multiuser.sharing.root")
@@ -441,7 +439,6 @@ private struct MultiUserCompetitionSharingTestLabView: View {
                 trigger: UNTimeIntervalNotificationTrigger(timeInterval: 12, repeats: false)
             ))
             judgesNotificationStatus = "Notification queued"
-            judgesNotificationQueued = true
         } catch { assertionFailure("Could not queue the lab notification: \(error)") }
     }
 

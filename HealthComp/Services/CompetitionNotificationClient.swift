@@ -314,7 +314,6 @@ enum CompetitionRoute: Equatable, Sendable {
     }
 }
 
-/// A nil route (summaries, merged reminders) opens the app where it was.
 /// Only the two single-match judges alerts can ask for a sender photo.
 struct CompetitionNotificationSender: Equatable, Sendable {
     let profileID: UUID
@@ -338,6 +337,7 @@ struct CompetitionNotificationSender: Equatable, Sendable {
     }
 }
 
+/// A nil route (summaries, merged reminders) opens the app where it was.
 struct CompetitionImmediateNotificationRequest: Equatable, Sendable {
     let identifier: String
     let content: CompetitionNotificationContent
