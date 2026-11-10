@@ -12,6 +12,9 @@ struct FriendSettingsFeature {
 
     struct UsernameSheet: Equatable, Sendable {
         var draft = ""
+        /// Counts edits, so a wait or answer from an earlier edit is dropped
+        /// even when you've typed your way back to the same name.
+        var edit = 0
         var availability = UsernameAvailability.unknown
         var isSaving = false
         var failure: UsernameFailure?
@@ -47,7 +50,8 @@ struct FriendSettingsFeature {
         case usernameSheetOpened
         case usernameSheetClosed
         case usernameChanged(String)
-        case usernameChecked(String, isAvailable: Bool?)
+        case usernameDebounced(edit: Int)
+        case usernameChecked(edit: Int, isAvailable: Bool?)
         case usernameContinueTapped
         case usernameSaveFinished(Result<FriendSettings, CompetitionRemoteFailure>)
     }
@@ -114,23 +118,38 @@ struct FriendSettingsFeature {
                     return .none
                 }
                 sheet.draft = draft
+                sheet.edit += 1
                 sheet.availability = .unknown
                 sheet.failure = nil
                 state.sheet = sheet
                 // Your own name needs no check, and checks count against
                 // the search limit.
                 guard FriendSettings.isValidUsername(draft), draft != state.saved?.username else {
-                    return .cancel(id: CancelID.availability)
+                    return .none
                 }
+                // No cancelInFlight: it cancels when the new effect starts,
+                // and on a busy main thread an older edit's effect can start
+                // later and cancel the newest one, so no check would ever
+                // answer the name shown. Every edit waits; only the latest
+                // edit, if nothing followed it, asks.
+                let edit: Int = sheet.edit
                 return .run { send in
                     try await clock.sleep(for: Self.availabilityDebounce)
-                    let isAvailable = try? await competitionClient.usernameAvailable(draft)
-                    await send(.usernameChecked(draft, isAvailable: isAvailable))
+                    await send(.usernameDebounced(edit: edit))
                 }
-                .cancellable(id: CancelID.availability, cancelInFlight: true)
+                .cancellable(id: CancelID.availability)
 
-            case let .usernameChecked(draft, isAvailable):
-                guard state.sheet?.draft == draft, let isAvailable else { return .none }
+            case let .usernameDebounced(edit):
+                guard let sheet = state.sheet, sheet.edit == edit, !sheet.isSaving else { return .none }
+                let draft: String = sheet.draft
+                return .run { send in
+                    let isAvailable: Bool? = try? await competitionClient.usernameAvailable(draft)
+                    await send(.usernameChecked(edit: edit, isAvailable: isAvailable))
+                }
+                .cancellable(id: CancelID.availability)
+
+            case let .usernameChecked(edit, isAvailable):
+                guard state.sheet?.edit == edit, let isAvailable else { return .none }
                 state.sheet?.availability = isAvailable ? .available : .taken
                 return .none
 
