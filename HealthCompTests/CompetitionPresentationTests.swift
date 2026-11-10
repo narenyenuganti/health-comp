@@ -3617,7 +3617,7 @@ final class CompetitionJudgesDecisionTests: XCTestCase {
     }
 
     func testCardsNeverOverrideTotalPoints() throws {
-        let decision = try decision([1300, 600, 600], [700, 800, 800])
+        let decision = try self.decision([1300, 600, 600], [700, 800, 800])
         XCTAssertEqual(decision.outcome, .win)
         XCTAssertEqual(decision.label, "BY TOTAL POINTS")
         XCTAssertEqual(try self.decision([100, 100, 100], [90, 90, 90], totals: (270, 300)).label, "BY TOTAL POINTS")

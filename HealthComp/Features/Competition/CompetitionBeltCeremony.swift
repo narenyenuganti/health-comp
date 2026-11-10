@@ -570,8 +570,10 @@ func competitionJudgesDecision(
     if complete, outcome != .tie {
         let own = cards.compactMap(\.yourTotal), other = cards.compactMap(\.theirTotal)
         if abs(own.reduce(0, +) - you) < 0.001 && abs(other.reduce(0, +) - them) < 0.001 {
-            let wins = zip(own, other).filter { outcome == .win ? $0 > $1 : $1 > $0 }.count
-            let even = zip(own, other).filter { $0 == $1 }.count
+            let wins = zip(own, other).filter { pair in
+                outcome == .win ? pair.0 > pair.1 : pair.1 > pair.0
+            }.count
+            let even = zip(own, other).filter { $0.0 == $0.1 }.count
             if wins == 3 { label = "UNANIMOUS DECISION" }
             else if wins == 2 { label = even == 1 ? "MAJORITY DECISION" : "SPLIT DECISION" }
         }
