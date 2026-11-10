@@ -209,10 +209,11 @@ final class NotificationChoicesUITests: XCTestCase {
         XCTAssertGreaterThan(friendRequests.frame.minY, friendsHeader.frame.minY)
         flip(friendRequests)
         XCTAssertEqual(friendRequests.value as? String, "0")
+        // Each server-held switch registers on its own: two flips, two calls.
         flip(choice("friend_accepted"))
         XCTAssertEqual(choice("friend_accepted").value as? String, "0")
         closeNotificationsAndAccount()
-        XCTAssertTrue(waitForServer("friend_accepted, friend_request", registrations: 7, failures: 1))
+        XCTAssertTrue(waitForServer("friend_accepted, friend_request", registrations: 8, failures: 1))
         openAccount()
         openNotifications()
         flip(choice("friend_request"))
@@ -220,10 +221,10 @@ final class NotificationChoicesUITests: XCTestCase {
         XCTAssertEqual(choice("friend_request").value as? String, "1")
         XCTAssertEqual(choice("friend_accepted").value as? String, "1")
         closeNotificationsAndAccount()
-        XCTAssertTrue(waitForServer("none", registrations: 8, failures: 1))
+        XCTAssertTrue(waitForServer("none", registrations: 10, failures: 1))
         // And nothing more follows.
         Thread.sleep(forTimeInterval: 3)
-        XCTAssertEqual(serverLabel(), summary("none", registrations: 8, failures: 1))
+        XCTAssertEqual(serverLabel(), summary("none", registrations: 10, failures: 1))
     }
 
     func testQuickOffAndOnLeavesNudgesOnAtTheServer() {
