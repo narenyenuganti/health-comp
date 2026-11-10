@@ -239,6 +239,13 @@ final class BotWeekTests: XCTestCase {
         XCTAssertEqual(decoded.canonicalBytes, regenerated.canonicalBytes)
     }
 
+    func testDocumentedSplitMixProbeFromSeedZero() {
+        var generator = SplitMix64(seed: 0)
+        XCTAssertEqual(generator.next(), 0xE220_A839_7B1D_CDAF)
+        XCTAssertEqual(generator.next(upperBound: 1), 0)
+        XCTAssertEqual(generator.next(upperBound: 601), 273)
+    }
+
     func testSeedDecimalEncoding() {
         XCTAssertEqual(BotWeek.decimalEncoding(of: 0), "0")
         XCTAssertEqual(BotWeek.decimalEncoding(of: .max), "18446744073709551615")

@@ -15,6 +15,7 @@ public enum BotMode: String, Codable, CaseIterable, Sendable {
 /// by 100 once to get centipoints. A `UInt64` seed is a decimal string on the
 /// wire (`BotWeek.decimalEncoding(of:)`): no sign and no leading zeros, except
 /// `"0"`. `UInt64.max` is `"18446744073709551615"`. Never a JSON number.
+/// A stored opponent plan still encodes its seed as a JSON number.
 ///
 /// Both samplers use `SplitMix64` from this module. Its state starts equal to
 /// the seed (it is not mixed first). `next` is:
@@ -38,7 +39,7 @@ public enum BotMode: String, Codable, CaseIterable, Sendable {
 /// ```
 ///
 /// A port can check seed 0: the first `next` is `0xE220A8397B1DCDAF`, then
-/// `next(upperBound: 1)` is 0 and the next `next(upperBound: 601)` is 157.
+/// `next(upperBound: 1)` is 0 and the next `next(upperBound: 601)` is 273.
 /// Products in the point formulas fit in a signed 64-bit integer. `/` truncates
 /// toward zero. SQL should use the same `bigint` division.
 ///
