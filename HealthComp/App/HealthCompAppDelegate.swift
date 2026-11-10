@@ -26,6 +26,9 @@ final class HealthCompAppDelegate: NSObject,
         // Before the Test Lab return: its fixtures reach the watch too.
         CompetitionWatchSync.shared.activate()
 #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--judges-decision") {
+            UserDefaults.standard.removeObject(forKey: CompetitionMotionSeen.storageKey)
+        }
         if ProcessInfo.processInfo.arguments.contains("--judges-notifications") {
             UNUserNotificationCenter.current().setNotificationCategories(CompetitionReactionAlert.categories)
             Task {

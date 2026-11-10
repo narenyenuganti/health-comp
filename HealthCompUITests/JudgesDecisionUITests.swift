@@ -15,7 +15,6 @@ final class JudgesDecisionUITests: XCTestCase {
         app.launchArguments = [
             "--multi-user-competition-test-lab", "--multi-user-competition-scenario", "belt-ceremony",
             "--belt-ceremonies", "--judges-decision", "-healthcomp.colorHintSeen", "YES",
-            "-healthcomp.motionSeen", "{}",
         ] + arguments
         app.launch()
         XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 15))
