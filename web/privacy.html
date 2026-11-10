@@ -25,18 +25,22 @@
     <nav aria-label="Home"><a href="/">HealthComp home</a></nav>
     <article aria-labelledby="privacy-title">
       <h1 id="privacy-title">HealthComp privacy</h1>
-      <p>HealthComp supports private, seven-day Activity competitions between two people.
-        The initial private beta is invitation-only for a small group of adults in the
+      <p>HealthComp supports private, seven-day Activity competitions: one-on-one matches
+        and group matches of up to four people, some of whom can be bots. You can also find
+        people by username and add them as friends. The initial private beta is invitation-only for a small group of adults in the
         United States.</p>
 
       <p><strong>Operator:</strong> Naren Yenuganti.<br>
-        <strong>Effective date:</strong> November 6, 2026.<br>
+        <strong>Effective date:</strong> November 11, 2026.<br>
         <strong>Questions or privacy requests:</strong> <a href="mailto:yrnaren1@gmail.com">yrnaren1@gmail.com</a>.</p>
 
       <h2>Information used by the app</h2>
       <ul>
-        <li><strong>Your account:</strong> an account identifier and the display name you choose connect
-          you to your competitions. Sign in with Apple and Supabase Auth handle sign-in.
+        <li><strong>Your account:</strong> your account stores an account identifier, the display name
+          you choose, and a username if you claim one. With a username, other people can find
+          your name, username, and photo in search unless you turn Show Me in Search off. You
+          can also choose whether anyone with your link, or only friends, can challenge you.
+          Sign in with Apple and Supabase Auth handle sign-in.
           Auth account and provider identity records can also contain an email address
           supplied by Apple, including a private-relay address, and sign-in metadata.
           Your Apple email-sharing choice affects the information Apple provides.</li>
@@ -44,7 +48,11 @@
           512 pixels, without location or other photo metadata, to a private storage bucket, linked
           to your account with a version identifier. If you report someone's photo, the
           server records who reported whom, which photo version, and when; we may review a
-          report and remove the photo.</li>
+          report and remove the photo. If you report a person, the server records who
+          reported whom and when. Reporting a person does not block them.</li>
+        <li><strong>Friends:</strong> the server stores your friends, the friend requests you send and
+          receive, and when each was made. People search does not store what you type; to
+          limit how often an account can search, the server keeps only a count per minute.</li>
         <li><strong>Activity on your iPhone:</strong> HealthComp reads Activity summaries to calculate
           competition scores. A practice match also reads your last 2 weeks of Activity
           on your iPhone to set the pacer; practice data is never sent. HealthComp
@@ -56,7 +64,9 @@
         <li><strong>Derived competition data:</strong> our server stores rounded Activity percentages,
           Move/Stand/Roll modes, availability, daily points, competition dates/time zone,
           revision information, results, awards, and the preset reactions you send (👏 🔥 😤 🫡)
-          and when you sent them, linked to participant accounts.
+          and when you sent them, linked to participant accounts. For a group match it also
+          stores the format, the seats and teams, and for each bot its style, a difficulty
+          number set from the creator's usual daily points, and the bot's daily points.
           Keeping raw Health data on-device does not mean no fitness information is
           collected by the service.</li>
         <li><strong>On your Apple Watch:</strong> if you install the Watch app, your iPhone sends
@@ -75,34 +85,43 @@
       </ul>
 
       <p>We use this information to authenticate accounts, calculate and synchronize
-        competitions, deliver notifications, protect score submissions, complete account
-        cleanup, and investigate support requests and service failures.</p>
+        competitions, deliver notifications, run people search and friend requests, protect
+        score submissions, complete account cleanup, and investigate reports, support
+        requests, and service failures.</p>
 
       <h2>Sharing and service providers</h2>
-      <p>Your competitor can see your display name and shared competition information,
+      <p>The people in your match (one other person, or up to three in a group match) can
+        see your display name and shared competition information,
         including daily points, availability, dates, results, the reactions you send, rounded
         Move/Exercise/Stand-or-Roll percentages, Activity modes, and when your iPhone
         last updated each daily score. These are derived
-        fitness values, not raw HealthKit samples or workout records. A private invitation
-        link grants its recipient a chance to join; share it only with your intended
-        competitor, not in a public issue or support message. Either person can share an
-        image of a finished match's result from the app. It shows both final scores, the
+        fitness values, not raw HealthKit samples or workout records. Friends can see your
+        display name, username, and photo. If Show Me in Search is on, people who find you in
+        search can see those too. They do not see your scores. A private invitation or
+        challenge link lets the recipient try to join. It does not work if they only take
+        challenges from friends and you are not their friend. Share it only with the person
+        you mean to play, not in a public issue or support message. Either person can share an
+        image of a finished one-on-one match's result from the app. It shows both final scores, the
         week, which days each person won and up to two highlights, and the person sharing
         can hide the other person's name.</p>
 
-      <p>If you add a profile photo, it is shown to people you have or had a match with
-        and to someone you have a pending challenge out to, unless either of you blocked
-        the other or they reported your photo. Their apps download it with their own
+      <p>If you add a profile photo, it is shown to people you have or had a match with,
+        to someone you have a pending challenge out to, to people invited to a group match
+        you have joined, to your friends, to someone you sent a friend request to, and to
+        people who can find you in search. It is hidden if either of you blocked the other,
+        or if they reported your photo. Their apps download it with their own
         sign-in and keep a copy on their iPhone to show it; that copy is dropped when your
         photo changes or is removed and their app next refreshes, and when they sign out.</p>
 
       <p>Supabase provides the configured authentication and competition backend. Apple
         provides sign-in, notification delivery, and app-integrity services. Remote push
-        alerts contain generic text, but routing includes a competition identifier and
+        alerts, including friend requests, contain generic text, but routing includes a competition identifier and
         uses an installation's push token. This is not identifier-free traffic. The app
         also generates local notifications on your iPhone that can include competitor
-        display names, points, results, and schedule reminders. Your system notification
-        settings control previews.
+        display names, points, results, and schedule reminders. Two result alerts can show
+        the other person's profile photo from your iPhone's copy; iOS may then suggest that
+        person in the share sheet or Siri, and may let their alerts through a Focus you
+        allow them in. Your system notification settings control previews.
         Cloudflare hosts the public website and invitation pages. The site's responses
         enable browser network-error reporting to Cloudflare; the live support response
         also includes Cloudflare's email-decoding script. Connection-error reports can
@@ -137,7 +156,8 @@
         choose Save Image for a result image, iOS asks for add-only Photos access, which
         you can change in Apple's system controls.</p>
 
-      <p>You can block someone from a challenge they sent you. Blocks are stored with your
+      <p>You can block someone from a challenge they sent you, or from their profile.
+        Blocking also removes a friendship and any friend requests between you. Blocks are stored with your
         account, aren’t shown to the blocked person, and are removed when either account
         is deleted.</p>
 
@@ -149,8 +169,9 @@
 
       <p><strong>Delete Account</strong> starts an authenticated cleanup workflow. When it completes,
         Apple authorization is revoked, the service authentication identity is removed,
-        active competitions are cancelled, your profile photo and the photo reports made by
-        or about you are deleted, and this profile's local data is cleared. A paired Apple
+        active competitions are cancelled, your profile photo and the photo and person
+        reports made by or about you are deleted, your username is cleared, your friendships
+        and friend requests are deleted, and this profile's local data is cleared. A paired Apple
         Watch clears its copy the next time it connects as your active Watch.
         Completed shared results remain for the other participant as <strong>Former
         competitor</strong>. The service removes the account linkage and replaces display names
