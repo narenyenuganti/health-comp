@@ -112,6 +112,7 @@ final class GroupMatchLiveUITests: XCTestCase {
         )
         waitForExpectations(timeout: 5)
         XCTAssertFalse(more.exists)
+        XCTAssertEqual(app.groupElement("competition.group.lead").label, "You left on Day 4. Your 1,664 stays in.")
         // Nothing left to chase once you've left.
         XCTAssertFalse(app.groupElement("competition.group.what-it-takes").exists)
         shot(app, "LiveFFA-left")

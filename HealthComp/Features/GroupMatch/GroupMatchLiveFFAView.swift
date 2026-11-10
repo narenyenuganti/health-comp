@@ -17,7 +17,8 @@ struct GroupMatchLiveFFAView: View {
             if competitionShouldShowScores(match.lifecycle) {
                 GroupMatchLeadLine(match: match)
             }
-            Text("Banter").accessibilityIdentifier("competition.group.banter")
+            // Banter's place: nothing shows until there's a line.
+            Color.clear.frame(height: 0).accessibilityIdentifier("competition.group.banter")
             SectionLabel("STANDINGS")
             standings
             if let takes = match.whatItTakes {
@@ -267,12 +268,19 @@ struct GroupMatchStatusRow: View {
     }
 }
 
-/// "You're 2nd. 48 behind Sam.", the points in bold amber.
+/// "You're 2nd. 48 behind Sam.", the points in bold amber. Once you've
+/// left: "You left on Day 4. Your 1,664 stays in."
 struct GroupMatchLeadLine: View {
     let match: GroupMatchPresentation
 
     var body: some View {
-        if let text = match.leadText {
+        if let day = match.configuration.leaveCutoffs[match.viewerSeatID] {
+            let points = GroupMatchPresentation.pointsText(match.projection.seatTotals[match.viewerSeatID] ?? 0)
+            let stays = match.format == .doubles ? "stays with your team" : "stays in"
+            GroupMatchHighlightedText(text: "You left on Day \(day). Your \(points) \(stays).", points: points)
+                .font(.title2.weight(.semibold))
+                .accessibilityIdentifier("competition.group.lead")
+        } else if let text = match.leadText {
             let points: Int? = switch match.lead {
             case let .chasing(_, gap, _): gap
             case let .ahead(margin): margin

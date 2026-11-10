@@ -19,7 +19,8 @@ struct GroupMatchLiveDoublesView: View {
             if competitionShouldShowScores(match.lifecycle) {
                 GroupMatchLeadLine(match: match)
             }
-            Text("Banter").accessibilityIdentifier("competition.group.banter")
+            // Banter's place: nothing shows until there's a line.
+            Color.clear.frame(height: 0).accessibilityIdentifier("competition.group.banter")
             if competitionShouldShowScores(match.lifecycle) {
                 SectionLabel("WHO’S CARRYING")
                 carrying

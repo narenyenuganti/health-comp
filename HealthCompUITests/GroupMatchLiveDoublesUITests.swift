@@ -73,6 +73,9 @@ final class GroupMatchLiveDoublesUITests: XCTestCase {
         let left = labeled("You, 1,664 points, 53 percent, left the match. Priya, 1,498 points, 47 percent", in: app)
         XCTAssertTrue(left.waitForExistence(timeout: 5))
         XCTAssertFalse(more.exists)
+        XCTAssertEqual(
+            app.groupElement("competition.group.lead").label, "You left on Day 4. Your 1,664 stays with your team."
+        )
         app.swipeUp()
         XCTAssertFalse(app.buttons["competition.group.nudge"].exists)
         app.swipeDown()
