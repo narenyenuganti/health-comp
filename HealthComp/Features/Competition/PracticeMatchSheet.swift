@@ -8,47 +8,49 @@ struct CompetitionPracticeStart {
     let start: (OpponentDifficulty) -> Void
 }
 
-/// Pick a pace; the practice starts tomorrow like a real match.
+/// Pick a bot; the practice starts tomorrow like a real match.
 struct PracticeMatchSheet: View {
     let practice: CompetitionPracticeStart
 
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.dismiss) private var dismiss
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @State private var selection: OpponentDifficulty = .balanced
+    @State private var selection: OpponentDifficulty = .pacer
     /// `commandRejected` lingers in the dashboard, so only a Start tapped in
     /// this presentation shows the error.
     @State private var hasAttempted = false
 
-    private static let paces: [(OpponentDifficulty, String, String)] = [
-        (.relaxed, "Relaxed", "About half your usual rings"),
-        (.balanced, "Balanced", "About your usual rings"),
-        (.challenging, "Challenging", "A bit more than usual"),
+    /// Each bot's week as seven bars, tallest 28 pt.
+    private static let bots: [(OpponentDifficulty, String, [CGFloat])] = [
+        (.pacer, "Your usual week, steady every day.", [18, 19, 18, 19, 18, 19, 18]),
+        (.chill, "A little under your usual. Starts slow.", [8, 9, 10, 11, 12, 13, 14]),
+        (.erratic, "Huge days and off days. Hard to read.", [26, 6, 24, 10, 28, 5, 20]),
+        (.beast, "Well above your usual, every day.", [24, 25, 26, 26, 27, 28, 28]),
     ]
 
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                VStack(alignment: .leading, spacing: 4) {
+            VStack(alignment: .leading, spacing: 16) {
+                Button("Cancel") { dismiss() }
+                    .foregroundStyle(Theme.ink)
+                    .frame(minHeight: 44)
+                    .accessibilityIdentifier("competition.practice.cancel")
+
+                VStack(alignment: .leading, spacing: 6) {
                     Text("Practice Match")
-                        .font(.title3.weight(.heavy).width(.condensed))
+                        .font(.largeTitle.weight(.heavy).width(.condensed))
+                        .textCase(.uppercase)
                         .foregroundStyle(Theme.ink)
                         .accessibilityAddTraits(.isHeader)
-                    Text("7 days against a pacer. It doesn’t count toward your record.")
-                        .font(.subheadline)
+                    Text("Seven days against a bot, scaled to your last two weeks. It doesn’t count toward your record.")
                         .foregroundStyle(Theme.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
-                VStack(spacing: 0) {
-                    ForEach(Array(Self.paces.enumerated()), id: \.offset) { index, pace in
-                        if index > 0 {
-                            CompetitionRowDivider(inset: 16)
-                        }
-                        paceRow(pace.0, title: pace.1, detail: pace.2)
+                VStack(spacing: 10) {
+                    ForEach(Self.bots, id: \.0) { bot in
+                        botRow(bot.0, detail: bot.1, bars: bot.2)
                     }
                 }
-                .themePanel()
-                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
                 .sensoryFeedback(.selection, trigger: selection)
 
                 // At accessibility sizes a pinned button would cover the rows.
@@ -57,7 +59,7 @@ struct PracticeMatchSheet: View {
                 }
             }
             .padding(.horizontal, 20)
-            .padding(.top, 24)
+            .padding(.top, 8)
             .padding(.bottom, 20)
         }
         .scrollBounceBehavior(.basedOnSize)
@@ -72,14 +74,6 @@ struct PracticeMatchSheet: View {
         }
         .moving(Motion.settle, value: showsError)
         .background(Theme.ground)
-        // At AX sizes medium shows only the title, so the sheet opens full
-        // height there.
-        .presentationDetents(
-            dynamicTypeSize.isAccessibilitySize ? [.large] : [.medium, .large]
-        )
-        // A drag on the rows scrolls them; the grabber still resizes or closes.
-        .presentationContentInteraction(.scrolls)
-        .presentationDragIndicator(.visible)
         .presentationBackground(Theme.ground)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("competition.practice.sheet")
@@ -97,19 +91,29 @@ struct PracticeMatchSheet: View {
         practice.isStarting || (hasAttempted && !practice.failed)
     }
 
-    private func paceRow(
+    private func botRow(
         _ difficulty: OpponentDifficulty,
-        title: String,
-        detail: String
+        detail: String,
+        bars: [CGFloat]
     ) -> some View {
         let isSelected = selection == difficulty
+        let title = PracticeMatch.opponentDisplayName(for: difficulty)
+        let shape = RoundedRectangle(cornerRadius: 20, style: .continuous)
         return Button {
             selection = difficulty
         } label: {
-            HStack(spacing: 12) {
+            HStack(spacing: 16) {
+                HStack(alignment: .bottom, spacing: 3) {
+                    ForEach(Array(bars.enumerated()), id: \.offset) { _, height in
+                        RoundedRectangle(cornerRadius: 1)
+                            .fill(Theme.ink)
+                            .frame(width: 5, height: height)
+                    }
+                }
+                .frame(height: 28, alignment: .bottom)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(title)
-                        .font(.headline)
+                        .font(.body.weight(.bold))
                         .foregroundStyle(Theme.ink)
                     Text(detail)
                         .font(.subheadline)
@@ -117,21 +121,18 @@ struct PracticeMatchSheet: View {
                 }
                 .fixedSize(horizontal: false, vertical: true)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                    .font(.title3)
-                    // At AX sizes a full-size mark would split "Challenging".
-                    .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
-                    .foregroundStyle(isSelected ? Theme.ink : Theme.tertiary)
-                    .contentTransition(reduceMotion ? .opacity : .symbolEffect(.replace))
-                    .animation(Motion.fade, value: isSelected)
-                    .accessibilityHidden(true)
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)
-            .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-            .contentShape(Rectangle())
+            .frame(maxWidth: .infinity, minHeight: 78, alignment: .leading)
+            .background(Theme.panel, in: shape)
+            .overlay {
+                shape.strokeBorder(isSelected ? Theme.ink : Theme.panel, lineWidth: 2)
+                    .animation(Motion.fade, value: isSelected)
+            }
+            .contentShape(shape)
         }
-        .buttonStyle(CompetitionRowButtonStyle())
+        .buttonStyle(.plain)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(title), \(detail)")
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
