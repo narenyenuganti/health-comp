@@ -654,6 +654,68 @@ final class SupabaseCompetitionRemoteAPITests: XCTestCase {
         try assertRPC(requests[2], name: "register_current_device_installation", body: currentBody)
     }
 
+    /// The live Supabase SDK reports a missing function as a PostgrestError,
+    /// which arrives with code PGRST202 and no HTTP status.
+    func testRegisterInstallationFallsBackOnPGRST202WithoutStatus() async throws {
+        let harness = CompetitionTransportHarness(stubs: [
+            .failure(.server(statusCode: nil, code: "PGRST202", message: "redacted")),
+            .response(200, try jsonData([
+                "installation_id": installationID.uuidString.lowercased(),
+                "environment": "sandbox",
+                "state": "active",
+            ])),
+        ])
+        let request = try CompetitionInstallationRequest(
+            installationID: installationID,
+            apnsToken: String(repeating: "a1", count: 32),
+            environment: .sandbox,
+            mutedPushKinds: ["friend_accepted", "friend_request", "nudge", "reaction"]
+        )
+
+        let installation = try await makeAPI(harness).registerInstallation(request)
+
+        XCTAssertEqual(installation.state, .active)
+        let requests = await harness.recordedRequests()
+        XCTAssertEqual(requests.count, 2)
+        let mutedBody: [String: Any] = [
+            "installation_id": installationID.uuidString.lowercased(),
+            "apns_token": String(repeating: "a1", count: 32),
+            "environment": "sandbox",
+            "supports_challenges": true,
+            "supports_reactions": true,
+            "muted_push_kinds": ["nudge", "reaction"],
+        ]
+        try assertRPC(requests[1], name: "register_current_device_installation", body: mutedBody)
+    }
+
+    /// Only PGRST202 means "this overload doesn't exist"; every other
+    /// failure, including a 404 with another code, is thrown after one call.
+    func testRegisterInstallationDoesNotFallBackOnOtherFailures() async throws {
+        let cases: [(CompetitionTransportStub, CompetitionRemoteFailure)] = [
+            (.response(404, try jsonData(["code": "not_found", "message": "redacted"])), .notFound),
+            (.response(404, Data()), .notFound),
+            (.response(406, try jsonData(["code": "PGRST116", "message": "redacted"])), .notFound),
+            (.failure(.server(statusCode: nil, code: "PGRST116", message: "redacted")), .notFound),
+            (.failure(.server(statusCode: nil, code: "42501", message: "redacted")), .operationFailed),
+            (.response(403, try jsonData(["code": "forbidden", "message": "redacted"])), .forbidden),
+            (.response(400, try jsonData(["code": "invalid_installation_request", "message": "redacted"])), .serverContractMismatch),
+        ]
+        let request = try CompetitionInstallationRequest(
+            installationID: installationID,
+            apnsToken: String(repeating: "a1", count: 32),
+            environment: .sandbox
+        )
+        for (index, (stub, expected)) in cases.enumerated() {
+            let harness = CompetitionTransportHarness(stubs: [stub])
+            let failure: CompetitionRemoteFailure? = await remoteFailure {
+                _ = try await makeAPI(harness).registerInstallation(request)
+            }
+            XCTAssertEqual(failure, expected, "case \(index)")
+            let requestCount: Int = await harness.requestCount()
+            XCTAssertEqual(requestCount, 1, "case \(index)")
+        }
+    }
+
     func testReactionsRouteThroughExactRPCs() async throws {
         let match = "85000000-0000-4000-8000-0000000000c1"
         let author = "85000000-0000-4000-8000-0000000000c2"

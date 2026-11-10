@@ -245,9 +245,10 @@ enum SupabaseCompetitionRemoteAPI {
             },
             registerInstallation: { request in
                 // Newest call first. A server without that overload answers
-                // PGRST202 (notFound), so fall back: 6 args (muted push kinds,
+                // PGRST202 (function not found), with or without an HTTP
+                // status, and only that falls back: 6 args (muted push kinds,
                 // no Friends), then 5 (reactions), 4 (challenges) and the
-                // original 3.
+                // original 3. Any other failure, 404s included, is thrown.
                 let bodies = [
                     try encodeWire(request, contract: .installationRequest),
                     try encode(MutedKindsInstallationParameters(request)),
@@ -257,13 +258,15 @@ enum SupabaseCompetitionRemoteAPI {
                 ]
                 var response: CompetitionRemoteTransportResponse?
                 for (index, body) in bodies.enumerated() {
+                    let isLast: Bool = index == bodies.count - 1
                     do {
                         response = try await send(
                             .rpc(name: "register_current_device_installation", parameters: body),
-                            transport: transport
+                            transport: transport,
+                            context: isLast ? .general : .overloadFallback
                         )
                         break
-                    } catch CompetitionRemoteFailure.notFound where index < bodies.count - 1 {
+                    } catch is MissingRPCFunction {
                         continue
                     }
                 }
@@ -813,6 +816,15 @@ enum SupabaseCompetitionRemoteAPI {
         case previewInvite
         case appAttestChallenge
         case appAttestSubmission
+        /// An RPC with an older overload to try: PGRST202 throws
+        /// MissingRPCFunction instead of a CompetitionRemoteFailure.
+        case overloadFallback
+    }
+
+    private struct MissingRPCFunction: Error {}
+
+    private static func isMissingRPCFunction(code: String?, context: ErrorContext) -> Bool {
+        context == .overloadFallback && code?.uppercased() == "PGRST202"
     }
 
     private static func send(
@@ -828,6 +840,13 @@ enum SupabaseCompetitionRemoteAPI {
             guard (200..<300).contains(response.statusCode)
                     || acceptConflict && response.statusCode == 409
             else {
+                let envelope: RemoteErrorEnvelope? = try? JSONDecoder().decode(
+                    RemoteErrorEnvelope.self,
+                    from: response.data
+                )
+                if isMissingRPCFunction(code: envelope?.code, context: context) {
+                    throw MissingRPCFunction()
+                }
                 throw classify(
                     statusCode: response.statusCode,
                     data: response.data,
@@ -837,6 +856,8 @@ enum SupabaseCompetitionRemoteAPI {
             return response
         } catch let failure as CompetitionRemoteFailure {
             throw failure
+        } catch let missing as MissingRPCFunction {
+            throw missing
         } catch is CancellationError {
             throw CompetitionRemoteFailure.cancelled
         } catch let failure as CompetitionRemoteTransportFailure {
@@ -846,6 +867,9 @@ enum SupabaseCompetitionRemoteAPI {
             case .network, .relay:
                 throw CompetitionRemoteFailure.retryableTransport
             case let .server(statusCode, code, message):
+                if isMissingRPCFunction(code: code, context: context) {
+                    throw MissingRPCFunction()
+                }
                 throw classify(
                     statusCode: statusCode,
                     code: code,
