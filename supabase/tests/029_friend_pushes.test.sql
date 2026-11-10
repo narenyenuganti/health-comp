@@ -29,9 +29,9 @@ begin
  return public.lease_competition_notification_work(25,180,friends);
 end;
 $$;
-insert into auth.users(id) select pg_temp.uid(n) from generate_series(1,22) n;
+insert into auth.users(id) select pg_temp.uid(n) from generate_series(1,30) n;
 insert into public.profiles(id,auth_user_id,display_name,state,username)
-select pg_temp.pid(n),pg_temp.uid(n),'Person '||n,'active','push_person_'||n from generate_series(1,22) n;
+select pg_temp.pid(n),pg_temp.uid(n),'Person '||n,'active','push_person_'||n from generate_series(1,30) n;
 select is((select count(*) from private.competition_notification_work),0::bigint,'migration backfill queued nothing');
 select is(pg_temp.register(1,1,true),jsonb_build_object('installation_id',pg_temp.iid(1),'environment','sandbox','state','active'),'new registration exact return');
 select pg_temp.register(2,2,true);
@@ -199,5 +199,105 @@ select throws_ok($$insert into private.competition_notification_work(
  '23514',null,'friend kind requires event identity');
 select ok(not has_function_privilege('authenticated','public.lease_competition_notification_work(integer,integer,boolean)','execute')
  and has_function_privilege('service_role','public.lease_competition_notification_work(integer,integer,boolean)','execute'), 'opted-in lease remains service-only');
+-- Match mutes apply only to match work, even in a mixed new-worker batch.
+create function pg_temp.challenge(a integer, b integer) returns uuid language plpgsql as $$
+declare code text;
+begin
+  perform pg_temp.as_user(b);
+  code := public.get_my_challenge_link()->>'code';
+  perform set_config('request.jwt.claims','{"role":"service_role"}',true);
+  return public.create_competition_invite_from_link(
+    extensions.digest(gen_random_uuid()::text,'sha256'),'UTC',pg_temp.uid(a),gen_random_uuid(),1::smallint,code);
+end;
+$$;
+create function pg_temp.item_keys(item jsonb) returns text[] language sql as $$
+  select array_agg(k order by k) from jsonb_object_keys(item) k;
+$$;
+select pg_temp.register(23,26,true);
+select pg_temp.register(24,27,true);
+select pg_temp.challenge(23,24);
+insert into private.competition_notification_mutes(profile_id,opponent_profile_id)
+values(pg_temp.pid(24),pg_temp.pid(23)),(pg_temp.pid(23),pg_temp.pid(24));
+select pg_temp.send(23,24);
+truncate leases;
+insert into leases select pg_temp.lease(true);
+select is((select array_agg(i->>'kind') from leases,jsonb_array_elements(data->'items') i),
+ array['friend_request'],'match-opponent mute still permits friend request delivery');
+select is((select state from private.competition_notification_work
+ where recipient_profile_id=pg_temp.pid(24) and kind='challenge_received'),'suppressed','match-opponent mute still suppresses match push');
+select is((select pg_temp.item_keys(data->'items'->0) from leases),
+ array['apnsToken','competitionId','environment','kind','leaseToken','semanticId','supportsFriends','workId'],
+ 'new lease friend item has exactly eight expected keys');
+select pg_temp.respond(24,23,true);
+truncate leases;
+insert into leases select pg_temp.lease(true);
+select is((select array_agg(i->>'kind') from leases,jsonb_array_elements(data->'items') i),
+ array['friend_accepted'],'match-opponent mute still permits friend acceptance delivery');
+-- New worker can parse both shapes in the same batch.
+select pg_temp.register(25,28,true);
+select pg_temp.register(26,29,true);
+select pg_temp.challenge(25,26);
+select pg_temp.send(25,26);
+truncate leases;
+insert into leases select pg_temp.lease(true);
+select is(jsonb_array_length((select data->'items' from leases)),2,'new lease returns mixed match and friend batch');
+select is((select pg_temp.item_keys(i) from leases,jsonb_array_elements(data->'items') i where i->>'kind'='challenge_received'),
+ array['apnsToken','competitionId','environment','kind','leaseToken','semanticId','workId'],
+ 'new lease match item retains exactly seven expected keys');
+select is((select pg_temp.item_keys(i) from leases,jsonb_array_elements(data->'items') i where i->>'kind'='friend_request'),
+ array['apnsToken','competitionId','environment','kind','leaseToken','semanticId','supportsFriends','workId'],
+ 'mixed new lease friend item retains exactly eight expected keys');
+select pg_temp.register(27,30,true);
+select pg_temp.register(28,31,true);
+select pg_temp.challenge(27,28);
+select pg_temp.send(27,28);
+truncate leases;
+select set_config('request.jwt.claims','{"role":"service_role"}',true);
+insert into leases select public.lease_competition_notification_work(25,180);
+select is(jsonb_array_length((select data->'items' from leases)),1,'old lease returns only match from mixed pending work');
+select is((select pg_temp.item_keys(data->'items'->0) from leases),
+ array['apnsToken','competitionId','environment','kind','leaseToken','semanticId','workId'],
+ 'old lease match item retains exactly seven expected keys');
+select is((select state from private.competition_notification_work
+ where recipient_profile_id=pg_temp.pid(28) and kind='friend_request'),'pending','old lease leaves friend work pending');
+-- Direct profile FKs cover friend rows whose nullable composite FKs skip checks.
+select ok((select count(*)=2 and bool_and(convalidated and confdeltype='a'
+ and confrelid='public.profiles'::regclass and cardinality(conkey)=1)
+ from pg_constraint where conrelid='private.competition_notification_work'::regclass
+ and conname in ('competition_notification_work_source_profile_fk','competition_notification_work_recipient_profile_fk')),
+ 'both profile foreign keys are validated and preserve tombstoned profiles');
+select throws_ok($$insert into private.competition_notification_work(
+ semantic_id,friend_event_id,kind,source_profile_id,recipient_profile_id,installation_id,state)
+ values('healthcomp.server-notification:v1:missing-source',gen_random_uuid(),'friend_request',pg_temp.pid(999),pg_temp.pid(28),pg_temp.iid(31),'pending')$$,
+ '23503',null,'friend row cannot reference nonexistent source profile');
+select throws_ok($$update private.competition_notification_work set recipient_profile_id=pg_temp.pid(999)
+ where recipient_profile_id=pg_temp.pid(28) and kind='friend_request'$$,
+ '23503',null,'friend row cannot reference nonexistent recipient profile');
+-- No delete trigger runs here: this exercises the lease-time stale-work check.
+insert into private.competition_notification_work(
+ semantic_id,friend_event_id,kind,source_profile_id,recipient_profile_id,installation_id,state)
+values('healthcomp.server-notification:v1:stale-request',gen_random_uuid(),'friend_request',pg_temp.pid(25),pg_temp.pid(28),pg_temp.iid(31),'pending'),
+ ('healthcomp.server-notification:v1:stale-accepted',gen_random_uuid(),'friend_accepted',pg_temp.pid(25),pg_temp.pid(28),pg_temp.iid(31),'pending');
+select pg_temp.lease(true);
+select is((select count(*) from private.competition_notification_work
+ where semantic_id in ('healthcomp.server-notification:v1:stale-request','healthcomp.server-notification:v1:stale-accepted') and state='superseded'),
+ 2::bigint,'lease supersedes request and acceptance with no backing relationship');
+-- Observe only worker wakeups; realtime Friends wakeups retain their own path.
+create temporary table worker_wakeups(n integer generated always as identity);
+create or replace function private.request_competition_notification_worker()
+returns void language sql security definer set search_path = '' as $$
+ insert into pg_temp.worker_wakeups default values;
+$$;
+select pg_temp.register(30,32,false);
+select pg_temp.send(29,30);
+select is((select count(*) from worker_wakeups),0::bigint,'no capable installation means no worker wakeup');
+select is((select count(*) from private.competition_notification_work where recipient_profile_id=pg_temp.pid(30)),0::bigint,'no capable installation means no queued rows');
+select pg_temp.remove(29,30);
+select pg_temp.register(30,32,true);
+select pg_temp.send(29,30);
+select is((select count(*) from worker_wakeups),1::bigint,'queued friend work wakes sender once');
+select pg_temp.remove(29,30);
+select pg_temp.send(29,30);
+select is((select count(*) from worker_wakeups),1::bigint,'rate guard queues nothing and does not wake sender');
 select * from finish();
 rollback;

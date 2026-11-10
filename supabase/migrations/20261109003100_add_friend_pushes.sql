@@ -8,6 +8,10 @@ alter table public.device_installations
   );
 alter table private.competition_notification_work
   add column friend_event_id uuid,
+  add constraint competition_notification_work_source_profile_fk
+    foreign key (source_profile_id) references public.profiles(id),
+  add constraint competition_notification_work_recipient_profile_fk
+    foreign key (recipient_profile_id) references public.profiles(id),
   alter column competition_id drop not null,
   alter column server_seq drop not null,
   drop constraint competition_notification_work_kind_check,
@@ -215,13 +219,13 @@ begin
                      or coalesce(competition_row.lifecycle, '') not in
                        ('scheduled', 'active', 'ends_today', 'tallying')))
                then 'discarded'
-             when exists (
+             when (work_row.competition_id is not null and exists (
                select 1
                from private.competition_notification_mutes mute_row
                where mute_row.profile_id = work_row.recipient_profile_id
                  and mute_row.opponent_profile_id
                    = work_row.source_profile_id
-             )
+             ))
                or work_row.kind = any(installation_row.muted_push_kinds)
                then 'suppressed'
              else 'lease'
@@ -363,7 +367,9 @@ begin
   join public.profiles source on source.id = source_id and source.state = 'active'
   where i.profile_id = recipient_id and i.state = 'active' and i.supports_friends
     and not private.people_blocked(source_id, recipient_id);
-  perform private.request_competition_notification_worker();
+  if found then
+    perform private.request_competition_notification_worker();
+  end if;
 end;
 $$;
 revoke all on function private.enqueue_friend_notification(text,uuid,uuid)
