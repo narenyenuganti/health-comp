@@ -1603,6 +1603,8 @@ final class MultiUserCompetitionUITests: XCTestCase {
         try auditNotificationsPage(audit)
 
         let unmute = app.buttons["Unmute Hermes"]
+        // The section header can be visible while this row is below the screen.
+        scrollToElement(unmute)
         XCTAssertTrue(unmute.exists)
         unmute.tap()
         XCTAssertTrue(mutedHeader.waitForNonExistence(timeout: 3))
