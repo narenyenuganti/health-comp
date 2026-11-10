@@ -67,9 +67,9 @@ func friendStatusLine(
     }
     guard let record = competitionOpponentRecords(theirs).first else { return nil }
     let high = max(record.wins, record.losses), low = min(record.wins, record.losses)
-    let score = ([high, low] + (record.ties > 0 ? [record.ties] : []))
-        .map(String.init)
-        .joined(separator: "–")
+    var counts: [Int] = [high, low]
+    if record.ties > 0 { counts.append(record.ties) }
+    let score: String = counts.map(String.init).joined(separator: "–")
     if record.wins == record.losses { return "Tied \(score)" }
     return record.wins > record.losses ? "You lead \(score)" : "\(record.opponentDisplayName) leads \(score)"
 }

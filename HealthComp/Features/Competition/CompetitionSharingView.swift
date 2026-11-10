@@ -2230,9 +2230,10 @@ enum CompetitionHomeRoute: Hashable {
                         at: min(place.depth, routes.count)
                     )
                 }
-                return (showsFriends.wrappedValue ? [.friends] : [])
-                    + (showsHistory.wrappedValue ? [.history] : [])
-                    + routes
+                var bottom: [CompetitionHomeRoute] = []
+                if showsFriends.wrappedValue { bottom.append(.friends) }
+                if showsHistory.wrappedValue { bottom.append(.history) }
+                return bottom + routes
             },
             set: { newRoutes in
                 var routes = newRoutes

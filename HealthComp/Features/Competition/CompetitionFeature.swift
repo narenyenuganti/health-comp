@@ -206,12 +206,19 @@ struct CompetitionFeature {
             guard publication?.source == .remoteParticipants else {
                 return claimSender.map { [$0] } ?? []
             }
-            // Most likely on screen first.
-            let owners = [ownProfile?.id, claimSender].compactMap { $0 }
-                + (friends.results ?? []).map(\.id)
-                + (friends.list?.incoming ?? []).map(\.id)
-                + (publication?.dashboard.competitions.compactMap(\.opponentProfileID) ?? [])
-                + (friends.list.map { ($0.friends + $0.outgoing).map(\.id) } ?? [])
+            // Most likely on screen first. Separate statements: as one
+            // expression, Xcode 16's compiler gives up type-checking it.
+            var owners: [UUID] = []
+            if let id = ownProfile?.id { owners.append(id) }
+            if let claimSender { owners.append(claimSender) }
+            let results: [FriendPerson] = friends.results ?? []
+            owners += results.map(\.id)
+            let list: FriendsList = friends.list ?? FriendsList()
+            owners += list.incoming.map(\.id)
+            let competitions: [LocalCompetitionPresentation] = publication?.dashboard.competitions ?? []
+            owners += competitions.compactMap(\.opponentProfileID)
+            owners += list.friends.map(\.id)
+            owners += list.outgoing.map(\.id)
             // ponytail: past 200 people the rest stay initials; page the
             // lookup if anyone gets there.
             var seen: Set<UUID> = []
