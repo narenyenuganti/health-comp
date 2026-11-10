@@ -557,20 +557,24 @@ private struct CompetitionJudgesReveal: View {
     }
 
     var body: some View {
-        VStack(spacing: 24) {
+        VStack(spacing: 16) {
             HStack {
                 Text("HEALTHCOMP /").foregroundStyle(Theme.ink)
                 Spacer()
                 Text("7 ROUNDS").foregroundStyle(Theme.secondary)
             }
             .font(.themeLabel).tracking(1.3)
-            Spacer(minLength: 0)
-            ZStack {
-                if stage == 0 { seal.transition(.opacity) }
-                if stage == 1 { scorecards.transition(.opacity) }
-                if stage == 2 { handRaise.transition(.opacity) }
+            GeometryReader { geometry in
+                ScrollView {
+                    ZStack {
+                        if stage == 0 { seal.transition(.opacity) }
+                        if stage == 1 { scorecards.transition(.opacity) }
+                        if stage == 2 { handRaise.transition(.opacity) }
+                    }
+                    .frame(maxWidth: .infinity, minHeight: geometry.size.height)
+                }
+                .scrollIndicators(.hidden)
             }
-            Spacer(minLength: 0)
             Button("Skip reveal", action: onSkip)
                 .font(.themeLabel)
                 .foregroundStyle(Theme.secondary)
@@ -718,7 +722,7 @@ private struct CompetitionJudgesReveal: View {
     }
 
     private func card(_ card: CompetitionJudgeCard, index: Int) -> some View {
-        VStack(spacing: 14) {
+        VStack(spacing: 8) {
             HStack {
                 Circle().fill([Theme.move, Theme.exercise, Theme.stand][index]).frame(width: 10, height: 10)
                 Text("Judge \(["Move", "Exercise", "Stand"][index])").font(.themeLabel)
