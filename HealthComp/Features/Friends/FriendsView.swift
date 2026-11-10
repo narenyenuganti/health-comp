@@ -130,6 +130,8 @@ private struct FriendsRowButtonStyle: ButtonStyle {
 struct FriendsPersonLabel: View {
     let person: FriendPerson
     let detail: String?
+    /// Ink on a row that is dimmed as a whole, so it stays readable.
+    var detailColor: Color = Theme.secondary
 
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
@@ -147,7 +149,7 @@ struct FriendsPersonLabel: View {
                 if let detail {
                     Text(detail)
                         .font(.subheadline)
-                        .foregroundStyle(Theme.secondary)
+                        .foregroundStyle(detailColor)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -607,28 +609,37 @@ struct PersonFriendMenuItems: View {
     /// Nil while your block list loads: Block and Report wait for it.
     let isBlocked: Bool?
     let unblock: (() -> Void)?
-    /// Off on the new-person page, whose own button adds and cancels.
-    var offersRequests = true
+    /// Whether you've played them: Add Friend is for people you've played.
+    var hasPlayed = true
     @Binding var dialog: PersonFriendDialog?
+
+    /// Add Friend or Cancel Request, when either applies.
+    enum RequestItem: Equatable { case add, cancel }
+
+    static func requestItem(_ relationship: FriendRelationship?, hasPlayed: Bool) -> RequestItem? {
+        switch relationship {
+        case .none?: return hasPlayed ? .add : nil
+        case .requested?: return .cancel
+        case .incoming?, .friend?, nil: return nil
+        }
+    }
 
     var body: some View {
         if let controls, isBlocked == false {
             Group {
-                if offersRequests {
-                    switch controls.relationship {
-                    case .none?:
-                        Button { controls.change(.add) } label: {
-                            Label("Add Friend", systemImage: "person.badge.plus")
-                        }
-                        .accessibilityIdentifier("friends.menu.add")
-                    case .requested?:
-                        Button { dialog = .cancelRequest } label: {
-                            Label("Cancel Request", systemImage: "xmark")
-                        }
-                        .accessibilityIdentifier("friends.menu.cancel-request")
-                    case .incoming?, .friend?, nil:
-                        EmptyView()
+                switch Self.requestItem(controls.relationship, hasPlayed: hasPlayed) {
+                case .add?:
+                    Button { controls.change(.add) } label: {
+                        Label("Add Friend", systemImage: "person.badge.plus")
                     }
+                    .accessibilityIdentifier("friends.menu.add")
+                case .cancel?:
+                    Button { dialog = .cancelRequest } label: {
+                        Label("Cancel Request", systemImage: "xmark")
+                    }
+                    .accessibilityIdentifier("friends.menu.cancel-request")
+                case nil:
+                    EmptyView()
                 }
                 if controls.relationship == .friend {
                     Button { dialog = .remove } label: {
@@ -743,6 +754,8 @@ struct FriendProfileView: View {
     var unblock: (() -> Void)? = nil
     /// The Challenge sheet with this friend chosen.
     var challenge: (() -> Void)? = nil
+    /// A challenge or match with them, though no finished week yet.
+    var hasPlayed = false
 
     @State private var dialog: PersonFriendDialog?
     @State private var isBlocking = false
@@ -827,7 +840,7 @@ struct FriendProfileView: View {
                         controls: controls,
                         isBlocked: isBlocked,
                         unblock: unblock,
-                        offersRequests: false,
+                        hasPlayed: hasPlayed,
                         dialog: $dialog
                     )
                 } label: {

@@ -15,6 +15,7 @@ final class ChallengeFriendUITests: XCTestCase {
         static let sam = "d1000000-0000-4000-8000-0000000000b2"
         static let dev = "d1000000-0000-4000-8000-0000000000b3"
         static let kai = "d1000000-0000-4000-8000-0000000000b4"
+        static let mateo = "d1000000-0000-4000-8000-0000000000c2"
     }
 
     private enum Scenario: String {
@@ -170,6 +171,50 @@ final class ChallengeFriendUITests: XCTestCase {
         XCTAssertTrue(app.buttons["friends.friend.\(Person.dev)"].waitForNonExistence(timeout: 5))
     }
 
+    /// The small page: Cancel Request for someone you asked, and Add Friend
+    /// for someone you're playing but haven't finished a week with.
+    func testThePersonMenuOffersCancelRequestAndAddFriend() {
+        launch(.challengeFriend)
+        let friends = app.buttons["friends.open"]
+        XCTAssertTrue(friends.waitForExistence(timeout: 5))
+        friends.tap()
+        let search = app.textFields["friends.search.field"]
+        XCTAssertTrue(search.waitForExistence(timeout: 5))
+        search.tap()
+        type("mateo", into: search)
+        let mateo = app.buttons["friends.result.\(Person.mateo)"]
+        expect(mateo, field: search)
+        mateo.tap()
+        XCTAssertTrue(element("friends.person").waitForExistence(timeout: 5))
+        openMenu()
+        XCTAssertTrue(menuItem("friends.menu.cancel-request").exists)
+        XCTAssertFalse(menuItem("friends.menu.add").exists)
+        menuItem("friends.menu.cancel-request").tap()
+        confirm("Cancel Request", menuID: "friends.menu.cancel-request")
+        Thread.sleep(forTimeInterval: 1)
+        openMenu()
+        // Never played: the page's own button adds them.
+        XCTAssertFalse(menuItem("friends.menu.cancel-request").exists)
+        XCTAssertFalse(menuItem("friends.menu.add").exists)
+        closeMenu()
+        back()
+
+        // Priya: a friend with a challenge waiting, no finished week.
+        element("friends.search.clear").tap()
+        let priya = app.buttons["friends.friend.\(Person.priya)"]
+        XCTAssertTrue(priya.waitForExistence(timeout: 5))
+        priya.tap()
+        XCTAssertTrue(element("friends.person").waitForExistence(timeout: 5))
+        openMenu()
+        XCTAssertFalse(menuItem("friends.menu.add").exists)
+        menuItem("friends.menu.remove").tap()
+        confirm("Remove Friend", menuID: "friends.menu.remove")
+        Thread.sleep(forTimeInterval: 1)
+        openMenu()
+        XCTAssertTrue(menuItem("friends.menu.add").exists)
+        XCTAssertFalse(menuItem("friends.menu.remove").exists)
+    }
+
     func testBlockFromAFriendsPageThenSeeThemInAccount() {
         launch(.challengeFriend)
         openFriend(Person.kai)
@@ -280,6 +325,19 @@ final class ChallengeFriendUITests: XCTestCase {
                 XCTAssertTrue(app.staticTexts["Report Dev Patel?"].waitForExistence(timeout: 3))
                 shot("dialog-report-\(suffix)")
                 dismissDialog()
+
+                if sizeName == "ax5" {
+                    // The sheet's last rows, which only scrolling shows.
+                    launch(.challengeFriend, arguments: arguments)
+                    openSheet()
+                    let share = app.buttons["competition.create.share-own-link"]
+                    XCTAssertTrue(share.waitForExistence(timeout: 5))
+                    // Swipes, not scrollTo: at ax5 the share row never
+                    // reported hittable, though the sheet scrolls to it.
+                    for _ in 0..<4 { app.swipeUp() }
+                    shot("sheet-friends-\(suffix)-bottom")
+                    try audit("sheet bottom \(suffix)")
+                }
 
                 launch(.empty, arguments: arguments)
                 openSheet(waitForFriends: false)

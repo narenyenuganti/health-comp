@@ -84,7 +84,10 @@ final class FriendsFeatureTests: XCTestCase {
 
     func testUnderThreeCharactersSearchesNothing() async {
         let store = makeStore()
-        await store.send(.queryChanged("ma")) { $0.query = "ma" }
+        await store.send(.queryChanged("ma")) {
+            $0.query = "ma"
+            $0.searchGeneration = 1
+        }
     }
 
     func testSearchWaitsForTheDebounceAndDropsStaleAnswers() async {
@@ -99,13 +102,19 @@ final class FriendsFeatureTests: XCTestCase {
         }
         await store.send(.queryChanged("mar")) {
             $0.query = "mar"
+            $0.searchGeneration = 1
             $0.isSearching = true
         }
         await clock.advance(by: .milliseconds(200))
-        // Typing on cancels the wait, so "mar" is never sent.
-        await store.send(.queryChanged("mara")) { $0.query = "mara" }
+        await store.send(.queryChanged("mara")) {
+            $0.query = "mara"
+            $0.searchGeneration = 2
+        }
         await clock.advance(by: Feature.searchDebounce)
-        await store.receive(.searchFinished("mara", .success([mara]))) {
+        // The wait for "mar" ends after "mara" was typed, so it's never sent.
+        await store.receive(.searchDebounced("mar", generation: 1))
+        await store.receive(.searchDebounced("mara", generation: 2))
+        await store.receive(.searchFinished("mara", generation: 2, .success([mara]))) {
             $0.isSearching = false
             $0.results = [mara]
             $0.people = [mara.id: mara]
@@ -115,14 +124,88 @@ final class FriendsFeatureTests: XCTestCase {
         // An answer for what's no longer typed changes nothing.
         await store.send(.queryChanged("mat")) {
             $0.query = "mat"
+            $0.searchGeneration = 3
             $0.isSearching = true
         }
-        await store.send(.searchFinished("mara", .success([])))
+        await store.send(.searchFinished("mara", generation: 2, .success([])))
         await store.send(.queryChanged("ma")) {
             $0.query = "ma"
+            $0.searchGeneration = 4
             $0.isSearching = false
             $0.results = nil
         }
+    }
+
+    func testAStaleDebounceSearchesNothing() async {
+        // The test client fails the test if search is called.
+        let store = makeStore(Feature.State(query: "mara", searchGeneration: 2, isSearching: true))
+        await store.send(.searchDebounced("mar", generation: 1))
+        await store.send(.queryChanged("ma")) {
+            $0.query = "ma"
+            $0.searchGeneration = 3
+            $0.isSearching = false
+        }
+        await store.send(.searchDebounced("mar", generation: 1))
+    }
+
+    /// mar → marc → mar inside one wait: only the last edit searches, once,
+    /// and an answer for the first visit to "mar" is never applied.
+    func testReturningToEarlierTextSearchesOnceForTheLatestEdit() async {
+        let clock = TestClock()
+        let searched = LockIsolated<[String]>([])
+        let mara = person(1, "Mara")
+        let store = makeStore(clock: clock) { client in
+            client.searchPeople = { query in
+                searched.withValue { $0.append(query) }
+                return [mara]
+            }
+        }
+        store.exhaustivity = .off
+        await store.send(.queryChanged("mar"))
+        await clock.advance(by: .milliseconds(100))
+        await store.send(.queryChanged("marc"))
+        await clock.advance(by: .milliseconds(100))
+        await store.send(.queryChanged("mar"))
+        XCTAssertEqual(store.state.searchGeneration, 3)
+        await clock.advance(by: Feature.searchDebounce)
+        await store.skipReceivedActions()
+        XCTAssertEqual(searched.value, ["mar"])
+        XCTAssertFalse(store.state.isSearching)
+        XCTAssertEqual(store.state.results, [mara])
+    }
+
+    func testAnAnswerFromAnEarlierEditOfTheSameTextChangesNothing() async {
+        let store = makeStore(Feature.State(query: "mar", searchGeneration: 3, isSearching: true))
+        await store.send(.searchFinished("mar", generation: 1, .success([person(1, "Mara")])))
+        await store.send(.searchFinished("mar", generation: 1, .failure(.searchRateLimited)))
+    }
+
+    /// CI saw this: the field read "marc", the server only got "mar", and
+    /// the spinner never stopped. An older keystroke's effect started after
+    /// the newest one's, as a busy main thread allows, and cancelled it.
+    func testAnOlderKeystrokeStartingLateStillSearchesWhatsTyped() async {
+        let clock = TestClock()
+        let searched = LockIsolated<[String]>([])
+        let marcus = person(1, "Marcus")
+        var client = CompetitionClient.testValue
+        client.searchPeople = { query in
+            searched.withValue { $0.append(query) }
+            return [marcus]
+        }
+        let store = TestStore(initialState: Feature.State()) {
+            StartsLate(late: .queryChanged("mar"), lag: .milliseconds(100))
+        } withDependencies: {
+            $0.competitionClient = client
+            $0.continuousClock = clock
+        }
+        store.exhaustivity = .off
+        await store.send(.queryChanged("mar"))
+        await store.send(.queryChanged("marc"))
+        await clock.advance(by: .milliseconds(100) + Feature.searchDebounce)
+        await store.skipReceivedActions()
+        XCTAssertEqual(searched.value, ["marc"])
+        XCTAssertFalse(store.state.isSearching)
+        XCTAssertEqual(store.state.results, [marcus])
     }
 
     func testSearchFailuresReadAsTheirOwnStates() async {
@@ -134,26 +217,32 @@ final class FriendsFeatureTests: XCTestCase {
         }
         await store.send(.queryChanged("abc")) {
             $0.query = "abc"
+            $0.searchGeneration = 1
             $0.isSearching = true
         }
-        await store.receive(.searchFinished("abc", .failure(.searchRateLimited))) {
+        await store.receive(.searchDebounced("abc", generation: 1))
+        await store.receive(.searchFinished("abc", generation: 1, .failure(.searchRateLimited))) {
             $0.isSearching = false
             $0.searchFailure = .rateLimited
         }
         await store.send(.queryChanged("abcd")) {
             $0.query = "abcd"
+            $0.searchGeneration = 2
             $0.isSearching = true
             $0.searchFailure = nil
         }
-        await store.receive(.searchFinished("abcd", .failure(.invalidQuery))) {
+        await store.receive(.searchDebounced("abcd", generation: 2))
+        await store.receive(.searchFinished("abcd", generation: 2, .failure(.invalidQuery))) {
             $0.isSearching = false
             $0.results = []
         }
         await store.send(.queryChanged("abcde")) {
             $0.query = "abcde"
+            $0.searchGeneration = 3
             $0.isSearching = true
         }
-        await store.receive(.searchFinished("abcde", .failure(.retryableTransport))) {
+        await store.receive(.searchDebounced("abcde", generation: 3))
+        await store.receive(.searchFinished("abcde", generation: 3, .failure(.retryableTransport))) {
             $0.isSearching = false
             $0.results = nil
             $0.searchFailure = .connection
@@ -329,9 +418,13 @@ final class FriendsFeatureTests: XCTestCase {
             }
             client.listFriends = { FriendsList() }
         }
-        await store.send(.blockTapped(dev)) { $0.inFlight = [dev.id] }
+        await store.send(.blockTapped(dev)) {
+            $0.inFlight = [dev.id]
+            $0.safetyInFlight = [dev.id]
+        }
         await store.receive(.blockFinished(dev, .success(AuthenticatedProfile(id: dev.id, displayName: "Dev")))) {
             $0.inFlight = []
+            $0.safetyInFlight = []
             $0.people[dev.id] = devNone
             $0.list = FriendsList()
             $0.results = []
@@ -351,9 +444,13 @@ final class FriendsFeatureTests: XCTestCase {
                 client.blockProfile = { _ in throw error }
                 client.listFriends = { FriendsList(friends: [dev]) }
             }
-            await store.send(.blockTapped(dev)) { $0.inFlight = [dev.id] }
+            await store.send(.blockTapped(dev)) {
+                $0.inFlight = [dev.id]
+                $0.safetyInFlight = [dev.id]
+            }
             await store.receive(.blockFinished(dev, .failure(error))) {
                 $0.inFlight = []
+                $0.safetyInFlight = []
                 $0.failure = Feature.PersonFailure(id: dev.id, failure: expected)
             }
             await store.receive(.requested)
@@ -369,9 +466,13 @@ final class FriendsFeatureTests: XCTestCase {
         let store = makeStore(.init(list: FriendsList(friends: [dev]))) { client in
             client.reportProfile = { _ in calls.withValue { $0.append("report") } }
         }
-        await store.send(.reportTapped(dev, andBlock: false)) { $0.inFlight = [dev.id] }
+        await store.send(.reportTapped(dev, andBlock: false)) {
+            $0.inFlight = [dev.id]
+            $0.safetyInFlight = [dev.id]
+        }
         await store.receive(.reportFinished(dev, andBlock: false, failure: nil)) {
             $0.inFlight = []
+            $0.safetyInFlight = []
             $0.reported = [dev.id]
         }
         XCTAssertEqual(calls.value, ["report"])
@@ -391,14 +492,22 @@ final class FriendsFeatureTests: XCTestCase {
             }
             client.listFriends = { FriendsList() }
         }
-        await store.send(.reportTapped(dev, andBlock: true)) { $0.inFlight = [dev.id] }
+        await store.send(.reportTapped(dev, andBlock: true)) {
+            $0.inFlight = [dev.id]
+            $0.safetyInFlight = [dev.id]
+        }
         await store.receive(.reportFinished(dev, andBlock: true, failure: nil)) {
             $0.inFlight = []
+            $0.safetyInFlight = []
             $0.reported = [dev.id]
         }
-        await store.receive(.blockTapped(dev)) { $0.inFlight = [dev.id] }
+        await store.receive(.blockTapped(dev)) {
+            $0.inFlight = [dev.id]
+            $0.safetyInFlight = [dev.id]
+        }
         await store.receive(.blockFinished(dev, .success(profile))) {
             $0.inFlight = []
+            $0.safetyInFlight = []
             $0.people[dev.id] = devNone
             $0.list = FriendsList()
         }
@@ -413,11 +522,217 @@ final class FriendsFeatureTests: XCTestCase {
             client.reportProfile = { _ in throw CompetitionRemoteFailure.retryableTransport }
             // blockProfile stays unimplemented: a call would fail the test.
         }
-        await store.send(.reportTapped(dev, andBlock: true)) { $0.inFlight = [dev.id] }
+        await store.send(.reportTapped(dev, andBlock: true)) {
+            $0.inFlight = [dev.id]
+            $0.safetyInFlight = [dev.id]
+        }
         await store.receive(.reportFinished(dev, andBlock: true, failure: .retryableTransport)) {
             $0.inFlight = []
+            $0.safetyInFlight = []
             $0.failure = Feature.PersonFailure(id: dev.id, failure: .connection)
         }
+    }
+
+    // The server applies each call a second before its answer arrives, so
+    // closing Friends in between is the case that loses a receipt.
+    private func makeSlowSafetyStore(
+        _ dev: FriendPerson,
+        clock: TestClock<Duration>,
+        calls: LockIsolated<[String]>,
+        reportFails: Bool = false,
+        blockFailures: Int = 0
+    ) -> TestStoreOf<Feature> {
+        let blockFailuresLeft = LockIsolated<Int>(blockFailures)
+        let isBlocked = LockIsolated<Bool>(false)
+        return makeStore(.init(list: FriendsList(friends: [dev])), clock: clock) { client in
+            client.reportProfile = { _ in
+                if !reportFails { calls.withValue { $0.append("report") } }
+                try await clock.sleep(for: .seconds(1))
+                if reportFails { throw CompetitionRemoteFailure.retryableTransport }
+            }
+            client.blockProfile = { id in
+                let fails: Bool = blockFailuresLeft.withValue { left in
+                    defer { left -= 1 }
+                    return left > 0
+                }
+                if !fails {
+                    calls.withValue { $0.append("block") }
+                    isBlocked.setValue(true)
+                }
+                try await clock.sleep(for: .seconds(1))
+                if fails { throw CompetitionRemoteFailure.retryableTransport }
+                return AuthenticatedProfile(id: id, displayName: dev.displayName)
+            }
+            client.listFriends = {
+                isBlocked.value ? FriendsList() : FriendsList(friends: [dev])
+            }
+        }
+    }
+
+    func testClosingDuringReportAndBlockStillReportsThenBlocks() async {
+        let clock = TestClock()
+        let dev = person(1, "Dev", .friend)
+        var devNone = dev
+        devNone.relationship = .none
+        let profile = AuthenticatedProfile(id: dev.id, displayName: "Dev")
+        let calls = LockIsolated<[String]>([])
+        let store = makeSlowSafetyStore(dev, clock: clock, calls: calls)
+        await store.send(.reportTapped(dev, andBlock: true)) {
+            $0.inFlight = [dev.id]
+            $0.safetyInFlight = [dev.id]
+        }
+        // Closing keeps the report's in-flight mark and its effect.
+        await store.send(.closed)
+        await clock.advance(by: .seconds(1))
+        await store.receive(.reportFinished(dev, andBlock: true, failure: nil)) {
+            $0.inFlight = []
+            $0.safetyInFlight = []
+            $0.reported = [dev.id]
+        }
+        await store.receive(.blockTapped(dev)) {
+            $0.inFlight = [dev.id]
+            $0.safetyInFlight = [dev.id]
+        }
+        await clock.advance(by: .seconds(1))
+        await store.receive(.blockFinished(dev, .success(profile))) {
+            $0.inFlight = []
+            $0.safetyInFlight = []
+            $0.people[dev.id] = devNone
+            $0.list = FriendsList()
+        }
+        await store.receive(.requested)
+        await store.receive(.loaded(FriendsList()))
+        XCTAssertEqual(calls.value, ["report", "block"])
+    }
+
+    func testClosingDuringABlockKeepsItsAnswer() async {
+        let clock = TestClock()
+        let dev = person(1, "Dev", .friend)
+        var devNone = dev
+        devNone.relationship = .none
+        let profile = AuthenticatedProfile(id: dev.id, displayName: "Dev")
+        let calls = LockIsolated<[String]>([])
+        let store = makeSlowSafetyStore(dev, clock: clock, calls: calls)
+        await store.send(.blockTapped(dev)) {
+            $0.inFlight = [dev.id]
+            $0.safetyInFlight = [dev.id]
+        }
+        await store.send(.closed)
+        await clock.advance(by: .seconds(1))
+        await store.receive(.blockFinished(dev, .success(profile))) {
+            $0.inFlight = []
+            $0.safetyInFlight = []
+            $0.people[dev.id] = devNone
+            $0.list = FriendsList()
+        }
+        await store.receive(.requested)
+        await store.receive(.loaded(FriendsList()))
+        XCTAssertEqual(calls.value, ["block"])
+    }
+
+    func testReportSavedThenBlockFailsKeepsTheReportAndBlockCanBeRetried() async {
+        let clock = TestClock()
+        let dev = person(1, "Dev", .friend)
+        var devNone = dev
+        devNone.relationship = .none
+        let profile = AuthenticatedProfile(id: dev.id, displayName: "Dev")
+        let calls = LockIsolated<[String]>([])
+        let store = makeSlowSafetyStore(dev, clock: clock, calls: calls, blockFailures: 1)
+        await store.send(.reportTapped(dev, andBlock: true)) {
+            $0.inFlight = [dev.id]
+            $0.safetyInFlight = [dev.id]
+        }
+        await store.send(.closed)
+        await clock.advance(by: .seconds(1))
+        await store.receive(.reportFinished(dev, andBlock: true, failure: nil)) {
+            $0.inFlight = []
+            $0.safetyInFlight = []
+            $0.reported = [dev.id]
+        }
+        await store.receive(.blockTapped(dev)) {
+            $0.inFlight = [dev.id]
+            $0.safetyInFlight = [dev.id]
+        }
+        await clock.advance(by: .seconds(1))
+        await store.receive(.blockFinished(dev, .failure(.retryableTransport))) {
+            $0.inFlight = []
+            $0.safetyInFlight = []
+            $0.failure = Feature.PersonFailure(id: dev.id, failure: .connection)
+        }
+        // Still a friend, still reported.
+        await store.receive(.requested)
+        await store.receive(.loaded(FriendsList(friends: [dev]))) {
+            $0.people = [dev.id: dev]
+        }
+
+        await store.send(.blockTapped(dev)) {
+            $0.inFlight = [dev.id]
+            $0.safetyInFlight = [dev.id]
+            $0.failure = nil
+        }
+        await clock.advance(by: .seconds(1))
+        await store.receive(.blockFinished(dev, .success(profile))) {
+            $0.inFlight = []
+            $0.safetyInFlight = []
+            $0.people[dev.id] = devNone
+            $0.list = FriendsList()
+        }
+        await store.receive(.requested)
+        await store.receive(.loaded(FriendsList()))
+        XCTAssertEqual(calls.value, ["report", "block"])
+    }
+
+    func testAReportThatFailsAfterClosingNeverBlocks() async {
+        let clock = TestClock()
+        let dev = person(1, "Dev", .friend)
+        let calls = LockIsolated<[String]>([])
+        let store = makeSlowSafetyStore(dev, clock: clock, calls: calls, reportFails: true)
+        await store.send(.reportTapped(dev, andBlock: true)) {
+            $0.inFlight = [dev.id]
+            $0.safetyInFlight = [dev.id]
+        }
+        await store.send(.closed)
+        await clock.advance(by: .seconds(1))
+        await store.receive(.reportFinished(dev, andBlock: true, failure: .retryableTransport)) {
+            $0.inFlight = []
+            $0.safetyInFlight = []
+            $0.failure = Feature.PersonFailure(id: dev.id, failure: .connection)
+        }
+        await clock.run()
+        XCTAssertEqual(calls.value, [])
+    }
+
+    func testAFailedBlockAsksTheServerWhoIsBlocked() async {
+        let dev = person(1, "Dev", .friend)
+        let profile = AuthenticatedProfile(id: dev.id, displayName: "Dev")
+        var initial = CompetitionFeature.State()
+        initial.friends = Feature.State(list: FriendsList(friends: [dev]))
+        initial.blockedPeople = []
+        let store = TestStore(initialState: initial) { CompetitionFeature() } withDependencies: {
+            $0.competitionClient = CompetitionClient.testValue
+            // The block landed; only its answer was lost.
+            $0.competitionClient.blockProfile = { _ in throw CompetitionRemoteFailure.retryableTransport }
+            $0.competitionClient.loadBlockedProfiles = { [profile] }
+            $0.competitionClient.listFriends = { FriendsList() }
+        }
+        store.exhaustivity = .off(showSkippedAssertions: false)
+        await store.send(.friends(.blockTapped(dev)))
+        await store.receive(.blockedPeopleResponse([profile])) {
+            $0.blockedPeople = [profile]
+        }
+        await store.finish()
+    }
+
+    func testTheMenuOffersCancelRequestAlwaysAndAddFriendOnlyOncePlayed() {
+        typealias Menu = PersonFriendMenuItems
+        XCTAssertEqual(Menu.requestItem(.requested, hasPlayed: false), .cancel)
+        XCTAssertEqual(Menu.requestItem(.requested, hasPlayed: true), .cancel)
+        XCTAssertEqual(Menu.requestItem(FriendRelationship.none, hasPlayed: true), .add)
+        XCTAssertNil(Menu.requestItem(FriendRelationship.none, hasPlayed: false))
+        XCTAssertNil(Menu.requestItem(.friend, hasPlayed: true))
+        XCTAssertNil(Menu.requestItem(.incoming, hasPlayed: true))
+        // Before the list loads, neither.
+        XCTAssertNil(Menu.requestItem(nil, hasPlayed: true))
     }
 
     func testSearchPeopleFromTheChallengeSheetFocusesTheFieldOnce() async {
@@ -525,6 +840,7 @@ final class FriendsFeatureTests: XCTestCase {
         }
         await store.send(.queryChanged("mar")) {
             $0.query = "mar"
+            $0.searchGeneration = 1
             $0.isSearching = true
         }
         await store.send(.changeTapped(marcus, .add)) { $0.inFlight = [marcus.id] }
@@ -558,6 +874,23 @@ final class FriendsFeatureTests: XCTestCase {
         }
         await store.send(.stop) {
             $0.friends = Feature.State()
+        }
+    }
+}
+
+/// Friends, with the effect of one action starting only after the clock
+/// moves `lag`.
+private struct StartsLate: Reducer {
+    let late: FriendsFeature.Action
+    let lag: Duration
+    @Dependency(\.continuousClock) var clock
+
+    var body: some ReducerOf<FriendsFeature> {
+        Reduce { state, action in
+            let effect: Effect<FriendsFeature.Action> = FriendsFeature().reduce(into: &state, action: action)
+            guard action == late else { return effect }
+            let wait: Effect<FriendsFeature.Action> = .run { [clock, lag] _ in try? await clock.sleep(for: lag) }
+            return .concatenate(wait, effect)
         }
     }
 }
