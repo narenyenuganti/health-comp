@@ -629,6 +629,70 @@ final class RemoteGroupMatchClientTests: XCTestCase {
         XCTAssertEqual(second.map(\.clientRevision), [4, 5, 6, 7], "day 2 goes out as 7")
     }
 
+    /// Re-review 1: through the production App Attest wrapper, a group
+    /// submission stuck on the network holds the key's gate. A duel upload
+    /// waiting behind it still goes out within the group deadline.
+    func testAGroupSubmissionHeldInAppAttestYieldsToADuelWithinItsDeadline() async throws {
+        let setup = try await AppAttestSetup(test: self, groupDeadline: .seconds(1))
+        await fulfillment(of: [setup.groupHeld], timeout: 10)
+        let duels = Task { await setup.runtime.synchronizeAll() }
+        await fulfillment(of: [setup.duelSent], timeout: 10)
+        _ = await duels.value
+        await setup.runtime.stop()
+        let groupEntry = try await setup.harness.outbox.entries().first { $0.payload.competitionID == doublesID }
+        guard case .pending? = groupEntry?.state else {
+            return XCTFail("the timed-out group upload waits for a retry: \(String(describing: groupEntry?.state))")
+        }
+    }
+
+    /// Re-review 1: the runtime stops while a group submission holds the gate
+    /// and a duel upload waits behind it. Stopping cancels the group first,
+    /// so it never waits on the stuck network call.
+    func testStoppingWhileAGroupSubmissionHoldsAppAttestNeverHangs() async throws {
+        let setup = try await AppAttestSetup(test: self, groupDeadline: .seconds(3_600))
+        await fulfillment(of: [setup.groupHeld], timeout: 10)
+        let duels = Task { await setup.runtime.synchronizeAll() }
+        try await Task.sleep(for: .milliseconds(300))
+        let stopped = expectation(description: "the runtime stops")
+        Task {
+            await setup.runtime.stop()
+            stopped.fulfill()
+        }
+        await fulfillment(of: [stopped], timeout: 10)
+        _ = await duels.value
+        // Stopping may cancel the duel upload too; only the stop must finish.
+        setup.duelSent.fulfill()
+        await fulfillment(of: [setup.duelSent], timeout: 0)
+    }
+
+    /// Re-review note 2: the server accepted revision 4 but the response was
+    /// lost. After a relaunch the unchanged request goes again, the server
+    /// answers duplicate with the original points, and the owner row returns.
+    func testAnAcceptedUploadWhoseResponseWasLostIsRecoveredAfterARelaunch() async throws {
+        let harness = try Harness()
+        let server = try FakeGroupServer(fixture: fixture(), matchID: doublesID, viewer: viewer)
+        await server.loseResponse(to: 4)
+        let clock = TestClock(dayThreeNoon)
+        _ = await harness.sync(
+            api: server.api(), environment: try health(startDay: (2026, 11, 8), days: 1), now: { clock.now }
+        ).run()
+        let lost = try await harness.outbox.entries()
+        XCTAssertEqual(lost.map(\.payload.competitionID), [doublesID], "revision 4 is still queued")
+
+        let relaunched = try Harness(root: harness.root)
+        clock.now = dayThreeNoon.addingTimeInterval(60)
+        _ = await relaunched.sync(
+            api: server.api(), environment: try health(startDay: (2026, 11, 8), days: 1), now: { clock.now }
+        ).run()
+        let accepted = await server.acceptedRequests()
+        XCTAssertEqual(accepted.map(\.clientRevision), [4, 5, 6], "no new revision for a reading already accepted")
+        let document = await relaunched.store.owner(doublesID)
+        XCTAssertEqual(document?.accepted.map(\.clientRevision), [4, 5, 6])
+        XCTAssertEqual(document?.accepted.first?.acceptedCentiPoints, 23_333)
+        let outbox = try await relaunched.outbox.entries()
+        XCTAssertEqual(outbox, [])
+    }
+
     /// Non-blocking 7: the list still shows revision 10 for day 7 after this
     /// device saw 11 accepted. Nothing is attested over the stale heads, not
     /// even best-available after the deadline.
@@ -699,8 +763,9 @@ final class RemoteGroupMatchClientTests: XCTestCase {
         let events: JSONCompetitionEventStore
         let viewer = UUID(uuidString: "69e5d45f-d72b-2738-b230-1af2557f7b92")!
 
-        init() throws {
-            root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+        /// A fresh directory, or `root` again as after a relaunch.
+        init(root existing: URL? = nil) throws {
+            root = existing ?? FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
             let noProtection = JSONCompetitionEventStoreFileProtection { _, _ in }
             for name in ["outbox", "events"] {
                 try FileManager.default.createDirectory(
@@ -941,7 +1006,8 @@ private actor FakeGroupServer {
     private var failsAppends = false
     private var failingRevisions: Set<Int64> = []
     private var firstAppend: (@Sendable () async -> Void)?
-    private var acceptedDigests: [Int64: (digest: String, sequence: Int64)] = [:]
+    private var acceptedDigests: [Int64: (digest: String, sequence: Int64, points: Int?)] = [:]
+    private var lostResponses: Set<Int64> = []
     private let viewer: UUID
     private(set) var log: [String] = []
     private(set) var attempts: [CompetitionScoreRevisionRequest] = []
@@ -974,6 +1040,8 @@ private actor FakeGroupServer {
     /// Another device's upload moved the participant's high-water.
     func setHighWater(_ value: Int64) { highWater = value }
     func setFailingRevisions(_ value: Set<Int64>) { failingRevisions = value }
+    /// The server accepts this revision but the response never arrives.
+    func loseResponse(to revision: Int64) { lostResponses.insert(revision) }
     func onFirstAppend(_ action: @escaping @Sendable () async -> Void) { firstAppend = action }
     func clearLog() { log = [] }
     func attemptedRequests() -> [CompetitionScoreRevisionRequest] { attempts }
@@ -1015,7 +1083,7 @@ private actor FakeGroupServer {
                 return try .rejected(.divergentDuplicate, cursor: sequence)
             }
             return try CompetitionScoreRevisionResponse(
-                disposition: .duplicate, rejectionCode: nil, acceptedCentiPoints: nil,
+                disposition: .duplicate, rejectionCode: nil, acceptedCentiPoints: prior.points,
                 wireContentSHA256: prior.digest, acceptedServerSequence: prior.sequence, competitionCursor: sequence
             )
         }
@@ -1048,7 +1116,8 @@ private actor FakeGroupServer {
             "received_at": stamp,
         ])
         highWater = max(highWater, request.clientRevision)
-        acceptedDigests[request.clientRevision] = (request.wireContentSHA256, sequence)
+        acceptedDigests[request.clientRevision] = (request.wireContentSHA256, sequence, points)
+        if lostResponses.remove(request.clientRevision) != nil { throw CompetitionRemoteFailure.retryableTransport }
         return try CompetitionScoreRevisionResponse(
             disposition: .appended, rejectionCode: nil, acceptedCentiPoints: points,
             wireContentSHA256: request.wireContentSHA256, acceptedServerSequence: sequence, competitionCursor: sequence
@@ -1084,4 +1153,139 @@ private extension CompetitionScoreRevisionResponse {
             wireContentSHA256: nil, acceptedServerSequence: nil, competitionCursor: cursor
         )
     }
+}
+
+/// A runtime behind the production App Attest wrapper, with a group upload
+/// queued ahead of a duel upload. The group's submit hangs until cancelled,
+/// as a stuck URLSession request does.
+private struct AppAttestSetup {
+    let harness: RemoteGroupMatchClientTestsHarnessBox
+    let runtime: RemoteCompetitionRuntime
+    let groupHeld: XCTestExpectation
+    let duelSent: XCTestExpectation
+
+    init(test: XCTestCase, groupDeadline: Duration) async throws {
+        let box = try RemoteGroupMatchClientTestsHarnessBox()
+        let viewer = box.viewer
+        let groupID = UUID(uuidString: "3656997c-2f73-47b5-ba2c-8288f5a7ecfe")!
+        let duelID = UUID()
+        _ = try await box.store.allocateRevision(groupID, atLeast: 3)
+        _ = try await box.outbox.enqueue(
+            .scoreRevision(try appAttestTestRequest(competitionID: groupID, viewer: viewer, group: true)),
+            enqueuedAt: Date()
+        )
+        _ = try await box.outbox.enqueue(
+            .scoreRevision(try appAttestTestRequest(competitionID: duelID, viewer: viewer, group: false)),
+            enqueuedAt: Date()
+        )
+        let groupHeld = test.expectation(description: "the group submission is on the network")
+        groupHeld.assertForOverFulfill = false
+        let duelSent = test.expectation(description: "the duel upload goes out")
+        duelSent.assertForOverFulfill = false
+        var raw = groupTestAPI(
+            listGroupMatches: { throw CompetitionRemoteFailure.retryableTransport },
+            competitionExists: { _ in true }
+        )
+        let challenges = ChallengeCounter()
+        raw.issueAppAttestChallenge = { _ in
+            let ordinal = await challenges.next()
+            return try CompetitionAppAttestChallenge(
+                challengeID: UUID(), challenge: Data(repeating: UInt8(ordinal % 255), count: 32),
+                expiresAt: Date().addingTimeInterval(300), proofKind: ordinal == 1 ? .attestation : .assertion
+            )
+        }
+        raw.submitAttestedScoreRevision = { envelope in
+            if envelope.score.competitionID == groupID {
+                groupHeld.fulfill()
+                do {
+                    while true { try await Task.sleep(for: .milliseconds(20)) }
+                } catch {
+                    throw CompetitionRemoteFailure.cancelled
+                }
+            }
+            duelSent.fulfill()
+            return try CompetitionScoreRevisionResponse(
+                disposition: .rejected, rejectionCode: .revisionRegression, acceptedCentiPoints: nil,
+                wireContentSHA256: nil, acceptedServerSequence: nil, competitionCursor: 1
+            )
+        }
+        let paths = AuthenticatedProfileStoragePaths(profileID: viewer, rootDirectory: box.root.appendingPathComponent("profile"))
+        for directory in paths.fixedDirectories {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        }
+        let api = try await ProfileScopedAppAttestRemoteAPI.make(
+            profileID: viewer,
+            paths: paths,
+            installationStore: CompetitionInstallationStateStore(directory: paths.installationsDirectory),
+            remoteAPI: raw,
+            service: GroupAppAttestService(),
+            groupDeadline: groupDeadline
+        )
+        runtime = RemoteCompetitionRuntime(
+            profileID: viewer, store: box.events, remoteAPI: api,
+            outboxStore: box.outbox, groupMatchStore: box.store
+        )
+        harness = box
+        self.groupHeld = groupHeld
+        self.duelSent = duelSent
+        // The group drain takes the gate first.
+        _ = await runtime.synchronizeGroupMatches()
+    }
+}
+
+/// The stores the App Attest tests share (the test class's Harness is private to it).
+private struct RemoteGroupMatchClientTestsHarnessBox {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
+    let viewer = UUID(uuidString: "69e5d45f-d72b-2738-b230-1af2557f7b92")!
+    let store: GroupMatchStore
+    let outbox: JSONCompetitionOutboxStore
+    let events: JSONCompetitionEventStore
+
+    init() throws {
+        let noProtection = JSONCompetitionEventStoreFileProtection { _, _ in }
+        for name in ["outbox", "events"] {
+            try FileManager.default.createDirectory(at: root.appendingPathComponent(name), withIntermediateDirectories: true)
+        }
+        store = GroupMatchStore(directory: root.appendingPathComponent("GroupMatches"), profileID: viewer)
+        outbox = JSONCompetitionOutboxStore(rootDirectory: root.appendingPathComponent("outbox"), fileProtection: noProtection)
+        events = JSONCompetitionEventStore(
+            rootDirectory: root.appendingPathComponent("events"), faultInjector: .none, fileProtection: noProtection
+        )
+    }
+}
+
+private func appAttestTestRequest(
+    competitionID: UUID, viewer: UUID, group: Bool
+) throws -> CompetitionScoreRevisionRequest {
+    let wire = try RemoteScoreRevisionWireV1(
+        competitionID: competitionID, participantID: viewer, dayOrdinal: 1,
+        moveMode: "activeEnergyKilocalories", standMode: "standHours",
+        moveBasisPoints: 10_000, exerciseBasisPoints: 5_000, standBasisPoints: 3_000,
+        availabilityReason: "available", scoringPolicyIdentity: RemoteScoringWireV1.policyIdentity,
+        clientRevision: 4
+    )
+    return try CompetitionScoreRevisionRequest(
+        competitionID: competitionID,
+        semanticEventID: group ? RemoteGroupMatchSync.semanticEventID(wireContentSHA256: wire.wireContentSHA256) : UUID(),
+        dayOrdinal: 1, clientRevision: 4, evaluatedAt: Date(),
+        moveMode: wire.moveMode, standMode: wire.standMode,
+        moveBasisPoints: wire.moveBasisPoints, exerciseBasisPoints: wire.exerciseBasisPoints,
+        standBasisPoints: wire.standBasisPoints, availabilityReason: wire.availabilityReason,
+        scoringPolicyIdentity: wire.scoringPolicyIdentity, wireContentSHA256: wire.wireContentSHA256
+    )
+}
+
+private actor ChallengeCounter {
+    private var count = 0
+    func next() -> Int {
+        count += 1
+        return count
+    }
+}
+
+private actor GroupAppAttestService: AppAttestServiceProtocol {
+    func isSupported() -> Bool { true }
+    func generateKey() -> String { Data(repeating: 0x52, count: 32).base64EncodedString() }
+    func attestKey(_ keyID: String, clientDataHash: Data) -> Data { Data("attestation".utf8) }
+    func generateAssertion(_ keyID: String, clientDataHash: Data) -> Data { Data("assertion".utf8) }
 }

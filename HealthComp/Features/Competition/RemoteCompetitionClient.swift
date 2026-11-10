@@ -293,9 +293,13 @@ enum ProfileScopedAppAttestRemoteAPI {
         paths: AuthenticatedProfileStoragePaths,
         installationStore: CompetitionInstallationStateStore,
         remoteAPI: CompetitionRemoteAPI,
-        service: any AppAttestServiceProtocol
+        service: any AppAttestServiceProtocol,
+        groupDeadline: Duration = .seconds(20)
     ) async throws -> CompetitionRemoteAPI {
         let installationState = try await installationStore.loadOrCreate()
+        let isGroup: @Sendable (CompetitionScoreRevisionRequest) -> Bool = {
+            $0.semanticEventID == RemoteGroupMatchSync.semanticEventID(wireContentSHA256: $0.wireContentSHA256)
+        }
         let appAttest = AppAttestClient.live(
             profileID: profileID,
             installationID: installationState.installationID,
@@ -305,11 +309,47 @@ enum ProfileScopedAppAttestRemoteAPI {
                 directory: paths.appAttestDirectory
             ),
             issueChallenge: remoteAPI.issueAppAttestChallenge,
-            submit: remoteAPI.submitAttestedScoreRevision
+            submit: remoteAPI.submitAttestedScoreRevision,
+            yields: isGroup
         )
         var wrapped = remoteAPI
-        wrapped.appendScoreRevision = appAttest.appendScoreRevision
+        // Duels and groups share the key's one-at-a-time gate. A group upload
+        // yields to a waiting duel and holds the gate for at most
+        // `groupDeadline`: then its network legs are cancelled and the outbox
+        // retries it later.
+        wrapped.appendScoreRevision = { request in
+            guard isGroup(request) else { return try await appAttest.appendScoreRevision(request) }
+            return try await bounded(groupDeadline) { try await appAttest.appendScoreRevision(request) }
+        }
         return wrapped
+    }
+
+    /// Cancels `operation` at `deadline`; a timed-out call throws
+    /// `retryableTransport`. Apple's proof generation can't be cancelled, so
+    /// a call inside it ends when that returns.
+    static func bounded<Value: Sendable>(
+        _ deadline: Duration,
+        _ operation: @escaping @Sendable () async throws -> Value
+    ) async throws -> Value {
+        let task = Task { try await operation() }
+        let timer = Task { () -> Bool in
+            guard (try? await Task.sleep(for: deadline)) != nil else { return false }
+            task.cancel()
+            return true
+        }
+        do {
+            let value = try await withTaskCancellationHandler {
+                try await task.value
+            } onCancel: {
+                task.cancel()
+            }
+            timer.cancel()
+            return value
+        } catch {
+            timer.cancel()
+            if await timer.value { throw CompetitionRemoteFailure.retryableTransport }
+            throw error
+        }
     }
 }
 
