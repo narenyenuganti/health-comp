@@ -283,9 +283,13 @@ final class RemoteCompetitionFeatureTests: XCTestCase {
         let store = TestStore(initialState: initial) { CompetitionFeature() } withDependencies: {
             $0.competitionClient = client
         }
-        await store.send(.friends(.blockTapped(dev))) { $0.friends.inFlight = [dev.id] }
+        await store.send(.friends(.blockTapped(dev))) {
+            $0.friends.inFlight = [dev.id]
+            $0.friends.safetyInFlight = [dev.id]
+        }
         await store.receive(.friends(.blockFinished(dev, .success(profile)))) {
             $0.friends.inFlight = []
+            $0.friends.safetyInFlight = []
             $0.friends.people = [dev.id: devNone]
             $0.friends.list = FriendsList()
             $0.blockedPeople = [profile, earlier]

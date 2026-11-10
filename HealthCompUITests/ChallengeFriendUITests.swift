@@ -332,7 +332,9 @@ final class ChallengeFriendUITests: XCTestCase {
                     openSheet()
                     let share = app.buttons["competition.create.share-own-link"]
                     XCTAssertTrue(share.waitForExistence(timeout: 5))
-                    scrollTo(share)
+                    // Swipes, not scrollTo: at ax5 the share row never
+                    // reported hittable, though the sheet scrolls to it.
+                    for _ in 0..<4 { app.swipeUp() }
                     shot("sheet-friends-\(suffix)-bottom")
                     try audit("sheet bottom \(suffix)")
                 }
