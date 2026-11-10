@@ -1569,13 +1569,14 @@ extension RemoteGroupMatchClientTests {
         XCTAssertEqual(sent.count, 3)
         let current: [String: Any] = [
             "installation_id": installationID.uuidString.lowercased(), "apns_token": String(repeating: "a1", count: 32),
-            "environment": "sandbox", "supports_challenges": true, "supports_reactions": true, "muted_push_kinds": [String](),
+            "environment": "sandbox", "supports_challenges": true, "supports_reactions": true,
+            "supports_friends": true, "muted_push_kinds": [String](),
         ]
         XCTAssertEqual(sent[0].body as NSDictionary, current.merging(["supports_group_matches": true]) { $1 } as NSDictionary)
         XCTAssertEqual(sent[1].body as NSDictionary, sent[0].body as NSDictionary)
         XCTAssertEqual(sent[2].body as NSDictionary, current as NSDictionary, "a server without the group overload")
 
-        // Gate off (Release until group matches ship): never advertised.
+        // Gate off: never advertised.
         let off = StubTransport([.response(200, active)])
         _ = try await SupabaseCompetitionRemoteAPI.make(transport: off.transport, supportsGroupMatches: false)
             .registerInstallation(request)
