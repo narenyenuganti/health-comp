@@ -7,11 +7,17 @@ import Foundation
 struct GroupMatchDraft: Hashable, Sendable {
     enum Seat: Hashable, Sendable {
         case person(profileID: UUID, team: Int?)
+        /// Someone named by their personal challenge link; the server resolves it.
+        case challengeLink(CompetitionChallengeLinkCode, team: Int?)
         case bot(BotMode, team: Int?)
     }
 
     let format: GroupMatchFormat
     let seats: [Seat]
+}
+
+extension CompetitionChallengeLinkCode: Hashable {
+    func hash(into hasher: inout Hasher) { hasher.combine(rawValue) }
 }
 
 /// Everything a person can ask of a group match.

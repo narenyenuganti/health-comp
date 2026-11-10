@@ -14,6 +14,9 @@ enum GroupMatchLabSetup: String, CaseIterable, Sendable {
     case lobbyInvitee = "lobby-invitee"
     case lobbyExpired = "lobby-expired"
     case lobbyShortInvitee = "lobby-short-invitee"
+    case lobbyScheduled = "lobby-scheduled"
+    case lobbyScheduledInvitee = "lobby-scheduled-invitee"
+    case lobbyWithdrew = "lobby-withdrew"
     case inviteFFA = "invite-ffa"
     case versusFFA = "versus-ffa"
     case versusDoubles = "versus-doubles"
@@ -54,12 +57,30 @@ enum GroupMatchFixtures {
     }
 
     static let shareLink = URL(string: "https://invites.ui.healthcomp.test/c/Gm4tR8vX2pL6kN3wB9cY5z")!
+    /// Maya's challenge link finds her; this one belongs to someone you can't add.
+    static let mayaLink = "Mx7kQ2pL9vR4tN8wB3cY6z"
+    static let unavailableLink = "Ux0aB1cD2eF3gH4iJ5kL6m"
+
+    /// Takes a second, so the lookup shows that it's working.
+    static let lookUpLink: @Sendable (CompetitionChallengeLinkCode) async -> GroupMatchLinkLookup = { code in
+        try? await Task.sleep(for: .seconds(1))
+        switch code.rawValue {
+        case mayaLink: return .found(name: "Maya")
+        case unavailableLink: return .unavailable
+        default: return .notFound
+        }
+    }
 
     private static let now = MultiUserCompetitionTestLabFixtures.labNow
     private static let zone = "America/Los_Angeles"
     private static let schedule = CompetitionSchedule(
         calendar: try! CompetitionCalendar(timeZoneIdentifier: zone),
         startDay: try! CompetitionDay(era: 1, year: 2026, month: 8, day: 13, timeZoneIdentifier: zone)
+    )
+    /// Everyone accepted today, so Day 1 is Monday.
+    private static let tomorrow = CompetitionSchedule(
+        calendar: try! CompetitionCalendar(timeZoneIdentifier: zone),
+        startDay: try! CompetitionDay(era: 1, year: 2026, month: 8, day: 17, timeZoneIdentifier: zone)
     )
 
     private static let fourDays: [Player: [Int]] = [
@@ -129,6 +150,10 @@ enum GroupMatchFixtures {
                 15, .fourWay, .declined(at: now, direction: .incoming), [.sam, .you, .priya, .leo],
                 invites: [.leo: .declined]
             )
+        case .lobbyScheduled: match(16, .fourWay, .scheduled, ffaLineup, schedule: tomorrow)
+        case .lobbyScheduledInvitee: match(17, .fourWay, .scheduled, [.sam, .you, .priya, .leo], schedule: tomorrow)
+        case .lobbyWithdrew:
+            match(18, .fourWay, .declined(at: now, direction: .outgoing), ffaLineup, invites: [.sam: .withdrew])
         case .liveFFA: match(4, .fourWay, live, ffaLineup, scores: fourDays)
         case .liveDoubles: doubles(5, live, scores: fourDays)
         case .liveBot: match(6, .fourWay, live, [.you, .sam, .erratic, .leo], scores: fourDays)
@@ -189,7 +214,8 @@ enum GroupMatchFixtures {
         invites: [Player: GroupMatchInviteState] = [:],
         teams: [Player: Int] = [:],
         scores: [Player: [Int]] = [:],
-        isFrozen: Bool = false
+        isFrozen: Bool = false,
+        schedule: CompetitionSchedule = Self.schedule
     ) -> GroupMatchPresentation {
         let seats = lineup.enumerated().map { index, player in
             GroupMatchSeat(
@@ -302,7 +328,8 @@ struct GroupMatchTestLabView: View {
                 store: group,
                 people: [GroupMatchFixtures.Player.priya, .leo].map(GroupMatchFixtures.player),
                 lineup: GroupMatchLineup(format: .fourWay, entries: [.person(GroupMatchFixtures.player(.sam))]),
-                opensAt: [.lineup]
+                opensAt: [.lineup],
+                lookUpLink: GroupMatchFixtures.lookUpLink
             )
         case .lineupDoubles:
             GroupMatchCreateView(
@@ -311,7 +338,8 @@ struct GroupMatchTestLabView: View {
                 lineup: GroupMatchLineup(
                     format: .doubles, entries: [GroupMatchFixtures.Player.priya, .sam].map { .person(GroupMatchFixtures.player($0)) }
                 ),
-                opensAt: [.lineup]
+                opensAt: [.lineup],
+                lookUpLink: GroupMatchFixtures.lookUpLink
             )
         case .botPicker:
             GroupMatchCreateView(
@@ -330,7 +358,8 @@ struct GroupMatchTestLabView: View {
         case .day:
             GroupMatchFixtures.routed(.liveFFA).map { GroupMatchDayView(match: $0, ordinal: 3) }
         case .history: ScrollView { GroupMatchRecord() }
-        case .lobbyHost, .lobbyDeclined, .lobbyInvitee, .lobbyExpired, .lobbyShortInvitee, .inviteFFA, .liveFFA, .liveDoubles, .liveBot, .banter,
+        case .lobbyHost, .lobbyDeclined, .lobbyInvitee, .lobbyExpired, .lobbyShortInvitee,
+             .lobbyScheduled, .lobbyScheduledInvitee, .lobbyWithdrew, .inviteFFA, .liveFFA, .liveDoubles, .liveBot, .banter,
              .resultFFAWon, .resultFFATied, .resultDoubles:
             MainTabView(store: store)
         }

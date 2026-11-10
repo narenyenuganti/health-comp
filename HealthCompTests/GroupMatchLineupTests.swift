@@ -37,6 +37,36 @@ final class GroupMatchLineupTests: XCTestCase {
         ]))
     }
 
+    func testAPastedLinkCountsAsAPersonAndSendsItsCode() throws {
+        let code = try XCTUnwrap(CompetitionChallengeLinkCode(rawValue: "Mx7kQ2pL9vR4tN8wB3cY6z"))
+        var lineup = GroupMatchLineup(format: .threeWay, entries: [.bot(.chill)])
+        XCTAssertFalse(lineup.canCreate)
+        lineup.add(.linked(code, name: "Maya"), team: nil)
+        XCTAssertTrue(lineup.canCreate)
+        XCTAssertEqual(lineup.draft, GroupMatchDraft(format: .threeWay, seats: [
+            .bot(.chill, team: nil), .challengeLink(code, team: nil),
+        ]))
+    }
+
+    func testAScheduledMatchStaysInTheLobbyUntilDayOne() throws {
+        func threeWay(_ lifecycle: LocalCompetitionLifecyclePresentation) throws -> GroupMatchPresentation {
+            let you = UUID()
+            return try GroupMatchPresentation(
+                id: CompetitionID(UUID()),
+                lifecycle: lifecycle,
+                format: .threeWay,
+                seats: [
+                    GroupMatchSeat(id: you, number: 1, name: "You", occupant: .person(profileID: UUID(), invite: .accepted)),
+                    GroupMatchSeat(id: UUID(), number: 2, name: "Sam", occupant: .person(profileID: sam.profileID, invite: .accepted)),
+                    GroupMatchSeat(id: UUID(), number: 3, name: "Chill", occupant: .bot(.chill)),
+                ],
+                viewerSeatID: you
+            )
+        }
+        XCTAssertEqual(try threeWay(.scheduled).screen, .lobby)
+        XCTAssertEqual(try threeWay(.active(dayOrdinal: 1)).screen, .liveFreeForAll)
+    }
+
     func testANewMatchKeepsTheSameSetupAndYourPartnerFirst() throws {
         let you = UUID(), them = UUID(), partner = UUID(), bot = UUID()
         let match = try GroupMatchPresentation(

@@ -43,6 +43,44 @@ final class GroupMatchJoinUITests: XCTestCase {
         shot(app, "Lobby-invitee")
     }
 
+    func testScheduledLobbyKeepsCancelAndWithdrawUntilDayOne() {
+        var app = XCUIApplication.launchGroupLab("lobby-scheduled")
+        let cancel = app.buttons["competition.group.lobby.cancel"]
+        XCTAssertTrue(cancel.waitForExistence(timeout: 8))
+        let status = app.groupElement("competition.group.lobby.status").label.uppercased()
+        XCTAssertTrue(status.hasPrefix("EVERYONE’S IN"), status)
+        XCTAssertTrue(status.contains("STARTS MON, AUG 17"), status)
+        XCTAssertEqual(app.groupElement("competition.group.lobby.seat.3").label, "Priya, In")
+        XCTAssertEqual(app.groupElement("competition.group.lobby.seat.4").label, "Leo, In")
+        XCTAssertFalse(app.buttons["competition.group.lobby.share"].exists)
+        XCTAssertFalse(app.buttons["competition.group.lobby.withdraw"].exists)
+        XCTAssertFalse(app.groupElement("competition.group.standings").exists, "Live views wait for Day 1.")
+        shot(app, "Lobby-scheduled-host")
+        cancel.tap()
+        XCTAssertTrue(app.staticTexts["Cancel this match?"].waitForExistence(timeout: 4))
+        app.terminate()
+
+        app = XCUIApplication.launchGroupLab("lobby-scheduled-invitee")
+        let withdraw = app.buttons["competition.group.lobby.withdraw"]
+        XCTAssertTrue(withdraw.waitForExistence(timeout: 8))
+        XCTAssertFalse(app.buttons["competition.group.lobby.cancel"].exists)
+        XCTAssertTrue(app.staticTexts["Until Day 1, you can still withdraw."].exists)
+        shot(app, "Lobby-scheduled-invitee")
+        withdraw.tap()
+        XCTAssertTrue(app.staticTexts["Withdraw from this match?"].waitForExistence(timeout: 4))
+    }
+
+    func testWithdrawalNamesWhoWithdrew() {
+        let app = XCUIApplication.launchGroupLab("lobby-withdrew")
+        XCTAssertTrue(app.staticTexts["One seat short"].waitForExistence(timeout: 8))
+        XCTAssertEqual(app.groupElement("competition.group.lobby.seat.2").label, "Sam, Withdrew")
+        XCTAssertEqual(app.groupElement("competition.group.lobby.seat.4").label, "Leo, In")
+        let detail = app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "Sam withdrew, so this match didn’t start."))
+        XCTAssertTrue(detail.firstMatch.exists)
+        XCTAssertTrue(app.buttons["competition.group.lobby.new-match"].exists)
+        shot(app, "LobbyShort-withdrew")
+    }
+
     func testDidNotStartOffersTheHostANewMatch() {
         let app = XCUIApplication.launchGroupLab("lobby-expired")
         XCTAssertTrue(app.staticTexts["One seat short"].waitForExistence(timeout: 8))

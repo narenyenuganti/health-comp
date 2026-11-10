@@ -1,7 +1,8 @@
 import ComposableArchitecture
 import SwiftUI
 
-/// Waiting for every seat to accept, or closed because someone didn't.
+/// Waiting for every seat to accept, everyone in before Day 1, or closed
+/// because someone didn't accept or withdrew.
 struct GroupMatchLobbyView: View {
     let match: GroupMatchPresentation
     let store: StoreOf<GroupMatchFeature>
@@ -14,7 +15,10 @@ struct GroupMatchLobbyView: View {
 
     var body: some View {
         Group {
-            if case .pending = match.lifecycle { waiting } else { closed }
+            switch match.lifecycle {
+            case .pending, .scheduled: waiting
+            default: closed
+            }
         }
         .navigationTitle(match.format.title)
         .navigationBarTitleDisplayMode(.inline)
@@ -62,7 +66,9 @@ struct GroupMatchLobbyView: View {
                     .foregroundStyle(Theme.ink)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityAddTraits(.isHeader)
-                Text("Starts once every seat has accepted.")
+                Text(isScheduled
+                    ? isHost ? "Until Day 1, you can still cancel." : "Until Day 1, you can still withdraw."
+                    : "Starts once every seat has accepted.")
                     .foregroundStyle(Theme.secondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -76,7 +82,10 @@ struct GroupMatchLobbyView: View {
         } actions: {
             failure
             if isHost {
-                if let link = store.shareLinks[match.id] {
+                // Once everyone is in, there's no one left to share it with.
+                if isScheduled {
+                    EmptyView()
+                } else if let link = store.shareLinks[match.id] {
                     ShareLink(item: link, subject: Text("Join my HealthComp match")) {
                         Text("Share Match Link")
                     }
@@ -95,12 +104,27 @@ struct GroupMatchLobbyView: View {
         }
     }
 
+    private var isScheduled: Bool {
+        if case .scheduled = match.lifecycle { true } else { false }
+    }
+
+    /// Day 1 as the match's own calendar has it.
+    private var startDay: String? {
+        guard let schedule = match.schedule,
+              let start = try? schedule.calendar.startOfDay(schedule.startDay),
+              let zone = TimeZone(identifier: schedule.calendar.timeZoneIdentifier)
+        else { return nil }
+        return competitionDayText(start, weekday: true, includesYear: false, locale: locale, timeZone: zone)
+    }
+
     @ViewBuilder
     private var waitingLabels: some View {
         let waitingFor = match.seats.filter { $0.invite == .invited }.count
-        Text("Waiting for \(waitingFor)")
+        Text(isScheduled ? "Everyone’s in" : "Waiting for \(waitingFor)")
         Spacer(minLength: 12)
-        if case let .pending(_, createdAt, expiresAt?) = match.lifecycle {
+        if isScheduled, let startDay {
+            Text("Starts \(startDay)")
+        } else if case let .pending(_, createdAt, expiresAt?) = match.lifecycle {
             // An invite lasts days, so its creation is close enough to now for the format.
             Text("Answer by \(competitionMomentText(expiresAt, now: createdAt, locale: locale, timeZone: timeZone))")
         }
@@ -162,22 +186,28 @@ struct GroupMatchLobbyView: View {
         if case .cancelled = match.lifecycle { true } else { false }
     }
 
+    private var withdrew: [GroupMatchSeat] {
+        match.seats.filter { $0.invite == .withdrew }
+    }
+
+    /// Whoever closed it: the person who withdrew, or everyone who didn't accept.
     private var missing: [GroupMatchSeat] {
-        match.seats.filter { $0.invite != nil && $0.invite != .accepted }
+        withdrew.isEmpty ? match.seats.filter { $0.invite != nil && $0.invite != .accepted } : withdrew
     }
 
     private var closedTitle: String {
         guard !isCancelled else { return "Match cancelled" }
-        let count = ["One", "Two", "Three"][max(0, min(missing.count, 3) - 1)]
-        return "\(count) \(missing.count == 1 ? "seat" : "seats") short"
+        guard (1...3).contains(missing.count) else { return "Match closed" }
+        return ["One seat", "Two seats", "Three seats"][missing.count - 1] + " short"
     }
 
     private var closedDetail: String {
         if isCancelled {
             return isHost ? "You cancelled this match." : "\(match.seats.first(where: { $0.number == 1 })?.name ?? "The host") cancelled this match."
         }
+        guard !missing.isEmpty else { return "This match didn’t start." }
         let names = missing.map { match.name(of: .seat($0.id)) }.formatted(.list(type: .and))
-        let sentence = "\(names) didn’t accept, so this match didn’t start."
+        let sentence = "\(names) \(withdrew.isEmpty ? "didn’t accept" : "withdrew"), so this match didn’t start."
         guard isHost else { return sentence }
         return missing.count == 1
             ? "\(sentence) Create a new one with a different player, a bot in that seat, or another format."
@@ -382,6 +412,7 @@ struct GroupMatchLineupPanels: View {
         case nil: return "In"
         case .accepted?: return isInvite && seat.number == 1 ? "Host" : "In"
         case .declined?: return "Declined"
+        case .withdrew?: return "Withdrew"
         case .invited?:
             if isInvite && seat.id == match.viewerSeatID { return "Your seat" }
             if case .pending = match.lifecycle { return "Invited" }

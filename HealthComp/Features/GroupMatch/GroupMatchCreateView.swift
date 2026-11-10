@@ -12,13 +12,20 @@ struct GroupMatchPlayer: Hashable, Sendable {
 struct GroupMatchLineup: Equatable {
     enum Entry: Hashable {
         case person(GroupMatchPlayer)
+        /// Named by their personal challenge link, never an open seat.
+        case linked(CompetitionChallengeLinkCode, name: String)
         case bot(BotMode)
 
         var name: String {
             switch self {
             case let .person(player): player.name
+            case let .linked(_, name): name
             case let .bot(mode): mode.name
             }
+        }
+
+        var isPerson: Bool {
+            if case .bot = self { false } else { true }
         }
     }
 
@@ -67,13 +74,14 @@ struct GroupMatchLineup: Equatable {
     var filledCount: Int { seats.compactMap { $0 }.count }
 
     var canCreate: Bool {
-        !seats.contains(nil) && seats.contains { if case .person? = $0 { true } else { false } }
+        !seats.contains(nil) && seats.contains { $0?.isPerson == true }
     }
 
     var draft: GroupMatchDraft {
         GroupMatchDraft(format: format, seats: seats.indices.compactMap { index in
             switch seats[index] {
             case let .person(player)?: .person(profileID: player.profileID, team: team(ofSeat: index))
+            case let .linked(code, _)?: .challengeLink(code, team: team(ofSeat: index))
             case let .bot(mode)?: .bot(mode, team: team(ofSeat: index))
             case nil: nil
             }
@@ -111,10 +119,16 @@ struct GroupMatchLineup: Equatable {
     }
 }
 
+/// What a pasted challenge link turned out to be.
+enum GroupMatchLinkLookup: Equatable, Sendable {
+    case idle, resolving, invalid, notFound, unavailable
+    case found(name: String)
+}
+
 /// New Match: pick a format, fill the seats, add bots, send.
 struct GroupMatchCreateView: View {
     enum Step: Hashable {
-        case lineup, bots
+        case lineup, bots, link
     }
 
     let store: StoreOf<GroupMatchFeature>
@@ -122,6 +136,8 @@ struct GroupMatchCreateView: View {
     let people: [GroupMatchPlayer]
     /// Duel keeps today's challenge sheet.
     let onDuel: () -> Void
+    // ponytail: fixtures only; the commands work wires the server lookup.
+    let lookUpLink: @Sendable (CompetitionChallengeLinkCode) async -> GroupMatchLinkLookup
     private let prefilled: [GroupMatchPlayer]
 
     @Environment(\.dismiss) private var dismiss
@@ -135,17 +151,23 @@ struct GroupMatchCreateView: View {
     @State private var pendingEntry: GroupMatchLineup.Entry?
     @State private var asksTeam = false
     @State private var sent: GroupMatchCommand?
+    @State private var linkText = ""
+    /// The code being looked up or found; nil once the text changes.
+    @State private var linkCode: CompetitionChallengeLinkCode?
+    @State private var link: GroupMatchLinkLookup = .idle
 
     init(
         store: StoreOf<GroupMatchFeature>,
         people: [GroupMatchPlayer] = [],
         lineup: GroupMatchLineup? = nil,
         opensAt path: [Step] = [],
-        onDuel: @escaping () -> Void = {}
+        onDuel: @escaping () -> Void = {},
+        lookUpLink: @escaping @Sendable (CompetitionChallengeLinkCode) async -> GroupMatchLinkLookup = { _ in .unavailable }
     ) {
         self.store = store
         self.people = people
         self.onDuel = onDuel
+        self.lookUpLink = lookUpLink
         var prefilled: [GroupMatchPlayer] = []
         for case let .person(player)? in lineup?.seats ?? [] { prefilled.append(player) }
         self.prefilled = prefilled
@@ -161,6 +183,7 @@ struct GroupMatchCreateView: View {
                     switch step {
                     case .lineup: lineupScreen
                     case .bots: botScreen
+                    case .link: linkScreen
                     }
                 }
         }
@@ -282,6 +305,23 @@ struct GroupMatchCreateView: View {
                 .buttonStyle(.plain)
                 .disabled(lineup.openTeams.isEmpty)
                 .accessibilityIdentifier("competition.group.add-bot")
+                CompetitionRowDivider(inset: 0)
+                NavigationLink(value: Step.link) {
+                    HStack(spacing: 12) {
+                        Text("Paste a challenge link")
+                            .foregroundStyle(Theme.ink)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                        Image(systemName: "chevron.right")
+                            .font(.footnote.weight(.semibold))
+                            .foregroundStyle(Theme.tertiary)
+                            .accessibilityHidden(true)
+                    }
+                    .frame(minHeight: 56)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .disabled(lineup.openTeams.isEmpty)
+                .accessibilityIdentifier("competition.group.paste-link")
             }
             if let hint {
                 Text(hint)
@@ -334,6 +374,8 @@ struct GroupMatchCreateView: View {
                         name: player.name, photo: player.profileID,
                         kind: lineup.team(ofSeat: index) == 1 ? .partner : .them
                     ) { EmptyView() }
+                case let .linked(_, name)?:
+                    GroupMatchSeatRow(name: name, kind: lineup.team(ofSeat: index) == 1 ? .partner : .them) { EmptyView() }
                 case let .bot(mode)?:
                     GroupMatchSeatRow(name: mode.name, kind: .bot) { EmptyView() }
                 case nil:
@@ -345,6 +387,8 @@ struct GroupMatchCreateView: View {
             if entry != nil || lineup.canRemoveSeat(index) {
                 Button("Remove") {
                     lineup.remove(seat: index)
+                    // Back keeps the three-way this made.
+                    selection = lineup.format
                 }
                 .font(.subheadline.weight(.semibold))
                 .foregroundStyle(Theme.secondary)
@@ -386,7 +430,89 @@ struct GroupMatchCreateView: View {
 
     private func place(_ entry: GroupMatchLineup.Entry, team: Int?) {
         lineup.add(entry, team: team)
-        if path.last == .bots { path.removeLast() }
+        if path.last == .bots || path.last == .link { path.removeLast() }
+    }
+
+    // MARK: Challenge link
+
+    private var linkScreen: some View {
+        GroupMatchPage {
+            GroupMatchHeading("Their challenge link", detail: "Paste the link they shared. It adds them, and only them.")
+            // Return looks it up rather than adding a line.
+            TextField("Challenge link", text: Binding(get: { linkText }, set: { text in
+                let clean = text.filter { !$0.isNewline }
+                if clean != linkText {
+                    linkText = clean
+                    link = .idle
+                    linkCode = nil
+                }
+                if text.contains(where: \.isNewline) { findLink() }
+            }), axis: .vertical)
+                .textInputAutocapitalization(.never)
+                .autocorrectionDisabled()
+                .font(.body.monospaced())
+                .lineLimit(3, reservesSpace: true)
+                .submitLabel(.search)
+                .padding(12)
+                .background(Theme.control, in: RoundedRectangle(cornerRadius: 10))
+                .accessibilityIdentifier("competition.group.link.field")
+            if case let .found(name) = link {
+                GroupMatchPanel {
+                    GroupMatchSeatRow(name: name) {
+                        Text("Found").font(.subheadline).foregroundStyle(Theme.secondary)
+                    }
+                    .accessibilityElement(children: .combine)
+                    .accessibilityIdentifier("competition.group.link.found")
+                }
+            } else if let message = linkMessage {
+                Text(message)
+                    .font(.subheadline)
+                    .foregroundStyle(Theme.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("competition.group.link.message")
+            }
+        } actions: {
+            if case let .found(name) = link, let linkCode {
+                Button("Add \(name)") { add(.linked(linkCode, name: name)) }
+                    .buttonStyle(PrimaryButtonStyle())
+                    .disabled(lineup.openTeams.isEmpty || lineup.seats.contains { if case .linked(linkCode, _)? = $0 { true } else { false } })
+                    .accessibilityIdentifier("competition.group.link.add")
+            } else {
+                Button(action: findLink) {
+                    BusyLabel("Find", isBusy: link == .resolving)
+                }
+                .buttonStyle(PrimaryButtonStyle())
+                .disabled(link == .resolving || linkText.trimmingCharacters(in: .whitespaces).isEmpty)
+                .accessibilityIdentifier("competition.group.link.find")
+            }
+        }
+        .onAppear { linkText = ""; link = .idle; linkCode = nil }
+        .navigationTitle("Challenge Link")
+        .navigationBarTitleDisplayMode(.inline)
+    }
+
+    private var linkMessage: String? {
+        switch link {
+        case .invalid: "That isn’t a full challenge link. Ask them to share it again."
+        case .notFound: "No account has this link. Check it and try again."
+        case .unavailable: "You can’t add this person to a match."
+        case .idle, .resolving, .found: nil
+        }
+    }
+
+    private func findLink() {
+        guard link != .resolving else { return }
+        guard let code = CompetitionFeature.challengeLinkCode(in: linkText.trimmingCharacters(in: .whitespaces)) else {
+            link = .invalid
+            return
+        }
+        linkCode = code
+        link = .resolving
+        Task {
+            let result = await lookUpLink(code)
+            // Edited meanwhile: that answer is for a different link.
+            if linkCode == code, link == .resolving { link = result }
+        }
     }
 
     // MARK: Bots
