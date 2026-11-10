@@ -1,19 +1,13 @@
 import SwiftUI
+import UIKit
 
 /// Picks or changes the name friends find you by.
 struct UsernameSheet: View {
     let friends: AccountFriendSettings
 
-    /// Here rather than a store binding: a filtered character doesn't change
-    /// the store's value, so the field would keep showing it.
-    @State private var text: String
-    @FocusState private var isFocused: Bool
+    /// Bumped to put the caret in the field.
+    @State private var focusRequest = 0
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-
-    init(friends: AccountFriendSettings) {
-        self.friends = friends
-        _text = State(initialValue: friends.state.sheet?.draft ?? "")
-    }
 
     private var sheet: FriendSettingsFeature.UsernameSheet {
         friends.state.sheet ?? .init()
@@ -65,37 +59,12 @@ struct UsernameSheet: View {
         .interactiveDismissDisabled(sheet.isSaving)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("account.username.sheet")
-        .onAppear { isFocused = true }
+        .onAppear { focusRequest += 1 }
         // Disabling the field while saving drops its focus; a failed save
         // leaves you typing again.
         .onChange(of: sheet.isSaving) { _, isSaving in
-            if !isSaving { isFocused = true }
+            if !isSaving { focusRequest += 1 }
         }
-        // Takes a filtered character back out of the field; the store
-        // already heard the name without it from `textBinding`.
-        .onChange(of: text) { _, newValue in
-            let sanitized = FriendSettings.sanitizedUsername(newValue)
-            if sanitized != newValue { text = sanitized }
-        }
-    }
-
-    /// Every edit reaches the store from here, not from
-    /// `onChange(of: text)`: on a busy iPhone SwiftUI can skip that onChange
-    /// for the last keystroke of a quick burst, so the store checked and
-    /// saved a shorter name than the field showed. The send waits for the
-    /// next main-queue turn, in order, so the field's own update happens
-    /// just as it does with `$text`.
-    private var textBinding: Binding<String> {
-        Binding(
-            get: { text },
-            set: { newValue in
-                text = newValue
-                let send = friends.send
-                DispatchQueue.main.async {
-                    send(.usernameChanged(FriendSettings.sanitizedUsername(newValue)))
-                }
-            }
-        )
     }
 
     private var field: some View {
@@ -103,15 +72,13 @@ struct UsernameSheet: View {
             Text(verbatim: "@")
                 .foregroundStyle(Theme.secondary)
                 .accessibilityHidden(true)
-            TextField("Username", text: textBinding, prompt: Text(verbatim: ""))
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .keyboardType(.asciiCapable)
-                .submitLabel(.continue)
-                .focused($isFocused)
-                .disabled(sheet.isSaving)
-                .onSubmit { friends.send(.usernameContinueTapped) }
-                .accessibilityIdentifier("account.username.field")
+            UsernameField(
+                initialText: sheet.draft,
+                isEnabled: !sheet.isSaving,
+                focusRequest: focusRequest,
+                changed: { friends.send(.usernameChanged($0)) },
+                submitted: { friends.send(.usernameContinueTapped) }
+            )
             if isAvailable {
                 Image(systemName: "checkmark")
                     .fontWeight(.bold)
@@ -164,6 +131,111 @@ struct UsernameSheet: View {
                 .buttonStyle(QuietButtonStyle())
                 .disabled(sheet.isSaving)
                 .accessibilityIdentifier("account.username.not-now")
+        }
+    }
+}
+
+/// UIKit's text field, filtered before an edit lands, so it never shows a
+/// character the name can't have. SwiftUI's `TextField` shows the keystroke
+/// first and relies on a later redraw to take it out, and on a busy iPhone
+/// that redraw (and the onChange that told the store) can be skipped: the
+/// field showed `betaalice!`, or a longer name than the one being checked
+/// and saved. The field owns the text; the store hears every change from it.
+private struct UsernameField: UIViewRepresentable {
+    /// Only read when the field is made: nothing else edits the name.
+    let initialText: String
+    let isEnabled: Bool
+    let focusRequest: Int
+    let changed: (String) -> Void
+    let submitted: () -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeUIView(context: Context) -> FocusingField {
+        let field = FocusingField()
+        field.text = initialText
+        field.font = .preferredFont(forTextStyle: .body)
+        field.adjustsFontForContentSizeCategory = true
+        field.textColor = Theme.inkUI
+        field.tintColor = Theme.inkUI
+        field.autocapitalizationType = .none
+        field.autocorrectionType = .no
+        field.spellCheckingType = .no
+        field.smartQuotesType = .no
+        field.smartDashesType = .no
+        field.smartInsertDeleteType = .no
+        field.keyboardType = .asciiCapable
+        field.returnKeyType = .continue
+        field.accessibilityLabel = "Username"
+        field.accessibilityIdentifier = "account.username.field"
+        field.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        field.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        field.delegate = context.coordinator
+        field.addTarget(context.coordinator, action: #selector(Coordinator.editingChanged), for: .editingChanged)
+        return field
+    }
+
+    func updateUIView(_ field: FocusingField, context: Context) {
+        context.coordinator.parent = self
+        field.isEnabled = isEnabled
+        if focusRequest != context.coordinator.focusRequest {
+            context.coordinator.focusRequest = focusRequest
+            field.focusWhenShown()
+        }
+    }
+
+    final class FocusingField: UITextField {
+        private var wantsFocus = false
+
+        /// Waits for a window: the sheet asks before it's on screen.
+        func focusWhenShown() {
+            wantsFocus = true
+            DispatchQueue.main.async { self.focusIfShown() }
+        }
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            focusIfShown()
+        }
+
+        private func focusIfShown() {
+            guard wantsFocus, window != nil, isEnabled else { return }
+            wantsFocus = !becomeFirstResponder()
+        }
+    }
+
+    final class Coordinator: NSObject, UITextFieldDelegate {
+        var parent: UsernameField?
+        var focusRequest = 0
+
+        func textField(
+            _ field: UITextField,
+            shouldChangeCharactersIn range: NSRange,
+            replacementString string: String
+        ) -> Bool {
+            let current = field.text ?? ""
+            guard let bounds = Range(range, in: current) else { return false }
+            let proposed = current.replacingCharacters(in: bounds, with: string)
+            let filtered = FriendSettings.sanitizedUsername(proposed)
+            // UIKit applies a clean edit itself and reports it in `editingChanged`.
+            guard filtered != proposed else { return true }
+            guard filtered != current else { return false }
+            let kept = FriendSettings.sanitizedUsername(String(current[..<bounds.lowerBound]) + string).count
+            field.text = filtered
+            if let caret = field.position(from: field.beginningOfDocument, offset: min(kept, filtered.count)) {
+                field.selectedTextRange = field.textRange(from: caret, to: caret)
+            }
+            parent?.changed(filtered)
+            return false
+        }
+
+        @objc func editingChanged(_ field: UITextField) {
+            parent?.changed(field.text ?? "")
+        }
+
+        func textFieldShouldReturn(_ field: UITextField) -> Bool {
+            parent?.submitted()
+            return false
         }
     }
 }

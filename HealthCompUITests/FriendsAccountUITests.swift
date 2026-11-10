@@ -48,6 +48,12 @@ final class FriendsAccountUITests: XCTestCase {
         XCTAssertEqual(field.value as? String, "betaalice")
         waitForStatus("Available")
         XCTAssertTrue(continueButton.isEnabled)
+
+        // A filtered last keystroke never shows, so the field always holds
+        // the name that will be saved, with no wait for a redraw.
+        field.typeText("!")
+        XCTAssertEqual(fieldValue, "betaalice", shown)
+        XCTAssertEqual(status.label, "Available", shown)
         continueButton.tap()
 
         XCTAssertTrue(field.waitForNonExistence(timeout: 5), shown)
