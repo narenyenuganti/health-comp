@@ -1152,3 +1152,61 @@ extension GroupMatchReadModel {
         )
     }
 }
+
+// MARK: - Commands
+
+/// A group match RPC as the server takes it.
+enum GroupMatchRemoteCommand: Equatable, Sendable {
+    /// Seat 1 is the creator; `draft` holds everyone else in seat order.
+    case create(creator: UUID, GroupMatchDraft, timeZoneIdentifier: String, idempotencyKey: UUID)
+    /// Decline before accepting, or withdraw after (both before the start).
+    case accept(UUID), decline(UUID), cancel(UUID), leave(UUID)
+    case nudge(UUID, recipient: UUID)
+    /// Nil removes your reaction to that person's day.
+    case react(UUID, target: UUID, ordinal: Int, CompetitionReactionKind?)
+
+    /// The RPC name and its JSON parameters.
+    func rpc() throws -> (name: String, parameters: [String: Any]) {
+        func id(_ value: UUID) -> String { value.uuidString.lowercased() }
+        switch self {
+        case let .create(creator, draft, zone, key):
+            let format = switch draft.format {
+            case .threeWay: "three_way"
+            case .fourWay: "four_way"
+            case .doubles: "doubles"
+            }
+            var seats: [[String: Any]] = [["kind": "human", "profile_id": id(creator)]]
+            if draft.format == .doubles { seats[0]["team_number"] = 1 }
+            for seat in draft.seats {
+                var entry: [String: Any]
+                let team: Int?
+                switch seat {
+                case let .person(profileID, seatTeam):
+                    entry = ["kind": "human", "profile_id": id(profileID)]
+                    team = seatTeam
+                case let .bot(mode, seatTeam):
+                    entry = ["kind": "bot", "bot_mode": mode.rawValue]
+                    team = seatTeam
+                }
+                if let team { entry["team_number"] = team }
+                seats.append(entry)
+            }
+            guard seats.count == draft.format.seatCount else { throw CompetitionRemoteFailure.serverContractMismatch }
+            return ("create_group_match", [
+                "format": format, "seats": seats, "time_zone_identifier": zone,
+                "creation_idempotency_key": id(key),
+            ])
+        case let .accept(match): return ("accept_group_match", ["competition_id": id(match)])
+        case let .decline(match): return ("decline_group_match", ["competition_id": id(match)])
+        case let .cancel(match): return ("cancel_group_match", ["competition_id": id(match)])
+        case let .leave(match): return ("leave_group_match", ["competition_id": id(match)])
+        case let .nudge(match, recipient):
+            return ("nudge_competition_participant", ["competition_id": id(match), "recipient_profile_id": id(recipient)])
+        case let .react(match, target, ordinal, kind):
+            return ("set_competition_reaction", [
+                "competition_id": id(match), "day_ordinal": ordinal,
+                "reaction": kind?.rawValue ?? NSNull(), "target_profile_id": id(target),
+            ])
+        }
+    }
+}
