@@ -608,7 +608,7 @@ Deno.test("successful APNs post resolves durable work without leaking identifier
   assertEquals(calls, [
     {
       name: "lease_competition_notification_work",
-      args: { batch_size: 10, lease_seconds: 180 },
+      args: { batch_size: 10, lease_seconds: 180, supports_friends: true },
     },
     {
       name: "resolve_competition_notification_work",
@@ -850,4 +850,83 @@ Deno.test("control characters in semantic IDs fail closed before APNs", async ()
 
   assertEquals(response.status, 502);
   assertEquals(didSend, false);
+});
+
+Deno.test("Friends alerts have only the friends route and generic text", () => {
+  for (
+    const [kind, title] of [
+      ["friend_request", "You have a new friend request."],
+      ["friend_accepted", "Your friend request was accepted."],
+    ] as const
+  ) {
+    assertEquals(
+      competitionNotificationPayload({ competitionId: null, kind }),
+      {
+        aps: { alert: { title }, sound: "default", "thread-id": "friends" },
+        "healthcomp.route.v": 1,
+        "healthcomp.route.kind": "friends",
+      },
+    );
+  }
+});
+
+Deno.test("Friends items require an explicit installation capability and null competition", async () => {
+  for (const kind of ["friend_request", "friend_accepted"] as const) {
+    for (const capability of [true, false, undefined]) {
+      let sends = 0;
+      const friend = {
+        ...item,
+        kind,
+        competitionId: null,
+        ...(capability === undefined ? {} : { supportsFriends: capability }),
+      };
+      const client: NotificationRpcClient = {
+        rpc: (name) =>
+          Promise.resolve({
+            data: name === "lease_competition_notification_work"
+              ? { items: [friend] }
+              : true,
+            error: null,
+          }),
+      };
+      const deps = dependencies(client, () => {
+        sends++;
+        return Promise.resolve(new Response(null, { status: 200 }));
+      });
+      deps.payload = competitionNotificationPayload;
+      const response = await sendCompetitionNotificationHandler(
+        request(),
+        deps,
+      );
+      assertEquals(response.status, capability === true ? 200 : 502);
+      assertEquals(sends, capability === true ? 1 : 0);
+    }
+  }
+});
+
+Deno.test("new sender falls back only for a missing lease overload before migration", async () => {
+  for (const code of ["PGRST202", "42501"]) {
+    const calls: Record<string, unknown>[] = [];
+    const client: NotificationRpcClient = {
+      rpc: (_name, args) => {
+        calls.push(args);
+        return Promise.resolve(
+          calls.length === 1
+            ? { data: null, error: { code, message: "unavailable" } }
+            : {
+              data: calls.length === 2 ? { items: [item] } : true,
+              error: null,
+            },
+        );
+      },
+    };
+    const deps = dependencies(client);
+    deps.payload = competitionNotificationPayload;
+    const response = await sendCompetitionNotificationHandler(request(), deps);
+    assertEquals(response.status, code === "PGRST202" ? 200 : 502);
+    assertEquals(calls.length, code === "PGRST202" ? 3 : 1);
+    if (code === "PGRST202") {
+      assertEquals(calls[1], { batch_size: 25, lease_seconds: 180 });
+    }
+  }
 });

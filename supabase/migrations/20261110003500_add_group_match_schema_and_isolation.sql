@@ -937,8 +937,9 @@ end;
 $$;
 
 create or replace function public.lease_competition_notification_work(
-  batch_size integer default 25,
-  lease_seconds integer default 180
+  batch_size integer,
+  lease_seconds integer,
+  supports_friends boolean
 )
 returns jsonb
 language plpgsql
@@ -947,6 +948,7 @@ set search_path = ''
 as $$
 declare
   input_batch_size alias for batch_size;
+  input_supports_friends alias for supports_friends;
   input_lease_seconds alias for lease_seconds;
   as_of timestamptz := pg_catalog.statement_timestamp();
   result jsonb;
@@ -961,6 +963,10 @@ begin
     raise exception 'invalid_lease_seconds' using errcode = '22023';
   end if;
 
+  if input_supports_friends is null then
+    raise exception 'invalid_friends_capability' using errcode = '22023';
+  end if;
+
   with locked_candidates as materialized (
     select work_row.id,
            work_row.available_at,
@@ -968,6 +974,19 @@ begin
            installation_row.apns_token,
            installation_row.environment,
            case
+             when work_row.kind in ('friend_request', 'friend_accepted')
+               and (source_profile_row.state is distinct from 'active'
+                 or profile_row.state is distinct from 'active'
+                 or private.people_blocked(work_row.source_profile_id, work_row.recipient_profile_id)
+                 or (work_row.kind = 'friend_request' and not exists (
+                   select 1 from private.friend_requests r
+                   where r.sender_profile_id = work_row.source_profile_id
+                     and r.recipient_profile_id = work_row.recipient_profile_id))
+                 or (work_row.kind = 'friend_accepted' and not private.are_friends(
+                   work_row.source_profile_id, work_row.recipient_profile_id)))
+               then 'superseded'
+             when work_row.kind in ('friend_request', 'friend_accepted')
+               and not installation_row.supports_friends then 'discarded'
              when work_row.attempt_count >= 10
                or installation_row.installation_id is null
                or installation_row.state <> 'active'
@@ -986,13 +1005,13 @@ begin
                      or coalesce(competition_row.lifecycle, '') not in
                        ('scheduled', 'active', 'ends_today', 'tallying')))
                then 'discarded'
-             when exists (
+             when (work_row.competition_id is not null and exists (
                select 1
                from private.competition_notification_mutes mute_row
                where mute_row.profile_id = work_row.recipient_profile_id
                  and mute_row.opponent_profile_id
                    = work_row.source_profile_id
-             )
+             ))
                or work_row.kind = any(installation_row.muted_push_kinds)
                then 'suppressed'
              else 'lease'
@@ -1007,7 +1026,8 @@ begin
       on source_profile_row.id = work_row.source_profile_id
     left join public.competitions competition_row
       on competition_row.id = work_row.competition_id
-    where (
+    where (input_supports_friends or work_row.kind not in ('friend_request', 'friend_accepted'))
+      and (
         work_row.state = 'pending'
         or (
           work_row.state = 'leased'
@@ -1027,7 +1047,7 @@ begin
         completed_at = as_of
     from locked_candidates candidate
     where work_row.id = candidate.id
-      and candidate.disposition in ('discarded', 'suppressed')
+      and candidate.disposition in ('discarded', 'suppressed', 'superseded')
     returning work_row.id
   ), candidates as materialized (
     select candidate.id,
@@ -1073,7 +1093,9 @@ begin
           'kind', leased.kind,
           'apnsToken', leased.apns_token,
           'environment', leased.environment
-        ) order by leased.created_at, leased.id
+        ) || case when leased.kind in ('friend_request', 'friend_accepted')
+          then '{"supportsFriends":true}'::jsonb else '{}'::jsonb end
+        order by leased.created_at, leased.id
       ),
       '[]'::jsonb
     )
@@ -1147,6 +1169,7 @@ create or replace function public.register_current_device_installation(
   environment text,
   supports_challenges boolean,
   supports_reactions boolean,
+  supports_friends boolean,
   muted_push_kinds text[],
   supports_group_matches boolean
 )
@@ -1162,6 +1185,7 @@ declare
   input_supports_challenges alias for supports_challenges;
   input_supports_reactions alias for supports_reactions;
   input_muted_push_kinds alias for muted_push_kinds;
+  input_supports_friends alias for supports_friends;
   input_supports_group_matches alias for supports_group_matches;
   caller_profile_id uuid;
   token_owner_profile_id uuid;
@@ -1188,9 +1212,11 @@ begin
      or input_environment not in ('sandbox', 'production')
      or input_supports_challenges is null
      or input_supports_reactions is null
+     or input_supports_friends is null
+     or input_supports_group_matches is null
      or input_muted_push_kinds is null
      or not coalesce(
-       input_muted_push_kinds <@ array['nudge', 'reaction']::text[], false
+       input_muted_push_kinds <@ array['nudge', 'reaction', 'friend_request', 'friend_accepted']::text[], false
      ) then
     raise exception 'invalid_installation_request' using errcode = '22023';
   end if;
@@ -1205,15 +1231,14 @@ begin
     raise exception 'installation_unavailable' using errcode = 'P0001';
   end if;
 
-  if input_supports_group_matches is null then raise exception 'invalid_installation_request' using errcode = '22023'; end if;
   begin
     insert into public.device_installations as installation_target (
       profile_id, installation_id, apns_token, environment, state,
-      supports_challenges, supports_reactions, muted_push_kinds, supports_group_matches
+      supports_challenges, supports_reactions, supports_friends, muted_push_kinds, supports_group_matches
     ) values (
       caller_profile_id, input_installation_id, input_apns_token,
       input_environment, 'active', input_supports_challenges,
-      input_supports_reactions, input_muted_push_kinds, input_supports_group_matches
+      input_supports_reactions, input_supports_friends, input_muted_push_kinds, input_supports_group_matches
     )
     on conflict on constraint device_installations_profile_installation_unique
     do update
@@ -1222,8 +1247,9 @@ begin
         state = 'active',
         supports_challenges = excluded.supports_challenges,
         supports_reactions = excluded.supports_reactions,
-        muted_push_kinds = excluded.muted_push_kinds,
+        supports_friends = excluded.supports_friends,
         supports_group_matches = excluded.supports_group_matches,
+        muted_push_kinds = excluded.muted_push_kinds,
         updated_at = pg_catalog.statement_timestamp()
     returning installation_target.installation_id,
               installation_target.environment,
@@ -1242,22 +1268,39 @@ begin
 end;
 $$;
 
+-- Older callers clear the capabilities they cannot advertise.
 create or replace function public.register_current_device_installation(
-  installation_id uuid,
-  apns_token text,
-  environment text,
-  supports_challenges boolean,
-  supports_reactions boolean,
-  muted_push_kinds text[]
+  installation_id uuid, apns_token text, environment text,
+  supports_challenges boolean, supports_reactions boolean, muted_push_kinds text[], supports_group_matches boolean
 )
-returns jsonb
-language plpgsql
-security definer
-set search_path = ''
+returns jsonb language plpgsql security definer set search_path = ''
 as $$ begin
   return public.register_current_device_installation(installation_id, apns_token, environment,
-    supports_challenges, supports_reactions, muted_push_kinds, false);
+    supports_challenges, supports_reactions, false, muted_push_kinds, supports_group_matches);
 end; $$;
+
+create or replace function public.register_current_device_installation(
+  installation_id uuid, apns_token text, environment text,
+  supports_challenges boolean, supports_reactions boolean, supports_friends boolean, muted_push_kinds text[]
+)
+returns jsonb language plpgsql security definer set search_path = ''
+as $$ begin
+  return public.register_current_device_installation(installation_id, apns_token, environment,
+    supports_challenges, supports_reactions, supports_friends, muted_push_kinds, false);
+end; $$;
+
+create or replace function public.register_current_device_installation(
+  installation_id uuid, apns_token text, environment text,
+  supports_challenges boolean, supports_reactions boolean, muted_push_kinds text[]
+)
+returns jsonb language plpgsql security definer set search_path = ''
+as $$ begin
+  return public.register_current_device_installation(installation_id, apns_token, environment,
+    supports_challenges, supports_reactions, false, muted_push_kinds, false);
+end; $$;
+
+revoke all on function public.register_current_device_installation(uuid,text,text,boolean,boolean,boolean,text[],boolean) from public, anon, authenticated, service_role;
+grant execute on function public.register_current_device_installation(uuid,text,text,boolean,boolean,boolean,text[],boolean) to authenticated;
 
 revoke all on function public.register_current_device_installation(uuid,text,text,boolean,boolean,text[],boolean) from public, anon, authenticated, service_role;
 grant execute on function public.register_current_device_installation(uuid,text,text,boolean,boolean,text[],boolean) to authenticated;

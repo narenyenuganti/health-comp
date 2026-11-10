@@ -69,7 +69,7 @@ select columns_are(
 
 select columns_are(
   'public', 'device_installations',
-  array['id', 'profile_id', 'apns_token', 'environment', 'state', 'created_at', 'updated_at', 'installation_id', 'supports_challenges', 'supports_reactions', 'muted_push_kinds', 'supports_group_matches']::name[],
+  array['id', 'profile_id', 'apns_token', 'environment', 'state', 'created_at', 'updated_at', 'installation_id', 'supports_challenges', 'supports_reactions', 'muted_push_kinds', 'supports_friends', 'supports_group_matches']::name[],
   'device installations expose only approved columns'
 );
 
