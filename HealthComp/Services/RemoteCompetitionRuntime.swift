@@ -617,10 +617,12 @@ actor RemoteCompetitionRuntime {
 
     func stop() async {
         isStopped = true
-        // Groups first: cancelling a group upload frees the App Attest gate
-        // a duel upload may be waiting on.
-        await groupSyncCoordinator?.stop()
-        await syncCoordinator?.stop()
+        // Both at once: the two drains share App Attest's one-at-a-time gate,
+        // so whichever holds it must be cancelled for the other to finish.
+        let group = groupSyncCoordinator, duel = syncCoordinator
+        async let groupStopped: Void = { await group?.stop() }()
+        async let duelStopped: Void = { await duel?.stop() }()
+        _ = await (groupStopped, duelStopped)
     }
 
     func commitNotificationDecisions(

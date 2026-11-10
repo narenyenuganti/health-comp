@@ -629,40 +629,49 @@ final class RemoteGroupMatchClientTests: XCTestCase {
         XCTAssertEqual(second.map(\.clientRevision), [4, 5, 6, 7], "day 2 goes out as 7")
     }
 
-    /// Re-review 1: through the production App Attest wrapper, a group
-    /// submission stuck on the network holds the key's gate. A duel upload
-    /// waiting behind it still goes out within the group deadline.
-    func testAGroupSubmissionHeldInAppAttestYieldsToADuelWithinItsDeadline() async throws {
-        let setup = try await AppAttestSetup(test: self, groupDeadline: .seconds(1))
-        await fulfillment(of: [setup.groupHeld], timeout: 10)
+    /// Re-review 1: through the production App Attest wrapper, a group's
+    /// challenge request hangs while a duel upload waits on the key's gate.
+    /// When the group request times out the duel goes out, and every
+    /// challenge issued is used.
+    func testADuelBehindAHeldGroupGoesOutWhenTheGroupRequestTimesOut() async throws {
+        let setup = try await AppAttestSetup(test: self, holds: .group, groupHold: .timesOut(after: .seconds(1)))
+        await fulfillment(of: [setup.held], timeout: 10)
         let duels = Task { await setup.runtime.synchronizeAll() }
         await fulfillment(of: [setup.duelSent], timeout: 10)
         _ = await duels.value
         await setup.runtime.stop()
-        let groupEntry = try await setup.harness.outbox.entries().first { $0.payload.competitionID == doublesID }
-        guard case .pending? = groupEntry?.state else {
-            return XCTFail("the timed-out group upload waits for a retry: \(String(describing: groupEntry?.state))")
-        }
+        let challenges = await setup.server.counts()
+        XCTAssertGreaterThanOrEqual(challenges.issued, 1)
+        XCTAssertEqual(challenges.used, challenges.issued, "no challenge is left unused")
     }
 
-    /// Re-review 1: the runtime stops while a group submission holds the gate
-    /// and a duel upload waits behind it. Stopping cancels the group first,
-    /// so it never waits on the stuck network call.
-    func testStoppingWhileAGroupSubmissionHoldsAppAttestNeverHangs() async throws {
-        let setup = try await AppAttestSetup(test: self, groupDeadline: .seconds(3_600))
-        await fulfillment(of: [setup.groupHeld], timeout: 10)
-        let duels = Task { await setup.runtime.synchronizeAll() }
-        try await Task.sleep(for: .milliseconds(300))
-        let stopped = expectation(description: "the runtime stops")
-        Task {
-            await setup.runtime.stop()
-            stopped.fulfill()
+    /// Re-review 1: stopping with the group holding the gate and the duel
+    /// waiting, and the other way round, finishes; nothing cancelled issues
+    /// a challenge it then abandons.
+    func testStoppingFinishesWhicheverFamilyHoldsAppAttest() async throws {
+        for holder in [AppAttestSetup.Family.group, .duel] {
+            let setup = try await AppAttestSetup(test: self, holds: holder, groupHold: .forever)
+            await fulfillment(of: [setup.held], timeout: 10)
+            let other = Task {
+                if holder == .group {
+                    _ = await setup.runtime.synchronizeAll()
+                } else {
+                    _ = await setup.runtime.synchronizeGroupMatches()
+                }
+            }
+            try await Task.sleep(for: .milliseconds(300))
+            let stopped = expectation(description: "the runtime stops while \(holder) holds the gate")
+            Task {
+                await setup.runtime.stop()
+                stopped.fulfill()
+            }
+            await fulfillment(of: [stopped], timeout: 10)
+            _ = await other.value
+            let challenges = await setup.server.counts()
+            XCTAssertEqual(challenges.issued, 0, "a cancelled upload issues no challenge (\(holder) holds)")
+            setup.duelSent.fulfill()
+            await fulfillment(of: [setup.duelSent], timeout: 0)
         }
-        await fulfillment(of: [stopped], timeout: 10)
-        _ = await duels.value
-        // Stopping may cancel the duel upload too; only the stop must finish.
-        setup.duelSent.fulfill()
-        await fulfillment(of: [setup.duelSent], timeout: 0)
     }
 
     /// Re-review note 2: the server accepted revision 4 but the response was
@@ -1156,15 +1165,19 @@ private extension CompetitionScoreRevisionResponse {
 }
 
 /// A runtime behind the production App Attest wrapper, with a group upload
-/// queued ahead of a duel upload. The group's submit hangs until cancelled,
-/// as a stuck URLSession request does.
+/// and a duel upload queued. The holder's challenge request hangs the way a
+/// stuck URLSession request does: until it times out or is cancelled.
 private struct AppAttestSetup {
+    enum Family: String { case group, duel }
+    enum Hold { case forever, timesOut(after: Duration) }
+
     let harness: RemoteGroupMatchClientTestsHarnessBox
     let runtime: RemoteCompetitionRuntime
-    let groupHeld: XCTestExpectation
+    let server: ChallengeServer
+    let held: XCTestExpectation
     let duelSent: XCTestExpectation
 
-    init(test: XCTestCase, groupDeadline: Duration) async throws {
+    init(test: XCTestCase, holds holder: Family, groupHold: Hold) async throws {
         let box = try RemoteGroupMatchClientTestsHarnessBox()
         let viewer = box.viewer
         let groupID = UUID(uuidString: "3656997c-2f73-47b5-ba2c-8288f5a7ecfe")!
@@ -1178,32 +1191,40 @@ private struct AppAttestSetup {
             .scoreRevision(try appAttestTestRequest(competitionID: duelID, viewer: viewer, group: false)),
             enqueuedAt: Date()
         )
-        let groupHeld = test.expectation(description: "the group submission is on the network")
-        groupHeld.assertForOverFulfill = false
+        let held = test.expectation(description: "the \(holder) request holds the gate")
+        held.assertForOverFulfill = false
         let duelSent = test.expectation(description: "the duel upload goes out")
         duelSent.assertForOverFulfill = false
+        let server = ChallengeServer()
         var raw = groupTestAPI(
             listGroupMatches: { throw CompetitionRemoteFailure.retryableTransport },
             competitionExists: { _ in true }
         )
-        let challenges = ChallengeCounter()
-        raw.issueAppAttestChallenge = { _ in
-            let ordinal = await challenges.next()
-            return try CompetitionAppAttestChallenge(
-                challengeID: UUID(), challenge: Data(repeating: UInt8(ordinal % 255), count: 32),
-                expiresAt: Date().addingTimeInterval(300), proofKind: ordinal == 1 ? .attestation : .assertion
-            )
-        }
-        raw.submitAttestedScoreRevision = { envelope in
-            if envelope.score.competitionID == groupID {
-                groupHeld.fulfill()
+        raw.issueAppAttestChallenge = { request in
+            // The production send refuses a cancelled task before sending.
+            guard !Task.isCancelled else { throw CompetitionRemoteFailure.cancelled }
+            let isHolder = await server.isFirstChallenge()
+            if isHolder {
+                held.fulfill()
+                let limit: Duration? = switch (holder, groupHold) {
+                case (.group, let .timesOut(after: limit)): limit
+                default: nil
+                }
+                let start = ContinuousClock.now
                 do {
-                    while true { try await Task.sleep(for: .milliseconds(20)) }
+                    while limit.map({ ContinuousClock.now - start < $0 }) ?? true {
+                        try await Task.sleep(for: .milliseconds(20))
+                    }
                 } catch {
                     throw CompetitionRemoteFailure.cancelled
                 }
+                throw CompetitionRemoteFailure.retryableTransport
             }
-            duelSent.fulfill()
+            return try await server.issue(request)
+        }
+        raw.submitAttestedScoreRevision = { envelope in
+            await server.submitted(envelope)
+            if envelope.score.competitionID == duelID { duelSent.fulfill() }
             return try CompetitionScoreRevisionResponse(
                 disposition: .rejected, rejectionCode: .revisionRegression, acceptedCentiPoints: nil,
                 wireContentSHA256: nil, acceptedServerSequence: nil, competitionCursor: 1
@@ -1218,18 +1239,53 @@ private struct AppAttestSetup {
             paths: paths,
             installationStore: CompetitionInstallationStateStore(directory: paths.installationsDirectory),
             remoteAPI: raw,
-            service: GroupAppAttestService(),
-            groupDeadline: groupDeadline
+            service: GroupAppAttestService()
         )
         runtime = RemoteCompetitionRuntime(
             profileID: viewer, store: box.events, remoteAPI: api,
             outboxStore: box.outbox, groupMatchStore: box.store
         )
         harness = box
-        self.groupHeld = groupHeld
+        self.server = server
+        self.held = held
         self.duelSent = duelSent
-        // The group drain takes the gate first.
-        _ = await runtime.synchronizeGroupMatches()
+        // The holder's drain takes the gate first.
+        if holder == .group {
+            _ = await runtime.synchronizeGroupMatches()
+        } else {
+            let runtime = runtime
+            Task { _ = await runtime.synchronizeAll() }
+        }
+    }
+}
+
+/// Challenges the fake server issued, and which of them a proof used.
+private actor ChallengeServer {
+    private var requests = 0
+    private var issuedIDs: Set<UUID> = []
+    private var submittedIDs: Set<UUID> = []
+
+    func isFirstChallenge() -> Bool {
+        requests += 1
+        return requests == 1
+    }
+
+    func issue(_ request: CompetitionAppAttestChallengeRequest) throws -> CompetitionAppAttestChallenge {
+        let id = UUID()
+        issuedIDs.insert(id)
+        return try CompetitionAppAttestChallenge(
+            challengeID: id, challenge: Data(repeating: UInt8(issuedIDs.count % 255), count: 32),
+            expiresAt: Date().addingTimeInterval(300), proofKind: issuedIDs.count == 1 ? .attestation : .assertion
+        )
+    }
+
+    func submitted(_ envelope: CompetitionAttestedScoreRevisionRequest) {
+        submittedIDs.insert(envelope.appAttest.challengeID)
+    }
+
+    /// Challenges issued, and how many of them a submission used.
+    func counts() -> (issued: Int, used: Int) {
+        (issuedIDs.count, issuedIDs.intersection(submittedIDs).count)
     }
 }
 
@@ -1273,14 +1329,6 @@ private func appAttestTestRequest(
         standBasisPoints: wire.standBasisPoints, availabilityReason: wire.availabilityReason,
         scoringPolicyIdentity: wire.scoringPolicyIdentity, wireContentSHA256: wire.wireContentSHA256
     )
-}
-
-private actor ChallengeCounter {
-    private var count = 0
-    func next() -> Int {
-        count += 1
-        return count
-    }
 }
 
 private actor GroupAppAttestService: AppAttestServiceProtocol {

@@ -34,8 +34,7 @@ struct AppAttestClient: Sendable {
         submit: @escaping @Sendable (
             CompetitionAttestedScoreRevisionRequest
         ) async throws -> CompetitionScoreRevisionResponse,
-        now: @escaping @Sendable () -> Date = { Date() },
-        yields: @escaping @Sendable (CompetitionScoreRevisionRequest) -> Bool = { _ in false }
+        now: @escaping @Sendable () -> Date = { Date() }
     ) -> Self {
         let coordinator = AppAttestClientCoordinator(
             profileID: profileID,
@@ -44,8 +43,7 @@ struct AppAttestClient: Sendable {
             stateStore: stateStore,
             issueChallenge: issueChallenge,
             submit: submit,
-            now: now,
-            yields: yields
+            now: now
         )
         return Self(
             appendScoreRevision: {
@@ -552,11 +550,9 @@ private actor AppAttestClientCoordinator {
         CompetitionAttestedScoreRevisionRequest
     ) async throws -> CompetitionScoreRevisionResponse
     private let now: @Sendable () -> Date
-    /// Requests that wait behind any other queued request for the gate.
-    private let yields: @Sendable (CompetitionScoreRevisionRequest) -> Bool
     private var ephemeralProof: EphemeralProof?
     private var operationIsInProgress = false
-    private var operationWaiters: [(continuation: CheckedContinuation<Void, Never>, yields: Bool)] = []
+    private var operationWaiters: [CheckedContinuation<Void, Never>] = []
 
     init(
         profileID: UUID,
@@ -569,8 +565,7 @@ private actor AppAttestClientCoordinator {
         submit: @escaping @Sendable (
             CompetitionAttestedScoreRevisionRequest
         ) async throws -> CompetitionScoreRevisionResponse,
-        now: @escaping @Sendable () -> Date,
-        yields: @escaping @Sendable (CompetitionScoreRevisionRequest) -> Bool
+        now: @escaping @Sendable () -> Date
     ) {
         self.profileID = profileID
         self.installationID = installationID
@@ -579,13 +574,12 @@ private actor AppAttestClientCoordinator {
         self.issueChallenge = issueChallenge
         self.submit = submit
         self.now = now
-        self.yields = yields
     }
 
     func appendScoreRevision(
         _ score: CompetitionScoreRevisionRequest
     ) async throws -> CompetitionScoreRevisionResponse {
-        try await withOperationGate(yields: yields(score)) {
+        try await withOperationGate {
             try await performAppendScoreRevision(score)
         }
     }
@@ -710,10 +704,9 @@ private actor AppAttestClientCoordinator {
     }
 
     private func withOperationGate<Value>(
-        yields: Bool,
         _ operation: () async throws -> Value
     ) async rethrows -> Value {
-        await acquireOperationGate(yields: yields)
+        await acquireOperationGate()
         do {
             let result = try await operation()
             releaseOperationGate()
@@ -724,25 +717,22 @@ private actor AppAttestClientCoordinator {
         }
     }
 
-    private func acquireOperationGate(yields: Bool) async {
+    private func acquireOperationGate() async {
         guard operationIsInProgress else {
             operationIsInProgress = true
             return
         }
         await withCheckedContinuation { continuation in
-            operationWaiters.append((continuation, yields))
+            operationWaiters.append(continuation)
         }
     }
 
-    /// One operation at a time, so assertions on the key stay in counter
-    /// order. A waiter that doesn't yield goes first; each kind stays FIFO.
     private func releaseOperationGate() {
         guard !operationWaiters.isEmpty else {
             operationIsInProgress = false
             return
         }
-        let next = operationWaiters.firstIndex { !$0.yields } ?? 0
-        operationWaiters.remove(at: next).continuation.resume()
+        operationWaiters.removeFirst().resume()
     }
 
     private func generateKey() async throws -> String {
