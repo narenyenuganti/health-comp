@@ -536,6 +536,8 @@ actor RemoteCompetitionRuntime {
     private let outboxStore: (any CompetitionOutboxStore)?
     private let syncCoordinator: CompetitionSyncCoordinator?
     private let cacheStore: (any RemoteCompetitionCacheStore)?
+    private let groupMatches: RemoteGroupMatchSync?
+    private let groupMatchStore: GroupMatchStore?
     private let now: @Sendable () -> Date
     private let engine = CompetitionEngine()
     private let maximumCursorRetries = 4
@@ -548,6 +550,7 @@ actor RemoteCompetitionRuntime {
         environment: CompetitionEnvironmentClient? = nil,
         outboxStore: (any CompetitionOutboxStore)? = nil,
         cacheStore: (any RemoteCompetitionCacheStore)? = nil,
+        groupMatchStore: GroupMatchStore? = nil,
         now: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.profileID = profileID
@@ -557,15 +560,38 @@ actor RemoteCompetitionRuntime {
         self.outboxStore = outboxStore
         self.cacheStore = cacheStore
         self.now = now
-        self.syncCoordinator = outboxStore.map { outboxStore in
+        let syncCoordinator = outboxStore.map { outboxStore in
             CompetitionSyncCoordinator(
                 profileID: profileID,
                 outboxStore: outboxStore,
                 remoteAPI: remoteAPI,
-                acceptedScorePersistence: .eventStore(store),
+                acceptedScorePersistence: groupMatchStore.map {
+                    .routing(groups: $0, duels: store)
+                } ?? .eventStore(store),
                 now: now
             )
         }
+        self.syncCoordinator = syncCoordinator
+        self.groupMatchStore = groupMatchStore
+        self.groupMatches = groupMatchStore.map {
+            RemoteGroupMatchSync(
+                profileID: profileID,
+                store: $0,
+                remoteAPI: remoteAPI,
+                environment: environment,
+                outboxStore: outboxStore,
+                syncCoordinator: syncCoordinator,
+                now: now
+            )
+        }
+    }
+
+    /// Group matches, apart from the duel inventory: refreshed, your days
+    /// uploaded and the final window attested. A failure here keeps the
+    /// cached read model and never touches a duel.
+    func synchronizeGroupMatches() async -> [GroupMatchReadModel] {
+        guard !isStopped, let groupMatches else { return [] }
+        return await groupMatches.run()
     }
 
     func stop() async {
@@ -668,7 +694,13 @@ actor RemoteCompetitionRuntime {
         let listedIDs = Set(descriptors.map(\.competitionID))
         do {
             let journalIDs = try await store.ids().map(\.rawValue)
-            let queuedIDs = try await outboxStore?.entries().map(\.payload.competitionID) ?? []
+            var queuedIDs: [UUID] = []
+            // Group entries aren't duels: the duel presence check can't see
+            // group rows and would discard their uploads.
+            for entry in try await outboxStore?.entries() ?? [] {
+                if let groupMatchStore, await groupMatchStore.owns(entry) { continue }
+                queuedIDs.append(entry.payload.competitionID)
+            }
             let localIDs = Set(journalIDs).union(nextCacheByID.keys).union(queuedIDs)
             var deletedIDs: [UUID] = []
             for rawID in localIDs.subtracting(listedIDs).sorted(by: { $0.uuidString < $1.uuidString }) {
@@ -1527,7 +1559,7 @@ actor RemoteCompetitionRuntime {
         }
     }
 
-    private static func attestationSemanticEventID(
+    static func attestationSemanticEventID(
         competitionID: UUID,
         profileID: UUID,
         basis: CompetitionAttestationBasis,
@@ -1567,7 +1599,7 @@ actor RemoteCompetitionRuntime {
         }
     }
 
-    private struct RemoteEvidence: Sendable {
+    struct RemoteEvidence: Sendable {
         let moveMode: String
         let standMode: String
         let moveBasisPoints: Int?
@@ -1576,7 +1608,7 @@ actor RemoteCompetitionRuntime {
         let availabilityReason: String
     }
 
-    private static func remoteEvidence(
+    static func remoteEvidence(
         from result: ActivityDayReadResult
     ) throws -> RemoteEvidence {
         switch result {
@@ -1624,7 +1656,7 @@ actor RemoteCompetitionRuntime {
         }
     }
 
-    private static func wire(
+    static func wire(
         competitionID: UUID,
         profileID: UUID,
         ordinal: Int,

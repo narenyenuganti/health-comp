@@ -178,6 +178,10 @@ struct CompetitionRemoteAPI: Sendable {
     var reportProfilePhoto: @Sendable (UUID) async throws -> Void = { _ in
         throw CompetitionRemoteFailure.operationFailed
     }
+    /// The raw `list_group_matches` body; `GroupMatchWire` validates it.
+    var listGroupMatches: @Sendable () async throws -> Data = {
+        throw CompetitionRemoteFailure.operationFailed
+    }
 }
 
 /// What the person a challenge was sent to may see before accepting it.

@@ -474,6 +474,8 @@ private actor RemoteCompetitionClientCoordinator {
     private var latestChallenges = CompetitionChallengeList.empty
     /// The last reaction list; kept when a refresh can't load it.
     private var latestReactions: [CompetitionReactionRecord] = []
+    /// The group read model: the last good server list, or the disk cache.
+    private var latestGroupMatches: [GroupMatchReadModel] = []
     private var hasStarted = false
     private var isStopped = false
     private var healthAuthorizationIssue: CompetitionClientIssue?
@@ -558,6 +560,7 @@ private actor RemoteCompetitionClientCoordinator {
                 self.latestPublication = nil
                 self.latestChallenges = .empty
                 self.latestReactions = []
+                self.latestGroupMatches = []
                 self.hasStarted = false
                 self.isStopped = false
                 let installationStore = CompetitionInstallationStateStore(
@@ -592,6 +595,12 @@ private actor RemoteCompetitionClientCoordinator {
                     ),
                     cacheStore: JSONRemoteCompetitionCacheStore(
                         rootDirectory: paths.serverCursorsDirectory
+                    ),
+                    groupMatchStore: GroupMatchStore(
+                        directory: paths.rootDirectory.appendingPathComponent(
+                            "GroupMatches", isDirectory: true
+                        ),
+                        profileID: profile.id
                     )
                 )
                 self.runtime = runtime
@@ -673,6 +682,7 @@ private actor RemoteCompetitionClientCoordinator {
                     latestPublication = nil
                     latestChallenges = .empty
                     latestReactions = []
+                    latestGroupMatches = []
                     publicationRevision = 0
                     hasStarted = false
                     isStopped = true
@@ -759,6 +769,7 @@ private actor RemoteCompetitionClientCoordinator {
             latestPublication = nil
             latestChallenges = .empty
             latestReactions = []
+            latestGroupMatches = []
             publicationRevision = 0
             hasStarted = false
             isStopped = true
@@ -830,7 +841,10 @@ private actor RemoteCompetitionClientCoordinator {
             return publication
         }
         await installationCoordinator?.reconcile()
+        // Side by side, so neither can fail or hold up the other.
+        async let groupMatches = runtime.synchronizeGroupMatches()
         let outcome = await runtime.synchronizeAll()
+        latestGroupMatches = await groupMatches
         await refreshPractice(.reconciliationProbe)
         if let challenges = try? await remoteAPI.listChallenges() {
             latestChallenges = challenges
@@ -1348,6 +1362,7 @@ private actor RemoteCompetitionClientCoordinator {
             latestPublication = nil
             latestChallenges = .empty
             latestReactions = []
+            latestGroupMatches = []
             publicationRevision = 0
             hasStarted = false
             router.finishCurrent()
@@ -1680,6 +1695,7 @@ private actor RemoteCompetitionClientCoordinator {
         lastPublishInputs = nil
         latestChallenges = .empty
         latestReactions = []
+        latestGroupMatches = []
         if stoppedTasks.realtime != nil {
             await realtimeClient.stop()
         }
@@ -1996,15 +2012,19 @@ private actor RemoteCompetitionClientCoordinator {
         knownCompetitionIDs: Set<CompetitionID>?
     ) async -> CompetitionPublication {
         let context = await environment.context()
+        var dashboard = RemoteCompetitionProjector.dashboard(
+            materializations: materializations,
+            profile: profile,
+            context: context,
+            issues: Self.deduplicated(issues + practiceIssues),
+            challenges: latestChallenges,
+            reactions: latestReactions
+        )
+        dashboard.groupMatches = latestGroupMatches.compactMap {
+            $0.presentation(viewer: profile.id, now: context.instant.wallDate)
+        }
         let publication = publish(
-            dashboard: RemoteCompetitionProjector.dashboard(
-                materializations: materializations,
-                profile: profile,
-                context: context,
-                issues: Self.deduplicated(issues + practiceIssues),
-                challenges: latestChallenges,
-                reactions: latestReactions
-            ).addingPractice(
+            dashboard: dashboard.addingPractice(
                 LocalCompetitionProjector.practicePresentations(
                     journals: practiceJournals,
                     context: context,
