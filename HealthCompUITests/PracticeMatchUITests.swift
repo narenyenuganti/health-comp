@@ -7,7 +7,7 @@ final class PracticeMatchUITests: XCTestCase {
 
     private static let practiceUUID = "a1000000-0000-4000-8000-00000000000c"
     private static let emptyLine = "Challenge someone to a 7-day match, or warm up against a pacer."
-    private static let sheetLine = "7 days against a pacer. It doesn’t count toward your record."
+    private static let sheetLine = "Seven days against a bot, scaled to your last two weeks. It doesn’t count toward your record."
     private static let startError = "Couldn’t start the practice match. Try again."
     private static let ax5 = ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
     private static let darkAX5 = ["-AppleInterfaceStyle", "Dark"] + ax5
@@ -45,27 +45,31 @@ final class PracticeMatchUITests: XCTestCase {
         open.tap()
         let sheet = element("competition.practice.sheet")
         XCTAssertTrue(sheet.waitForExistence(timeout: 3))
-        XCTAssertTrue(text("Practice Match").exists)
+        XCTAssertTrue(text("PRACTICE MATCH").exists)
         XCTAssertTrue(text(Self.sheetLine).exists)
-        let relaxed = app.buttons["competition.practice.pace.relaxed"]
-        let balanced = app.buttons["competition.practice.pace.balanced"]
-        let challenging = app.buttons["competition.practice.pace.challenging"]
-        XCTAssertEqual(relaxed.label, "Relaxed, About half your usual rings")
-        XCTAssertEqual(balanced.label, "Balanced, About your usual rings")
-        XCTAssertEqual(challenging.label, "Challenging, A bit more than usual")
-        // Balanced is the default, and only one pace is ever picked.
-        XCTAssertEqual(selected(), ["balanced"])
-        XCTAssertLessThan(relaxed.frame.minY, balanced.frame.minY)
-        XCTAssertLessThan(balanced.frame.minY, challenging.frame.minY)
-        for row in [relaxed, balanced, challenging] {
+        let pacer = app.buttons["competition.practice.pace.pacer"]
+        let chill = app.buttons["competition.practice.pace.chill"]
+        let erratic = app.buttons["competition.practice.pace.erratic"]
+        let beast = app.buttons["competition.practice.pace.beast"]
+        XCTAssertEqual(pacer.label, "Pacer, Your usual week, steady every day.")
+        XCTAssertEqual(chill.label, "Chill, A little under your usual. Starts slow.")
+        XCTAssertEqual(erratic.label, "Erratic, Huge days and off days. Hard to read.")
+        XCTAssertEqual(beast.label, "Beast, Well above your usual, every day.")
+        XCTAssertFalse(app.buttons["competition.practice.pace.balanced"].exists)
+        // Pacer is the default, and only one bot is ever picked.
+        XCTAssertEqual(selected(), ["pacer"])
+        XCTAssertLessThan(pacer.frame.minY, chill.frame.minY)
+        XCTAssertLessThan(chill.frame.minY, erratic.frame.minY)
+        XCTAssertLessThan(erratic.frame.minY, beast.frame.minY)
+        for row in [pacer, chill, erratic, beast] {
             XCTAssertGreaterThanOrEqual(row.frame.height, 44)
         }
-        relaxed.tap()
-        XCTAssertEqual(selected(), ["relaxed"])
-        challenging.tap()
-        XCTAssertEqual(selected(), ["challenging"])
-        relaxed.tap()
-        XCTAssertEqual(selected(), ["relaxed"])
+        chill.tap()
+        XCTAssertEqual(selected(), ["chill"])
+        beast.tap()
+        XCTAssertEqual(selected(), ["beast"])
+        erratic.tap()
+        XCTAssertEqual(selected(), ["erratic"])
         XCTAssertFalse(element("competition.practice.error").exists)
         let start = app.buttons["competition.practice.start"]
         XCTAssertEqual(start.label, "Start Tomorrow")
@@ -124,14 +128,14 @@ final class PracticeMatchUITests: XCTestCase {
         XCTAssertEqual(all("competition.practice.error").count, 1)
         // The sheet stays open with the same pace and Start ready again.
         XCTAssertTrue(element("competition.practice.sheet").exists)
-        XCTAssertEqual(selected(), ["balanced"])
+        XCTAssertEqual(selected(), ["pacer"])
         waitForEnabled(start)
         XCTAssertLessThanOrEqual(error.frame.maxY, start.frame.minY)
-        app.buttons["competition.practice.pace.challenging"].tap()
+        app.buttons["competition.practice.pace.beast"].tap()
         start.tap()
         XCTAssertTrue(error.waitForExistence(timeout: 5))
         waitForEnabled(start)
-        XCTAssertEqual(selected(), ["challenging"])
+        XCTAssertEqual(selected(), ["beast"])
 
         // Closed and reopened, the old failure stays hidden.
         closeSheet()
@@ -141,7 +145,7 @@ final class PracticeMatchUITests: XCTestCase {
         XCTAssertTrue(text("No matches yet").exists)
         openSheet()
         XCTAssertFalse(element("competition.practice.error").exists)
-        XCTAssertEqual(selected(), ["balanced"])
+        XCTAssertEqual(selected(), ["pacer"])
         start.tap()
         XCTAssertTrue(element("competition.practice.sheet").waitForNonExistence(timeout: 5))
         let card = sharingCard(state: "active")
@@ -381,10 +385,10 @@ final class PracticeMatchUITests: XCTestCase {
         scrollToElement(open)
         open.tap()
         XCTAssertTrue(element("competition.practice.sheet").waitForExistence(timeout: 3))
-        let challenging = app.buttons["competition.practice.pace.challenging"]
-        scrollToElement(challenging, in: sheetScroll)
-        challenging.tap()
-        XCTAssertEqual(selected(), ["challenging"])
+        let beast = app.buttons["competition.practice.pace.beast"]
+        scrollToElement(beast, in: sheetScroll)
+        beast.tap()
+        XCTAssertEqual(selected(), ["beast"])
         let start = app.buttons["competition.practice.start"]
         scrollToElement(start, in: sheetScroll)
         XCTAssertTrue(start.isHittable)
@@ -564,8 +568,7 @@ final class PracticeMatchUITests: XCTestCase {
 
     private func closeSheet() {
         let sheet = element("competition.practice.sheet")
-        sheet.swipeDown(velocity: .fast)
-        if sheet.exists { sheet.swipeDown(velocity: .fast) }
+        app.buttons["competition.practice.cancel"].tap()
         XCTAssertTrue(sheet.waitForNonExistence(timeout: 3))
     }
 
@@ -601,7 +604,7 @@ final class PracticeMatchUITests: XCTestCase {
 
     /// The pace ids that read as selected.
     private func selected() -> [String] {
-        ["relaxed", "balanced", "challenging"].filter {
+        ["pacer", "chill", "erratic", "beast"].filter {
             app.buttons["competition.practice.pace.\($0)"].isSelected
         }
     }
@@ -655,7 +658,7 @@ final class PracticeMatchUITests: XCTestCase {
     /// The pace sheet's own scroll view, not Home behind it.
     private var sheetScroll: XCUIElement {
         app.scrollViews.containing(
-            NSPredicate(format: "identifier == %@", "competition.practice.pace.balanced")
+            NSPredicate(format: "identifier == %@", "competition.practice.pace.pacer")
         ).firstMatch
     }
 
