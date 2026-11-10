@@ -3,7 +3,7 @@ import SwiftUI
 
 /// The beat before a match: you and them collide on the slash, then the
 /// screen splits open onto the match, which is live underneath throughout.
-/// Once per match per device, the first time it opens with both sides in.
+/// Automatically once per match per device; replayable from the match menu.
 
 /// What the intro says.
 struct CompetitionVersusIntroContent: Equatable {
@@ -30,12 +30,12 @@ private struct VersusPhotos {
     var them: ProfilePhoto?
 }
 
-/// Nil when the intro must not play. Only scheduled or Day 1, so a match
-/// already running when this ships stays quiet.
+/// Autoplays only when scheduled or on Day 1. A replay can show a later day.
 func competitionVersusIntroContent(
     _ competition: LocalCompetitionPresentation,
     in publication: LocalCompetitionPublication,
-    locale: Locale = .current
+    locale: Locale = .current,
+    isReplay: Bool = false
 ) -> CompetitionVersusIntroContent? {
     guard publication.source == .remoteParticipants, !competition.isPractice else { return nil }
     let dayLine: String
@@ -47,6 +47,9 @@ func competitionVersusIntroContent(
         dayLine = "Day 1 is \(weekdayName(first, locale: locale))"
     case .active(dayOrdinal: 1):
         dayLine = "Day 1 starts now"
+    case .active, .endsToday, .tallying:
+        guard isReplay else { return nil }
+        dayLine = competitionStatusText(competition, style: .card, locale: locale).title
     default:
         return nil
     }
@@ -120,12 +123,14 @@ extension View {
     func competitionVersusIntro(
         matchID: CompetitionID?,
         publication: LocalCompetitionPublication?,
-        isPlaying: Binding<Bool>
+        isPlaying: Binding<Bool>,
+        replay: Binding<Bool>
     ) -> some View {
         modifier(CompetitionVersusIntroHost(
             matchID: matchID,
             publication: publication,
-            isPlaying: isPlaying
+            isPlaying: isPlaying,
+            replay: replay
         ))
     }
 }
@@ -134,6 +139,7 @@ private struct CompetitionVersusIntroHost: ViewModifier {
     let matchID: CompetitionID?
     let publication: LocalCompetitionPublication?
     @Binding var isPlaying: Bool
+    @Binding var replay: Bool
 
     @AppStorage(CompetitionMotionSeen.storageKey)
     private var seen = CompetitionMotionSeen()
@@ -147,11 +153,16 @@ private struct CompetitionVersusIntroHost: ViewModifier {
     /// The open match, if its intro is due. One rule covers the accepter and
     /// the sender, on arrival or in place when the other side accepts.
     private var due: CompetitionVersusIntroContent? {
+        guard let matchID, !seen.hasSeen(.versus, matchID) else { return nil }
+        return introContent()
+    }
+
+    private func introContent(isReplay: Bool = false) -> CompetitionVersusIntroContent? {
         guard CompetitionVersusIntroGate.isEnabled, playing == nil, scenePhase == .active,
-              let matchID, !seen.hasSeen(.versus, matchID), let publication,
+              let matchID, let publication,
               let competition = publication.dashboard.competitions.first(where: { $0.id == matchID })
         else { return nil }
-        return competitionVersusIntroContent(competition, in: publication, locale: locale)
+        return competitionVersusIntroContent(competition, in: publication, locale: locale, isReplay: isReplay)
     }
 
     func body(content: Content) -> some View {
@@ -168,15 +179,24 @@ private struct CompetitionVersusIntroHost: ViewModifier {
             }
             .onChange(of: due, initial: true) { _, due in
                 guard let due else { return }
-                seen = seen.marking(.versus, due.id)
-                if voiceOver || CompetitionVersusIntroGate.assumesVoiceOver {
-                    announce(due.announcement)
-                } else {
-                    playingPhotos = VersusPhotos(you: photos.own, them: photos.photo(due.themPhoto))
-                    playing = due
-                    isPlaying = true
-                }
+                play(due)
             }
+            .onChange(of: replay) { _, requested in
+                guard requested else { return }
+                replay = false
+                if let intro = introContent(isReplay: true) { play(intro) }
+            }
+    }
+
+    private func play(_ intro: CompetitionVersusIntroContent) {
+        seen = seen.marking(.versus, intro.id)
+        if voiceOver || CompetitionVersusIntroGate.assumesVoiceOver {
+            announce(intro.announcement)
+        } else {
+            playingPhotos = VersusPhotos(you: photos.own, them: photos.photo(intro.themPhoto))
+            playing = intro
+            isPlaying = true
+        }
     }
 
     private func announce(_ text: String) {
@@ -200,12 +220,12 @@ private enum VersusClock {
     static let stamp = 0.6
     static let names = 0.8
     static let tape = 1.0
-    static let split = 2.4
-    static let end = 2.72
+    static let split = 3.68
+    static let end = 4.0
     /// Everything in place, for Reduce Motion.
-    static let composed = 2.39
+    static let composed = 3.67
     /// Reduce Motion's hold: a fade in, this, a fade out.
-    static let reducedHold = 1.2
+    static let reducedHold = 3.6
 
     static let slamCurve = UnitCurve.bezier(
         startControlPoint: UnitPoint(x: 0.55, y: 0),
@@ -453,7 +473,7 @@ private struct CompetitionVersusIntroView: View {
         let away = 1 - VersusClock.slamCurve.value(
             at: VersusClock.ramp(t, VersusClock.slam, VersusClock.contact - VersusClock.slam)
         )
-        let creep = VersusClock.ramp(t, VersusClock.contact, 1.95)
+        let creep = VersusClock.ramp(t, VersusClock.contact, VersusClock.split - VersusClock.contact)
         let dx = stage.size.width + 60
         let holdsBelt = content.holder == (isYours ? .you : .them)
         let center = CGPoint(

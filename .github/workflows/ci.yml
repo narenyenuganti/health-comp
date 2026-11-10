@@ -250,6 +250,10 @@ jobs:
             -only-testing:HealthCompUITests/PracticeMatchUITests/testAFailedStartExplainsOnTheSheetAndAReopenedSheetStartsClean \
             -only-testing:HealthCompUITests/NotificationChoicesUITests/testSwitchesRegisterServerHeldKindsAndRetryAfterAFailure \
             -only-testing:HealthCompUITests/NotificationChoicesUITests/testMutedNameUsesFullLeadingEdgeAtLargestTextSize \
+            -only-testing:HealthCompUITests/VersusIntroUITests/testEveryMatchupEndsByItself \
+            -only-testing:HealthCompUITests/VersusIntroUITests/testMenuReplaysRepeatedlyWithoutReenablingAutoplay \
+            -only-testing:HealthCompUITests/VersusIntroUITests/testMenuReplaysAfterDayOne \
+            -only-testing:HealthCompUITests/VersusIntroUITests/testReduceMotionShowsTheComposedScreenAndATapEndsIt \
             -parallel-testing-enabled NO \
             -maximum-concurrent-test-simulator-destinations 1 \
             -maximum-parallel-testing-workers 1 \
