@@ -82,7 +82,7 @@ final class FriendsUITests: XCTestCase {
         openFriends()
         search("mar")
         let action = app.buttons["friends.result.action.\(Person.marcus)"]
-        XCTAssertTrue(action.waitForExistence(timeout: 5))
+        expect(action)
         XCTAssertEqual(action.label, "Add")
         XCTAssertTrue(app.staticTexts["Can’t find them? Send your link from Friends."].exists)
 
@@ -103,38 +103,35 @@ final class FriendsUITests: XCTestCase {
         XCTAssertTrue(waitUntil(5) { action.label == "Add" })
 
         // Someone already requested, and the friend label.
-        element("friends.search.clear").tap()
-        field.typeText("mat")
+        search("mat")
         let mateo = app.buttons["friends.result.action.\(Person.mateo)"]
-        XCTAssertTrue(mateo.waitForExistence(timeout: 5))
+        expect(mateo)
         XCTAssertEqual(mateo.label, "Requested")
-        element("friends.search.clear").tap()
-        field.typeText("maya")
+        search("maya")
         let maya = element("friends.result.action.\(Person.maya)")
-        XCTAssertTrue(maya.waitForExistence(timeout: 5))
+        expect(maya)
         XCTAssertEqual(maya.label, "Friends")
     }
 
     func testSearchEmptyStatesAndALimit() {
         launch(.friends)
         openFriends()
-        field.tap()
-        field.typeText("ma")
+        search("ma")
         // Under three characters shows nothing.
         XCTAssertFalse(element("friends.search.empty").waitForExistence(timeout: 1))
         XCTAssertFalse(element("friends.result.\(Person.marcus)").exists)
 
-        field.typeText("qqq")
+        search("maqqq")
         let empty = element("friends.search.empty")
-        XCTAssertTrue(empty.waitForExistence(timeout: 5))
+        expect(empty)
         XCTAssertEqual(empty.label, "No one found.")
         XCTAssertFalse(element("friends.search.hint").exists)
 
         element("friends.search.clear").tap()
         XCTAssertTrue(empty.waitForNonExistence(timeout: 3))
-        field.typeText("ratelimit")
+        search("ratelimit")
         let error = element("friends.search.error")
-        XCTAssertTrue(error.waitForExistence(timeout: 5))
+        expect(error)
         XCTAssertEqual(error.label, "Too many searches. Try again in a minute.")
 
         // Clearing returns to the list. Back is every pushed page's one,
@@ -144,8 +141,8 @@ final class FriendsUITests: XCTestCase {
         XCTAssertGreaterThanOrEqual(clear.frame.height, 44)
         clear.tap()
         XCTAssertTrue(app.staticTexts["REQUESTS · 2"].waitForExistence(timeout: 3))
-        field.typeText("qqq")
-        XCTAssertTrue(empty.waitForExistence(timeout: 5))
+        search("qqq")
+        expect(empty)
         back()
         XCTAssertTrue(app.buttons["friends.open"].waitForExistence(timeout: 5))
         // Closing forgot the search.
@@ -159,7 +156,7 @@ final class FriendsUITests: XCTestCase {
         openFriends()
         search("mara")
         let action = app.buttons["friends.result.action.\(Person.mara)"]
-        XCTAssertTrue(action.waitForExistence(timeout: 5))
+        expect(action)
         action.tap()
         let failure = element("friends.failure.\(Person.mara)")
         XCTAssertTrue(failure.waitForExistence(timeout: 5))
@@ -176,7 +173,7 @@ final class FriendsUITests: XCTestCase {
         openFriends()
         search("marc")
         let row = app.buttons["friends.result.\(Person.marcus)"]
-        XCTAssertTrue(row.waitForExistence(timeout: 5))
+        expect(row)
         row.tap()
         XCTAssertTrue(element("friends.person").waitForExistence(timeout: 5))
         XCTAssertEqual(element("friends.person.name").label, "Marcus Hill")
@@ -254,7 +251,7 @@ final class FriendsUITests: XCTestCase {
                 shot("friends-requests-\(suffix)")
                 try audit("friends \(suffix)")
                 search("mar")
-                XCTAssertTrue(element("friends.result.\(Person.marcus)").waitForExistence(timeout: 5))
+                expect(element("friends.result.\(Person.marcus)"))
                 shot("search-results-\(suffix)")
                 // Everything is reachable with the keyboard up.
                 scrollTo(element("friends.search.hint"))
@@ -265,15 +262,12 @@ final class FriendsUITests: XCTestCase {
                 // Keyboard down: its predictive bar has no label to audit.
                 dismissKeyboard()
                 try audit("search \(suffix)")
-                element("friends.search.clear").tap()
-                field.tap()
-                field.typeText("qqq")
-                XCTAssertTrue(element("friends.search.empty").waitForExistence(timeout: 5))
+                search("qqq")
+                expect(element("friends.search.empty"))
                 shot("search-empty-\(suffix)")
-                element("friends.search.clear").tap()
-                field.typeText("marc")
+                search("marc")
                 let row = app.buttons["friends.result.\(Person.marcus)"]
-                XCTAssertTrue(row.waitForExistence(timeout: 5))
+                expect(row)
                 dismissKeyboard()
                 row.tap()
                 XCTAssertTrue(element("friends.person").waitForExistence(timeout: 5))
@@ -326,11 +320,51 @@ final class FriendsUITests: XCTestCase {
         XCTAssertTrue(accept.waitForNonExistence(timeout: 5))
     }
 
-    private func search(_ text: String) {
-        XCTAssertTrue(field.waitForExistence(timeout: 5))
-        field.tap()
-        XCTAssertTrue(waitUntil(3) { self.app.keyboards.firstMatch.exists })
-        field.typeText(text)
+    /// Sets the query to exactly `text`, and waits until the field says so
+    /// before anyone waits on results: a slow runner can drop keys.
+    private func search(_ text: String, file: StaticString = #filePath, line: UInt = #line) {
+        XCTAssertTrue(field.waitForExistence(timeout: 5), file: file, line: line)
+        for attempt in 1...2 where fieldText != text {
+            if attempt > 1 {
+                XCTContext.runActivity(named: "Retyping \"\(text)\": the field read \"\(fieldText)\"") { _ in }
+            }
+            let clear = element("friends.search.clear")
+            if clear.exists {
+                clear.tap()
+                _ = waitUntil(3) { !clear.exists }
+            }
+            if !app.keyboards.firstMatch.exists { field.tap() }
+            XCTAssertTrue(waitUntil(3) { self.app.keyboards.firstMatch.exists }, file: file, line: line)
+            field.typeText(text)
+            _ = waitUntil(3) { self.fieldText == text }
+        }
+        XCTAssertEqual(fieldText, text, "The search field's text", file: file, line: line)
+    }
+
+    /// The query as typed; empty, not the placeholder, when there's none.
+    private var fieldText: String {
+        guard field.exists else { return "<no field>" }
+        let value = field.value as? String ?? ""
+        return value == field.placeholderValue ? "" : value
+    }
+
+    /// Waits for a result, and on failure says what the field held and
+    /// what was on screen.
+    private func expect(
+        _ target: XCUIElement,
+        timeout: TimeInterval = 5,
+        file: StaticString = #filePath,
+        line: UInt = #line
+    ) {
+        guard !target.waitForExistence(timeout: timeout) else { return }
+        shot("missing-result")
+        let texts = app.staticTexts.allElementsBoundByIndex.map(\.label)
+        let buttons = app.buttons.allElementsBoundByIndex.map { $0.identifier.isEmpty ? $0.label : $0.identifier }
+        XCTFail(
+            "Not found: \(target). Field: \"\(fieldText)\". Texts: \(texts). Buttons: \(buttons)",
+            file: file,
+            line: line
+        )
     }
 
     private func dismissKeyboard() {
