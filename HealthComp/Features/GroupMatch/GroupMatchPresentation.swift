@@ -1,14 +1,11 @@
 import CompetitionCore
 import Foundation
 
-/// Hides the group format picker in Release until the server and the remote
-/// commands are live.
+/// On everywhere: the server's group match migrations ship before this app.
+/// Set to false to hide group matches again (format picker, Home's New Match
+/// and the group-capable installation registration).
 enum GroupMatchRollout {
-    #if DEBUG || HEALTHCOMP_STAGING
     static let showsFormatPicker = true
-    #else
-    static let showsFormatPicker = false
-    #endif
 }
 
 enum GroupMatchFormat: String, CaseIterable, Hashable, Sendable {

@@ -121,8 +121,23 @@ struct GroupMatchLineup: Equatable {
 
 /// What a pasted challenge link turned out to be.
 enum GroupMatchLinkLookup: Equatable, Sendable {
-    case idle, resolving, invalid, notFound, unavailable
+    case idle, resolving, invalid, notFound, unavailable, failed
     case found(name: String)
+
+    /// The duel sheet's `resolve_challenge_link`: a name only, never a seat.
+    /// Not found and unavailable stay one answer, as on the duel sheet.
+    static func resolve(_ code: CompetitionChallengeLinkCode) async -> Self {
+        @Dependency(\.competitionClient) var competitionClient
+        do {
+            return .found(name: try await competitionClient.resolveChallengeLink(code))
+        } catch CompetitionRemoteFailure.ownChallengeLink {
+            return .unavailable
+        } catch CompetitionRemoteFailure.recipientUnavailable, CompetitionRemoteFailure.notFound {
+            return .notFound
+        } catch {
+            return .failed
+        }
+    }
 }
 
 /// New Match: pick a format, fill the seats, add bots, send.
@@ -136,7 +151,6 @@ struct GroupMatchCreateView: View {
     let people: [GroupMatchPlayer]
     /// Duel keeps today's challenge sheet.
     let onDuel: () -> Void
-    // ponytail: fixtures only; the commands work wires the server lookup.
     let lookUpLink: @Sendable (CompetitionChallengeLinkCode) async -> GroupMatchLinkLookup
     private let prefilled: [GroupMatchPlayer]
 
@@ -162,7 +176,7 @@ struct GroupMatchCreateView: View {
         lineup: GroupMatchLineup? = nil,
         opensAt path: [Step] = [],
         onDuel: @escaping () -> Void = {},
-        lookUpLink: @escaping @Sendable (CompetitionChallengeLinkCode) async -> GroupMatchLinkLookup = { _ in .unavailable }
+        lookUpLink: @escaping @Sendable (CompetitionChallengeLinkCode) async -> GroupMatchLinkLookup = GroupMatchLinkLookup.resolve
     ) {
         self.store = store
         self.people = people
@@ -330,8 +344,12 @@ struct GroupMatchCreateView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         } actions: {
-            if let sent, store.failed.contains(sent) {
-                GroupMatchErrorLine("Couldn’t create the match. Check your connection and try again.")
+            if let sent, let line = store.state.failureLine(
+                [sent],
+                otherwise: "Couldn’t create the match. Check your connection and try again.",
+                name: { id in (people + prefilled).first { $0.profileID == id }?.name }
+            ) {
+                GroupMatchErrorLine(line)
             }
             Button {
                 let command = GroupMatchCommand.create(lineup.draft)
@@ -496,6 +514,7 @@ struct GroupMatchCreateView: View {
         case .invalid: "That isn’t a full challenge link. Ask them to share it again."
         case .notFound: "No account has this link. Check it and try again."
         case .unavailable: "You can’t add this person to a match."
+        case .failed: "Couldn’t check that link. Check your connection and try again."
         case .idle, .resolving, .found: nil
         }
     }

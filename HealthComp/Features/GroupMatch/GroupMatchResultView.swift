@@ -16,6 +16,7 @@ struct GroupMatchResultView: View {
     @ScaledMetric(relativeTo: .largeTitle) private var podiumNumberSize: CGFloat = 44
     @Environment(\.locale) private var locale
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @State private var showsRematch = false
 
     var body: some View {
         ScrollView {
@@ -60,12 +61,16 @@ struct GroupMatchResultView: View {
             }
         }
         .navigationBarTitleDisplayMode(.inline)
+        // Prefilled with the same lineup; nothing is sent until Create Match.
+        .sheet(isPresented: $showsRematch) {
+            GroupMatchCreateView(store: store, lineup: GroupMatchLineup(match: match))
+        }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("competition.group.result")
     }
 
     private var rematchButton: some View {
-        Button("Rematch Everyone") { store.send(.rematchEveryoneTapped(match.id)) }
+        Button("Rematch Everyone") { showsRematch = true }
             .buttonStyle(PrimaryButtonStyle())
             .accessibilityIdentifier("competition.group.result.rematch")
     }

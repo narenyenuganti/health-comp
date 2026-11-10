@@ -29,8 +29,11 @@ struct GroupMatchInviteView: View {
                 .foregroundStyle(Theme.secondary)
                 .fixedSize(horizontal: false, vertical: true)
         } actions: {
-            if store.failed.contains(.accept(match.id)) || store.failed.contains(.decline(match.id)) {
-                GroupMatchErrorLine("Couldn’t complete that. Check your connection and try again.")
+            if let line = store.state.failureLine(
+                [.accept(match.id), .decline(match.id)],
+                otherwise: "Couldn’t complete that. Check your connection and try again."
+            ) {
+                GroupMatchErrorLine(line)
             }
             Button {
                 store.send(.commandTapped(.accept(match.id)))

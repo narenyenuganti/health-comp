@@ -11,6 +11,20 @@ extension GroupMatchPresentation {
         }
     }
 
+    /// Today's banter for this viewer: nil before Day 3, off a live day, or
+    /// when nothing triggers. The same scores give every phone the same line.
+    var banter: String? {
+        guard let liveDay else { return nil }
+        var bots: [UUID: String] = [:]
+        for seat in seats { if case let .bot(mode) = seat.occupant { bots[seat.id] = mode.rawValue } }
+        guard let line = try? MatchBanter.line(
+            matchID: id.rawValue, configuration: configuration, dayOrdinal: liveDay, days: days, botModes: bots
+        ) else { return nil }
+        return MatchBanter.render(
+            line, names: Dictionary(uniqueKeysWithValues: seats.map { ($0.id, $0.name) }), viewerSeatID: viewerSeatID
+        )
+    }
+
     /// Last day with scores: the live day, or all seven once the week is over.
     var lastPlayedDay: Int {
         switch lifecycle {

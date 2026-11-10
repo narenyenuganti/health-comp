@@ -10,6 +10,9 @@ struct MainTabView: View {
 
     @Environment(\.scenePhase) private var scenePhase
     @State private var isChallengePresented = false
+    /// New Match: the format picker, whose Duel opens the Challenge sheet.
+    @State private var isNewMatchPresented = false
+    @State private var opensDuel = false
     @State private var isPracticePresented = false
     @State private var isVersusPlaying = false
     @State private var replaysVersus = false
@@ -59,7 +62,7 @@ struct MainTabView: View {
         // Keeps the notifications prompt from presenting under the
         // Challenge or practice sheet or the recap deck, where SwiftUI would
         // drop it, or over the versus intro.
-        .onChange(of: isChallengePresented || isPracticePresented || isVersusPlaying || recapPeriod != nil) { _, isOpen in
+        .onChange(of: isChallengePresented || isNewMatchPresented || isPracticePresented || isVersusPlaying || recapPeriod != nil) { _, isOpen in
             store.send(.challengeSheetVisibilityChanged(isOpen))
         }
         .onReceive(
@@ -108,9 +111,20 @@ struct MainTabView: View {
                 close: { store.send(.dismissChallengeFromLink) }
             )
         }
+        .sheet(isPresented: $isNewMatchPresented, onDismiss: {
+            // After this sheet is gone, so the Challenge sheet can present.
+            if opensDuel { opensDuel = false; isChallengePresented = true }
+        }) {
+            GroupMatchCreateView(
+                store: store.scope(state: \.competition.group, action: \.competition.group),
+                people: newMatchPeople,
+                onDuel: { opensDuel = true; isNewMatchPresented = false }
+            )
+        }
         // A Friends push opens Friends in front of everything.
         .onChange(of: store.friendsRouteCount) { _, _ in
             isChallengePresented = false
+            isNewMatchPresented = false
             isPracticePresented = false
             recapPeriod = nil
         }
@@ -127,6 +141,20 @@ struct MainTabView: View {
         }
         // Last, so every screen and sheet above draws the same photos.
         .environment(\.profilePhotos, store.competition.profilePhotoImages)
+    }
+
+    /// Friends, then people you've had a duel with, once each.
+    private var newMatchPeople: [GroupMatchPlayer] {
+        let friends = (store.competition.friends.list?.friends ?? []).map {
+            GroupMatchPlayer(profileID: $0.id, name: $0.displayName)
+        }
+        let played = (store.competition.publication?.dashboard.competitions ?? []).compactMap { competition in
+            RemoteCompetitionOpponentIdentity.profileID(competition.opponentIdentity).map {
+                GroupMatchPlayer(profileID: $0, name: competition.opponentDisplayName)
+            }
+        }
+        var seen = Set<UUID>()
+        return (friends + played).filter { seen.insert($0.profileID).inserted }
     }
 
     private var photoOwners: [UUID] {
@@ -443,7 +471,9 @@ struct MainTabView: View {
                 FriendsToolbarButton(requestCount: store.competition.friends.requestCount) {
                     store.send(.friendsPresentationChanged(true))
                 }
-                CompetitionChallengeButton { isChallengePresented = true }
+                CompetitionChallengeButton {
+                    if GroupMatchRollout.showsFormatPicker { isNewMatchPresented = true } else { isChallengePresented = true }
+                }
             }
             if let openAccount {
                 Button(action: openAccount) {

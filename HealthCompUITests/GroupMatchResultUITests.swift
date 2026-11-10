@@ -20,7 +20,9 @@ final class GroupMatchResultUITests: XCTestCase {
         )
         XCTAssertTrue(app.groupElement("competition.group.result.row.1").label.hasPrefix("1st, You"))
         XCTAssertTrue(app.groupElement("competition.group.result.row.4").label.hasPrefix("4th, Leo"))
-        XCTAssertTrue(app.buttons["competition.group.result.rematch"].isEnabled)
+        // Rematch Everyone opens New Match on the same format; nothing is sent yet.
+        app.buttons["competition.group.result.rematch"].tap()
+        XCTAssertTrue(app.groupElement("competition.group.format.four-way").waitForExistence(timeout: 4))
 
         app.terminate()
         app = XCUIApplication.launchGroupLab("result-ffa-tied")

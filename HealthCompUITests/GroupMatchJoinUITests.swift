@@ -21,9 +21,8 @@ final class GroupMatchJoinUITests: XCTestCase {
 
     func testHostLobbyWaitsForEverySeat() {
         let app = XCUIApplication.launchGroupLab("lobby-host")
-        let share = app.buttons["competition.group.lobby.share"]
-        XCTAssertTrue(share.waitForExistence(timeout: 8))
-        XCTAssertTrue(share.isEnabled)
+        XCTAssertTrue(app.buttons["competition.group.lobby.cancel"].waitForExistence(timeout: 8))
+        XCTAssertFalse(app.buttons["competition.group.lobby.share"].exists)
         XCTAssertTrue(app.groupElement("competition.group.lobby.status").label.uppercased().hasPrefix("WAITING FOR 2"))
         XCTAssertTrue(app.staticTexts["Starts once every seat has accepted."].exists)
         XCTAssertEqual(app.groupElement("competition.group.lobby.seat.2").label, "Sam, In")

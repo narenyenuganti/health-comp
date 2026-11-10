@@ -175,6 +175,25 @@ final class RemoteGroupMatchClientTests: XCTestCase {
         XCTAssertNil(withoutSeats.frozenDays)
     }
 
+    func testWhoeverClosedAMatchShowsAsWithdrawnOrDeclined() throws {
+        func closed(by profileID: String) throws -> GroupMatchPresentation {
+            let data = try editedFixture(pendingID) { match in
+                match["lifecycle"] = "declined"
+                match["closed_by_profile_id"] = profileID
+                match["closed_at"] = "2026-11-10T09:00:00+00:00"
+            }
+            return try XCTUnwrap(
+                GroupMatchWire.decodeList(data, viewer: viewer).first { $0.id == pendingID }?
+                    .presentation(viewer: viewer, now: dayThreeNoon)
+            )
+        }
+        // Seat 2 had accepted, so closing it is a withdrawal; seat 3 never answered.
+        let withdrawn = try closed(by: "4000ca96-a5d0-db44-3b89-bbfb6bc44e19")
+        XCTAssertEqual(withdrawn.seats.map(\.invite), [.accepted, .withdrew, .invited])
+        let declined = try closed(by: "758901eb-c557-7975-e585-97488b2a907e")
+        XCTAssertEqual(declined.seats.map(\.invite), [.accepted, .accepted, .declined])
+    }
+
     // MARK: Read model cache
 
     func testStaleRefreshKeepsTheNewerCachedMatchAndOfflineUsesTheCache() async throws {
@@ -1457,6 +1476,18 @@ extension RemoteGroupMatchClientTests {
         XCTAssertEqual((ffa.parameters["seats"] as? [[String: Any]])?.map { Set($0.keys) }, [
             ["kind", "profile_id"], ["kind", "profile_id"], ["kind", "bot_mode"],
         ])
+        // A pasted challenge link names the person by its code; the server resolves it.
+        let linked = try GroupMatchRemoteCommand.create(
+            creator: viewer,
+            GroupMatchDraft(format: .threeWay, seats: [
+                .challengeLink(try XCTUnwrap(CompetitionChallengeLinkCode(rawValue: "Mx7kQ2pL9vR4tN8wB3cY6z")), team: nil),
+                .bot(.chill, team: nil),
+            ]),
+            timeZoneIdentifier: "UTC", idempotencyKey: key
+        ).rpc()
+        XCTAssertEqual((linked.parameters["seats"] as? [[String: Any]])?[1] as NSDictionary?, [
+            "kind": "human", "challenge_link_code": "Mx7kQ2pL9vR4tN8wB3cY6z",
+        ] as NSDictionary)
         XCTAssertThrowsError(try GroupMatchRemoteCommand.create(
             creator: viewer, GroupMatchDraft(format: .fourWay, seats: [.person(profileID: Self.sam, team: nil)]),
             timeZoneIdentifier: "UTC", idempotencyKey: key

@@ -143,12 +143,13 @@ final class CompetitionNotificationPreferencesTests: XCTestCase {
                 "healthcomp.notifications.nudge",
                 "healthcomp.notifications.friend_request",
                 "healthcomp.notifications.friend_accepted",
+                "healthcomp.notifications.group-banter",
             ]
         )
         XCTAssertEqual(
             CompetitionNotificationChoice.allCases.map(\.title),
             ["Lead changes", "Close scores", "What it takes", "Last day", "Live Activity", "Reactions", "Nudges",
-             "Friend requests", "Accepted requests"]
+             "Friend requests", "Accepted requests", "Group match banter"]
         )
         XCTAssertEqual(
             CompetitionNotificationChoice.allCases.filter(\.isServerSent),

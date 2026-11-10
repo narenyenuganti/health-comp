@@ -17,8 +17,13 @@ struct GroupMatchLiveFFAView: View {
             if competitionShouldShowScores(match.lifecycle) {
                 GroupMatchLeadLine(match: match)
             }
-            // Banter's place: nothing shows until there's a line.
-            Color.clear.frame(height: 0).accessibilityIdentifier("competition.group.banter")
+            if let banter = match.banter {
+                Text(banter)
+                    .font(.subheadline)
+                    .foregroundStyle(Theme.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("competition.group.banter")
+            }
             SectionLabel("STANDINGS")
             standings
             if let takes = match.whatItTakes {
@@ -176,8 +181,10 @@ struct GroupMatchLiveScreen<Content: View>: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 GroupMatchStatusRow(match: match)
-                if store.failed.contains(.leave(match.id)) {
-                    Text("Couldn’t leave the match. Check your connection and try again.")
+                if let line = store.state.failureLine(
+                    [.leave(match.id)], otherwise: "Couldn’t leave the match. Check your connection and try again."
+                ) {
+                    Text(line)
                         .font(.callout)
                         .foregroundStyle(Theme.secondary)
                         .fixedSize(horizontal: false, vertical: true)

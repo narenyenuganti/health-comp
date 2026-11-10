@@ -19,8 +19,13 @@ struct GroupMatchLiveDoublesView: View {
             if competitionShouldShowScores(match.lifecycle) {
                 GroupMatchLeadLine(match: match)
             }
-            // Banter's place: nothing shows until there's a line.
-            Color.clear.frame(height: 0).accessibilityIdentifier("competition.group.banter")
+            if let banter = match.banter {
+                Text(banter)
+                    .font(.subheadline)
+                    .foregroundStyle(Theme.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("competition.group.banter")
+            }
             if competitionShouldShowScores(match.lifecycle) {
                 SectionLabel("WHO’S CARRYING")
                 carrying
@@ -214,8 +219,8 @@ struct GroupMatchLiveDoublesView: View {
                     .disabled(isSending)
                     .accessibilityHint("Sends \(partner.name) a notification to open HealthComp.")
                     .accessibilityIdentifier("competition.group.nudge")
-                    if store.failed.contains(command) {
-                        Text("Couldn’t send the nudge. Try again.")
+                    if let line = store.state.failureLine([command], otherwise: "Couldn’t send the nudge. Try again.") {
+                        Text(line)
                             .font(.subheadline)
                             .foregroundStyle(Theme.secondary)
                             .accessibilityIdentifier("competition.group.nudge.error")

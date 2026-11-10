@@ -81,22 +81,8 @@ struct GroupMatchLobbyView: View {
             }
         } actions: {
             failure
+            // No match link this round: seats are named at creation.
             if isHost {
-                // Once everyone is in, there's no one left to share it with.
-                if isScheduled {
-                    EmptyView()
-                } else if let link = store.shareLinks[match.id] {
-                    ShareLink(item: link, subject: Text("Join my HealthComp match")) {
-                        Text("Share Match Link")
-                    }
-                    .buttonStyle(PrimaryButtonStyle())
-                    .accessibilityIdentifier("competition.group.lobby.share")
-                } else {
-                    Button("Share Match Link") {}
-                        .buttonStyle(PrimaryButtonStyle())
-                        .disabled(true)
-                        .accessibilityIdentifier("competition.group.lobby.share")
-                }
                 quietCommand("Cancel Match", .cancel(match.id), identifier: "competition.group.lobby.cancel")
             } else {
                 quietCommand("Withdraw", .withdraw(match.id), identifier: "competition.group.lobby.withdraw")
@@ -154,8 +140,11 @@ struct GroupMatchLobbyView: View {
 
     @ViewBuilder
     private var failure: some View {
-        if [GroupMatchCommand.cancel(match.id), .withdraw(match.id)].contains(where: { store.failed.contains($0) }) {
-            GroupMatchErrorLine("Couldn’t complete that. Check your connection and try again.")
+        if let line = store.state.failureLine(
+            [.cancel(match.id), .withdraw(match.id)],
+            otherwise: "Couldn’t complete that. Check your connection and try again."
+        ) {
+            GroupMatchErrorLine(line)
         }
     }
 

@@ -71,7 +71,6 @@ enum GroupMatchFixtures {
         GroupMatchPlayer(profileID: player.profileID, name: player.name)
     }
 
-    static let shareLink = URL(string: "https://invites.ui.healthcomp.test/c/Gm4tR8vX2pL6kN3wB9cY5z")!
     /// Maya's challenge link finds her; this one belongs to someone you can't add.
     static let mayaLink = "Mx7kQ2pL9vR4tN8wB3cY6z"
     static let unavailableLink = "Ux0aB1cD2eF3gH4iJ5kL6m"
@@ -177,7 +176,8 @@ enum GroupMatchFixtures {
         case .liveFFA: match(4, .fourWay, live, ffaLineup, scores: fourDays, left: left)
         case .liveDoubles: doubles(5, live, scores: fourDays, left: left)
         case .liveBot: match(6, .fourWay, live, [.you, .sam, .erratic, .leo], scores: fourDays, left: left)
-        case .banter: doubles(7, live, scores: fourDays)
+        // Leo's slow week leaves Sam carrying their team.
+        case .banter: doubles(7, live, scores: fourDays.merging([.leo: [150, 160, 140, 170]]) { $1 })
         case .resultFFAWon: match(8, .fourWay, won, ffaLineup, scores: week, isFrozen: true)
         case .resultFFATied:
             match(
@@ -396,16 +396,13 @@ struct GroupMatchTestLabView: View {
         let answer = GroupMatchFixtures.publication(revision: 2, setup: setup)
         let left = GroupMatchFixtures.publication(revision: 2, setup: setup, youLeft: true)
         let photos = GroupMatchFixtures.photoData(setup)
-        var state = MainTabFeature.State(
+        let state = MainTabFeature.State(
             competition: CompetitionFeature.State(
                 publication: first,
                 ownProfile: AuthenticatedProfile(id: GroupMatchFixtures.Player.you.profileID, displayName: "You")
             ),
             path: setup == .home || setup.isVersus ? [] : first.dashboard.groupMatches.map(\.id)
         )
-        for match in first.dashboard.groupMatches {
-            state.competition.group.shareLinks[match.id] = GroupMatchFixtures.shareLink
-        }
         _store = State(initialValue: Store(initialState: state) {
             MainTabFeature()
         } withDependencies: {

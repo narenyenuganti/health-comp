@@ -7,6 +7,8 @@ enum CompetitionScheduledNotificationFamily: String, CaseIterable, Sendable {
     case finalDay = "final-day"
     case competitionEnded = "competition-ended"
     case whatItTakes = "what-it-takes"
+    /// A group match's evening line, at 8 PM in the match's zone.
+    case groupBanter = "group-banter"
 }
 
 enum CompetitionNotificationIdentifier {
@@ -145,19 +147,23 @@ struct CompetitionNotificationPlanningSnapshot: Equatable, Sendable {
     /// `nil` means store enumeration failed and orphan cleanup must not run.
     /// A non-nil set includes both successfully loaded and failed-load IDs.
     let knownCompetitionIDs: Set<CompetitionID>?
+    /// Only for their evening banter; nothing else here notifies about them.
+    let groupMatches: [GroupMatchPresentation]
 
     init(
         publicationRevision: UInt64,
         evaluatedAt: Date,
         timeZoneIdentifier: String,
         competitions: [CompetitionNotificationCompetitionSnapshot],
-        knownCompetitionIDs: Set<CompetitionID>? = nil
+        knownCompetitionIDs: Set<CompetitionID>? = nil,
+        groupMatches: [GroupMatchPresentation] = []
     ) {
         self.publicationRevision = publicationRevision
         self.evaluatedAt = evaluatedAt
         self.timeZoneIdentifier = timeZoneIdentifier
         self.competitions = competitions
         self.knownCompetitionIDs = knownCompetitionIDs
+        self.groupMatches = groupMatches
     }
 }
 
@@ -198,6 +204,7 @@ extension CompetitionNotificationMessageFamily {
         case .opportunistic(.closeScore): .closeScore
         case .scheduled(.finalDay): .finalDay
         case .scheduled(.whatItTakes): .whatItTakes
+        case .scheduled(.groupBanter): .groupBanter
         case .opportunistic(.result), .opportunistic(.catchUp),
              .opportunistic(.dailyMaximum), .scheduled(.inviteExpiry),
              .scheduled(.scheduledStart), .scheduled(.competitionEnded):
@@ -227,6 +234,8 @@ struct CompetitionNotificationMessage: Equatable, Sendable {
     var whatItTakes: CompetitionWhatItTakes? = nil
     var matchTimeZoneIdentifier: String? = nil
     var matchDayEnd: Date? = nil
+    /// A group match's banter, already rendered for this person.
+    var banter: CompetitionNotificationContent? = nil
 }
 
 struct CompetitionNotificationEmissionDecision: Equatable, Sendable {

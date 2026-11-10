@@ -36,6 +36,14 @@ final class GroupMatchLiveDoublesUITests: XCTestCase {
         shot(app, "LiveDoubles-nudged")
     }
 
+    func testBanterShowsUnderTheLeadLine() {
+        let app = XCUIApplication.launchGroupLab("banter")
+        let banter = app.groupElement("competition.group.banter")
+        XCTAssertTrue(banter.waitForExistence(timeout: 8))
+        XCTAssertGreaterThan(banter.frame.minY, app.groupElement("competition.group.lead").frame.maxY - 1)
+        shot(app, "Banter")
+    }
+
     func testOneDayIsGroupedByTeam() {
         let app = XCUIApplication.launchGroupLab("live-doubles")
         XCTAssertTrue(app.groupElement("competition.group.team.you").waitForExistence(timeout: 8))

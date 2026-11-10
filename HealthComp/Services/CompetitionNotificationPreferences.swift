@@ -190,6 +190,7 @@ enum CompetitionNotificationChoice: String, CaseIterable, Sendable {
     case nudge // raw value = server work kind (20261101002500)
     case friendRequest = "friend_request" // server work kind (20261109003100)
     case friendAccepted = "friend_accepted" // server work kind (20261109003100)
+    case groupBanter = "group-banter"
 
     var title: String {
         switch self {
@@ -202,6 +203,7 @@ enum CompetitionNotificationChoice: String, CaseIterable, Sendable {
         case .nudge: "Nudges"
         case .friendRequest: "Friend requests"
         case .friendAccepted: "Accepted requests"
+        case .groupBanter: "Group match banter"
         }
     }
 

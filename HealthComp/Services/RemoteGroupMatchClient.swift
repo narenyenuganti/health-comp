@@ -84,6 +84,8 @@ struct GroupMatchReadModel: Codable, Equatable, Sendable {
     let invitationExpiresAt: Date?
     let bestAvailableDeadline: Date?
     let closedAt: Date?
+    /// Who declined, withdrew or cancelled. Nil in caches from before it was kept.
+    var closedByProfileID: UUID? = nil
     let seats: [Seat]
     let ownerRevisionHighWater: Int64
     let ownerAttestation: Attestation?
@@ -156,7 +158,7 @@ enum GroupMatchWire {
         if let startDay, startDay.range(of: #"^\d{4}-\d{2}-\d{2}$"#, options: .regularExpression) == nil {
             throw CompetitionRemoteFailure.serverContractMismatch
         }
-        _ = try object.optional("closed_by_profile_id") { try object.uuid($0) }
+        let closedBy = try object.optional("closed_by_profile_id") { try object.uuid($0) }
         let seats = try object.array("seats").map { try seat($0, matchID: id, format: format) }
         let profiles = seats.compactMap(\.profileID)
         guard seats.map(\.index) == Array(1...format.seatCount),
@@ -189,6 +191,7 @@ enum GroupMatchWire {
             invitationExpiresAt: try object.optional("invitation_expires_at") { try object.date($0) },
             bestAvailableDeadline: try object.optional("best_available_deadline") { try object.date($0) },
             closedAt: try object.optional("closed_at") { try object.date($0) },
+            closedByProfileID: closedBy,
             seats: seats,
             ownerRevisionHighWater: try owner.int64("revision_high_water"),
             ownerAttestation: attestation,
@@ -1165,8 +1168,15 @@ extension GroupMatchReadModel {
                 number: seat.index,
                 name: seat.botMode?.name ?? seat.displayName ?? "Former competitor",
                 occupant: seat.profileID.map { profileID in
-                    .person(profileID: profileID, invite: seat.state == "pending" ? .invited
-                        : seat.state == "declined" ? .declined : .accepted)
+                    // The server keeps the closer's own state: an accepted
+                    // closer of a declined match withdrew, a pending one declined.
+                    let closedIt = self.lifecycle == "declined" && profileID == closedByProfileID
+                    let invite: GroupMatchInviteState = switch seat.state {
+                    case "pending": closedIt ? .declined : .invited
+                    case "declined": .declined
+                    default: closedIt ? .withdrew : .accepted
+                    }
+                    return .person(profileID: profileID, invite: invite)
                 } ?? .bot(seat.botMode ?? .pacer),
                 team: seat.team
             )
@@ -1246,6 +1256,9 @@ enum GroupMatchRemoteCommand: Equatable, Sendable {
                 switch seat {
                 case let .person(profileID, seatTeam):
                     entry = ["kind": "human", "profile_id": id(profileID)]
+                    team = seatTeam
+                case let .challengeLink(code, seatTeam):
+                    entry = ["kind": "human", "challenge_link_code": code.rawValue]
                     team = seatTeam
                 case let .bot(mode, seatTeam):
                     entry = ["kind": "bot", "bot_mode": mode.rawValue]

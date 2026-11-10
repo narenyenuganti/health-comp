@@ -78,21 +78,27 @@ struct GroupMatchFeature {
         var failed: Set<GroupMatchCommand> = []
         /// Why a command in `failed` failed, when the server said.
         var failureReasons: [GroupMatchCommand: GroupMatchFailure] = [:]
-        /// The match link for the lobbies you host, once the server has one.
-        var shareLinks: [CompetitionID: URL] = [:]
+
+        /// The line under the first of `commands` that failed: the server's
+        /// reason when it gave one, otherwise `generic`. Nil when none failed.
+        func failureLine(
+            _ commands: [GroupMatchCommand], otherwise generic: String, name: (UUID) -> String? = { _ in nil }
+        ) -> String? {
+            guard let command = commands.first(where: failed.contains) else { return nil }
+            guard let reason = failureReasons[command] else { return generic }
+            if case let .updateRequired(profileID?) = reason { return reason.message(name: name(profileID)) }
+            return reason.message()
+        }
     }
 
     enum Action: Equatable, Sendable {
         enum Delegate: Equatable, Sendable {
             case published(CompetitionPublication)
-            /// Opens Create Match with the same lineup.
-            case rematchEveryone(CompetitionID)
         }
 
         case commandTapped(GroupMatchCommand)
         /// Nil publication when the command failed, with the reason if known.
         case commandFinished(GroupMatchCommand, CompetitionPublication?, GroupMatchFailure? = nil)
-        case rematchEveryoneTapped(CompetitionID)
         case delegate(Delegate)
     }
 
@@ -126,9 +132,6 @@ struct GroupMatchFeature {
                     return .none
                 }
                 return .send(.delegate(.published(published)))
-
-            case let .rematchEveryoneTapped(id):
-                return .send(.delegate(.rematchEveryone(id)))
 
             case .delegate:
                 return .none

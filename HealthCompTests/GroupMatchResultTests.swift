@@ -6,15 +6,6 @@ import XCTest
 
 @MainActor
 final class GroupMatchResultTests: XCTestCase {
-    func testRematchEveryoneAsksTheParentForTheSameLineup() async {
-        let id = GroupMatchFixtures.routed(.resultFFAWon)!.id
-        let store = TestStore(initialState: GroupMatchFeature.State()) {
-            GroupMatchFeature()
-        }
-        await store.send(.rematchEveryoneTapped(id))
-        await store.receive(.delegate(.rematchEveryone(id)))
-    }
-
     func testDoublesCanTieOnTheServersPlaces() {
         let match = GroupMatchFixtures.routed(.resultDoublesTied)!
         XCTAssertEqual(match.standingRows.map(\.place), [1, 1])

@@ -2472,7 +2472,11 @@ enum RemoteCompetitionProjector {
             evaluatedAt: context.instant.wallDate,
             timeZoneIdentifier: context.timeZoneIdentifier,
             competitions: competitions,
-            knownCompetitionIDs: knownCompetitionIDs
+            // Group matches are known too, so orphan cleanup keeps their banter.
+            knownCompetitionIDs: knownCompetitionIDs.map {
+                $0.union(publication.dashboard.groupMatches.map(\.id))
+            },
+            groupMatches: publication.dashboard.groupMatches
         )
     }
 

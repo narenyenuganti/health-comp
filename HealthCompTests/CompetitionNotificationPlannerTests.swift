@@ -1364,6 +1364,7 @@ final class CompetitionNotificationPlannerTests: XCTestCase {
             (.scheduled(.finalDay), .finalDay),
             (.scheduled(.competitionEnded), nil),
             (.scheduled(.whatItTakes), .whatItTakes),
+            (.scheduled(.groupBanter), .groupBanter),
         ]
         XCTAssertEqual(
             families.count,
