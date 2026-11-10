@@ -31,7 +31,7 @@ final class CompetitionNotificationClientTests: XCTestCase {
         ))
         XCTAssertEqual(request.content.title, content.title)
         XCTAssertEqual(request.content.body, content.body)
-        XCTAssertEqual(CompetitionRoute(userInfo: request.content.userInfo), .competition(id))
+        XCTAssertEqual(CompetitionReactionAlert.route(userInfo: request.content.userInfo), .competition(id))
         XCTAssertEqual(request.content.categoryIdentifier, CompetitionReactionAlert.category(.result))
         XCTAssertEqual(request.content.userInfo[CompetitionReactionAlert.recipientKey] as? String, recipient.uuidString)
     }
