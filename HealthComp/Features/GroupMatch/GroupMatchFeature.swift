@@ -41,11 +41,14 @@ struct GroupMatchFeature {
     enum Action: Equatable, Sendable {
         enum Delegate: Equatable, Sendable {
             case published(CompetitionPublication)
+            /// Opens Create Match with the same lineup.
+            case rematchEveryone(CompetitionID)
         }
 
         case commandTapped(GroupMatchCommand)
         /// Nil when the command failed.
         case commandFinished(GroupMatchCommand, CompetitionPublication?)
+        case rematchEveryoneTapped(CompetitionID)
         case delegate(Delegate)
     }
 
@@ -73,6 +76,9 @@ struct GroupMatchFeature {
                     return .none
                 }
                 return .send(.delegate(.published(published)))
+
+            case let .rematchEveryoneTapped(id):
+                return .send(.delegate(.rematchEveryone(id)))
 
             case .delegate:
                 return .none

@@ -1432,20 +1432,21 @@ struct CompetitionHistoryView: View {
         let weeks = competitionHistoryWeeks(publication.dashboard.competitions)
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
-                if weeks.isEmpty {
+                if weeks.isEmpty && GroupMatchRecord.finished(publication.dashboard.groupMatches).isEmpty {
                     Text("Finished matches appear here.")
                         .font(.subheadline)
                         .foregroundStyle(Theme.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 } else {
-                    recordSection(weeks)
+                    if !weeks.isEmpty { recordSection(weeks) }
+                    GroupMatchRecord(matches: publication.dashboard.groupMatches, now: publication.evaluatedAt)
                     if let openRecap,
                        let today = competitionRecapToday(publication),
                        case let periods = competitionRecapPeriods(publication.dashboard.competitions, today: today),
                        !periods.isEmpty {
                         recapSection(periods, open: openRecap)
                     }
-                    weeksSection(weeks)
+                    if !weeks.isEmpty { weeksSection(weeks) }
                 }
             }
             .padding(.horizontal, 16)
