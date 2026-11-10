@@ -141,6 +141,40 @@ final class RemoteGroupMatchClientTests: XCTestCase {
         XCTAssertEqual(pending.seats[2].invite, .invited)
     }
 
+    func testAFinishedMatchTakesItsTotalsAndDaysFromTheFrozenResultSeats() throws {
+        func days(_ points: [Int]) -> [[String: Any]] {
+            points.enumerated().map {
+                ["ordinal": $0.offset + 1, "status": "available", "centi_points": String($0.element), "reason": NSNull()]
+            }
+        }
+        let data = try editedFixture(finishedID) { match in
+            var result = match["result"] as! [String: Any]
+            result["version"] = 1
+            result["seats"] = [
+                ["seat_index": 1, "total_centi_points": "210000", "days": days([40_000, 20_000] + Array(repeating: 30_000, count: 5))],
+                ["seat_index": 2, "total_centi_points": "210000", "days": days([20_000, 40_000] + Array(repeating: 30_000, count: 5))],
+                ["seat_index": 3, "total_centi_points": "0", "days": days(Array(repeating: 0, count: 7))],
+            ]
+            match["result"] = result
+        }
+        let finished = try XCTUnwrap(
+            GroupMatchWire.decodeList(data, viewer: viewer).first { $0.id == finishedID }?
+                .presentation(viewer: viewer, now: dayThreeNoon)
+        )
+        let ids = finished.seats.map(\.id)
+        XCTAssertEqual(finished.frozenSeatTotals, [ids[0]: 210_000, ids[1]: 210_000, ids[2]: 0])
+        XCTAssertEqual(finished.frozenDays?.count, 21)
+        // Day 1 to seat 1, day 2 to seat 2, days 3-7 shared.
+        XCTAssertEqual(ids.map { finished.frozenDaysWon(by: .seat($0)) }, [6, 6, 0])
+
+        let withoutSeats = try XCTUnwrap(
+            GroupMatchWire.decodeList(fixture(), viewer: viewer).first { $0.id == finishedID }?
+                .presentation(viewer: viewer, now: dayThreeNoon)
+        )
+        XCTAssertNil(withoutSeats.frozenSeatTotals)
+        XCTAssertNil(withoutSeats.frozenDays)
+    }
+
     // MARK: Read model cache
 
     func testStaleRefreshKeepsTheNewerCachedMatchAndOfflineUsesTheCache() async throws {

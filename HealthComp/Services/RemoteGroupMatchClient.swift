@@ -1138,6 +1138,26 @@ extension GroupMatchReadModel {
                 return subject.map { GroupMatchStandingRow(subject: $0, place: standing.place, centipoints: standing.centipoints) }
             }
         }
+        // The server's frozen seat days, when it sends them. Core can't hold a
+        // day-0 cutoff, so that leaver's days count as resolved zeros.
+        let frozenSeats = result?.seats?.compactMap { frozen in
+            seats.first { $0.index == frozen.seatIndex }.map { (seat: $0, frozen: frozen) }
+        }
+        let frozenSeatTotals = frozenSeats.map {
+            Dictionary(uniqueKeysWithValues: $0.map { ($0.seat.id, $0.frozen.totalCentipoints) })
+        }
+        let frozenDays = frozenSeats.map {
+            $0.flatMap { seat, frozen in
+                frozen.days.compactMap { day in
+                    let value: MatchDayValue = switch day.status {
+                    case "available": .centipoints(day.centipoints ?? 0)
+                    case "afterLeave": leaveCutoffs[seat.id] == nil ? .centipoints(0) : .afterLeave
+                    default: .unavailable
+                    }
+                    return try? MatchDayScore(seatID: seat.id, ordinal: day.ordinal, value: value)
+                }
+            }
+        }
         return try? GroupMatchPresentation(
             id: CompetitionID(id),
             lifecycle: lifecycle,
@@ -1148,7 +1168,9 @@ extension GroupMatchReadModel {
             days: days,
             rings: rings,
             leaveCutoffs: leaveCutoffs,
-            frozenStandings: frozen
+            frozenStandings: frozen,
+            frozenSeatTotals: frozenSeatTotals,
+            frozenDays: frozenDays
         )
     }
 }
