@@ -946,7 +946,7 @@ enum SupabaseCompetitionRemoteAPI {
                 throw CompetitionRemoteFailure.cancelled
             case .network, .relay:
                 throw CompetitionRemoteFailure.retryableTransport
-            case let .server(statusCode, code, message, detail):
+            case let .server(statusCode, code, message, detail, hint):
                 if isMissingRPCFunction(code: code, context: context) {
                     throw MissingRPCFunction()
                 }
@@ -955,6 +955,7 @@ enum SupabaseCompetitionRemoteAPI {
                     code: code,
                     message: message,
                     detail: detail,
+                    hint: hint,
                     context: context
                 )
             case .other:
@@ -979,6 +980,7 @@ enum SupabaseCompetitionRemoteAPI {
             code: envelope?.code,
             message: envelope?.message ?? "",
             detail: envelope?.details,
+            hint: envelope?.hint,
             context: context
         )
     }
@@ -988,6 +990,7 @@ enum SupabaseCompetitionRemoteAPI {
         code: String?,
         message: String,
         detail: String? = nil,
+        hint: String? = nil,
         context: ErrorContext
     ) -> CompetitionRemoteFailure {
         let normalizedCode = code?.lowercased()
@@ -1036,7 +1039,13 @@ enum SupabaseCompetitionRemoteAPI {
             return .ownChallengeLink
         }
         if identifiers.contains("group_update_required") {
-            return .groupUpdateRequired(profileID: detail.flatMap(wireUUID))
+            let suffix = " needs to update HealthComp first."
+            let displayName = hint.flatMap { hint -> String? in
+                guard hint.hasSuffix(suffix) else { return nil }
+                let name = String(hint.dropLast(suffix.count))
+                return (try? validateDisplayName(name)).map { name }
+            }
+            return .groupUpdateRequired(profileID: detail.flatMap(wireUUID), displayName: displayName)
         }
         if identifiers.contains("group_creation_limit") {
             return .groupCreationLimit
@@ -1829,11 +1838,13 @@ private struct RemoteErrorEnvelope: Decodable {
     let message: String?
     /// PostgREST's `details`; nil inside an `error` body.
     var details: String?
+    var hint: String?
 
     private enum CodingKeys: String, CodingKey {
         case code
         case message
         case details
+        case hint
         case error
     }
 
@@ -1852,6 +1863,7 @@ private struct RemoteErrorEnvelope: Decodable {
                 forKey: .message
             )
             self.details = try? container.decodeIfPresent(String.self, forKey: .details)
+            self.hint = try? container.decodeIfPresent(String.self, forKey: .hint)
         }
     }
 }
@@ -2005,7 +2017,8 @@ private actor SupabaseCompetitionClientBox {
                 statusCode: nil,
                 code: error.code,
                 message: error.message,
-                detail: error.details
+                detail: error.details,
+                hint: error.hint
             )
         } catch let error as URLError {
             if error.code == .cancelled {

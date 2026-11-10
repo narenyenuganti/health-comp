@@ -6,12 +6,12 @@ import SwiftUI
 struct GroupMatchLobbyView: View {
     let match: GroupMatchPresentation
     let store: StoreOf<GroupMatchFeature>
+    let createNewMatch: () -> Void
 
     @Environment(\.dismiss) private var dismiss
     @Environment(\.locale) private var locale
     @Environment(\.timeZone) private var timeZone
     @State private var confirms: GroupMatchCommand?
-    @State private var showsNewMatch = false
 
     var body: some View {
         Group {
@@ -35,9 +35,6 @@ struct GroupMatchLobbyView: View {
             Button("Keep Match", role: .cancel) {}
         } message: {
             Text("It won’t start, and everyone in it sees that.")
-        }
-        .sheet(isPresented: $showsNewMatch) {
-            GroupMatchCreateView(store: store, lineup: GroupMatchLineup(match: match))
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("competition.group.lobby")
@@ -161,7 +158,7 @@ struct GroupMatchLobbyView: View {
             GroupMatchLineupPanels(match: match, identifier: "competition.group.lobby.seat")
         } actions: {
             if isHost {
-                Button("Create a New Match") { showsNewMatch = true }
+                Button("Create a New Match", action: createNewMatch)
                     .buttonStyle(PrimaryButtonStyle())
                     .accessibilityIdentifier("competition.group.lobby.new-match")
             }
@@ -179,9 +176,8 @@ struct GroupMatchLobbyView: View {
         match.seats.filter { $0.invite == .withdrew }
     }
 
-    /// Whoever closed it: the person who withdrew, or everyone who didn't accept.
     private var missing: [GroupMatchSeat] {
-        withdrew.isEmpty ? match.seats.filter { $0.invite != nil && $0.invite != .accepted } : withdrew
+        match.closedBeforeStartSeats
     }
 
     private var closedTitle: String {
@@ -395,8 +391,8 @@ struct GroupMatchLineupPanels: View {
         return match.format == .doubles && seat.team == match.viewer.team ? .partner : .them
     }
 
-    private func status(of seat: GroupMatchSeat) -> String {
-        let isInvite = match.viewer.invite == .invited
+    func status(of seat: GroupMatchSeat) -> String {
+        let isInvite = match.screen == .invite
         switch seat.invite {
         case nil: return "In"
         case .accepted?: return isInvite && seat.number == 1 ? "Host" : "In"

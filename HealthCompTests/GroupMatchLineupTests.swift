@@ -6,6 +6,28 @@ final class GroupMatchLineupTests: XCTestCase {
     private let sam = GroupMatchPlayer(profileID: UUID(), name: "Sam")
     private let priya = GroupMatchPlayer(profileID: UUID(), name: "Priya")
 
+    func testCandidatesKeepFriendsAndPlayedPeopleButExcludeUnavailableProfiles() {
+        let blocked = UUID(), deleted = UUID(), stranger = UUID()
+        func match(
+            _ id: UUID, _ name: String, _ lifecycle: LocalCompetitionLifecyclePresentation = .active(dayOrdinal: 3)
+        ) -> LocalCompetitionPresentation {
+            .init(id: CompetitionID(UUID()), ownerDisplayName: "You", opponentDisplayName: name,
+                  opponentIdentity: RemoteCompetitionOpponentIdentity.identity(for: id), lifecycle: lifecycle,
+                  acceptedConfiguration: nil, userPoints: 0, opponentPoints: 0, days: [], currentDayOrdinal: nil,
+                  lastRefresh: nil, tally: nil, terminalResult: nil)
+        }
+        func friend(_ id: UUID, _ name: String) -> FriendPerson {
+            .init(id: id, displayName: name, username: nil, relationship: .friend)
+        }
+        XCTAssertEqual(GroupMatchPlayer.candidates(
+            friends: [friend(sam.profileID, sam.name), friend(blocked, "Blocked"), friend(deleted, "Old name")],
+            matches: [match(sam.profileID, "Older Sam"), match(priya.profileID, priya.name), match(blocked, "Blocked"),
+                      match(deleted, "Old name"), match(deleted, competitionFormerCompetitorName),
+                      match(stranger, "Stranger", .pending(direction: .incoming, createdAt: .distantPast, expiresAt: nil))],
+            blocked: [AuthenticatedProfile(id: blocked, displayName: "Blocked")]
+        ), [sam, priya])
+    }
+
     func testRemovingAFourWaySeatMakesAThreeWayAndCreateNeedsAnotherPerson() {
         var lineup = GroupMatchLineup(format: .fourWay, entries: [.bot(.erratic)])
         XCTAssertFalse(lineup.canRemoveSeat(0), "A filled seat empties first.")

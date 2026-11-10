@@ -1557,10 +1557,11 @@ final class MultiUserCompetitionUITests: XCTestCase {
                 .waitForExistence(timeout: 3)
         )
 
-        // Nine switches, all on by default, in page order.
+        // Switches in page order.
         let rows: [(String, String)] = [
             ("lead-change", "Lead changes"), ("close-score", "Close scores"),
-            ("what-it-takes", "What it takes"), ("final-day", "Last day"), ("live-activity", "Live Activity"),
+            ("what-it-takes", "What it takes"), ("final-day", "Last day"),
+            ("group-banter", "Group match banter"), ("live-activity", "Live Activity"),
             ("reaction", "Reactions"), ("nudge", "Nudges"),
             ("friend_request", "Friend requests"), ("friend_accepted", "Accepted requests"),
         ]
@@ -2319,10 +2320,7 @@ final class MultiUserCompetitionUITests: XCTestCase {
         let open = app.buttons["competition.create.open"]
         XCTAssertTrue(open.waitForExistence(timeout: 8))
         open.tap()
-        // + opens New Match on Duel; Choose Players opens the Challenge sheet.
-        let duel = app.buttons["competition.group.choose-players"]
-        XCTAssertTrue(duel.waitForExistence(timeout: 3))
-        duel.tap()
+        // The sharing lab opens the Challenge sheet directly.
         XCTAssertTrue(
             app.buttons["competition.create.done"].waitForExistence(timeout: 3)
         )

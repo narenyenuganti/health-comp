@@ -1537,16 +1537,26 @@ extension RemoteGroupMatchClientTests {
             XCTAssertEqual(failure, expected, message)
             XCTAssertEqual(failure.flatMap { GroupMatchFailure($0) }, reason, message)
         }
-        // The REST error body's `details` names the profile too.
+        // A pasted link has no local profile ID; both transports keep the name in the hint.
+        let hint = "Sam needs to update HealthComp first."
         let body = try JSONSerialization.data(withJSONObject: [
             "code": "P0001", "message": "group_update_required", "details": Self.sam.uuidString.lowercased(),
+            "hint": hint,
         ])
-        let rest = StubTransport([.response(400, body)])
-        do {
-            _ = try await SupabaseCompetitionRemoteAPI.make(transport: rest.transport).sendGroupMatchCommand(.accept(pendingID))
-            XCTFail("expected a failure")
-        } catch {
-            XCTAssertEqual(error as? CompetitionRemoteFailure, .groupUpdateRequired(profileID: Self.sam))
+        let code = try XCTUnwrap(CompetitionChallengeLinkCode(rawValue: "Mx7kQ2pL9vR4tN8wB3cY6z"))
+        let draft = GroupMatchDraft(format: .threeWay, seats: [.challengeLink(code, team: nil), .bot(.pacer, team: nil)])
+        let create = GroupMatchRemoteCommand.create(creator: viewer, draft, timeZoneIdentifier: "UTC", idempotencyKey: UUID())
+        for reply in [StubTransport.Answer.response(400, body), .failure(.server(
+            statusCode: nil, code: "P0001", message: "group_update_required", detail: Self.sam.uuidString.lowercased(), hint: hint
+        ))] {
+            let result = await failure(of: create, answering: reply)
+            let error = try XCTUnwrap(result)
+            XCTAssertEqual(error, .groupUpdateRequired(profileID: Self.sam, displayName: "Sam"))
+            var state = GroupMatchFeature.State()
+            let command = GroupMatchCommand.create(draft)
+            state.failed.insert(command)
+            state.failureReasons[command] = GroupMatchFailure(error)
+            XCTAssertEqual(state.failureLine([command], otherwise: "Couldn’t create match"), hint)
         }
         XCTAssertNil(GroupMatchFailure(CompetitionRemoteFailure.retryableTransport), "offline keeps the generic line")
         XCTAssertEqual(GroupMatchFailure.updateRequired(profileID: Self.leo).message(name: "Leo"), "Leo needs to update HealthComp first.")

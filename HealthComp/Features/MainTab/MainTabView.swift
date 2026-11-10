@@ -12,6 +12,7 @@ struct MainTabView: View {
     @State private var isChallengePresented = false
     /// New Match: the format picker, whose Duel opens the Challenge sheet.
     @State private var isNewMatchPresented = false
+    @State private var newMatchLineup: GroupMatchLineup?
     @State private var opensDuel = false
     @State private var isPracticePresented = false
     @State private var isVersusPlaying = false
@@ -112,12 +113,14 @@ struct MainTabView: View {
             )
         }
         .sheet(isPresented: $isNewMatchPresented, onDismiss: {
+            newMatchLineup = nil
             // After this sheet is gone, so the Challenge sheet can present.
             if opensDuel { opensDuel = false; isChallengePresented = true }
         }) {
             GroupMatchCreateView(
                 store: store.scope(state: \.competition.group, action: \.competition.group),
                 people: newMatchPeople,
+                lineup: newMatchLineup,
                 onDuel: { opensDuel = true; isNewMatchPresented = false }
             )
         }
@@ -145,16 +148,11 @@ struct MainTabView: View {
 
     /// Friends, then people you've had a duel with, once each.
     private var newMatchPeople: [GroupMatchPlayer] {
-        let friends = (store.competition.friends.list?.friends ?? []).map {
-            GroupMatchPlayer(profileID: $0.id, name: $0.displayName)
-        }
-        let played = (store.competition.publication?.dashboard.competitions ?? []).compactMap { competition in
-            RemoteCompetitionOpponentIdentity.profileID(competition.opponentIdentity).map {
-                GroupMatchPlayer(profileID: $0, name: competition.opponentDisplayName)
-            }
-        }
-        var seen = Set<UUID>()
-        return (friends + played).filter { seen.insert($0.profileID).inserted }
+        GroupMatchPlayer.candidates(
+            friends: store.competition.friends.list?.friends ?? [],
+            matches: store.competition.publication?.dashboard.competitions ?? [],
+            blocked: store.competition.blockedPeople ?? []
+        )
     }
 
     private var photoOwners: [UUID] {
@@ -556,7 +554,11 @@ struct MainTabView: View {
         ) {
             GroupMatchDestination(
                 match: match,
-                store: store.scope(state: \.competition.group, action: \.competition.group)
+                store: store.scope(state: \.competition.group, action: \.competition.group),
+                createNewMatch: {
+                    newMatchLineup = GroupMatchLineup(match: match)
+                    isNewMatchPresented = true
+                }
             )
             .environment(
                 \.groupMatchReplayIntro,

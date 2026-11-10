@@ -153,6 +153,15 @@ struct GroupMatchPresentation: Identifiable, Equatable, Sendable {
 
     var viewer: GroupMatchSeat { seats.first { $0.id == viewerSeatID }! }
 
+    /// A decline or withdrawal closes the match before other invitees have to answer.
+    var closedBeforeStartSeats: [GroupMatchSeat] {
+        switch lifecycle {
+        case .declined: seats.filter { $0.invite == .declined || $0.invite == .withdrew }
+        case .expired: seats.filter { $0.invite == .invited }
+        default: []
+        }
+    }
+
     /// Your seat, or your team in doubles.
     var viewerSubject: MatchStandingSubject {
         format == .doubles ? .team(viewer.team!) : .seat(viewerSeatID)

@@ -95,10 +95,11 @@ final class GroupMatchJoinUITests: XCTestCase {
         shot(app, "LobbyShort-new-match")
     }
 
-    func testDidNotStartNamesEveryMissingSeat() {
+    func testDidNotStartNamesThePersonWhoDeclined() {
         let app = XCUIApplication.launchGroupLab("lobby-declined")
-        XCTAssertTrue(app.staticTexts["Two seats short"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.staticTexts["One seat short"].waitForExistence(timeout: 8))
         XCTAssertEqual(app.groupElement("competition.group.lobby.seat.3").label, "Priya, Declined")
+        XCTAssertEqual(app.groupElement("competition.group.lobby.seat.4").label, "Leo, No answer")
         shot(app, "LobbyShort-declined")
     }
 
@@ -107,6 +108,7 @@ final class GroupMatchJoinUITests: XCTestCase {
         XCTAssertTrue(app.buttons["competition.group.lobby.done"].waitForExistence(timeout: 8))
         XCTAssertFalse(app.buttons["competition.group.lobby.new-match"].exists)
         XCTAssertTrue(app.staticTexts["Leo didn’t accept, so this match didn’t start."].exists)
+        XCTAssertEqual(app.groupElement("competition.group.lobby.seat.2").label, "You, No answer")
         shot(app, "LobbyShort-invitee")
     }
 

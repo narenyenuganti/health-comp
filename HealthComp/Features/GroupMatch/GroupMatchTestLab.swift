@@ -167,7 +167,7 @@ enum GroupMatchFixtures {
         case .lobbyShortInvitee:
             match(
                 23, .fourWay, .declined(at: now, direction: .incoming), [.sam, .you, .priya, .leo],
-                invites: [.leo: .declined]
+                viewerInvite: .invited, invites: [.leo: .declined]
             )
         case .lobbyScheduled: match(24, .fourWay, .scheduled, ffaLineup, start: tomorrow)
         case .lobbyScheduledInvitee: match(25, .fourWay, .scheduled, [.sam, .you, .priya, .leo], start: tomorrow)
@@ -177,7 +177,7 @@ enum GroupMatchFixtures {
         case .liveDoubles: doubles(5, live, scores: fourDays, left: left)
         case .liveBot: match(6, .fourWay, live, [.you, .sam, .erratic, .leo], scores: fourDays, left: left)
         // Leo's slow week leaves Sam carrying their team.
-        case .banter: doubles(7, live, scores: fourDays.merging([.leo: [150, 160, 140, 170]]) { $1 })
+        case .banter: doubles(7, live, scores: fourDays.merging([.leo: [150, 160, 140, 170]]) { $1 }, left: left)
         case .resultFFAWon: match(8, .fourWay, won, ffaLineup, scores: week, isFrozen: true)
         case .resultFFATied:
             match(
@@ -279,7 +279,7 @@ enum GroupMatchFixtures {
 
     /// Home's cards: every state once, in the order Home lists them.
     static let homeSetups: [GroupMatchLabSetup] = [
-        .inviteFFA, .lobbyHost, .liveFFA, .liveDoubles, .resultFFAWon, .resultDoubles, .lobbyDeclined,
+        .inviteFFA, .lobbyHost, .liveFFA, .liveDoubles, .resultFFAWon, .resultDoubles, .lobbyDeclined, .lobbyWithdrew,
     ]
 
     static func publication(

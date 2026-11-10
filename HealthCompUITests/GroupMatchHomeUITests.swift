@@ -31,6 +31,7 @@ final class GroupMatchHomeUITests: XCTestCase {
         XCTAssertTrue(app.groupElement(card("completed", 8)).label.contains("You finished 1st."))
         XCTAssertTrue(app.groupElement(card("completed", 10)).label.contains("Your team won."))
         XCTAssertTrue(app.groupElement(card("declined", 2)).label.hasSuffix("Priya didn’t accept."))
+        XCTAssertTrue(app.groupElement(card("declined", 26)).label.hasSuffix("Sam withdrew."))
         XCTAssertFalse(app.groupElement("competition.create.empty").exists)
         shot(app, "Home-1")
         for page in 2...4 {

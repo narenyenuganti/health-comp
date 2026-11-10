@@ -1,6 +1,6 @@
 import XCTest
 
-/// Account → Notifications: nine switches in three sections. `account` is the
+/// Account → Notifications: ten switches in three sections. `account` is the
 /// standalone Account fixture (iOS notifications and Live Activities off).
 /// `notification-choices` is the real app root with notifications on, the
 /// long-named challenger muted, and the real installation coordinator
@@ -12,7 +12,8 @@ final class NotificationChoicesUITests: XCTestCase {
 
     private static let rows: [(id: String, label: String)] = [
         ("lead-change", "Lead changes"), ("close-score", "Close scores"),
-        ("what-it-takes", "What it takes"), ("final-day", "Last day"), ("live-activity", "Live Activity"),
+        ("what-it-takes", "What it takes"), ("final-day", "Last day"),
+        ("group-banter", "Group match banter"), ("live-activity", "Live Activity"),
         ("reaction", "Reactions"), ("nudge", "Nudges"),
         ("friend_request", "Friend requests"), ("friend_accepted", "Accepted requests"),
     ]
@@ -33,7 +34,7 @@ final class NotificationChoicesUITests: XCTestCase {
 
     // MARK: Page
 
-    func testPageListsNineSwitchesInOrderWithLiveActivitiesOffInIOS() {
+    func testPageListsSwitchesInOrderWithLiveActivitiesOffInIOS() {
         launch(.account)
         openNotificationsFromAccount()
         XCTAssertTrue(app.staticTexts["Turned off in iOS Settings"].exists)

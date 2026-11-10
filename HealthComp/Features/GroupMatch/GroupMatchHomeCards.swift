@@ -153,7 +153,9 @@ private struct GroupMatchHomeCard: View {
             let waiting = others.filter { $0.invite == .invited }
             return waiting.isEmpty ? "Everyone’s in." : "Waiting on \(names(waiting))."
         case .declined:
-            let declined = others.filter { $0.invite == .declined }
+            let withdrew = match.closedBeforeStartSeats.filter { $0.invite == .withdrew }
+            if !withdrew.isEmpty { return "\(names(withdrew)) withdrew." }
+            let declined = match.closedBeforeStartSeats.filter { $0.id != match.viewerSeatID }
             return declined.isEmpty ? "Someone didn’t accept." : "\(names(declined)) didn’t accept."
         case .expired:
             let waiting = others.filter { $0.invite == .invited }
@@ -173,7 +175,7 @@ private struct GroupMatchHomeCard: View {
                     name: seat.name, photo: seat.profileID, size: avatarSize,
                     isYou: seat.id == match.viewerSeatID, isBot: seat.isBot
                 )
-                .opacity(seat.invite == .invited || seat.invite == .declined ? 0.45 : 1)
+                .opacity(seat.invite == nil || seat.invite == .accepted ? 1 : 0.45)
             }
         }
     }

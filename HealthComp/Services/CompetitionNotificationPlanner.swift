@@ -411,8 +411,11 @@ struct CompetitionNotificationPlanner: Sendable {
         }
 
         if authorization.permitsNotifications, !switchedOff.contains(.groupBanter) {
-            scheduledCandidates += try snapshot.groupMatches.compactMap {
-                try banterCandidate($0, evaluatedAt: snapshot.evaluatedAt)
+            scheduledCandidates += try snapshot.groupMatches.compactMap { match in
+                guard !match.hasLeft(match.viewer), !match.seats.compactMap(\.profileID).contains(where: {
+                    mutedOpponentIdentities.contains(RemoteCompetitionOpponentIdentity.identity(for: $0))
+                }) else { return nil }
+                return try banterCandidate(match, evaluatedAt: snapshot.evaluatedAt)
             }
         }
 

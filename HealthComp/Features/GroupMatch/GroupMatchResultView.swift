@@ -1,5 +1,4 @@
 import CompetitionCore
-import ComposableArchitecture
 import SwiftUI
 
 /// A finished group match: the server's frozen standings as given, how many
@@ -7,7 +6,7 @@ import SwiftUI
 /// A group match never moves a belt.
 struct GroupMatchResultView: View {
     let match: GroupMatchPresentation
-    let store: StoreOf<GroupMatchFeature>
+    let createNewMatch: () -> Void
 
     @ScaledMetric(relativeTo: .largeTitle) private var headlineSize: CGFloat = 56
     @ScaledMetric(relativeTo: .title) private var scoreSize: CGFloat = 28
@@ -16,7 +15,6 @@ struct GroupMatchResultView: View {
     @ScaledMetric(relativeTo: .largeTitle) private var podiumNumberSize: CGFloat = 44
     @Environment(\.locale) private var locale
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
-    @State private var showsRematch = false
 
     var body: some View {
         ScrollView {
@@ -61,16 +59,12 @@ struct GroupMatchResultView: View {
             }
         }
         .navigationBarTitleDisplayMode(.inline)
-        // Prefilled with the same lineup; nothing is sent until Create Match.
-        .sheet(isPresented: $showsRematch) {
-            GroupMatchCreateView(store: store, lineup: GroupMatchLineup(match: match))
-        }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("competition.group.result")
     }
 
     private var rematchButton: some View {
-        Button("Rematch Everyone") { showsRematch = true }
+        Button("Rematch Everyone", action: createNewMatch)
             .buttonStyle(PrimaryButtonStyle())
             .accessibilityIdentifier("competition.group.result.rematch")
     }

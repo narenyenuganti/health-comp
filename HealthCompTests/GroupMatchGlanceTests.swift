@@ -142,8 +142,18 @@ final class GroupMatchGlanceTests: XCTestCase {
         // Whatever order the dashboard brings.
         XCTAssertEqual(GroupMatchHomeCards.shown(matches.reversed(), now: now).map(\.id), [
             GroupMatchLabSetup.inviteFFA, .lobbyHost, .liveDoubles, .liveFFA, .resultDoubles, .resultFFAWon,
-            .lobbyDeclined,
+            .lobbyWithdrew, .lobbyDeclined,
         ].map { fixture($0).id })
+    }
+
+    @MainActor
+    func testOnlyTheSeatThatClosedAMatchIsNamedAndPendingSeatsHaveNoAnswer() {
+        XCTAssertEqual(fixture(.lobbyDeclined).closedBeforeStartSeats.map(\.name), ["Priya"])
+        XCTAssertEqual(fixture(.lobbyWithdrew).closedBeforeStartSeats.map(\.name), ["Sam"])
+        XCTAssertEqual(fixture(.lobbyExpired).closedBeforeStartSeats.map(\.name), ["Leo"])
+        let closed = fixture(.lobbyShortInvitee)
+        XCTAssertEqual(closed.closedBeforeStartSeats.map(\.name), ["Leo"])
+        XCTAssertEqual(GroupMatchLineupPanels(match: closed, identifier: "seat").status(of: closed.viewer), "No answer")
     }
 
     func testResultsAndClosedMatchesLeaveHomeOnTheDuelsClock() throws {

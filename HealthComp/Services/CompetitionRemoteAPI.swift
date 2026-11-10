@@ -27,7 +27,7 @@ enum CompetitionRemoteFailure: Error, Equatable, Sendable {
     case appAttestProofConflict
     /// A named person has no installation that can show group matches; the
     /// server names the first such seat's profile.
-    case groupUpdateRequired(profileID: UUID?)
+    case groupUpdateRequired(profileID: UUID?, displayName: String? = nil)
     /// You already have five pending or live group matches.
     case groupCreationLimit
     case invalidUsername
@@ -319,8 +319,8 @@ enum CompetitionRemoteTransportFailure: Error, Equatable, Sendable {
     case cancelled
     case network
     case relay
-    /// `detail` is PostgREST's `details` (a group update names the profile).
-    case server(statusCode: Int?, code: String?, message: String, detail: String? = nil)
+    /// PostgREST's `details` and `hint` can identify a player who needs an update.
+    case server(statusCode: Int?, code: String?, message: String, detail: String? = nil, hint: String? = nil)
     case other
 }
 

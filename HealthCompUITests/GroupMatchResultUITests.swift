@@ -23,6 +23,9 @@ final class GroupMatchResultUITests: XCTestCase {
         // Rematch Everyone opens New Match on the same format; nothing is sent yet.
         app.buttons["competition.group.result.rematch"].tap()
         XCTAssertTrue(app.groupElement("competition.group.format.four-way").waitForExistence(timeout: 4))
+        app.buttons["competition.group.format.duel"].tap()
+        app.buttons["competition.group.choose-players"].tap()
+        XCTAssertTrue(app.buttons["competition.create.done"].waitForExistence(timeout: 4))
 
         app.terminate()
         app = XCUIApplication.launchGroupLab("result-ffa-tied")

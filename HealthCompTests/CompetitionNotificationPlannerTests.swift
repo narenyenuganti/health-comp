@@ -5,6 +5,32 @@ import UserNotifications
 @testable import HealthComp
 
 final class CompetitionNotificationPlannerTests: XCTestCase {
+    #if DEBUG
+    func testGroupBanterRequiresAViewerStillInAnUnmutedMatch() throws {
+        let match = try XCTUnwrap(GroupMatchFixtures.routed(.banter))
+        let left = try XCTUnwrap(GroupMatchFixtures.routed(.banter, youLeft: true))
+        let planner = CompetitionNotificationPlanner(policy: .liveV1)
+        func requests(
+            _ match: GroupMatchPresentation, muted: Set<String> = [], off: Set<CompetitionNotificationChoice> = []
+        ) throws -> [CompetitionScheduledNotificationRequest] {
+            try planner.plan(
+                .init(publicationRevision: 1, evaluatedAt: MultiUserCompetitionTestLabFixtures.labNow,
+                      timeZoneIdentifier: "America/Los_Angeles", competitions: [], groupMatches: [match]),
+                authorization: .authorized, mutedOpponentIdentities: muted, switchedOff: off
+            ).desiredScheduledRequests
+        }
+
+        let request = try XCTUnwrap(requests(match).first)
+        XCTAssertEqual(request.dateComponents.hour, 20)
+        XCTAssertEqual(request.content.body, match.banter)
+        XCTAssertNotNil(left.banter, "Leaving alone must suppress a line that would still qualify")
+        XCTAssertTrue(try requests(left).isEmpty)
+        let muted = RemoteCompetitionOpponentIdentity.identity(for: GroupMatchFixtures.Player.priya.profileID)
+        XCTAssertTrue(try requests(match, muted: [muted]).isEmpty, "Even a seat outside the banter line counts")
+        XCTAssertTrue(try requests(match, off: [.groupBanter]).isEmpty)
+    }
+    #endif
+
     func testLivePolicyV1OwnsTimingBudgetPriorityAndPrivacyCopy() throws {
         let policy = CompetitionNotificationPolicy.liveV1
         let timeZoneIdentifier = "America/Los_Angeles"

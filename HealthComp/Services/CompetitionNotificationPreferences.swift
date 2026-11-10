@@ -185,12 +185,12 @@ enum CompetitionNotificationChoice: String, CaseIterable, Sendable {
     case closeScore = "close-score"
     case whatItTakes = "what-it-takes"
     case finalDay = "final-day"
+    case groupBanter = "group-banter"
     case liveActivity = "live-activity"
     case reaction // raw value = server work kind (20261102002700)
     case nudge // raw value = server work kind (20261101002500)
     case friendRequest = "friend_request" // server work kind (20261109003100)
     case friendAccepted = "friend_accepted" // server work kind (20261109003100)
-    case groupBanter = "group-banter"
 
     var title: String {
         switch self {

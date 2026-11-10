@@ -42,7 +42,7 @@ enum GroupMatchCommand: Hashable, Sendable {
 enum GroupMatchFailure: Hashable, Sendable {
     case recipientUnavailable
     /// The server names the first person who needs a newer app.
-    case updateRequired(profileID: UUID?)
+    case updateRequired(profileID: UUID?, displayName: String? = nil)
     case creationLimit
     /// Closed, expired or no longer yours to answer.
     case closed
@@ -50,7 +50,8 @@ enum GroupMatchFailure: Hashable, Sendable {
     init?(_ error: Error) {
         switch error as? CompetitionRemoteFailure {
         case .recipientUnavailable?: self = .recipientUnavailable
-        case let .groupUpdateRequired(profileID)?: self = .updateRequired(profileID: profileID)
+        case let .groupUpdateRequired(profileID, displayName)?:
+            self = .updateRequired(profileID: profileID, displayName: displayName)
         case .groupCreationLimit?: self = .creationLimit
         case .inviteUnavailable?: self = .closed
         default: return nil
@@ -61,7 +62,8 @@ enum GroupMatchFailure: Hashable, Sendable {
     func message(name: String? = nil) -> String {
         switch self {
         case .recipientUnavailable: "Someone in this lineup can’t be invited. Check the players and try again."
-        case .updateRequired: "\(name ?? "Someone in this lineup") needs to update HealthComp first."
+        case let .updateRequired(_, displayName):
+            "\(name ?? displayName ?? "Someone in this lineup") needs to update HealthComp first."
         case .creationLimit: "You already have 5 group matches waiting or live. Finish or cancel one first."
         case .closed: "This match is no longer open."
         }
@@ -86,7 +88,7 @@ struct GroupMatchFeature {
         ) -> String? {
             guard let command = commands.first(where: failed.contains) else { return nil }
             guard let reason = failureReasons[command] else { return generic }
-            if case let .updateRequired(profileID?) = reason { return reason.message(name: name(profileID)) }
+            if case let .updateRequired(profileID?, _) = reason { return reason.message(name: name(profileID)) }
             return reason.message()
         }
     }

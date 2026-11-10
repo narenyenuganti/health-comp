@@ -6,6 +6,24 @@ import SwiftUI
 struct GroupMatchPlayer: Hashable, Sendable {
     let profileID: UUID
     let name: String
+
+    static func candidates(
+        friends: [FriendPerson], matches: [LocalCompetitionPresentation], blocked: [AuthenticatedProfile]
+    ) -> [Self] {
+        var seen = Set(blocked.map(\.id))
+        let played = matches.compactMap { match -> Self? in
+            guard let id = RemoteCompetitionOpponentIdentity.profileID(match.opponentIdentity) else { return nil }
+            if match.opponentDisplayName == competitionFormerCompetitorName {
+                seen.insert(id)
+                return nil
+            }
+            if case .pending(.incoming, _, _) = match.lifecycle { return nil }
+            return Self(profileID: id, name: match.opponentDisplayName)
+        }
+        return (friends.map { Self(profileID: $0.id, name: $0.displayName) } + played).filter {
+            $0.name != competitionFormerCompetitorName && seen.insert($0.profileID).inserted
+        }
+    }
 }
 
 /// Who you're sending the match to, seat by seat. You are never in it.
