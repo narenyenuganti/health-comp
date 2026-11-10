@@ -42,6 +42,7 @@ struct MainTabView: View {
         .task(id: store.competition.publication?.source == .remoteParticipants) {
             if store.competition.publication?.source == .remoteParticipants {
                 store.send(.competition(.blockedPeopleRequested))
+                store.send(.competition(.friends(.requested)))
             }
         }
         .onChange(of: scenePhase) { _, newValue in
@@ -49,6 +50,9 @@ struct MainTabView: View {
             // A photo changed or hidden while away shows without a relaunch.
             if newValue == .active {
                 store.send(.competition(.profilePhotosNeeded(photoOwners)))
+                if store.competition.publication?.source == .remoteParticipants {
+                    store.send(.competition(.friends(.requested)))
+                }
             }
         }
         // Keeps the notifications prompt from presenting under the
@@ -223,6 +227,9 @@ struct MainTabView: View {
                         CompetitionHistoryView(publication: publication, openRecap: { recapPeriod = $0 })
                             .toolbarRole(.editor)
                     }
+                case .friends:
+                    FriendsView(store: store)
+                        .toolbarRole(.editor)
                 case let .person(identity):
                     if let publication = store.competition.publication {
                         personScreen(identity, publication: publication)
@@ -282,13 +289,37 @@ struct MainTabView: View {
             personPlace: Binding(
                 get: { store.personPlace },
                 set: { store.send(.personPlaceChanged($0)) }
+            ),
+            showsFriends: Binding(
+                get: { store.showsFriends },
+                set: { store.send(.friendsPresentationChanged($0)) }
             )
         )
     }
 
     /// The person page, with the match under it on the stack, whether you
-    /// blocked them, and their mute.
+    /// blocked them, and their mute. Someone with no finished match gets
+    /// their small page, when search or Friends has told us who they are.
+    @ViewBuilder
     private func personScreen(
+        _ identity: String,
+        publication: LocalCompetitionPublication
+    ) -> some View {
+        if let id = RemoteCompetitionOpponentIdentity.profileID(identity),
+           let person = store.competition.friends.people[id],
+           competitionRivalryWeeks(publication.dashboard.competitions, opponentIdentity: identity).isEmpty {
+            FriendProfileView(
+                person: person,
+                isInFlight: store.competition.friends.inFlight.contains(id),
+                failure: store.competition.friends.failure(for: id),
+                change: { store.send(.competition(.friends(.changeTapped(person, $0)))) }
+            )
+        } else {
+            matchedPersonScreen(identity, publication: publication)
+        }
+    }
+
+    private func matchedPersonScreen(
         _ identity: String,
         publication: LocalCompetitionPublication
     ) -> some View {
@@ -352,6 +383,9 @@ struct MainTabView: View {
         ToolbarItemGroup(placement: .topBarTrailing) {
             // Invitations are private links between real people.
             if store.competition.publication?.source == .remoteParticipants {
+                FriendsToolbarButton(requestCount: store.competition.friends.requestCount) {
+                    store.send(.friendsPresentationChanged(true))
+                }
                 CompetitionChallengeButton { isChallengePresented = true }
             }
             if let openAccount {

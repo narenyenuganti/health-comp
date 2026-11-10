@@ -338,7 +338,7 @@ struct AccountSettingsView: View {
             .themePanel(cornerRadius: 14)
             .accessibilityIdentifier("account.settings.display-name")
 
-            Text("People you play see this name.")
+            Text("People you play, friends and anyone who finds you in search see this name.")
                 .font(.subheadline)
                 .foregroundStyle(Theme.secondary)
                 .multilineTextAlignment(.center)
@@ -435,7 +435,7 @@ struct AccountSettingsView: View {
                 Button("Remove Photo", role: .destructive) { profilePhoto.remove() }
                 Button("Cancel", role: .cancel) {}
             } message: {
-                Text("People you play will see your initial instead.")
+                Text("They will see your initial instead.")
             }
             .photosPicker(
                 isPresented: $isPhotoPickerPresented,

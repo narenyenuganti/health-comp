@@ -2088,6 +2088,73 @@ final class CompetitionPresentationTests: XCTestCase {
         XCTAssertEqual(path, [])
     }
 
+    func testHomeRouteStackKeepsThePersonPageOverFriends() {
+        let id = CompetitionID(UUID(uuidString: "00000000-0000-0000-0000-00000000000A")!)
+        var path: [CompetitionID] = []
+        var showsHistory = false
+        var person: String?
+        var showsFriends = true
+        let stack = CompetitionHomeRoute.stack(
+            path: Binding(get: { path }, set: { path = $0 }),
+            showsHistory: Binding(get: { showsHistory }, set: { showsHistory = $0 }),
+            person: Binding(get: { person }, set: { person = $0 }),
+            showsFriends: Binding(get: { showsFriends }, set: { showsFriends = $0 })
+        )
+
+        // The trap: a route the setter doesn't model pops itself.
+        XCTAssertEqual(stack.wrappedValue, [.friends])
+        stack.wrappedValue = [.friends]
+        XCTAssertTrue(showsFriends)
+        XCTAssertFalse(showsHistory)
+
+        stack.wrappedValue = [.friends, .person("p"), .competition(id)]
+        XCTAssertEqual(stack.wrappedValue, [.friends, .person("p"), .competition(id)])
+        XCTAssertTrue(showsFriends)
+
+        stack.wrappedValue = [.friends, .person("p")]
+        XCTAssertEqual(person, "p")
+        XCTAssertEqual(path, [])
+
+        stack.wrappedValue = []
+        XCTAssertFalse(showsFriends)
+        XCTAssertNil(person)
+
+        stack.wrappedValue = [.history]
+        XCTAssertTrue(showsHistory)
+        XCTAssertFalse(showsFriends)
+    }
+
+    func testFriendStatusLineSaysLiveThenStartsThenRecord() {
+        let evaluatedAt = Date(timeIntervalSince1970: 1_793_000_000)
+        func finished(_ id: Int, _ outcome: CompetitionOutcome) -> LocalCompetitionPresentation {
+            homePresentation(
+                id: id,
+                identity: "dev",
+                lifecycle: .completed(
+                    outcome: outcome,
+                    basis: .stableAcrossPostBoundaryReads,
+                    completedAt: evaluatedAt.addingTimeInterval(TimeInterval(-id * 604_800))
+                ),
+                evaluatedAt: evaluatedAt
+            )
+        }
+        func line(_ competitions: [LocalCompetitionPresentation]) -> String? {
+            friendStatusLine(identity: "dev", competitions: competitions)
+        }
+        let active = homePresentation(id: 9, identity: "dev", lifecycle: .active(dayOrdinal: 3), evaluatedAt: evaluatedAt)
+        let scheduled = homePresentation(id: 8, identity: "dev", lifecycle: .scheduled, evaluatedAt: evaluatedAt)
+        let someoneElse = homePresentation(id: 7, identity: "other", lifecycle: .active(dayOrdinal: 1), evaluatedAt: evaluatedAt)
+
+        XCTAssertNil(line([]))
+        XCTAssertNil(line([someoneElse]), "Only their own matches count")
+        XCTAssertEqual(line([finished(1, .win), active, scheduled]), "Live · Day 3 of 7")
+        XCTAssertEqual(line([finished(1, .win), scheduled]), competitionStatusText(scheduled, style: .row).title)
+        XCTAssertEqual(line([finished(1, .win), finished(2, .win), finished(3, .loss)]), "You lead 2–1")
+        XCTAssertEqual(line([finished(1, .loss), finished(2, .loss), finished(3, .win)]), "Hermes leads 2–1")
+        XCTAssertEqual(line([finished(1, .win), finished(2, .loss)]), "Tied 1–1")
+        XCTAssertEqual(line([finished(1, .win), finished(2, .win), finished(3, .tie)]), "You lead 2–0–1")
+    }
+
     // MARK: Home and History
 
     func testHomeLayoutSingleLiveMatchIsTheHero() {
