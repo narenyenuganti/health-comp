@@ -7,6 +7,20 @@ import XCTest
 @testable import HealthComp
 
 final class ProfilePhotoImageTests: XCTestCase {
+    #if DEBUG
+    @MainActor func testIllustratedJudgesPortraitsAreDistinctDecodablePhotos() throws {
+        let portraits = (0..<4).map { ProfilePhotoTestLabServer.illustratedPortrait($0) }
+        XCTAssertEqual(Set(portraits).count, 4)
+        for jpeg in portraits {
+            let image = try ProfilePhotoImage.uprightImage(from: jpeg)
+            XCTAssertEqual(image.width, 512)
+            XCTAssertEqual(image.height, 512)
+            XCTAssertNotNil(ProfilePhoto(jpeg: jpeg, version: UUID()))
+        }
+    }
+
+    #endif
+
     func testCropIsRedrawnAs512PixelJPEGWithNoMetadata() throws {
         let original = try Self.photo(width: 1200, height: 900, orientation: 1)
         let image = try ProfilePhotoImage.uprightImage(from: original)

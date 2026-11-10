@@ -30,6 +30,7 @@
 		0D56620F1159D3BEE42F935C /* CompetitionWidgetSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9ABC029BB6B7504EA3CF39D9 /* CompetitionWidgetSnapshot.swift */; };
 		0D7E2224EB53F47629BDB312 /* late-watch-sync.json in Resources */ = {isa = PBXBuildFile; fileRef = 0B62BF4147CD724EB04CECC6 /* late-watch-sync.json */; };
 		0FC85F9BC7725A7452690C81 /* ActivityRingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9B370A537E958C39D00549FA /* ActivityRingsView.swift */; };
+		0FDB6D15E5EA9F15EBCC1780 /* JudgesDecisionUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1C5FBEBD506E31F3C5AA7F7A /* JudgesDecisionUITests.swift */; };
 		0FF8C7A7EE486C0C12635490 /* CompetitionCore in Frameworks */ = {isa = PBXBuildFile; productRef = 72D0E717AD59302E2D046DE9 /* CompetitionCore */; };
 		10877D47E948C78A37F0C748 /* ClaimCompetitionView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 225974742689A63371700688 /* ClaimCompetitionView.swift */; };
 		11EA5A0802FDCE4985CC1B82 /* MatchActivityViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1CD9ED5A800E944EC8B6E60B /* MatchActivityViews.swift */; };
@@ -368,6 +369,7 @@
 		185D226E47FB94EBF23B7B6F /* CompetitionNotificationPreferencesTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionNotificationPreferencesTests.swift; sourceTree = "<group>"; };
 		1921895541916B918BFFA3E8 /* CompetitionNotificationPlannerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionNotificationPlannerTests.swift; sourceTree = "<group>"; };
 		1C381C991A5E051955B3436C /* GroupMatchLobbyView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupMatchLobbyView.swift; sourceTree = "<group>"; };
+		1C5FBEBD506E31F3C5AA7F7A /* JudgesDecisionUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JudgesDecisionUITests.swift; sourceTree = "<group>"; };
 		1CD9ED5A800E944EC8B6E60B /* MatchActivityViews.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MatchActivityViews.swift; sourceTree = "<group>"; };
 		1D4D0A6902647274F72B003C /* HealthComp.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = HealthComp.entitlements; sourceTree = "<group>"; };
 		1D93500BA9AA5B7AF63C71F7 /* LocalCompetitionRuntimeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalCompetitionRuntimeTests.swift; sourceTree = "<group>"; };
@@ -946,6 +948,7 @@
 				63115D7F541C584C430C30AF /* GroupMatchResultUITests.swift */,
 				D831216FE74950268FCDAD23 /* GroupMatchUITestSupport.swift */,
 				04C60166004CE3323879D75F /* GroupMatchVersusUITests.swift */,
+				1C5FBEBD506E31F3C5AA7F7A /* JudgesDecisionUITests.swift */,
 				FB2BD1609D5C6054896B040D /* LiveActivityUITests.swift */,
 				A1AAA11C718845811F2393C0 /* LocalCompetitionLifecycleUITests.swift */,
 				72D97B24F7398742C8358DD9 /* MultiUserCompetitionUITests.swift */,
@@ -1313,6 +1316,7 @@
 				F862A00C4D23E9862B2D7056 /* GroupMatchResultUITests.swift in Sources */,
 				EC77962BCC702A17BC4E91F9 /* GroupMatchUITestSupport.swift in Sources */,
 				1BFAD3FE5B94EEBB095FA1D9 /* GroupMatchVersusUITests.swift in Sources */,
+				0FDB6D15E5EA9F15EBCC1780 /* JudgesDecisionUITests.swift in Sources */,
 				0B50733A9DA68107D84F2BF8 /* LiveActivityUITests.swift in Sources */,
 				8E965F238EEB7338E422F5C5 /* LocalCompetitionLifecycleUITests.swift in Sources */,
 				51EC8DDC48A29F9C45FDE1A3 /* MultiUserCompetitionUITests.swift in Sources */,
