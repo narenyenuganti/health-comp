@@ -49,6 +49,17 @@ final class GroupMatchVersusUITests: XCTestCase {
         }
     }
 
+    func testPhotoIntrosAtTheLargestTextSize() {
+        for (setup, prefix) in [("versus-ffa-photos", "Four-Way. "), ("versus-doubles-photos", "Doubles. ")] {
+            let app = XCUIApplication.launchGroupLab(setup, arguments: Self.hold + [
+                "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL",
+            ])
+            XCTAssertTrue(intro(app, prefix).waitForExistence(timeout: 8), setup)
+            shot(app, "\(setup)-ax5")
+            app.terminate()
+        }
+    }
+
     func testIntroAtTheLargestTextSizeInDark() {
         let app = XCUIApplication.launchGroupLab("versus-ffa", arguments: Self.hold + [
             "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL",

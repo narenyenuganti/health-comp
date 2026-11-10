@@ -315,6 +315,16 @@ struct GroupMatchVersusIntroView: View {
         )
     }
 
+    /// The part of a panel that is on screen at `y`, in its own frame, 12
+    /// points in from either edge.
+    private func visible(_ stage: GroupVersusStage, panel: Int, width: CGFloat, y: CGFloat) -> ClosedRange<CGFloat> {
+        let left = stage.midX(panel) - width / 2
+        let lean = 2 * stage.lean * (1 - y / stage.height)
+        let low = max(lean, -left) + 12
+        let high = min(width - 2 * stage.lean + lean, stage.size.width - left) - 12
+        return low...max(low, high)
+    }
+
     /// Where the panel's centre line is at `y`, in its own frame.
     private func centre(_ stage: GroupVersusStage, width: CGFloat, y: CGFloat) -> CGFloat {
         width / 2 + (stage.height / 2 - y) * GroupVersusStage.skew
@@ -354,33 +364,40 @@ struct GroupMatchVersusIntroView: View {
         let slotTop = CGFloat(slot) * (box + nameHeight)
         let boxMiddle = slotTop + (nameFirst ? nameHeight : 0) + box / 2
         let nameMiddle = slotTop + (nameFirst ? 0 : box) + nameHeight / 2
+        let markSpan = visible(stage, panel: panel, width: width, y: boxMiddle)
+        let nameSpan = visible(stage, panel: panel, width: width, y: nameMiddle)
         return ZStack {
-            Group {
-                if let photo = photos[person.id], !person.isBot {
-                    let image = Image(uiImage: photo.image)
-                        .resizable()
-                        .scaledToFill()
-                        .frame(width: width * (count == 2 ? 1.5 : 2), height: box)
-                        .clipped()
-                        .grayscale(1)
+            if let photo = photos[person.id], !person.isBot {
+                let image = Image(uiImage: photo.image)
+                    .resizable()
+                    .scaledToFill()
+                    .frame(width: width * (count == 2 ? 1.5 : 2), height: box)
+                    .clipped()
+                    .grayscale(1)
+                Group {
                     if person.isYou {
                         // Multiplied into amber: amber still means you.
                         image.contrast(1.15).blendMode(.multiply)
                     } else {
                         image.opacity(0.55)
                     }
-                } else {
-                    mark(
-                        person, size: min(box * 0.6, width),
-                        letterSize: min((count == 2 ? 200 : 240) * stage.k, box * 0.9)
-                    )
                 }
+                .frame(width: width, height: box)
+                .clipped()
+                .position(x: centre(stage, width: width, y: boxMiddle), y: boxMiddle)
+            } else {
+                // Sized to the part of the panel on screen, so nothing is cut
+                // to a stray block at the edge. 0.6 em covers a wide capital.
+                let room = max(markSpan.upperBound - markSpan.lowerBound, 0)
+                mark(
+                    person, size: min(box * 0.6, room * 0.8),
+                    letterSize: min((count == 2 ? 200 : 240) * stage.k, box * 0.9, room * 0.8 / 0.6)
+                )
+                .position(x: (markSpan.lowerBound + markSpan.upperBound) / 2, y: boxMiddle)
             }
-            .frame(width: width, height: box)
-            .clipped()
-            .position(x: centre(stage, width: width, y: boxMiddle), y: boxMiddle)
             name(person, at: t)
-                .position(x: centre(stage, width: width, y: nameMiddle), y: nameMiddle)
+                .frame(width: max(nameSpan.upperBound - nameSpan.lowerBound, 0))
+                .position(x: (nameSpan.lowerBound + nameSpan.upperBound) / 2, y: nameMiddle)
         }
     }
 
@@ -409,6 +426,7 @@ struct GroupMatchVersusIntroView: View {
             .tracking(1.2)
             .textCase(.uppercase)
             .lineLimit(1)
+            .minimumScaleFactor(0.5)
             .foregroundStyle(person.isYou ? Theme.onYouFill : Theme.ink)
             .opacity(t < VersusClock.names ? 0 : landing)
     }
