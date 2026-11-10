@@ -6,6 +6,7 @@ import DependenciesMacros
 import Foundation
 #if canImport(UserNotifications)
 import UserNotifications
+import Intents
 #endif
 
 enum CompetitionNotificationAuthorizationState: Equatable, Sendable {
@@ -314,6 +315,29 @@ enum CompetitionRoute: Equatable, Sendable {
 }
 
 /// A nil route (summaries, merged reminders) opens the app where it was.
+/// Only the two single-match judges alerts can ask for a sender photo.
+struct CompetitionNotificationSender: Equatable, Sendable {
+    let profileID: UUID
+    let displayName: String
+    var photoJPEG: Data? = nil
+
+    static func judges(
+        family: CompetitionNotificationMessageFamily, identity: String, name: String
+    ) -> Self? {
+        guard family == .scheduled(.competitionEnded) || family == .opportunistic(.result),
+              let id = RemoteCompetitionOpponentIdentity.profileID(identity) else { return nil }
+        return Self(profileID: id, displayName: name)
+    }
+
+    /// The caller supplies the current visibility decision and cached bytes only.
+    func permitted(ownProfileID: UUID, cachedJPEG: Data?, isVisible: Bool) -> Self? {
+        guard profileID != ownProfileID, isVisible, let cachedJPEG, !cachedJPEG.isEmpty else { return nil }
+        var sender = self
+        sender.photoJPEG = cachedJPEG
+        return sender
+    }
+}
+
 struct CompetitionImmediateNotificationRequest: Equatable, Sendable {
     let identifier: String
     let content: CompetitionNotificationContent
@@ -324,6 +348,7 @@ struct CompetitionImmediateNotificationRequest: Equatable, Sendable {
     /// The auth user signed in when it posted. A reaction from the alert is
     /// sent only as them; without one the alert has no actions.
     var recipientUserID: UUID? = nil
+    var sender: CompetitionNotificationSender? = nil
 }
 
 /// The four reactions as actions on a local lead-change or result alert. The
@@ -404,6 +429,7 @@ struct CompetitionScheduledNotificationRequest: Equatable, Sendable {
     let content: CompetitionNotificationContent
     let dateComponents: DateComponents
     let route: CompetitionRoute?
+    var sender: CompetitionNotificationSender? = nil
 }
 
 /// One Notification Center thread per match, matching the server's
@@ -480,12 +506,12 @@ extension CompetitionNotificationClient: DependencyKey {
         },
         upsert: { request in
             try await UNUserNotificationCenter.current().add(
-                Self.makeRequest(request)
+                await Self.makeRequest(request)
             )
         },
         postNow: { request in
             try await UNUserNotificationCenter.current().add(
-                Self.makeRequest(request)
+                await Self.makeRequest(request)
             )
         },
         pendingIDs: { prefix in
@@ -518,12 +544,12 @@ extension CompetitionNotificationClient: DependencyKey {
         }
     )
 
-    private static func makeRequest(
+    static func makeRequest(
         _ request: CompetitionScheduledNotificationRequest
-    ) -> UNNotificationRequest {
+    ) async -> UNNotificationRequest {
         UNNotificationRequest(
             identifier: request.identifier,
-            content: makeContent(request.content, route: request.route),
+            content: await makeContent(request.content, route: request.route, sender: request.sender),
             trigger: UNCalendarNotificationTrigger(
                 dateMatching: request.dateComponents,
                 repeats: false
@@ -531,16 +557,17 @@ extension CompetitionNotificationClient: DependencyKey {
         )
     }
 
-    private static func makeRequest(
+    static func makeRequest(
         _ request: CompetitionImmediateNotificationRequest
-    ) -> UNNotificationRequest {
+    ) async -> UNNotificationRequest {
         UNNotificationRequest(
             identifier: request.identifier,
-            content: makeContent(
+            content: await makeContent(
                 request.content,
                 route: request.route,
                 reactionTarget: request.reactionTarget,
-                recipientUserID: request.recipientUserID
+                recipientUserID: request.recipientUserID,
+                sender: request.sender
             ),
             trigger: nil
         )
@@ -550,8 +577,9 @@ extension CompetitionNotificationClient: DependencyKey {
         _ notification: CompetitionNotificationContent,
         route: CompetitionRoute?,
         reactionTarget: CompetitionReactionTarget? = nil,
-        recipientUserID: UUID? = nil
-    ) -> UNNotificationContent {
+        recipientUserID: UUID? = nil,
+        sender: CompetitionNotificationSender? = nil
+    ) async -> UNNotificationContent {
         let content = UNMutableNotificationContent()
         content.title = notification.title
         content.body = notification.body
@@ -562,7 +590,27 @@ extension CompetitionNotificationClient: DependencyKey {
             content.categoryIdentifier = CompetitionReactionAlert.category(reactionTarget)
             content.userInfo[CompetitionReactionAlert.recipientKey] = recipientUserID.uuidString
         }
-        return content
+        guard let sender, let jpeg = sender.photoJPEG else { return content }
+        let person = INPerson(
+            personHandle: INPersonHandle(value: sender.profileID.uuidString, type: .unknown),
+            nameComponents: nil, displayName: sender.displayName,
+            image: INImage(imageData: jpeg), contactIdentifier: nil, customIdentifier: sender.profileID.uuidString
+        )
+        let intent = INSendMessageIntent(
+            recipients: nil, outgoingMessageType: .outgoingMessageText,
+            content: "\(notification.title)\n\(notification.body)",
+            speakableGroupName: nil, conversationIdentifier: content.threadIdentifier,
+            serviceName: nil, sender: person, attachments: nil
+        )
+        let interaction = INInteraction(intent: intent, response: nil)
+        interaction.direction = .incoming
+        do {
+            try await interaction.donate()
+            return try content.updating(from: intent)
+        } catch {
+            // Decoration must never prevent the original alert from being queued.
+            return content
+        }
     }
 }
 #endif

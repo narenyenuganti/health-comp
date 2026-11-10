@@ -80,9 +80,12 @@ final class JudgesDecisionUITests: XCTestCase {
         let allow = springboard.buttons["Allow"]
         if allow.waitForExistence(timeout: 5) { allow.tap() }
         XCUIDevice.shared.press(.home)
-        print("JUDGES_NOTIFICATIONS_READY")
-        // The recording driver sends real simctl pushes while the lane stays held.
-        Thread.sleep(forTimeInterval: 45)
+        print("JUDGES_LOCAL_NOTIFICATION_READY")
+        let banner = springboard.descendants(matching: .any).matching(
+            NSPredicate(format: "label CONTAINS %@", "The judges’ scorecards are in")
+        ).firstMatch
+        XCTAssertTrue(banner.waitForExistence(timeout: 25))
+        Thread.sleep(forTimeInterval: 6)
     }
 
     private func soon(_ seconds: TimeInterval, _ condition: () -> Bool) -> Bool {

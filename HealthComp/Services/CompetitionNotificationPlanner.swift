@@ -570,7 +570,9 @@ struct CompetitionNotificationPlanner: Sendable {
                     ),
                     content: policy.content(message),
                     dateComponents: components,
-                    route: .competition(competition.id)
+                    route: .competition(competition.id),
+                    sender: .judges(family: message.family, identity: competition.opponentIdentity,
+                                    name: competition.opponentDisplayName)
                 ),
                 message: message,
                 fireDate: fireDate
@@ -744,7 +746,9 @@ struct CompetitionNotificationPlanner: Sendable {
                                 .opportunistic(candidate.record),
                             content: policy.content(candidate.message),
                             route: .competition(competition.id),
-                            reactionTarget: reactionTarget(candidate.record)
+                            reactionTarget: reactionTarget(candidate.record),
+                            sender: .judges(family: candidate.message.family, identity: competition.opponentIdentity,
+                                            name: competition.opponentDisplayName)
                         )
                     )
                 )

@@ -4,6 +4,7 @@ import CompetitionCore
 import ComposableArchitecture
 import Foundation
 import SwiftUI
+import UserNotifications
 
 enum MultiUserCompetitionTestLabScenario:
     String,
@@ -395,7 +396,39 @@ private struct MultiUserCompetitionSharingTestLabView: View {
                     judgesPhotos.photos[reference.ownerProfileID] = photo
                 }
             }
+            if ProcessInfo.processInfo.arguments.contains("--judges-notifications") {
+                await scheduleJudgesPhotoNotification()
+            }
         }
+    }
+
+    private func scheduleJudgesPhotoNotification() async {
+        guard let match = publication.dashboard.competitions.first(where: {
+            $0.id.rawValue == UUID(uuidString: "a3000000-0000-4000-8000-000000000075")!
+        }), let owner = match.opponentProfileID,
+              let photo = judgesPhotos.photo(owner),
+              (try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])) == true
+        else { return }
+        let message = CompetitionNotificationMessage(
+            family: .opportunistic(.result), competitionID: match.id,
+            opponentDisplayName: match.opponentDisplayName,
+            ownerPoints: nil, opponentPoints: nil, outcome: nil
+        )
+        let sender = CompetitionNotificationSender.judges(
+            family: message.family, identity: match.opponentIdentity, name: match.opponentDisplayName
+        )?.permitted(ownProfileID: MultiUserCompetitionTestLabFixtures.ownProfileID,
+                     cachedJPEG: photo.image.jpegData(compressionQuality: 0.9), isVisible: true)
+        let request = await CompetitionNotificationClient.makeRequest(CompetitionImmediateNotificationRequest(
+            identifier: "judges-local-photo-demo",
+            content: CompetitionNotificationPolicy.liveV1.content(message), route: .competition(match.id),
+            reactionTarget: .result, recipientUserID: MultiUserCompetitionTestLabFixtures.ownProfileID,
+            sender: sender
+        ))
+        // iOS owns the delay, so the alert fires even after the lab backgrounds.
+        try? await UNUserNotificationCenter.current().add(UNNotificationRequest(
+            identifier: request.identifier, content: request.content,
+            trigger: UNTimeIntervalNotificationTrigger(timeInterval: 12, repeats: false)
+        ))
     }
 
     private var homeStack: Binding<[CompetitionHomeRoute]> {

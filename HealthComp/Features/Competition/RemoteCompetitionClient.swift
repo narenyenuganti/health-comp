@@ -608,7 +608,19 @@ private actor RemoteCompetitionClientCoordinator {
                 self.notificationPreferences = preferences
                 self.observerDeliveryReceipts =
                     observerDeliveryReceiptFactory(paths)
-                if let notificationClient {
+                if var notificationClient {
+                    let upsert = notificationClient.upsert
+                    let postNow = notificationClient.postNow
+                    notificationClient.upsert = { [weak self] request in
+                        var request = request
+                        request.sender = await self?.notificationSender(request.sender, accountID: profile.id)
+                        try await upsert(request)
+                    }
+                    notificationClient.postNow = { [weak self] request in
+                        var request = request
+                        request.sender = await self?.notificationSender(request.sender, accountID: profile.id)
+                        try await postNow(request)
+                    }
                     self.notificationCoordinator = .live(
                         decisionCommitter: .remote(runtime: runtime),
                         planner: CompetitionNotificationPlanner(
@@ -1136,6 +1148,21 @@ private actor RemoteCompetitionClientCoordinator {
     func cachedProfilePhotoData(_ owner: UUID) -> Data? {
         guard runtime != nil, terminalTeardown == nil else { return nil }
         return photoCache?.latestData(owner: owner)
+    }
+
+    /// Revalidate visibility before baking a cached avatar into a local alert.
+    /// Never download a photo for a notification, and fail closed when offline.
+    private func notificationSender(_ sender: CompetitionNotificationSender?, accountID: UUID) async -> CompetitionNotificationSender? {
+        guard let sender, let account = try? photoAccount(), account.id == accountID,
+              sender.profileID != account.id, !account.cache.isReported(owner: sender.profileID),
+              account.cache.latestData(owner: sender.profileID) != nil else { return nil }
+        guard let visible = try? await loadProfilePhotos([sender.profileID]),
+              isMountedPhotoCache(account.cache), profile?.id == accountID,
+              !account.cache.isReported(owner: sender.profileID) else { return nil }
+        let reference = visible.first { $0.ownerProfileID == sender.profileID }
+        return sender.permitted(ownProfileID: account.id,
+                                cachedJPEG: reference.flatMap { account.cache.data(for: $0) },
+                                isVisible: reference != nil)
     }
 
     /// Clears leftovers first (the folder holds three objects at most), then
