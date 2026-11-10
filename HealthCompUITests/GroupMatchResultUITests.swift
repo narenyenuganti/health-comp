@@ -30,13 +30,20 @@ final class GroupMatchResultUITests: XCTestCase {
         XCTAssertTrue(places[0].hasPrefix("1st, tied"), places[0])
         XCTAssertTrue(places[1].hasPrefix("1st, tied"), places[1])
         XCTAssertTrue(places[2].hasPrefix("3rd, Priya"), places[2])
+
+        // A tie across the podium's edge lists every place the same way.
+        app.terminate()
+        app = XCUIApplication.launchGroupLab("result-ffa-tied-third")
+        XCTAssertTrue(app.groupElement("competition.group.result.title").waitForExistence(timeout: 8))
+        XCTAssertEqual(app.groupElement("competition.group.result.title").label, "Tied for 3rd")
+        XCTAssertTrue(app.groupElement("competition.group.result.row.4").label.hasPrefix("3rd, tied"))
     }
 
     func testDoublesResultShowsTeamsTiesAndWhoCarried() {
         var app = XCUIApplication.launchGroupLab("result-doubles")
         XCTAssertTrue(app.groupElement("competition.group.result.title").waitForExistence(timeout: 8))
         XCTAssertEqual(app.groupElement("competition.group.result.title").label, "Your team won")
-        XCTAssertTrue(app.groupElement("competition.group.result.team.yours").label.contains("You + Priya"))
+        XCTAssertTrue(app.groupElement("competition.group.result.team.yours").label.contains("You and Priya"))
         XCTAssertTrue(app.groupElement("competition.group.result.carry.yours").label.contains("53 percent"))
         XCTAssertTrue(app.groupElement("competition.group.result.carry.theirs").label.hasPrefix("Sam"))
         XCTAssertTrue(app.groupElement("competition.group.result.no-belt").exists)

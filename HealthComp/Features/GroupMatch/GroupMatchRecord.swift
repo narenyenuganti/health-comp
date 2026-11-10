@@ -49,7 +49,7 @@ struct GroupMatchRecord: View {
 
     // MARK: Record
 
-    /// "1st twice, 2nd once"; "2 of 5" counts firsts, shared ones included.
+    /// "1st twice, 2nd once"; "2 firsts of 5", shared firsts included.
     private func freeForAllRow(_ matches: [GroupMatchPresentation]) -> some View {
         let places = matches.compactMap { $0.viewerRow?.place }
         let finishes = Set(places).sorted().map { place in
@@ -65,38 +65,49 @@ struct GroupMatchRecord: View {
         return recordRow(
             title: "Free-for-all",
             detail: finishes,
-            value: Text(String(firsts)).foregroundStyle(Theme.you) + Text(" of \(places.count)"),
+            value: Text(String(firsts)).foregroundStyle(Theme.you)
+                + Text(" \(firsts == 1 ? "first" : "firsts") of \(places.count)"),
             accessibility: "Free-for-all, first in \(firsts) of \(places.count). \(finishes)",
             identifier: "competition.group.record.free-for-all"
         )
     }
 
+    /// Won, lost and tied with each partner of these finished matches, in
+    /// their order (newest first in History): one record per
+    /// person (by profile) or bot (by mode), under the newest name.
+    static func partnerRecords(_ matches: [GroupMatchPresentation]) -> [(name: String, record: [Int])] {
+        var partners: [GroupMatchSeat.Partner] = []
+        var names: [GroupMatchSeat.Partner: String] = [:]
+        var records: [GroupMatchSeat.Partner: [Int]] = [:]
+        for match in matches where match.format == .doubles {
+            guard let seat = match.partner else { continue }
+            if records[seat.partnerKey] == nil {
+                partners.append(seat.partnerKey)
+                names[seat.partnerKey] = seat.name
+            }
+            records[seat.partnerKey, default: [0, 0, 0]][match.doublesOutcome.rawValue] += 1
+        }
+        return partners.map { (names[$0]!, records[$0]!) }
+    }
+
     /// "2–0 with Priya, 1–1 with Sam"; ties only when there are some.
     private func doublesRow(_ matches: [GroupMatchPresentation]) -> some View {
-        var partners: [String] = []
-        var records: [String: [Int]] = [:]
-        for match in matches {
-            let partner = match.partnerName
-            if records[partner] == nil { partners.append(partner) }
-            var record = records[partner] ?? [0, 0, 0]
-            record[match.doublesOutcome.rawValue] += 1
-            records[partner] = record
-        }
+        let partners = Self.partnerRecords(matches)
         func text(_ record: [Int]) -> String {
             (record[2] > 0 ? record : Array(record.prefix(2))).map(String.init).joined(separator: "–")
         }
         let total = partners.reduce(into: [0, 0, 0]) { sum, partner in
-            for index in 0..<3 { sum[index] += records[partner]![index] }
+            for index in 0..<3 { sum[index] += partner.record[index] }
         }
         var value = Text(String(total[0])).foregroundStyle(Theme.you) + Text("–\(total[1])")
         if total[2] > 0 { value = value + Text("–\(total[2])").foregroundStyle(Theme.secondary) }
         return recordRow(
             title: "Doubles",
-            detail: partners.map { "\(text(records[$0]!)) with \($0)" }.joined(separator: ", "),
+            detail: partners.map { "\(text($0.record)) with \($0.name)" }.joined(separator: ", "),
             value: value,
             accessibility: "Doubles, \(total[0]) won, \(total[1]) lost"
                 + (total[2] > 0 ? ", \(total[2]) tied" : "") + ". "
-                + partners.map { "\(text(records[$0]!)) with \($0)" }.joined(separator: ", "),
+                + partners.map { "\(text($0.record)) with \($0.name)" }.joined(separator: ", "),
             identifier: "competition.group.record.doubles"
         )
     }
@@ -145,7 +156,7 @@ struct GroupMatchRecord: View {
         let isWin: Bool
         if match.format == .doubles {
             let outcome = match.doublesOutcome
-            title = "Doubles with \(match.partnerName)"
+            title = "Doubles with \(match.partner?.name ?? "")"
             names = "vs " + others.filter { $0.team != match.viewer.team }.map(\.name)
                 .formatted(.list(type: .and))
             verdict = ["Won", "Lost", "Tied"][outcome.rawValue]
@@ -205,13 +216,27 @@ private extension GroupMatchPresentation {
         schedule.flatMap { competitionScheduleBoundaries($0)?.start } ?? .distantPast
     }
 
-    var partnerName: String {
-        seats.first { $0.id != viewerSeatID && $0.team == viewer.team }?.name ?? ""
+    var partner: GroupMatchSeat? {
+        seats.first { $0.id != viewerSeatID && $0.team == viewer.team }
     }
 
     /// From the server's places: both teams first is a tie.
     var doublesOutcome: DoublesOutcome {
         guard viewerRow?.place == 1 else { return .lost }
         return standingRows.filter { $0.place == 1 }.count > 1 ? .tied : .won
+    }
+}
+
+private extension GroupMatchSeat {
+    enum Partner: Hashable {
+        case person(UUID)
+        case bot(BotMode)
+    }
+
+    var partnerKey: Partner {
+        switch occupant {
+        case let .person(profileID, _): .person(profileID)
+        case let .bot(mode): .bot(mode)
+        }
     }
 }

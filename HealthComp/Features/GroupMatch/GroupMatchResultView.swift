@@ -23,9 +23,12 @@ struct GroupMatchResultView: View {
                 hero
                 if match.format == .doubles {
                     teams
-                    SectionLabel("WHO CARRIED")
-                    carried
-                } else if dynamicTypeSize.isAccessibilitySize {
+                    // Only from the server's seat totals; hidden without them.
+                    if hasCarry {
+                        SectionLabel("WHO CARRIED")
+                        carried
+                    }
+                } else if dynamicTypeSize.isAccessibilitySize || tieCrossesPodium {
                     places(rows)
                 } else {
                     podium
@@ -76,8 +79,16 @@ struct GroupMatchResultView: View {
         rows.first { $0.subject == match.viewerSubject }
     }
 
-    private var isTiedFirst: Bool {
-        viewerRow?.place == 1 && rows.filter { $0.place == 1 }.count > 1
+    /// Your place is shared.
+    private var isTied: Bool {
+        rows.filter { $0.place == viewerRow?.place }.count > 1
+    }
+
+    private var isTiedFirst: Bool { isTied && viewerRow?.place == 1 }
+
+    /// Tied places look equal: the podium only when no tie spans 3rd and 4th.
+    private var tieCrossesPodium: Bool {
+        rows.count > 3 && rows[2].place == rows[3].place
     }
 
     private var hero: some View {
@@ -108,14 +119,14 @@ struct GroupMatchResultView: View {
     private var title: String {
         let team = match.format == .doubles
         guard let viewerRow else { return "Final" }
-        if isTiedFirst { return team ? "Tied" : "Tied for 1st" }
+        if isTied { return team ? "Tied" : "Tied for \(GroupMatchPresentation.placeText(viewerRow.place))" }
         if viewerRow.place == 1 { return team ? "Your team won" : "You won" }
         return team ? "Your team lost" : "You finished \(GroupMatchPresentation.placeText(viewerRow.place))"
     }
 
     // Amber is a win; a tie is neutral, as in a duel.
     private var titleColor: Color {
-        isTiedFirst ? Theme.secondary : viewerRow?.place == 1 ? Theme.you : Theme.ink
+        isTied ? Theme.secondary : viewerRow?.place == 1 ? Theme.you : Theme.ink
     }
 
     /// "By 38 over Sam. You won 3 days."
@@ -145,23 +156,29 @@ struct GroupMatchResultView: View {
         } else {
             lead = Text("")
         }
-        guard daysWon > 0 else { return lead }
+        // From the server's day values only; left out without them.
+        guard let daysWon = match.frozenDaysWon(by: match.viewerSubject), daysWon > 0 else { return lead }
         let who = isDoubles ? "Your team" : "You"
         return Text("\(lead) \(who) won \(daysWon == 1 ? "1 day" : "\(daysWon) days").")
     }
 
-    /// Days you (or your team) won outright or shared.
-    private var daysWon: Int {
-        (1...7).filter { ordinal in
-            if case let .winners(subjects) = match.dayWinners(ordinal: ordinal) {
-                return subjects.contains(match.viewerSubject)
+    /// Decimals only when whole points would hide a real difference between
+    /// two totals shown here.
+    private var fractionDigits: Int {
+        func digits(_ totals: [Int]) -> [Int] {
+            totals.flatMap { a in
+                totals.map { competitionFinalFractionDigits(userPoints: Double(a) / 100, opponentPoints: Double($0) / 100) }
             }
-            return false
-        }.count
+        }
+        return (digits(rows.map(\.centipoints)) + digits(match.frozenSeatTotals.map { Array($0.values) } ?? [])).max() ?? 0
     }
 
     private func points(_ centipoints: Int) -> String {
-        competitionPointsText(Double(centipoints) / 100, locale: locale)
+        competitionPointsText(Double(centipoints) / 100, fractionDigits: fractionDigits, locale: locale)
+    }
+
+    private func spoken(_ centipoints: Int) -> String {
+        competitionPointsAccessibilityText(Double(centipoints) / 100, fractionDigits: fractionDigits, locale: locale)
     }
 
     // MARK: Free-for-all
@@ -265,7 +282,7 @@ struct GroupMatchResultView: View {
             tied ? "tied" : nil,
             seat.id == match.viewerSeatID ? "You" : seat.name,
             seat.isBot ? "bot" : nil,
-            competitionPointsAccessibilityText(Double(row.centipoints) / 100, locale: locale),
+            spoken(row.centipoints),
         ]
         .compactMap { $0 }
         .joined(separator: ", ")
@@ -310,8 +327,11 @@ struct GroupMatchResultView: View {
         .accessibilityLabel([
             row.map { GroupMatchPresentation.placeText($0.place) },
             isYours ? "Your team" : nil,
-            match.name(of: .team(team)),
-            competitionPointsAccessibilityText(Double(row?.centipoints ?? 0) / 100, locale: locale),
+            match.seats.filter { $0.team == team }
+                .sorted { ($0.id == match.viewerSeatID ? 0 : $0.number) < ($1.id == match.viewerSeatID ? 0 : $1.number) }
+                .map(spokenName)
+                .formatted(.list(type: .and)),
+            spoken(row?.centipoints ?? 0),
         ].compactMap { $0 }.joined(separator: ", "))
         .accessibilityIdentifier("competition.group.result.team.\(isYours ? "yours" : "theirs")")
     }
@@ -335,15 +355,18 @@ struct GroupMatchResultView: View {
             if isYours { return lhs.id == match.viewerSeatID }
             return (total(lhs), -lhs.number) > (total(rhs), -rhs.number)
         }
-        let share = members.first.flatMap { match.carryPercent(seatID: $0.id) }
+        let share = members.first.flatMap { match.frozenCarryPercent(seatID: $0.id) }
         return VStack(spacing: 10) {
             GeometryReader { proxy in
                 let width = proxy.size.width - 3
-                let first = width * CGFloat(share ?? 50) / 100
                 HStack(spacing: 3) {
-                    if members.count == 2 {
+                    if members.count == 2, let share {
+                        let first = width * CGFloat(share) / 100
                         segment(members[0], isYours: isYours, isLead: true).frame(width: first)
                         segment(members[1], isYours: isYours, isLead: false).frame(width: width - first)
+                    } else {
+                        // A team with no points has no split to show.
+                        Capsule().fill(Theme.hairline)
                     }
                 }
             }
@@ -368,16 +391,27 @@ struct GroupMatchResultView: View {
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(members.enumerated().map { index, seat in
             [
-                seat.id == match.viewerSeatID ? "You" : seat.name,
-                competitionPointsAccessibilityText(Double(total(seat)) / 100, locale: locale),
+                spokenName(seat),
+                spoken(total(seat)),
                 index == 0 ? share.map { "\($0) percent of the team" } : nil,
             ].compactMap { $0 }.joined(separator: ", ")
         }.joined(separator: ". "))
         .accessibilityIdentifier("competition.group.result.carry.\(isYours ? "yours" : "theirs")")
     }
 
+    /// Every seat has a total in the server's result.
+    private var hasCarry: Bool {
+        guard let totals = match.frozenSeatTotals else { return false }
+        return match.seats.allSatisfy { totals[$0.id] != nil }
+    }
+
     private func total(_ seat: GroupMatchSeat) -> Int {
-        match.projection.seatTotals[seat.id] ?? 0
+        match.frozenSeatTotals?[seat.id] ?? 0
+    }
+
+    /// "You", "Sam", or "Pacer, bot".
+    private func spokenName(_ seat: GroupMatchSeat) -> String {
+        seat.id == match.viewerSeatID ? "You" : seat.isBot ? "\(seat.name), bot" : seat.name
     }
 
     /// You fill amber and your partner is an amber outline; a bot is never

@@ -23,6 +23,7 @@ enum GroupMatchLabSetup: String, CaseIterable, Sendable {
     case resultFFAWon = "result-ffa-won"
     case resultFFATied = "result-ffa-tied"
     case resultFFALost = "result-ffa-lost"
+    case resultFFATiedThird = "result-ffa-tied-third"
     case resultDoubles = "result-doubles"
     case resultDoublesTied = "result-doubles-tied"
     case history
@@ -122,6 +123,15 @@ enum GroupMatchFixtures {
                 ffaLineup, scores: tiedWeek, isFrozen: true
             )
         case .resultFFALost: history[3]
+        case .resultFFATiedThird:
+            // Leo 1st, Sam 2nd, you and Priya both on 2,610.
+            match(
+                18, .fourWay,
+                .completed(outcome: .loss, basis: .stableAcrossPostBoundaryReads, completedAt: now),
+                ffaLineup,
+                scores: [.you: week[.priya]!, .sam: week[.sam]!, .priya: week[.priya]!, .leo: week[.you]!],
+                isFrozen: true
+            )
         case .resultDoubles: doubles(10, won, scores: week, isFrozen: true)
         case .resultDoublesTied:
             // Both teams on 5,551.
@@ -260,7 +270,9 @@ enum GroupMatchFixtures {
                 )
             }
         }
-        func build(frozen: [GroupMatchStandingRow]?) -> GroupMatchPresentation {
+        /// A finished fixture's server result: its places plus the seat
+        /// totals and day values it was decided on.
+        func build(frozen: GroupMatchPresentation?) -> GroupMatchPresentation {
             try! GroupMatchPresentation(
                 id: CompetitionID(UUID(uuidString: "c3000000-0000-4000-8000-0000000000\(String(format: "%02d", id))")!),
                 lifecycle: lifecycle,
@@ -270,11 +282,13 @@ enum GroupMatchFixtures {
                 schedule: schedule(month: start.month, day: start.day),
                 days: days,
                 rings: rings,
-                frozenStandings: frozen
+                frozenStandings: frozen?.standingRows,
+                frozenSeatTotals: frozen?.projection.seatTotals,
+                frozenDays: frozen?.days
             )
         }
         let projected = build(frozen: nil)
-        return isFrozen ? build(frozen: projected.standingRows) : projected
+        return isFrozen ? build(frozen: projected) : projected
     }
 }
 
@@ -344,7 +358,7 @@ struct GroupMatchTestLabView: View {
                 CompetitionHistoryView(publication: GroupMatchFixtures.historyPublication(duelsOnly: setup == .historyDuels))
             }
         case .lobbyHost, .lobbyDeclined, .inviteFFA, .liveFFA, .liveDoubles, .liveBot, .banter,
-             .resultFFAWon, .resultFFATied, .resultFFALost, .resultDoubles, .resultDoublesTied:
+             .resultFFAWon, .resultFFATied, .resultFFALost, .resultFFATiedThird, .resultDoubles, .resultDoublesTied:
             MainTabView(store: store)
         }
     }
