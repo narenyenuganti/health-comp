@@ -218,7 +218,9 @@ final class VersusIntroUITests: XCTestCase {
     }
 
     private func replay(file: StaticString = #filePath, line: UInt = #line) {
-        app.buttons["competition.more"].tap()
+        // A touch at its centre, as a person's: Xcode 16.4 reports the menu's
+        // own inner button there, calls ••• not hittable and won't tap it.
+        app.buttons["competition.more"].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         let replay = app.buttons["competition.versus.replay"]
         XCTAssertTrue(replay.waitForExistence(timeout: 3), file: file, line: line)
         replay.tap()
