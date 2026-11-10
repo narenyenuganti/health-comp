@@ -4,6 +4,8 @@ public struct OpponentGeneratorVersion: Codable, Hashable, Sendable {
     public static let v1 = Self(rawValue: 1)
     /// Scales each day's final points to the owner's baseline daily points.
     public static let v2 = Self(rawValue: 2)
+    /// Whole-point BotWeek totals and reveal steps. Requires a bot-mode difficulty.
+    public static let v3 = Self(rawValue: 3)
 
     public let rawValue: UInt32
 
@@ -16,6 +18,10 @@ public enum OpponentDifficulty: String, Codable, CaseIterable, Sendable {
     case relaxed
     case balanced
     case challenging
+    case pacer
+    case chill
+    case erratic
+    case beast
 }
 
 public enum OpponentPlanError: Error, Equatable, Sendable {
@@ -428,8 +434,8 @@ public struct OpponentPlanGenerationRequest: Codable, Equatable, Sendable {
     public let seed: UInt64
     public let generatorVersion: OpponentGeneratorVersion
     public let difficulty: OpponentDifficulty
-    /// Required by `.v2`, rejected by `.v1`. Never persisted: the plan keeps
-    /// every day's points, and its commitment covers them.
+    /// Required by `.v2` and `.v3`, rejected by `.v1`. Never persisted: the plan
+    /// keeps every day's points, and its commitment covers them.
     public let baselineDailyPoints: Int?
 
     public init(
@@ -466,7 +472,17 @@ public enum OpponentPlanGenerator {
             else {
                 throw OpponentPlanError.invalidBaseline(baselineDailyPoints)
             }
+            guard difficulty.botMode == nil else {
+                throw OpponentPlanError.invalidDifficultyPolicy(dayOrdinal: 1)
+            }
             policy = difficulty.versionTwoPolicy(baseline: baseline)
+        case .v3:
+            return try botWeekPlan(
+                seed: seed,
+                difficulty: difficulty,
+                schedule: schedule,
+                baselineDailyPoints: baselineDailyPoints
+            )
         default:
             throw OpponentPlanError.unsupportedGeneratorVersion(
                 generatorVersion.rawValue
@@ -548,6 +564,63 @@ public enum OpponentPlanGenerator {
         )
     }
 
+    private static func botWeekPlan(
+        seed: UInt64,
+        difficulty: OpponentDifficulty,
+        schedule: CompetitionSchedule,
+        baselineDailyPoints: Int?
+    ) throws -> OpponentPlan {
+        guard let mode = difficulty.botMode else {
+            throw OpponentPlanError.invalidDifficultyPolicy(dayOrdinal: 1)
+        }
+        guard let baseline = baselineDailyPoints,
+              (100...600).contains(baseline)
+        else {
+            throw OpponentPlanError.invalidBaseline(baselineDailyPoints)
+        }
+        guard (try? schedule.calendar.sevenDayWindow(
+            startingOn: schedule.startDay
+        ))?.count == 7 else {
+            throw OpponentPlanError.invalidSchedule
+        }
+
+        let totals = BotWeek.dailyTotals(
+            seed: seed,
+            mode: mode,
+            baselineDailyPoints: baseline
+        )
+        var days: [OpponentDayPlan] = []
+        days.reserveCapacity(7)
+        for (offset, finalPoints) in totals.enumerated() {
+            let ordinal = offset + 1
+            let checkpoints = try BotWeek.revealSteps(
+                seed: seed,
+                mode: mode,
+                dayOrdinal: ordinal,
+                finalPoints: finalPoints
+            ).map { step in
+                try OpponentCheckpoint(
+                    progressBasisPoints: step.progressBasisPoints,
+                    cumulativePoints: step.cumulativePoints
+                )
+            }
+            days.append(
+                try OpponentDayPlan(
+                    ordinal: ordinal,
+                    finalPoints: finalPoints,
+                    checkpoints: checkpoints
+                )
+            )
+        }
+        return try OpponentPlan(
+            generatorVersion: .v3,
+            seed: seed,
+            difficulty: difficulty,
+            schedule: schedule,
+            days: days
+        )
+    }
+
     private static func streamSeed(
         seed: UInt64,
         generatorVersion: OpponentGeneratorVersion,
@@ -601,6 +674,10 @@ private struct OpponentDifficultyV1Policy {
 }
 
 private extension OpponentDifficulty {
+    var botMode: BotMode? {
+        BotMode(rawValue: rawValue)
+    }
+
     var versionOnePolicy: OpponentDifficultyV1Policy {
         switch self {
         case .relaxed:
@@ -621,6 +698,32 @@ private extension OpponentDifficulty {
                 checkpointCount: 8...10,
                 curve: .earlyBuild
             )
+        // v1 stays defined for every raw string so the existing case sweeps
+        // still generate. These ranges are the legacy sampler, not BotWeek.
+        case .chill:
+            return OpponentDifficultyV1Policy(
+                finalPoints: 180...360,
+                checkpointCount: 6...8,
+                curve: .lateBuild
+            )
+        case .pacer:
+            return OpponentDifficultyV1Policy(
+                finalPoints: 260...480,
+                checkpointCount: 7...9,
+                curve: .linear
+            )
+        case .beast:
+            return OpponentDifficultyV1Policy(
+                finalPoints: 360...600,
+                checkpointCount: 8...10,
+                curve: .earlyBuild
+            )
+        case .erratic:
+            return OpponentDifficultyV1Policy(
+                finalPoints: 30...600,
+                checkpointCount: 6...10,
+                curve: .linear
+            )
         }
     }
 
@@ -633,6 +736,8 @@ private extension OpponentDifficulty {
         case .relaxed: percents = 45...60
         case .balanced: percents = 90...110
         case .challenging: percents = 110...130
+        case .pacer, .chill, .erratic, .beast:
+            preconditionFailure("Bot modes use generator v3")
         }
         func scaled(_ percent: Int) -> Int {
             min(600, (baseline * percent + 50) / 100)
