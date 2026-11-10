@@ -104,6 +104,8 @@ struct UsernameSheet: View {
         }
         .font(.body)
         .padding(.horizontal, 14)
+        // Keeps the caret off the border at accessibility sizes.
+        .padding(.vertical, 8)
         .frame(minHeight: 56)
         .background(Theme.control, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay {
