@@ -2,7 +2,7 @@ import XCTest
 
 extension XCUIApplication {
     /// The group match Test Lab on one `-groupLab` setup.
-    static func launchGroupLab(_ setup: String) -> XCUIApplication {
+    static func launchGroupLab(_ setup: String, arguments: [String] = []) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = [
             "--multi-user-competition-test-lab",
@@ -10,7 +10,7 @@ extension XCUIApplication {
             "-healthcomp.colorHintSeen", "YES",
             "-groupLab", setup,
             "-UIAccessibilityReduceMotionEnabled", "YES",
-        ]
+        ] + arguments
         app.launch()
         return app
     }

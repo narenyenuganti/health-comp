@@ -221,7 +221,7 @@ struct GroupMatchPresentation: Identifiable, Equatable, Sendable {
         return (share.numerator * 200 + share.denominator) / (share.denominator * 2)
     }
 
-    private static func placeText(_ place: Int) -> String {
+    static func placeText(_ place: Int) -> String {
         let formatter = NumberFormatter()
         formatter.locale = Locale(identifier: "en_US")
         formatter.numberStyle = .ordinal
@@ -229,7 +229,7 @@ struct GroupMatchPresentation: Identifiable, Equatable, Sendable {
     }
 
     /// Whole points, with decimals only when rounding would hide a real gap.
-    private static func pointsText(_ centipoints: Int) -> String {
+    static func pointsText(_ centipoints: Int) -> String {
         let points = Double(centipoints) / 100
         return competitionPointsText(
             points,
