@@ -196,7 +196,7 @@ private struct CompetitionBeltCeremony: ViewModifier {
                 didStart = true
                 if judgesAreOn, let competition, !seen.hasSeen(.judges, competition.id), isFirstView {
                     playJudges()
-                } else if isFirstView || hasPendingBelt {
+                } else if hasPendingBelt {
                     playBelt()
                 } else {
                     onFinished()
@@ -217,8 +217,10 @@ private struct CompetitionBeltCeremony: ViewModifier {
     }
 
     private var hasPendingBelt: Bool {
-        guard let competition, script != nil else { return false }
-        return seen.hasSeen(.judges, competition.id) && !seen.hasSeen(.belt, competition.id)
+        guard script != nil else { return false }
+        guard let competition else { return isFirstView }
+        return !seen.hasSeen(.belt, competition.id)
+            && (isFirstView || seen.hasSeen(.judges, competition.id))
     }
 
     private func mark(_ moment: CompetitionMotionSeen.Moment) {
