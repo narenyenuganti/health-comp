@@ -2,15 +2,22 @@ import CompetitionCore
 import ComposableArchitecture
 import Foundation
 
-/// What Create Match sends: named people and bots only.
+/// What Create Match sends: named people and bots only, everyone but you.
+/// In doubles you are on team 1.
 struct GroupMatchDraft: Hashable, Sendable {
     enum Seat: Hashable, Sendable {
         case person(profileID: UUID, team: Int?)
+        /// Someone named by their personal challenge link; the server resolves it.
+        case challengeLink(CompetitionChallengeLinkCode, team: Int?)
         case bot(BotMode, team: Int?)
     }
 
     let format: GroupMatchFormat
     let seats: [Seat]
+}
+
+extension CompetitionChallengeLinkCode: Hashable {
+    func hash(into hasher: inout Hasher) { hasher.combine(rawValue) }
 }
 
 /// Everything a person can ask of a group match.
@@ -71,6 +78,8 @@ struct GroupMatchFeature {
         var failed: Set<GroupMatchCommand> = []
         /// Why a command in `failed` failed, when the server said.
         var failureReasons: [GroupMatchCommand: GroupMatchFailure] = [:]
+        /// The match link for the lobbies you host, once the server has one.
+        var shareLinks: [CompetitionID: URL] = [:]
     }
 
     enum Action: Equatable, Sendable {

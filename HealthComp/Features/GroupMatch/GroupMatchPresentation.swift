@@ -31,7 +31,8 @@ extension BotMode {
 }
 
 enum GroupMatchInviteState: Equatable, Sendable {
-    case invited, accepted, declined
+    /// Withdrew after accepting, which closed the match before Day 1.
+    case invited, accepted, declined, withdrew
 }
 
 struct GroupMatchSeat: Identifiable, Equatable, Sendable {

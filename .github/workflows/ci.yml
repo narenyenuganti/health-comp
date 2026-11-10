@@ -252,6 +252,8 @@ jobs:
             -only-testing:HealthCompUITests/NotificationChoicesUITests/testMutedNameUsesFullLeadingEdgeAtLargestTextSize \
             -only-testing:HealthCompUITests/GroupMatchCreateUITests/testFormatPickerOffersEveryFormat \
             -only-testing:HealthCompUITests/GroupMatchJoinUITests/testInviteShowsTheLineupAndAnswers \
+            -only-testing:HealthCompUITests/GroupMatchCreateUITests/testFourWayLineupFillsSeatsAndDropsToThreeWay \
+            -only-testing:HealthCompUITests/GroupMatchJoinUITests/testDidNotStartOffersTheHostANewMatch \
             -only-testing:HealthCompUITests/GroupMatchLiveUITests/testLiveFreeForAllShowsStandingsAndTheWeek \
             -only-testing:HealthCompUITests/GroupMatchLiveUITests/testLeaveMatchConfirmsAndShowsYouLeft \
             -only-testing:HealthCompUITests/GroupMatchLiveDoublesUITests/testLiveDoublesShowsBothTeams \

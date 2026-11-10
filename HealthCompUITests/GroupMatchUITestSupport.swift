@@ -2,7 +2,9 @@ import XCTest
 
 extension XCUIApplication {
     /// The group match Test Lab on one `-groupLab` setup.
-    static func launchGroupLab(_ setup: String, arguments: [String] = []) -> XCUIApplication {
+    static func launchGroupLab(
+        _ setup: String, arguments: [String] = [], dark: Bool = false, largestText: Bool = false
+    ) -> XCUIApplication {
         let app = XCUIApplication()
         app.launchArguments = [
             "--multi-user-competition-test-lab",
@@ -11,6 +13,10 @@ extension XCUIApplication {
             "-groupLab", setup,
             "-UIAccessibilityReduceMotionEnabled", "YES",
         ] + arguments
+        if dark { app.launchArguments += ["-AppleInterfaceStyle", "Dark"] }
+        if largestText {
+            app.launchArguments += ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
+        }
         app.launch()
         return app
     }
