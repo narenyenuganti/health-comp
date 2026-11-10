@@ -83,6 +83,8 @@ struct MainTabFeature {
         /// Shown instead of Home; the competition starts once it finishes.
         var onboarding: PermissionOnboarding?
         var showsHistory: Bool
+        /// Friends, at the bottom of the stack as History is.
+        var showsFriends = false
         var isAccountPresented: Bool
         /// A route to a match that isn't loaded yet: it refreshed once and
         /// waits for the match, without moving the current screens.
@@ -182,6 +184,7 @@ struct MainTabFeature {
         case dismissChallengeFromLink
         case pathChanged([CompetitionID])
         case historyPresentationChanged(Bool)
+        case friendsPresentationChanged(Bool)
         case historyPersonChanged(String?)
         case personPlaceChanged(CompetitionPersonPlace)
         case accountPresentationChanged(Bool)
@@ -400,6 +403,13 @@ struct MainTabFeature {
 
             case let .historyPresentationChanged(isPresented):
                 state.showsHistory = isPresented
+                if !isPresented {
+                    state.historyPersonIdentity = nil
+                }
+                return .none
+
+            case let .friendsPresentationChanged(isPresented):
+                state.showsFriends = isPresented
                 if !isPresented {
                     state.historyPersonIdentity = nil
                 }
@@ -949,6 +959,7 @@ struct MainTabFeature {
             state.heldRouteSequence = nil
             state.lastHandledRouteSequence = envelope.sequence
             state.showsHistory = false
+            state.showsFriends = false
             state.historyPersonIdentity = nil
             state.personPlace = CompetitionPersonPlace()
             let closesAccount = state.isAccountPresented
@@ -1014,6 +1025,7 @@ struct MainTabFeature {
         }
         state.challengeFromLink = nil
         state.showsHistory = false
+        state.showsFriends = false
         state.historyPersonIdentity = nil
         state.personPlace = CompetitionPersonPlace()
         state.path = [id]

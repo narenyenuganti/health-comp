@@ -1534,6 +1534,7 @@ final class MainTabFeatureTests: XCTestCase {
             isAccountPresented: true
         )
         initial.historyPersonIdentity = "remote-profile:v1:x"
+        initial.showsFriends = true
         let store = TestStore(initialState: initial) {
             MainTabFeature()
         } withDependencies: {
@@ -1544,6 +1545,7 @@ final class MainTabFeatureTests: XCTestCase {
             .routeReceived(CompetitionRouteEnvelope(sequence: 3, route: .competition(id)))
         ) {
             $0.showsHistory = false
+            $0.showsFriends = false
             $0.historyPersonIdentity = nil
             $0.isAccountPresented = false
             $0.path = [id]
@@ -1574,6 +1576,19 @@ final class MainTabFeatureTests: XCTestCase {
         }
         await store.send(.accountPresentationChanged(false)) {
             $0.isAccountPresented = false
+        }
+    }
+
+    @MainActor
+    func testFriendsPresentationClearsThePersonWhenItCloses() async {
+        let store = TestStore(initialState: MainTabFeature.State()) {
+            MainTabFeature()
+        }
+        await store.send(.friendsPresentationChanged(true)) { $0.showsFriends = true }
+        await store.send(.historyPersonChanged("p")) { $0.historyPersonIdentity = "p" }
+        await store.send(.friendsPresentationChanged(false)) {
+            $0.showsFriends = false
+            $0.historyPersonIdentity = nil
         }
     }
 

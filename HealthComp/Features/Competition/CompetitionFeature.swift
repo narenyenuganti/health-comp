@@ -151,6 +151,7 @@ struct CompetitionFeature {
         var photoReportsInFlight: Set<UUID> = []
         var ownPhoto = OwnPhotoState()
         var friendSettings = FriendSettingsFeature.State()
+        var friends = FriendsFeature.State()
 
         init(
             publication: CompetitionPublication? = nil,
@@ -196,11 +197,21 @@ struct CompetitionFeature {
             ProfilePhotoImages(ownID: ownProfile?.id, photos: profilePhotos)
         }
 
-        /// You and everyone on a real match, sorted so it can key a task.
+        /// You, everyone on a real match, your Friends lists and the search
+        /// results, sorted so it can key a task.
         var photoOwners: [UUID] {
             guard publication?.source == .remoteParticipants else { return [] }
-            let others = publication?.dashboard.competitions.compactMap(\.opponentProfileID) ?? []
-            return Array(Set(others + [ownProfile?.id].compactMap { $0 }))
+            // Most likely on screen first.
+            let owners = [ownProfile?.id].compactMap { $0 }
+                + (friends.results ?? []).map(\.id)
+                + (friends.list?.incoming ?? []).map(\.id)
+                + (publication?.dashboard.competitions.compactMap(\.opponentProfileID) ?? [])
+                + (friends.list.map { ($0.friends + $0.outgoing).map(\.id) } ?? [])
+            // ponytail: past 200 people the rest stay initials; page the
+            // lookup if anyone gets there.
+            var seen: Set<UUID> = []
+            return owners.filter { seen.insert($0).inserted }
+                .prefix(CompetitionFeature.maxPhotoOwners)
                 .sorted { $0.uuidString < $1.uuidString }
         }
 
@@ -312,7 +323,11 @@ struct CompetitionFeature {
         case photoReportConfirmed(UUID)
         case photoReportFinished(UUID, succeeded: Bool)
         case friendSettings(FriendSettingsFeature.Action)
+        case friends(FriendsFeature.Action)
     }
+
+    /// `list_profile_photos` takes at most this many ids.
+    static let maxPhotoOwners = 200
 
     @Dependency(\.competitionClient) var competitionClient
     @Dependency(\.competitionInviteLinkClient) var competitionInviteLinkClient
@@ -333,9 +348,10 @@ struct CompetitionFeature {
 
     var body: some ReducerOf<Self> {
         Scope(state: \.friendSettings, action: \.friendSettings) { FriendSettingsFeature() }
+        Scope(state: \.friends, action: \.friends) { FriendsFeature() }
         Reduce { state, action in
             switch action {
-            case .friendSettings:
+            case .friendSettings, .friends:
                 return .none
 
             case .task:
@@ -1052,8 +1068,12 @@ struct CompetitionFeature {
                 state.photoReportsInFlight = []
                 state.ownPhoto = OwnPhotoState()
                 state.friendSettings = FriendSettingsFeature.State()
+                state.friends = FriendsFeature.State()
                 return .concatenate(
                     .merge(
+                        .cancel(id: FriendsFeature.CancelID.load),
+                        .cancel(id: FriendsFeature.CancelID.search),
+                        .cancel(id: FriendsFeature.CancelID.change),
                         .cancel(id: FriendSettingsFeature.CancelID.load),
                         .cancel(id: FriendSettingsFeature.CancelID.save),
                         .cancel(id: FriendSettingsFeature.CancelID.availability),

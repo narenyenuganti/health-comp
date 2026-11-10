@@ -2202,6 +2202,7 @@ struct CompetitionPersonPlace: Equatable, Sendable {
 /// or a challenge.
 enum CompetitionHomeRoute: Hashable {
     case history
+    case friends
     /// One person's page, by opponent identity.
     case person(String)
     /// That person's Records, one push above their page.
@@ -2216,7 +2217,8 @@ enum CompetitionHomeRoute: Hashable {
         path: Binding<[CompetitionID]>,
         showsHistory: Binding<Bool>,
         person: Binding<String?>,
-        personPlace: Binding<CompetitionPersonPlace> = .constant(CompetitionPersonPlace())
+        personPlace: Binding<CompetitionPersonPlace> = .constant(CompetitionPersonPlace()),
+        showsFriends: Binding<Bool> = .constant(false)
     ) -> Binding<[CompetitionHomeRoute]> {
         Binding(
             get: {
@@ -2228,7 +2230,9 @@ enum CompetitionHomeRoute: Hashable {
                         at: min(place.depth, routes.count)
                     )
                 }
-                return (showsHistory.wrappedValue ? [.history] : []) + routes
+                return (showsFriends.wrappedValue ? [.friends] : [])
+                    + (showsHistory.wrappedValue ? [.history] : [])
+                    + routes
             },
             set: { newRoutes in
                 var routes = newRoutes
@@ -2237,7 +2241,9 @@ enum CompetitionHomeRoute: Hashable {
                     routes = Array(routes[...first])
                 }
                 let personIndex = routes.firstIndex(where: \.isPerson)
+                // Both before the person: closing either clears it.
                 showsHistory.wrappedValue = routes.first == .history
+                showsFriends.wrappedValue = routes.first == .friends
                 person.wrappedValue = personIndex.flatMap {
                     guard case let .person(identity) = routes[$0] else { return nil }
                     return identity
