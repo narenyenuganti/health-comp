@@ -99,6 +99,12 @@ struct CompetitionClient: Sendable {
     var setUsername: @Sendable (String) async throws -> FriendSettings
     var usernameAvailable: @Sendable (String) async throws -> Bool
     var updateFriendSettings: @Sendable (Bool, FriendChallengePolicy) async throws -> FriendSettings
+    var listFriends: @Sendable () async throws -> FriendsList
+    var searchPeople: @Sendable (String) async throws -> [FriendPerson]
+    var sendFriendRequest: @Sendable (UUID) async throws -> FriendRelationship
+    /// The profile, then whether you accepted.
+    var respondToFriendRequest: @Sendable (UUID, Bool) async throws -> FriendRelationship
+    var removeFriend: @Sendable (UUID) async throws -> FriendRelationship
     var previewInvite: @Sendable (
         CompetitionInviteClaimRequest
     ) async throws -> CompetitionInvitePreview
@@ -226,6 +232,21 @@ struct CompetitionClient: Sendable {
         ) async throws -> FriendSettings = { _, _ in
             throw CompetitionRemoteFailure.operationFailed
         },
+        listFriends: @escaping @Sendable () async throws -> FriendsList = {
+            throw CompetitionRemoteFailure.operationFailed
+        },
+        searchPeople: @escaping @Sendable (String) async throws -> [FriendPerson] = { _ in
+            throw CompetitionRemoteFailure.operationFailed
+        },
+        sendFriendRequest: @escaping @Sendable (UUID) async throws -> FriendRelationship = { _ in
+            throw CompetitionRemoteFailure.operationFailed
+        },
+        respondToFriendRequest: @escaping @Sendable (UUID, Bool) async throws -> FriendRelationship = { _, _ in
+            throw CompetitionRemoteFailure.operationFailed
+        },
+        removeFriend: @escaping @Sendable (UUID) async throws -> FriendRelationship = { _ in
+            throw CompetitionRemoteFailure.operationFailed
+        },
         previewInvite: @escaping @Sendable (
             CompetitionInviteClaimRequest
         ) async throws -> CompetitionInvitePreview = { _ in
@@ -309,6 +330,11 @@ struct CompetitionClient: Sendable {
         self.setUsername = setUsername
         self.usernameAvailable = usernameAvailable
         self.updateFriendSettings = updateFriendSettings
+        self.listFriends = listFriends
+        self.searchPeople = searchPeople
+        self.sendFriendRequest = sendFriendRequest
+        self.respondToFriendRequest = respondToFriendRequest
+        self.removeFriend = removeFriend
         self.previewInvite = previewInvite
         self.loadChallengeLinkCode = loadChallengeLinkCode
         self.resetChallengeLinkCode = resetChallengeLinkCode

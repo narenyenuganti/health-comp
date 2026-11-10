@@ -1186,6 +1186,194 @@ final class SupabaseCompetitionRemoteAPITests: XCTestCase {
         }
     }
 
+    private let friendID = "12000000-0000-4000-8000-0000000000f1"
+
+    private func personBody(
+        id: Any? = nil,
+        name: Any = "Jordan Lee",
+        username: Any = "jordanlee",
+        relationship: Any = "friend"
+    ) -> [String: Any] {
+        ["id": id ?? friendID, "display_name": name, "username": username, "relationship": relationship]
+    }
+
+    private func friendsListBody(
+        friends: [Any] = [],
+        incoming: [Any] = [],
+        outgoing: [Any] = []
+    ) -> [String: Any] {
+        ["friends": friends, "incoming": incoming, "outgoing": outgoing]
+    }
+
+    func testListFriendsDecodesAllThreeListsAndCallsTheRPC() async throws {
+        let harness = CompetitionTransportHarness(stubs: [
+            .response(200, try jsonData(friendsListBody(
+                friends: [personBody(username: NSNull())],
+                incoming: [personBody(relationship: "incoming")],
+                outgoing: [personBody(relationship: "requested")]
+            ))),
+        ])
+        let list = try await makeAPI(harness).listFriends()
+        let id = UUID(uuidString: friendID)!
+        XCTAssertEqual(list.friends, [FriendPerson(id: id, displayName: "Jordan Lee", username: nil, relationship: .friend)])
+        XCTAssertEqual(list.incoming, [FriendPerson(id: id, displayName: "Jordan Lee", username: "jordanlee", relationship: .incoming)])
+        XCTAssertEqual(list.outgoing.map(\.relationship), [.requested])
+        let requests = await harness.recordedRequests()
+        try assertRPC(requests[0], name: "list_friends", body: [:])
+    }
+
+    func testListFriendsRejectsTheWrongShape() async throws {
+        var extraTop = friendsListBody()
+        extraTop["extra"] = 1
+        var missingList = friendsListBody()
+        missingList.removeValue(forKey: "outgoing")
+        var extraPerson = personBody()
+        extraPerson["extra"] = 1
+        var noUsername = personBody()
+        noUsername.removeValue(forKey: "username")
+        let bad: [[String: Any]] = [
+            extraTop,
+            missingList,
+            ["friends": "x", "incoming": [], "outgoing": []],
+            friendsListBody(friends: [extraPerson]),
+            friendsListBody(friends: [noUsername]),
+            friendsListBody(friends: [personBody(id: "not-a-uuid")]),
+            friendsListBody(friends: [personBody(id: friendID.uppercased())]),
+            friendsListBody(friends: [personBody(name: "")]),
+            friendsListBody(friends: [personBody(name: 7)]),
+            friendsListBody(friends: [personBody(username: "Not Valid")]),
+            friendsListBody(friends: [personBody(relationship: "rival")]),
+            friendsListBody(friends: [personBody(relationship: "incoming")]),
+            friendsListBody(incoming: [personBody(relationship: "friend")]),
+            friendsListBody(outgoing: [personBody(relationship: "none")]),
+        ]
+        for body in bad {
+            let harness = CompetitionTransportHarness(stubs: [.response(200, try jsonData(body))])
+            let failure = await remoteFailure { _ = try await makeAPI(harness).listFriends() }
+            XCTAssertEqual(failure, .serverContractMismatch, "\(body)")
+        }
+    }
+
+    func testSearchPeopleSendsTheQueryAndDecodesExactKeys() async throws {
+        var extraPerson = personBody()
+        extraPerson["extra"] = 1
+        let harness = CompetitionTransportHarness(stubs: [
+            .response(200, try jsonData(["people": [personBody(relationship: "none"), personBody(relationship: "requested")]])),
+            .response(200, try jsonData(["people": []])),
+            .response(200, try jsonData(["people": [], "extra": 1])),
+            .response(200, try jsonData(["results": []])),
+            .response(200, try jsonData(["people": "x"])),
+            .response(200, try jsonData(["people": [extraPerson]])),
+        ])
+        let api = makeAPI(harness)
+        let found = try await api.searchPeople("@jor")
+        XCTAssertEqual(found.map(\.relationship), [FriendRelationship.none, .requested])
+        let none = try await api.searchPeople("nobody")
+        XCTAssertEqual(none, [])
+        for _ in 0..<4 {
+            let failure = await remoteFailure { _ = try await api.searchPeople("abc") }
+            XCTAssertEqual(failure, .serverContractMismatch)
+        }
+        let requests = await harness.recordedRequests()
+        try assertRPC(requests[0], name: "search_people", body: ["query": "@jor"])
+    }
+
+    func testSendFriendRequestAcceptsOnlyItsOwnAnswers() async throws {
+        let id = UUID(uuidString: friendID)!
+        let harness = CompetitionTransportHarness(stubs: [
+            .response(200, try jsonData(["relationship": "requested"])),
+            .response(200, try jsonData(["relationship": "friend"])),
+            .response(200, try jsonData(["relationship": "none"])),
+            .response(200, try jsonData(["relationship": "incoming"])),
+            .response(200, try jsonData(["relationship": "requested", "extra": 1])),
+            .response(200, try jsonData(["relationship": 1])),
+        ])
+        let api = makeAPI(harness)
+        let requested = try await api.sendFriendRequest(id)
+        XCTAssertEqual(requested, .requested)
+        let friend = try await api.sendFriendRequest(id)
+        XCTAssertEqual(friend, .friend)
+        for _ in 0..<4 {
+            let failure = await remoteFailure { _ = try await api.sendFriendRequest(id) }
+            XCTAssertEqual(failure, .serverContractMismatch)
+        }
+        let requests = await harness.recordedRequests()
+        try assertRPC(requests[0], name: "send_friend_request", body: ["profile_id": friendID])
+    }
+
+    func testRespondToFriendRequestSendsTheAnswerAndChecksTheEcho() async throws {
+        let id = UUID(uuidString: friendID)!
+        let harness = CompetitionTransportHarness(stubs: [
+            .response(200, try jsonData(["relationship": "friend"])),
+            .response(200, try jsonData(["relationship": "none"])),
+            .response(200, try jsonData(["relationship": "friend"])),
+            .response(200, try jsonData(["relationship": "none"])),
+            .response(200, try jsonData(["relationship": "requested"])),
+            .response(200, try jsonData(["relationship": "none", "extra": 1])),
+        ])
+        let api = makeAPI(harness)
+        let accepted = try await api.respondToFriendRequest(id, true)
+        XCTAssertEqual(accepted, .friend)
+        let declined = try await api.respondToFriendRequest(id, false)
+        XCTAssertEqual(declined, FriendRelationship.none)
+        // Declining someone who is already a friend changes nothing.
+        let already = try await api.respondToFriendRequest(id, false)
+        XCTAssertEqual(already, .friend)
+        let acceptWithNone = await remoteFailure { _ = try await api.respondToFriendRequest(id, true) }
+        XCTAssertEqual(acceptWithNone, .serverContractMismatch)
+        let declineRequested = await remoteFailure { _ = try await api.respondToFriendRequest(id, false) }
+        XCTAssertEqual(declineRequested, .serverContractMismatch)
+        let extra = await remoteFailure { _ = try await api.respondToFriendRequest(id, false) }
+        XCTAssertEqual(extra, .serverContractMismatch)
+        let requests = await harness.recordedRequests()
+        try assertRPC(requests[0], name: "respond_to_friend_request", body: ["profile_id": friendID, "accept": true])
+        try assertRPC(requests[1], name: "respond_to_friend_request", body: ["profile_id": friendID, "accept": false])
+    }
+
+    func testRemoveFriendAnswersNone() async throws {
+        let id = UUID(uuidString: friendID)!
+        let harness = CompetitionTransportHarness(stubs: [
+            .response(200, try jsonData(["relationship": "none"])),
+            .response(200, try jsonData(["relationship": "friend"])),
+            .response(200, try jsonData(["relationship": "none", "extra": 1])),
+            .response(200, try jsonData([:])),
+        ])
+        let api = makeAPI(harness)
+        let removed = try await api.removeFriend(id)
+        XCTAssertEqual(removed, FriendRelationship.none)
+        for _ in 0..<3 {
+            let failure = await remoteFailure { _ = try await api.removeFriend(id) }
+            XCTAssertEqual(failure, .serverContractMismatch)
+        }
+        let requests = await harness.recordedRequests()
+        try assertRPC(requests[0], name: "remove_friend", body: ["profile_id": friendID])
+    }
+
+    func testFriendErrorsMapToTypedFailures() async throws {
+        let id = UUID(uuidString: friendID)!
+        typealias Call = @Sendable (CompetitionRemoteAPI) async throws -> Void
+        let search: Call = { _ = try await $0.searchPeople("abc") }
+        let add: Call = { _ = try await $0.sendFriendRequest(id) }
+        let respond: Call = { _ = try await $0.respondToFriendRequest(id, true) }
+        let remove: Call = { _ = try await $0.removeFriend(id) }
+        let cases: [(String, CompetitionRemoteFailure, Call)] = [
+            ("invalid_query", .invalidQuery, search),
+            ("search_rate_limited", .searchRateLimited, search),
+            ("invalid_profile_id", .invalidProfileID, add),
+            ("recipient_unavailable", .recipientUnavailable, add),
+            ("friend_request_limit", .friendRequestLimit, add),
+            ("invalid_profile_id", .invalidProfileID, respond),
+            ("invalid_friend_request_response", .invalidFriendRequestResponse, respond),
+            ("request_unavailable", .requestUnavailable, respond),
+            ("invalid_profile_id", .invalidProfileID, remove),
+        ]
+        for (code, expected, call) in cases {
+            let harness = CompetitionTransportHarness(stubs: [.response(400, try errorData(code: code))])
+            let failure = await remoteFailure { try await call(makeAPI(harness)) }
+            XCTAssertEqual(failure, expected, code)
+        }
+    }
+
     func testChallengeLinkCodeAndResolve() async throws {
         let profile = "12000000-0000-4000-8000-0000000000a3"
         let harness = CompetitionTransportHarness(stubs: [

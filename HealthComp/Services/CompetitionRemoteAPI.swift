@@ -30,6 +30,12 @@ enum CompetitionRemoteFailure: Error, Equatable, Sendable {
     case usernameUnavailable
     case searchRateLimited
     case invalidFriendSettings
+    case invalidQuery
+    case invalidProfileID
+    case invalidFriendRequestResponse
+    case friendRequestLimit
+    /// Accept when the request is gone or the person is unavailable.
+    case requestUnavailable
     case operationFailed
 }
 
@@ -196,6 +202,24 @@ struct CompetitionRemoteAPI: Sendable {
         _ showInSearch: Bool,
         _ challengePolicy: FriendChallengePolicy
     ) async throws -> FriendSettings = { _, _ in
+        throw CompetitionRemoteFailure.operationFailed
+    }
+    var listFriends: @Sendable () async throws -> FriendsList = {
+        throw CompetitionRemoteFailure.operationFailed
+    }
+    var searchPeople: @Sendable (String) async throws -> [FriendPerson] = { _ in
+        throw CompetitionRemoteFailure.operationFailed
+    }
+    var sendFriendRequest: @Sendable (UUID) async throws -> FriendRelationship = { _ in
+        throw CompetitionRemoteFailure.operationFailed
+    }
+    var respondToFriendRequest: @Sendable (
+        _ profileID: UUID,
+        _ accept: Bool
+    ) async throws -> FriendRelationship = { _, _ in
+        throw CompetitionRemoteFailure.operationFailed
+    }
+    var removeFriend: @Sendable (UUID) async throws -> FriendRelationship = { _ in
         throw CompetitionRemoteFailure.operationFailed
     }
 }

@@ -178,6 +178,23 @@ extension CompetitionClient {
                     try await $0.updateFriendSettings(showInSearch, challengePolicy)
                 }
             },
+            listFriends: {
+                try await coordinator.remote { try await $0.listFriends() }
+            },
+            searchPeople: { query in
+                try await coordinator.remote { try await $0.searchPeople(query) }
+            },
+            sendFriendRequest: { profileID in
+                try await coordinator.remote { try await $0.sendFriendRequest(profileID) }
+            },
+            respondToFriendRequest: { profileID, accept in
+                try await coordinator.remote {
+                    try await $0.respondToFriendRequest(profileID, accept)
+                }
+            },
+            removeFriend: { profileID in
+                try await coordinator.remote { try await $0.removeFriend(profileID) }
+            },
             previewInvite: { request in
                 try await coordinator.remote { try await $0.previewInvite(request) }
             },

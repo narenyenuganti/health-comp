@@ -634,6 +634,52 @@ enum SupabaseCompetitionRemoteAPI {
                     throw CompetitionRemoteFailure.serverContractMismatch
                 }
                 return settings
+            },
+            listFriends: {
+                let response = try await sendReadOnly(
+                    .rpc(name: "list_friends", parameters: try encode(EmptyParameters())),
+                    transport: transport
+                )
+                return try decodeFriendsList(response.data)
+            },
+            searchPeople: { query in
+                // Not read-only: each search counts against the limit.
+                let response = try await send(
+                    .rpc(name: "search_people", parameters: try encode(["query": query])),
+                    transport: transport
+                )
+                guard let object = try? JSONSerialization.jsonObject(with: response.data)
+                    as? [String: Any],
+                      Set(object.keys) == ["people"]
+                else {
+                    throw CompetitionRemoteFailure.serverContractMismatch
+                }
+                return try decodeFriendPeople(object["people"])
+            },
+            sendFriendRequest: { profileID in
+                try await friendCommand(
+                    "send_friend_request",
+                    profileID,
+                    allowed: [.requested, .friend],
+                    transport
+                )
+            },
+            respondToFriendRequest: { profileID, accept in
+                try validateUUID(profileID)
+                let response = try await send(
+                    .rpc(name: "respond_to_friend_request", parameters: try encode(
+                        RespondToFriendRequestParameters(
+                            profileID: profileID.uuidString.lowercased(),
+                            accept: accept
+                        )
+                    )),
+                    transport: transport
+                )
+                // Declining someone who is already a friend changes nothing.
+                return try decodeRelationship(response.data, allowed: accept ? [.friend] : [.none, .friend])
+            },
+            removeFriend: { profileID in
+                try await friendCommand("remove_friend", profileID, allowed: [.none], transport)
             }
         )
     }
@@ -857,6 +903,21 @@ enum SupabaseCompetitionRemoteAPI {
         }
         if identifiers.contains("invalid_friend_settings") {
             return .invalidFriendSettings
+        }
+        if identifiers.contains("invalid_query") {
+            return .invalidQuery
+        }
+        if identifiers.contains("invalid_profile_id") {
+            return .invalidProfileID
+        }
+        if identifiers.contains("invalid_friend_request_response") {
+            return .invalidFriendRequestResponse
+        }
+        if identifiers.contains("friend_request_limit") {
+            return .friendRequestLimit
+        }
+        if identifiers.contains("request_unavailable") {
+            return .requestUnavailable
         }
         let isClaimContext = context == .claimInvite || context == .previewInvite
         // Your own link says so; every other claim failure stays collapsed.
@@ -1126,6 +1187,84 @@ enum SupabaseCompetitionRemoteAPI {
             showInSearch: showInSearch,
             challengePolicy: challengePolicy
         )
+    }
+
+    private static func friendCommand(
+        _ name: String,
+        _ profileID: UUID,
+        allowed: Set<FriendRelationship>,
+        _ transport: CompetitionRemoteTransport
+    ) async throws -> FriendRelationship {
+        try validateUUID(profileID)
+        let response = try await send(
+            .rpc(name: name, parameters: try encode(["profile_id": profileID.uuidString.lowercased()])),
+            transport: transport
+        )
+        return try decodeRelationship(response.data, allowed: allowed)
+    }
+
+    /// Exactly `{relationship}`, and a value this command can answer.
+    private static func decodeRelationship(
+        _ data: Data,
+        allowed: Set<FriendRelationship>
+    ) throws -> FriendRelationship {
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              Set(object.keys) == ["relationship"],
+              let relationship = (object["relationship"] as? String)
+                .flatMap(FriendRelationship.init(rawValue:)),
+              allowed.contains(relationship)
+        else {
+            throw CompetitionRemoteFailure.serverContractMismatch
+        }
+        return relationship
+    }
+
+    /// Exactly `{friends, incoming, outgoing}`, each row in its own list.
+    private static func decodeFriendsList(_ data: Data) throws -> FriendsList {
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              Set(object.keys) == ["friends", "incoming", "outgoing"]
+        else {
+            throw CompetitionRemoteFailure.serverContractMismatch
+        }
+        let list = FriendsList(
+            friends: try decodeFriendPeople(object["friends"]),
+            incoming: try decodeFriendPeople(object["incoming"]),
+            outgoing: try decodeFriendPeople(object["outgoing"])
+        )
+        guard list.friends.allSatisfy({ $0.relationship == .friend }),
+              list.incoming.allSatisfy({ $0.relationship == .incoming }),
+              list.outgoing.allSatisfy({ $0.relationship == .requested })
+        else {
+            throw CompetitionRemoteFailure.serverContractMismatch
+        }
+        return list
+    }
+
+    private static func decodeFriendPeople(_ value: Any?) throws -> [FriendPerson] {
+        guard let rows = value as? [Any] else {
+            throw CompetitionRemoteFailure.serverContractMismatch
+        }
+        return try rows.map { row in
+            // `{id, display_name}` is the profile rule; these two keys are new.
+            guard var object = row as? [String: Any],
+                  let usernameValue = object.removeValue(forKey: "username"),
+                  let relationship = (object.removeValue(forKey: "relationship") as? String)
+                    .flatMap(FriendRelationship.init(rawValue:)),
+                  let profile = challengeProfile(object, idKey: "id", nameKey: "display_name")
+            else {
+                throw CompetitionRemoteFailure.serverContractMismatch
+            }
+            let username = usernameValue as? String
+            guard usernameValue is NSNull || username.map(FriendSettings.isValidUsername) == true else {
+                throw CompetitionRemoteFailure.serverContractMismatch
+            }
+            return FriendPerson(
+                id: profile.id,
+                displayName: profile.displayName,
+                username: username,
+                relationship: relationship
+            )
+        }
     }
 
     /// JSON `true`/`false` only: `as? Bool` also accepts 0 and 1.
@@ -1405,6 +1544,16 @@ private struct NotificationMuteMutationResponse: Decodable {
     enum CodingKeys: String, CodingKey {
         case opponentProfileID = "opponent_profile_id"
         case isMuted = "is_muted"
+    }
+}
+
+private struct RespondToFriendRequestParameters: Encodable {
+    let profileID: String
+    let accept: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case profileID = "profile_id"
+        case accept
     }
 }
 

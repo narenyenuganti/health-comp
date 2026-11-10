@@ -30,3 +30,28 @@ struct FriendSettings: Equatable, Sendable {
         username.count >= 3 && sanitizedUsername(username) == username
     }
 }
+
+/// How someone stands to you, as the server says it.
+enum FriendRelationship: String, Equatable, Sendable {
+    case none, requested, incoming, friend
+}
+
+/// Someone found in search or on your Friends lists. Never activity data.
+struct FriendPerson: Equatable, Identifiable, Sendable {
+    let id: UUID
+    let displayName: String
+    /// Nil until the server lets you see it.
+    let username: String?
+    var relationship: FriendRelationship
+
+    /// The key of their person page.
+    var identity: String { RemoteCompetitionOpponentIdentity.identity(for: id) }
+}
+
+struct FriendsList: Equatable, Sendable {
+    var friends: [FriendPerson] = []
+    /// Requests to you, newest first.
+    var incoming: [FriendPerson] = []
+    /// Your requests, newest first.
+    var outgoing: [FriendPerson] = []
+}

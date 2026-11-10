@@ -622,7 +622,8 @@ actor CompetitionSyncCoordinator {
         case .operationFailed, .recipientUnavailable, .pendingInvitationExists,
              .activeMatchExists, .incomingChallengeExists, .ownChallengeLink,
              .invalidUsername, .usernameUnavailable, .searchRateLimited,
-             .invalidFriendSettings:
+             .invalidFriendSettings, .invalidQuery, .invalidProfileID,
+             .invalidFriendRequestResponse, .friendRequestLimit, .requestUnavailable:
             .operationFailed
         case .cancelled, .retryableTransport:
             .operationFailed
