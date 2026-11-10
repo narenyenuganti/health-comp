@@ -136,7 +136,8 @@ struct GroupMatchLiveFFAView: View {
 }
 
 extension GroupMatchPresentation {
-    /// "Outscore Sam by 49 today to take 1st." and who's closest behind you.
+    /// "Outscore Sam by 49 from here to take 1st." and who's closest behind
+    /// you. The gap is the current one, today's points included.
     /// Nil unless you're chasing someone today.
     var whatItTakes: (target: String, points: String, chaser: String?)? {
         guard liveDay != nil, !hasLeft(viewer), case let .chasing(_, gap, behind) = lead,
@@ -156,7 +157,7 @@ extension GroupMatchPresentation {
             let names = chasers.map { name(of: $0.0) }.formatted(.list(type: .and))
             return "\(names) \(chasers.count == 1 ? "is" : "are") \(Self.pointsText(first.1)) behind you."
         }
-        return ("Outscore \(names) by \(points) today to take \(Self.placeText(place)).", points, chaser)
+        return ("Outscore \(names) by \(points) from here to take \(Self.placeText(place)).", points, chaser)
     }
 }
 
@@ -220,7 +221,9 @@ struct GroupMatchLiveScreen<Content: View>: View {
     }
 
     private var leaveMessage: String {
-        let partner = match.seats.first { $0.team != nil && $0.team == match.viewer.team && $0.id != match.viewerSeatID }
+        let partner = match.seats.first {
+            $0.team != nil && $0.team == match.viewer.team && $0.id != match.viewerSeatID && !match.hasLeft($0)
+        }
         return "Your synced points stay in. Points not sent yet won’t count."
             + (partner.map { " \($0.name) plays on." } ?? "")
     }

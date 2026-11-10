@@ -22,7 +22,7 @@ final class GroupMatchLiveUITests: XCTestCase {
         XCTAssertEqual(app.groupElement("competition.group.standing.4").label, "4th, Leo, 1,203 points")
         XCTAssertEqual(app.groupElement("competition.group.lead").label, "You're 2nd. 48 behind Sam.")
         let takes = app.groupElement("competition.group.what-it-takes")
-        XCTAssertTrue(takes.label.contains("Outscore Sam by 49 today to take 1st."), takes.label)
+        XCTAssertTrue(takes.label.contains("Outscore Sam by 49 from here to take 1st."), takes.label)
         XCTAssertTrue(takes.label.contains("Priya is 166 behind you."), takes.label)
         shot(app, "LiveFFA-top")
 
@@ -104,6 +104,14 @@ final class GroupMatchLiveUITests: XCTestCase {
         XCTAssertTrue(dialog.waitForExistence(timeout: 3))
         XCTAssertTrue(dialog.staticTexts["Your synced points stay in. Points not sent yet won’t count."].exists)
         shot(app, "LiveFFA-leave-confirm")
+        // Keep Playing changes nothing.
+        let keep = dialog.buttons["Keep Playing"].exists ? dialog.buttons["Keep Playing"] : app.buttons["Keep Playing"]
+        keep.tap()
+        XCTAssertTrue(dialog.waitForNonExistence(timeout: 3))
+        XCTAssertEqual(app.groupElement("competition.group.standing.2").label, "2nd, You, 1,664 points")
+        more.tap()
+        leave.tap()
+        XCTAssertTrue(dialog.waitForExistence(timeout: 3))
         dialog.buttons["Leave Match"].tap()
 
         let you = app.groupElement("competition.group.standing.2")

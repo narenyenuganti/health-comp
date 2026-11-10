@@ -222,12 +222,14 @@ struct GroupMatchDayView: View {
             guard case let .react(id, seatID, day, _) = command else { return false }
             return id == match.id && seatID == seat.id && day == ordinal
         }
+        // A failed send isn't selected, so tapping it again retries it.
+        let failed = store.failed.contains(where: isTarget)
         return CompetitionReactionPicker(
-            selection: sent[seat.id],
+            selection: failed ? nil : sent[seat.id],
             isPending: store.inFlight.contains(where: isTarget),
-            failed: store.failed.contains(where: isTarget),
+            failed: failed,
             select: { kind in
-                let next = sent[seat.id] == kind ? nil : kind
+                let next = !failed && sent[seat.id] == kind ? nil : kind
                 sent[seat.id] = next
                 store.send(.commandTapped(.react(match.id, seatID: seat.id, ordinal: ordinal, next)))
             }
