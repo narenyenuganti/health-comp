@@ -12,6 +12,8 @@ with expected_tables(schema_name, table_name, expected_rls, expected_force, auth
     ('public', 'daily_score_revisions', true, false, true),
     ('public', 'participant_finalization_attestations', true, false, true),
     ('public', 'competition_results', true, false, true),
+    ('public', 'competition_seats', true, false, false),
+    ('public', 'competition_group_results', true, false, false),
     ('public', 'competition_awards', true, false, true),
     ('public', 'device_installations', true, false, false),
     ('public', 'support_events', true, false, false),
@@ -38,6 +40,7 @@ required_column_groups(table_name, type_name, column_names) as (
     ('competitions', 'text', array['lifecycle']),
     ('competition_participants', 'uuid', array['competition_id','profile_id']),
     ('competition_participants', 'text', array['state']),
+    ('competition_participants', 'timestamptz', array['left_at']),
     ('competition_invites', 'uuid', array['id','competition_id']),
     ('competition_invites', 'timestamptz', array['consumed_at']),
     ('competition_change_log', 'uuid', array['competition_id']),
@@ -240,7 +243,7 @@ select pg_catalog.json_build_object(
       where cp.profile_id = p.id and cp.state is distinct from 'anonymized')),
   'deactivated_profiles_with_unfinished_competitions', (select count(*) from deactivated p where exists (
     select 1 from only public.competition_participants cp join only public.competitions c on c.id = cp.competition_id
-    where cp.profile_id = p.id and c.lifecycle in ('pending','scheduled','active','ends_today','tallying'))),
+    where cp.profile_id = p.id and cp.left_at is null and c.lifecycle in ('pending','scheduled','active','ends_today','tallying'))),
   'deactivated_profiles_with_unconsumed_cancelled_invites', (select count(*) from deactivated p where exists (
     select 1 from only public.competition_participants cp join only public.competitions c on c.id = cp.competition_id
     join only public.competition_invites i on i.competition_id = c.id

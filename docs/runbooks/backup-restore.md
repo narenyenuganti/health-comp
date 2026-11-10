@@ -776,7 +776,7 @@ Vault secrets.
 
 Require exactly 33 native nonnegative integer fields, with no extra keys or
 output. The two fixed criteria are `receipt_version=2` and
-`application_tables_checked=22`. Version 1 receipts do not qualify this candidate.
+`application_tables_checked=24`. Version 1 receipts do not qualify this candidate.
 These 21 violation counters must all be zero on the contained recovery target:
 
 - `browser_requests_remaining`, `deletion_client_binding_invalid`
