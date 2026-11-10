@@ -121,6 +121,16 @@ struct CompetitionSharingView: View {
                     }
                 }
 
+                // Group matches: their own block, never in the duel layout.
+                if !GroupMatchHomeCards.shown(publication.dashboard.groupMatches, now: publication.evaluatedAt).isEmpty {
+                    GroupMatchHomeCards(
+                        matches: publication.dashboard.groupMatches,
+                        now: publication.evaluatedAt,
+                        select: selectCompetition
+                    )
+                        .transition(Motion.appear)
+                }
+
                 if !layout.upNext.isEmpty {
                     section("UP NEXT", id: "competition.home.upNext") {
                         rowPanel(layout.upNext) { competition in
@@ -160,7 +170,7 @@ struct CompetitionSharingView: View {
                     .transition(Motion.appear)
                 }
 
-                if layout.isEmpty {
+                if layout.isEmpty && GroupMatchHomeCards.shown(publication.dashboard.groupMatches, now: publication.evaluatedAt).isEmpty {
                     emptyState
                         .transition(Motion.appear)
                 }
@@ -187,6 +197,7 @@ struct CompetitionSharingView: View {
             // Derived keys only: every publication carries a new `evaluatedAt`,
             // which would animate all the time-derived text.
             .moving(Motion.settle, value: layout.shape)
+            .moving(Motion.settle, value: GroupMatchHomeCards.shown(publication.dashboard.groupMatches, now: publication.evaluatedAt).map(\.id))
             .moving(Motion.settle, value: publication.dashboard.issues)
             .moving(Motion.settle, value: layout.allItems.map { unseen($0)?.updatedAt })
             .moving(Motion.settle, value: layout.allItems.map { beltGoingIn(for: $0, in: records)?.holder })

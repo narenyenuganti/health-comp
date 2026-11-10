@@ -202,7 +202,15 @@ final class GroupMatchPresentationTests: XCTestCase {
         let now = MultiUserCompetitionTestLabFixtures.labNow
         XCTAssertFalse(competitionHomeLayout(duels, now: now).isEmpty)
         XCTAssertEqual(competitionHomeLayout(mixed, now: now), competitionHomeLayout(duels, now: now))
-        XCTAssertEqual(CompetitionWidgetSnapshot(dashboard: mixed), CompetitionWidgetSnapshot(dashboard: duels))
+        // Glance shows the live one through its own field, with no belt or
+        // chase; the duel entries are unchanged.
+        let glance = CompetitionWidgetSnapshot(dashboard: mixed)
+        let duelGlance = CompetitionWidgetSnapshot(dashboard: duels)
+        XCTAssertEqual(glance.matches.filter { $0.group == nil }, duelGlance.matches)
+        XCTAssertEqual(glance.hasIncomingChallenge, duelGlance.hasIncomingChallenge)
+        let groups = glance.matches.filter { $0.group != nil }
+        XCTAssertEqual(groups.map(\.id), [fixture(.liveFFA).id.rawValue])
+        XCTAssertTrue(groups.allSatisfy { $0.belt == nil && $0.chase == nil && $0.final == nil })
     }
 
     func testDashboardRebuildsKeepGroupMatches() {

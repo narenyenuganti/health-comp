@@ -170,6 +170,7 @@ struct GroupMatchLiveScreen<Content: View>: View {
 
     @State private var day: Int?
     @State private var confirmsLeave = false
+    @Environment(\.groupMatchReplayIntro) private var replayIntro
 
     var body: some View {
         ScrollView {
@@ -192,16 +193,24 @@ struct GroupMatchLiveScreen<Content: View>: View {
         .navigationTitle(match.format.title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            if match.canLeave {
+            if match.canLeave || replayIntro != nil {
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
-                        Button(role: .destructive) {
-                            confirmsLeave = true
-                        } label: {
-                            Label("Leave Match", systemImage: "rectangle.portrait.and.arrow.right")
+                        if let replayIntro {
+                            Button(action: replayIntro) {
+                                Label("Replay intro", systemImage: "arrow.counterclockwise")
+                            }
+                            .accessibilityIdentifier("competition.versus.replay")
                         }
-                        .disabled(store.inFlight.contains(.leave(match.id)))
-                        .accessibilityIdentifier("competition.group.leave")
+                        if match.canLeave {
+                            Button(role: .destructive) {
+                                confirmsLeave = true
+                            } label: {
+                                Label("Leave Match", systemImage: "rectangle.portrait.and.arrow.right")
+                            }
+                            .disabled(store.inFlight.contains(.leave(match.id)))
+                            .accessibilityIdentifier("competition.group.leave")
+                        }
                     } label: {
                         CompetitionMoreLabel()
                     }

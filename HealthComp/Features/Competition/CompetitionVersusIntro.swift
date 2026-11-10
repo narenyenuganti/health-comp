@@ -149,6 +149,8 @@ private struct CompetitionVersusIntroHost: ViewModifier {
     @Environment(\.profilePhotos) private var photos
     @State private var playing: CompetitionVersusIntroContent?
     @State private var playingPhotos = VersusPhotos()
+    @State private var playingGroup: GroupMatchVersusContent?
+    @State private var groupPhotos: [UUID: ProfilePhoto] = [:]
 
     /// The open match, if its intro is due. One rule covers the accepter and
     /// the sender, on arrival or in place when the other side accepts.
@@ -157,8 +159,22 @@ private struct CompetitionVersusIntroHost: ViewModifier {
         return introContent()
     }
 
+    private var dueGroup: GroupMatchVersusContent? {
+        guard let matchID, !seen.hasSeen(.versus, matchID) else { return nil }
+        return groupContent()
+    }
+
+    /// A group match's lineup; nil for a duel.
+    private func groupContent(isReplay: Bool = false) -> GroupMatchVersusContent? {
+        guard CompetitionVersusIntroGate.isEnabled, playing == nil, playingGroup == nil, scenePhase == .active,
+              let matchID, let publication,
+              let match = publication.dashboard.groupMatches.first(where: { $0.id == matchID })
+        else { return nil }
+        return groupMatchVersusIntroContent(match, source: publication.source, locale: locale, isReplay: isReplay)
+    }
+
     private func introContent(isReplay: Bool = false) -> CompetitionVersusIntroContent? {
-        guard CompetitionVersusIntroGate.isEnabled, playing == nil, scenePhase == .active,
+        guard CompetitionVersusIntroGate.isEnabled, playing == nil, playingGroup == nil, scenePhase == .active,
               let matchID, let publication,
               let competition = publication.dashboard.competitions.first(where: { $0.id == matchID })
         else { return nil }
@@ -175,6 +191,12 @@ private struct CompetitionVersusIntroHost: ViewModifier {
                     }
                     // Past this the words crowd the slash. The label has them all.
                     .dynamicTypeSize(...DynamicTypeSize.accessibility2)
+                } else if let playingGroup {
+                    GroupMatchVersusIntroView(content: playingGroup, photos: groupPhotos) {
+                        self.playingGroup = nil
+                        isPlaying = false
+                    }
+                    .dynamicTypeSize(...DynamicTypeSize.accessibility2)
                 }
             }
             .onChange(of: due, initial: true) { _, due in
@@ -184,7 +206,15 @@ private struct CompetitionVersusIntroHost: ViewModifier {
             .onChange(of: replay) { _, requested in
                 guard requested else { return }
                 replay = false
-                if let intro = introContent(isReplay: true) { play(intro) }
+                if let intro = introContent(isReplay: true) {
+                    play(intro)
+                } else if let group = groupContent(isReplay: true) {
+                    play(group)
+                }
+            }
+            .onChange(of: dueGroup, initial: true) { _, due in
+                guard let due else { return }
+                play(due)
             }
     }
 
@@ -195,6 +225,19 @@ private struct CompetitionVersusIntroHost: ViewModifier {
         } else {
             playingPhotos = VersusPhotos(you: photos.own, them: photos.photo(intro.themPhoto))
             playing = intro
+            isPlaying = true
+        }
+    }
+
+    private func play(_ intro: GroupMatchVersusContent) {
+        seen = seen.marking(.versus, intro.id)
+        if voiceOver || CompetitionVersusIntroGate.assumesVoiceOver {
+            announce(intro.announcement)
+        } else {
+            groupPhotos = Dictionary(uniqueKeysWithValues: intro.panels.joined().compactMap { person in
+                (person.isYou ? photos.own : photos.photo(person.profileID)).map { (person.id, $0) }
+            })
+            playingGroup = intro
             isPlaying = true
         }
     }
@@ -212,9 +255,9 @@ private struct CompetitionVersusIntroHost: ViewModifier {
 }
 
 /// Every number of the intro lives here and in `VersusStage`, ported from the
-/// approved preview: a sanctioned exception to Motion.swift, "nothing
+/// approved preview (the group intro shares it): a sanctioned exception to Motion.swift, "nothing
 /// scale-pops", "one haptic" and "never hold".
-private enum VersusClock {
+enum VersusClock {
     static let slam = 0.15
     static let contact = 0.45
     static let stamp = 0.6

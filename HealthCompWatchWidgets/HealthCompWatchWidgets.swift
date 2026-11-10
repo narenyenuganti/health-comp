@@ -189,8 +189,9 @@ private struct WatchRectangularView: View {
 
     private var header: some View {
         HStack(spacing: 0) {
-            label(match.name)
-                .privacySensitive()
+            // A group match by its format; the place and gap are in the label.
+            label(match.group?.title ?? match.name)
+                .privacySensitive(match.group == nil)
             label(" · \(match.boardStatus(at: date))")
                 .layoutPriority(1)
         }

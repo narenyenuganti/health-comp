@@ -439,6 +439,14 @@ struct MainTabView: View {
                 match: match,
                 store: store.scope(state: \.competition.group, action: \.competition.group)
             )
+            .environment(
+                \.groupMatchReplayIntro,
+                CompetitionVersusIntroGate.isEnabled
+                    && store.competition.publication.flatMap {
+                        groupMatchVersusIntroContent(match, source: $0.source, isReplay: true)
+                    } != nil
+                    ? { replaysVersus = true } : nil
+            )
         } else if let publication = store.competition.publication,
            let competition = publication.dashboard.competitions.first(
                where: { $0.id == id }

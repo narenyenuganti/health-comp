@@ -108,7 +108,9 @@ private struct WatchBoardPage: View {
         let status = match.boardStatus(at: date)
         ZStack(alignment: .topLeading) {
             ZStack(alignment: .topLeading) {
-                if match.state(at: date) == .scheduled {
+                if let group = match.group {
+                    groupBoard(group, status: status).transition(Motion.appear)
+                } else if match.state(at: date) == .scheduled {
                     scheduled(status).transition(Motion.appear)
                 } else {
                     board(status).transition(Motion.appear)
@@ -208,6 +210,37 @@ private struct WatchBoardPage: View {
             Spacer(minLength: 0)
         }
         .animation(Motion.fade, value: match.isStale(at: date))
+    }
+
+    /// A group match: the standings, you in amber. No belt, no chase.
+    private func groupBoard(_ group: CompetitionWidgetSnapshot.Group, status: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            label("\(group.title) · \(status)")
+                .padding(.trailing, 12)  // the page dots
+            ForEach(Array(group.rows.enumerated()), id: \.offset) { _, row in
+                HStack(alignment: .firstTextBaseline, spacing: 4) {
+                    Text(group.isDoubles ? row.name : "\(row.place) \(row.name)")
+                        .fontWeight(row.isYou ? .bold : .regular)
+                        .lineLimit(1)
+                        .privacySensitive(row.namesSomeone)
+                    Spacer(minLength: 4)
+                    Text(competitionPointsText(row.points))
+                        .font(.score(size: 20))
+                        .lineLimit(1)
+                        .scoreRoll(row.points, id: "\(match.id)/\(row.name)")
+                        .privacySensitive()
+                }
+                .foregroundStyle(row.isYou ? Theme.you : Theme.ink)
+            }
+            if let lead = group.lead, typeSize < .accessibility1 {
+                Text(lead)
+                    .font(.footnote)
+                    .foregroundStyle(Theme.secondary)
+                    .lineLimit(2)
+                    .privacySensitive()
+            }
+            Spacer(minLength: 0)
+        }
     }
 
     private func scheduled(_ status: String) -> some View {

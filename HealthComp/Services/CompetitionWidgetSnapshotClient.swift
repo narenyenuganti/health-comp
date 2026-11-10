@@ -119,7 +119,7 @@ extension CompetitionWidgetSnapshot {
                     match.belt = Belt(for: competition, records: records, in: competitions)
                     return match
                 }
-            },
+            } + dashboard.groupMatches.compactMap(Match.init(group:)),
             hasIncomingChallenge: competitions.contains {
                 if case .pending(.incoming, _, _) = $0.lifecycle { true } else { false }
             }
@@ -152,6 +152,78 @@ extension CompetitionWidgetSnapshot.Belt {
 }
 
 extension CompetitionWidgetSnapshot.Match {
+    /// A live group match: standings in `group`, and the legacy duel fields
+    /// as you against the next place up (or 2nd while you lead), or the two
+    /// team totals, for an older watch. No belt, chase or record.
+    init?(group m: GroupMatchPresentation) {
+        switch m.lifecycle {
+        // Once you've left, it's no longer yours to watch live.
+        case .active, .endsToday, .tallying: guard !m.hasLeft(m.viewer) else { return nil }
+        default: return nil
+        }
+        guard let schedule = m.schedule,
+              let dayStarts = try? schedule.calendar
+                .sevenDayWindow(startingOn: schedule.startDay)
+                .map({ try schedule.calendar.startOfDay($0) }),
+              let endsAt = competitionScheduleBoundaries(schedule)?.end,
+              let url = CompetitionRoute.competition(m.id).url
+        else { return nil }
+        let rows = m.standingRows
+        let you = m.viewerSubject
+        let isDoubles = m.format == .doubles
+        let them: MatchStandingSubject? = switch m.lead {
+        case let .chasing(_, _, behind): behind.first
+        case let .tiedFirst(with): with.first
+        case .ahead, nil: rows.first { $0.subject != you }?.subject
+        }
+        func total(_ subject: MatchStandingSubject?) -> Double {
+            Double(rows.first { $0.subject == subject }?.centipoints ?? 0) / 100
+        }
+        func dayPoints(_ subject: MatchStandingSubject?) -> [Double?] {
+            let members = subject.map(m.members(of:)) ?? []
+            return (1...7).map { ordinal in
+                let values = members.compactMap { m.dayCentipoints($0, ordinal: ordinal) }
+                return values.isEmpty ? nil : Double(values.reduce(0, +)) / 100
+            }
+        }
+        let lead: String? = switch m.lead {
+        case let .chasing(_, gap, behind):
+            isDoubles
+                ? "Your team down \(GroupMatchPresentation.pointsText(gap))"
+                : "\(GroupMatchPresentation.pointsText(gap)) behind \(behind.map(m.name(of:)).formatted(.list(type: .and)))"
+        case let .ahead(margin):
+            isDoubles
+                ? "Your team up \(GroupMatchPresentation.pointsText(margin))"
+                : "You lead by \(GroupMatchPresentation.pointsText(margin))"
+        case .tiedFirst: isDoubles ? "All square" : "Tied for 1st"
+        case nil: nil
+        }
+        self.init(
+            id: m.id.rawValue,
+            personID: "group:\(m.id.rawValue.uuidString.lowercased())",
+            name: them.map(m.name(of:)) ?? m.format.title,
+            url: url,
+            timeZoneIdentifier: schedule.calendar.timeZoneIdentifier,
+            dayStarts: dayStarts,
+            endsAt: endsAt,
+            userPoints: total(you),
+            opponentPoints: total(them),
+            userDayPoints: dayPoints(you),
+            opponentDayPoints: dayPoints(them),
+            updatedAt: nil,
+            final: nil,
+            group: CompetitionWidgetSnapshot.Group(
+                title: m.format.title,
+                isDoubles: isDoubles,
+                rows: rows.map {
+                    .init(place: $0.place, name: m.name(of: $0.subject), points: Double($0.centipoints) / 100,
+                          isYou: $0.subject == you)
+                },
+                lead: lead
+            )
+        )
+    }
+
     init?(presentation p: CompetitionPresentation) {
         guard !p.isPractice else { return nil }
         let final: CompetitionWidgetSnapshot.Final?
