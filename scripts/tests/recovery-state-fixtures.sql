@@ -50,6 +50,11 @@ create table private.account_blocks (blocker_profile_id uuid, blocked_profile_id
 create table private.competition_reactions (competition_id uuid, author_profile_id uuid, reaction text);
 create table private.profile_photo_reports (reporter_profile_id uuid, reported_profile_id uuid);
 
+create table private.friendships (profile_low uuid, profile_high uuid, created_at timestamptz);
+create table private.friend_requests (sender_profile_id uuid, recipient_profile_id uuid, created_at timestamptz);
+create table private.profile_reports (reporter_profile_id uuid, reported_profile_id uuid, created_at timestamptz);
+create table private.people_search_limits (profile_id uuid, window_started_at timestamptz, used integer);
+
 -- Policy expressions are copied at runtime from immutable migration 00200,
 -- never from the operator oracle. These signature-only fixture helpers MUST NOT
 -- execute during an aggregate catalog inspection (helper implementation is outside
@@ -98,6 +103,14 @@ alter table private.competition_reactions enable row level security;
 alter table private.competition_reactions force row level security;
 alter table private.profile_photo_reports enable row level security;
 alter table private.profile_photo_reports force row level security;
+alter table private.friendships enable row level security;
+alter table private.friendships force row level security;
+alter table private.friend_requests enable row level security;
+alter table private.friend_requests force row level security;
+alter table private.profile_reports enable row level security;
+alter table private.profile_reports force row level security;
+alter table private.people_search_limits enable row level security;
+alter table private.people_search_limits force row level security;
 revoke all on all tables in schema public, private from public, anon, authenticated, service_role;
 grant select (id, display_name) on public.profiles to authenticated;
 grant select on public.competitions, public.competition_participants,
@@ -114,7 +127,8 @@ truncate public.profiles, public.competitions, public.competition_participants,
   private.account_deletions, private.app_attest_keys, private.app_attest_challenges,
   private.app_attest_submission_grants, private.apple_deletion_web_requests,
   private.challenge_links, private.account_blocks, private.competition_reactions,
-  private.profile_photo_reports;
+  private.profile_photo_reports, private.friendships, private.friend_requests,
+  private.profile_reports, private.people_search_limits;
 insert into public.profiles
 select md5('profile-' || n)::uuid,
   case when n in (4, 5) then null else md5('auth-' || n)::uuid end,

@@ -1286,6 +1286,7 @@ declare
   input_link_code alias for challenge_link_code;
   caller_profile_id uuid;
   source_scoring_policy text;
+  f boolean;
   new_competition_id uuid;
   existing_invite record;
   created_time timestamptz := pg_catalog.statement_timestamp();
@@ -1348,10 +1349,19 @@ begin
        where p.id = input_recipient_profile_id and p.state = 'active') then
     raise exception 'recipient_unavailable' using errcode = 'P0001';
   end if;
+  f := private.are_friends(caller_profile_id, input_recipient_profile_id);
   -- A reset link also stops its challengers from switching to the account
   -- id they saw (a rematch is between people who already played).
   if input_rematch_parent_id is null and input_link_code is null
-     and private.challenge_link_revoked_v1(caller_profile_id, input_recipient_profile_id) then
+     and not f and private.challenge_link_revoked_v1(caller_profile_id, input_recipient_profile_id) then
+    raise exception 'recipient_unavailable' using errcode = 'P0001';
+  end if;
+  -- Search discovery is not a challenge link; shipped Challenge Again has history.
+  if input_rematch_parent_id is null and input_link_code is null and not f
+     and exists (select 1 from public.profiles p where p.id = input_recipient_profile_id and p.username is not null)
+     and not exists (select 1 from public.competition_participants a
+       join public.competition_participants b on b.competition_id = a.competition_id
+       where a.profile_id = caller_profile_id and b.profile_id = input_recipient_profile_id) then
     raise exception 'recipient_unavailable' using errcode = 'P0001';
   end if;
   if input_rematch_parent_id is null then
@@ -1367,6 +1377,11 @@ begin
     if source_scoring_policy is null then
       raise exception 'rematch_not_allowed' using errcode = '42501';
     end if;
+  end if;
+
+  if not f and exists (select 1 from public.profiles p
+    where p.id = input_recipient_profile_id and p.challenge_policy = 'friends_only') then
+    raise exception 'recipient_unavailable' using errcode = 'P0001';
   end if;
 
   update public.competitions c set lifecycle = 'expired', updated_at = created_time

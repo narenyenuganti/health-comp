@@ -135,9 +135,19 @@ begin
     where not exists (select 1 from public.profiles p where p.id = h.id and p.state = 'active'))
     or exists (select 1 from pg_catalog.jsonb_array_elements(normalized) e
       where e->>'kind' = 'human' and (e->>'profile_id')::uuid <> caller
-        and ((e->>'challenge_link_code' is null and private.challenge_link_revoked_v1(caller,(e->>'profile_id')::uuid))
+        and ((e->>'challenge_link_code' is null and not private.are_friends(caller,(e->>'profile_id')::uuid)
+            and private.challenge_link_revoked_v1(caller,(e->>'profile_id')::uuid))
           or (e->>'challenge_link_code' is not null and not exists (select 1 from private.challenge_links l
             where l.profile_id = (e->>'profile_id')::uuid and l.code = e->>'challenge_link_code'))))
+    or exists (select 1 from pg_catalog.jsonb_array_elements(normalized) e
+      join public.profiles recipient on recipient.id = (e->>'profile_id')::uuid
+      where e->>'kind' = 'human' and recipient.id <> caller
+        and not private.are_friends(caller,recipient.id)
+        and (recipient.challenge_policy = 'friends_only'
+          or (e->>'challenge_link_code' is null and recipient.username is not null
+            and not exists (select 1 from public.competition_participants a
+              join public.competition_participants b on b.competition_id = a.competition_id
+              where a.profile_id = caller and b.profile_id = recipient.id))))
     or exists (select 1 from private.account_blocks b where b.blocker_profile_id = any(humans) and b.blocked_profile_id = any(humans)) then
     raise exception 'recipient_unavailable' using errcode = 'P0001';
   end if;

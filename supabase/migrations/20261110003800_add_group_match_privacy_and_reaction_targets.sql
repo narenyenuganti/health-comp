@@ -347,7 +347,12 @@ as $$
         and not exists (select 1 from private.profile_photo_reports r
           where r.reporter_profile_id = viewer.id and r.reported_profile_id = target_profile_id)
         and (
-          exists (select 1 from public.competitions c
+          private.are_friends(viewer.id, target_profile_id)
+          or exists (select 1 from private.friend_requests r
+            where r.sender_profile_id = target_profile_id and r.recipient_profile_id = viewer.id)
+          or exists (select 1 from public.profiles p where p.id = target_profile_id
+            and p.username is not null and p.show_in_search)
+          or exists (select 1 from public.competitions c
             join public.competition_participants own on own.competition_id = c.id and own.profile_id = viewer.id and own.state in ('pending','accepted')
             join public.competition_participants other on other.competition_id = c.id and other.profile_id = target_profile_id and other.state = 'accepted'
             where c.format <> 'duel' and c.lifecycle = 'pending' and c.invitation_expires_at > pg_catalog.statement_timestamp()
