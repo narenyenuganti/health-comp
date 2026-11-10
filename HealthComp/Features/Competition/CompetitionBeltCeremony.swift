@@ -702,10 +702,11 @@ private struct CompetitionJudgesReveal: View {
                         .foregroundStyle(Theme.ink).background(Theme.ground)
                         .overlay(Rectangle().stroke(Theme.ink, lineWidth: 3))
                         .rotationEffect(.degrees(reduceMotion ? 0 : -12))
-                        .scaleEffect(stamped ? 1 : 1.2)
+                        .transition(reduceMotion ? .opacity : .scale(scale: 1.15).combined(with: .opacity))
                         .accessibilityIdentifier("competition.judges.stamp")
                 }
             }
+            .animation(Motion.fade, value: cardIndex)
             HStack {
                 ForEach(0..<3) { index in
                     Text(["MOVE", "EXERCISE", "STAND"][index])
@@ -723,6 +724,9 @@ private struct CompetitionJudgesReveal: View {
                 Text("Judge \(["Move", "Exercise", "Stand"][index])").font(.themeLabel)
                 Spacer()
                 Text("OFFICIAL").font(.themeLabel).foregroundStyle(Theme.secondary)
+            }
+            if card.yourTotal == nil || card.theirTotal == nil {
+                Text("Ring breakdown unavailable").font(.footnote).foregroundStyle(Theme.secondary)
             }
             Divider()
             HStack {
