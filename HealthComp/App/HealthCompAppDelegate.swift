@@ -26,6 +26,12 @@ final class HealthCompAppDelegate: NSObject,
         // Before the Test Lab return: its fixtures reach the watch too.
         CompetitionWatchSync.shared.activate()
 #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--judges-notifications") {
+            UNUserNotificationCenter.current().setNotificationCategories(CompetitionReactionAlert.categories)
+            Task {
+                _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])
+            }
+        }
         guard case .disabled = CompetitionTestLabLaunchParser.decision(
             arguments: ProcessInfo.processInfo.arguments
         ) else {

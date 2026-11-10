@@ -535,6 +535,7 @@ private struct CompetitionJudgesReveal: View {
     @Environment(\.scenePhase) private var scenePhase
     @State private var stage = 0
     @State private var pressing = false
+    @State private var breakingSeal = false
     @State private var progress = 0.0
     @State private var tapOpens = false
     @State private var cardIndex = 0
@@ -596,6 +597,11 @@ private struct CompetitionJudgesReveal: View {
                 if tick % 3 == 0 { ticks += 1 }
             }
         }
+        .task(id: breakingSeal) {
+            guard breakingSeal else { return }
+            guard (try? await Task.sleep(for: .seconds(0.3))) != nil else { return }
+            withAnimation(Motion.fade) { stage = 1 }
+        }
         .task(id: stage) {
             guard stage == 1 else { return }
             for card in 0..<3 {
@@ -603,7 +609,7 @@ private struct CompetitionJudgesReveal: View {
                 rows = reduceMotion ? 7 : 0
                 for row in 1...7 {
                     guard (try? await Task.sleep(for: .seconds(0.1))) != nil else { return }
-                    rows = row
+                    if !reduceMotion { rows = row }
                 }
                 guard (try? await Task.sleep(for: .seconds(0.5))) != nil else { return }
             }
@@ -651,6 +657,10 @@ private struct CompetitionJudgesReveal: View {
                         .frame(width: 106, height: 106).rotationEffect(.degrees(-90))
                         .animation(reduceMotion ? nil : Motion.press, value: progress)
                     Text("H/").font(.score(size: 36)).foregroundStyle(Theme.onYouFill)
+                    if breakingSeal {
+                        Rectangle().fill(Theme.beltWell).frame(width: 8, height: 160)
+                            .rotationEffect(.degrees(12)).transition(.opacity)
+                    }
                 }
                 .contentShape(Rectangle())
                 .onLongPressGesture(minimumDuration: 0.9, maximumDistance: 60, pressing: { pressing = $0 }, perform: open)
@@ -671,8 +681,8 @@ private struct CompetitionJudgesReveal: View {
     }
 
     private func open() {
-        guard stage == 0 else { return }
-        withAnimation(Motion.fade) { stage = 1 }
+        guard stage == 0, !breakingSeal else { return }
+        withAnimation(Motion.fade) { breakingSeal = true }
     }
 
     private var scorecards: some View {
@@ -793,18 +803,12 @@ private struct CompetitionJudgesReveal: View {
 /// Original geometric figures. Both referee hands share the fighters' wrist
 /// endpoints, so contact stays intact throughout the raise.
 private struct CompetitionJudgesFigures: View, Animatable {
-    var leftRaised: Bool
-    var rightRaised: Bool
-    var leftLost: Bool
-    var rightLost: Bool
     private var left: Double
     private var right: Double
     private var leftDrop: Double
     private var rightDrop: Double
 
     init(leftRaised: Bool, rightRaised: Bool, leftLost: Bool, rightLost: Bool) {
-        self.leftRaised = leftRaised; self.rightRaised = rightRaised
-        self.leftLost = leftLost; self.rightLost = rightLost
         left = leftRaised ? 1 : 0; right = rightRaised ? 1 : 0
         leftDrop = leftLost ? 1 : 0; rightDrop = rightLost ? 1 : 0
     }

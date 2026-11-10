@@ -11,12 +11,12 @@ final class JudgesDecisionUITests: XCTestCase {
     func testLoss() { run(byte: 0x85, name: "Riley", decision: "SPLIT DECISION", winner: "THE WINNER, RILEY", belt: "AND NEW") }
     func testDraw() { run(byte: 0xC2, name: "Taylor", decision: "DRAW", winner: "IT’S A DRAW", belt: nil) }
 
-    private func launch() {
+    private func launch(_ arguments: [String] = []) {
         app.launchArguments = [
             "--multi-user-competition-test-lab", "--multi-user-competition-scenario", "belt-ceremony",
             "--belt-ceremonies", "--judges-decision", "-healthcomp.colorHintSeen", "YES",
             "-healthcomp.motionSeen", "{}",
-        ]
+        ] + arguments
         app.launch()
         XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 15))
     }
@@ -61,6 +61,17 @@ final class JudgesDecisionUITests: XCTestCase {
         scrollTo(week); week.tap()
         XCTAssertTrue(element("competition.result").waitForExistence(timeout: 3))
         XCTAssertFalse(element("competition.judges.reveal").exists)
+    }
+
+    func testNotifications() {
+        launch(["--judges-notifications"])
+        let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
+        let allow = springboard.buttons["Allow"]
+        if allow.waitForExistence(timeout: 5) { allow.tap() }
+        XCUIDevice.shared.press(.home)
+        print("JUDGES_NOTIFICATIONS_READY")
+        // The recording driver sends real simctl pushes while the lane stays held.
+        Thread.sleep(forTimeInterval: 45)
     }
 
     private func soon(_ seconds: TimeInterval, _ condition: () -> Bool) -> Bool {
