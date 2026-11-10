@@ -54,6 +54,21 @@ final class HealthCompAppDelegate: NSObject,
         pushRegistrationHub.publishFailure()
     }
 
+    /// Nothing shows while the app is open, as before this method existed;
+    /// a Friends push reloads Friends.
+    func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        willPresent notification: UNNotification
+    ) async -> UNNotificationPresentationOptions {
+        let userInfo = notification.request.content.userInfo
+        if CompetitionReactionAlert.route(userInfo: userInfo) == .friends {
+            await MainActor.run {
+                NotificationCenter.default.post(name: .healthCompFriendsPushReceived, object: nil)
+            }
+        }
+        return []
+    }
+
     func userNotificationCenter(
         _ center: UNUserNotificationCenter,
         didReceive response: UNNotificationResponse
@@ -74,4 +89,9 @@ final class HealthCompAppDelegate: NSObject,
         }
         _ = CompetitionRoutingEnvironment.liveHub.enqueue(route)
     }
+}
+
+extension Notification.Name {
+    /// A Friends push arrived while the app was open.
+    static let healthCompFriendsPushReceived = Notification.Name("healthcomp.friendsPushReceived")
 }

@@ -25,6 +25,17 @@ enum CompetitionRemoteFailure: Error, Equatable, Sendable {
     case appAttestRejected
     case appAttestContextUnavailable
     case appAttestProofConflict
+    case invalidUsername
+    /// Taken or reserved; the server doesn't say which.
+    case usernameUnavailable
+    case searchRateLimited
+    case invalidFriendSettings
+    case invalidQuery
+    case invalidProfileID
+    case invalidFriendRequestResponse
+    case friendRequestLimit
+    /// Accept when the request is gone or the person is unavailable.
+    case requestUnavailable
     case operationFailed
 }
 
@@ -176,6 +187,46 @@ struct CompetitionRemoteAPI: Sendable {
     }
     /// Reports this person's photo and hides their photos from you for good.
     var reportProfilePhoto: @Sendable (UUID) async throws -> Void = { _ in
+        throw CompetitionRemoteFailure.operationFailed
+    }
+    var getFriendSettings: @Sendable () async throws -> FriendSettings = {
+        throw CompetitionRemoteFailure.operationFailed
+    }
+    var setUsername: @Sendable (String) async throws -> FriendSettings = { _ in
+        throw CompetitionRemoteFailure.operationFailed
+    }
+    var usernameAvailable: @Sendable (String) async throws -> Bool = { _ in
+        throw CompetitionRemoteFailure.operationFailed
+    }
+    var updateFriendSettings: @Sendable (
+        _ showInSearch: Bool,
+        _ challengePolicy: FriendChallengePolicy
+    ) async throws -> FriendSettings = { _, _ in
+        throw CompetitionRemoteFailure.operationFailed
+    }
+    var listFriends: @Sendable () async throws -> FriendsList = {
+        throw CompetitionRemoteFailure.operationFailed
+    }
+    var searchPeople: @Sendable (String) async throws -> [FriendPerson] = { _ in
+        throw CompetitionRemoteFailure.operationFailed
+    }
+    var sendFriendRequest: @Sendable (UUID) async throws -> FriendRelationship = { _ in
+        throw CompetitionRemoteFailure.operationFailed
+    }
+    var respondToFriendRequest: @Sendable (
+        _ profileID: UUID,
+        _ accept: Bool
+    ) async throws -> FriendRelationship = { _, _ in
+        throw CompetitionRemoteFailure.operationFailed
+    }
+    var removeFriend: @Sendable (UUID) async throws -> FriendRelationship = { _ in
+        throw CompetitionRemoteFailure.operationFailed
+    }
+    /// Blocks a person by profile id; answers with their blocked-list row.
+    var blockProfile: @Sendable (UUID) async throws -> AuthenticatedProfile = { _ in
+        throw CompetitionRemoteFailure.operationFailed
+    }
+    var reportProfile: @Sendable (UUID) async throws -> Void = { _ in
         throw CompetitionRemoteFailure.operationFailed
     }
 }

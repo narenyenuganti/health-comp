@@ -150,6 +150,8 @@ struct CompetitionFeature {
         var reportedPhotoOwners: Set<UUID> = []
         var photoReportsInFlight: Set<UUID> = []
         var ownPhoto = OwnPhotoState()
+        var friendSettings = FriendSettingsFeature.State()
+        var friends = FriendsFeature.State()
         var group = GroupMatchFeature.State()
 
         init(
@@ -196,13 +198,36 @@ struct CompetitionFeature {
             ProfilePhotoImages(ownID: ownProfile?.id, photos: profilePhotos)
         }
 
-        /// You and everyone on a real match, sorted so it can key a task.
-        var photoOwners: [UUID] {
-            guard publication?.source == .remoteParticipants else { return [] }
-            let others = publication?.dashboard.competitions.compactMap(\.opponentProfileID) ?? []
-            let groupSeats = publication?.dashboard.groupMatches
-                .flatMap { $0.seats.compactMap(\.profileID) } ?? []
-            return Array(Set(others + groupSeats + [ownProfile?.id].compactMap { $0 }))
+        var photoOwners: [UUID] { photoOwners(claimSender: nil) }
+
+        /// You, the sender of a challenge being claimed (they sent it to
+        /// you, so you may see theirs), everyone on a real match or group
+        /// match, your Friends lists and the search results, sorted so it
+        /// can key a task.
+        func photoOwners(claimSender: UUID?) -> [UUID] {
+            guard publication?.source == .remoteParticipants else {
+                return claimSender.map { [$0] } ?? []
+            }
+            // Most likely on screen first. Separate statements: as one
+            // expression, Xcode 16's compiler gives up type-checking it.
+            var owners: [UUID] = []
+            if let id = ownProfile?.id { owners.append(id) }
+            if let claimSender { owners.append(claimSender) }
+            let results: [FriendPerson] = friends.results ?? []
+            owners += results.map(\.id)
+            let list: FriendsList = friends.list ?? FriendsList()
+            owners += list.incoming.map(\.id)
+            let competitions: [LocalCompetitionPresentation] = publication?.dashboard.competitions ?? []
+            owners += competitions.compactMap(\.opponentProfileID)
+            let groupMatches: [GroupMatchPresentation] = publication?.dashboard.groupMatches ?? []
+            owners += groupMatches.flatMap { $0.seats.compactMap(\.profileID) }
+            owners += list.friends.map(\.id)
+            owners += list.outgoing.map(\.id)
+            // ponytail: past 200 people the rest stay initials; page the
+            // lookup if anyone gets there.
+            var seen: Set<UUID> = []
+            return owners.filter { seen.insert($0).inserted }
+                .prefix(CompetitionFeature.maxPhotoOwners)
                 .sorted { $0.uuidString < $1.uuidString }
         }
 
@@ -313,8 +338,13 @@ struct CompetitionFeature {
         case ownPhotoRemoveFinished(succeeded: Bool)
         case photoReportConfirmed(UUID)
         case photoReportFinished(UUID, succeeded: Bool)
+        case friendSettings(FriendSettingsFeature.Action)
+        case friends(FriendsFeature.Action)
         case group(GroupMatchFeature.Action)
     }
+
+    /// `list_profile_photos` takes at most this many ids.
+    static let maxPhotoOwners = 200
 
     @Dependency(\.competitionClient) var competitionClient
     @Dependency(\.competitionInviteLinkClient) var competitionInviteLinkClient
@@ -334,15 +364,40 @@ struct CompetitionFeature {
     }
 
     var body: some ReducerOf<Self> {
+        Scope(state: \.friendSettings, action: \.friendSettings) { FriendSettingsFeature() }
+        Scope(state: \.friends, action: \.friends) { FriendsFeature() }
         Scope(state: \.group, action: \.group) {
             GroupMatchFeature()
         }
         Reduce { state, action in
             switch action {
+            // A list load already running may have read before this block
+            // and would bring nobody back, so it's dropped as Unblock does.
+            case .friends(.blockTapped):
+                return .cancel(id: CancelID.blockedPeople)
+
+            case let .friends(.blockFinished(_, .success(profile))):
+                // Unknown stays unknown until the list loads.
+                state.blockedPeople = state.blockedPeople.map { [profile] + $0.filter { $0.id != profile.id } }
+                let owners = state.photoOwners
+                return .merge(
+                    state.blockedPeople == nil ? .send(.blockedPeopleRequested) : .none,
+                    // The server cancelled any challenge between you.
+                    reconcile(trigger: .pullToRefresh),
+                    // It hides their photo now, as for Decline and Block.
+                    owners.isEmpty ? .none : .send(.profilePhotosNeeded(owners))
+                )
+
+            case .friends(.blockFinished(_, .failure)):
+                // A connection lost after sending may hide a block the server
+                // applied: ask it rather than assume either way. Friends
+                // reloads its list as well.
+                return .send(.blockedPeopleRequested)
+
             case let .group(.delegate(.published(publication))):
                 return .send(.publication(publication))
 
-            case .group:
+            case .friendSettings, .friends, .group:
                 return .none
 
             case .task:
@@ -381,7 +436,11 @@ struct CompetitionFeature {
                     state.commandIDsInFlight.remove(id)
                     state.commandExpectedPublicationRevisions[id] = nil
                 }
-                return .none
+                // Each realtime wakeup publishes, so a request sent or
+                // answered elsewhere reaches the badge and lists here too.
+                let friendsInUse = state.friends.list != nil || state.friends.loadFailed
+                guard publication.source == .remoteParticipants, friendsInUse else { return .none }
+                return .send(.friends(.requested))
 
             case let .inviteRecipientCodeChanged(code):
                 guard !state.isChallengeSheetLocked,
@@ -642,7 +701,9 @@ struct CompetitionFeature {
                     // Once the dashboard catches up, the derived row replaces this.
                     effect = reconcile(trigger: .pullToRefresh)
                 case .failure(.recipientUnavailable), .failure(.forbidden):
-                    guard slot == .sheet else {
+                    // A friend, Challenge Again or an id: the person is known,
+                    // so only a link that found them can be wrong.
+                    guard slot == .sheet, state.inviteRecipient?.profileID == nil else {
                         creation.status = .failed(.recipientGone)
                         break
                     }
@@ -1059,8 +1120,17 @@ struct CompetitionFeature {
                 state.reportedPhotoOwners = []
                 state.photoReportsInFlight = []
                 state.ownPhoto = OwnPhotoState()
+                state.friendSettings = FriendSettingsFeature.State()
+                state.friends = FriendsFeature.State()
                 return .concatenate(
                     .merge(
+                        .cancel(id: FriendsFeature.CancelID.load),
+                        .cancel(id: FriendsFeature.CancelID.search),
+                        .cancel(id: FriendsFeature.CancelID.change),
+                        .cancel(id: FriendsFeature.CancelID.safety),
+                        .cancel(id: FriendSettingsFeature.CancelID.load),
+                        .cancel(id: FriendSettingsFeature.CancelID.save),
+                        .cancel(id: FriendSettingsFeature.CancelID.availability),
                         .cancel(id: CancelID.profilePhotos),
                         .cancel(id: CancelID.ownPhoto),
                         .cancel(id: CancelID.reaction),

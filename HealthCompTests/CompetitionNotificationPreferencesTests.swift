@@ -112,6 +112,22 @@ final class CompetitionNotificationPreferencesTests: XCTestCase {
             defaults.set(false, forKey: choice.storageKey)
         }
         XCTAssertEqual(CompetitionNotificationChoice.mutedPushKinds(in: defaults), ["nudge", "reaction"])
+
+        defaults.set(false, forKey: CompetitionNotificationChoice.friendRequest.storageKey)
+        defaults.set(false, forKey: CompetitionNotificationChoice.friendAccepted.storageKey)
+        XCTAssertEqual(
+            CompetitionNotificationChoice.mutedPushKinds(in: defaults),
+            ["friend_accepted", "friend_request", "nudge", "reaction"]
+        )
+    }
+
+    func testFriendChoicesDefaultToOn() throws {
+        let suite = "choices-\(UUID())"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        XCTAssertEqual(CompetitionNotificationChoice.switchedOff(in: defaults), [])
+        XCTAssertEqual(CompetitionNotificationChoice.mutedPushKinds(in: defaults), [])
     }
 
     func testNotificationChoiceKeysAndTitlesNeverChange() {
@@ -125,15 +141,22 @@ final class CompetitionNotificationPreferencesTests: XCTestCase {
                 "healthcomp.notifications.live-activity",
                 "healthcomp.notifications.reaction",
                 "healthcomp.notifications.nudge",
+                "healthcomp.notifications.friend_request",
+                "healthcomp.notifications.friend_accepted",
             ]
         )
         XCTAssertEqual(
             CompetitionNotificationChoice.allCases.map(\.title),
-            ["Lead changes", "Close scores", "What it takes", "Last day", "Live Activity", "Reactions", "Nudges"]
+            ["Lead changes", "Close scores", "What it takes", "Last day", "Live Activity", "Reactions", "Nudges",
+             "Friend requests", "Accepted requests"]
         )
         XCTAssertEqual(
             CompetitionNotificationChoice.allCases.filter(\.isServerSent),
-            [.reaction, .nudge]
+            [.reaction, .nudge, .friendRequest, .friendAccepted]
+        )
+        XCTAssertEqual(
+            CompetitionNotificationChoice.allCases.filter(\.isFriends).map(\.rawValue),
+            ["friend_request", "friend_accepted"]
         )
     }
 }

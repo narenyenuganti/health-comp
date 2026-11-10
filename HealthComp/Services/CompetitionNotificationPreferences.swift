@@ -188,6 +188,8 @@ enum CompetitionNotificationChoice: String, CaseIterable, Sendable {
     case liveActivity = "live-activity"
     case reaction // raw value = server work kind (20261102002700)
     case nudge // raw value = server work kind (20261101002500)
+    case friendRequest = "friend_request" // server work kind (20261109003100)
+    case friendAccepted = "friend_accepted" // server work kind (20261109003100)
 
     var title: String {
         switch self {
@@ -198,11 +200,16 @@ enum CompetitionNotificationChoice: String, CaseIterable, Sendable {
         case .liveActivity: "Live Activity"
         case .reaction: "Reactions"
         case .nudge: "Nudges"
+        case .friendRequest: "Friend requests"
+        case .friendAccepted: "Accepted requests"
         }
     }
 
     /// Held back by the server, not the planner.
-    var isServerSent: Bool { self == .reaction || self == .nudge }
+    var isServerSent: Bool { self == .reaction || self == .nudge || isFriends }
+
+    /// Its own section; servers before 20261109003100 reject these mutes.
+    var isFriends: Bool { self == .friendRequest || self == .friendAccepted }
 
     /// Persisted on devices: never rename a raw value.
     var storageKey: String { "healthcomp.notifications." + rawValue }
