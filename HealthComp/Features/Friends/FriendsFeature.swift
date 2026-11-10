@@ -82,6 +82,8 @@ struct FriendsFeature {
         case requested
         case loaded(FriendsList?)
         case queryChanged(String)
+        /// The debounce for this searchable text ended.
+        case searchDebounced(String)
         case searchFinished(String, Result<[FriendPerson], CompetitionRemoteFailure>)
         case changeTapped(FriendPerson, Change)
         case changeFinished(FriendPerson, Result<FriendRelationship, CompetitionRemoteFailure>)
@@ -134,8 +136,19 @@ struct FriendsFeature {
                     return .cancel(id: CancelID.search)
                 }
                 state.isSearching = true
+                // No cancelInFlight: it cancels when the new effect's task
+                // starts, so a busy main thread could let an older keystroke
+                // cancel the newest one and leave the spinner up. Every wait
+                // ends instead, and only the one for what's typed searches.
                 return .run { send in
                     try await clock.sleep(for: Self.searchDebounce)
+                    await send(.searchDebounced(searchable))
+                }
+                .cancellable(id: CancelID.search)
+
+            case let .searchDebounced(searchable):
+                guard Self.searchableQuery(state.query) == searchable else { return .none }
+                return .run { send in
                     do {
                         let people = try await competitionClient.searchPeople(searchable)
                         await send(.searchFinished(searchable, .success(people)))
@@ -145,7 +158,7 @@ struct FriendsFeature {
                         )))
                     }
                 }
-                .cancellable(id: CancelID.search, cancelInFlight: true)
+                .cancellable(id: CancelID.search)
 
             case let .searchFinished(query, result):
                 guard Self.searchableQuery(state.query) == query else { return .none }

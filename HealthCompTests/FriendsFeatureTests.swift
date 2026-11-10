@@ -102,9 +102,11 @@ final class FriendsFeatureTests: XCTestCase {
             $0.isSearching = true
         }
         await clock.advance(by: .milliseconds(200))
-        // Typing on cancels the wait, so "mar" is never sent.
         await store.send(.queryChanged("mara")) { $0.query = "mara" }
         await clock.advance(by: Feature.searchDebounce)
+        // The wait for "mar" ends after "mara" was typed, so it's never sent.
+        await store.receive(.searchDebounced("mar"))
+        await store.receive(.searchDebounced("mara"))
         await store.receive(.searchFinished("mara", .success([mara]))) {
             $0.isSearching = false
             $0.results = [mara]
@@ -125,6 +127,45 @@ final class FriendsFeatureTests: XCTestCase {
         }
     }
 
+    func testAStaleDebounceSearchesNothing() async {
+        // The test client fails the test if search is called.
+        let store = makeStore(Feature.State(query: "mara", isSearching: true))
+        await store.send(.searchDebounced("mar"))
+        await store.send(.queryChanged("ma")) {
+            $0.query = "ma"
+            $0.isSearching = false
+        }
+        await store.send(.searchDebounced("mar"))
+    }
+
+    /// CI saw this: the field read "marc", the server only got "mar", and
+    /// the spinner never stopped. An older keystroke's effect started after
+    /// the newest one's, as a busy main thread allows, and cancelled it.
+    func testAnOlderKeystrokeStartingLateStillSearchesWhatsTyped() async {
+        let clock = TestClock()
+        let searched = LockIsolated<[String]>([])
+        let marcus = person(1, "Marcus")
+        var client = CompetitionClient.testValue
+        client.searchPeople = { query in
+            searched.withValue { $0.append(query) }
+            return [marcus]
+        }
+        let store = TestStore(initialState: Feature.State()) {
+            StartsLate(late: .queryChanged("mar"), lag: .milliseconds(100))
+        } withDependencies: {
+            $0.competitionClient = client
+            $0.continuousClock = clock
+        }
+        store.exhaustivity = .off
+        await store.send(.queryChanged("mar"))
+        await store.send(.queryChanged("marc"))
+        await clock.advance(by: .milliseconds(100) + Feature.searchDebounce)
+        await store.skipReceivedActions()
+        XCTAssertEqual(searched.value, ["marc"])
+        XCTAssertFalse(store.state.isSearching)
+        XCTAssertEqual(store.state.results, [marcus])
+    }
+
     func testSearchFailuresReadAsTheirOwnStates() async {
         let answers = LockIsolated<[CompetitionRemoteFailure]>([
             .searchRateLimited, .invalidQuery, .retryableTransport,
@@ -136,6 +177,7 @@ final class FriendsFeatureTests: XCTestCase {
             $0.query = "abc"
             $0.isSearching = true
         }
+        await store.receive(.searchDebounced("abc"))
         await store.receive(.searchFinished("abc", .failure(.searchRateLimited))) {
             $0.isSearching = false
             $0.searchFailure = .rateLimited
@@ -145,6 +187,7 @@ final class FriendsFeatureTests: XCTestCase {
             $0.isSearching = true
             $0.searchFailure = nil
         }
+        await store.receive(.searchDebounced("abcd"))
         await store.receive(.searchFinished("abcd", .failure(.invalidQuery))) {
             $0.isSearching = false
             $0.results = []
@@ -153,6 +196,7 @@ final class FriendsFeatureTests: XCTestCase {
             $0.query = "abcde"
             $0.isSearching = true
         }
+        await store.receive(.searchDebounced("abcde"))
         await store.receive(.searchFinished("abcde", .failure(.retryableTransport))) {
             $0.isSearching = false
             $0.results = nil
@@ -422,6 +466,23 @@ final class FriendsFeatureTests: XCTestCase {
         }
         await store.send(.stop) {
             $0.friends = Feature.State()
+        }
+    }
+}
+
+/// Friends, with the effect of one action starting only after the clock
+/// moves `lag`.
+private struct StartsLate: Reducer {
+    let late: FriendsFeature.Action
+    let lag: Duration
+    @Dependency(\.continuousClock) var clock
+
+    var body: some ReducerOf<FriendsFeature> {
+        Reduce { state, action in
+            let effect: Effect<FriendsFeature.Action> = FriendsFeature().reduce(into: &state, action: action)
+            guard action == late else { return effect }
+            let wait: Effect<FriendsFeature.Action> = .run { [clock, lag] _ in try? await clock.sleep(for: lag) }
+            return .concatenate(wait, effect)
         }
     }
 }
