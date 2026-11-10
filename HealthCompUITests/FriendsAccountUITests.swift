@@ -162,8 +162,11 @@ final class FriendsAccountUITests: XCTestCase {
         for appearance in ["Light", "Dark"] {
             for (sizeName, size) in sizes {
                 let suffix = "\(appearance.lowercased())-\(sizeName)"
+                // Account's sheet takes System from the iPhone, not the
+                // Test Lab's pinned root, so it needs the app's own setting.
                 openPrivacy(arguments: [
                     "-AppleInterfaceStyle", appearance,
+                    "-healthcomp.appearance", appearance.lowercased(),
                     "-UIPreferredContentSizeCategoryName", size,
                 ])
                 shot("privacy-\(suffix)")
@@ -172,8 +175,7 @@ final class FriendsAccountUITests: XCTestCase {
                 field.typeText("betaalice")
                 XCTAssertTrue(status.waitForExistence(timeout: 5))
                 shot("username-available-\(suffix)")
-                // The keyboard covers the buttons at AX5, as it does a pinned
-                // sheet's content; the audit reads what's on screen.
+                // Only what's above the keyboard; the next test reaches the rest.
                 try audit("username \(suffix)")
                 clearField()
                 field.typeText("taken_name")
@@ -181,6 +183,31 @@ final class FriendsAccountUITests: XCTestCase {
                 shot("username-taken-\(suffix)")
             }
         }
+    }
+
+    /// At AX5 the buttons scroll with the text, so the keyboard covers them
+    /// until you scroll. Both stay reachable without closing it.
+    func testContinueAndNotNowAreReachableWithTheKeyboardUpAtLargestTextSize() {
+        openPrivacy(arguments: ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"])
+        openSheet("account.privacy.username.choose")
+        field.typeText("betaalice")
+        XCTAssertTrue(status.waitForExistence(timeout: 5))
+        scrollAboveTheKeyboard(continueButton)
+        shot("username-continue-reached-ax5")
+        continueButton.tap()
+        XCTAssertTrue(field.waitForNonExistence(timeout: 5))
+        XCTAssertEqual(element("account.privacy.username").label, "@betaalice")
+
+        openSheet("account.privacy.username.edit")
+        clearField()
+        field.typeText("not_saved")
+        XCTAssertTrue(status.waitForExistence(timeout: 5))
+        let notNow = app.buttons["account.username.not-now"]
+        scrollAboveTheKeyboard(notNow)
+        shot("username-not-now-reached-ax5")
+        notNow.tap()
+        XCTAssertTrue(field.waitForNonExistence(timeout: 5))
+        XCTAssertEqual(element("account.privacy.username").label, "@betaalice")
     }
 
     // MARK: Helpers
@@ -234,6 +261,25 @@ final class FriendsAccountUITests: XCTestCase {
         } else {
             toggle.coordinate(withNormalizedOffset: CGVector(dx: 0.93, dy: 0.5)).tap()
         }
+    }
+
+    private func scrollAboveTheKeyboard(_ element: XCUIElement) {
+        let keyboard = app.keyboards.firstMatch
+        func isClear() -> Bool {
+            element.exists && element.isHittable && element.frame.maxY <= keyboard.frame.minY
+        }
+        XCTAssertTrue(keyboard.exists)
+        for _ in 0..<8 where !isClear() {
+            // Above the keyboard: a drag that reaches it would dismiss it.
+            app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).press(
+                forDuration: 0.05,
+                thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.25)),
+                withVelocity: .slow,
+                thenHoldForDuration: 0.2
+            )
+        }
+        XCTAssertTrue(isClear(), "\(element)")
+        XCTAssertTrue(keyboard.exists, "The keyboard stays up.")
     }
 
     private func clearField() {
