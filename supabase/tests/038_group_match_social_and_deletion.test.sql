@@ -25,7 +25,7 @@ create function pg_temp.make_match(label text,fmt text default 'three_way',human
 declare result uuid;
 begin
  perform pg_temp.as_user(1);
- result := (public.create_group_match(fmt,pg_temp.lineup(humans,case when fmt='three_way' then 3 else 4 end,fmt='doubles'),'UTC')->>'competition_id')::uuid;
+ result := (public.create_group_match(fmt,pg_temp.lineup(humans,case when fmt='three_way' then 3 else 4 end,fmt='doubles'),'UTC',extensions.gen_random_uuid())->>'competition_id')::uuid;
  insert into gm values(label,result);
  return result;
 end; $$;
@@ -90,7 +90,7 @@ select pg_temp.as_user(1);
 insert into gm values('photos',(public.create_group_match('three_way',jsonb_build_array(
  jsonb_build_object('kind','human','profile_id',pg_temp.pid(1)),
  jsonb_build_object('kind','human','profile_id',pg_temp.pid(5)),
- jsonb_build_object('kind','human','profile_id',pg_temp.pid(6))),'UTC')->>'competition_id')::uuid);
+ jsonb_build_object('kind','human','profile_id',pg_temp.pid(6))),'UTC',extensions.gen_random_uuid())->>'competition_id')::uuid);
 select pg_temp.as_user(5);
 select ok(private.can_view_profile_photo(pg_temp.pid(1)),'pending invitee may see accepted creator photo');
 select ok(not private.can_view_profile_photo(pg_temp.pid(6)),'pending seat photo remains hidden');

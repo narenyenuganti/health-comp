@@ -25,7 +25,7 @@ create function pg_temp.make_match(label text,fmt text default 'three_way',human
 declare result uuid;
 begin
  perform pg_temp.as_user(1);
- result := (public.create_group_match(fmt,pg_temp.lineup(humans,case when fmt='three_way' then 3 else 4 end,fmt='doubles'),'UTC')->>'competition_id')::uuid;
+ result := (public.create_group_match(fmt,pg_temp.lineup(humans,case when fmt='three_way' then 3 else 4 end,fmt='doubles'),'UTC',extensions.gen_random_uuid())->>'competition_id')::uuid;
  insert into gm values(label,result);
  return result;
 end; $$;
@@ -76,4 +76,8 @@ select private.finalize_competition_locked(pg_temp.gid('baseline-new'),now()+int
 select is(private.group_player_baseline(pg_temp.pid(1)),400,'overlapping local date counted once using newest finalization');
 select pg_temp.make_match('baseline-bot','three_way',2); select pg_temp.accept_all(pg_temp.gid('baseline-bot'));
 select is((select bot_baseline from public.competition_seats where competition_id=pg_temp.gid('baseline-bot') and kind='bot'),350,'human means weighted equally with 300 fallback');
+select is(private.group_bot_week('0','pacer',300),array[306,273,321,270,327,291,312],'server generator v1 pacer golden');
+select is(private.group_bot_week('0','chill',300),array[252,267,237,243,231,258,252],'server generator v1 chill golden');
+select is(private.group_bot_week('0','erratic',300),array[189,192,186,450,435,456,141],'server generator v1 erratic golden');
+select is(private.group_bot_week('0','beast',300),array[450,393,417,435,423,378,390],'server generator v1 beast golden');
 select * from finish(); rollback;

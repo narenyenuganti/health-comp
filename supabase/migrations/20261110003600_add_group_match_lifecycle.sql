@@ -1,3 +1,9 @@
+create function private.group_revision_strings(revisions bigint[])
+returns text[] language sql immutable set search_path = '' as $$
+  select case when revisions is null then null else array(select r::text from pg_catalog.unnest(revisions) r) end;
+$$;
+revoke all on function private.group_revision_strings(bigint[]) from public,anon,authenticated,service_role;
+
 -- Named immutable lineups. Match ids are route identifiers, never bearer credentials.
 create function private.group_lineup_blocked(cid uuid)
 returns boolean language sql stable security definer set search_path = '' as $$
@@ -43,19 +49,21 @@ begin
       frozen_revisions = private.latest_revision_vector(cid,pid), updated_at = as_of
     where competition_id = cid and profile_id = pid returning * into p;
     perform private.allocate_competition_server_seq(cid,'group_seat_left',pid,as_of);
+    perform private.finalize_competition_locked(cid,as_of);
   end if;
   return pg_catalog.jsonb_build_object('left_at',p.left_at,'frozen_through_day',p.frozen_through_day,
-    'accepted_revisions',p.frozen_revisions,'bank',private.participant_projection_v2(cid,pid,p.frozen_revisions,
+    'accepted_revisions',private.group_revision_strings(p.frozen_revisions),'bank',private.participant_projection_v2(cid,pid,p.frozen_revisions,
       private.owner_window_commitment_v1(cid,pid,p.frozen_revisions)));
 end; $$;
 
-create function public.create_group_match(format text, seats jsonb, time_zone_identifier text)
+create function public.create_group_match(format text, seats jsonb, time_zone_identifier text, creation_idempotency_key uuid)
 returns jsonb language plpgsql security definer set search_path = '' as $$
 declare
   input_format alias for format; input_seats alias for seats; input_zone alias for time_zone_identifier;
-  caller uuid := private.require_active_caller_profile_id(); cid uuid := extensions.gen_random_uuid();
+  input_key alias for creation_idempotency_key;
+  caller uuid; cid uuid := extensions.gen_random_uuid(); existing record; request_hash bytea;
   entry jsonb; normalized jsonb := '[]'::jsonb; pid uuid; humans uuid[] := '{}'::uuid[];
-  idx integer := 0; n integer; team integer; missing record; decision_time timestamptz := pg_catalog.statement_timestamp();
+  idx integer := 0; n integer; missing record; decision_time timestamptz := pg_catalog.statement_timestamp();
 begin
   if input_format is null or input_format not in ('three_way','four_way','doubles')
     or pg_catalog.jsonb_typeof(input_seats) is distinct from 'array'
@@ -66,37 +74,61 @@ begin
   if n <> (case when input_format = 'three_way' then 3 else 4 end) then
     raise exception 'invalid_group_match' using errcode = '22023';
   end if;
+  -- Validate the entire shape before any code resolution or profile lookup.
+  if input_key is null then raise exception 'invalid_group_match' using errcode = '22023'; end if;
   for entry in select value from pg_catalog.jsonb_array_elements(input_seats) loop
     idx := idx + 1;
-    team := (entry->>'team_number')::integer;
-    if (input_format = 'doubles' and (team is null or team not in (1,2)))
-      or (input_format <> 'doubles' and team is not null)
-      or pg_catalog.jsonb_typeof(entry) is distinct from 'object'
-      or coalesce(entry->>'kind','') not in ('human','bot') then
+    if pg_catalog.jsonb_typeof(entry) is distinct from 'object'
+      or coalesce(entry->>'kind','') not in ('human','bot')
+      or exists (select 1 from pg_catalog.jsonb_object_keys(entry) k where k not in ('kind','profile_id','challenge_link_code','team_number','bot_mode'))
+      or (input_format = 'doubles' and coalesce(entry->>'team_number','') not in ('1','2'))
+      or (input_format <> 'doubles' and entry->>'team_number' is not null) then
       raise exception 'invalid_group_seat' using errcode = '22023';
     end if;
     if entry->>'kind' = 'human' then
-      pid := (entry->>'profile_id')::uuid;
-      if entry->>'challenge_link_code' is not null then
-        select l.profile_id into pid from private.challenge_links l where l.code = entry->>'challenge_link_code';
+      if (entry->>'profile_id' is null) = (entry->>'challenge_link_code' is null)
+        or entry->>'bot_mode' is not null
+        or (entry->>'profile_id' is not null and entry->>'profile_id' !~ '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$')
+        or (entry->>'challenge_link_code' is not null and entry->>'challenge_link_code' !~ '^[A-Za-z0-9_-]{22}$')
+        or (idx = 1 and entry->>'profile_id' is null) then
+        raise exception 'invalid_group_seat' using errcode = '22023';
       end if;
-      if pid is null or pid = any(humans) or (idx = 1 and pid <> caller)
-        or (idx <> 1 and pid = caller) then
-        raise exception 'recipient_unavailable' using errcode = 'P0001';
-      end if;
-      humans := pg_catalog.array_append(humans,pid);
-      entry := entry || pg_catalog.jsonb_build_object('profile_id',pid);
     elsif idx = 1 or coalesce(entry->>'bot_mode','') not in ('pacer','chill','erratic','beast')
       or entry->>'profile_id' is not null or entry->>'challenge_link_code' is not null then
       raise exception 'invalid_group_seat' using errcode = '22023';
     end if;
-    normalized := normalized || pg_catalog.jsonb_build_array(entry);
   end loop;
-  if pg_catalog.cardinality(humans) < 2 or not (caller = any(humans))
-    or (input_format = 'doubles' and (select count(*) from pg_catalog.jsonb_array_elements(normalized) e
-      where (e->>'team_number')::integer = 1) <> 2) then
+  if (select pg_catalog.count(*) from pg_catalog.jsonb_array_elements(input_seats) e where e->>'kind' = 'human') < 2
+    or (input_format = 'doubles' and (select pg_catalog.count(*) from pg_catalog.jsonb_array_elements(input_seats) e where e->>'team_number' = '1') <> 2)
+    or exists (select 1 from pg_catalog.jsonb_array_elements(input_seats) e where e->>'profile_id' is not null
+      group by (e->>'profile_id')::uuid having pg_catalog.count(*) > 1) then
     raise exception 'invalid_group_match' using errcode = '22023';
   end if;
+  caller := private.require_active_caller_profile_id();
+  request_hash := extensions.digest(pg_catalog.jsonb_build_object('format',input_format,'seats',input_seats,'zone',input_zone)::text,'sha256');
+  -- Serialize retries independently of link resolution, including a link reset after the first commit.
+  perform pg_catalog.pg_advisory_xact_lock(pg_catalog.hashtextextended('group-create/' || caller::text || '/' || input_key::text,0));
+  select c.id,c.group_creation_request_sha256 into existing from public.competitions c
+    where c.creator_profile_id = caller and c.invite_creation_idempotency_key = input_key;
+  if found then
+    if existing.group_creation_request_sha256 is distinct from request_hash then raise exception 'idempotency_conflict' using errcode = 'P0001'; end if;
+    return pg_catalog.jsonb_build_object('competition_id',existing.id);
+  end if;
+  idx := 0;
+  for entry in select value from pg_catalog.jsonb_array_elements(input_seats) loop
+    idx := idx + 1; pid := (entry->>'profile_id')::uuid;
+    if entry->>'kind' = 'human' then
+      if entry->>'challenge_link_code' is not null then
+        select l.profile_id into pid from private.challenge_links l where l.code = entry->>'challenge_link_code';
+      end if;
+      if pid is null or pid = any(humans) or (idx = 1 and pid <> caller) or (idx <> 1 and pid = caller) then
+        raise exception 'recipient_unavailable' using errcode = 'P0001';
+      end if;
+      humans := pg_catalog.array_append(humans,pid);
+      entry := entry || pg_catalog.jsonb_build_object('profile_id',pid);
+    end if;
+    normalized := normalized || pg_catalog.jsonb_build_array(entry);
+  end loop;
   -- The same ordered profile locks serialize creation, acceptance and blocking.
   perform 1 from public.profiles p where p.id = any(humans) order by p.id for no key update;
   if exists (select 1 from pg_catalog.unnest(humans) h(id)
@@ -121,8 +153,8 @@ begin
         (decision_time at time zone c.time_zone_identifier)::date <= c.start_day + 6))) >= 5 then
     raise exception 'group_creation_limit' using errcode = 'P0001';
   end if;
-  insert into public.competitions(id,creator_profile_id,format,seat_count,time_zone_identifier,scoring_policy_identity,lifecycle,invitation_expires_at)
-    values(cid,caller,input_format,n,input_zone,'healthcomp.activity-score.v1','pending',decision_time + private.invitation_expiry_interval_v1());
+  insert into public.competitions(id,creator_profile_id,format,seat_count,time_zone_identifier,scoring_policy_identity,lifecycle,invitation_expires_at,invite_creation_idempotency_key,group_creation_request_sha256)
+    values(cid,caller,input_format,n,input_zone,'healthcomp.activity-score.v1','pending',decision_time + private.invitation_expiry_interval_v1(),input_key,request_hash);
   idx := 0;
   for entry in select value from pg_catalog.jsonb_array_elements(normalized) loop
     idx := idx + 1; pid := (entry->>'profile_id')::uuid;
@@ -168,6 +200,8 @@ returns jsonb language plpgsql security definer set search_path = '' as $$
 declare cid alias for competition_id; caller uuid := private.require_active_caller_profile_id();
   c record; p record; baseline integer; start_date date; seed_value text; decision_time timestamptz := pg_catalog.statement_timestamp();
 begin
+  if not exists (select 1 from public.competition_participants cp where cp.competition_id = cid and cp.profile_id = caller) then
+    raise exception 'group_match_unavailable' using errcode = 'P0001'; end if;
   -- Profile locks precede the competition lock everywhere that checks all-pairs blocks.
   perform 1 from public.profiles pr join public.competition_participants cp on cp.profile_id = pr.id
     where cp.competition_id = cid order by pr.id for no key update of pr;
@@ -178,6 +212,7 @@ begin
     raise exception 'group_match_unavailable' using errcode = 'P0001';
   end if;
   if c.lifecycle = 'scheduled' then return pg_catalog.jsonb_build_object('competition_id',cid,'state','scheduled'); end if;
+  if c.lifecycle = 'expired' then return pg_catalog.jsonb_build_object('competition_id',cid,'state','expired'); end if;
   if c.lifecycle <> 'pending' then raise exception 'group_match_unavailable' using errcode = 'P0001'; end if;
   if c.invitation_expires_at <= decision_time then
     update public.competitions set lifecycle = 'expired' where id = cid;
@@ -211,6 +246,7 @@ begin
   select co.* into c from public.competitions co join public.competition_participants cp on cp.competition_id = co.id
     and cp.profile_id = caller where co.id = cid and co.format <> 'duel' and co.creator_profile_id <> caller for update of co;
   if not found then raise exception 'group_match_unavailable' using errcode = 'P0001'; end if;
+  if c.lifecycle = 'expired' then return pg_catalog.jsonb_build_object('competition_id',cid); end if;
   if c.lifecycle = 'declined' and c.closed_by_profile_id = caller then return pg_catalog.jsonb_build_object('competition_id',cid); end if;
   if not (c.lifecycle = 'pending' or (c.lifecycle = 'scheduled' and (decision_time at time zone c.time_zone_identifier)::date < c.start_day)) then
     raise exception 'withdraw_not_allowed' using errcode = 'P0001';
@@ -218,6 +254,7 @@ begin
   update public.competitions set lifecycle = case when c.lifecycle = 'pending' and c.invitation_expires_at <= decision_time then 'expired' else 'declined' end,
     closed_by_profile_id = case when c.lifecycle = 'pending' and c.invitation_expires_at <= decision_time then null else caller end,
     closed_at = case when c.lifecycle = 'pending' and c.invitation_expires_at <= decision_time then null else decision_time end,updated_at = decision_time where id = cid;
+  if c.lifecycle = 'pending' and c.invitation_expires_at <= decision_time then return pg_catalog.jsonb_build_object('competition_id',cid); end if;
   for pid in select cp.profile_id from public.competition_participants cp where cp.competition_id = cid and cp.profile_id <> caller loop
     perform private.enqueue_challenge_notification(cid,'challenge_declined',pid,caller);
   end loop;
@@ -257,7 +294,8 @@ returns jsonb language sql stable security definer set search_path = '' as $$
     'seats',(select pg_catalog.jsonb_agg(pg_catalog.jsonb_build_object(
       'id',s.id,'seat_index',s.seat_index,'team_number',s.team_number,'kind',s.kind,'profile_id',s.profile_id,
       'display_name',p.display_name,'can_view_photo',case when s.profile_id is null then false else private.can_view_profile_photo(s.profile_id) end,
-      'state',cp.state,'left_at',cp.left_at,'frozen_through_day',cp.frozen_through_day,'frozen_revisions',cp.frozen_revisions,
+      'state',cp.state,'left_at',cp.left_at,'frozen_through_day',cp.frozen_through_day,'frozen_revisions',private.group_revision_strings(cp.frozen_revisions),
+      'attestation_basis',(select a.basis from public.participant_finalization_attestations a where a.competition_id = c.id and a.participant_profile_id = s.profile_id order by a.attestation_version desc limit 1),
       'bot_mode',s.bot_mode,'bot_seed',s.bot_seed,'bot_baseline',s.bot_baseline,'bot_generator_version',s.bot_generator_version,
       'bot_daily_totals',s.bot_daily_totals,
       'days',coalesce((select pg_catalog.jsonb_agg(pg_catalog.to_jsonb(h) || pg_catalog.jsonb_build_object(
@@ -273,12 +311,12 @@ returns jsonb language sql stable security definer set search_path = '' as $$
       'revision_high_water',coalesce((select max(r.client_revision) from public.daily_score_revisions r
         where r.competition_id = c.id and r.participant_profile_id = viewer),0)::text,
       'attestation',(select pg_catalog.to_jsonb(a) || pg_catalog.jsonb_build_object('attestation_version',a.attestation_version::text,
-        'server_seq',a.server_seq::text,'window_commitment_sha256',pg_catalog.encode(a.window_commitment_sha256,'hex'))
+        'server_seq',a.server_seq::text,'accepted_revisions',private.group_revision_strings(a.accepted_revisions),'window_commitment_sha256',pg_catalog.encode(a.window_commitment_sha256,'hex'))
         from public.participant_finalization_attestations a where a.competition_id = c.id and a.participant_profile_id = viewer
         order by a.attestation_version desc limit 1)),
     'reactions',coalesce((select pg_catalog.jsonb_agg(pg_catalog.to_jsonb(r) order by r.updated_at,r.author_profile_id)
       from private.competition_reactions r where r.competition_id = c.id),'[]'::jsonb),
-    'result',(select pg_catalog.to_jsonb(r) || pg_catalog.jsonb_build_object('server_seq',r.server_seq::text,
+    'result',(select (pg_catalog.to_jsonb(r) - 'frozen_payload') || pg_catalog.jsonb_build_object('server_seq',r.server_seq::text,
       'immutable_hash',pg_catalog.encode(r.immutable_hash,'hex')) from public.competition_group_results r where r.competition_id = c.id))
   from public.competitions c where c.id = cid and c.format <> 'duel';
 $$;
@@ -289,7 +327,8 @@ declare caller uuid := private.require_active_caller_profile_id(); result jsonb;
 begin
   select coalesce(pg_catalog.jsonb_agg(private.group_match_projection(c.id,caller) order by c.created_at desc,c.id),'[]'::jsonb) into result
     from public.competitions c join public.competition_participants p on p.competition_id = c.id and p.profile_id = caller
-    where c.format <> 'duel' and (c.lifecycle <> 'pending' or not private.group_lineup_blocked(c.id));
+    where c.format <> 'duel' and (c.lifecycle in ('scheduled','active','ends_today','tallying','completed','archived')
+      or not private.group_lineup_blocked(c.id));
   return pg_catalog.jsonb_build_object('version',1,'matches',result);
 end; $$;
 
@@ -306,8 +345,8 @@ end; $$;
 revoke all on function private.group_lineup_blocked(uuid), private.group_bot_week(text,text,integer),
   private.bank_group_match_seat(uuid,uuid,timestamptz),private.group_player_baseline(uuid),private.group_match_projection(uuid,uuid)
   from public,anon,authenticated,service_role;
-revoke all on function public.create_group_match(text,jsonb,text),public.accept_group_match(uuid),public.decline_group_match(uuid),
+revoke all on function public.create_group_match(text,jsonb,text,uuid),public.accept_group_match(uuid),public.decline_group_match(uuid),
   public.cancel_group_match(uuid),public.leave_group_match(uuid),public.list_group_matches(),public.preview_group_match(uuid)
   from public,anon,authenticated,service_role;
-grant execute on function public.create_group_match(text,jsonb,text),public.accept_group_match(uuid),public.decline_group_match(uuid),
+grant execute on function public.create_group_match(text,jsonb,text,uuid),public.accept_group_match(uuid),public.decline_group_match(uuid),
   public.cancel_group_match(uuid),public.leave_group_match(uuid),public.list_group_matches(),public.preview_group_match(uuid) to authenticated;

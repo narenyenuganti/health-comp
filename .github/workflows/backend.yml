@@ -18,6 +18,9 @@ jobs:
     name: Supabase and Deno
     runs-on: ubuntu-24.04
     timeout-minutes: 45
+    env:
+      HEALTHCOMP_TEST_DATABASE_URL: postgresql://postgres:postgres@127.0.0.1:54322/postgres
+      HEALTHCOMP_TEST_FUNCTIONS_URL: http://127.0.0.1:54321/functions/v1
 
     steps:
       - name: Check out repository

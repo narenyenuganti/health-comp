@@ -2,6 +2,7 @@
 alter table public.competitions
   add column format text not null default 'duel' check (format in ('duel','three_way','four_way','doubles')),
   add column seat_count integer not null default 2,
+  add column group_creation_request_sha256 bytea check (pg_catalog.octet_length(group_creation_request_sha256) = 32),
   add constraint competition_format_seats check (
     (format = 'duel' and seat_count = 2) or (format = 'three_way' and seat_count = 3)
     or (format in ('four_way','doubles') and seat_count = 4));

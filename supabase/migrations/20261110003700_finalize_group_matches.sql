@@ -34,7 +34,7 @@ begin
       total := (window_payload->>'total_centi_points')::integer;
       seats_payload := seats_payload || pg_catalog.jsonb_build_array(pg_catalog.jsonb_build_object(
         'id',seat.id,'seat_index',seat.seat_index,'team_number',seat.team_number,'kind','human','profile_id',seat.profile_id,
-        'left_at',seat.left_at,'frozen_through_day',seat.frozen_through_day,'accepted_revisions',revisions,
+        'left_at',seat.left_at,'frozen_through_day',seat.frozen_through_day,'accepted_revisions',private.group_revision_strings(revisions),
         'window',window_payload,'total_centi_points',total,
         'accepted_rows',coalesce((select pg_catalog.jsonb_agg(pg_catalog.to_jsonb(r) || pg_catalog.jsonb_build_object(
           'client_revision',r.client_revision::text,'server_seq',r.server_seq::text,'wire_content_sha256',pg_catalog.encode(r.wire_content_sha256,'hex')) order by r.day_ordinal)
@@ -116,7 +116,7 @@ declare
   rev alias for client_revision; evaluated alias for evaluated_at; mm alias for move_mode; sm alias for stand_mode;
   mbp alias for move_basis_points; ebp alias for exercise_basis_points; sbp alias for stand_basis_points;
   availability alias for availability_reason; policy alias for scoring_policy_identity; expected_digest alias for expected_wire_content_sha256;
-  pid uuid; comp record; prior record; points integer; digest bytea; inserted record;
+  pid uuid; comp record; prior record; points integer; digest bytea; inserted record; group_terminal boolean;
 begin
   pid:=private.assert_authenticated_profile();
   select c.* into comp from public.competitions c
@@ -124,22 +124,25 @@ begin
   where c.id=cid for update of c;
   if not found then raise exception 'competition_not_found' using errcode='P0002'; end if;
 
+  group_terminal := exists (select 1 from public.competition_participants p where p.competition_id = cid and p.profile_id = pid and p.left_at is not null)
+    or exists (select 1 from public.competition_group_results r where r.competition_id = cid);
   select * into prior from public.daily_score_revisions s
    where s.competition_id=cid and s.participant_profile_id=pid
      and (s.semantic_event_id=sid::text or s.client_revision=rev)
    order by (s.semantic_event_id=sid::text) desc limit 1;
   if found then
-    points:=case when availability='available' then least(mbp+ebp+sbp,60000) else null end;
-    digest:=private.wire_score_digest_v1(cid,pid,ord::smallint,mm,sm,mbp,ebp,sbp,points,availability,policy,rev);
-    if expected_digest is null or expected_digest !~ '^[0-9a-f]{64}$' or pg_catalog.encode(digest,'hex')<>expected_digest then raise exception 'wire_digest_mismatch' using errcode='22023'; end if;
     if prior.semantic_event_id=sid::text and prior.client_revision=rev and prior.day_ordinal=ord
       and prior.evaluated_at=evaluated and prior.move_mode=mm and prior.stand_mode=sm
       and prior.move_basis_points is not distinct from mbp and prior.exercise_basis_points is not distinct from ebp
       and prior.stand_basis_points is not distinct from sbp and prior.availability_reason=availability
-      and prior.scoring_policy_identity=policy and prior.wire_content_sha256=digest then
+      and prior.scoring_policy_identity=policy and pg_catalog.encode(prior.wire_content_sha256,'hex')=expected_digest then
       return pg_catalog.jsonb_build_object('disposition','duplicate','acceptedCentiPoints',prior.accepted_centi_points,
         'wireContentSHA256',pg_catalog.encode(prior.wire_content_sha256,'hex'),'acceptedServerSeq',prior.server_seq::text,'competitionCursor',(select next_server_seq-1 from public.competitions where id=cid)::text);
     end if;
+    if group_terminal then return private.score_rejection_v1(cid,pid,'competition_terminal'); end if;
+    points:=case when availability='available' then least(mbp+ebp+sbp,60000) else null end;
+    digest:=private.wire_score_digest_v1(cid,pid,ord::smallint,mm,sm,mbp,ebp,sbp,points,availability,policy,rev);
+    if expected_digest is null or expected_digest !~ '^[0-9a-f]{64}$' or pg_catalog.encode(digest,'hex')<>expected_digest then raise exception 'wire_digest_mismatch' using errcode='22023'; end if;
     return private.score_rejection_v1(cid,pid,'divergent_duplicate');
   end if;
 
@@ -406,12 +409,6 @@ begin
 
   if not found then
     raise exception 'competition_not_found' using errcode = 'P0002';
-  end if;
-
-  if exists (select 1 from public.competition_participants p where p.competition_id = input_competition_id
-      and p.profile_id = caller_profile_id and p.left_at is not null)
-    or exists (select 1 from public.competition_group_results r where r.competition_id = input_competition_id) then
-    raise exception 'competition_terminal' using errcode = 'P0001';
   end if;
 
   select key_row.*
@@ -685,5 +682,54 @@ begin
     'profile_id', deletion_row.profile_id,
     'phase', deletion_row.phase
   );
+end;
+$$;
+
+-- Ready groups without a remaining phone (all left) must not wait for the fallback deadline.
+create or replace function private.finalize_due_competitions_batch(
+  input_batch_size integer,
+  input_as_of timestamptz
+)
+returns bigint
+language plpgsql
+set search_path = ''
+as $$
+declare
+  candidate record;
+  finalized_count bigint := 0;
+begin
+  if input_batch_size is null or input_batch_size not between 1 and 1000 then
+    raise exception 'invalid_batch_size' using errcode = '22023';
+  end if;
+  if input_as_of is null or not pg_catalog.isfinite(input_as_of) then
+    raise exception 'invalid_as_of' using errcode = '22023';
+  end if;
+
+  for candidate in
+    select competition_row.id
+    from public.competitions competition_row
+    where competition_row.lifecycle in (
+      'scheduled', 'active', 'ends_today', 'tallying'
+    )
+      and (competition_row.best_available_deadline <= input_as_of
+        or (competition_row.format <> 'duel'
+          and input_as_of >= ((competition_row.start_day + 7)::timestamp at time zone competition_row.time_zone_identifier)
+          and not exists (select 1 from public.competition_participants p
+            where p.competition_id = competition_row.id and p.state = 'accepted' and p.left_at is null
+              and not exists (select 1 from public.participant_finalization_attestations a
+                where a.competition_id = p.competition_id and a.participant_profile_id = p.profile_id and a.basis = 'stable'))))
+    order by competition_row.best_available_deadline
+    for update skip locked
+    limit input_batch_size
+  loop
+    if private.finalize_competition_locked(
+      candidate.id,
+      input_as_of
+    ) is not null then
+      finalized_count := finalized_count + 1;
+    end if;
+  end loop;
+
+  return finalized_count;
 end;
 $$;

@@ -25,7 +25,7 @@ create function pg_temp.make_match(label text,fmt text default 'three_way',human
 declare result uuid;
 begin
  perform pg_temp.as_user(1);
- result := (public.create_group_match(fmt,pg_temp.lineup(humans,case when fmt='three_way' then 3 else 4 end,fmt='doubles'),'UTC')->>'competition_id')::uuid;
+ result := (public.create_group_match(fmt,pg_temp.lineup(humans,case when fmt='three_way' then 3 else 4 end,fmt='doubles'),'UTC',extensions.gen_random_uuid())->>'competition_id')::uuid;
  insert into gm values(label,result);
  return result;
 end; $$;

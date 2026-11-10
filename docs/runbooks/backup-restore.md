@@ -808,7 +808,7 @@ not equality of this counter with the pre-cleanup source. Preserve all durable
 state comparisons. Nonzero violation counts are rejection
 evidence even when psql exits zero. The receipt has no overall readiness field.
 
-The 22-table authorization baseline is 11 public tables with RLS/no FORCE, ten
+The 24-table authorization baseline is 13 public tables with RLS/no FORCE, ten
 private tables with both flags, and private `competition_notification_mutes`
 with neither flag but revoked raw access. The ten FORCE-protected tables are
 `competition_notification_work`, `account_deletions`, `app_attest_keys`,

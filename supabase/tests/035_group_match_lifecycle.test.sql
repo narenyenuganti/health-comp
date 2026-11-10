@@ -25,7 +25,7 @@ create function pg_temp.make_match(label text,fmt text default 'three_way',human
 declare result uuid;
 begin
  perform pg_temp.as_user(1);
- result := (public.create_group_match(fmt,pg_temp.lineup(humans,case when fmt='three_way' then 3 else 4 end,fmt='doubles'),'UTC')->>'competition_id')::uuid;
+ result := (public.create_group_match(fmt,pg_temp.lineup(humans,case when fmt='three_way' then 3 else 4 end,fmt='doubles'),'UTC',extensions.gen_random_uuid())->>'competition_id')::uuid;
  insert into gm values(label,result);
  return result;
 end; $$;
@@ -57,14 +57,14 @@ begin
 end; $$;
 
 select pg_temp.as_user(1);
-select throws_ok($$select public.create_group_match('three_way',pg_temp.lineup(1,3),'UTC')$$,'22023','invalid_group_match','one human plus bots stays practice');
+select throws_ok($$select public.create_group_match('three_way',pg_temp.lineup(1,3),'UTC',extensions.gen_random_uuid())$$,'22023','invalid_group_match','one human plus bots stays practice');
 update public.device_installations set supports_group_matches=false where profile_id=pg_temp.pid(3);
-select throws_ok($$select public.create_group_match('three_way',pg_temp.lineup(3,3),'UTC')$$,'P0001','group_update_required','old-only named installation refused');
+select throws_ok($$select public.create_group_match('three_way',pg_temp.lineup(3,3),'UTC',extensions.gen_random_uuid())$$,'P0001','group_update_required','old-only named installation refused');
 insert into private.account_blocks values(pg_temp.pid(2),pg_temp.pid(3),now());
-select throws_ok($$select public.create_group_match('three_way',pg_temp.lineup(3,3),'UTC')$$,'P0001','recipient_unavailable','all-pairs block checked before capability (no update oracle)');
+select throws_ok($$select public.create_group_match('three_way',pg_temp.lineup(3,3),'UTC',extensions.gen_random_uuid())$$,'P0001','recipient_unavailable','all-pairs block checked before capability (no update oracle)');
 delete from private.account_blocks;
 update public.profiles set state='deleting' where id=pg_temp.pid(3);
-select throws_ok($$select public.create_group_match('three_way',pg_temp.lineup(3,3),'UTC')$$,'P0001','recipient_unavailable','inactive profile checked before capability');
+select throws_ok($$select public.create_group_match('three_way',pg_temp.lineup(3,3),'UTC',extensions.gen_random_uuid())$$,'P0001','recipient_unavailable','inactive profile checked before capability');
 update public.profiles set state='active' where id=pg_temp.pid(3);
 update public.device_installations set supports_group_matches=true where profile_id=pg_temp.pid(3);
 select pg_temp.make_match('lobby');

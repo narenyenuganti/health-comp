@@ -155,6 +155,7 @@ begin
     where work_row.competition_id = target_competition_id
       and work_row.recipient_profile_id = target_recipient_profile_id
       and work_row.kind = 'reaction'
+      and (work_row.state <> 'suppressed' or exists (select 1 from public.competitions c where c.id = target_competition_id and c.format = 'duel'))
       and work_row.created_at > decision_time - interval '1 hour'
   ) then
     return;
@@ -221,7 +222,6 @@ declare
   target record;
   other_profile_id uuid;
   current_reaction text;
-  recipient record;
 begin
   if input_day_ordinal is null or input_target_profile_id is null or input_competition_id is null
      or (input_day_ordinal is not null and input_day_ordinal not between 1 and 7)
@@ -296,26 +296,6 @@ begin
   end if;
 
   perform private.allocate_competition_server_seq(target.id,'group_reaction_changed',caller_profile_id,decision_time);
-  -- 1900's broadcast_competition_change recipients (accepted, active), with
-  -- the same event and payload, so every installed app just reconciles.
-  for recipient in
-    select p.profile_id
-    from public.competition_participants p
-    join public.profiles pr on pr.id = p.profile_id
-    where p.competition_id = target.id and p.state = 'accepted'
-      and pr.state = 'active'
-    order by p.profile_id
-  loop
-    perform realtime.send(
-      pg_catalog.jsonb_build_object(
-        'server_cursor_hint', (target.next_server_seq - 1)::text
-      ),
-      'competition_changed',
-      'profile:' || recipient.profile_id::text,
-      true
-    );
-  end loop;
-
   if input_reaction is not null then
     perform private.enqueue_reaction_notification(
       target.id, other_profile_id, caller_profile_id
@@ -421,7 +401,9 @@ as $$
         on b.competition_id = c.id and b.profile_id = recipient_profile_id
        and b.state = 'accepted'
       where c.lifecycle in ('scheduled', 'active', 'ends_today', 'tallying',
-        'completed', 'archived', 'cancelled'));
+        'completed', 'archived', 'cancelled')
+        and (c.format = 'duel' or exists (select 1 from public.competition_change_log l where l.competition_id = c.id
+          and l.change_kind = 'competition_lifecycle_changed' and l.payload_snapshot->>'lifecycle' = 'scheduled')));
 $$;
 
 create or replace function public.block_challenger(competition_id uuid)
@@ -433,6 +415,7 @@ declare
   decision_time timestamptz;
   sender_profile_id uuid;
   declined record;
+  recipient uuid;
 begin
   if input_competition_id is null then
     raise exception 'invalid_competition_id' using errcode = '22023';
@@ -472,8 +455,10 @@ begin
       and c.invitation_expires_at > decision_time
     returning c.id
   loop
-    perform private.enqueue_challenge_notification(
-      declined.id, 'challenge_declined', sender_profile_id, caller_profile_id);
+    for recipient in select p.profile_id from public.competition_participants p
+      where p.competition_id = declined.id and p.profile_id <> caller_profile_id loop
+      perform private.enqueue_challenge_notification(declined.id,'challenge_declined',recipient,caller_profile_id);
+    end loop;
   end loop;
   return pg_catalog.jsonb_build_object('competition_id', input_competition_id);
 end;

@@ -25,7 +25,7 @@ create function pg_temp.make_match(label text,fmt text default 'three_way',human
 declare result uuid;
 begin
  perform pg_temp.as_user(1);
- result := (public.create_group_match(fmt,pg_temp.lineup(humans,case when fmt='three_way' then 3 else 4 end,fmt='doubles'),'UTC')->>'competition_id')::uuid;
+ result := (public.create_group_match(fmt,pg_temp.lineup(humans,case when fmt='three_way' then 3 else 4 end,fmt='doubles'),'UTC',extensions.gen_random_uuid())->>'competition_id')::uuid;
  insert into gm values(label,result);
  return result;
 end; $$;
@@ -60,7 +60,7 @@ select pg_temp.make_match('leave','three_way',2);
 select pg_temp.make_live(pg_temp.gid('leave'));
 select is(pg_temp.score(pg_temp.gid('leave'),1,1,1)->>'disposition','appended','human uses existing score wire');
 select pg_temp.as_user(1);
-select is(public.leave_group_match(pg_temp.gid('leave'))->'accepted_revisions','[1,0,0,0,0,0,0]'::jsonb,'leave seals accepted heads, including missing days');
+select is(public.leave_group_match(pg_temp.gid('leave'))->'accepted_revisions','["1","0","0","0","0","0","0"]'::jsonb,'leave seals accepted heads, including missing days');
 select is(pg_temp.score(pg_temp.gid('leave'),1,1,1)->>'disposition','duplicate','exact pre-leave retry keeps original receipt');
 select is(pg_temp.score(pg_temp.gid('leave'),1,1,2)->>'disposition','rejected','new revisions after leave refused');
 select lives_ok($$select public.leave_group_match(pg_temp.gid('leave'))$$,'leave retry idempotent');
