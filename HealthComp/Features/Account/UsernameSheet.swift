@@ -141,7 +141,7 @@ struct UsernameSheet: View {
 /// that redraw (and the onChange that told the store) can be skipped: the
 /// field showed `betaalice!`, or a longer name than the one being checked
 /// and saved. The field owns the text; the store hears every change from it.
-private struct UsernameField: UIViewRepresentable {
+struct UsernameField: UIViewRepresentable {
     /// Only read when the field is made: nothing else edits the name.
     let initialText: String
     let isEnabled: Bool
@@ -184,6 +184,22 @@ private struct UsernameField: UIViewRepresentable {
         }
     }
 
+    /// The field after replacing `range` with `replacement`, keeping only
+    /// what a username can have, and where the caret goes: after what was
+    /// kept of the replacement. Nil for a range outside the text. `isClean`
+    /// when nothing was filtered, so UIKit can apply the edit itself.
+    static func filteredEdit(
+        _ current: String,
+        _ range: NSRange,
+        _ replacement: String
+    ) -> (text: String, caret: Int, isClean: Bool)? {
+        guard let bounds = Range(range, in: current) else { return nil }
+        let proposed: String = current.replacingCharacters(in: bounds, with: replacement)
+        let text: String = FriendSettings.sanitizedUsername(proposed)
+        let kept: Int = FriendSettings.sanitizedUsername(String(current[..<bounds.lowerBound]) + replacement).count
+        return (text, min(kept, text.count), text == proposed)
+    }
+
     final class FocusingField: UITextField {
         private var wantsFocus = false
 
@@ -213,24 +229,32 @@ private struct UsernameField: UIViewRepresentable {
             shouldChangeCharactersIn range: NSRange,
             replacementString string: String
         ) -> Bool {
-            let current = field.text ?? ""
-            guard let bounds = Range(range, in: current) else { return false }
-            let proposed = current.replacingCharacters(in: bounds, with: string)
-            let filtered = FriendSettings.sanitizedUsername(proposed)
+            // Mid-composition (marked text) the edit goes through as is;
+            // `editingChanged` filters once it ends.
+            if field.markedTextRange != nil { return true }
+            let current: String = field.text ?? ""
+            guard let edit = UsernameField.filteredEdit(current, range, string) else { return false }
             // UIKit applies a clean edit itself and reports it in `editingChanged`.
-            guard filtered != proposed else { return true }
-            guard filtered != current else { return false }
-            let kept = FriendSettings.sanitizedUsername(String(current[..<bounds.lowerBound]) + string).count
-            field.text = filtered
-            if let caret = field.position(from: field.beginningOfDocument, offset: min(kept, filtered.count)) {
+            if edit.isClean { return true }
+            if edit.text != current { field.text = edit.text }
+            // Even when nothing changed (a selection replaced by characters
+            // that filter away), the selection collapses, so the next key
+            // doesn't overwrite it.
+            if let caret = field.position(from: field.beginningOfDocument, offset: edit.caret) {
                 field.selectedTextRange = field.textRange(from: caret, to: caret)
             }
-            parent?.changed(filtered)
+            if edit.text != current { parent?.changed(edit.text) }
             return false
         }
 
+        /// Also catches input that skips the delegate, such as dictation or
+        /// an accepted prediction, once any composition (marked text) ends.
         @objc func editingChanged(_ field: UITextField) {
-            parent?.changed(field.text ?? "")
+            guard field.markedTextRange == nil else { return }
+            let text: String = field.text ?? ""
+            let filtered: String = FriendSettings.sanitizedUsername(text)
+            if filtered != text { field.text = filtered }
+            parent?.changed(filtered)
         }
 
         func textFieldShouldReturn(_ field: UITextField) -> Bool {

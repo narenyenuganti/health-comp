@@ -1,4 +1,5 @@
 import ComposableArchitecture
+import UIKit
 import XCTest
 
 @testable import HealthComp
@@ -130,16 +131,22 @@ final class FriendsSettingsFeatureTests: XCTestCase {
             }
         }
         await store.send(.usernameSheetOpened) { $0.sheet = .init() }
-        await store.send(.usernameChanged("nar")) { $0.sheet?.draft = "nar" }
+        await store.send(.usernameChanged("nar")) {
+            $0.sheet?.draft = "nar"
+            $0.sheet?.edit = 1
+        }
         await clock.advance(by: .milliseconds(200))
-        await store.send(.usernameChanged("nare")) { $0.sheet?.draft = "nare" }
+        await store.send(.usernameChanged("nare")) {
+            $0.sheet?.draft = "nare"
+            $0.sheet?.edit = 2
+        }
         await clock.advance(by: .milliseconds(399))
         // The wait for "nar" ends, but the field has moved on.
-        await store.receive(.usernameDebounced("nar"))
+        await store.receive(.usernameDebounced(edit: 1))
         XCTAssertEqual(asked.value, [])
         await clock.advance(by: .milliseconds(1))
-        await store.receive(.usernameDebounced("nare"))
-        await store.receive(.usernameChecked("nare", isAvailable: true)) {
+        await store.receive(.usernameDebounced(edit: 2))
+        await store.receive(.usernameChecked(edit: 2, isAvailable: true)) {
             $0.sheet?.availability = .available
         }
         XCTAssertEqual(asked.value, ["nare"])
@@ -147,6 +154,7 @@ final class FriendsSettingsFeatureTests: XCTestCase {
         // An edit clears the answer, and an invalid name never asks.
         await store.send(.usernameChanged("na")) {
             $0.sheet?.draft = "na"
+            $0.sheet?.edit = 3
             $0.sheet?.availability = .unknown
         }
         await clock.run()
@@ -174,21 +182,28 @@ final class FriendsSettingsFeatureTests: XCTestCase {
         }
         await store.send(.usernameChanged("betaal")) {
             $0.sheet?.draft = "betaal"
+            $0.sheet?.edit = 1
             $0.sheet?.availability = .unknown
         }
         await clock.advance(by: .milliseconds(500))
-        await store.receive(.usernameDebounced("betaal"))
+        await store.receive(.usernameDebounced(edit: 1))
         XCTAssertEqual(asked.value, ["betaal"])
-        let retyped = ["off", "offline_na", "offline_name"]
-        await store.send(.usernameChanged("")) { $0.sheet?.draft = "" }
-        for draft in retyped {
-            await store.send(.usernameChanged(draft)) { $0.sheet?.draft = draft }
+        let retyped: [String] = ["off", "offline_na", "offline_name"]
+        await store.send(.usernameChanged("")) {
+            $0.sheet?.draft = ""
+            $0.sheet?.edit = 2
+        }
+        for (index, draft) in retyped.enumerated() {
+            await store.send(.usernameChanged(draft)) {
+                $0.sheet?.draft = draft
+                $0.sheet?.edit = 3 + index
+            }
         }
         await clock.advance(by: .milliseconds(700))
         // The slow answer about "betaal" lands after the edits and is dropped.
-        await store.receive(.usernameChecked("betaal", isAvailable: true))
-        for draft in retyped { await store.receive(.usernameDebounced(draft)) }
-        await store.receive(.usernameChecked("offline_name", isAvailable: true)) {
+        await store.receive(.usernameChecked(edit: 1, isAvailable: true))
+        for edit in 3...5 { await store.receive(.usernameDebounced(edit: edit)) }
+        await store.receive(.usernameChecked(edit: 5, isAvailable: true)) {
             $0.sheet?.availability = .available
         }
         XCTAssertEqual(asked.value, ["betaal", "offline_name"])
@@ -203,13 +218,96 @@ final class FriendsSettingsFeatureTests: XCTestCase {
         XCTAssertEqual(saved.value, ["offline_name"])
     }
 
+    // MARK: Username field
+
+    /// A selection replaced by characters that filter away (or to the same
+    /// text) leaves the caret after it, so the next key inserts there.
+    func testAFilteredReplacementOverASelectionLeavesTheCaretAfterIt() throws {
+        let upper = try XCTUnwrap(UsernameField.filteredEdit("abc", NSRange(location: 1, length: 1), "B"))
+        XCTAssertEqual(upper.text, "abc")
+        XCTAssertEqual(upper.caret, 2)
+        XCTAssertFalse(upper.isClean)
+        let next = try XCTUnwrap(UsernameField.filteredEdit(upper.text, NSRange(location: upper.caret, length: 0), "d"))
+        XCTAssertEqual(next.text, "abdc")
+        XCTAssertEqual(next.caret, 3)
+        XCTAssertTrue(next.isClean)
+
+        let dropped = try XCTUnwrap(UsernameField.filteredEdit("abc", NSRange(location: 1, length: 1), "!"))
+        XCTAssertEqual(dropped.text, "ac")
+        XCTAssertEqual(dropped.caret, 1)
+        let after = try XCTUnwrap(UsernameField.filteredEdit(dropped.text, NSRange(location: dropped.caret, length: 0), "d"))
+        XCTAssertEqual(after.text, "adc")
+
+        let pasted = try XCTUnwrap(UsernameField.filteredEdit("ab", NSRange(location: 1, length: 0), "X-y z"))
+        XCTAssertEqual(pasted.text, "axyzb")
+        XCTAssertEqual(pasted.caret, 4)
+        XCTAssertNil(UsernameField.filteredEdit("ab", NSRange(location: 5, length: 1), "c"))
+    }
+
+    /// Input that skips the delegate (dictation, an accepted prediction)
+    /// still ends up filtered, and the store hears the filtered name.
+    func testTextThatSkipsTheFilterIsFilteredWhenItChanges() {
+        let sent = LockIsolated<[String]>([])
+        let coordinator = UsernameField.Coordinator()
+        coordinator.parent = UsernameField(
+            initialText: "",
+            isEnabled: true,
+            focusRequest: 0,
+            changed: { name in sent.withValue { $0.append(name) } },
+            submitted: {}
+        )
+        let field = UITextField()
+        field.text = "Be-ta Alice!"
+        coordinator.editingChanged(field)
+        XCTAssertEqual(field.text, "betaalice")
+        XCTAssertEqual(sent.value, ["betaalice"])
+    }
+
     func testAnAnswerAboutAnOlderDraftIsDropped() async {
         var state = Feature.State(saved: unset)
-        state.sheet = .init(draft: "newer")
+        state.sheet = .init(draft: "newer", edit: 2)
         let store = makeStore(state)
-        await store.send(.usernameChecked("older", isAvailable: false))
-        await store.send(.usernameChecked("newer", isAvailable: nil))
+        await store.send(.usernameChecked(edit: 1, isAvailable: false))
+        await store.send(.usernameChecked(edit: 2, isAvailable: nil))
         XCTAssertEqual(store.state.sheet?.availability, .unknown)
+    }
+
+    /// alice, alice2, alice inside one wait: the first alice's wait ends
+    /// early but belongs to an earlier edit, so only the last edit asks, once,
+    /// and an answer for an earlier edit of the same text changes nothing.
+    func testReturningToANameAsksOnceForTheLatestEdit() async {
+        let clock = TestClock()
+        let asked = LockIsolated<[String]>([])
+        let store = makeStore(clock: clock) { client in
+            client.usernameAvailable = { name in
+                asked.withValue { $0.append(name) }
+                return true
+            }
+        }
+        await store.send(.usernameSheetOpened) { $0.sheet = .init() }
+        for (index, draft) in ["alice", "alice2", "alice"].enumerated() {
+            await store.send(.usernameChanged(draft)) {
+                $0.sheet?.draft = draft
+                $0.sheet?.edit = index + 1
+            }
+            await clock.advance(by: .milliseconds(100))
+        }
+        await clock.advance(by: .milliseconds(100))
+        await store.receive(.usernameDebounced(edit: 1))
+        await clock.advance(by: .milliseconds(100))
+        await store.receive(.usernameDebounced(edit: 2))
+        XCTAssertEqual(asked.value, [])
+        await clock.advance(by: .milliseconds(100))
+        await store.receive(.usernameDebounced(edit: 3))
+        await store.receive(.usernameChecked(edit: 3, isAvailable: true)) {
+            $0.sheet?.availability = .available
+        }
+        XCTAssertEqual(asked.value, ["alice"])
+
+        // Delivered late, the first alice's answer changes nothing.
+        await store.send(.usernameChecked(edit: 1, isAvailable: false))
+        await store.send(.usernameDebounced(edit: 1))
+        XCTAssertEqual(asked.value, ["alice"])
     }
 
     func testYourOwnNameIsNotChecked() async {
@@ -223,6 +321,7 @@ final class FriendsSettingsFeatureTests: XCTestCase {
         }
         await store.send(.usernameChanged("alice")) {
             $0.sheet?.draft = "alice"
+            $0.sheet?.edit = 1
             $0.sheet?.availability = .unknown
         }
     }
@@ -417,8 +516,9 @@ final class FriendsSettingsFeatureTests: XCTestCase {
         }
         await store.send(.friendSettings(.usernameChanged("alice"))) {
             $0.friendSettings.sheet?.draft = "alice"
+            $0.friendSettings.sheet?.edit = 1
         }
-        await store.receive(.friendSettings(.usernameDebounced("alice")))
+        await store.receive(.friendSettings(.usernameDebounced(edit: 1)))
         await held.waitUntilEntered()
         await store.send(.stop) { $0.friendSettings = .init() }
         held.release()
