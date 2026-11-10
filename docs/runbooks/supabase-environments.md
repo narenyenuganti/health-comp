@@ -624,6 +624,60 @@ The migration must be in production before any build containing the switches
 reaches TestFlight. Without it the app registers through the five-argument
 call and the server keeps sending switched-off reactions and nudges.
 
+### Friends pushes
+
+Migration `20261109003100` adds `friend_request` and `friend_accepted` work,
+`device_installations.supports_friends` (default false), and a seven-argument
+`register_current_device_installation` overload. Argument order is
+`installation_id, apns_token, environment, supports_challenges,
+supports_reactions, supports_friends, muted_push_kinds`; its response remains
+exactly `installation_id`, `environment`, and `state`. Friend kinds join the
+allowed per-installation mute values. Match-opponent mutes apply only to work
+with a competition; they do not silence Friends alerts.
+
+**Deploy order:** the migration and `send-competition-notification` can deploy
+in either order, first in Staging and then in production. The new sender asks
+for the three-argument lease with `supports_friends=true` and retries the old
+two-argument lease only on PGRST202 (function not found). The migration keeps
+the two-argument lease as a wrapper with `supports_friends=false`, which never
+leases friend work. Thus a new sender works before the migration, while an
+old sender leaves friend work pending after it. Match items retain exactly
+seven keys in both paths; friend items have the additional
+`supportsFriends=true` key and a null `competitionId`.
+
+Clients call the seven-argument registration and fall back to six arguments
+on PGRST202, preserving the supported mute values. The six-argument overload
+in this migration delegates with `supports_friends=false` and preserves its
+supplied mute array; before the migration its validation accepts only `nudge`
+and `reaction`, so omit friend-kind mutes from that fallback request. Existing
+6 → 5 → 4 → 3 fallback remains available on older environments. Registration
+therefore keeps existing pushes working before Friends is deployed.
+
+**Rollback:** keep the applied migration and use a forward repair; do not
+remove overloads, columns, constraints, or historical rows. Rolling the sender
+back to its previous version is safe for match pushes, but pauses Friends:
+old leasing ignores both pending friend rows and expired friend leases.
+When the new sender returns, it reclaims expired leases through the usual
+lease/retry path and rechecks capability, kind mutes, blocks, active profiles,
+and the backing request/friendship. Live friend leases must expire or finish
+before another worker can own them. There is no backlog age cap: a still-valid
+older request remains eligible when delivery resumes.
+
+**Kill switch:** to stop Friends alerts while keeping the current worker
+contract, redeploy the sender with both friend kinds mapped to a null payload;
+the existing resolver marks leased work `discarded` without contacting APNs.
+Allow in-flight sends to finish before treating this as effective. There is no
+separate runtime environment toggle. If reverting to the old sender instead,
+choose explicitly whether to retain pending/leased friend work for resumption
+or discard the backlog. For discard, first quiesce notification workers and
+wait out any in-flight sends, then use a reviewed forward migration to update
+only `kind in ('friend_request', 'friend_accepted')` rows in `pending` or
+`leased`: set `state='discarded'`, clear `lease_token`, `lease_expires_at`, and
+`leased_apns_token_sha256`, and set `updated_at` and `completed_at` to the
+statement timestamp. Do not merely reset them to pending: the old sender will
+still ignore them. Keep terminal rows so the rolling 24-hour guard retains its
+history; do not delete installations or profiles to clear this backlog.
+
 ### Profile photos
 
 Migration `20261107002900` adds the private `profile-photos` bucket (512 KiB,
