@@ -59,7 +59,8 @@ final class GroupMatchLiveDoublesUITests: XCTestCase {
 
     func testLeaveMatchLeavesYourPartnerPlaying() {
         let app = XCUIApplication.launchGroupLab("live-doubles")
-        let more = app.buttons["competition.more"]
+        // iOS 18 exposes Menu's identified wrapper, not its nested button, as hittable.
+        let more = app.groupElement("competition.more")
         XCTAssertTrue(more.waitForExistence(timeout: 8))
         more.tap()
         app.buttons["competition.group.leave"].tap()
