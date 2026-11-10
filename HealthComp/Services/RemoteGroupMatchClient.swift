@@ -50,10 +50,27 @@ struct GroupMatchReadModel: Codable, Equatable, Sendable {
         let centipoints: Int
     }
 
+    /// One seat's frozen week in the result: points, or why a day has none.
+    struct FrozenSeat: Codable, Equatable, Sendable {
+        struct Day: Codable, Equatable, Sendable {
+            let ordinal: Int
+            /// available, unavailable or afterLeave.
+            let status: String
+            let centipoints: Int?
+            let reason: String?
+        }
+
+        let seatIndex: Int
+        let totalCentipoints: Int
+        let days: [Day]
+    }
+
     struct Result: Codable, Equatable, Sendable {
         let basis: CompetitionAttestationBasis
         let completedAt: Date
         let standings: [Standing]
+        /// Nil until the server sends `result.seats` (version 1).
+        var seats: [FrozenSeat]? = nil
     }
 
     let id: UUID
@@ -298,7 +315,9 @@ enum GroupMatchWire {
     }
 
     private static func result(_ value: Any?, matchID: UUID, format: GroupMatchFormat) throws -> GroupMatchReadModel.Result {
-        let object = try WireObject(value, keys: resultKeys)
+        // `version` and `seats` arrive together, or not at all on older servers.
+        let hasSeats = (value as? [String: Any])?["seats"] != nil
+        let object = try WireObject(value, keys: hasSeats ? resultKeys.union(["version", "seats"]) : resultKeys)
         guard try object.uuid("competition_id") == matchID,
               try formatValue(object.string("format")) == format,
               isHexDigest(try object.string("immutable_hash"))
@@ -312,11 +331,52 @@ enum GroupMatchWire {
                 centipoints: try row.int("centipoints")
             )
         }
+        var seats: [GroupMatchReadModel.FrozenSeat]?
+        if hasSeats {
+            guard try object.int("version") == 1 else { throw CompetitionRemoteFailure.serverContractMismatch }
+            seats = try object.array("seats").map(frozenSeat)
+            guard seats?.map(\.seatIndex) == Array(1...format.seatCount) else {
+                throw CompetitionRemoteFailure.serverContractMismatch
+            }
+        }
         return GroupMatchReadModel.Result(
             basis: try object.basis("finalization_basis"),
             completedAt: try object.date("completed_at"),
-            standings: standings
+            standings: standings,
+            seats: seats
         )
+    }
+
+    private static func frozenSeat(_ value: Any) throws -> GroupMatchReadModel.FrozenSeat {
+        let object = try WireObject(value, keys: ["seat_index", "total_centi_points", "days"])
+        let days = try object.array("days").map { value -> GroupMatchReadModel.FrozenSeat.Day in
+            let day = try WireObject(value, keys: ["ordinal", "status", "centi_points", "reason"])
+            let status = try day.string("status")
+            let points = try day.optional("centi_points") { Int(try day.int64($0)) }
+            let reason = try day.optional("reason") { try day.string($0) }
+            switch status {
+            case "available":
+                guard let points, (0...60_000).contains(points), reason == nil else {
+                    throw CompetitionRemoteFailure.serverContractMismatch
+                }
+            case "unavailable":
+                guard points == nil, let reason, reason != "afterLeave" else {
+                    throw CompetitionRemoteFailure.serverContractMismatch
+                }
+            case "afterLeave":
+                guard points == nil || points == 0, reason == "afterLeave" else {
+                    throw CompetitionRemoteFailure.serverContractMismatch
+                }
+            default:
+                throw CompetitionRemoteFailure.serverContractMismatch
+            }
+            return .init(ordinal: try day.int("ordinal"), status: status, centipoints: points, reason: reason)
+        }
+        let total = Int(try object.int64("total_centi_points"))
+        guard days.map(\.ordinal) == Array(1...7), (0...420_000).contains(total) else {
+            throw CompetitionRemoteFailure.serverContractMismatch
+        }
+        return .init(seatIndex: try object.int("seat_index"), totalCentipoints: total, days: days)
     }
 
     private static func formatValue(_ value: String) -> GroupMatchFormat? {

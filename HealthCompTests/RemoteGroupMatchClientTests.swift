@@ -72,6 +72,47 @@ final class RemoteGroupMatchClientTests: XCTestCase {
         XCTAssertThrowsError(try GroupMatchWire.decodeList(fixture(), viewer: UUID()), "another account's list")
     }
 
+    func testDecodesFrozenSeatDaysWhenTheServerSendsThem() throws {
+        func days(_ points: String?, status: String = "available", reason: Any = NSNull()) -> [[String: Any]] {
+            (1...7).map { ["ordinal": $0, "status": status, "centi_points": points ?? NSNull(), "reason": reason] }
+        }
+        func seats(_ third: [[String: Any]]) -> [[String: Any]] {
+            [
+                ["seat_index": 1, "total_centi_points": "210000", "days": days("30000")],
+                ["seat_index": 2, "total_centi_points": "210000", "days": days("30000")],
+                ["seat_index": 3, "total_centi_points": "0", "days": third],
+            ]
+        }
+        func withSeats(version: Any?, _ value: [[String: Any]]) throws -> Data {
+            try editedFixture(finishedID) { match in
+                var result = match["result"] as! [String: Any]
+                result["seats"] = value
+                if let version { result["version"] = version }
+                match["result"] = result
+            }
+        }
+        let leaver = days(nil, status: "afterLeave", reason: "afterLeave")
+        let decoded = try GroupMatchWire.decodeList(withSeats(version: 1, seats(leaver)), viewer: viewer)
+        let frozen = try XCTUnwrap(decoded.first { $0.id == finishedID }?.result?.seats)
+        XCTAssertEqual(frozen.map(\.totalCentipoints), [210_000, 210_000, 0])
+        XCTAssertEqual(frozen[0].days.map(\.centipoints), Array(repeating: 30_000, count: 7))
+        XCTAssertEqual(frozen[2].days.map(\.status), Array(repeating: "afterLeave", count: 7))
+        XCTAssertNil(try GroupMatchWire.decodeList(fixture(), viewer: viewer).first { $0.id == finishedID }?.result?.seats)
+
+        XCTAssertThrowsError(try GroupMatchWire.decodeList(withSeats(version: nil, seats(leaver)), viewer: viewer), "no version")
+        XCTAssertThrowsError(
+            try GroupMatchWire.decodeList(withSeats(version: 1, seats(days(nil, status: "missing"))), viewer: viewer),
+            "unknown status"
+        )
+        XCTAssertThrowsError(
+            try GroupMatchWire.decodeList(withSeats(version: 1, Array(seats(leaver).prefix(2))), viewer: viewer),
+            "a seat left out"
+        )
+        var numeric = seats(leaver)
+        numeric[0]["total_centi_points"] = 210_000
+        XCTAssertThrowsError(try GroupMatchWire.decodeList(withSeats(version: 1, numeric), viewer: viewer), "numeric total")
+    }
+
     // MARK: Presentation
 
     func testProjectsLiveDoublesWithTheBotRevealedAndFinishedAsFrozen() throws {
