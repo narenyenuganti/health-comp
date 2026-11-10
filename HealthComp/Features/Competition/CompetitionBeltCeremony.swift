@@ -693,7 +693,8 @@ private struct CompetitionJudgesReveal: View {
                 raised = true
                 thuds += 1
             }
-            guard (try? await Task.sleep(for: .seconds(2))) != nil else { return }
+            // The 0.45 s raise settles, then the final pose holds for 1.75 s.
+            guard (try? await Task.sleep(for: .seconds(2.2))) != nil else { return }
             onFinished()
         }
         .onChange(of: scenePhase) { _, phase in if phase == .background { onBackground() } }
@@ -720,6 +721,7 @@ private struct CompetitionJudgesReveal: View {
                     Circle().fill(Theme.youFill).frame(width: 92, height: 92)
                     Circle().trim(from: 0, to: progress).stroke(Theme.youFill, style: StrokeStyle(lineWidth: 3, lineCap: .round))
                         .frame(width: 106, height: 106).rotationEffect(.degrees(-90))
+                        .opacity(progress > 0 ? 1 : 0)
                         .animation(reduceMotion ? nil : Motion.press, value: progress)
                     Text("H/").font(.score(size: 36)).foregroundStyle(Theme.onYouFill)
                     if breakingSeal {
@@ -762,25 +764,28 @@ private struct CompetitionJudgesReveal: View {
             }.font(.themeLabel).foregroundStyle(Theme.secondary)
             ZStack {
                 card(decision.cards[cardIndex], index: cardIndex).id(cardIndex).transition(.opacity)
-                if stamped {
-                    Text(decision.label)
-                        .font(.score(size: 35)).minimumScaleFactor(0.5).lineLimit(1)
-                        .padding(16)
-                        .foregroundStyle(Theme.ink).background(Theme.ground)
-                        .overlay(Rectangle().stroke(Theme.ink, lineWidth: 3))
-                        .rotationEffect(.degrees(reduceMotion ? 0 : -12))
-                        .transition(reduceMotion ? .opacity : .scale(scale: 1.15).combined(with: .opacity))
-                        .accessibilityIdentifier("competition.judges.stamp")
-                }
             }
             .animation(Motion.fade, value: cardIndex)
-            HStack {
-                ForEach(0..<3) { index in
-                    Text(["MOVE", "EXERCISE", "STAND"][index])
-                        .foregroundStyle(index <= cardIndex ? Theme.ink : Theme.faint)
-                    if index < 2 { Spacer() }
+            ZStack {
+                if stamped {
+                    Text(decision.label)
+                        .font(.score(size: 30)).minimumScaleFactor(0.5).lineLimit(1)
+                        .padding(.horizontal, 12).padding(.vertical, 8)
+                        .foregroundStyle(Theme.ink)
+                        .overlay(Rectangle().stroke(Theme.ink, lineWidth: 3))
+                        .transition(reduceMotion ? .opacity : .scale(scale: 1.15).combined(with: .opacity))
+                        .accessibilityIdentifier("competition.judges.stamp")
+                } else {
+                    HStack {
+                        ForEach(0..<3) { index in
+                            Text(["MOVE", "EXERCISE", "STAND"][index])
+                                .foregroundStyle(index <= cardIndex ? Theme.ink : Theme.faint)
+                            if index < 2 { Spacer() }
+                        }
+                    }.font(.themeLabel)
                 }
-            }.font(.themeLabel)
+            }
+            .frame(height: 60)
         }
     }
 
