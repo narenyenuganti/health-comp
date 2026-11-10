@@ -139,7 +139,7 @@ private struct FriendsPersonLabel: View {
     }
 }
 
-/// Friends, and search in place of them while the field is in use.
+/// Friends, and search in place of them while there's a query.
 struct FriendsView: View {
     let store: StoreOf<MainTabFeature>
 
@@ -150,7 +150,7 @@ struct FriendsView: View {
     @Environment(\.timeZone) private var timeZone
 
     private var state: FriendsFeature.State { store.competition.friends }
-    private var isSearchShown: Bool { isFieldFocused || !state.query.isEmpty }
+    private var isSearchShown: Bool { !state.query.isEmpty }
     private var pinsInvite: Bool { !dynamicTypeSize.isAccessibilitySize }
 
     private var settings: AccountFriendSettings {
@@ -161,11 +161,15 @@ struct FriendsView: View {
     }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 22) {
-                searchField
+        VStack(spacing: 0) {
+            // Pinned, so the query and its clear button never scroll away.
+            searchField
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+                .padding(.bottom, 10)
+            ScrollView {
                 // Not the field: a keystroke mustn't animate it.
-                Group {
+                VStack(alignment: .leading, spacing: 22) {
                     if isSearchShown {
                         searchContent
                     } else {
@@ -175,17 +179,18 @@ struct FriendsView: View {
                 }
                 .moving(Motion.settle, value: state)
                 .moving(Motion.settle, value: isSearchShown)
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+                .padding(.bottom, 12)
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
-            .accessibilityElement(children: .contain)
-            .accessibilityIdentifier("friends.screen")
+            .scrollDismissesKeyboard(.interactively)
+            .refreshable { [store] in
+                await store.send(.competition(.friends(.requested))).finish()
+            }
         }
-        .scrollDismissesKeyboard(.interactively)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("friends.screen")
         .background(Theme.ground)
-        .refreshable { [store] in
-            await store.send(.competition(.friends(.requested))).finish()
-        }
         .safeAreaInset(edge: .bottom) {
             if pinsInvite, !isSearchShown {
                 inviteButton
@@ -197,22 +202,6 @@ struct FriendsView: View {
         }
         .navigationTitle("Friends")
         .navigationBarTitleDisplayMode(.inline)
-        // In search the back chevron returns to Friends, not Home.
-        .navigationBarBackButtonHidden(isSearchShown)
-        .toolbar {
-            if isSearchShown {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button(action: leaveSearch) {
-                        Image(systemName: "chevron.left")
-                            .font(.headline)
-                            .foregroundStyle(Theme.ink)
-                            .frame(minWidth: 44, minHeight: 44, alignment: .leading)
-                    }
-                    .accessibilityLabel("Back to Friends")
-                    .accessibilityIdentifier("friends.search.back")
-                }
-            }
-        }
         // Outside `.refreshable`, which a sheet presented from inside it
         // inherits: a drag down would refresh, not close.
         .sheet(isPresented: Binding(
@@ -250,11 +239,6 @@ struct FriendsView: View {
         "healthcomp.friends.username-prompted.\(id.uuidString.lowercased())"
     }
 
-    private func leaveSearch() {
-        isFieldFocused = false
-        store.send(.competition(.friends(.queryChanged(""))))
-    }
-
     private func change(_ person: FriendPerson, _ change: FriendsFeature.Change) {
         store.send(.competition(.friends(.changeTapped(person, change))))
     }
@@ -288,7 +272,7 @@ struct FriendsView: View {
                     Image(systemName: "xmark")
                         .font(.footnote.weight(.bold))
                         .foregroundStyle(Theme.secondary)
-                        .frame(width: 36, height: 44)
+                        .frame(width: 44, height: 44)
                         .contentShape(Rectangle())
                 }
                 .accessibilityLabel("Clear search")
@@ -296,7 +280,7 @@ struct FriendsView: View {
             }
         }
         .padding(.leading, 14)
-        .padding(.trailing, 6)
+        .padding(.trailing, 2)
         .frame(minHeight: 48)
         .background(Theme.control, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay {
@@ -320,7 +304,7 @@ struct FriendsView: View {
             if results.isEmpty {
                 quietLine("No one found.", id: "friends.search.empty")
             } else {
-                panel(results, divider: 66) { resultRow($0) }
+                panel(results) { resultRow($0) }
                 Text("Can’t find them? Send your link from Friends.")
                     .font(.subheadline)
                     .foregroundStyle(Theme.secondary)
@@ -391,12 +375,12 @@ struct FriendsView: View {
             }
             if !list.incoming.isEmpty {
                 section("REQUESTS · \(list.incoming.count)", id: "friends.requests") {
-                    panel(list.incoming, divider: 66) { requestRow($0) }
+                    panel(list.incoming) { requestRow($0) }
                 }
             }
             if !list.friends.isEmpty {
                 section("FRIENDS · \(list.friends.count)", id: "friends.list") {
-                    panel(list.friends, divider: 66) { friendRow($0) }
+                    panel(list.friends) { friendRow($0) }
                 }
             }
         } else if state.loadFailed {
@@ -512,12 +496,14 @@ struct FriendsView: View {
         .accessibilityIdentifier(id)
     }
 
+    /// Dividers start where the row's text does: past the avatar, or at the
+    /// row's edge once rows stack at accessibility sizes.
     private func panel<Row: View>(
         _ people: [FriendPerson],
-        divider: CGFloat,
         @ViewBuilder row: @escaping (FriendPerson) -> Row
     ) -> some View {
-        VStack(spacing: 0) {
+        let divider: CGFloat = dynamicTypeSize.isAccessibilitySize ? 14 : 66
+        return VStack(spacing: 0) {
             ForEach(Array(people.enumerated()), id: \.element.id) { index, person in
                 if index > 0 { CompetitionRowDivider(inset: divider) }
                 row(person)

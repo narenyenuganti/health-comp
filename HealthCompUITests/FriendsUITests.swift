@@ -137,10 +137,21 @@ final class FriendsUITests: XCTestCase {
         XCTAssertTrue(error.waitForExistence(timeout: 5))
         XCTAssertEqual(error.label, "Too many searches. Try again in a minute.")
 
-        // The chevron leaves search, not Friends.
-        app.buttons["friends.search.back"].tap()
+        // Clearing returns to the list. Back is every pushed page's one,
+        // and leaves Friends from search too.
+        let clear = element("friends.search.clear")
+        XCTAssertGreaterThanOrEqual(clear.frame.width, 44)
+        XCTAssertGreaterThanOrEqual(clear.frame.height, 44)
+        clear.tap()
         XCTAssertTrue(app.staticTexts["REQUESTS · 2"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.navigationBars["Friends"].exists)
+        field.typeText("qqq")
+        XCTAssertTrue(empty.waitForExistence(timeout: 5))
+        back()
+        XCTAssertTrue(app.buttons["friends.open"].waitForExistence(timeout: 5))
+        // Closing forgot the search.
+        openFriends()
+        XCTAssertTrue(app.staticTexts["REQUESTS · 2"].waitForExistence(timeout: 5))
+        XCTAssertFalse(empty.exists)
     }
 
     func testAFailedAddStaysInlineAndCanBeTriedAgain() {
@@ -247,6 +258,9 @@ final class FriendsUITests: XCTestCase {
                 shot("search-results-\(suffix)")
                 // Everything is reachable with the keyboard up.
                 scrollTo(element("friends.search.hint"))
+                // Pinned: the query and its clear button stay on screen.
+                XCTAssertTrue(field.isHittable)
+                XCTAssertTrue(element("friends.search.clear").isHittable)
                 shot("search-results-scrolled-\(suffix)")
                 // Keyboard down: its predictive bar has no label to audit.
                 dismissKeyboard()
