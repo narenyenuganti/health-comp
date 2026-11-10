@@ -1,3 +1,4 @@
+#if DEBUG
 import CompetitionCore
 import ComposableArchitecture
 import XCTest
@@ -289,3 +290,4 @@ final class GroupMatchPresentationTests: XCTestCase {
         )
     }
 }
+#endif

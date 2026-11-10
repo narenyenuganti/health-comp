@@ -9,6 +9,8 @@ struct GroupMatchCreateView: View {
 
     let step: Step
     let store: StoreOf<GroupMatchFeature>
+    /// Profile ids of people you've played.
+    var people: [UUID] = []
 
     var body: some View {
         ScrollView {
@@ -29,8 +31,10 @@ struct GroupMatchCreateView: View {
                         Button("Remove Seat \(seat)") {}
                             .accessibilityIdentifier("competition.group.seat.\(seat).remove")
                     }
-                    Button("Add Sam") {}
-                        .accessibilityIdentifier("competition.group.person.\(GroupMatchFixtures.samProfile.uuidString.lowercased()).add")
+                    ForEach(people, id: \.self) { person in
+                        Button("Add Person") {}
+                            .accessibilityIdentifier("competition.group.person.\(person.uuidString.lowercased()).add")
+                    }
                     Button("Add Bot") {}.accessibilityIdentifier("competition.group.add-bot")
                     Button("Paste Link") {}.accessibilityIdentifier("competition.group.paste-link")
                     Button("Create Match") {}.accessibilityIdentifier("competition.group.create")

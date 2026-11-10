@@ -1,3 +1,4 @@
+#if DEBUG
 import CompetitionCore
 import ComposableArchitecture
 import SwiftUI
@@ -262,8 +263,8 @@ struct GroupMatchTestLabView: View {
     var body: some View {
         switch setup {
         case .formatPicker: GroupMatchCreateView(step: .format, store: group)
-        case .lineupFFA: GroupMatchCreateView(step: .lineup(.fourWay), store: group)
-        case .lineupDoubles: GroupMatchCreateView(step: .lineup(.doubles), store: group)
+        case .lineupFFA: GroupMatchCreateView(step: .lineup(.fourWay), store: group, people: [GroupMatchFixtures.samProfile])
+        case .lineupDoubles: GroupMatchCreateView(step: .lineup(.doubles), store: group, people: [GroupMatchFixtures.samProfile])
         case .botPicker: GroupMatchCreateView(step: .bots, store: group)
         // In a ScrollView: the lab root's identifier otherwise replaces a bare stack's.
         case .versusFFA: ScrollView { GroupMatchVersusIntro(match: GroupMatchFixtures.versusFFA) }
@@ -281,3 +282,4 @@ struct GroupMatchTestLabView: View {
         }
     }
 }
+#endif
