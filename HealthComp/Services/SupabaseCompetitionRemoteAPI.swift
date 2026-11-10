@@ -576,6 +576,12 @@ enum SupabaseCompetitionRemoteAPI {
                 else {
                     throw CompetitionRemoteFailure.serverContractMismatch
                 }
+            },
+            listGroupMatches: {
+                try await sendReadOnly(
+                    .rpc(name: "list_group_matches", parameters: try encode(EmptyParameters())),
+                    transport: transport
+                ).data
             }
         )
     }

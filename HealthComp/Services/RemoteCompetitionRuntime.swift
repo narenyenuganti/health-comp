@@ -535,7 +535,10 @@ actor RemoteCompetitionRuntime {
     private let environment: CompetitionEnvironmentClient?
     private let outboxStore: (any CompetitionOutboxStore)?
     private let syncCoordinator: CompetitionSyncCoordinator?
+    private let groupSyncCoordinator: CompetitionSyncCoordinator?
     private let cacheStore: (any RemoteCompetitionCacheStore)?
+    private let groupMatches: RemoteGroupMatchSync?
+    private let groupMatchStore: GroupMatchStore?
     private let now: @Sendable () -> Date
     private let engine = CompetitionEngine()
     private let maximumCursorRetries = 4
@@ -548,6 +551,7 @@ actor RemoteCompetitionRuntime {
         environment: CompetitionEnvironmentClient? = nil,
         outboxStore: (any CompetitionOutboxStore)? = nil,
         cacheStore: (any RemoteCompetitionCacheStore)? = nil,
+        groupMatchStore: GroupMatchStore? = nil,
         now: @escaping @Sendable () -> Date = { Date() }
     ) {
         self.profileID = profileID
@@ -557,20 +561,68 @@ actor RemoteCompetitionRuntime {
         self.outboxStore = outboxStore
         self.cacheStore = cacheStore
         self.now = now
+        // With group matches, each family drains its own share of the outbox.
         self.syncCoordinator = outboxStore.map { outboxStore in
             CompetitionSyncCoordinator(
                 profileID: profileID,
-                outboxStore: outboxStore,
+                outboxStore: groupMatchStore.map {
+                    GroupOutboxPartition(base: outboxStore, groups: $0, holdsGroups: false)
+                } ?? outboxStore,
                 remoteAPI: remoteAPI,
-                acceptedScorePersistence: .eventStore(store),
+                acceptedScorePersistence: groupMatchStore.map {
+                    .routing(groups: $0, duels: store)
+                } ?? .eventStore(store),
+                now: now
+            )
+        }
+        let groupSyncCoordinator: CompetitionSyncCoordinator? = groupMatchStore.flatMap { groups in
+            outboxStore.map { outboxStore in
+                CompetitionSyncCoordinator(
+                    profileID: profileID,
+                    outboxStore: GroupOutboxPartition(base: outboxStore, groups: groups, holdsGroups: true),
+                    remoteAPI: remoteAPI,
+                    acceptedScorePersistence: .routing(groups: groups, duels: store),
+                    now: now
+                )
+            }
+        }
+        self.groupSyncCoordinator = groupSyncCoordinator
+        self.groupMatchStore = groupMatchStore
+        self.groupMatches = groupMatchStore.map {
+            RemoteGroupMatchSync(
+                profileID: profileID,
+                store: $0,
+                remoteAPI: remoteAPI,
+                environment: environment,
+                outboxStore: outboxStore,
+                syncCoordinator: groupSyncCoordinator,
                 now: now
             )
         }
     }
 
+    /// Group matches, apart from the duel inventory: refreshed, your days
+    /// uploaded and the final window attested. A failure here keeps the
+    /// cached read model and never touches a duel.
+    func synchronizeGroupMatches() async -> [GroupMatchReadModel] {
+        guard !isStopped, let groupMatches else { return [] }
+        return await groupMatches.run()
+    }
+
+    /// The last good group list on disk, for a publication before the
+    /// network answers.
+    func cachedGroupMatches() async -> [GroupMatchReadModel] {
+        await groupMatchStore?.readModel() ?? []
+    }
+
     func stop() async {
         isStopped = true
-        await syncCoordinator?.stop()
+        // Both at once: the two drains share App Attest's one-at-a-time gate,
+        // so whichever holds it must be cancelled for the other to finish.
+        let group = groupSyncCoordinator, duel = syncCoordinator
+        async let groupStopped: Void = { await group?.stop() }()
+        async let duelStopped: Void = { await duel?.stop() }()
+        _ = await (groupStopped, duelStopped)
     }
 
     func commitNotificationDecisions(
@@ -668,7 +720,13 @@ actor RemoteCompetitionRuntime {
         let listedIDs = Set(descriptors.map(\.competitionID))
         do {
             let journalIDs = try await store.ids().map(\.rawValue)
-            let queuedIDs = try await outboxStore?.entries().map(\.payload.competitionID) ?? []
+            var queuedIDs: [UUID] = []
+            // Group entries aren't duels: the duel presence check can't see
+            // group rows and would discard their uploads.
+            for entry in try await outboxStore?.entries() ?? [] {
+                if let groupMatchStore, await groupMatchStore.owns(entry) { continue }
+                queuedIDs.append(entry.payload.competitionID)
+            }
             let localIDs = Set(journalIDs).union(nextCacheByID.keys).union(queuedIDs)
             var deletedIDs: [UUID] = []
             for rawID in localIDs.subtracting(listedIDs).sorted(by: { $0.uuidString < $1.uuidString }) {
@@ -1527,7 +1585,7 @@ actor RemoteCompetitionRuntime {
         }
     }
 
-    private static func attestationSemanticEventID(
+    static func attestationSemanticEventID(
         competitionID: UUID,
         profileID: UUID,
         basis: CompetitionAttestationBasis,
@@ -1567,7 +1625,7 @@ actor RemoteCompetitionRuntime {
         }
     }
 
-    private struct RemoteEvidence: Sendable {
+    struct RemoteEvidence: Sendable {
         let moveMode: String
         let standMode: String
         let moveBasisPoints: Int?
@@ -1576,7 +1634,7 @@ actor RemoteCompetitionRuntime {
         let availabilityReason: String
     }
 
-    private static func remoteEvidence(
+    static func remoteEvidence(
         from result: ActivityDayReadResult
     ) throws -> RemoteEvidence {
         switch result {
@@ -1624,7 +1682,7 @@ actor RemoteCompetitionRuntime {
         }
     }
 
-    private static func wire(
+    static func wire(
         competitionID: UUID,
         profileID: UUID,
         ordinal: Int,
