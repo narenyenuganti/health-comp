@@ -124,6 +124,9 @@ extension CompetitionWidgetSnapshot.Match {
     /// One string redacts whole, so wrist-down it's the status alone.
     func inlineText(at date: Date, redacted: Bool = false, locale: Locale = .current) -> String {
         if redacted { return boardStatus(at: date, locale: locale) }
+        if let group {
+            return "\(circular(at: date, locale: locale).value) · \(boardStatus(at: date, locale: locale)) · \(group.title)"
+        }
         if state(at: date) == .scheduled {
             return "Day 1 is \(weekday("EEE", locale: locale)) · \(name)"
         }
@@ -133,7 +136,7 @@ extension CompetitionWidgetSnapshot.Match {
     /// "DAY 5 · SAM", "FINAL · SAM", "DAY 1 · SAM". Wrist-down, no name.
     func cornerLabel(at date: Date, redacted: Bool = false, locale: Locale = .current) -> String {
         let status = state(at: date) == .scheduled ? "Day 1" : boardStatus(at: date, locale: locale)
-        return (redacted ? status : "\(status) · \(name)").uppercased()
+        return (redacted ? status : "\(status) · \(group?.title ?? name)").uppercased()
     }
 
     /// The chase bar while you trail on the day the phone worked it out for:

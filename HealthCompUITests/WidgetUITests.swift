@@ -103,6 +103,30 @@ final class WidgetUITests: XCTestCase {
         }
     }
 
+    /// A live group match: your place and the gap, or the two team totals.
+    func testHomeScreenWidgetsShowGroupMatches() throws {
+        launch(scenario: "groupFFA")
+        XCUIDevice.shared.press(.home)
+        removeOurWidgets()
+        addWidget(sizeSwipes: 1)  // medium
+        addWidget(sizeSwipes: 0)  // small
+        XCTAssertTrue(ourWidgets().firstMatch.waitForExistence(timeout: 15), springboard.debugDescription)
+        for state in [
+            Expectation(scenario: "groupFFA", label: "Four-Way, Day 4 of 7. You're 2nd. 48 behind Sam.", updated: false),
+            Expectation(
+                scenario: "groupDoubles",
+                label: "Doubles, Day 4 of 7. Your team 3,162 points. Sam + Leo 2,915 points. Your team up 247.",
+                updated: false
+            ),
+        ] {
+            launch(scenario: state.scenario)
+            XCUIDevice.shared.press(.home)
+            assertWidgets(state, count: 2)
+            sleep(2)
+            shot("home-\(state.scenario)-light")
+        }
+    }
+
     /// Each step lands with the Home Screen showing, for a recording to judge
     /// the score roll: rises, a lead flip, a digit gained, the longest number,
     /// decimals gained, then another person, which fades rather than rolls.

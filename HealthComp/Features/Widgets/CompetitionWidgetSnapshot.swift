@@ -40,6 +40,31 @@ struct CompetitionWidgetSnapshot: Codable, Equatable, Sendable {
         /// The Watch's chase bar, from the phone's what it takes. Nil when
         /// you lead or the phone couldn't work it out.
         var chase: Chase?
+        /// A live group match. Optional, so older files still decode, and an
+        /// older watch draws the fields above as a card against the next
+        /// place up. Never carries a belt or a chase.
+        var group: Group?
+    }
+
+    /// A group match's standings, worded on the iPhone from its scoring.
+    struct Group: Codable, Equatable, Sendable {
+        /// "Four-Way", "Doubles".
+        var title: String
+        var isDoubles: Bool
+        /// Ranked: each seat in a free-for-all, each team in doubles.
+        var rows: [Row]
+        /// "48 behind Sam", "You lead by 54", "Your team up 247".
+        var lead: String?
+
+        struct Row: Codable, Equatable, Sendable {
+            var place: Int
+            /// "You", "Sam", "You + Priya".
+            var name: String
+            var points: Double
+            var isYou: Bool
+        }
+
+        var yourPlace: Int? { rows.first(where: \.isYou)?.place }
     }
 
     /// What it takes to lead on a live day.
@@ -140,7 +165,8 @@ extension CompetitionWidgetSnapshot {
     func suggestedPeople() -> [(id: String, name: String)] {
         var seen = Set<String>()
         return matches
-            .filter { $0.name != "Former competitor" && seen.insert($0.personID).inserted }
+            // A group match is no person to pick.
+            .filter { $0.group == nil && $0.name != "Former competitor" && seen.insert($0.personID).inserted }
             .map { (id: $0.personID, name: $0.name) }
             .sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
     }
@@ -225,7 +251,7 @@ extension CompetitionWidgetSnapshot.Match {
 
     /// The medium header: "Sam · Day 5 of 7", "Sam · Final".
     func mediumHeader(at date: Date, locale: Locale = .current) -> String {
-        "\(name) · \(mediumStatus(at: date, locale: locale))"
+        groupHeader(at: date, locale: locale) ?? "\(name) · \(mediumStatus(at: date, locale: locale))"
     }
 
     /// The header after the name, kept whole when a long name truncates.
@@ -237,6 +263,7 @@ extension CompetitionWidgetSnapshot.Match {
     /// "You lead by 54." while live, "Won by 114 points" for a result, nil
     /// for a tie or a scheduled match.
     func leadLine(at date: Date, locale: Locale = .current) -> String? {
+        if let group { return group.lead }
         switch state(at: date) {
         case .live, .finalPending:
             return competitionLeadSentence(
@@ -286,6 +313,10 @@ extension CompetitionWidgetSnapshot.Match {
         locale: Locale = .current,
         timeZone: TimeZone = .current
     ) -> [[String]] {
+        if let group, let header = groupHeader(at: date, locale: locale) {
+            let line = [groupPlaceText, group.lead].compactMap { $0 }.joined(separator: " · ")
+            return [[header, group.title], [line, groupPlaceText ?? group.lead ?? ""]]
+        }
         if state(at: date) == .scheduled {
             // "Day 1 is Wednesday" doesn't fit the rectangle: "Day 1 is Wed".
             return [[name], [status(at: date, locale: locale), "Day 1 is \(weekday("EEE", locale: locale))"]]
@@ -308,6 +339,9 @@ extension CompetitionWidgetSnapshot.Match {
             userPoints: userPoints, opponentPoints: opponentPoints,
             fractionDigits: finalDigits, locale: locale
         )
+        if let place = groupPlaceText {
+            return (status(at: date, compact: true, locale: locale).uppercased(), place.uppercased())
+        }
         switch state(at: date) {
         case .scheduled: return ("DAY 1", weekday("EEE", locale: locale))
         case .final(.win): return ("WON", margin)
@@ -327,6 +361,7 @@ extension CompetitionWidgetSnapshot.Match {
         timeZone: TimeZone = .current
     ) -> String {
         let state = state(at: date)
+        if let label = groupAccessibilityLabel(at: date, redacted: redacted, locale: locale) { return label }
         guard !redacted else {
             return "HealthComp, \(status(at: date, compact: true, locale: locale))."
         }
@@ -366,6 +401,45 @@ extension CompetitionWidgetSnapshot.Match {
                 opponentPoints: points(opponentDayPoints, index)
             )
         }
+    }
+}
+
+// MARK: Group copy
+
+extension CompetitionWidgetSnapshot.Group {
+    /// "2ND", in English as the rest of the copy is.
+    func placeText(_ place: Int) -> String {
+        let formatter = NumberFormatter()
+        formatter.locale = Locale(identifier: "en_US")
+        formatter.numberStyle = .ordinal
+        return formatter.string(from: place as NSNumber) ?? String(place)
+    }
+}
+
+extension CompetitionWidgetSnapshot.Match {
+    /// "Four-Way · Day 4"; nil for a duel.
+    func groupHeader(at date: Date, locale: Locale = .current) -> String? {
+        group.map { "\($0.title) · \(status(at: date, compact: true, locale: locale))" }
+    }
+
+    /// "2nd" in a free-for-all; nil in doubles and duels.
+    var groupPlaceText: String? {
+        guard let group, !group.isDoubles, let place = group.yourPlace else { return nil }
+        return group.placeText(place)
+    }
+
+    /// The widget's one label for a group match.
+    func groupAccessibilityLabel(at date: Date, redacted: Bool, locale: Locale = .current) -> String? {
+        guard let group, !redacted else { return nil }
+        let header = "\(group.title), \(status(at: date, locale: locale))."
+        if group.isDoubles {
+            let teams = group.rows.map {
+                "\($0.isYou ? "Your team" : $0.name) \(competitionPointsAccessibilityText($0.points, locale: locale))."
+            }
+            return ([header] + teams + [group.lead.map { $0 + "." }].compactMap { $0 }).joined(separator: " ")
+        }
+        let place = groupPlaceText.map { "You're \($0)." }
+        return [header, place, group.lead.map { $0 + "." }].compactMap { $0 }.joined(separator: " ")
     }
 }
 
@@ -617,6 +691,25 @@ extension CompetitionWidgetSnapshot {
             // Sam's result has left Home; only Alex is live.
             matches = [alex, match(5, "Sam", currentDay: 12, you: 1_840, them: 1_726, final: .win, leavesInDays: -1)]
         case "noSam": matches = [alex]
+        // Group matches: the legacy fields are you against the next place up.
+        case "groupFFA":
+            var four = match(11, "Sam", person: "group:four", currentDay: 4, you: 1_664, them: 1_712,
+                             youDays: [421, 437, 398, 408], themDays: [448, 402, 451, 411], updated: false)
+            four.group = Group(title: "Four-Way", isDoubles: false, rows: [
+                .init(place: 1, name: "Sam", points: 1_712, isYou: false),
+                .init(place: 2, name: "You", points: 1_664, isYou: true),
+                .init(place: 3, name: "Priya", points: 1_498, isYou: false),
+                .init(place: 4, name: "Leo", points: 1_203, isYou: false),
+            ], lead: "48 behind Sam")
+            matches = [four]
+        case "groupDoubles":
+            var doubles = match(12, "Sam + Leo", person: "group:doubles", currentDay: 4, you: 3_162, them: 2_915,
+                                youDays: [801, 802, 800, 759], themDays: [758, 744, 739, 674], updated: false)
+            doubles.group = Group(title: "Doubles", isDoubles: true, rows: [
+                .init(place: 1, name: "You + Priya", points: 3_162, isYou: true),
+                .init(place: 2, name: "Sam + Leo", points: 2_915, isYou: false),
+            ], lead: "Your team up 247")
+            matches = [doubles]
         // A digit gained, for the score roll.
         case "almostThousand":
             matches = [match(5, "Sam", currentDay: 5, you: 999, them: 980, youDays: week, themDays: theirs)]

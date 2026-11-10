@@ -2,6 +2,7 @@
 import CompetitionCore
 import ComposableArchitecture
 import SwiftUI
+import UIKit
 
 /// `-groupLab <setup>` in the `group-matches` Test Lab scenario.
 enum GroupMatchLabSetup: String, CaseIterable, Sendable {
@@ -14,6 +15,9 @@ enum GroupMatchLabSetup: String, CaseIterable, Sendable {
     case inviteFFA = "invite-ffa"
     case versusFFA = "versus-ffa"
     case versusDoubles = "versus-doubles"
+    case versusFFAPhotos = "versus-ffa-photos"
+    case versusDoublesPhotos = "versus-doubles-photos"
+    case versusBot = "versus-bot"
     case home
     case liveFFA = "live-ffa"
     case liveDoubles = "live-doubles"
@@ -24,6 +28,12 @@ enum GroupMatchLabSetup: String, CaseIterable, Sendable {
     case resultFFATied = "result-ffa-tied"
     case resultDoubles = "result-doubles"
     case history
+}
+
+extension GroupMatchLabSetup {
+    var isVersus: Bool {
+        [.versusFFA, .versusDoubles, .versusFFAPhotos, .versusDoublesPhotos, .versusBot].contains(self)
+    }
 }
 
 /// One match per mockup state. Now is Sun Aug 16, Day 4 of a week that began
@@ -122,14 +132,35 @@ enum GroupMatchFixtures {
                 ffaLineup, scores: tiedWeek, isFrozen: true
             )
         case .resultDoubles: doubles(10, won, scores: week, isFrozen: true)
-        case .formatPicker, .lineupFFA, .lineupDoubles, .botPicker,
-             .versusFFA, .versusDoubles, .home, .day, .history:
+        case .versusFFA, .versusFFAPhotos: match(11, .fourWay, .scheduled, ffaLineup)
+        case .versusDoubles, .versusDoublesPhotos: doubles(12, .scheduled)
+        case .versusBot: match(13, .fourWay, .scheduled, [.you, .sam, .erratic, .leo])
+        case .formatPicker, .lineupFFA, .lineupDoubles, .botPicker, .home, .day, .history:
             nil
         }
     }
 
-    static var versusFFA: GroupMatchPresentation { match(11, .fourWay, .scheduled, ffaLineup) }
-    static var versusDoubles: GroupMatchPresentation { doubles(12, .scheduled) }
+    /// Placeholder portraits for the photo intros: you, Sam and Priya; Leo
+    /// keeps his initial, as in the mockup.
+    static func photoData(_ setup: GroupMatchLabSetup) -> [UUID: Data] {
+        guard setup == .versusFFAPhotos || setup == .versusDoublesPhotos else { return [:] }
+        let tones: [(Player, UIColor)] = [(.you, .systemTeal), (.sam, .systemPurple), (.priya, .systemPink)]
+        return Dictionary(uniqueKeysWithValues: tones.map { player, tone in
+            let image = UIGraphicsImageRenderer(size: CGSize(width: 400, height: 400)).image { context in
+                tone.setFill()
+                context.fill(CGRect(x: 0, y: 0, width: 400, height: 400))
+                UIColor.white.withAlphaComponent(0.85).setFill()
+                context.cgContext.fillEllipse(in: CGRect(x: 130, y: 70, width: 140, height: 160))
+                context.cgContext.fillEllipse(in: CGRect(x: 60, y: 250, width: 280, height: 260))
+            }
+            return (player.profileID, image.jpegData(compressionQuality: 0.8)!)
+        })
+    }
+
+    /// Home's cards: every state once, in the order Home lists them.
+    static let homeSetups: [GroupMatchLabSetup] = [
+        .inviteFFA, .lobbyHost, .liveFFA, .liveDoubles, .resultFFAWon, .resultDoubles, .lobbyDeclined,
+    ]
 
     static func publication(
         revision: UInt64, setup: GroupMatchLabSetup, youLeft: Bool = false
@@ -141,7 +172,9 @@ enum GroupMatchFixtures {
                 awards: [],
                 issues: [],
                 hiddenTerminalCompetitionCount: 0,
-                groupMatches: [routed(setup, youLeft: youLeft)].compactMap { $0 }
+                groupMatches: setup == .home
+                    ? homeSetups.compactMap { routed($0) }
+                    : [routed(setup, youLeft: youLeft)].compactMap { $0 }
             ),
             evaluatedAt: now,
             timeZoneIdentifier: zone,
@@ -237,10 +270,14 @@ struct GroupMatchTestLabView: View {
         let first = GroupMatchFixtures.publication(revision: 1, setup: setup)
         let answer = GroupMatchFixtures.publication(revision: 2, setup: setup)
         let left = GroupMatchFixtures.publication(revision: 2, setup: setup, youLeft: true)
+        let photos = GroupMatchFixtures.photoData(setup)
         _store = State(initialValue: Store(
             initialState: MainTabFeature.State(
-                competition: CompetitionFeature.State(publication: first),
-                path: first.dashboard.groupMatches.map(\.id)
+                competition: CompetitionFeature.State(
+                    publication: first,
+                    ownProfile: AuthenticatedProfile(id: GroupMatchFixtures.Player.you.profileID, displayName: "You")
+                ),
+                path: setup == .home || setup.isVersus ? [] : first.dashboard.groupMatches.map(\.id)
             )
         ) {
             MainTabFeature()
@@ -256,6 +293,8 @@ struct GroupMatchTestLabView: View {
                 reinvite: { first },
                 waitUntil: { _ in },
                 stop: {},
+                loadProfilePhotos: { _ in throw CompetitionRemoteFailure.notFound },
+                cachedProfilePhotoData: { photos[$0] },
                 groupMatchCommand: { command in
                     if case .leave = command { return left }
                     return answer
@@ -281,19 +320,19 @@ struct GroupMatchTestLabView: View {
         case .lineupFFA: GroupMatchCreateView(step: .lineup(.fourWay), store: group, people: [GroupMatchFixtures.samProfile])
         case .lineupDoubles: GroupMatchCreateView(step: .lineup(.doubles), store: group, people: [GroupMatchFixtures.samProfile])
         case .botPicker: GroupMatchCreateView(step: .bots, store: group)
-        // In a ScrollView: the lab root's identifier otherwise replaces a bare stack's.
-        case .versusFFA: ScrollView { GroupMatchVersusIntro(match: GroupMatchFixtures.versusFFA) }
-        case .versusDoubles: ScrollView { GroupMatchVersusIntro(match: GroupMatchFixtures.versusDoubles) }
-        case .home:
-            ScrollView {
-                GroupMatchHomeCards(matches: [.liveFFA, .liveDoubles].compactMap(GroupMatchFixtures.routed))
-            }
         case .day:
             GroupMatchFixtures.routed(.liveFFA).map { match in
                 NavigationStack { GroupMatchDayView(match: match, ordinal: 3, store: group) }
             }
         case .history: ScrollView { GroupMatchRecord() }
-        case .lobbyHost, .lobbyDeclined, .inviteFFA, .liveFFA, .liveDoubles, .liveBot, .banter,
+        case .versusFFA, .versusDoubles, .versusFFAPhotos, .versusDoublesPhotos, .versusBot:
+            // Opened a beat after launch, so the photos are in when the intro decides.
+            MainTabView(store: store)
+                .task {
+                    try? await Task.sleep(for: .seconds(1))
+                    store.send(.pathChanged(store.competition.publication?.dashboard.groupMatches.map(\.id) ?? []))
+                }
+        case .home, .lobbyHost, .lobbyDeclined, .inviteFFA, .liveFFA, .liveDoubles, .liveBot, .banter,
              .resultFFAWon, .resultFFATied, .resultDoubles:
             MainTabView(store: store)
         }
