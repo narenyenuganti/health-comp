@@ -268,6 +268,7 @@ private struct MultiUserCompetitionSharingTestLabView: View {
     @State private var labNudges: [CompetitionID: CompetitionFeature.NudgeStatus] = [:]
     @State private var ownReactions: [CompetitionReactionKey: CompetitionReactionKind] = [:]
     @State private var recapPeriod: CompetitionRecapPeriod?
+    @State private var judgesNotificationQueued = false
     @State private var judgesPhotos = ProfilePhotoImages(ownID: MultiUserCompetitionTestLabFixtures.ownProfileID)
 
     /// Once per process, never per init: SwiftUI re-runs child inits
@@ -382,6 +383,12 @@ private struct MultiUserCompetitionSharingTestLabView: View {
                 .background(.regularMaterial)
             }
         }
+        .overlay(alignment: .bottom) {
+            if judgesNotificationQueued {
+                Text("Notification queued")
+                    .accessibilityIdentifier("judges.notification.queued")
+            }
+        }
         .accessibilityIdentifier("multiuser.sharing.root")
         .environment(\.profilePhotos, judgesPhotos)
         .task {
@@ -425,10 +432,13 @@ private struct MultiUserCompetitionSharingTestLabView: View {
             sender: sender
         ))
         // iOS owns the delay, so the alert fires even after the lab backgrounds.
-        try? await UNUserNotificationCenter.current().add(UNNotificationRequest(
-            identifier: request.identifier, content: request.content,
-            trigger: UNTimeIntervalNotificationTrigger(timeInterval: 12, repeats: false)
-        ))
+        do {
+            try await UNUserNotificationCenter.current().add(UNNotificationRequest(
+                identifier: request.identifier, content: request.content,
+                trigger: UNTimeIntervalNotificationTrigger(timeInterval: 12, repeats: false)
+            ))
+            judgesNotificationQueued = true
+        } catch { assertionFailure("Could not queue the lab notification: \(error)") }
     }
 
     private var homeStack: Binding<[CompetitionHomeRoute]> {

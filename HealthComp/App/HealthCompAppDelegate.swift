@@ -31,9 +31,6 @@ final class HealthCompAppDelegate: NSObject,
         }
         if ProcessInfo.processInfo.arguments.contains("--judges-notifications") {
             UNUserNotificationCenter.current().setNotificationCategories(CompetitionReactionAlert.categories)
-            Task {
-                _ = try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])
-            }
         }
         guard case .disabled = CompetitionTestLabLaunchParser.decision(
             arguments: ProcessInfo.processInfo.arguments
