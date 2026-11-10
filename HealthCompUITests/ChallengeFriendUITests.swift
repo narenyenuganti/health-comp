@@ -109,8 +109,9 @@ final class ChallengeFriendUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Friends"].waitForExistence(timeout: 5))
         XCTAssertFalse(element("competition.create.card").exists)
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
-        app.typeText("marc")
-        XCTAssertTrue(app.buttons["friends.result.d1000000-0000-4000-8000-0000000000c1"].waitForExistence(timeout: 5))
+        let search = app.textFields["friends.search.field"]
+        type("marc", into: search)
+        expect(app.buttons["friends.result.d1000000-0000-4000-8000-0000000000c1"], field: search)
     }
 
     func testPasteTheirLinkStillFindsThemFromItsRow() {
@@ -122,10 +123,11 @@ final class ChallengeFriendUITests: XCTestCase {
         XCTAssertTrue(field.waitForExistence(timeout: 3))
         XCTAssertFalse(element("competition.create.friends").exists, "The link replaces the groups")
         field.tap()
+        type("healthcomp://challenge/SamSamSamSamSamSamSam1", into: field)
         // Return runs Find.
-        field.typeText("healthcomp://challenge/SamSamSamSamSamSamSam1\n")
+        field.typeText("\n")
         let name = app.staticTexts["competition.create.recipient-name"]
-        XCTAssertTrue(name.waitForExistence(timeout: 5))
+        expect(name, field: field)
         XCTAssertEqual(name.label, "Challenge Sam Okafor")
         let create = app.buttons["competition.create.button"]
         scrollTo(create)
@@ -398,6 +400,40 @@ final class ChallengeFriendUITests: XCTestCase {
                 .press(forDuration: 0.05, thenDragTo: window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4)))
         }
         XCTAssertTrue(target.isHittable, "\(target)")
+    }
+
+    /// A slow runner can drop keys: type, read the field back, and retype
+    /// once from empty if it doesn't hold the text.
+    private func type(_ text: String, into field: XCUIElement, file: StaticString = #filePath, line: UInt = #line) {
+        XCTAssertTrue(field.waitForExistence(timeout: 5), file: file, line: line)
+        for attempt in 1...2 where fieldText(field) != text {
+            if attempt > 1 {
+                let held = fieldText(field)
+                XCTContext.runActivity(named: "Retyping \"\(text)\": the field read \"\(held)\"") { _ in }
+                field.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: held.count))
+            }
+            if !app.keyboards.firstMatch.exists { field.tap() }
+            field.typeText(text)
+            _ = waitUntil(3) { self.fieldText(field) == text }
+        }
+        XCTAssertEqual(fieldText(field), text, "The field's text", file: file, line: line)
+    }
+
+    /// What was typed; empty, not the placeholder, when there's nothing.
+    private func fieldText(_ field: XCUIElement) -> String {
+        guard field.exists else { return "<no field>" }
+        let value = field.value as? String ?? ""
+        return value == field.placeholderValue ? "" : value
+    }
+
+    /// Waits for `target`, and on failure says what the field held and
+    /// what was on screen.
+    private func expect(_ target: XCUIElement, field: XCUIElement, file: StaticString = #filePath, line: UInt = #line) {
+        guard !target.waitForExistence(timeout: 5) else { return }
+        shot("missing-result")
+        let texts = app.staticTexts.allElementsBoundByIndex.map(\.label)
+        let buttons = app.buttons.allElementsBoundByIndex.map { $0.identifier.isEmpty ? $0.label : $0.identifier }
+        XCTFail("Not found: \(target). Field: \"\(fieldText(field))\". Texts: \(texts). Buttons: \(buttons)", file: file, line: line)
     }
 
     private func waitUntil(_ timeout: TimeInterval, _ condition: () -> Bool) -> Bool {
