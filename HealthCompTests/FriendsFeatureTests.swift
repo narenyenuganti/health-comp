@@ -84,7 +84,10 @@ final class FriendsFeatureTests: XCTestCase {
 
     func testUnderThreeCharactersSearchesNothing() async {
         let store = makeStore()
-        await store.send(.queryChanged("ma")) { $0.query = "ma" }
+        await store.send(.queryChanged("ma")) {
+            $0.query = "ma"
+            $0.searchGeneration = 1
+        }
     }
 
     func testSearchWaitsForTheDebounceAndDropsStaleAnswers() async {
@@ -99,15 +102,19 @@ final class FriendsFeatureTests: XCTestCase {
         }
         await store.send(.queryChanged("mar")) {
             $0.query = "mar"
+            $0.searchGeneration = 1
             $0.isSearching = true
         }
         await clock.advance(by: .milliseconds(200))
-        await store.send(.queryChanged("mara")) { $0.query = "mara" }
+        await store.send(.queryChanged("mara")) {
+            $0.query = "mara"
+            $0.searchGeneration = 2
+        }
         await clock.advance(by: Feature.searchDebounce)
         // The wait for "mar" ends after "mara" was typed, so it's never sent.
-        await store.receive(.searchDebounced("mar"))
-        await store.receive(.searchDebounced("mara"))
-        await store.receive(.searchFinished("mara", .success([mara]))) {
+        await store.receive(.searchDebounced("mar", generation: 1))
+        await store.receive(.searchDebounced("mara", generation: 2))
+        await store.receive(.searchFinished("mara", generation: 2, .success([mara]))) {
             $0.isSearching = false
             $0.results = [mara]
             $0.people = [mara.id: mara]
@@ -117,11 +124,13 @@ final class FriendsFeatureTests: XCTestCase {
         // An answer for what's no longer typed changes nothing.
         await store.send(.queryChanged("mat")) {
             $0.query = "mat"
+            $0.searchGeneration = 3
             $0.isSearching = true
         }
-        await store.send(.searchFinished("mara", .success([])))
+        await store.send(.searchFinished("mara", generation: 2, .success([])))
         await store.send(.queryChanged("ma")) {
             $0.query = "ma"
+            $0.searchGeneration = 4
             $0.isSearching = false
             $0.results = nil
         }
@@ -129,13 +138,46 @@ final class FriendsFeatureTests: XCTestCase {
 
     func testAStaleDebounceSearchesNothing() async {
         // The test client fails the test if search is called.
-        let store = makeStore(Feature.State(query: "mara", isSearching: true))
-        await store.send(.searchDebounced("mar"))
+        let store = makeStore(Feature.State(query: "mara", searchGeneration: 2, isSearching: true))
+        await store.send(.searchDebounced("mar", generation: 1))
         await store.send(.queryChanged("ma")) {
             $0.query = "ma"
+            $0.searchGeneration = 3
             $0.isSearching = false
         }
-        await store.send(.searchDebounced("mar"))
+        await store.send(.searchDebounced("mar", generation: 1))
+    }
+
+    /// mar → marc → mar inside one wait: only the last edit searches, once,
+    /// and an answer for the first visit to "mar" is never applied.
+    func testReturningToEarlierTextSearchesOnceForTheLatestEdit() async {
+        let clock = TestClock()
+        let searched = LockIsolated<[String]>([])
+        let mara = person(1, "Mara")
+        let store = makeStore(clock: clock) { client in
+            client.searchPeople = { query in
+                searched.withValue { $0.append(query) }
+                return [mara]
+            }
+        }
+        store.exhaustivity = .off
+        await store.send(.queryChanged("mar"))
+        await clock.advance(by: .milliseconds(100))
+        await store.send(.queryChanged("marc"))
+        await clock.advance(by: .milliseconds(100))
+        await store.send(.queryChanged("mar"))
+        XCTAssertEqual(store.state.searchGeneration, 3)
+        await clock.advance(by: Feature.searchDebounce)
+        await store.skipReceivedActions()
+        XCTAssertEqual(searched.value, ["mar"])
+        XCTAssertFalse(store.state.isSearching)
+        XCTAssertEqual(store.state.results, [mara])
+    }
+
+    func testAnAnswerFromAnEarlierEditOfTheSameTextChangesNothing() async {
+        let store = makeStore(Feature.State(query: "mar", searchGeneration: 3, isSearching: true))
+        await store.send(.searchFinished("mar", generation: 1, .success([person(1, "Mara")])))
+        await store.send(.searchFinished("mar", generation: 1, .failure(.searchRateLimited)))
     }
 
     /// CI saw this: the field read "marc", the server only got "mar", and
@@ -175,29 +217,32 @@ final class FriendsFeatureTests: XCTestCase {
         }
         await store.send(.queryChanged("abc")) {
             $0.query = "abc"
+            $0.searchGeneration = 1
             $0.isSearching = true
         }
-        await store.receive(.searchDebounced("abc"))
-        await store.receive(.searchFinished("abc", .failure(.searchRateLimited))) {
+        await store.receive(.searchDebounced("abc", generation: 1))
+        await store.receive(.searchFinished("abc", generation: 1, .failure(.searchRateLimited))) {
             $0.isSearching = false
             $0.searchFailure = .rateLimited
         }
         await store.send(.queryChanged("abcd")) {
             $0.query = "abcd"
+            $0.searchGeneration = 2
             $0.isSearching = true
             $0.searchFailure = nil
         }
-        await store.receive(.searchDebounced("abcd"))
-        await store.receive(.searchFinished("abcd", .failure(.invalidQuery))) {
+        await store.receive(.searchDebounced("abcd", generation: 2))
+        await store.receive(.searchFinished("abcd", generation: 2, .failure(.invalidQuery))) {
             $0.isSearching = false
             $0.results = []
         }
         await store.send(.queryChanged("abcde")) {
             $0.query = "abcde"
+            $0.searchGeneration = 3
             $0.isSearching = true
         }
-        await store.receive(.searchDebounced("abcde"))
-        await store.receive(.searchFinished("abcde", .failure(.retryableTransport))) {
+        await store.receive(.searchDebounced("abcde", generation: 3))
+        await store.receive(.searchFinished("abcde", generation: 3, .failure(.retryableTransport))) {
             $0.isSearching = false
             $0.results = nil
             $0.searchFailure = .connection
@@ -433,6 +478,7 @@ final class FriendsFeatureTests: XCTestCase {
         }
         await store.send(.queryChanged("mar")) {
             $0.query = "mar"
+            $0.searchGeneration = 1
             $0.isSearching = true
         }
         await store.send(.changeTapped(marcus, .add)) { $0.inFlight = [marcus.id] }
