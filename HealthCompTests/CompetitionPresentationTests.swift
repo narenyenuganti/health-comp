@@ -2155,6 +2155,27 @@ final class CompetitionPresentationTests: XCTestCase {
         XCTAssertEqual(line([finished(1, .win), finished(2, .win), finished(3, .tie)]), "You lead 2–0–1")
     }
 
+    func testChallengeSheetDimsAFriendYouArePlayingOrHaveChallenged() {
+        let at = Date(timeIntervalSince1970: 1_793_000_000)
+        func blocker(_ lifecycle: LocalCompetitionLifecyclePresentation, identity: String = "dev") -> String? {
+            friendChallengeBlocker(
+                identity: "dev",
+                competitions: [homePresentation(id: 1, identity: identity, lifecycle: lifecycle, evaluatedAt: at)]
+            )
+        }
+        XCTAssertNil(friendChallengeBlocker(identity: "dev", competitions: []))
+        XCTAssertEqual(blocker(.pending(direction: .outgoing, createdAt: at, expiresAt: nil)), "Challenge pending")
+        XCTAssertEqual(blocker(.pending(direction: .incoming, createdAt: at, expiresAt: nil)), "Challenge pending")
+        XCTAssertEqual(blocker(.scheduled), "In a match with you")
+        XCTAssertEqual(blocker(.active(dayOrdinal: 3)), "In a match with you")
+        XCTAssertEqual(blocker(.endsToday), "In a match with you")
+        // As the server: tallying and finished weeks don't stop a new challenge.
+        XCTAssertNil(blocker(.tallying(startedAt: at)))
+        XCTAssertNil(blocker(.completed(outcome: .win, basis: .stableAcrossPostBoundaryReads, completedAt: at)))
+        XCTAssertNil(blocker(.expired(at: at, direction: .outgoing)))
+        XCTAssertNil(blocker(.scheduled, identity: "other"), "Only their own matches count")
+    }
+
     // MARK: Home and History
 
     func testHomeLayoutSingleLiveMatchIsTheHero() {

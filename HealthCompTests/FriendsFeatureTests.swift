@@ -292,10 +292,146 @@ final class FriendsFeatureTests: XCTestCase {
         }
     }
 
+    func testRemoveFriendEndsTheFriendship() async {
+        let dev = person(1, "Dev", .friend)
+        var devNone = dev
+        devNone.relationship = .none
+        let removed = LockIsolated<[UUID]>([])
+        let store = makeStore(.init(list: FriendsList(friends: [dev]))) { client in
+            client.removeFriend = { id in
+                removed.withValue { $0.append(id) }
+                return .none
+            }
+            client.listFriends = { FriendsList() }
+        }
+        await store.send(.changeTapped(dev, .remove)) { $0.inFlight = [dev.id] }
+        await store.receive(.changeFinished(dev, .success(.none))) {
+            $0.inFlight = []
+            $0.people[dev.id] = devNone
+            $0.list = FriendsList()
+        }
+        await store.receive(.requested)
+        await store.receive(.loaded(FriendsList()))
+        XCTAssertEqual(removed.value, [dev.id])
+    }
+
+    func testBlockByProfileDropsThemFromTheListsAndSearch() async {
+        let dev = person(1, "Dev", .friend)
+        var devNone = dev
+        devNone.relationship = .none
+        let blocked = LockIsolated<[UUID]>([])
+        var state = Feature.State(list: FriendsList(friends: [dev]), results: [dev])
+        state.people = [dev.id: dev]
+        let store = makeStore(state) { client in
+            client.blockProfile = { id in
+                blocked.withValue { $0.append(id) }
+                return AuthenticatedProfile(id: id, displayName: "Dev")
+            }
+            client.listFriends = { FriendsList() }
+        }
+        await store.send(.blockTapped(dev)) { $0.inFlight = [dev.id] }
+        await store.receive(.blockFinished(dev, .success(AuthenticatedProfile(id: dev.id, displayName: "Dev")))) {
+            $0.inFlight = []
+            $0.people[dev.id] = devNone
+            $0.list = FriendsList()
+            $0.results = []
+        }
+        await store.receive(.requested)
+        await store.receive(.loaded(FriendsList()))
+        XCTAssertEqual(blocked.value, [dev.id])
+    }
+
+    func testAFailedBlockKeepsThemAndSaysWhy() async {
+        let dev = person(1, "Dev", .friend)
+        for (error, expected) in [
+            (CompetitionRemoteFailure.retryableTransport, Feature.ChangeFailure.connection),
+            (.recipientUnavailable, .unavailable),
+        ] {
+            let store = makeStore(.init(list: FriendsList(friends: [dev]))) { client in
+                client.blockProfile = { _ in throw error }
+                client.listFriends = { FriendsList(friends: [dev]) }
+            }
+            await store.send(.blockTapped(dev)) { $0.inFlight = [dev.id] }
+            await store.receive(.blockFinished(dev, .failure(error))) {
+                $0.inFlight = []
+                $0.failure = Feature.PersonFailure(id: dev.id, failure: expected)
+            }
+            await store.receive(.requested)
+            await store.receive(.loaded(FriendsList(friends: [dev]))) {
+                $0.people = [dev.id: dev]
+            }
+        }
+    }
+
+    func testReportOnlyReportsAndIsRemembered() async {
+        let dev = person(1, "Dev", .friend)
+        let calls = LockIsolated<[String]>([])
+        let store = makeStore(.init(list: FriendsList(friends: [dev]))) { client in
+            client.reportProfile = { _ in calls.withValue { $0.append("report") } }
+        }
+        await store.send(.reportTapped(dev, andBlock: false)) { $0.inFlight = [dev.id] }
+        await store.receive(.reportFinished(dev, andBlock: false, failure: nil)) {
+            $0.inFlight = []
+            $0.reported = [dev.id]
+        }
+        XCTAssertEqual(calls.value, ["report"])
+    }
+
+    func testReportAndBlockReportsFirstThenBlocks() async {
+        let dev = person(1, "Dev", .friend)
+        var devNone = dev
+        devNone.relationship = .none
+        let profile = AuthenticatedProfile(id: dev.id, displayName: "Dev")
+        let calls = LockIsolated<[String]>([])
+        let store = makeStore(.init(list: FriendsList(friends: [dev]))) { client in
+            client.reportProfile = { _ in calls.withValue { $0.append("report") } }
+            client.blockProfile = { id in
+                calls.withValue { $0.append("block") }
+                return AuthenticatedProfile(id: id, displayName: "Dev")
+            }
+            client.listFriends = { FriendsList() }
+        }
+        await store.send(.reportTapped(dev, andBlock: true)) { $0.inFlight = [dev.id] }
+        await store.receive(.reportFinished(dev, andBlock: true, failure: nil)) {
+            $0.inFlight = []
+            $0.reported = [dev.id]
+        }
+        await store.receive(.blockTapped(dev)) { $0.inFlight = [dev.id] }
+        await store.receive(.blockFinished(dev, .success(profile))) {
+            $0.inFlight = []
+            $0.people[dev.id] = devNone
+            $0.list = FriendsList()
+        }
+        await store.receive(.requested)
+        await store.receive(.loaded(FriendsList()))
+        XCTAssertEqual(calls.value, ["report", "block"])
+    }
+
+    func testAFailedReportDoesNotBlock() async {
+        let dev = person(1, "Dev", .friend)
+        let store = makeStore(.init(list: FriendsList(friends: [dev]))) { client in
+            client.reportProfile = { _ in throw CompetitionRemoteFailure.retryableTransport }
+            // blockProfile stays unimplemented: a call would fail the test.
+        }
+        await store.send(.reportTapped(dev, andBlock: true)) { $0.inFlight = [dev.id] }
+        await store.receive(.reportFinished(dev, andBlock: true, failure: .retryableTransport)) {
+            $0.inFlight = []
+            $0.failure = Feature.PersonFailure(id: dev.id, failure: .connection)
+        }
+    }
+
+    func testSearchPeopleFromTheChallengeSheetFocusesTheFieldOnce() async {
+        let store = makeStore()
+        await store.send(.searchFocusRequested(true)) { $0.focusesSearch = true }
+        await store.send(.searchFocusRequested(false)) { $0.focusesSearch = false }
+    }
+
     func testALateAnswerAfterSignOutIsIgnored() async {
         let marcus = person(1, "Marcus")
         let store = makeStore()
         await store.send(.changeFinished(marcus, .success(.requested)))
+        await store.send(.blockFinished(marcus, .success(AuthenticatedProfile(id: marcus.id, displayName: "Marcus"))))
+        await store.send(.reportFinished(marcus, andBlock: true, failure: nil))
     }
 
     func testPhotoOwnersAreYouTheListsAndTheResultsCappedForTheServer() {

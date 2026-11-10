@@ -1349,6 +1349,48 @@ final class SupabaseCompetitionRemoteAPITests: XCTestCase {
         try assertRPC(requests[0], name: "remove_friend", body: ["profile_id": friendID])
     }
 
+    func testBlockProfileAnswersTheirBlockedListRow() async throws {
+        let id = UUID(uuidString: friendID)!
+        let other = "12000000-0000-4000-8000-0000000000ff"
+        let harness = CompetitionTransportHarness(stubs: [
+            .response(200, try jsonData(["id": friendID, "display_name": "Dev Patel"])),
+            // Someone else's row, extra keys, a missing name, the wrong shape.
+            .response(200, try jsonData(["id": other, "display_name": "Dev Patel"])),
+            .response(200, try jsonData(["id": friendID, "display_name": "Dev Patel", "username": "devp"])),
+            .response(200, try jsonData(["id": friendID])),
+            .response(200, try jsonData(["relationship": "none"])),
+        ])
+        let api = makeAPI(harness)
+        let blocked = try await api.blockProfile(id)
+        XCTAssertEqual(blocked, AuthenticatedProfile(id: id, displayName: "Dev Patel"))
+        for _ in 0..<4 {
+            let failure = await remoteFailure { _ = try await api.blockProfile(id) }
+            XCTAssertEqual(failure, .serverContractMismatch)
+        }
+        let requests = await harness.recordedRequests()
+        try assertRPC(requests[0], name: "block_profile", body: ["profile_id": friendID])
+    }
+
+    func testReportProfileAnswersReported() async throws {
+        let id = UUID(uuidString: friendID)!
+        let harness = CompetitionTransportHarness(stubs: [
+            .response(200, try jsonData(["reported": true])),
+            .response(200, try jsonData(["reported": false])),
+            // 1 is not JSON true.
+            .response(200, try jsonData(["reported": 1])),
+            .response(200, try jsonData(["reported": true, "extra": 1])),
+            .response(200, try jsonData([:])),
+        ])
+        let api = makeAPI(harness)
+        try await api.reportProfile(id)
+        for _ in 0..<4 {
+            let failure = await remoteFailure { try await api.reportProfile(id) }
+            XCTAssertEqual(failure, .serverContractMismatch)
+        }
+        let requests = await harness.recordedRequests()
+        try assertRPC(requests[0], name: "report_profile", body: ["profile_id": friendID])
+    }
+
     func testFriendErrorsMapToTypedFailures() async throws {
         let id = UUID(uuidString: friendID)!
         typealias Call = @Sendable (CompetitionRemoteAPI) async throws -> Void
@@ -1356,6 +1398,8 @@ final class SupabaseCompetitionRemoteAPITests: XCTestCase {
         let add: Call = { _ = try await $0.sendFriendRequest(id) }
         let respond: Call = { _ = try await $0.respondToFriendRequest(id, true) }
         let remove: Call = { _ = try await $0.removeFriend(id) }
+        let block: Call = { _ = try await $0.blockProfile(id) }
+        let report: Call = { try await $0.reportProfile(id) }
         let cases: [(String, CompetitionRemoteFailure, Call)] = [
             ("invalid_query", .invalidQuery, search),
             ("search_rate_limited", .searchRateLimited, search),
@@ -1366,6 +1410,10 @@ final class SupabaseCompetitionRemoteAPITests: XCTestCase {
             ("invalid_friend_request_response", .invalidFriendRequestResponse, respond),
             ("request_unavailable", .requestUnavailable, respond),
             ("invalid_profile_id", .invalidProfileID, remove),
+            ("invalid_profile_id", .invalidProfileID, block),
+            ("recipient_unavailable", .recipientUnavailable, block),
+            ("invalid_profile_id", .invalidProfileID, report),
+            ("recipient_unavailable", .recipientUnavailable, report),
         ]
         for (code, expected, call) in cases {
             let harness = CompetitionTransportHarness(stubs: [.response(400, try errorData(code: code))])

@@ -203,7 +203,7 @@ final class RemoteCompetitionFeatureTests: XCTestCase {
     }
 
     @MainActor
-    func testChallengeAgainRefusedAfterALinkResetShowsTheCollapsedCopy() async throws {
+    func testChallengeAgainRefusedSaysTheyCantBeChallengedNotThatNoAccountHasALink() async throws {
         let key = UUID()
         let closed = CompetitionID(UUID())
         let recorder = InviteCreationRecorder(results: [.failure(.recipientUnavailable)])
@@ -223,17 +223,78 @@ final class RemoteCompetitionFeatureTests: XCTestCase {
             $0.inviteCreations[.sheet] = Creation(recipient: .profile(Self.recipient.id), idempotencyKey: key, status: .creating)
         }
         // The server refuses an id learned through a link that was reset.
+        // No link is on screen, so the sheet keeps them and says so, giving
+        // no reason.
         await store.receive(.createInviteResponse(.sheet, idempotencyKey: key, .failure(.recipientUnavailable))) {
-            $0.inviteCreations[.sheet] = nil
-            $0.inviteRecipient = nil
-            $0.inviteRecipientStatus = .notFound
+            $0.inviteCreations[.sheet]?.status = .failed(.recipientGone)
         }
         await store.finish()
         XCTAssertEqual(recorder.requests.first?.recipient, .profile(Self.recipient.id))
-        XCTAssertEqual(
-            competitionRecipientErrorText(store.state.inviteRecipientStatus),
-            "No account has this link. Check it and try again."
-        )
+        XCTAssertEqual(store.state.challengeSheetStatus, .failed(.recipientGone))
+        XCTAssertNil(competitionRecipientErrorText(store.state.inviteRecipientStatus))
+    }
+
+    @MainActor
+    func testAFriendChosenFromTheSheetAndRefusedStaysChosen() async throws {
+        let friend = FriendPerson(id: Self.recipient.id, displayName: "Maya", username: "maya", relationship: .friend)
+        for failure in [CompetitionRemoteFailure.recipientUnavailable, .forbidden] {
+            let key = UUID()
+            let recorder = InviteCreationRecorder(results: [.failure(failure)])
+            let store = TestStore(initialState: CompetitionFeature.State()) {
+                CompetitionFeature()
+            } withDependencies: {
+                $0.competitionClient = recorder.client
+                $0.competitionInviteLinkClient = .fixture(host: Self.host, timeZoneIdentifier: "UTC", idempotencyKeys: [key])
+            }
+            let chosen = CompetitionFeature.InviteRecipient(
+                AuthenticatedProfile(id: friend.id, displayName: friend.displayName)
+            )
+            await store.send(.challengeRecipientChosen(chosen)) {
+                $0.inviteRecipient = chosen
+                $0.inviteRecipientCode = friend.id.uuidString.lowercased()
+            }
+            await store.send(.createInviteTapped) {
+                $0.inviteCreations[.sheet] = Creation(recipient: .profile(friend.id), idempotencyKey: key, status: .creating)
+            }
+            await store.receive(.createInviteResponse(.sheet, idempotencyKey: key, .failure(failure))) {
+                $0.inviteCreations[.sheet]?.status = .failed(.recipientGone)
+            }
+            await store.finish()
+            XCTAssertEqual(recorder.requests.first?.recipientProfileID, friend.id)
+            XCTAssertNil(recorder.requests.first?.rematchParentID)
+            XCTAssertEqual(store.state.challengeSheetStatus, .failed(.recipientGone))
+        }
+    }
+
+    @MainActor
+    func testBlockingSomeoneFromTheirPageListsThemAsBlockedAndRefreshesMatches() async {
+        let dev = FriendPerson(id: Self.recipient.id, displayName: "Dev", username: "devp", relationship: .friend)
+        var devNone = dev
+        devNone.relationship = .none
+        let profile = AuthenticatedProfile(id: dev.id, displayName: "Dev")
+        let earlier = AuthenticatedProfile(id: UUID(), displayName: "Sam")
+        let recorder = InviteCreationRecorder(results: [])
+        var client = recorder.client
+        client.blockProfile = { _ in profile }
+        client.listFriends = { FriendsList() }
+        var initial = CompetitionFeature.State()
+        initial.blockedPeople = [earlier]
+        initial.friends.list = FriendsList(friends: [dev])
+        let store = TestStore(initialState: initial) { CompetitionFeature() } withDependencies: {
+            $0.competitionClient = client
+        }
+        await store.send(.friends(.blockTapped(dev))) { $0.friends.inFlight = [dev.id] }
+        await store.receive(.friends(.blockFinished(dev, .success(profile)))) {
+            $0.friends.inFlight = []
+            $0.friends.people = [dev.id: devNone]
+            $0.friends.list = FriendsList()
+            $0.blockedPeople = [profile, earlier]
+        }
+        await store.receive(.friends(.requested))
+        await store.receive(.friends(.loaded(FriendsList())))
+        await store.finish()
+        // Their pending challenge to you, or yours to them, was cancelled.
+        XCTAssertEqual(recorder.reconcileTriggers, [.pullToRefresh])
     }
 
     @MainActor
@@ -549,7 +610,7 @@ final class RemoteCompetitionFeatureTests: XCTestCase {
     }
 
     @MainActor
-    func testSheetAccountGoneClearsPersonWithNotFound() async {
+    func testSheetAccountGoneKeepsAKnownPersonAndSaysTheyCantBeChallenged() async {
         let key = UUID()
         let recorder = InviteCreationRecorder(results: [.failure(.recipientUnavailable)])
         let store = TestStore(initialState: CompetitionFeature.State(inviteRecipient: .init(Self.recipient))) {
@@ -562,9 +623,7 @@ final class RemoteCompetitionFeatureTests: XCTestCase {
             $0.inviteCreations[.sheet] = Creation(recipient: .profile(Self.recipient.id), idempotencyKey: key, status: .creating)
         }
         await store.receive(.createInviteResponse(.sheet, idempotencyKey: key, .failure(.recipientUnavailable))) {
-            $0.inviteCreations = [:]
-            $0.inviteRecipient = nil
-            $0.inviteRecipientStatus = .notFound
+            $0.inviteCreations[.sheet]?.status = .failed(.recipientGone)
         }
         await store.finish()
     }

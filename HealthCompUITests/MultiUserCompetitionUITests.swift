@@ -17,6 +17,7 @@ final class MultiUserCompetitionUITests: XCTestCase {
         launch(.sharing)
         defer { app.terminate() }
         openChallengeDrawer()
+        showLinkEntry()
         let create = app.buttons["competition.create.button"]
         XCTAssertTrue(create.waitForExistence(timeout: 3))
         XCTAssertFalse(create.isEnabled)
@@ -50,6 +51,7 @@ final class MultiUserCompetitionUITests: XCTestCase {
 
         openChallengeDrawer()
         XCTAssertFalse(app.staticTexts["competition.create.recipient-name"].exists)
+        showLinkEntry()
         XCTAssertTrue(app.buttons["competition.create.find-recipient"].waitForExistence(timeout: 3))
         let field = recipientCodeField
         XCTAssertTrue(field.isEnabled)
@@ -67,6 +69,7 @@ final class MultiUserCompetitionUITests: XCTestCase {
         // Return runs Find; Find is never tapped.
         func submit(_ code: String) {
             openChallengeDrawer()
+            showLinkEntry()
             let field = recipientCodeField
             XCTAssertTrue(field.waitForExistence(timeout: 3))
             field.tap()
@@ -196,6 +199,7 @@ final class MultiUserCompetitionUITests: XCTestCase {
         ).firstMatch.exists)
 
         openChallengeDrawer()
+        showLinkEntry()
         let timeZone = app.staticTexts["competition.create.time-zone"]
         XCTAssertTrue(timeZone.waitForExistence(timeout: 3))
         XCTAssertEqual(
@@ -1152,7 +1156,7 @@ final class MultiUserCompetitionUITests: XCTestCase {
         XCTAssertEqual(unblock.identifier, "account.blocked.unblock")
         XCTAssertTrue(app.staticTexts["BLOCKED"].exists)
         XCTAssertTrue(app.staticTexts["Alex"].exists)
-        let footer = app.staticTexts["Blocked people can’t challenge you. They aren’t notified."]
+        let footer = app.staticTexts["Blocked people can’t challenge you or find you in search. They aren’t notified."]
         scrollToElement(footer)
         XCTAssertTrue(footer.exists)
         attachScreenshot("account-blocked")
@@ -1840,7 +1844,16 @@ final class MultiUserCompetitionUITests: XCTestCase {
         }
     }
 
+    /// The link field sits behind Paste Their Challenge Link.
+    private func showLinkEntry() {
+        let paste = app.buttons["competition.create.paste-link"]
+        XCTAssertTrue(paste.waitForExistence(timeout: 3))
+        paste.tap()
+        XCTAssertTrue(app.buttons["competition.create.find-recipient"].waitForExistence(timeout: 3))
+    }
+
     private func chooseRecipient() {
+        if !app.buttons["competition.create.find-recipient"].exists { showLinkEntry() }
         let input = recipientCodeField
         scrollToElement(input)
         input.tap()
