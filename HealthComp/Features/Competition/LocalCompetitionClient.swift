@@ -363,8 +363,13 @@ extension LocalCompetitionDashboard {
             }
             return competitionInviteBoundary(competition.lifecycle)
         }
-        return (duels + groupMatches.compactMap { competitionInviteBoundary($0.lifecycle) })
-            .filter { $0 > now }.min()
+        let groups = groupMatches.compactMap { match -> Date? in
+            if case let .completed(_, _, completedAt) = match.lifecycle, let schedule = match.schedule {
+                return competitionResultLeavesHome(schedule: schedule, completedAt: completedAt)?.at
+            }
+            return competitionInviteBoundary(match.lifecycle)
+        }
+        return (duels + groups).filter { $0 > now }.min()
     }
 }
 

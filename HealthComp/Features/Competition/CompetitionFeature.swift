@@ -1071,7 +1071,8 @@ struct CompetitionFeature {
                         .cancel(id: CancelID.challengeLink),
                         .cancel(id: CancelID.challengeLinkReset),
                         .cancel(id: CancelID.blockedPeople),
-                        .cancel(id: CancelID.nudge)
+                        .cancel(id: CancelID.nudge),
+                        .cancel(id: GroupMatchFeature.CancelID.commands)
                     ),
                     .run { _ in await competitionClient.stop() }
                 )

@@ -51,6 +51,9 @@ struct GroupMatchFeature {
 
     @Dependency(\.competitionClient) var competitionClient
 
+    /// `CompetitionFeature.stop` cancels these, so a sign-out drops late answers.
+    enum CancelID { case commands }
+
     var body: some ReducerOf<Self> {
         Reduce { state, action in
             switch action {
@@ -61,6 +64,7 @@ struct GroupMatchFeature {
                     let published = try? await competitionClient.groupMatchCommand(command)
                     await send(.commandFinished(command, published))
                 }
+                .cancellable(id: CancelID.commands)
 
             case let .commandFinished(command, published):
                 state.inFlight.remove(command)

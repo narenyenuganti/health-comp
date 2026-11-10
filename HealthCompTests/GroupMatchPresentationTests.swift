@@ -27,7 +27,9 @@ final class GroupMatchPresentationTests: XCTestCase {
     private func dayOne(
         _ points: [Player: Int],
         format: GroupMatchFormat = .fourWay,
-        teams: [Player: Int] = [:]
+        teams: [Player: Int] = [:],
+        unavailable: [Player] = [],
+        leaveCutoffs: [Player: Int] = [:]
     ) throws -> GroupMatchPresentation {
         let lineup: [Player] = [.you, .sam, .priya, .leo]
         return try GroupMatchPresentation(
@@ -44,7 +46,10 @@ final class GroupMatchPresentationTests: XCTestCase {
             viewerSeatID: Player.you.seatID,
             days: try points.map {
                 try MatchDayScore(seatID: $0.key.seatID, ordinal: 1, value: .centipoints($0.value))
-            }
+            } + unavailable.map {
+                try MatchDayScore(seatID: $0.seatID, ordinal: 1, value: .unavailable)
+            },
+            leaveCutoffs: Dictionary(uniqueKeysWithValues: leaveCutoffs.map { ($0.key.seatID, $0.value) })
         )
     }
 
@@ -107,6 +112,28 @@ final class GroupMatchPresentationTests: XCTestCase {
         XCTAssertEqual(try dayOne([.you: 500, .sam: 500]).dayWinners(ordinal: 1), .unresolved)
     }
 
+    func testALeaveCutoffReachesScoring() throws {
+        // Leo left after Day 1 with nothing synced: that day is a banked zero, not pending.
+        let match = try dayOne([.you: 500, .sam: 300, .priya: 100], leaveCutoffs: [.leo: 1])
+        XCTAssertFalse(match.projection.isProvisional)
+        XCTAssertEqual(match.dayWinners(ordinal: 1), .winners([.seat(Player.you.seatID)]))
+    }
+
+    func testAnUnavailableDayLeavesTheDayUndecided() throws {
+        let match = try dayOne([.you: 500, .sam: 300, .priya: 100], unavailable: [.leo])
+        XCTAssertTrue(match.projection.isProvisional)
+        XCTAssertEqual(match.dayWinners(ordinal: 1), .unresolved)
+    }
+
+    func testABotsLaterDaysDontCountYet() throws {
+        let fixed = fixture(.liveBot)
+        let dayTwo = try GroupMatchPresentation(
+            id: fixed.id, lifecycle: .active(dayOrdinal: 2), format: fixed.format,
+            seats: fixed.seats, viewerSeatID: fixed.viewerSeatID, days: fixed.days
+        )
+        XCTAssertEqual(dayTwo.projection.seatTotals[Player.erratic.seatID], 70_000)
+    }
+
     func testAFinishedMatchShowsTheServersStandingsAsIs() throws {
         let live = fixture(.liveFFA)
         let frozen = [GroupMatchStandingRow(subject: .seat(Player.leo.seatID), place: 1, centipoints: 7)]
@@ -166,9 +193,16 @@ final class GroupMatchPresentationTests: XCTestCase {
     // MARK: Staying out of duels
 
     func testAGroupMatchReachesNoDuelSurface() {
-        let groups = dashboard([fixture(.liveFFA), fixture(.resultFFAWon)])
-        XCTAssertTrue(competitionHomeLayout(groups, now: .distantPast).isEmpty)
-        XCTAssertTrue(CompetitionWidgetSnapshot(dashboard: groups).matches.isEmpty)
+        let duels = MultiUserCompetitionTestLabFixtures.publication(archivedIDs: []).dashboard
+        let mixed = LocalCompetitionDashboard(
+            competitions: duels.competitions, awards: duels.awards, issues: duels.issues,
+            hiddenTerminalCompetitionCount: duels.hiddenTerminalCompetitionCount,
+            groupMatches: [fixture(.liveFFA), fixture(.resultFFAWon)]
+        )
+        let now = MultiUserCompetitionTestLabFixtures.labNow
+        XCTAssertFalse(competitionHomeLayout(duels, now: now).isEmpty)
+        XCTAssertEqual(competitionHomeLayout(mixed, now: now), competitionHomeLayout(duels, now: now))
+        XCTAssertEqual(CompetitionWidgetSnapshot(dashboard: mixed), CompetitionWidgetSnapshot(dashboard: duels))
     }
 
     func testDashboardRebuildsKeepGroupMatches() {
@@ -196,6 +230,15 @@ final class GroupMatchPresentationTests: XCTestCase {
             viewerSeatID: Player.you.seatID
         )
         XCTAssertEqual(dashboard([match]).nextHomeBoundary(after: now), expiry)
+    }
+
+    func testAGroupResultLeavesHomeLikeADuelResult() {
+        let match = fixture(.resultFFAWon)
+        let leaves = competitionResultLeavesHome(
+            schedule: match.schedule!, completedAt: MultiUserCompetitionTestLabFixtures.labNow
+        )?.at
+        XCTAssertNotNil(leaves)
+        XCTAssertEqual(dashboard([match]).nextHomeBoundary(after: .distantPast), leaves)
     }
 
     func testPhotoOwnersIncludeEveryPersonInAGroupMatchButNoBot() {
@@ -254,6 +297,27 @@ final class GroupMatchPresentationTests: XCTestCase {
             $0.inFlight = []
             $0.failed = [command]
         }
+    }
+
+    func testStopDropsAGroupCommandStillInFlight() async {
+        let command = GroupMatchCommand.leave(CompetitionID(UUID()))
+        let late = LocalCompetitionPublication(publicationRevision: 9, dashboard: dashboard([]))
+        let store = TestStore(initialState: CompetitionFeature.State()) {
+            CompetitionFeature()
+        } withDependencies: {
+            // Answers even when cancelled, as a request already sent would.
+            $0.competitionClient = Self.client { _ in
+                try? await Task.sleep(nanoseconds: 3_600_000_000_000)
+                return late
+            }
+        }
+        await store.send(.group(.commandTapped(command))) {
+            $0.group.inFlight = [command]
+        }
+        await store.send(.stop) {
+            $0.group.inFlight = []
+        }
+        await store.finish()
     }
 
     func testASecondTapWhileInFlightDoesNothing() async {
