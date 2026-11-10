@@ -629,7 +629,7 @@ struct AccountSettingsView: View {
         } header: {
             SectionLabel("BLOCKED")
         } footer: {
-            Text("Blocked people can’t challenge you. They aren’t notified.")
+            Text("Blocked people can’t challenge you or find you in search. They aren’t notified.")
                 .foregroundStyle(Theme.secondary)
         }
         .listRowBackground(Theme.panel)

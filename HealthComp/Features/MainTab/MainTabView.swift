@@ -172,6 +172,17 @@ struct MainTabView: View {
                             store.send(.competition(.createInviteTapped))
                         },
                         isChallengePresented: $isChallengePresented,
+                        friends: store.competition.friends.list?.friends ?? [],
+                        chooseFriend: { friend in
+                            store.send(.competition(.challengeRecipientChosen(.init(
+                                AuthenticatedProfile(id: friend.id, displayName: friend.displayName)
+                            ))))
+                        },
+                        searchPeople: {
+                            isChallengePresented = false
+                            store.send(.competition(.friends(.searchFocusRequested(true))))
+                            store.send(.friendsPresentationChanged(true))
+                        },
                         selectCompetition: {
                             store.send(.pathChanged([$0]))
                         },
@@ -303,10 +314,15 @@ struct MainTabView: View {
            let person = store.competition.friends.people[id],
            competitionRivalryWeeks(publication.dashboard.competitions, opponentIdentity: identity).isEmpty {
             FriendProfileView(
-                person: person,
-                isInFlight: store.competition.friends.inFlight.contains(id),
-                failure: store.competition.friends.failure(for: id),
-                change: { store.send(.competition(.friends(.changeTapped(person, $0)))) }
+                controls: friendControls(id, displayName: person.displayName),
+                isBlocked: store.competition.blockedPeople.map { $0.contains { $0.id == id } },
+                unblock: { store.send(.competition(.unblockTapped(id))) },
+                challenge: {
+                    store.send(.competition(.challengeRecipientChosen(.init(
+                        AuthenticatedProfile(id: id, displayName: person.displayName)
+                    ))))
+                    isChallengePresented = true
+                }
             )
         } else {
             matchedPersonScreen(identity, publication: publication)
@@ -335,7 +351,14 @@ struct MainTabView: View {
             muteButton: publication.dashboard.competitions
                 .first { $0.opponentIdentity == identity }
                 .flatMap(muteButton(for:)),
-            challenge: challengeAgain
+            challenge: challengeAgain,
+            friend: profileID.flatMap { id in
+                guard publication.source == .remoteParticipants,
+                      let name = publication.dashboard.competitions
+                        .first(where: { $0.opponentIdentity == identity })?.opponentDisplayName
+                else { return nil }
+                return friendControls(id, displayName: name)
+            }
         )
         // Your own blocks only; the phone never learns who blocked you.
         .task(id: identity) {
@@ -343,6 +366,30 @@ struct MainTabView: View {
                 store.send(.competition(.blockedPeopleRequested))
             }
         }
+    }
+
+    /// Friending, Block and Report for one person, as the Friends reducer
+    /// has them. Someone it hasn't seen is nobody to you once the list loads.
+    private func friendControls(_ id: UUID, displayName: String) -> PersonFriendControls {
+        let friends = store.competition.friends
+        let known = friends.people[id]
+        let relationship = known?.relationship ?? (friends.list == nil ? nil : FriendRelationship.none)
+        let person = known ?? FriendPerson(
+            id: id,
+            displayName: displayName,
+            username: nil,
+            relationship: relationship ?? .none
+        )
+        return PersonFriendControls(
+            person: person,
+            relationship: relationship,
+            isInFlight: friends.inFlight.contains(id),
+            failure: friends.failure(for: id),
+            isReported: friends.reported.contains(id),
+            change: { store.send(.competition(.friends(.changeTapped(person, $0)))) },
+            block: { store.send(.competition(.friends(.blockTapped(person)))) },
+            report: { store.send(.competition(.friends(.reportTapped(person, andBlock: $0)))) }
+        )
     }
 
     /// "Your record with Sam" on a match: pushes their page, or pops back to

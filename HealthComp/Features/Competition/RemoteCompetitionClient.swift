@@ -195,6 +195,12 @@ extension CompetitionClient {
             removeFriend: { profileID in
                 try await coordinator.remote { try await $0.removeFriend(profileID) }
             },
+            blockProfile: { profileID in
+                try await coordinator.remote { try await $0.blockProfile(profileID) }
+            },
+            reportProfile: { profileID in
+                try await coordinator.remote { try await $0.reportProfile(profileID) }
+            },
             previewInvite: { request in
                 try await coordinator.remote { try await $0.previewInvite(request) }
             },

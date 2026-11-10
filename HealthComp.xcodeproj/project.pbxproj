@@ -125,6 +125,7 @@
 		7234259C461A81E4E2CCD79B /* PracticeMatchUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E1B0DD351BE98BC4D5092E60 /* PracticeMatchUITests.swift */; };
 		73F853265BC75C365CD2BB2B /* MainTabFeatureTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3DFF07C8F1DAF91F666CE2C /* MainTabFeatureTests.swift */; };
 		75D39A881B6BCE6ACD99671C /* CompetitionCore in Frameworks */ = {isa = PBXBuildFile; productRef = 94AE5B1EA8D73C40C59A519D /* CompetitionCore */; };
+		76E1858AE8B912ACF8C9B070 /* ChallengeFriendUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E33126E38DB95E0D418831B /* ChallengeFriendUITests.swift */; };
 		773AF0E3CFE0D3D0017B8620 /* MatchActivityViews.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1CD9ED5A800E944EC8B6E60B /* MatchActivityViews.swift */; };
 		7A3A884CEF7A982535C0BD1D /* CompetitionTestLabTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A326EB5826710C985D17686 /* CompetitionTestLabTests.swift */; };
 		7AC8B015321B80E77EEEF3AF /* AccountDeletionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 091448CE772C0EE35F3C5B74 /* AccountDeletionTests.swift */; };
@@ -347,6 +348,7 @@
 		1D4D0A6902647274F72B003C /* HealthComp.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = HealthComp.entitlements; sourceTree = "<group>"; };
 		1D7361E150B1013DA4B9100F /* FriendsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FriendsView.swift; sourceTree = "<group>"; };
 		1D93500BA9AA5B7AF63C71F7 /* LocalCompetitionRuntimeTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalCompetitionRuntimeTests.swift; sourceTree = "<group>"; };
+		1E33126E38DB95E0D418831B /* ChallengeFriendUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChallengeFriendUITests.swift; sourceTree = "<group>"; };
 		1FEF4EE70421B685B8C576F0 /* FriendsUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FriendsUITests.swift; sourceTree = "<group>"; };
 		225974742689A63371700688 /* ClaimCompetitionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaimCompetitionView.swift; sourceTree = "<group>"; };
 		226BA4E27B1F6F1804DEE79E /* StagingScoringResponseCapture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StagingScoringResponseCapture.swift; sourceTree = "<group>"; };
@@ -879,6 +881,7 @@
 				ED81C5A1328943D778A8FF03 /* BeltCeremonyUITests.swift */,
 				0D362A9C189813C864E8BB5D /* BeltUITests.swift */,
 				5A6710FBCACA682D0C66812B /* BlockChallengerUITests.swift */,
+				1E33126E38DB95E0D418831B /* ChallengeFriendUITests.swift */,
 				9B8ADC881AFEAFA869B4D4AD /* FeatureRoundIntegrationUITests.swift */,
 				5A81D6D6FB0B1906DADE8C44 /* FriendsAccountUITests.swift */,
 				1FEF4EE70421B685B8C576F0 /* FriendsUITests.swift */,
@@ -1239,6 +1242,7 @@
 				6A62FEFFFFF5D9A45E379FC5 /* BeltCeremonyUITests.swift in Sources */,
 				548CAA89B58584D8851DA6EE /* BeltUITests.swift in Sources */,
 				303844E9F398E8FD157BF912 /* BlockChallengerUITests.swift in Sources */,
+				76E1858AE8B912ACF8C9B070 /* ChallengeFriendUITests.swift in Sources */,
 				AE4819959E9FC9096C3AA3AB /* FeatureRoundIntegrationUITests.swift in Sources */,
 				3535E7D09D48455B7F3F8895 /* FriendsAccountUITests.swift in Sources */,
 				49250A41E473BB2ACDF4D700 /* FriendsUITests.swift in Sources */,

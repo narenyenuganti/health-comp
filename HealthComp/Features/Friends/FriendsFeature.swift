@@ -1,10 +1,13 @@
 import ComposableArchitecture
 import Foundation
 
-/// The Friends screen, people search, and adding someone.
+/// The Friends screen, people search, adding someone, and removing,
+/// blocking or reporting them from their page.
 @Reducer
 struct FriendsFeature {
-    enum Change: Equatable, Sendable { case add, accept, decline, cancel }
+    /// `cancel` takes back your request; `remove` ends a friendship. Both
+    /// are `remove_friend`.
+    enum Change: Equatable, Sendable { case add, accept, decline, cancel, remove }
 
     enum ChangeFailure: Equatable, Sendable { case connection, unavailable, limit }
 
@@ -30,11 +33,24 @@ struct FriendsFeature {
         var people: [UUID: FriendPerson] = [:]
         var inFlight: Set<UUID> = []
         var failure: PersonFailure?
+        /// Reported from this iPhone since sign-in.
+        var reported: Set<UUID> = []
+        /// The Challenge sheet's Search People: focus the field once Friends shows.
+        var focusesSearch = false
 
         var requestCount: Int { list?.incoming.count ?? 0 }
 
         func failure(for id: UUID) -> ChangeFailure? {
             failure?.id == id ? failure?.failure : nil
+        }
+
+        mutating func fail(_ person: FriendPerson, _ failure: CompetitionRemoteFailure) {
+            let reason: ChangeFailure = switch failure {
+            case .recipientUnavailable, .requestUnavailable: .unavailable
+            case .friendRequestLimit: .limit
+            default: .connection
+            }
+            self.failure = PersonFailure(id: person.id, failure: reason)
         }
 
         /// One person's answer, everywhere they're drawn.
@@ -87,6 +103,13 @@ struct FriendsFeature {
         case changeFinished(FriendPerson, Result<FriendRelationship, CompetitionRemoteFailure>)
         /// The screen left the stack.
         case closed
+        case blockTapped(FriendPerson)
+        case blockFinished(FriendPerson, Result<AuthenticatedProfile, CompetitionRemoteFailure>)
+        /// Report, then block when asked: once blocked they can't be reported.
+        case reportTapped(FriendPerson, andBlock: Bool)
+        /// Nil when the report was saved.
+        case reportFinished(FriendPerson, andBlock: Bool, failure: CompetitionRemoteFailure?)
+        case searchFocusRequested(Bool)
     }
 
     enum CancelID { case load, search, change }
@@ -177,7 +200,7 @@ struct FriendsFeature {
                             case .add: try await competitionClient.sendFriendRequest(person.id)
                             case .accept: try await competitionClient.respondToFriendRequest(person.id, true)
                             case .decline: try await competitionClient.respondToFriendRequest(person.id, false)
-                            case .cancel: try await competitionClient.removeFriend(person.id)
+                            case .cancel, .remove: try await competitionClient.removeFriend(person.id)
                             }
                             await send(.changeFinished(person, .success(relationship)))
                         } catch {
@@ -195,12 +218,8 @@ struct FriendsFeature {
                 switch result {
                 case let .success(relationship):
                     state.apply(relationship, to: person)
-                case .failure(.recipientUnavailable), .failure(.requestUnavailable):
-                    state.failure = PersonFailure(id: person.id, failure: .unavailable)
-                case .failure(.friendRequestLimit):
-                    state.failure = PersonFailure(id: person.id, failure: .limit)
-                case .failure:
-                    state.failure = PersonFailure(id: person.id, failure: .connection)
+                case let .failure(failure):
+                    state.fail(person, failure)
                 }
                 return state.inFlight.isEmpty ? .send(.requested) : .none
 
@@ -219,6 +238,69 @@ struct FriendsFeature {
                     .cancel(id: CancelID.change),
                     interrupted ? .send(.requested) : .cancel(id: CancelID.load)
                 )
+
+            case let .blockTapped(person):
+                guard state.inFlight.insert(person.id).inserted else { return .none }
+                state.failure = nil
+                return .merge(
+                    .cancel(id: CancelID.load),
+                    .run { send in
+                        do {
+                            let profile = try await competitionClient.blockProfile(person.id)
+                            await send(.blockFinished(person, .success(profile)))
+                        } catch {
+                            await send(.blockFinished(person, .failure(
+                                error as? CompetitionRemoteFailure ?? .operationFailed
+                            )))
+                        }
+                    }
+                    .cancellable(id: CancelID.change)
+                )
+
+            case let .blockFinished(person, result):
+                guard state.inFlight.remove(person.id) != nil else { return .none }
+                switch result {
+                case .success:
+                    // Blocking ends the friendship and any request, and drops
+                    // them from search.
+                    state.apply(.none, to: person)
+                    state.results?.removeAll { $0.id == person.id }
+                case let .failure(failure):
+                    state.fail(person, failure)
+                }
+                return state.inFlight.isEmpty ? .send(.requested) : .none
+
+            case let .reportTapped(person, andBlock):
+                guard state.inFlight.insert(person.id).inserted else { return .none }
+                state.failure = nil
+                return .run { send in
+                    do {
+                        try await competitionClient.reportProfile(person.id)
+                        await send(.reportFinished(person, andBlock: andBlock, failure: nil))
+                    } catch {
+                        await send(.reportFinished(
+                            person,
+                            andBlock: andBlock,
+                            failure: error as? CompetitionRemoteFailure ?? .operationFailed
+                        ))
+                    }
+                }
+                .cancellable(id: CancelID.change)
+
+            case let .reportFinished(person, andBlock, failure):
+                guard state.inFlight.remove(person.id) != nil else { return .none }
+                if let failure {
+                    // Not blocked either: the report comes first, so Try Again
+                    // does both.
+                    state.fail(person, failure)
+                    return .none
+                }
+                state.reported.insert(person.id)
+                return andBlock ? .send(.blockTapped(person)) : .none
+
+            case let .searchFocusRequested(focuses):
+                state.focusesSearch = focuses
+                return .none
             }
         }
     }

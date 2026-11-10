@@ -74,6 +74,24 @@ func friendStatusLine(
     return record.wins > record.losses ? "You lead \(score)" : "\(record.opponentDisplayName) leads \(score)"
 }
 
+/// Why a friend can't be challenged now: what the Challenge sheet would
+/// otherwise turn up after the tap. Nil when they can be.
+func friendChallengeBlocker(
+    identity: String,
+    competitions: [LocalCompetitionPresentation]
+) -> String? {
+    let theirs = competitions.filter { $0.opponentIdentity == identity && !$0.isPractice }
+    if theirs.contains(where: \.isPending) { return "Challenge pending" }
+    // As `matchInProgress`: tallying doesn't count, matching the server.
+    let inMatch = theirs.contains {
+        switch $0.lifecycle {
+        case .scheduled, .active, .endsToday: true
+        default: false
+        }
+    }
+    return inMatch ? "In a match with you" : nil
+}
+
 extension FriendsFeature.ChangeFailure {
     var message: String {
         switch self {
@@ -109,7 +127,7 @@ private struct FriendsRowButtonStyle: ButtonStyle {
 
 /// Avatar, name and one line under it. Beside each other, or stacked at
 /// accessibility sizes so the name gets the width.
-private struct FriendsPersonLabel: View {
+struct FriendsPersonLabel: View {
     let person: FriendPerson
     let detail: String?
 
@@ -215,6 +233,12 @@ struct FriendsView: View {
             store.send(.competition(.friends(.requested)))
             store.send(.competition(.friendSettings(.requested)))
             store.send(.competition(.challengeLinkRequested))
+        }
+        // The Challenge sheet's Search People.
+        .onChange(of: state.focusesSearch, initial: true) { _, focuses in
+            guard focuses else { return }
+            isFieldFocused = true
+            store.send(.competition(.friends(.searchFocusRequested(false))))
         }
         // Not `saved?.username == nil`, which is true before the settings
         // load and so never changes when they arrive with no username.
@@ -536,8 +560,8 @@ struct FriendsView: View {
     }
 }
 
-private extension View {
-    /// The one confirmation Friends asks for: cancelling a request.
+extension View {
+    /// Cancelling a request, from Friends or a person page.
     func friendsCancelRequestDialog(
         _ person: Binding<FriendPerson?>,
         cancel: @escaping (FriendPerson) -> Void
@@ -557,16 +581,175 @@ private extension View {
     }
 }
 
-/// Someone you haven't played: who they are, and adding them. Reached
-/// through `.person`, when there is no match record to show.
-struct FriendProfileView: View {
+/// Friend, block and report on a person page, for someone with a profile id.
+struct PersonFriendControls {
     let person: FriendPerson
+    /// Nil until your Friends list loads: Add, Cancel and Remove wait for it.
+    let relationship: FriendRelationship?
     let isInFlight: Bool
     let failure: FriendsFeature.ChangeFailure?
+    let isReported: Bool
     let change: (FriendsFeature.Change) -> Void
+    let block: () -> Void
+    let report: (_ andBlock: Bool) -> Void
+}
 
-    @State private var cancelling: FriendPerson?
+/// The person page's confirmations.
+enum PersonFriendDialog: Equatable {
+    case cancelRequest, remove, block, report
+}
+
+/// Add Friend or Cancel Request, Remove Friend, Block, Unblock and Report,
+/// each only when it applies, in that order. Mute goes above them.
+struct PersonFriendMenuItems: View {
+    let name: String
+    let controls: PersonFriendControls?
+    /// Nil while your block list loads: Block and Report wait for it.
+    let isBlocked: Bool?
+    let unblock: (() -> Void)?
+    /// Off on the new-person page, whose own button adds and cancels.
+    var offersRequests = true
+    @Binding var dialog: PersonFriendDialog?
+
+    var body: some View {
+        if let controls, isBlocked == false {
+            Group {
+                if offersRequests {
+                    switch controls.relationship {
+                    case .none?:
+                        Button { controls.change(.add) } label: {
+                            Label("Add Friend", systemImage: "person.badge.plus")
+                        }
+                        .accessibilityIdentifier("friends.menu.add")
+                    case .requested?:
+                        Button { dialog = .cancelRequest } label: {
+                            Label("Cancel Request", systemImage: "xmark")
+                        }
+                        .accessibilityIdentifier("friends.menu.cancel-request")
+                    case .incoming?, .friend?, nil:
+                        EmptyView()
+                    }
+                }
+                if controls.relationship == .friend {
+                    Button { dialog = .remove } label: {
+                        Label("Remove Friend", systemImage: "person.badge.minus")
+                    }
+                    .accessibilityIdentifier("friends.menu.remove")
+                }
+                Button { dialog = .block } label: {
+                    Label("Block \(name)", systemImage: "hand.raised")
+                }
+                .accessibilityIdentifier("friends.menu.block")
+            }
+            .disabled(controls.isInFlight)
+        }
+        if isBlocked == true, let unblock {
+            Button(action: unblock) {
+                Label("Unblock \(name)", systemImage: "hand.raised.slash")
+            }
+        }
+        if let controls, isBlocked == false, !controls.isReported {
+            Button { dialog = .report } label: {
+                Label("Report \(name)", systemImage: "flag")
+            }
+            .disabled(controls.isInFlight)
+            .accessibilityIdentifier("friends.menu.report")
+        }
+    }
+}
+
+extension View {
+    /// Remove, Block and Report ask first, in the tone of Decline and Block.
+    /// `blocking` runs before a block is sent, so the page can pop once it lands.
+    func personFriendDialogs(
+        _ dialog: Binding<PersonFriendDialog?>,
+        name: String,
+        controls: PersonFriendControls?,
+        blocking: @escaping () -> Void
+    ) -> some View {
+        func presents(_ kind: PersonFriendDialog) -> Binding<Bool> {
+            Binding(
+                get: { dialog.wrappedValue == kind && controls != nil },
+                set: { if !$0, dialog.wrappedValue == kind { dialog.wrappedValue = nil } }
+            )
+        }
+        return self
+            .friendsCancelRequestDialog(Binding(
+                get: { dialog.wrappedValue == .cancelRequest ? controls?.person : nil },
+                set: { if $0 == nil, dialog.wrappedValue == .cancelRequest { dialog.wrappedValue = nil } }
+            )) { _ in controls?.change(.cancel) }
+            .confirmationDialog("Remove \(name) as a friend?", isPresented: presents(.remove), titleVisibility: .visible) {
+                Button("Remove Friend", role: .destructive) { controls?.change(.remove) }
+                    .accessibilityIdentifier("friends.remove.confirm")
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("You can still play each other with a link.")
+            }
+            .confirmationDialog("Block \(name)?", isPresented: presents(.block), titleVisibility: .visible) {
+                Button("Block \(name)", role: .destructive) {
+                    blocking()
+                    controls?.block()
+                }
+                .accessibilityIdentifier("friends.block.confirm")
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("\(name) can’t challenge you or find you in search, and you’ll no longer be friends. They aren’t notified.")
+            }
+            .confirmationDialog("Report \(name)?", isPresented: presents(.report), titleVisibility: .visible) {
+                Button("Report") { controls?.report(false) }
+                    .accessibilityIdentifier("friends.report.confirm")
+                Button("Report and Block \(name)", role: .destructive) {
+                    blocking()
+                    controls?.report(true)
+                }
+                .accessibilityIdentifier("friends.report.block")
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("We’ll review this account. Reporting doesn’t block them.")
+            }
+    }
+}
+
+/// The quiet lines a person page shows after Remove, Block or Report:
+/// why one failed, or that a report went in.
+struct PersonFriendNotes: View {
+    let failure: FriendsFeature.ChangeFailure?
+    let isReported: Bool
+
+    var body: some View {
+        if let failure {
+            Text(failure.message)
+                .font(.callout)
+                .foregroundStyle(Theme.ink)
+                .fixedSize(horizontal: false, vertical: true)
+                .transition(Motion.appear)
+                .accessibilityIdentifier("friends.person.error")
+        }
+        if isReported {
+            Text("Reported. Thanks.")
+                .font(.subheadline)
+                .foregroundStyle(Theme.secondary)
+                .transition(Motion.appear)
+                .accessibilityIdentifier("friends.person.reported")
+        }
+    }
+}
+
+/// Someone you haven't played: who they are, adding them, and challenging
+/// a friend. Reached through `.person`, when there is no match record to show.
+struct FriendProfileView: View {
+    let controls: PersonFriendControls
+    var isBlocked: Bool? = false
+    var unblock: (() -> Void)? = nil
+    /// The Challenge sheet with this friend chosen.
+    var challenge: (() -> Void)? = nil
+
+    @State private var dialog: PersonFriendDialog?
+    @State private var isBlocking = false
+    @Environment(\.dismiss) private var dismiss
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
+    private var person: FriendPerson { controls.person }
 
     var body: some View {
         // Accessibility sizes scroll the button with the text; pinned, it
@@ -576,7 +759,7 @@ struct FriendProfileView: View {
             VStack(spacing: 6) {
                 PersonAvatar(
                     name: person.displayName,
-                    photo: person.id,
+                    photo: isBlocked == false ? person.id : nil,
                     size: 112,
                     initialFont: .largeTitle.weight(.heavy).width(.condensed)
                 )
@@ -593,7 +776,14 @@ struct FriendProfileView: View {
                         .foregroundStyle(Theme.secondary)
                         .accessibilityIdentifier("friends.person.username")
                 }
-                if person.relationship != .friend {
+                if isBlocked == true {
+                    Text("\(person.displayName) can’t challenge you.")
+                        .font(.subheadline)
+                        .foregroundStyle(Theme.secondary)
+                        .multilineTextAlignment(.center)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 28)
+                } else if person.relationship != .friend {
                     Text("Friends can challenge each other without a link.")
                         .font(.subheadline)
                         .foregroundStyle(Theme.secondary)
@@ -602,6 +792,8 @@ struct FriendProfileView: View {
                         .padding(.top, 28)
                         .padding(.horizontal, 16)
                 }
+                PersonFriendNotes(failure: nil, isReported: controls.isReported)
+                    .padding(.top, 12)
                 if !pinsButton {
                     footer.padding(.top, 28)
                 }
@@ -624,15 +816,37 @@ struct FriendProfileView: View {
             }
         }
         .moving(Motion.settle, value: person)
-        .moving(Motion.settle, value: failure)
+        .moving(Motion.settle, value: controls.failure)
+        .moving(Motion.settle, value: controls.isReported)
         .navigationBarTitleDisplayMode(.inline)
-        .friendsCancelRequestDialog($cancelling) { _ in change(.cancel) }
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    PersonFriendMenuItems(
+                        name: person.displayName,
+                        controls: controls,
+                        isBlocked: isBlocked,
+                        unblock: unblock,
+                        offersRequests: false,
+                        dialog: $dialog
+                    )
+                } label: {
+                    CompetitionMoreLabel()
+                }
+                .accessibilityIdentifier("competition.more")
+            }
+        }
+        .personFriendDialogs($dialog, name: person.displayName, controls: controls) { isBlocking = true }
+        // Back to wherever they were found, once the block lands.
+        .onChange(of: isBlocked) { _, blocked in
+            if isBlocking, blocked == true { dismiss() }
+        }
     }
 
     @ViewBuilder
     private var footer: some View {
         VStack(spacing: 10) {
-            if let failure {
+            if let failure = controls.failure {
                 Text(failure.message)
                     .font(.callout)
                     .foregroundStyle(Theme.ink)
@@ -641,30 +855,38 @@ struct FriendProfileView: View {
                     .transition(Motion.appear)
                     .accessibilityIdentifier("friends.person.error")
             }
-            action
+            if isBlocked == false {
+                action
+            }
         }
     }
 
     @ViewBuilder
     private var action: some View {
+        let isInFlight = controls.isInFlight
         switch person.relationship {
         case .none:
-            Button { change(.add) } label: { BusyLabel("Add Friend", isBusy: isInFlight) }
+            Button { controls.change(.add) } label: { BusyLabel("Add Friend", isBusy: isInFlight) }
                 .buttonStyle(PrimaryButtonStyle())
                 .disabled(isInFlight)
                 .accessibilityIdentifier("friends.person.action")
         case .incoming:
-            Button { change(.accept) } label: { BusyLabel("Accept Request", isBusy: isInFlight) }
+            Button { controls.change(.accept) } label: { BusyLabel("Accept Request", isBusy: isInFlight) }
                 .buttonStyle(PrimaryButtonStyle())
                 .disabled(isInFlight)
                 .accessibilityIdentifier("friends.person.action")
         case .requested:
-            Button { cancelling = person } label: { BusyLabel("Requested", isBusy: isInFlight) }
+            Button { dialog = .cancelRequest } label: { BusyLabel("Requested", isBusy: isInFlight) }
                 .buttonStyle(SecondaryButtonStyle())
                 .disabled(isInFlight)
                 .accessibilityIdentifier("friends.person.action")
         case .friend:
-            EmptyView()
+            if let challenge {
+                Button("Challenge \(person.displayName)", action: challenge)
+                    .buttonStyle(PrimaryButtonStyle())
+                    .disabled(isInFlight)
+                    .accessibilityIdentifier("friends.person.challenge")
+            }
         }
     }
 }

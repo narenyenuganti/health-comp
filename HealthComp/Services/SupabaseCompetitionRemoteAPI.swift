@@ -680,6 +680,40 @@ enum SupabaseCompetitionRemoteAPI {
             },
             removeFriend: { profileID in
                 try await friendCommand("remove_friend", profileID, allowed: [.none], transport)
+            },
+            blockProfile: { profileID in
+                try validateUUID(profileID)
+                let response = try await send(
+                    .rpc(name: "block_profile", parameters: try encode(
+                        ["profile_id": profileID.uuidString.lowercased()]
+                    )),
+                    transport: transport
+                )
+                // Exactly a `list_blocked_profiles` row, for this person.
+                guard let object = try? JSONSerialization.jsonObject(with: response.data),
+                      let profile = challengeProfile(object, idKey: "id", nameKey: "display_name"),
+                      profile.id == profileID
+                else {
+                    throw CompetitionRemoteFailure.serverContractMismatch
+                }
+                return profile
+            },
+            reportProfile: { profileID in
+                try validateUUID(profileID)
+                let response = try await send(
+                    .rpc(name: "report_profile", parameters: try encode(
+                        ["profile_id": profileID.uuidString.lowercased()]
+                    )),
+                    transport: transport
+                )
+                // Exactly `{reported: true}`.
+                guard let object = try? JSONSerialization.jsonObject(with: response.data)
+                    as? [String: Any],
+                      Set(object.keys) == ["reported"],
+                      strictBool(object["reported"]) == true
+                else {
+                    throw CompetitionRemoteFailure.serverContractMismatch
+                }
             }
         )
     }

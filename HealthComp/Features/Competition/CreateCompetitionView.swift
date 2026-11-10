@@ -1,8 +1,9 @@
 import CompetitionCore
 import SwiftUI
 
-/// The drawer behind Home's + button: the rules, the calendar's time zone
-/// and one private, single-use link.
+/// The drawer behind Home's + button: a friend, or someone else by search
+/// or their link; then the rules, the calendar's time zone and one private,
+/// single-use link.
 struct CreateCompetitionView: View {
     let status: CompetitionFeature.ChallengeSheetStatus
     let timeZoneIdentifier: String
@@ -13,6 +14,13 @@ struct CreateCompetitionView: View {
     let senderName: String?
     /// Your own challenge link; Share Your Link shows once it has loaded.
     var ownChallengeLink: URL? = nil
+    /// A FRIEND; empty omits the group.
+    var friends: [FriendPerson] = []
+    /// Your matches, to dim a friend you can't challenge now.
+    var competitions: [LocalCompetitionPresentation] = []
+    var chooseFriend: ((FriendPerson) -> Void)? = nil
+    /// Closes the sheet on Friends' search; nil omits the row.
+    var searchPeople: (() -> Void)? = nil
     let findRecipient: () -> Void
     let create: () -> Void
     let openChallenge: (CompetitionID) -> Void
@@ -22,22 +30,31 @@ struct CreateCompetitionView: View {
     @Environment(\.locale) private var locale
     @Environment(\.timeZone) private var timeZone
     @FocusState private var recipientCodeIsFocused: Bool
+    /// Paste Their Challenge Link was tapped: the link field and Find show.
+    @State private var entersLink = false
+
+    /// Nobody chosen yet and no link being entered: the two groups.
+    private var isPicking: Bool { recipient == nil && !entersLink }
 
     var body: some View {
         // Accessibility sizes scroll the control with the text; pinned, they
         // would squeeze both.
-        let pinsControl = !dynamicTypeSize.isAccessibilitySize
+        let pinsControl = !dynamicTypeSize.isAccessibilitySize && !isPicking
         ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 header
-                recipientSelection
-                CompetitionRulesCard(source: .remoteParticipants)
-                Text(competitionTimeZoneText(timeZoneIdentifier, locale: locale))
-                    .font(.caption)
-                    .foregroundStyle(Theme.secondary)
-                    .accessibilityIdentifier("competition.create.time-zone")
-                if !pinsControl {
-                    controlSlot
+                if isPicking {
+                    picker
+                } else {
+                    recipientSelection
+                    CompetitionRulesCard(source: .remoteParticipants)
+                    Text(competitionTimeZoneText(timeZoneIdentifier, locale: locale))
+                        .font(.caption)
+                        .foregroundStyle(Theme.secondary)
+                        .accessibilityIdentifier("competition.create.time-zone")
+                    if dynamicTypeSize.isAccessibilitySize {
+                        controlSlot
+                    }
                 }
             }
             .padding(.horizontal, 20)
@@ -68,6 +85,7 @@ struct CreateCompetitionView: View {
         .moving(Motion.settle, value: recipient?.displayName)
         .moving(Motion.settle, value: competitionRecipientErrorText(recipientStatus))
         .moving(Motion.settle, value: ownChallengeLink)
+        .moving(Motion.settle, value: isPicking)
         .background(Theme.ground)
         .presentationDetents([.large])
         .presentationDragIndicator(.visible)
@@ -95,11 +113,17 @@ struct CreateCompetitionView: View {
                 if case .sent = oldValue { return }
                 announce("Challenge sent")
             case let .failed(failure):
-                announce(competitionInviteFailureText(failure, opponentName: recipientName))
+                announce(failureText(failure))
             case .ready, .creating, .alreadyChallenged, .challengedYou, .inMatch:
                 break
             }
         }
+    }
+
+    private func failureText(_ failure: CompetitionFeature.InviteCreationFailure) -> String {
+        failure == .recipientGone
+            ? "You can’t challenge \(recipientName) right now."
+            : competitionInviteFailureText(failure, opponentName: recipientName)
     }
 
     private func announce(_ text: String) {
@@ -182,11 +206,13 @@ struct CreateCompetitionView: View {
                     .contentTransition(.opacity)
                     .animation(Motion.fade, value: isSent)
                     .accessibilityAddTraits(.isHeader)
-                Text(
-                    "Choose an existing HealthComp account. Only that account can accept your private link, which expires after 24 hours."
-                )
-                .font(.subheadline)
-                .foregroundStyle(Theme.secondary)
+                if entersLink {
+                    Text(
+                        "Choose an existing HealthComp account. Only that account can accept your private link, which expires after 24 hours."
+                    )
+                    .font(.subheadline)
+                    .foregroundStyle(Theme.secondary)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
 
@@ -195,54 +221,119 @@ struct CreateCompetitionView: View {
         }
     }
 
+    // MARK: Picker
+
+    private var picker: some View {
+        VStack(alignment: .leading, spacing: 22) {
+            if !friends.isEmpty {
+                pickerGroup("A FRIEND", id: "competition.create.friends") {
+                    ForEach(Array(friends.enumerated()), id: \.element.id) { index, friend in
+                        if index > 0 { CompetitionRowDivider(inset: 66) }
+                        friendRow(friend)
+                    }
+                }
+            }
+            pickerGroup("SOMEONE ELSE", id: "competition.create.someone-else") {
+                if let searchPeople {
+                    Button(action: searchPeople) {
+                        pickerRowLabel("Search People", systemImage: "magnifyingglass", opens: true)
+                    }
+                    .buttonStyle(CompetitionRowButtonStyle())
+                    .accessibilityIdentifier("competition.create.search-people")
+                    CompetitionRowDivider(inset: 50)
+                }
+                Button { entersLink = true } label: {
+                    pickerRowLabel("Paste Their Challenge Link", systemImage: "link", opens: true)
+                }
+                .buttonStyle(CompetitionRowButtonStyle())
+                .accessibilityIdentifier("competition.create.paste-link")
+                if let ownChallengeLink {
+                    CompetitionRowDivider(inset: 50)
+                    ShareLink(
+                        item: ownChallengeLink,
+                        subject: Text("My HealthComp challenge link"),
+                        message: Text("Challenge me to a week of rings on HealthComp.")
+                    ) {
+                        pickerRowLabel("Share Your Link", systemImage: "square.and.arrow.up", opens: false)
+                    }
+                    .buttonStyle(CompetitionRowButtonStyle())
+                    .transition(Motion.appear)
+                    .accessibilityIdentifier("competition.create.share-own-link")
+                }
+            }
+        }
+    }
+
+    /// A friend you're already playing or challenging is dimmed and says so.
+    private func friendRow(_ friend: FriendPerson) -> some View {
+        let blocker = friendChallengeBlocker(identity: friend.identity, competitions: competitions)
+        let detail = blocker
+            ?? friendStatusLine(identity: friend.identity, competitions: competitions, locale: locale, timeZone: timeZone)
+            ?? "No matches yet"
+        return Button { chooseFriend?(friend) } label: {
+            HStack(spacing: 12) {
+                FriendsPersonLabel(person: friend, detail: detail)
+                if blocker == nil {
+                    Image(systemName: "chevron.right")
+                        .font(.caption.weight(.bold))
+                        .foregroundStyle(Theme.tertiary)
+                        .accessibilityHidden(true)
+                }
+            }
+            .padding(.vertical, 12)
+            .padding(.horizontal, 14)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(CompetitionRowButtonStyle())
+        .disabled(blocker != nil || chooseFriend == nil)
+        .opacity(blocker == nil ? 1 : 0.45)
+        .accessibilityIdentifier("competition.create.friend.\(friend.id.uuidString.lowercased())")
+    }
+
+    private func pickerRowLabel(_ title: String, systemImage: String, opens: Bool) -> some View {
+        HStack(spacing: 12) {
+            Image(systemName: systemImage)
+                .font(.body.weight(.semibold))
+                .frame(width: 24)
+                .accessibilityHidden(true)
+            Text(title)
+                .font(.body)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if opens {
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(Theme.tertiary)
+                    .accessibilityHidden(true)
+            }
+        }
+        .foregroundStyle(Theme.ink)
+        .padding(.horizontal, 14)
+        .frame(minHeight: 56)
+        .contentShape(Rectangle())
+    }
+
+    private func pickerGroup<Content: View>(
+        _ title: String,
+        id: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            SectionLabel(title).padding(.horizontal, 4)
+            VStack(spacing: 0) { content() }
+                .themePanel()
+                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier(id)
+    }
+
+    // MARK: Chosen
+
     private var recipientSelection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("THEIR CHALLENGE LINK")
-                .font(.themeLabel)
-                .foregroundStyle(Theme.secondary)
-            Text("Paste the challenge link they shared. Or send them yours so they can challenge you.")
-                .font(.subheadline)
-                .foregroundStyle(Theme.secondary)
-            // A long code wraps instead of clipping, and the reserved lines
-            // keep the field itself a 44 pt target (a one-line field fails
-            // both audits). Return runs Find rather than adding a line.
-            TextField("Challenge link", text: codeBinding, axis: .vertical)
-                .focused($recipientCodeIsFocused)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .font(.body.monospaced())
-                .lineLimit(3, reservesSpace: true)
-                .submitLabel(.search)
-                .padding(12)
-                .background(Theme.control, in: RoundedRectangle(cornerRadius: 10))
-                .disabled(isLocked)
-                .accessibilityIdentifier("competition.create.recipient-code")
-            Button(action: find) {
-                BusyLabel("Find", isBusy: recipientStatus == .lookingUp)
-            }
-            .buttonStyle(SecondaryButtonStyle())
-            .disabled(!canFind)
-            .accessibilityValue(recipientStatus == .lookingUp ? "Finding account" : "")
-            .accessibilityIdentifier("competition.create.find-recipient")
-            if let ownChallengeLink {
-                ShareLink(
-                    item: ownChallengeLink,
-                    subject: Text("My HealthComp challenge link"),
-                    message: Text("Challenge me to a week of rings on HealthComp.")
-                ) {
-                    Label("Share Your Link", systemImage: "square.and.arrow.up")
-                }
-                .buttonStyle(SecondaryButtonStyle())
-                .transition(Motion.appear)
-                .accessibilityIdentifier("competition.create.share-own-link")
-            }
-            if let error = competitionRecipientErrorText(recipientStatus) {
-                Text(error)
-                    .font(.callout)
-                    .foregroundStyle(Theme.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .transition(Motion.appear)
-                    .accessibilityIdentifier("competition.create.recipient-error")
+            if entersLink {
+                linkEntry
             }
             if let recipient {
                 Text("Challenge \(recipient.displayName)")
@@ -257,6 +348,58 @@ struct CreateCompetitionView: View {
             }
         }
         .foregroundStyle(Theme.ink)
+    }
+
+    /// Their challenge link, Find, and your own to share: as before friends.
+    @ViewBuilder
+    private var linkEntry: some View {
+        Text("THEIR CHALLENGE LINK")
+            .font(.themeLabel)
+            .foregroundStyle(Theme.secondary)
+        Text("Paste the challenge link they shared. Or send them yours so they can challenge you.")
+            .font(.subheadline)
+            .foregroundStyle(Theme.secondary)
+        // A long code wraps instead of clipping, and the reserved lines
+        // keep the field itself a 44 pt target (a one-line field fails
+        // both audits). Return runs Find rather than adding a line.
+        TextField("Challenge link", text: codeBinding, axis: .vertical)
+            .focused($recipientCodeIsFocused)
+            .textInputAutocapitalization(.never)
+            .autocorrectionDisabled()
+            .font(.body.monospaced())
+            .lineLimit(3, reservesSpace: true)
+            .submitLabel(.search)
+            .padding(12)
+            .background(Theme.control, in: RoundedRectangle(cornerRadius: 10))
+            .disabled(isLocked)
+            .accessibilityIdentifier("competition.create.recipient-code")
+        Button(action: find) {
+            BusyLabel("Find", isBusy: recipientStatus == .lookingUp)
+        }
+        .buttonStyle(SecondaryButtonStyle())
+        .disabled(!canFind)
+        .accessibilityValue(recipientStatus == .lookingUp ? "Finding account" : "")
+        .accessibilityIdentifier("competition.create.find-recipient")
+        if let ownChallengeLink {
+            ShareLink(
+                item: ownChallengeLink,
+                subject: Text("My HealthComp challenge link"),
+                message: Text("Challenge me to a week of rings on HealthComp.")
+            ) {
+                Label("Share Your Link", systemImage: "square.and.arrow.up")
+            }
+            .buttonStyle(SecondaryButtonStyle())
+            .transition(Motion.appear)
+            .accessibilityIdentifier("competition.create.share-own-link")
+        }
+        if let error = competitionRecipientErrorText(recipientStatus) {
+            Text(error)
+                .font(.callout)
+                .foregroundStyle(Theme.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .transition(Motion.appear)
+                .accessibilityIdentifier("competition.create.recipient-error")
+        }
     }
 
     private var title: String {
@@ -331,6 +474,14 @@ struct CreateCompetitionView: View {
             .font(.caption)
             .foregroundStyle(Theme.secondary)
             .accessibilityIdentifier("competition.create.configuration-error")
+
+        case .failed(.recipientGone):
+            // A friend or someone you've played: never "No account has this link".
+            Text(failureText(.recipientGone))
+                .font(.callout)
+                .foregroundStyle(Theme.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("competition.create.recipient-unavailable")
 
         case .failed(.conflict):
             Text(competitionInviteFailureText(.conflict, opponentName: recipientName))

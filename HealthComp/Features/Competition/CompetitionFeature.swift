@@ -363,6 +363,23 @@ struct CompetitionFeature {
         Scope(state: \.friends, action: \.friends) { FriendsFeature() }
         Reduce { state, action in
             switch action {
+            // A list load already running may have read before this block
+            // and would bring nobody back, so it's dropped as Unblock does.
+            case .friends(.blockTapped):
+                return .cancel(id: CancelID.blockedPeople)
+
+            case let .friends(.blockFinished(_, .success(profile))):
+                // Unknown stays unknown until the list loads.
+                state.blockedPeople = state.blockedPeople.map { [profile] + $0.filter { $0.id != profile.id } }
+                let owners = state.photoOwners
+                return .merge(
+                    state.blockedPeople == nil ? .send(.blockedPeopleRequested) : .none,
+                    // The server cancelled any challenge between you.
+                    reconcile(trigger: .pullToRefresh),
+                    // It hides their photo now, as for Decline and Block.
+                    owners.isEmpty ? .none : .send(.profilePhotosNeeded(owners))
+                )
+
             case .friendSettings, .friends:
                 return .none
 
@@ -667,7 +684,9 @@ struct CompetitionFeature {
                     // Once the dashboard catches up, the derived row replaces this.
                     effect = reconcile(trigger: .pullToRefresh)
                 case .failure(.recipientUnavailable), .failure(.forbidden):
-                    guard slot == .sheet else {
+                    // A friend, Challenge Again or an id: the person is known,
+                    // so only a link that found them can be wrong.
+                    guard slot == .sheet, state.inviteRecipient?.profileID == nil else {
                         creation.status = .failed(.recipientGone)
                         break
                     }

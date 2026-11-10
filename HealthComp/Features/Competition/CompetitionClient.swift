@@ -105,6 +105,9 @@ struct CompetitionClient: Sendable {
     /// The profile, then whether you accepted.
     var respondToFriendRequest: @Sendable (UUID, Bool) async throws -> FriendRelationship
     var removeFriend: @Sendable (UUID) async throws -> FriendRelationship
+    /// Blocks a person by profile id; answers with their blocked-list row.
+    var blockProfile: @Sendable (UUID) async throws -> AuthenticatedProfile
+    var reportProfile: @Sendable (UUID) async throws -> Void
     var previewInvite: @Sendable (
         CompetitionInviteClaimRequest
     ) async throws -> CompetitionInvitePreview
@@ -247,6 +250,12 @@ struct CompetitionClient: Sendable {
         removeFriend: @escaping @Sendable (UUID) async throws -> FriendRelationship = { _ in
             throw CompetitionRemoteFailure.operationFailed
         },
+        blockProfile: @escaping @Sendable (UUID) async throws -> AuthenticatedProfile = { _ in
+            throw CompetitionRemoteFailure.operationFailed
+        },
+        reportProfile: @escaping @Sendable (UUID) async throws -> Void = { _ in
+            throw CompetitionRemoteFailure.operationFailed
+        },
         previewInvite: @escaping @Sendable (
             CompetitionInviteClaimRequest
         ) async throws -> CompetitionInvitePreview = { _ in
@@ -335,6 +344,8 @@ struct CompetitionClient: Sendable {
         self.sendFriendRequest = sendFriendRequest
         self.respondToFriendRequest = respondToFriendRequest
         self.removeFriend = removeFriend
+        self.blockProfile = blockProfile
+        self.reportProfile = reportProfile
         self.previewInvite = previewInvite
         self.loadChallengeLinkCode = loadChallengeLinkCode
         self.resetChallengeLinkCode = resetChallengeLinkCode

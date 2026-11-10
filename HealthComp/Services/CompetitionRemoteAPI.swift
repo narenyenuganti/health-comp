@@ -222,6 +222,13 @@ struct CompetitionRemoteAPI: Sendable {
     var removeFriend: @Sendable (UUID) async throws -> FriendRelationship = { _ in
         throw CompetitionRemoteFailure.operationFailed
     }
+    /// Blocks a person by profile id; answers with their blocked-list row.
+    var blockProfile: @Sendable (UUID) async throws -> AuthenticatedProfile = { _ in
+        throw CompetitionRemoteFailure.operationFailed
+    }
+    var reportProfile: @Sendable (UUID) async throws -> Void = { _ in
+        throw CompetitionRemoteFailure.operationFailed
+    }
 }
 
 /// What the person a challenge was sent to may see before accepting it.
