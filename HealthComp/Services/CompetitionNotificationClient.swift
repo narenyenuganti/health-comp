@@ -157,12 +157,15 @@ enum CompetitionRoute: Equatable, Sendable {
         case competition
         case claimInvite
         case challengeLink
+        case friends
     }
 
     case competition(CompetitionID)
     case claimInvite(CompetitionInviteClaimToken)
     /// Someone's challenge link: offers to challenge them.
     case challengeLink(CompetitionChallengeLinkCode)
+    /// A Friends push (request or accept): opens Friends, which reloads.
+    case friends
 
     /// The custom-scheme link that opens a match, for widgets. Lowercased:
     /// `init?(url:)` rejects an uppercase uuid.
@@ -262,21 +265,28 @@ enum CompetitionRoute: Equatable, Sendable {
     }
 
     init?(userInfo: [AnyHashable: Any]) {
-        let routeKeys = Set([
-            UserInfoKey.version,
-            UserInfoKey.kind,
-            UserInfoKey.competitionID,
-        ])
-        let stringKeys = Set(userInfo.keys.compactMap { $0 as? String })
+        let friendsKeys: Set<String> = [UserInfoKey.version, UserInfoKey.kind]
+        let routeKeys: Set<String> = friendsKeys.union([UserInfoKey.competitionID])
+        var stringKeys = Set(userInfo.keys.compactMap { $0 as? String })
         guard stringKeys.count == userInfo.count else { return nil }
-        if stringKeys == routeKeys.union(["aps"]) {
+        if stringKeys.contains("aps") {
             guard userInfo["aps"] is [String: Any] else { return nil }
-        } else {
-            guard stringKeys == routeKeys else { return nil }
+            stringKeys.remove("aps")
         }
         guard let version = userInfo[UserInfoKey.version] as? Int,
-              version == 1,
-              userInfo[UserInfoKey.kind] as? String == "competition",
+              version == 1
+        else {
+            return nil
+        }
+        let kind = userInfo[UserInfoKey.kind] as? String
+        if kind == "friends" {
+            // No id: Friends fetches who is what.
+            guard stringKeys == friendsKeys else { return nil }
+            self = .friends
+            return
+        }
+        guard stringKeys == routeKeys,
+              kind == "competition",
               let persistedID = userInfo[UserInfoKey.competitionID] as? String,
               let uuid = UUID(uuidString: persistedID),
               uuid.uuidString.lowercased() == persistedID
@@ -295,6 +305,8 @@ enum CompetitionRoute: Equatable, Sendable {
                 UserInfoKey.competitionID:
                     id.rawValue.uuidString.lowercased(),
             ]
+        case .friends:
+            return [UserInfoKey.version: 1, UserInfoKey.kind: "friends"]
         case .claimInvite, .challengeLink:
             // Invite tokens and link codes are intentionally forbidden from
             // notification payloads. An empty payload fails closed when decoded.
@@ -310,6 +322,8 @@ enum CompetitionRoute: Equatable, Sendable {
             .claimInvite
         case .challengeLink:
             .challengeLink
+        case .friends:
+            .friends
         }
     }
 }

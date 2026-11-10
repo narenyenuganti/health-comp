@@ -450,6 +450,12 @@ private struct AccountSheet: View {
                 unblock: { mainStore.send(.competition(.unblockTapped($0))) }
             )
             : nil
+        let friendSettings = competition.publication?.source == .remoteParticipants
+            ? AccountFriendSettings(
+                state: competition.friendSettings,
+                send: { mainStore.send(.competition(.friendSettings($0))) }
+            )
+            : nil
         let ownPhoto = competition.ownPhoto
         let profilePhoto = competition.publication?.source == .remoteParticipants
             ? AccountProfilePhoto(
@@ -470,6 +476,7 @@ private struct AccountSheet: View {
             challengeLink: challengeLink,
             blockedPeople: blockedPeople,
             profilePhoto: profilePhoto,
+            friendSettings: friendSettings,
             refreshCompetition: { mainStore.send(.competition(.pullToRefresh)) }
         )
 #else
@@ -480,7 +487,8 @@ private struct AccountSheet: View {
             liveMatchCount: liveMatchCount,
             challengeLink: challengeLink,
             blockedPeople: blockedPeople,
-            profilePhoto: profilePhoto
+            profilePhoto: profilePhoto,
+            friendSettings: friendSettings
         )
 #endif
     }

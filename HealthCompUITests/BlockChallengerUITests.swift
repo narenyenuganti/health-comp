@@ -15,7 +15,7 @@ final class BlockChallengerUITests: XCTestCase {
     private static let narenID = "a1000000-0000-4000-8000-000000000005"
     private static let longName = "Alexandria Montgomery-Featherstonehaugh"
     private static let declineMessage = " will see a decline either way. If you block them, they can’t challenge you again."
-    private static let footer = "Blocked people can’t challenge you. They aren’t notified."
+    private static let footer = "Blocked people can’t challenge you or find you in search. They aren’t notified."
 
     override func setUpWithError() throws {
         continueAfterFailure = false

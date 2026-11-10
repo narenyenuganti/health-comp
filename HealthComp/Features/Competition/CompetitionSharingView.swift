@@ -17,6 +17,11 @@ struct CompetitionSharingView: View {
     let createInvite: () -> Void
     /// Set by the host's + button and by the empty state.
     @Binding var isChallengePresented: Bool
+    /// The Challenge sheet's A FRIEND group; empty omits it.
+    var friends: [FriendPerson] = []
+    var chooseFriend: ((FriendPerson) -> Void)? = nil
+    /// The sheet's Search People row; nil omits it.
+    var searchPeople: (() -> Void)? = nil
     let selectCompetition: (CompetitionID) -> Void
     let openHistory: () -> Void
     let reinvite: () -> Void
@@ -222,6 +227,10 @@ struct CompetitionSharingView: View {
                 recipientStatus: recipientStatus,
                 senderName: senderName,
                 ownChallengeLink: ownChallengeLink,
+                friends: friends,
+                competitions: publication.dashboard.competitions,
+                chooseFriend: chooseFriend,
+                searchPeople: searchPeople,
                 findRecipient: findRecipient,
                 create: createInvite,
                 openChallenge: {
@@ -1579,10 +1588,15 @@ struct CompetitionPersonView: View {
     var muteButton: CompetitionMuteButton? = nil
     /// The create flow with them prefilled, from one of their matches.
     var challenge: ((CompetitionID) -> Void)? = nil
+    /// Real people only: their username, friending, Block and Report.
+    var friend: PersonFriendControls? = nil
 
     @AppStorage(CompetitionMotionSeen.storageKey)
     private var motionSeen = CompetitionMotionSeen()
     @State private var showsAllWeeks = false
+    @State private var friendDialog: PersonFriendDialog?
+    @State private var isBlocking = false
+    @Environment(\.dismiss) private var dismiss
     @State private var dismissedChallengeIDs: Set<CompetitionID> = []
     @Environment(\.locale) private var locale
     @Environment(\.timeZone) private var timeZone
@@ -1609,6 +1623,8 @@ struct CompetitionPersonView: View {
             )
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
+                PersonFriendNotes(failure: friend?.failure, isReported: friend?.isReported == true)
+                    .padding(.horizontal, 4)
                 if let record, !oldestFirst.isEmpty {
                     content(record, oldestFirst: oldestFirst, theirs: theirs, unseen: unseen)
                     if let button, dynamicTypeSize.isAccessibilitySize {
@@ -1640,23 +1656,32 @@ struct CompetitionPersonView: View {
         .navigationTitle(name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            if !isDeleted(record), muteButton != nil || (isBlocked == true && unblock != nil) {
+            if !isDeleted(record), muteButton != nil || friend != nil || (isBlocked == true && unblock != nil) {
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
                         if let muteButton {
                             muteButton
                         }
-                        if isBlocked == true, let unblock {
-                            Button(action: unblock) {
-                                Label("Unblock \(name)", systemImage: "hand.raised.slash")
-                            }
-                        }
+                        PersonFriendMenuItems(
+                            name: name,
+                            controls: friend,
+                            isBlocked: isBlocked,
+                            unblock: unblock,
+                            dialog: $friendDialog
+                        )
                     } label: {
                         CompetitionMoreLabel()
                     }
                     .accessibilityIdentifier("competition.more")
                 }
             }
+        }
+        .personFriendDialogs($friendDialog, name: name, controls: friend) { isBlocking = true }
+        .moving(Motion.settle, value: friend?.failure)
+        .moving(Motion.settle, value: friend?.isReported)
+        // Back to wherever they were found, once the block lands.
+        .onChange(of: isBlocked) { _, blocked in
+            if isBlocking, blocked == true { dismiss() }
         }
     }
 
@@ -1904,9 +1929,10 @@ struct CompetitionPersonView: View {
             : AnyLayout(HStackLayout(alignment: .bottom, spacing: 12))
     }
 
-    /// Who, the record, the week count and Muted or Blocked. At accessibility
-    /// sizes they stack.
+    /// Who, the record, the week count, Muted or Blocked, and their username
+    /// when you may see it. At accessibility sizes they stack.
     private func header(_ record: CompetitionOpponentRecord, weekCount: Int) -> some View {
+        let username = isLedger(record) ? nil : friend?.person.username
         let tag = isBlocked == true && !isDeleted(record) ? "Blocked" : muteButton?.isMuted == true ? "Muted" : nil
         return rowLayout {
             avatar(record)
@@ -1920,6 +1946,11 @@ struct CompetitionPersonView: View {
                 if let tag {
                     Text(tag.uppercased())
                 }
+                if let username {
+                    // Usernames are lowercase; capitals would misspell them.
+                    Text(verbatim: "@\(username)")
+                        .tracking(0)
+                }
             }
             .font(.themeLabel)
             .tracking(1.2)
@@ -1928,7 +1959,7 @@ struct CompetitionPersonView: View {
         .padding(.horizontal, 4)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(
-            ["\(record.accessibilityText)", competitionWeeksText(weekCount), tag]
+            ["\(record.accessibilityText)", competitionWeeksText(weekCount), tag, username.map { "@\($0)" }]
                 .compactMap { $0 }
                 .joined(separator: ". ")
         )
@@ -2202,6 +2233,7 @@ struct CompetitionPersonPlace: Equatable, Sendable {
 /// or a challenge.
 enum CompetitionHomeRoute: Hashable {
     case history
+    case friends
     /// One person's page, by opponent identity.
     case person(String)
     /// That person's Records, one push above their page.
@@ -2216,7 +2248,8 @@ enum CompetitionHomeRoute: Hashable {
         path: Binding<[CompetitionID]>,
         showsHistory: Binding<Bool>,
         person: Binding<String?>,
-        personPlace: Binding<CompetitionPersonPlace> = .constant(CompetitionPersonPlace())
+        personPlace: Binding<CompetitionPersonPlace> = .constant(CompetitionPersonPlace()),
+        showsFriends: Binding<Bool> = .constant(false)
     ) -> Binding<[CompetitionHomeRoute]> {
         Binding(
             get: {
@@ -2228,7 +2261,10 @@ enum CompetitionHomeRoute: Hashable {
                         at: min(place.depth, routes.count)
                     )
                 }
-                return (showsHistory.wrappedValue ? [.history] : []) + routes
+                var bottom: [CompetitionHomeRoute] = []
+                if showsFriends.wrappedValue { bottom.append(.friends) }
+                if showsHistory.wrappedValue { bottom.append(.history) }
+                return bottom + routes
             },
             set: { newRoutes in
                 var routes = newRoutes
@@ -2237,7 +2273,9 @@ enum CompetitionHomeRoute: Hashable {
                     routes = Array(routes[...first])
                 }
                 let personIndex = routes.firstIndex(where: \.isPerson)
+                // Both before the person: closing either clears it.
                 showsHistory.wrappedValue = routes.first == .history
+                showsFriends.wrappedValue = routes.first == .friends
                 person.wrappedValue = personIndex.flatMap {
                     guard case let .person(identity) = routes[$0] else { return nil }
                     return identity

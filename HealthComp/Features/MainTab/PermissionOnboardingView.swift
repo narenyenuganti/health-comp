@@ -80,7 +80,7 @@ struct PermissionOnboardingView: View {
                 ? "HealthComp reads your Activity rings to score each match day. You’ll join the match right after."
                 : "HealthComp reads your Activity rings to score each match day."
         case .notifications:
-            "HealthComp only sends match moments, like these."
+            "HealthComp sends match moments, like these, and friend requests."
         }
     }
 

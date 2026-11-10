@@ -53,6 +53,13 @@ struct AccountBlockedPeople {
     let unblock: (UUID) -> Void
 }
 
+/// Your username and who can find or challenge you, for Account → Privacy.
+/// Nil hides them; so does a server that hasn't answered.
+struct AccountFriendSettings {
+    let state: FriendSettingsFeature.State
+    let send: (FriendSettingsFeature.Action) -> Void
+}
+
 /// What Account → Notifications needs from the competition. Hosts without
 /// competition state pass nil, which hides the row.
 struct AccountNotificationSettings {
@@ -150,6 +157,7 @@ struct AccountSettingsView: View {
     var blockedPeople: AccountBlockedPeople?
     /// Real accounts only: set, change or remove your photo.
     var profilePhoto: AccountProfilePhoto?
+    var friendSettings: AccountFriendSettings?
 #if HEALTHCOMP_STAGING
     var refreshCompetition: (() -> Void)?
 #endif
@@ -330,7 +338,7 @@ struct AccountSettingsView: View {
             .themePanel(cornerRadius: 14)
             .accessibilityIdentifier("account.settings.display-name")
 
-            Text("People you play see this name.")
+            Text("People you play, friends and anyone who finds you in search see this name.")
                 .font(.subheadline)
                 .foregroundStyle(Theme.secondary)
                 .multilineTextAlignment(.center)
@@ -427,7 +435,7 @@ struct AccountSettingsView: View {
                 Button("Remove Photo", role: .destructive) { profilePhoto.remove() }
                 Button("Cancel", role: .cancel) {}
             } message: {
-                Text("People you play will see your initial instead.")
+                Text("They will see your initial instead.")
             }
             .photosPicker(
                 isPresented: $isPhotoPickerPresented,
@@ -565,7 +573,7 @@ struct AccountSettingsView: View {
                         } message: {
                             Text("Your old link stops working. Challenges already sent stay.")
                         }
-                    Text("Anyone with this link can challenge you. Reset it to turn off the old one; challenges already sent stay.")
+                    Text("Anyone with this link can challenge you, unless you only allow friends. Reset it to turn off the old one; challenges already sent stay.")
                         .font(.caption)
                         .foregroundStyle(Theme.secondary)
                         .fixedSize(horizontal: false, vertical: true)
@@ -621,7 +629,7 @@ struct AccountSettingsView: View {
         } header: {
             SectionLabel("BLOCKED")
         } footer: {
-            Text("Blocked people can’t challenge you. They aren’t notified.")
+            Text("Blocked people can’t challenge you or find you in search. They aren’t notified.")
                 .foregroundStyle(Theme.secondary)
         }
         .listRowBackground(Theme.panel)
@@ -720,7 +728,7 @@ struct AccountSettingsView: View {
             .accessibilityIdentifier("account.appearance")
 
             NavigationLink {
-                AccountPrivacyPage()
+                AccountPrivacyPage(friends: friendSettings)
             } label: {
                 Label("Privacy", systemImage: "lock")
             }
@@ -937,13 +945,14 @@ private struct AccountNotificationsPage: View {
                     EmptyView()
                 }
             } footer: {
-                Text("HealthComp only sends match moments, like lead changes and results. To mute someone, open your match with them.")
+                Text("HealthComp sends match moments, like lead changes and results, and friend requests. To mute someone, open your match with them.")
                     .foregroundStyle(Theme.secondary)
             }
             .listRowBackground(Theme.panel)
 
             choiceSection("DURING A MATCH", CompetitionNotificationChoice.allCases.filter { !$0.isServerSent })
-            choiceSection("FROM THE OTHER PERSON", CompetitionNotificationChoice.allCases.filter(\.isServerSent))
+            choiceSection("FROM THE OTHER PERSON", CompetitionNotificationChoice.allCases.filter { $0.isServerSent && !$0.isFriends })
+            choiceSection("FRIENDS", CompetitionNotificationChoice.allCases.filter(\.isFriends))
 
             if !settings.mutedPeople.isEmpty {
                 Section {
@@ -1076,8 +1085,16 @@ private struct NotificationChoiceToggle: View {
 }
 
 private struct AccountPrivacyPage: View {
+    let friends: AccountFriendSettings?
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+
     var body: some View {
         List {
+            if let friends, let shown = friends.state.shown {
+                usernameSection(friends, shown)
+                searchSection(friends, shown)
+                challengeSection(friends, shown)
+            }
             Section {
                 Label(
                     "Raw Health data stays on this iPhone",
@@ -1085,7 +1102,7 @@ private struct AccountPrivacyPage: View {
                 )
                 Label(
                     "The other person gets your daily points, rounded Activity percentages and modes",
-                    systemImage: "person.2.shield"
+                    systemImage: "person.2"
                 )
                 Link(destination: URL(string: "https://healthcomp.app/privacy")!) {
                     Text("Privacy Policy")
@@ -1096,7 +1113,118 @@ private struct AccountPrivacyPage: View {
             }
             .listRowBackground(Theme.panel)
         }
+        .moving(Motion.settle, value: friends?.state)
         .accountPageStyle(title: "Privacy")
+        // The id, as Account can open before the publication mounts these.
+        .task(id: friends != nil) { friends?.send(.requested) }
+        .sheet(isPresented: Binding(
+            get: { friends?.state.sheet != nil },
+            set: { if !$0 { friends?.send(.usernameSheetClosed) } }
+        )) {
+            if let friends { UsernameSheet(friends: friends) }
+        }
+    }
+
+    private func usernameSection(
+        _ friends: AccountFriendSettings,
+        _ shown: FriendSettings
+    ) -> some View {
+        Section {
+            if let username = shown.username {
+                let layout = dynamicTypeSize.isAccessibilitySize
+                    ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
+                    : AnyLayout(HStackLayout(spacing: 12))
+                layout {
+                    Text(verbatim: "@\(username)")
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("account.privacy.username")
+                    Button { friends.send(.usernameSheetOpened) } label: {
+                        Text("Edit")
+                            .frame(minHeight: 44)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.borderless)
+                    .disabled(friends.state.isSaving)
+                    .accessibilityLabel("Edit Username")
+                    .accessibilityIdentifier("account.privacy.username.edit")
+                }
+            } else {
+                Button { friends.send(.usernameSheetOpened) } label: {
+                    Text("Choose a Username")
+                        .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                        .contentShape(Rectangle())
+                }
+                .disabled(friends.state.isSaving)
+                .accessibilityIdentifier("account.privacy.username.choose")
+            }
+        } header: {
+            SectionLabel("USERNAME")
+        }
+        .listRowBackground(Theme.panel)
+    }
+
+    private func searchSection(
+        _ friends: AccountFriendSettings,
+        _ shown: FriendSettings
+    ) -> some View {
+        Section {
+            Toggle("Show Me in Search", isOn: Binding(
+                get: { shown.showInSearch },
+                set: { friends.send(.showInSearchChanged($0)) }
+            ))
+            // Amber, not the page's ink, which hides the thumb in dark mode.
+            .tint(Theme.youFill)
+            .disabled(friends.state.isSaving)
+            .accessibilityIdentifier("account.privacy.show-in-search")
+            if friends.state.failedField == .showInSearch { saveError }
+        } header: {
+            SectionLabel("FINDING YOU")
+        } footer: {
+            Text("Off: only people with your link can add you. Search shows your name, photo and username, never your rings.")
+                .foregroundStyle(Theme.secondary)
+        }
+        .listRowBackground(Theme.panel)
+    }
+
+    private func challengeSection(
+        _ friends: AccountFriendSettings,
+        _ shown: FriendSettings
+    ) -> some View {
+        Section {
+            ForEach(FriendChallengePolicy.allCases, id: \.self) { policy in
+                let isSelected = shown.challengePolicy == policy
+                Button { friends.send(.challengePolicyChanged(policy)) } label: {
+                    HStack(spacing: 12) {
+                        Text(policy.title)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Image(systemName: "checkmark")
+                            .fontWeight(.semibold)
+                            .opacity(isSelected ? 1 : 0)
+                            .accessibilityHidden(true)
+                    }
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
+                }
+                .disabled(friends.state.isSaving)
+                .accessibilityAddTraits(isSelected ? .isSelected : [])
+                .accessibilityIdentifier("account.privacy.challenge.\(policy.rawValue)")
+            }
+            if friends.state.failedField == .challengePolicy { saveError }
+        } header: {
+            SectionLabel("WHO CAN CHALLENGE YOU")
+        }
+        .listRowBackground(Theme.panel)
+    }
+
+    private var saveError: some View {
+        Text("Couldn’t save. Check your connection and try again.")
+            .font(.callout)
+            .foregroundStyle(Theme.ink)
+            .fixedSize(horizontal: false, vertical: true)
+            .accessibilityIdentifier("account.privacy.error")
+            .listRowSeparator(.hidden, edges: .top)
     }
 }
 

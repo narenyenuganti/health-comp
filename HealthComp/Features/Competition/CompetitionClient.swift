@@ -95,6 +95,19 @@ struct CompetitionClient: Sendable {
     var loadBlockedProfiles: @Sendable () async throws -> [AuthenticatedProfile]
     /// Takes a profile id.
     var unblock: @Sendable (UUID) async throws -> Void
+    var getFriendSettings: @Sendable () async throws -> FriendSettings
+    var setUsername: @Sendable (String) async throws -> FriendSettings
+    var usernameAvailable: @Sendable (String) async throws -> Bool
+    var updateFriendSettings: @Sendable (Bool, FriendChallengePolicy) async throws -> FriendSettings
+    var listFriends: @Sendable () async throws -> FriendsList
+    var searchPeople: @Sendable (String) async throws -> [FriendPerson]
+    var sendFriendRequest: @Sendable (UUID) async throws -> FriendRelationship
+    /// The profile, then whether you accepted.
+    var respondToFriendRequest: @Sendable (UUID, Bool) async throws -> FriendRelationship
+    var removeFriend: @Sendable (UUID) async throws -> FriendRelationship
+    /// Blocks a person by profile id; answers with their blocked-list row.
+    var blockProfile: @Sendable (UUID) async throws -> AuthenticatedProfile
+    var reportProfile: @Sendable (UUID) async throws -> Void
     var previewInvite: @Sendable (
         CompetitionInviteClaimRequest
     ) async throws -> CompetitionInvitePreview
@@ -208,6 +221,42 @@ struct CompetitionClient: Sendable {
         unblock: @escaping @Sendable (UUID) async throws -> Void = { _ in
             throw CompetitionRemoteFailure.operationFailed
         },
+        getFriendSettings: @escaping @Sendable () async throws -> FriendSettings = {
+            throw CompetitionRemoteFailure.operationFailed
+        },
+        setUsername: @escaping @Sendable (String) async throws -> FriendSettings = { _ in
+            throw CompetitionRemoteFailure.operationFailed
+        },
+        usernameAvailable: @escaping @Sendable (String) async throws -> Bool = { _ in
+            throw CompetitionRemoteFailure.operationFailed
+        },
+        updateFriendSettings: @escaping @Sendable (
+            Bool,
+            FriendChallengePolicy
+        ) async throws -> FriendSettings = { _, _ in
+            throw CompetitionRemoteFailure.operationFailed
+        },
+        listFriends: @escaping @Sendable () async throws -> FriendsList = {
+            throw CompetitionRemoteFailure.operationFailed
+        },
+        searchPeople: @escaping @Sendable (String) async throws -> [FriendPerson] = { _ in
+            throw CompetitionRemoteFailure.operationFailed
+        },
+        sendFriendRequest: @escaping @Sendable (UUID) async throws -> FriendRelationship = { _ in
+            throw CompetitionRemoteFailure.operationFailed
+        },
+        respondToFriendRequest: @escaping @Sendable (UUID, Bool) async throws -> FriendRelationship = { _, _ in
+            throw CompetitionRemoteFailure.operationFailed
+        },
+        removeFriend: @escaping @Sendable (UUID) async throws -> FriendRelationship = { _ in
+            throw CompetitionRemoteFailure.operationFailed
+        },
+        blockProfile: @escaping @Sendable (UUID) async throws -> AuthenticatedProfile = { _ in
+            throw CompetitionRemoteFailure.operationFailed
+        },
+        reportProfile: @escaping @Sendable (UUID) async throws -> Void = { _ in
+            throw CompetitionRemoteFailure.operationFailed
+        },
         previewInvite: @escaping @Sendable (
             CompetitionInviteClaimRequest
         ) async throws -> CompetitionInvitePreview = { _ in
@@ -291,6 +340,17 @@ struct CompetitionClient: Sendable {
         self.block = block
         self.loadBlockedProfiles = loadBlockedProfiles
         self.unblock = unblock
+        self.getFriendSettings = getFriendSettings
+        self.setUsername = setUsername
+        self.usernameAvailable = usernameAvailable
+        self.updateFriendSettings = updateFriendSettings
+        self.listFriends = listFriends
+        self.searchPeople = searchPeople
+        self.sendFriendRequest = sendFriendRequest
+        self.respondToFriendRequest = respondToFriendRequest
+        self.removeFriend = removeFriend
+        self.blockProfile = blockProfile
+        self.reportProfile = reportProfile
         self.previewInvite = previewInvite
         self.loadChallengeLinkCode = loadChallengeLinkCode
         self.resetChallengeLinkCode = resetChallengeLinkCode

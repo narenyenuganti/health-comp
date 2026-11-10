@@ -620,7 +620,10 @@ actor CompetitionSyncCoordinator {
              .appAttestProofConflict:
             .appAttestRejectedTerminal
         case .operationFailed, .recipientUnavailable, .pendingInvitationExists,
-             .activeMatchExists, .incomingChallengeExists, .ownChallengeLink:
+             .activeMatchExists, .incomingChallengeExists, .ownChallengeLink,
+             .invalidUsername, .usernameUnavailable, .searchRateLimited,
+             .invalidFriendSettings, .invalidQuery, .invalidProfileID,
+             .invalidFriendRequestResponse, .friendRequestLimit, .requestUnavailable:
             .operationFailed
         case .cancelled, .retryableTransport:
             .operationFailed
