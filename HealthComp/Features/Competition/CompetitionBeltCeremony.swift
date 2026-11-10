@@ -709,7 +709,8 @@ private struct CompetitionJudgesReveal: View {
                 .foregroundStyle(Theme.secondary)
             VStack(spacing: 28) {
                 Text("OFFICIAL SCORECARDS").font(.themeLabel).tracking(2)
-                    .foregroundStyle(Theme.faint)
+                    .foregroundStyle(Theme.secondary)
+                    .environment(\.colorScheme, .dark)
                 ZStack {
                     RoundedRectangle(cornerRadius: 8).stroke(Theme.faint.opacity(0.5), lineWidth: 1)
                         .frame(height: 150).rotationEffect(.degrees(-4))
@@ -735,7 +736,8 @@ private struct CompetitionJudgesReveal: View {
                 .accessibilityAction(.default, open)
                 .accessibilityIdentifier("competition.judges.seal")
                 Text("THREE RINGS. THREE JUDGES.").font(.themeLabel).tracking(1.5)
-                    .foregroundStyle(Theme.faint)
+                    .foregroundStyle(Theme.secondary)
+                    .environment(\.colorScheme, .dark)
             }
             .padding(28).background(Theme.beltWell, in: RoundedRectangle(cornerRadius: 20))
             Text(tapOpens ? "Hold or tap to open" : "Hold to open")
@@ -914,15 +916,15 @@ private struct CompetitionJudgesFigures: View, Animatable {
                 line([.init(x: x - 19, y: 190), .init(x: x + 19, y: 190)], color: Theme.beltWell, width: 5)
             }
             // Referee behind the joined wrists, neutral stripes and an upright stance.
-            line([.init(x: 159, y: 209), .init(x: 153, y: 267)], color: Theme.faint, width: 16)
-            line([.init(x: 181, y: 209), .init(x: 187, y: 267)], color: Theme.faint, width: 16)
-            context.fill(Path(roundedRect: CGRect(x: 146, y: 132, width: 48, height: 81), cornerRadius: 9), with: .color(Theme.faint))
+            line([.init(x: 159, y: 209), .init(x: 153, y: 267)], color: Theme.tertiary, width: 16)
+            line([.init(x: 181, y: 209), .init(x: 187, y: 267)], color: Theme.tertiary, width: 16)
+            context.fill(Path(roundedRect: CGRect(x: 146, y: 132, width: 48, height: 81), cornerRadius: 9), with: .color(Theme.tertiary))
             for x in [155, 170, 185] { line([.init(x: x, y: 139), .init(x: x, y: 202)], color: Theme.beltWell, width: 5) }
-            ellipse(CGRect(x: 156, y: 94, width: 28, height: 31), color: Theme.faint)
+            ellipse(CGRect(x: 156, y: 94, width: 28, height: 31), color: Theme.tertiary)
             for (index, wrist) in wrists.enumerated() {
                 let shoulder: CGFloat = index == 0 ? 149 : 191
-                line([.init(x: shoulder, y: 144), .init(x: (shoulder + wrist.x) / 2, y: (144 + wrist.y) / 2 + 8), wrist], color: Theme.faint, width: 12)
-                ellipse(CGRect(x: wrist.x - 6, y: wrist.y + 4, width: 12, height: 12), color: Theme.faint)
+                line([.init(x: shoulder, y: 144), .init(x: (shoulder + wrist.x) / 2, y: (144 + wrist.y) / 2 + 8), wrist], color: Theme.tertiary, width: 12)
+                ellipse(CGRect(x: wrist.x - 6, y: wrist.y + 4, width: 12, height: 12), color: Theme.tertiary)
             }
         }
     }
