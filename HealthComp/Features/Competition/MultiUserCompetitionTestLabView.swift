@@ -2871,12 +2871,39 @@ enum MultiUserCompetitionTestLabFixtures {
             _ outcome: CompetitionOutcome,
             completed: Bool = false
         ) -> LocalCompetitionPresentation {
-            let (user, opponent): (Double, Double) = switch outcome {
+            let judges = ProcessInfo.processInfo.arguments.contains("--judges-decision") && completed
+            let actualStart = judges ? startDay + 2 : startDay
+            var you: [[Double]] = [
+                [142, 150, 138, 160, 150, 145, 147],
+                [160, 170, 150, 180, 165, 155, 160],
+                [100, 105, 102, 110, 108, 107, 110],
+            ]
+            var them: [[Double]] = [
+                [120, 130, 110, 140, 125, 120, 125],
+                [170, 180, 160, 190, 175, 165, 170],
+                [75, 80, 78, 82, 85, 80, 80],
+            ]
+            if byte == 0x94 { them[1] = [140, 150, 130, 160, 145, 135, 140] }
+            if outcome == .loss { swap(&you, &them) }
+            if outcome == .tie {
+                you = [[140, 150, 130, 160, 140, 130, 150], [140, 150, 130, 160, 140, 130, 150], [100, 100, 101, 100, 100, 100, 100]]
+                them = [[125, 130, 120, 140, 130, 125, 130], [150, 160, 150, 170, 160, 150, 160], [100, 100, 101, 100, 100, 100, 100]]
+            }
+            let ownDays = (0..<7).map { day in you.reduce(0) { $0 + $1[day] } }
+            let otherDays = (0..<7).map { day in them.reduce(0) { $0 + $1[day] } }
+            let (baseUser, baseOpponent): (Double, Double) = switch outcome {
             case .win: (3_210, 3_050)
             case .loss: (2_980, 3_140)
             case .tie: (3_000, 3_000)
             }
-            let end = competitionScheduleBoundaries(schedule(startDay: startDay, month: month))!.end
+            let user = judges ? ownDays.reduce(0, +) : baseUser
+            let opponent = judges ? otherDays.reduce(0, +) : baseOpponent
+            var days = judges ? completedDays(startDay: actualStart, owner: ownDays, opponent: otherDays) : []
+            for index in days.indices {
+                days[index].ownerRingPoints = you.map { $0[index] }
+                days[index].opponentRingPoints = them.map { $0[index] }
+            }
+            let end = competitionScheduleBoundaries(schedule(startDay: actualStart, month: month))!.end
             let completedAt = end.addingTimeInterval(43_200)
             return presentation(
                 id: id(byte),
@@ -2895,7 +2922,7 @@ enum MultiUserCompetitionTestLabFixtures {
                     ),
                 userPoints: user,
                 opponentPoints: opponent,
-                days: [],
+                days: days,
                 currentDayOrdinal: nil,
                 terminal: LocalCompetitionTerminalPresentation(
                     userPoints: user,
@@ -2904,7 +2931,7 @@ enum MultiUserCompetitionTestLabFixtures {
                     basis: .stableAcrossPostBoundaryReads,
                     completedAt: completedAt
                 ),
-                startDay: startDay,
+                startDay: actualStart,
                 month: month,
                 opponentIdentity: identity
             )

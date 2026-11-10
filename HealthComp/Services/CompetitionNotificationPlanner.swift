@@ -121,8 +121,8 @@ extension CompetitionNotificationPolicy {
             )
         case .scheduled(.competitionEnded):
             return content(
-                statusTitle(.tallying(startedAt: .distantPast), opponent: name),
-                "HealthComp is checking the latest Activity data before finalizing your result with \(name)."
+                "Judges are tallying…",
+                "Seven rounds with \(name) are in. The decision is coming."
             )
         case .scheduled(.whatItTakes):
             guard let takes = message.whatItTakes, let need = takes.points else {
@@ -184,25 +184,9 @@ extension CompetitionNotificationPolicy {
                 body
             )
         case .opportunistic(.result):
-            let title = message.outcome.map {
-                statusTitle(
-                    .completed(
-                        outcome: $0,
-                        basis: .stableAcrossPostBoundaryReads,
-                        completedAt: .distantPast
-                    ),
-                    opponent: name
-                )
-            } ?? "Match complete"
-            guard let scores = resultScores(message, locale: locale) else {
-                return content(title, "Your match with \(name) is complete.")
-            }
-            let body = message.outcome == .loss
-                ? "\(scores.opp) to \(scores.own)."
-                : "\(scores.own) to \(scores.opp)."
             return content(
-                title,
-                [body, beltSentence(message)].compactMap { $0 }.joined(separator: " ")
+                "The judges’ scorecards are in",
+                "Seven rounds with \(name). Open to hear the decision."
             )
         case .opportunistic(.catchUp):
             return content(

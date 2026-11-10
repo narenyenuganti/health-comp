@@ -131,6 +131,14 @@ struct CompetitionResultView: View {
                     .transition(Motion.appear)
                 }
 
+                Button("Watch the decision again", systemImage: "arrow.counterclockwise") {
+                    replaysCeremony = true
+                }
+                .font(.themeLabel)
+                .foregroundStyle(Theme.ink)
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .accessibilityIdentifier("competition.judges.replay")
+
                 // Real matches only; practice also renders as remote.
                 if source == .remoteParticipants, !competition.isPractice {
                     shareResultButton
@@ -230,6 +238,7 @@ struct CompetitionResultView: View {
         .competitionBeltCeremony(
             event: beltEvent,
             opponentName: opponentName,
+            competition: competition,
             isFirstView: isFirstView,
             replay: $replaysCeremony,
             onFinished: startVerdict
@@ -1516,6 +1525,7 @@ enum CompetitionRematchStage: Equatable {
 extension CompetitionMotionSeen {
     enum Moment: String {
         case verdict
+        case judges
         case versus
     }
 

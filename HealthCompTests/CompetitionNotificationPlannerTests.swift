@@ -93,8 +93,8 @@ final class CompetitionNotificationPlannerTests: XCTestCase {
             ),
             locale: Locale(identifier: "en_US")
         )
-        XCTAssertEqual(result.title, "You beat Alex")
-        XCTAssertEqual(result.body, "4,200 to 3,900.")
+        XCTAssertEqual(result.title, "The judges’ scorecards are in")
+        XCTAssertEqual(result.body, "Seven rounds with Alex. Open to hear the decision.")
     }
 
     func testLivePolicyV1UsesTheUsersLocaleAndWholePoints() {
@@ -126,34 +126,23 @@ final class CompetitionNotificationPlannerTests: XCTestCase {
         }
         XCTAssertEqual(title(.scheduled(.finalDay)), "Last day")
         XCTAssertEqual(title(.scheduled(.finalDay)), formatter(.endsToday))
-        XCTAssertEqual(title(.scheduled(.competitionEnded)), "Final score pending")
-        XCTAssertEqual(
-            title(.scheduled(.competitionEnded)),
-            formatter(.tallying(startedAt: .distantPast))
-        )
+        XCTAssertEqual(title(.scheduled(.competitionEnded)), "Judges are tallying…")
         XCTAssertEqual(title(.scheduled(.scheduledStart)), "Day 1 of 7")
         XCTAssertEqual(
             title(.scheduled(.scheduledStart)),
             formatter(.active(dayOrdinal: 1))
         )
-        XCTAssertEqual(title(.opportunistic(.result), outcome: .loss), "Alex won")
-        XCTAssertEqual(title(.opportunistic(.result), outcome: .tie), "All square with Alex")
-        XCTAssertEqual(
-            title(.opportunistic(.result), outcome: .loss),
-            formatter(.completed(
-                outcome: .loss,
-                basis: .stableAcrossPostBoundaryReads,
-                completedAt: .distantPast
-            ))
-        )
+        for outcome in [CompetitionOutcome.win, .loss, .tie] {
+            XCTAssertEqual(title(.opportunistic(.result), outcome: outcome), "The judges’ scorecards are in")
+        }
     }
 
-    func testResultCopyShowsDecimalsOnlyWhenWholePointsWouldHideTheWinner() {
+    func testResultTeaserDoesNotRevealEvenAFractionalWinner() {
         let content = CompetitionNotificationPolicy.liveV1Content(
             message(.opportunistic(.result), 412.3, 412.0, .win),
             locale: Locale(identifier: "en_US")
         )
-        XCTAssertEqual(content.body, "412.30 to 412.00.")
+        XCTAssertEqual(content.body, "Seven rounds with Alex. Open to hear the decision.")
     }
 
     private func message(
@@ -858,61 +847,61 @@ final class CompetitionNotificationPlannerTests: XCTestCase {
         )
     }
 
-    func testResultNotificationSaysYouTookTheBeltFromThem() throws {
+    func testResultNotificationConcealsYouTookTheBeltFromThem() throws {
         XCTAssertEqual(
             try resultBody([
                 earlierWeek(outcome: .loss),
                 finishedMatch("11", name: "Sam", owner: 4_200, opponent: 3_900, outcome: .win),
             ]),
-            "4,200 to 3,900. You took the belt from Sam."
+            "Seven rounds with Sam. Open to hear the decision."
         )
     }
 
-    func testResultNotificationSaysTheyTookTheBelt() throws {
+    func testResultNotificationConcealsTheyTookTheBelt() throws {
         XCTAssertEqual(
             try resultBody([
                 earlierWeek(outcome: .win),
                 finishedMatch("11", name: "Sam", owner: 3_117, opponent: 3_302, outcome: .loss),
             ]),
-            "3,302 to 3,117. Sam took the belt."
+            "Seven rounds with Sam. Open to hear the decision."
         )
     }
 
-    func testResultNotificationSaysYouTookTheBeltOnAFirstWin() throws {
+    func testResultNotificationConcealsYouTookTheBeltOnAFirstWin() throws {
         XCTAssertEqual(
             try resultBody([
                 finishedMatch("11", name: "Sam", owner: 4_200, opponent: 3_900, outcome: .win),
             ]),
-            "4,200 to 3,900. You took the belt."
+            "Seven rounds with Sam. Open to hear the decision."
         )
     }
 
-    func testResultNotificationOmitsTheBeltWhenKeptTiedOrRetired() throws {
+    func testResultNotificationTeasesKeptTiedAndRetiredMatches() throws {
         XCTAssertEqual(
             try resultBody([
                 earlierWeek(outcome: .win),
                 finishedMatch("11", name: "Sam", owner: 4_200, opponent: 3_900, outcome: .win),
             ]),
-            "4,200 to 3,900."
+            "Seven rounds with Sam. Open to hear the decision."
         )
         XCTAssertEqual(
             try resultBody([
                 earlierWeek(outcome: .win),
                 finishedMatch("11", name: "Sam", owner: 1_500, opponent: 1_500, outcome: .tie),
             ]),
-            "1,500 to 1,500."
+            "Seven rounds with Sam. Open to hear the decision."
         )
         XCTAssertEqual(
             try resultBody([
                 finishedMatch("11", name: "Sam", owner: 1_500, opponent: 1_500, outcome: .tie),
             ]),
-            "1,500 to 1,500."
+            "Seven rounds with Sam. Open to hear the decision."
         )
         XCTAssertEqual(
             try resultBody([
                 finishedMatch("11", name: "Former competitor", owner: 4_200, opponent: 3_900, outcome: .win),
             ]),
-            "4,200 to 3,900."
+            "Seven rounds with Former competitor. Open to hear the decision."
         )
     }
 
@@ -1235,18 +1224,16 @@ final class CompetitionNotificationPlannerTests: XCTestCase {
             copy(.opportunistic(.dailyMaximum), 600, 100, live: 4).body,
             "That’s the daily max. It counts in all 4 of your matches."
         )
-        XCTAssertEqual(line(copy(.opportunistic(.result), 4_200, 3_900, .win)), "You beat Alex · 4,200 to 3,900.")
-        XCTAssertEqual(line(copy(.opportunistic(.result), 3_117, 3_302, .loss)), "Alex won · 3,302 to 3,117.")
-        let tie = copy(.opportunistic(.result), 1_500, 1_500, .tie)
-        XCTAssertEqual(tie.title, formatterTitle(.completed(
-            outcome: .tie, basis: .stableAcrossPostBoundaryReads, completedAt: .distantPast
-        )))
-        XCTAssertEqual(tie.body, "1,500 to 1,500.")
-        XCTAssertEqual(copy(.opportunistic(.result), 412.3, 412.0, .win).body, "412.30 to 412.00.")
-        XCTAssertEqual(
-            line(copy(.opportunistic(.result))),
-            "Match complete · Your match with Alex is complete."
-        )
+        for outcome in [CompetitionOutcome.win, .loss, .tie] {
+            XCTAssertEqual(line(copy(.opportunistic(.result), 4_200, 3_900, outcome)),
+                           "The judges’ scorecards are in · Seven rounds with Alex. Open to hear the decision.")
+        }
+        XCTAssertEqual(copy(.opportunistic(.result), 412.3, 412.0, .win).body,
+                       "Seven rounds with Alex. Open to hear the decision.")
+        XCTAssertEqual(line(copy(.opportunistic(.result))),
+                       "The judges’ scorecards are in · Seven rounds with Alex. Open to hear the decision.")
+        XCTAssertEqual(copy(.scheduled(.competitionEnded)).body,
+                       "Seven rounds with Alex are in. The decision is coming.")
         XCTAssertEqual(
             line(copy(.opportunistic(.catchUp))),
             "Match update · Open HealthComp for the latest on your match with Alex."

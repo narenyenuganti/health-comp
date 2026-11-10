@@ -3580,3 +3580,60 @@ extension CompetitionPresentationTests {
         }
     }
 }
+
+final class CompetitionJudgesDecisionTests: XCTestCase {
+    private func decision(_ you: [Double], _ them: [Double], totals: (Double, Double)? = nil) throws -> CompetitionJudgesDecision {
+        let days = try (0..<7).map { index in
+            var day = LocalCompetitionDayPresentation(
+                day: try CompetitionDay(era: 1, year: 2026, month: 11, day: index + 2, timeZoneIdentifier: "UTC"),
+                ordinal: index + 1,
+                ownerAcceptedPoints: you.reduce(0, +) / 7,
+                ownerLatestAvailability: .observed,
+                opponentRevealedPoints: them.reduce(0, +) / 7
+            )
+            day.ownerRingPoints = you.map { $0 / 7 }
+            day.opponentRingPoints = them.map { $0 / 7 }
+            return day
+        }
+        return competitionJudgesDecision(days: days, you: totals?.0 ?? you.reduce(0, +), them: totals?.1 ?? them.reduce(0, +))
+    }
+
+    func testApprovedSplitAndItsReverse() throws {
+        let won = try decision([1032, 1140, 742], [870, 1210, 560])
+        XCTAssertEqual(won.outcome, .win)
+        XCTAssertEqual(won.label, "SPLIT DECISION")
+        XCTAssertEqual(won.cards[0].yourTotal ?? 0, 1032, accuracy: 0.0001)
+        let lost = try decision([870, 1210, 560], [1032, 1140, 742])
+        XCTAssertEqual(lost.outcome, .loss)
+        XCTAssertEqual(lost.label, "SPLIT DECISION")
+    }
+
+    func testUnanimousMajorityAndDraw() throws {
+        XCTAssertEqual(try decision([1032, 1140, 742], [870, 1000, 560]).label, "UNANIMOUS DECISION")
+        XCTAssertEqual(try decision([1032, 1140, 742], [870, 1140, 560]).label, "MAJORITY DECISION")
+        let draw = try decision([1000, 1000, 701], [900, 1100, 701])
+        XCTAssertEqual(draw.outcome, .tie)
+        XCTAssertEqual(draw.label, "DRAW")
+    }
+
+    func testCardsNeverOverrideTotalPoints() throws {
+        let decision = try decision([1300, 600, 600], [700, 800, 800])
+        XCTAssertEqual(decision.outcome, .win)
+        XCTAssertEqual(decision.label, "BY TOTAL POINTS")
+        XCTAssertEqual(try self.decision([100, 100, 100], [90, 90, 90], totals: (270, 300)).label, "BY TOTAL POINTS")
+    }
+
+    func testMissingDataDoesNotInventCards() {
+        let decision = competitionJudgesDecision(days: [], you: 2914, them: 2640)
+        XCTAssertEqual(decision.label, "BY TOTAL POINTS")
+        XCTAssertTrue(decision.cards.allSatisfy { $0.yourTotal == nil && $0.theirTotal == nil })
+    }
+
+    func testSeenMarkIsPerMatchAndIndependentOfVerdict() {
+        let id = CompetitionID(UUID())
+        let marked = CompetitionMotionSeen().marking(.judges, id)
+        XCTAssertTrue(CompetitionMotionSeen(rawValue: marked.rawValue)!.hasSeen(.judges, id))
+        XCTAssertFalse(marked.hasSeen(.verdict, id))
+        XCTAssertFalse(marked.hasSeen(.judges, CompetitionID(UUID())))
+    }
+}
