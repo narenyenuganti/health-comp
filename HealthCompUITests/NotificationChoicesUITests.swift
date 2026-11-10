@@ -64,6 +64,10 @@ final class NotificationChoicesUITests: XCTestCase {
             )
             XCTAssertGreaterThanOrEqual(toggle.frame.height, 43.5, row.id)
             XCTAssertEqual(toggle.isEnabled, row.id != "live-activity", row.id)
+            if row.id == "live-activity" {
+                // The saved choice is still on; iOS having Live Activities off must show Off.
+                XCTAssertEqual(toggle.value as? String, "0", row.id)
+            }
             if row.id == "reaction" { previous = app.staticTexts["FROM THE OTHER PERSON"] }
             if row.id == "friend_request" { previous = app.staticTexts["FRIENDS"] }
             XCTAssertTrue(previous.exists, row.id)
