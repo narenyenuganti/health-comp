@@ -158,9 +158,10 @@ enum GroupMatchWire {
         }
         _ = try object.optional("closed_by_profile_id") { try object.uuid($0) }
         let seats = try object.array("seats").map { try seat($0, matchID: id, format: format) }
-        guard seats.map(\.index) == Array(1...format.seatCount) else {
-            throw CompetitionRemoteFailure.serverContractMismatch
-        }
+        let profiles = seats.compactMap(\.profileID)
+        guard seats.map(\.index) == Array(1...format.seatCount),
+              Set(seats.map(\.id)).count == seats.count, Set(profiles).count == profiles.count
+        else { throw CompetitionRemoteFailure.serverContractMismatch }
         let owner = try WireObject(object.values["owner"], keys: ["profile_id", "revision_high_water", "attestation"])
         guard try owner.uuid("profile_id") == viewer,
               seats.contains(where: { $0.profileID == viewer })
@@ -276,13 +277,24 @@ enum GroupMatchWire {
         else { throw CompetitionRemoteFailure.serverContractMismatch }
         _ = try object.uuid("id")
         _ = try object.uuid("semantic_event_id")
-        _ = try object.string("move_mode")
-        _ = try object.string("stand_mode")
         _ = try object.date("evaluated_at")
         _ = try object.date("received_at")
         let revision = try object.int64("client_revision")
         let sequence = try object.int64("server_seq")
-        guard revision > 0, sequence > 0 else { throw CompetitionRemoteFailure.serverContractMismatch }
+        guard revision > 0, sequence > 0, let profileID else { throw CompetitionRemoteFailure.serverContractMismatch }
+        // The row's own fields must hash to its digest: this closes modes,
+        // reasons and basis points with the wire's validators.
+        let wire = try RemoteScoreRevisionWireV1(
+            competitionID: matchID, participantID: profileID, dayOrdinal: ordinal,
+            moveMode: try object.string("move_mode"), standMode: try object.string("stand_mode"),
+            moveBasisPoints: move, exerciseBasisPoints: exercise, standBasisPoints: stand,
+            availabilityReason: reason, scoringPolicyIdentity: RemoteScoringWireV1.policyIdentity,
+            clientRevision: revision
+        )
+        let rings = competitionRingBasisPoints(centipoints, move, exercise, stand)
+        guard wire.wireContentSHA256 == digest, wire.acceptedCentiPoints == centipoints,
+              (centipoints == nil) == (rings == nil)
+        else { throw CompetitionRemoteFailure.serverContractMismatch }
         return GroupMatchReadModel.Day(
             ordinal: ordinal,
             clientRevision: revision,
@@ -290,7 +302,7 @@ enum GroupMatchWire {
             centipoints: centipoints,
             availabilityReason: reason,
             wireContentSHA256: digest,
-            ringBasisPoints: competitionRingBasisPoints(centipoints, move, exercise, stand)
+            ringBasisPoints: rings
         )
     }
 
@@ -373,7 +385,9 @@ enum GroupMatchWire {
             return .init(ordinal: try day.int("ordinal"), status: status, centipoints: points, reason: reason)
         }
         let total = Int(try object.int64("total_centi_points"))
-        guard days.map(\.ordinal) == Array(1...7), (0...420_000).contains(total) else {
+        guard days.map(\.ordinal) == Array(1...7), (0...420_000).contains(total),
+              days.reduce(0, { $0 + ($1.centipoints ?? 0) }) == total
+        else {
             throw CompetitionRemoteFailure.serverContractMismatch
         }
         return .init(seatIndex: try object.int("seat_index"), totalCentipoints: total, days: days)
@@ -740,12 +754,17 @@ struct RemoteGroupMatchSync: Sendable {
     func refresh() async -> (matches: [GroupMatchReadModel], isFresh: Bool) {
         let cached = await store.readModel()
         guard let fresh = try? await list() else { return (cached, false) }
+        var keptCached = false
         let merged = fresh.map { match in
-            cached.first { $0.id == match.id && $0.serverVersion > match.serverVersion } ?? match
+            guard let newer = cached.first(where: { $0.id == match.id && $0.serverVersion > match.serverVersion })
+            else { return match }
+            keptCached = true
+            return newer
         }
         try? await store.saveReadModel(merged)
         await removeOrphanedOwners(keeping: Set(merged.map(\.id)))
-        return (merged, true)
+        // A list older than the cache can't vouch for current heads.
+        return (merged, !keptCached)
     }
 
     private func list() async throws -> [GroupMatchReadModel] {
@@ -895,6 +914,11 @@ struct RemoteGroupMatchSync: Sendable {
             guard case .permanentFailure = entry.state else { return }
             // A newer accepted row for that day replaced the rejected one.
             if revisions[request.dayOrdinal - 1] < request.clientRevision { hasFailedUpload = true }
+        }
+        // Heads older than a row this device saw accepted are a stale list.
+        if let document = await store.owner(match.id),
+           document.accepted.contains(where: { $0.clientRevision > revisions[$0.ordinal - 1] }) {
+            return
         }
         let basis: CompetitionAttestationBasis
         if headsAreFresh, !hasFailedUpload, revisions.allSatisfy({ $0 > 0 }) {

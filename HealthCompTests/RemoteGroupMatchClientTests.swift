@@ -153,12 +153,13 @@ final class RemoteGroupMatchClientTests: XCTestCase {
         }
         var sync = harness.sync(api: groupTestAPI(listGroupMatches: { older }), now: { self.dayThreeNoon })
         var refreshed = await sync.refresh()
-        XCTAssertTrue(refreshed.isFresh)
+        XCTAssertFalse(refreshed.isFresh, "a list older than the cache can't vouch for current heads")
         XCTAssertEqual(refreshed.matches.first { $0.id == doublesID }?.lifecycle, "scheduled")
 
         let newer = try editedFixture(doublesID) { $0["server_version"] = "12" }
         sync = harness.sync(api: groupTestAPI(listGroupMatches: { newer }), now: { self.dayThreeNoon })
         refreshed = await sync.refresh()
+        XCTAssertTrue(refreshed.isFresh)
         XCTAssertEqual(refreshed.matches.first { $0.id == doublesID }?.serverVersion, 12)
 
         sync = harness.sync(api: groupTestAPI(listGroupMatches: { Data("{\"version\":1}".utf8) }), now: { self.dayThreeNoon })
@@ -626,6 +627,66 @@ final class RemoteGroupMatchClientTests: XCTestCase {
         ).run()
         let second = await server.acceptedRequests()
         XCTAssertEqual(second.map(\.clientRevision), [4, 5, 6, 7], "day 2 goes out as 7")
+    }
+
+    /// Non-blocking 7: the list still shows revision 10 for day 7 after this
+    /// device saw 11 accepted. Nothing is attested over the stale heads, not
+    /// even best-available after the deadline.
+    func testHeadsOlderThanALocalReceiptAreNotAttested() async throws {
+        let harness = try Harness()
+        let server = try FakeGroupServer(
+            fixture: fixture(), matchID: doublesID, viewer: viewer,
+            startDay: "2026-11-03", deadline: "2026-11-10T00:00:00+00:00"
+        )
+        let clock = TestClock(dayThreeNoon.addingTimeInterval(-86_400))
+        _ = await harness.sync(
+            api: server.api(), environment: try health(startDay: (2026, 11, 3), days: 7), now: { clock.now }
+        ).run()
+        let document = await harness.store.owner(doublesID)
+        let row = try XCTUnwrap(document?.accepted.last)
+        _ = try await harness.store.rehydrate(doublesID, highWater: 11, rows: [
+            try RemoteAcceptedScoreRow(
+                ordinal: 7, acceptedCentiPoints: row.acceptedCentiPoints, availabilityReason: nil,
+                wireContentSHA256: String(repeating: "a", count: 64), clientRevision: 11,
+                serverSequence: 999, ringBasisPoints: row.ringBasisPoints
+            ),
+        ])
+        clock.now = dayThreeNoon
+        _ = await harness.sync(
+            api: server.api(), environment: try health(startDay: (2026, 11, 3), days: 7, readFails: true),
+            now: { clock.now }
+        ).run()
+        let sent = await server.attestations
+        XCTAssertTrue(sent.isEmpty)
+    }
+
+    /// Non-blocking 8: rows whose fields don't hash to their digest, an
+    /// unknown reason or mode, or a seat twice are rejected whole.
+    func testRejectsRowsTheWireValidatorsRefuse() throws {
+        func viewerDay(_ edit: @escaping (inout [String: Any]) -> Void) throws -> Data {
+            try editedFixture(doublesID) { match in
+                Self.editSeat(&match, 0) { seat in
+                    var days = seat["days"] as! [[String: Any]]
+                    edit(&days[0])
+                    seat["days"] = days
+                }
+            }
+        }
+        XCTAssertNoThrow(try GroupMatchWire.decodeList(fixture(), viewer: viewer))
+        for (name, body) in [
+            ("unknown reason", try viewerDay { $0["availability_reason"] = "madeUpReason"; $0["accepted_centi_points"] = NSNull() }),
+            ("unknown mode", try viewerDay { $0["move_mode"] = "bogus" }),
+            ("ring outside its range", try viewerDay { $0["move_basis_points"] = 90_000 }),
+            ("points the rings don't add up to", try viewerDay { $0["accepted_centi_points"] = 100 }),
+            ("a digest of other content", try viewerDay { $0["wire_content_sha256"] = String(repeating: "0", count: 64) }),
+            ("a seat twice", try editedFixture(doublesID) { match in
+                var seats = match["seats"] as! [[String: Any]]
+                seats[1]["id"] = seats[0]["id"]
+                match["seats"] = seats
+            }),
+        ] {
+            XCTAssertThrowsError(try GroupMatchWire.decodeList(body, viewer: viewer), name)
+        }
     }
 
     // MARK: Helpers
