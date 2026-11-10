@@ -219,6 +219,7 @@ private struct CompetitionBeltCeremony: ViewModifier {
     private var hasPendingBelt: Bool {
         guard script != nil else { return false }
         guard let competition else { return isFirstView }
+        if case .archived = competition.lifecycle { return false }
         return !seen.hasSeen(.belt, competition.id)
             && (isFirstView || seen.hasSeen(.judges, competition.id))
     }
