@@ -134,8 +134,11 @@ final class FriendsSettingsFeatureTests: XCTestCase {
         await clock.advance(by: .milliseconds(200))
         await store.send(.usernameChanged("nare")) { $0.sheet?.draft = "nare" }
         await clock.advance(by: .milliseconds(399))
+        // The wait for "nar" ends, but the field has moved on.
+        await store.receive(.usernameDebounced("nar"))
         XCTAssertEqual(asked.value, [])
         await clock.advance(by: .milliseconds(1))
+        await store.receive(.usernameDebounced("nare"))
         await store.receive(.usernameChecked("nare", isAvailable: true)) {
             $0.sheet?.availability = .available
         }
@@ -174,12 +177,17 @@ final class FriendsSettingsFeatureTests: XCTestCase {
             $0.sheet?.availability = .unknown
         }
         await clock.advance(by: .milliseconds(500))
+        await store.receive(.usernameDebounced("betaal"))
         XCTAssertEqual(asked.value, ["betaal"])
+        let retyped = ["off", "offline_na", "offline_name"]
         await store.send(.usernameChanged("")) { $0.sheet?.draft = "" }
-        for draft in ["off", "offline_na", "offline_name"] {
+        for draft in retyped {
             await store.send(.usernameChanged(draft)) { $0.sheet?.draft = draft }
         }
         await clock.advance(by: .milliseconds(700))
+        // The slow answer about "betaal" lands after the edits and is dropped.
+        await store.receive(.usernameChecked("betaal", isAvailable: true))
+        for draft in retyped { await store.receive(.usernameDebounced(draft)) }
         await store.receive(.usernameChecked("offline_name", isAvailable: true)) {
             $0.sheet?.availability = .available
         }
@@ -410,6 +418,7 @@ final class FriendsSettingsFeatureTests: XCTestCase {
         await store.send(.friendSettings(.usernameChanged("alice"))) {
             $0.friendSettings.sheet?.draft = "alice"
         }
+        await store.receive(.friendSettings(.usernameDebounced("alice")))
         await held.waitUntilEntered()
         await store.send(.stop) { $0.friendSettings = .init() }
         held.release()

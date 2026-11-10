@@ -47,6 +47,7 @@ struct FriendSettingsFeature {
         case usernameSheetOpened
         case usernameSheetClosed
         case usernameChanged(String)
+        case usernameDebounced(String)
         case usernameChecked(String, isAvailable: Bool?)
         case usernameContinueTapped
         case usernameSaveFinished(Result<FriendSettings, CompetitionRemoteFailure>)
@@ -120,14 +121,26 @@ struct FriendSettingsFeature {
                 // Your own name needs no check, and checks count against
                 // the search limit.
                 guard FriendSettings.isValidUsername(draft), draft != state.saved?.username else {
-                    return .cancel(id: CancelID.availability)
+                    return .none
                 }
+                // No cancelInFlight: it cancels when the new effect starts,
+                // and on a busy main thread an older edit's effect can start
+                // later and cancel the newest one, so no check would ever
+                // answer the name shown. Every edit waits; only the one still
+                // current afterwards asks.
                 return .run { send in
                     try await clock.sleep(for: Self.availabilityDebounce)
+                    await send(.usernameDebounced(draft))
+                }
+                .cancellable(id: CancelID.availability)
+
+            case let .usernameDebounced(draft):
+                guard let sheet = state.sheet, sheet.draft == draft, !sheet.isSaving else { return .none }
+                return .run { send in
                     let isAvailable = try? await competitionClient.usernameAvailable(draft)
                     await send(.usernameChecked(draft, isAvailable: isAvailable))
                 }
-                .cancellable(id: CancelID.availability, cancelInFlight: true)
+                .cancellable(id: CancelID.availability)
 
             case let .usernameChecked(draft, isAvailable):
                 guard state.sheet?.draft == draft, let isAvailable else { return .none }
