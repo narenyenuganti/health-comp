@@ -85,6 +85,8 @@ struct FriendsFeature {
         case searchFinished(String, Result<[FriendPerson], CompetitionRemoteFailure>)
         case changeTapped(FriendPerson, Change)
         case changeFinished(FriendPerson, Result<FriendRelationship, CompetitionRemoteFailure>)
+        /// The screen left the stack.
+        case closed
     }
 
     enum CancelID { case load, search, change }
@@ -201,6 +203,22 @@ struct FriendsFeature {
                     state.failure = PersonFailure(id: person.id, failure: .connection)
                 }
                 return state.inFlight.isEmpty ? .send(.requested) : .none
+
+            case .closed:
+                // A cancelled change may still have landed, so Home's badge
+                // reloads after one; reopening reloads anyway.
+                let interrupted = !state.inFlight.isEmpty
+                state.query = ""
+                state.results = nil
+                state.isSearching = false
+                state.searchFailure = nil
+                state.inFlight = []
+                state.failure = nil
+                return .merge(
+                    .cancel(id: CancelID.search),
+                    .cancel(id: CancelID.change),
+                    interrupted ? .send(.requested) : .cancel(id: CancelID.load)
+                )
             }
         }
     }

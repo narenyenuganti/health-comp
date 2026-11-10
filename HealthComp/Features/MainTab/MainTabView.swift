@@ -115,14 +115,8 @@ struct MainTabView: View {
         .environment(\.profilePhotos, store.competition.profilePhotoImages)
     }
 
-    /// Everyone whose photo could show, with the sender of a challenge
-    /// being claimed: they sent it to you, so you may see theirs.
     private var photoOwners: [UUID] {
-        let owners = store.competition.photoOwners
-        guard let sender = store.inviteClaimPreview?.sender.id, !owners.contains(sender) else {
-            return owners
-        }
-        return owners + [sender]
+        store.competition.photoOwners(claimSender: store.inviteClaimPreview?.sender.id)
     }
 
     /// Accept, or Send from a link: both end by closing the sheet on the match.

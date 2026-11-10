@@ -409,11 +409,12 @@ struct MainTabFeature {
                 return .none
 
             case let .friendsPresentationChanged(isPresented):
-                state.showsFriends = isPresented
-                if !isPresented {
-                    state.historyPersonIdentity = nil
+                guard !isPresented else {
+                    state.showsFriends = true
+                    return .none
                 }
-                return .none
+                state.historyPersonIdentity = nil
+                return closeFriends(state: &state)
 
             case let .historyPersonChanged(identity):
                 state.historyPersonIdentity = identity
@@ -959,13 +960,14 @@ struct MainTabFeature {
             state.heldRouteSequence = nil
             state.lastHandledRouteSequence = envelope.sequence
             state.showsHistory = false
-            state.showsFriends = false
+            let closesFriends = closeFriends(state: &state)
             state.historyPersonIdentity = nil
             state.personPlace = CompetitionPersonPlace()
             let closesAccount = state.isAccountPresented
             state.isAccountPresented = false
             state.path = [id]
             return .merge(
+                closesFriends,
                 .cancel(id: CancelID.routeHold),
                 .run { _ in
                     competitionRoutingClient.consume(envelope.sequence)
@@ -1025,11 +1027,18 @@ struct MainTabFeature {
         }
         state.challengeFromLink = nil
         state.showsHistory = false
-        state.showsFriends = false
+        let closesFriends = closeFriends(state: &state)
         state.historyPersonIdentity = nil
         state.personPlace = CompetitionPersonPlace()
         state.path = [id]
-        return .send(.competition(.challengeSheetDismissed))
+        return .merge(closesFriends, .send(.competition(.challengeSheetDismissed)))
+    }
+
+    /// Friends leaving the stack stops its search, load and changes.
+    private func closeFriends(state: inout State) -> Effect<Action> {
+        guard state.showsFriends else { return .none }
+        state.showsFriends = false
+        return .send(.competition(.friends(.closed)))
     }
 
     /// Asks the server who sent the pending link before showing the sheet.

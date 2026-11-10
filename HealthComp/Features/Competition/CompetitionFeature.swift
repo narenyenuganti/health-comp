@@ -197,12 +197,17 @@ struct CompetitionFeature {
             ProfilePhotoImages(ownID: ownProfile?.id, photos: profilePhotos)
         }
 
-        /// You, everyone on a real match, your Friends lists and the search
-        /// results, sorted so it can key a task.
-        var photoOwners: [UUID] {
-            guard publication?.source == .remoteParticipants else { return [] }
+        var photoOwners: [UUID] { photoOwners(claimSender: nil) }
+
+        /// You, the sender of a challenge being claimed (they sent it to
+        /// you, so you may see theirs), everyone on a real match, your
+        /// Friends lists and the search results, sorted so it can key a task.
+        func photoOwners(claimSender: UUID?) -> [UUID] {
+            guard publication?.source == .remoteParticipants else {
+                return claimSender.map { [$0] } ?? []
+            }
             // Most likely on screen first.
-            let owners = [ownProfile?.id].compactMap { $0 }
+            let owners = [ownProfile?.id, claimSender].compactMap { $0 }
                 + (friends.results ?? []).map(\.id)
                 + (friends.list?.incoming ?? []).map(\.id)
                 + (publication?.dashboard.competitions.compactMap(\.opponentProfileID) ?? [])
@@ -390,7 +395,11 @@ struct CompetitionFeature {
                     state.commandIDsInFlight.remove(id)
                     state.commandExpectedPublicationRevisions[id] = nil
                 }
-                return .none
+                // Each realtime wakeup publishes, so a request sent or
+                // answered elsewhere reaches the badge and lists here too.
+                let friendsInUse = state.friends.list != nil || state.friends.loadFailed
+                guard publication.source == .remoteParticipants, friendsInUse else { return .none }
+                return .send(.friends(.requested))
 
             case let .inviteRecipientCodeChanged(code):
                 guard !state.isChallengeSheetLocked,

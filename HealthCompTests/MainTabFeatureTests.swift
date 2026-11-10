@@ -1535,6 +1535,7 @@ final class MainTabFeatureTests: XCTestCase {
         )
         initial.historyPersonIdentity = "remote-profile:v1:x"
         initial.showsFriends = true
+        initial.competition.friends.query = "ma"
         let store = TestStore(initialState: initial) {
             MainTabFeature()
         } withDependencies: {
@@ -1550,6 +1551,10 @@ final class MainTabFeatureTests: XCTestCase {
             $0.isAccountPresented = false
             $0.path = [id]
             $0.lastHandledRouteSequence = 3
+        }
+        // Friends left the stack, so its work stops too.
+        await store.receive(.competition(.friends(.closed))) {
+            $0.competition.friends.query = ""
         }
         await store.finish()
         XCTAssertEqual(routing.consumedSequences, [3])
@@ -1590,6 +1595,8 @@ final class MainTabFeatureTests: XCTestCase {
             $0.showsFriends = false
             $0.historyPersonIdentity = nil
         }
+        // Its search, load and changes stop with it.
+        await store.receive(.competition(.friends(.closed)))
     }
 
     private var archivedLifecycle: LocalCompetitionLifecyclePresentation {

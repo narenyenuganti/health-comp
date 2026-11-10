@@ -326,6 +326,90 @@ final class FriendsFeatureTests: XCTestCase {
         XCTAssertTrue(state.photoOwners.contains(own.id))
         XCTAssertTrue(state.photoOwners.contains(requester.id), "On screen before the long list")
         XCTAssertTrue(state.photoOwners.contains(result.id))
+
+        // A claim's sender joins after everyone else is counted, still capped.
+        let sender = UUID()
+        let withSender = state.photoOwners(claimSender: sender)
+        XCTAssertEqual(withSender.count, CompetitionFeature.maxPhotoOwners)
+        XCTAssertTrue(withSender.contains(sender), "On screen, so kept")
+        XCTAssertTrue(withSender.contains(own.id))
+        XCTAssertTrue(withSender.contains(requester.id))
+        XCTAssertEqual(state.photoOwners(claimSender: own.id), state.photoOwners, "Each owner once")
+        XCTAssertEqual(CompetitionFeature.State().photoOwners(claimSender: sender), [sender])
+    }
+
+    private func publication(_ revision: UInt64, _ source: CompetitionPublicationSource) -> LocalCompetitionPublication {
+        LocalCompetitionPublication(
+            publicationRevision: revision,
+            dashboard: LocalCompetitionDashboard(
+                competitions: [],
+                awards: [],
+                issues: [],
+                hiddenTerminalCompetitionCount: 0
+            ),
+            source: source
+        )
+    }
+
+    func testARealtimePublicationRefreshesFriendsOnceTheyreInUse() async {
+        let jordan = person(1, "Jordan", .incoming)
+        let list = FriendsList(incoming: [jordan])
+        var initial = CompetitionFeature.State()
+        initial.friends.list = FriendsList()
+        let store = TestStore(initialState: initial) { CompetitionFeature() } withDependencies: {
+            $0.competitionClient = CompetitionClient.testValue
+            $0.competitionClient.listFriends = { list }
+        }
+        // A wakeup in the foreground: no navigation, no scene change.
+        let first = publication(1, .remoteParticipants)
+        await store.send(.publication(first)) { $0.publication = first }
+        await store.receive(.friends(.requested))
+        await store.receive(.friends(.loaded(list))) {
+            $0.friends.list = list
+            $0.friends.people = [jordan.id: jordan]
+        }
+        XCTAssertEqual(store.state.friends.requestCount, 1)
+    }
+
+    func testAPublicationLeavesFriendsAloneUntilTheyAreUsed() async {
+        let store = TestStore(initialState: CompetitionFeature.State()) { CompetitionFeature() } withDependencies: {
+            $0.competitionClient = CompetitionClient.testValue
+        }
+        let first = publication(1, .remoteParticipants)
+        await store.send(.publication(first)) { $0.publication = first }
+    }
+
+    func testClosingStopsSearchAndChangesThenReloadsForTheBadge() async {
+        let clock = TestClock()
+        let marcus = person(1, "Marcus")
+        let store = makeStore(clock: clock) { client in
+            client.searchPeople = { _ in [marcus] }
+            client.sendFriendRequest = { _ in try await Task.never() }
+            client.listFriends = { FriendsList() }
+        }
+        await store.send(.queryChanged("mar")) {
+            $0.query = "mar"
+            $0.isSearching = true
+        }
+        await store.send(.changeTapped(marcus, .add)) { $0.inFlight = [marcus.id] }
+        await store.send(.closed) {
+            $0.query = ""
+            $0.isSearching = false
+            $0.inFlight = []
+        }
+        // The add may have landed before it was cancelled.
+        await store.receive(.requested)
+        await store.receive(.loaded(FriendsList())) { $0.list = FriendsList() }
+        // The search never answers a closed screen.
+        await clock.run()
+    }
+
+    func testClosingWithNothingChangingCancelsTheLoad() async {
+        let store = makeStore { client in
+            client.listFriends = { try await Task.never() }
+        }
+        await store.send(.requested)
+        await store.send(.closed)
     }
 
     func testSignOutForgetsEveryone() async {
