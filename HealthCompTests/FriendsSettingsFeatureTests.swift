@@ -150,6 +150,51 @@ final class FriendsSettingsFeatureTests: XCTestCase {
         XCTAssertEqual(asked.value, ["nare"])
     }
 
+    /// Clearing the field mid-check and typing a new name: only the new
+    /// name is answered, and Continue saves exactly that name.
+    func testRetypingDuringASlowCheckChecksAndSavesTheLastName() async {
+        let clock = TestClock()
+        let asked = LockIsolated<[String]>([])
+        let saved = LockIsolated<[String]>([])
+        var state = Feature.State(saved: unset)
+        state.sheet = .init(draft: "betaalice", availability: .available)
+        let store = makeStore(state, clock: clock) { client in
+            client.usernameAvailable = { name in
+                asked.withValue { $0.append(name) }
+                try await clock.sleep(for: .milliseconds(300))
+                return true
+            }
+            client.setUsername = { name in
+                saved.withValue { $0.append(name) }
+                return FriendSettings(username: name, showInSearch: true, challengePolicy: .friendsAndLink)
+            }
+        }
+        await store.send(.usernameChanged("betaal")) {
+            $0.sheet?.draft = "betaal"
+            $0.sheet?.availability = .unknown
+        }
+        await clock.advance(by: .milliseconds(500))
+        XCTAssertEqual(asked.value, ["betaal"])
+        await store.send(.usernameChanged("")) { $0.sheet?.draft = "" }
+        for draft in ["off", "offline_na", "offline_name"] {
+            await store.send(.usernameChanged(draft)) { $0.sheet?.draft = draft }
+        }
+        await clock.advance(by: .milliseconds(700))
+        await store.receive(.usernameChecked("offline_name", isAvailable: true)) {
+            $0.sheet?.availability = .available
+        }
+        XCTAssertEqual(asked.value, ["betaal", "offline_name"])
+
+        await store.send(.usernameContinueTapped) { $0.sheet?.isSaving = true }
+        await store.receive(.usernameSaveFinished(.success(FriendSettings(
+            username: "offline_name", showInSearch: true, challengePolicy: .friendsAndLink
+        )))) {
+            $0.saved?.username = "offline_name"
+            $0.sheet = nil
+        }
+        XCTAssertEqual(saved.value, ["offline_name"])
+    }
+
     func testAnAnswerAboutAnOlderDraftIsDropped() async {
         var state = Feature.State(saved: unset)
         state.sheet = .init(draft: "newer")

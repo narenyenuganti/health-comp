@@ -50,8 +50,8 @@ final class FriendsAccountUITests: XCTestCase {
         XCTAssertTrue(continueButton.isEnabled)
         continueButton.tap()
 
-        XCTAssertTrue(field.waitForNonExistence(timeout: 5))
-        XCTAssertTrue(element("account.privacy.username").waitForExistence(timeout: 3))
+        XCTAssertTrue(field.waitForNonExistence(timeout: 5), shown)
+        XCTAssertTrue(element("account.privacy.username").waitForExistence(timeout: 3), shown)
         XCTAssertEqual(element("account.privacy.username").label, "@betaalice")
     }
 
@@ -78,11 +78,11 @@ final class FriendsAccountUITests: XCTestCase {
         waitForStatus("Available")
         continueButton.tap()
         let error = element("account.username.error")
-        XCTAssertTrue(error.waitForExistence(timeout: 5))
+        XCTAssertTrue(error.waitForExistence(timeout: 5), shown)
         XCTAssertEqual(error.label, Self.saveError)
         XCTAssertEqual(app.alerts.count, 0)
         continueButton.tap()
-        XCTAssertTrue(field.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(field.waitForNonExistence(timeout: 5), shown)
         XCTAssertEqual(element("account.privacy.username").label, "@offline_name")
     }
 
@@ -91,7 +91,7 @@ final class FriendsAccountUITests: XCTestCase {
         openSheet("account.privacy.username.choose")
         enter("betaalice")
         app.buttons["account.username.not-now"].tap()
-        XCTAssertTrue(field.waitForNonExistence(timeout: 3))
+        XCTAssertTrue(field.waitForNonExistence(timeout: 3), shown)
         XCTAssertTrue(app.buttons["account.privacy.username.choose"].exists)
     }
 
@@ -101,7 +101,7 @@ final class FriendsAccountUITests: XCTestCase {
         enter("betaalice")
         waitForStatus("Available")
         continueButton.tap()
-        XCTAssertTrue(field.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(field.waitForNonExistence(timeout: 5), shown)
 
         openSheet("account.privacy.username.edit")
         XCTAssertEqual(field.value as? String, "betaalice")
@@ -111,7 +111,7 @@ final class FriendsAccountUITests: XCTestCase {
         enter("alice_b")
         waitForStatus("Available")
         continueButton.tap()
-        XCTAssertTrue(field.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(field.waitForNonExistence(timeout: 5), shown)
         XCTAssertEqual(element("account.privacy.username").label, "@alice_b")
     }
 
@@ -122,14 +122,14 @@ final class FriendsAccountUITests: XCTestCase {
 
         flip(toggle)
         let error = element("account.privacy.error")
-        XCTAssertTrue(error.waitForExistence(timeout: 5))
+        XCTAssertTrue(error.waitForExistence(timeout: 5), shown)
         XCTAssertEqual(error.label, Self.saveError)
         XCTAssertEqual(toggle.value as? String, "1")
         XCTAssertEqual(app.alerts.count, 0)
 
         flip(toggle)
-        XCTAssertTrue(error.waitForNonExistence(timeout: 5))
-        XCTAssertTrue(waitUntil(5) { toggle.value as? String == "0" && toggle.isEnabled })
+        XCTAssertTrue(error.waitForNonExistence(timeout: 5), shown)
+        XCTAssertTrue(waitUntil(5) { toggle.value as? String == "0" && toggle.isEnabled }, shown)
     }
 
     func testChangeWhoCanChallengeYou() {
@@ -142,11 +142,11 @@ final class FriendsAccountUITests: XCTestCase {
         XCTAssertEqual(friendsOnly.label, "Friends only")
 
         friendsOnly.tap()
-        XCTAssertTrue(waitUntil(5) { friendsOnly.isSelected && !everyone.isSelected && friendsOnly.isEnabled })
+        XCTAssertTrue(waitUntil(5) { friendsOnly.isSelected && !everyone.isSelected && friendsOnly.isEnabled }, shown)
         XCTAssertFalse(element("account.privacy.error").exists)
 
         everyone.tap()
-        XCTAssertTrue(waitUntil(5) { everyone.isSelected && !friendsOnly.isSelected })
+        XCTAssertTrue(waitUntil(5) { everyone.isSelected && !friendsOnly.isSelected }, shown)
     }
 
     /// `privacy-<light|dark>-<default|ax5>`, and the same for the sheet.
@@ -188,7 +188,7 @@ final class FriendsAccountUITests: XCTestCase {
         scrollAboveTheKeyboard(continueButton)
         shot("username-continue-reached-ax5")
         continueButton.tap()
-        XCTAssertTrue(field.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(field.waitForNonExistence(timeout: 5), shown)
         XCTAssertEqual(element("account.privacy.username").label, "@betaalice")
 
         openSheet("account.privacy.username.edit")
@@ -198,7 +198,7 @@ final class FriendsAccountUITests: XCTestCase {
         scrollAboveTheKeyboard(notNow)
         shot("username-not-now-reached-ax5")
         notNow.tap()
-        XCTAssertTrue(field.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(field.waitForNonExistence(timeout: 5), shown)
         XCTAssertEqual(element("account.privacy.username").label, "@betaalice")
     }
 
@@ -224,26 +224,26 @@ final class FriendsAccountUITests: XCTestCase {
             "-AppleLocale", "en_US",
         ] + arguments
         app.launch()
-        XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 10), shown)
         app.buttons["app.account"].tap()
-        XCTAssertTrue(app.navigationBars["Account"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.navigationBars["Account"].waitForExistence(timeout: 3), shown)
         let privacy = app.buttons["account.privacy"]
         scrollTo(privacy)
         privacy.tap()
-        XCTAssertTrue(app.navigationBars["Privacy"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.navigationBars["Privacy"].waitForExistence(timeout: 3), shown)
         XCTAssertTrue(
             app.buttons["account.privacy.username.choose"].waitForExistence(timeout: 5),
-            "The rows appear once the server answers."
+            "The rows appear once the server answers. \(shown)"
         )
     }
 
     private func openSheet(_ identifier: String) {
         let button = app.buttons[identifier]
-        XCTAssertTrue(button.waitForExistence(timeout: 5), identifier)
+        XCTAssertTrue(button.waitForExistence(timeout: 5), "\(identifier) \(shown)")
         button.tap()
-        XCTAssertTrue(field.waitForExistence(timeout: 3))
+        XCTAssertTrue(field.waitForExistence(timeout: 3), shown)
         // The field takes focus when the sheet opens.
-        XCTAssertTrue(waitUntil(3) { self.app.keyboards.firstMatch.exists })
+        XCTAssertTrue(waitUntil(3) { self.app.keyboards.firstMatch.exists }, shown)
     }
 
     private func flip(_ toggle: XCUIElement) {
@@ -274,6 +274,14 @@ final class FriendsAccountUITests: XCTestCase {
         XCTAssertTrue(keyboard.exists, "The keyboard stays up.")
     }
 
+    /// What the sheet and page show, for failure messages.
+    private var shown: String {
+        func label(_ element: XCUIElement) -> String { element.exists ? "'\(element.label)'" : "absent" }
+        let text = field.exists ? "'\(fieldValue)'" : "absent"
+        return "field \(text), status \(label(status)), error \(label(element("account.username.error"))), "
+            + "page error \(label(element("account.privacy.error")))"
+    }
+
     /// What the field holds; an empty field reports its empty prompt.
     private var fieldValue: String {
         let value = field.value as? String ?? ""
@@ -287,7 +295,7 @@ final class FriendsAccountUITests: XCTestCase {
         field.typeText(text)
         XCTAssertTrue(
             waitUntil(5) { self.fieldValue == text },
-            "The field shows '\(fieldValue)' after typing '\(text)'",
+            "Typed '\(text)'; \(shown)",
             file: file, line: line
         )
     }
@@ -305,7 +313,7 @@ final class FriendsAccountUITests: XCTestCase {
     private func waitForStatus(_ expected: String, file: StaticString = #filePath, line: UInt = #line) {
         XCTAssertTrue(
             waitUntil(5) { self.status.exists && self.status.label == expected },
-            "Expected '\(expected)'; status is \(status.exists ? "'\(status.label)'" : "absent") for '\(fieldValue)'",
+            "Expected '\(expected)'; \(shown)",
             file: file, line: line
         )
     }

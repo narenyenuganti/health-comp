@@ -71,14 +71,26 @@ struct UsernameSheet: View {
         .onChange(of: sheet.isSaving) { _, isSaving in
             if !isSaving { isFocused = true }
         }
+        // Only redraws the field without a filtered character; the store
+        // hears about every edit from `textBinding`.
         .onChange(of: text) { _, newValue in
             let sanitized = FriendSettings.sanitizedUsername(newValue)
-            if sanitized == newValue {
-                friends.send(.usernameChanged(sanitized))
-            } else {
-                text = sanitized
-            }
+            if sanitized != newValue { text = sanitized }
         }
+    }
+
+    /// Tells the store from the setter, not from `onChange(of: text)`: on a
+    /// busy iPhone SwiftUI can skip the onChange for the last keystroke of a
+    /// quick burst, leaving the store checking and saving a shorter name than
+    /// the field shows.
+    private var textBinding: Binding<String> {
+        Binding(
+            get: { text },
+            set: { newValue in
+                text = newValue
+                friends.send(.usernameChanged(FriendSettings.sanitizedUsername(newValue)))
+            }
+        )
     }
 
     private var field: some View {
@@ -86,7 +98,7 @@ struct UsernameSheet: View {
             Text(verbatim: "@")
                 .foregroundStyle(Theme.secondary)
                 .accessibilityHidden(true)
-            TextField("Username", text: $text, prompt: Text(verbatim: ""))
+            TextField("Username", text: textBinding, prompt: Text(verbatim: ""))
                 .textInputAutocapitalization(.never)
                 .autocorrectionDisabled()
                 .keyboardType(.asciiCapable)
