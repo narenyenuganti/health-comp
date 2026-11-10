@@ -24,7 +24,7 @@ final class GroupMatchVersusUITests: XCTestCase {
         )
         shot(app, "VersusFFA")
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
-        XCTAssertTrue(app.groupElement("competition.group.status").waitForExistence(timeout: 8))
+        XCTAssertTrue(app.groupElement("competition.group.lobby.status").waitForExistence(timeout: 8))
         XCTAssertFalse(intro.waitForExistence(timeout: 2))
     }
 
