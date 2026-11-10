@@ -1101,7 +1101,7 @@ private struct AccountPrivacyPage: View {
                 )
                 Label(
                     "The other person gets your daily points, rounded Activity percentages and modes",
-                    systemImage: "person.2.shield"
+                    systemImage: "person.2"
                 )
                 Link(destination: URL(string: "https://healthcomp.app/privacy")!) {
                     Text("Privacy Policy")
