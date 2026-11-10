@@ -269,6 +269,7 @@ private struct MultiUserCompetitionSharingTestLabView: View {
     @State private var ownReactions: [CompetitionReactionKey: CompetitionReactionKind] = [:]
     @State private var recapPeriod: CompetitionRecapPeriod?
     @State private var judgesNotificationQueued = false
+    @State private var judgesNotificationStatus = "Loading sample photos"
     @State private var judgesPhotos = ProfilePhotoImages(ownID: MultiUserCompetitionTestLabFixtures.ownProfileID)
 
     /// Once per process, never per init: SwiftUI re-runs child inits
@@ -384,9 +385,9 @@ private struct MultiUserCompetitionSharingTestLabView: View {
             }
         }
         .overlay(alignment: .bottom) {
-            if judgesNotificationQueued {
-                Text("Notification queued")
-                    .accessibilityIdentifier("judges.notification.queued")
+            if ProcessInfo.processInfo.arguments.contains("--judges-notifications") {
+                Text(judgesNotificationStatus)
+                    .accessibilityIdentifier(judgesNotificationQueued ? "judges.notification.queued" : "judges.notification.preparing")
             }
         }
         .accessibilityIdentifier("multiuser.sharing.root")
@@ -412,10 +413,12 @@ private struct MultiUserCompetitionSharingTestLabView: View {
     private func scheduleJudgesPhotoNotification() async {
         guard let match = publication.dashboard.competitions.first(where: {
             $0.id.rawValue == UUID(uuidString: "a3000000-0000-4000-8000-000000000075")!
-        }), let owner = match.opponentProfileID,
-              let photo = judgesPhotos.photo(owner),
-              (try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])) == true
-        else { return }
+        }) else { judgesNotificationStatus = "Sample match missing"; return }
+        guard let owner = match.opponentProfileID, let photo = judgesPhotos.photo(owner)
+        else { judgesNotificationStatus = "Sample photo missing"; return }
+        guard (try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound])) == true
+        else { judgesNotificationStatus = "Notifications not allowed"; return }
+        judgesNotificationStatus = "Preparing communication notification"
         let message = CompetitionNotificationMessage(
             family: .opportunistic(.result), competitionID: match.id,
             opponentDisplayName: match.opponentDisplayName,
@@ -437,6 +440,7 @@ private struct MultiUserCompetitionSharingTestLabView: View {
                 identifier: request.identifier, content: request.content,
                 trigger: UNTimeIntervalNotificationTrigger(timeInterval: 12, repeats: false)
             ))
+            judgesNotificationStatus = "Notification queued"
             judgesNotificationQueued = true
         } catch { assertionFailure("Could not queue the lab notification: \(error)") }
     }

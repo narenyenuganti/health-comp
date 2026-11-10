@@ -79,7 +79,7 @@ final class JudgesDecisionUITests: XCTestCase {
         let springboard = XCUIApplication(bundleIdentifier: "com.apple.springboard")
         let allow = springboard.buttons["Allow"]
         if allow.waitForExistence(timeout: 5) { allow.tap() }
-        XCTAssertTrue(app.staticTexts["judges.notification.queued"].waitForExistence(timeout: 15))
+        XCTAssertTrue(app.staticTexts["judges.notification.queued"].waitForExistence(timeout: 15), app.staticTexts["judges.notification.preparing"].label)
         XCUIDevice.shared.press(.home)
         print("JUDGES_LOCAL_NOTIFICATION_READY")
         let banner = springboard.descendants(matching: .any).matching(
