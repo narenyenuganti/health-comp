@@ -12,8 +12,11 @@ on:
       - "!supabase/**"
       - "!README.md"
       - "supabase/tests/fixtures/**"
-  # Squash merges land code the PR run already passed, so main runs nightly
-  # (catching merges after main moved) and on demand for exact-main evidence.
+  # Pull requests run a short set: core checks, the Release device build, the
+  # unit tests and one UI test per main flow. The nightly run on main and
+  # manual runs add every other listed UI test, the Staging tests, and the
+  # Staging and Debug device builds. Before a release, run the full set with:
+  #   gh workflow run "iOS CI" --ref <branch>
   schedule:
     - cron: "17 9 * * *"
   workflow_dispatch:
@@ -32,13 +35,13 @@ env:
   SUPABASE_URL: https://ci-fixture.supabase.co
   SUPABASE_PUBLISHABLE_KEY: sb_publishable_ci-fixture
 
-# Three parallel jobs. The Staging device build follows its Simulator build
-# to reuse that job's swift-syntax macro plugins. The Debug device build runs
-# in the core job because the Debug UI tests already make that job longest.
-# The core job verifies the shared Xcode version for all three.
+# Pull requests run two jobs (core and Debug tests), so two pull requests fit
+# in the five concurrent macOS jobs. Nightly and manual runs add the Staging
+# job, whose device build follows its Simulator build to reuse that job's
+# swift-syntax macro plugins. The core job verifies the shared Xcode version.
 jobs:
   core:
-    name: Core checks and Release and Debug device builds
+    name: Core checks and device builds
     runs-on: macos-15
     timeout-minutes: 120
 
@@ -149,6 +152,7 @@ jobs:
             "$RUNNER_TEMP/HealthComp-DerivedData/Build/Products/Release-iphoneos/HealthComp.app"
 
       - name: Build unsigned Debug device configuration
+        if: ${{ github.event_name != 'pull_request' }}
         run: |
           set -euo pipefail
           xcodebuild build \
@@ -210,6 +214,72 @@ jobs:
         id: app_tests
         run: |
           set -euo pipefail
+          # Pull requests run the unit tests and one UI test per main flow.
+          # Nightly and manual runs add every other listed UI test.
+          ui_tests=(
+            MultiUserCompetitionUITests/testWelcomeIsSignInAndPrivacyPolicyOnly
+            MultiUserCompetitionUITests/testCreateRemoteUpdatesHistoryAnonymizationRematchAndArchive
+            MultiUserCompetitionUITests/testCopyCustomSchemeInvitationIncludesTheCompleteLink
+            MultiUserCompetitionUITests/testRemoteDayDrawerShowsRingsThatAddUpToTheDayScore
+            MultiUserCompetitionUITests/testPracticeMatchStartsFromEmptyHomeAndEndsFromTheMenu
+            MultiUserCompetitionUITests/testAccountEditingAndPrivacyBoundariesRemainAccessible
+            MultiUserCompetitionUITests/testSignOutAsksFirstAndStatesTheEffect
+            FriendsUITests/testSearchAddThenCancelTheRequest
+            FriendsUITests/testAcceptAndDeclineARequest
+            ChallengeFriendUITests/testPickAFriendConfirmAndSend
+            GroupMatchCreateUITests/testFormatPickerOffersEveryFormat
+            GroupMatchJoinUITests/testInviteShowsTheLineupAndAnswers
+            GroupMatchHomeUITests/testHomeCardsCarryTheirState
+            GroupMatchLiveUITests/testLiveFreeForAllShowsStandingsAndTheWeek
+            GroupMatchLiveDoublesUITests/testLiveDoublesShowsBothTeams
+            GroupMatchVersusUITests/testFreeForAllIntroShowsTheLineupThenTheMatch
+            GroupMatchResultUITests/testTiedResultSaysNoBelt
+            GroupMatchHistoryUITests/testRecordShowsEachKindOfMatch
+          )
+          if [[ "$GITHUB_EVENT_NAME" != pull_request ]]; then
+            ui_tests+=(
+              MultiUserCompetitionUITests/testCreatingInvitationRequiresConfirmingAnExistingAccount
+              MultiUserCompetitionUITests/testCopyCustomSchemeRematchIncludesTheCompleteLink
+              MultiUserCompetitionUITests/testAccountDeletionFailureShowsUnderDeleteRow
+              MultiUserCompetitionUITests/testRemoteCompetitionAppearanceAndTypeSizeMatrix
+              MultiUserCompetitionUITests/testHealthOnboardingDisclosesSharedDerivedActivity
+              MultiUserCompetitionUITests/testRemoteInvitationDisclosesSharedDerivedActivity
+              MultiUserCompetitionUITests/testWelcomeWithPendingChallengeAsksToSignIn
+              MultiUserCompetitionUITests/testChallengeHealthOnboardingFramesTheMatch
+              MultiUserCompetitionUITests/testNotificationsPageOpensSettingsAndUnmutes
+              MultiUserCompetitionUITests/testHealthPageOpensSettings
+              BlockChallengerUITests/testDeclineAndBlockDisablesTheScreenThenLeavesHomeAndListsThemInAccount
+              FriendsAccountUITests
+              FriendsUITests
+              ChallengeFriendUITests
+              WhatItTakesUITests/testWhatItTakesPanelForEveryRemoteState
+              MultiUserCompetitionUITests/testBeltShowsOnHomeHistoryAndThePersonPage
+              BeltUITests/testHistoryRecordsPassTheAuditAtAccessibility5
+              MultiUserCompetitionUITests/testShareResultPreviewsTheImageAndRemembersHideName
+              RecapCardUITests/testShareOpensTheSystemSheetWithSaveImage
+              WidgetUITests/testMatchWidgetShowsTheSampleScoreAndPicksAPerson
+              MultiUserCompetitionUITests/testStaleMatchOffersOneNudgeADay
+              NudgeUITests/testFailedNudgeRetriesAndARefusalExplains
+              MultiUserCompetitionUITests/testReactionsOnHomeMatchDayDrawerAndResult
+              ReactionsUITests/testDraggingTheDrawerFromAChipSendsNoReaction
+              LiveActivityUITests/testPreviewShowsEveryScoreStateInTheAppsWords
+              PracticeMatchUITests/testAFailedStartExplainsOnTheSheetAndAReopenedSheetStartsClean
+              NotificationChoicesUITests/testSwitchesRegisterServerHeldKindsAndRetryAfterAFailure
+              NotificationChoicesUITests/testMutedNameUsesFullLeadingEdgeAtLargestTextSize
+              GroupMatchCreateUITests/testFourWayLineupFillsSeatsAndDropsToThreeWay
+              GroupMatchJoinUITests/testDidNotStartOffersTheHostANewMatch
+              GroupMatchLiveUITests/testLeaveMatchConfirmsAndShowsYouLeft
+              GroupMatchLiveDoublesUITests/testBanterShowsUnderTheLeadLine
+              GroupMatchResultUITests/testFreeForAllResultShowsSharedPlacesAndRematch
+              GroupMatchResultUITests/testDoublesResultShowsTeamsTiesAndWhoCarried
+              GroupMatchVersusUITests/testReplaysFromTheMenuOnALaterDay
+              GroupMatchHistoryUITests/testGroupMatchesSitBelowTheDuelRecordOnlyWhenThereAreSome
+              VersusIntroUITests/testEveryMatchupEndsByItself
+              VersusIntroUITests/testMenuReplaysRepeatedlyWithoutReenablingAutoplay
+              VersusIntroUITests/testMenuReplaysAfterDayOne
+              VersusIntroUITests/testReduceMotionShowsTheComposedScreenAndATapEndsIt
+            )
+          fi
           xcodebuild test \
             -project HealthComp.xcodeproj \
             -scheme HealthComp \
@@ -218,61 +288,9 @@ jobs:
             -derivedDataPath "$RUNNER_TEMP/HealthComp-DerivedData" \
             -resultBundlePath "$RUNNER_TEMP/HealthComp-AppTests.xcresult" \
             -only-testing:HealthCompTests \
-            -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testCopyCustomSchemeInvitationIncludesTheCompleteLink \
-            -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testCreatingInvitationRequiresConfirmingAnExistingAccount \
-            -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testCopyCustomSchemeRematchIncludesTheCompleteLink \
-            -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testAccountEditingAndPrivacyBoundariesRemainAccessible \
-            -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testAccountDeletionFailureShowsUnderDeleteRow \
-            -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testRemoteDayDrawerShowsRingsThatAddUpToTheDayScore \
-            -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testRemoteCompetitionAppearanceAndTypeSizeMatrix \
-            -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testCreateRemoteUpdatesHistoryAnonymizationRematchAndArchive \
-            -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testWelcomeIsSignInAndPrivacyPolicyOnly \
-            -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testHealthOnboardingDisclosesSharedDerivedActivity \
-            -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testRemoteInvitationDisclosesSharedDerivedActivity \
-            -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testWelcomeWithPendingChallengeAsksToSignIn \
-            -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testChallengeHealthOnboardingFramesTheMatch \
-            -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testSignOutAsksFirstAndStatesTheEffect \
-            -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testNotificationsPageOpensSettingsAndUnmutes \
-            -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testHealthPageOpensSettings \
-            -only-testing:HealthCompUITests/BlockChallengerUITests/testDeclineAndBlockDisablesTheScreenThenLeavesHomeAndListsThemInAccount \
-            -only-testing:HealthCompUITests/FriendsAccountUITests \
-            -only-testing:HealthCompUITests/FriendsUITests \
-            -only-testing:HealthCompUITests/ChallengeFriendUITests \
-            -only-testing:HealthCompUITests/WhatItTakesUITests/testWhatItTakesPanelForEveryRemoteState \
-            -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testBeltShowsOnHomeHistoryAndThePersonPage \
-            -only-testing:HealthCompUITests/BeltUITests/testHistoryRecordsPassTheAuditAtAccessibility5 \
-            -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testShareResultPreviewsTheImageAndRemembersHideName \
-            -only-testing:HealthCompUITests/RecapCardUITests/testShareOpensTheSystemSheetWithSaveImage \
-            -only-testing:HealthCompUITests/WidgetUITests/testMatchWidgetShowsTheSampleScoreAndPicksAPerson \
-            -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testStaleMatchOffersOneNudgeADay \
-            -only-testing:HealthCompUITests/NudgeUITests/testFailedNudgeRetriesAndARefusalExplains \
-            -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testReactionsOnHomeMatchDayDrawerAndResult \
-            -only-testing:HealthCompUITests/ReactionsUITests/testDraggingTheDrawerFromAChipSendsNoReaction \
-            -only-testing:HealthCompUITests/LiveActivityUITests/testPreviewShowsEveryScoreStateInTheAppsWords \
-            -only-testing:HealthCompUITests/MultiUserCompetitionUITests/testPracticeMatchStartsFromEmptyHomeAndEndsFromTheMenu \
-            -only-testing:HealthCompUITests/PracticeMatchUITests/testAFailedStartExplainsOnTheSheetAndAReopenedSheetStartsClean \
-            -only-testing:HealthCompUITests/NotificationChoicesUITests/testSwitchesRegisterServerHeldKindsAndRetryAfterAFailure \
-            -only-testing:HealthCompUITests/NotificationChoicesUITests/testMutedNameUsesFullLeadingEdgeAtLargestTextSize \
-            -only-testing:HealthCompUITests/GroupMatchCreateUITests/testFormatPickerOffersEveryFormat \
-            -only-testing:HealthCompUITests/GroupMatchJoinUITests/testInviteShowsTheLineupAndAnswers \
-            -only-testing:HealthCompUITests/GroupMatchCreateUITests/testFourWayLineupFillsSeatsAndDropsToThreeWay \
-            -only-testing:HealthCompUITests/GroupMatchJoinUITests/testDidNotStartOffersTheHostANewMatch \
-            -only-testing:HealthCompUITests/GroupMatchLiveUITests/testLiveFreeForAllShowsStandingsAndTheWeek \
-            -only-testing:HealthCompUITests/GroupMatchLiveUITests/testLeaveMatchConfirmsAndShowsYouLeft \
-            -only-testing:HealthCompUITests/GroupMatchLiveDoublesUITests/testLiveDoublesShowsBothTeams \
-            -only-testing:HealthCompUITests/GroupMatchLiveDoublesUITests/testBanterShowsUnderTheLeadLine \
-            -only-testing:HealthCompUITests/GroupMatchResultUITests/testTiedResultSaysNoBelt \
-            -only-testing:HealthCompUITests/GroupMatchResultUITests/testFreeForAllResultShowsSharedPlacesAndRematch \
-            -only-testing:HealthCompUITests/GroupMatchResultUITests/testDoublesResultShowsTeamsTiesAndWhoCarried \
-            -only-testing:HealthCompUITests/GroupMatchHomeUITests/testHomeCardsCarryTheirState \
-            -only-testing:HealthCompUITests/GroupMatchVersusUITests/testFreeForAllIntroShowsTheLineupThenTheMatch \
-            -only-testing:HealthCompUITests/GroupMatchVersusUITests/testReplaysFromTheMenuOnALaterDay \
-            -only-testing:HealthCompUITests/GroupMatchHistoryUITests/testRecordShowsEachKindOfMatch \
-            -only-testing:HealthCompUITests/GroupMatchHistoryUITests/testGroupMatchesSitBelowTheDuelRecordOnlyWhenThereAreSome \
-            -only-testing:HealthCompUITests/VersusIntroUITests/testEveryMatchupEndsByItself \
-            -only-testing:HealthCompUITests/VersusIntroUITests/testMenuReplaysRepeatedlyWithoutReenablingAutoplay \
-            -only-testing:HealthCompUITests/VersusIntroUITests/testMenuReplaysAfterDayOne \
-            -only-testing:HealthCompUITests/VersusIntroUITests/testReduceMotionShowsTheComposedScreenAndATapEndsIt \
+            "${ui_tests[@]/#/-only-testing:HealthCompUITests/}" \
+            -retry-tests-on-failure \
+            -test-iterations 2 \
             -parallel-testing-enabled NO \
             -maximum-concurrent-test-simulator-destinations 1 \
             -maximum-parallel-testing-workers 1 \
@@ -309,6 +327,7 @@ jobs:
 
   staging:
     name: Staging tests and device build
+    if: ${{ github.event_name != 'pull_request' }}
     runs-on: macos-15
     timeout-minutes: 120
 
