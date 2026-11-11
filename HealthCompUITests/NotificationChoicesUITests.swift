@@ -98,7 +98,9 @@ final class NotificationChoicesUITests: XCTestCase {
         let muted = app.staticTexts["MUTED"]
         scrollToElement(muted)
         XCTAssertGreaterThan(muted.frame.minY, choice("friend_accepted").frame.maxY)
-        XCTAssertTrue(text("Muting someone silences all your matches with them.").exists)
+        let mutedHelp = text("Muting someone silences all your matches with them.")
+        scrollToElement(mutedHelp)
+        XCTAssertTrue(mutedHelp.exists)
 
         // The Live Activity Open Settings opens this app's settings page.
         let settings = app.buttons["account.notifications.live-activity.settings"]
