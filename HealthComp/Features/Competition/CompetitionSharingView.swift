@@ -605,7 +605,9 @@ private struct CompetitionHeroCard: View {
         VStack(alignment: .leading, spacing: 16) {
             statusRow
 
-            if let holder = belt?.holder,
+            // With scores up, the belt sits on its holder's side of the board.
+            if !competitionShouldShowScores(competition.lifecycle),
+               let holder = belt?.holder,
                let text = belt.flatMap({
                    competitionBeltChipText($0, opponentName: competition.opponentDisplayName)
                }) {
@@ -614,7 +616,7 @@ private struct CompetitionHeroCard: View {
             }
 
             if competitionShouldShowScores(competition.lifecycle) {
-                HeroScoreboard(competition: competition, isCompact: isCompact)
+                HeroScoreboard(competition: competition, isCompact: isCompact, belt: belt)
                     .transition(Motion.appear)
                 statement
                     .font(.body)
@@ -761,19 +763,22 @@ private struct CompetitionHeroCard: View {
 
 private struct HeroScoreboard: View {
     let competition: LocalCompetitionPresentation
+    let belt: CompetitionBelt?
 
     @ScaledMetric private var scoreSize: CGFloat
     @ScaledMetric(relativeTo: .headline) private var avatarSize: CGFloat = 28
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
-    init(competition: LocalCompetitionPresentation, isCompact: Bool) {
+    init(competition: LocalCompetitionPresentation, isCompact: Bool, belt: CompetitionBelt?) {
         self.competition = competition
+        self.belt = belt
         _scoreSize = ScaledMetric(wrappedValue: isCompact ? 40 : 64, relativeTo: .largeTitle)
     }
 
     var body: some View {
         layout {
             side(
+                .you,
                 name: "You",
                 avatar: PersonAvatar(name: competition.ownerDisplayName, size: avatarSize, isYou: true),
                 points: competition.userPoints,
@@ -788,6 +793,7 @@ private struct HeroScoreboard: View {
                     .accessibilityHidden(true)
             }
             side(
+                .them,
                 name: competition.opponentDisplayName,
                 avatar: PersonAvatar(
                     name: competition.opponentDisplayName,
@@ -812,6 +818,7 @@ private struct HeroScoreboard: View {
     }
 
     private func side(
+        _ holder: CompetitionBeltHolder,
         name: String,
         avatar: PersonAvatar,
         points: Double,
@@ -824,6 +831,18 @@ private struct HeroScoreboard: View {
                 Text(name.uppercased(with: .current))
                     .font(.themeLabel)
                     .tracking(1.4)
+                if belt?.holder == holder {
+                    HStack(spacing: 4) {
+                        CompetitionBeltMark(holder: holder)
+                        let defenses = belt?.current?.defenses ?? 0
+                        if defenses > 0 {
+                            Text("×\(defenses)")
+                                .font(.themeLabel.monospacedDigit())
+                                .accessibilityHidden(true)
+                        }
+                    }
+                    .transition(Motion.appear)
+                }
             }
             Text(competitionPointsText(points))
                 .font(.score(size: scoreSize).monospacedDigit())
@@ -1106,7 +1125,7 @@ struct CompetitionDefensePips: View {
     }
 }
 
-/// "You hold the belt" on a Home card.
+/// "You hold the belt" on a Home card with no scores up yet.
 private struct CompetitionBeltChip: View {
     let holder: CompetitionBeltHolder
     let text: String
