@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # Saves every database function the app can call into a database test, so a
-# later migration that breaks the build people have installed fails Backend CI.
-# Only the newest released build is kept. Run this at each release, against a
-# freshly reset local database:
+# later migration that breaks a build people have installed fails Backend CI.
+# The list is saved from the newest release and still covers older builds,
+# because a function stays listed until its line is deleted. Run this at each
+# release, against a freshly reset local database:
 #
 #   supabase db reset
 #   HEALTHCOMP_TEST_DATABASE_URL=postgresql://... \
@@ -81,7 +82,7 @@ $released
       and r.args <@ c.args and c.required <@ r.required
   )
 \$released\$,
-  'build $build can still call every function it shipped with; if not, keep the old function and add the change as optional arguments or a new overload');
+  'builds up to $build can still call every function they shipped with; if not, keep the old function and add the change as optional arguments or a new overload');
 
 select * from finish();
 rollback;

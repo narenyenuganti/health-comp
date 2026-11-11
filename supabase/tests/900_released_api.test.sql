@@ -99,7 +99,7 @@ select is_empty($released$
       and r.args <@ c.args and c.required <@ r.required
   )
 $released$,
-  'build 1.0.4 (4) can still call every function it shipped with; if not, keep the old function and add the change as optional arguments or a new overload');
+  'builds up to 1.0.4 (4) can still call every function they shipped with; if not, keep the old function and add the change as optional arguments or a new overload');
 
 select * from finish();
 rollback;
