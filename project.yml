@@ -36,6 +36,8 @@ targets:
     info:
       path: HealthComp/Resources/Info.plist
       properties:
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: false
         UIApplicationSupportsIndirectInputEvents: true
@@ -98,6 +100,8 @@ targets:
       path: HealthCompWidgets/Info.plist
       properties:
         CFBundleDisplayName: HealthComp
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         HEALTHCOMP_APP_GROUP: "$(HEALTHCOMP_APP_GROUP)"
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
@@ -129,8 +133,8 @@ targets:
       path: HealthCompWatch/Info.plist
       properties:
         CFBundleDisplayName: HealthComp
-        CFBundleShortVersionString: "1.0"
-        CFBundleVersion: "1"
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         WKApplication: true
         WKCompanionAppBundleIdentifier: "$(HEALTHCOMP_IOS_BUNDLE_ID)"
         WKRunsIndependentlyOfCompanionApp: false
@@ -165,8 +169,8 @@ targets:
       path: HealthCompWatchWidgets/Info.plist
       properties:
         CFBundleDisplayName: HealthComp
-        CFBundleShortVersionString: "1.0"
-        CFBundleVersion: "1"
+        CFBundleShortVersionString: "$(MARKETING_VERSION)"
+        CFBundleVersion: "$(CURRENT_PROJECT_VERSION)"
         HEALTHCOMP_APP_GROUP: "$(HEALTHCOMP_APP_GROUP)"
         NSExtension:
           NSExtensionPointIdentifier: com.apple.widgetkit-extension
