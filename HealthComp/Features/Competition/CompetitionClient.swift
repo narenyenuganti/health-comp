@@ -99,6 +99,9 @@ struct CompetitionClient: Sendable {
     var setUsername: @Sendable (String) async throws -> FriendSettings
     var usernameAvailable: @Sendable (String) async throws -> Bool
     var updateFriendSettings: @Sendable (Bool, FriendChallengePolicy) async throws -> FriendSettings
+    var getCareerSummary: @Sendable (UUID) async throws -> CompetitionCareer?
+    var getCareerSharing: @Sendable () async throws -> Bool
+    var setCareerSharing: @Sendable (Bool) async throws -> Bool
     var listFriends: @Sendable () async throws -> FriendsList
     var searchPeople: @Sendable (String) async throws -> [FriendPerson]
     var sendFriendRequest: @Sendable (UUID) async throws -> FriendRelationship
@@ -236,6 +239,13 @@ struct CompetitionClient: Sendable {
         ) async throws -> FriendSettings = { _, _ in
             throw CompetitionRemoteFailure.operationFailed
         },
+        getCareerSummary: @escaping @Sendable (UUID) async throws -> CompetitionCareer? = { _ in nil },
+        getCareerSharing: @escaping @Sendable () async throws -> Bool = {
+            throw CompetitionRemoteFailure.operationFailed
+        },
+        setCareerSharing: @escaping @Sendable (Bool) async throws -> Bool = { _ in
+            throw CompetitionRemoteFailure.operationFailed
+        },
         listFriends: @escaping @Sendable () async throws -> FriendsList = {
             throw CompetitionRemoteFailure.operationFailed
         },
@@ -344,6 +354,9 @@ struct CompetitionClient: Sendable {
         self.setUsername = setUsername
         self.usernameAvailable = usernameAvailable
         self.updateFriendSettings = updateFriendSettings
+        self.getCareerSummary = getCareerSummary
+        self.getCareerSharing = getCareerSharing
+        self.setCareerSharing = setCareerSharing
         self.listFriends = listFriends
         self.searchPeople = searchPeople
         self.sendFriendRequest = sendFriendRequest

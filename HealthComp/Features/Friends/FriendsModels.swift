@@ -48,6 +48,24 @@ struct FriendPerson: Equatable, Identifiable, Sendable {
     var identity: String { RemoteCompetitionOpponentIdentity.identity(for: id) }
 }
 
+/// A person's finished 1v1 weeks, across everyone they've played.
+struct CompetitionCareer: Equatable, Sendable {
+    var wins = 0
+    var losses = 0
+    var ties = 0
+    var people = 0
+    var belts = 0
+    var winStreak = 0
+    var bestWeek = 0.0
+
+    var weeks: Int { wins + losses + ties }
+
+    /// "14–6", or "14–6–2" with ties, as a record reads everywhere else.
+    var text: String {
+        ([wins, losses] + (ties > 0 ? [ties] : [])).map(String.init).joined(separator: "–")
+    }
+}
+
 struct FriendsList: Equatable, Sendable {
     var friends: [FriendPerson] = []
     /// Requests to you, newest first.

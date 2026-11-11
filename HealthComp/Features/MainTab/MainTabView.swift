@@ -10,6 +10,8 @@ struct MainTabView: View {
 
     @Environment(\.scenePhase) private var scenePhase
     @State private var isChallengePresented = false
+    @AppStorage(CompetitionMotionSeen.storageKey)
+    private var motionSeen = CompetitionMotionSeen()
     /// New Match: the format picker, whose Duel opens the Challenge sheet.
     @State private var isNewMatchPresented = false
     @State private var newMatchLineup: GroupMatchLineup?
@@ -280,6 +282,23 @@ struct MainTabView: View {
                         personScreen(identity, publication: publication)
                             .toolbarRole(.editor)
                     }
+                case let .profile(identity):
+                    if let publication = store.competition.publication {
+                        profileScreen(identity, publication: publication)
+                            .toolbarRole(.editor)
+                    }
+                case .ownProfile:
+                    if let publication = store.competition.publication {
+                        CompetitionOwnProfileView(
+                            publication: publication,
+                            name: store.competition.ownProfile?.displayName ?? "",
+                            sharesCareer: store.competition.sharesCareer,
+                            setSharesCareer: { store.send(.competition(.careerSharingChanged($0))) },
+                            edit: { store.send(.accountPresentationChanged(true)) }
+                        )
+                        .toolbarRole(.editor)
+                        .task { store.send(.competition(.careerSharingRequested)) }
+                    }
                 case let .records(identity):
                     if let publication = store.competition.publication {
                         CompetitionRecordsView(publication: publication, opponentIdentity: identity)
@@ -297,6 +316,9 @@ struct MainTabView: View {
                         }
                 }
             }
+        }
+        .environment(\.openCompetitionProfile) { route in
+            homeStack.wrappedValue = CompetitionHomeRoute.opening(route, on: homeStack.wrappedValue)
         }
         // Here, not on the root Group, so it doesn't share a view with the
         // claim sheet.
@@ -343,29 +365,69 @@ struct MainTabView: View {
         )
     }
 
-    /// The person page, with the match under it on the stack, whether you
-    /// blocked them, and their mute. Someone with no finished match gets
-    /// their small page, when search or Friends has told us who they are.
+    /// Their weeks with you. Someone with no finished week gets their
+    /// profile, when search or Friends has told us who they are.
     @ViewBuilder
     private func personScreen(
         _ identity: String,
         publication: LocalCompetitionPublication
     ) -> some View {
         if let id = RemoteCompetitionOpponentIdentity.profileID(identity),
-           let person = store.competition.friends.people[id],
+           store.competition.friends.people[id] != nil,
            competitionRivalryWeeks(publication.dashboard.competitions, opponentIdentity: identity).isEmpty {
+            profileScreen(identity, publication: publication)
+        } else {
+            matchedPersonScreen(identity, publication: publication)
+        }
+    }
+
+    /// One profile page wherever you tap a person. Someone you blocked or a
+    /// deleted account keeps the ledger once there are weeks to show.
+    @ViewBuilder
+    private func profileScreen(
+        _ identity: String,
+        publication: LocalCompetitionPublication
+    ) -> some View {
+        let competitions = publication.dashboard.competitions
+        let theirs = competitions.filter { $0.opponentIdentity == identity }
+        let id = RemoteCompetitionOpponentIdentity.profileID(identity)
+        let name = id.flatMap { store.competition.friends.people[$0]?.displayName }
+            ?? theirs.first?.opponentDisplayName
+        let rivalry = CompetitionProfileRivalry(
+            competitions, identity: identity, name: name ?? "", now: publication.evaluatedAt, seen: motionSeen
+        )
+        let isBlocked: Bool? = if let id, publication.source == .remoteParticipants {
+            store.competition.blockedPeople.map { $0.contains { $0.id == id } }
+        } else {
+            false
+        }
+        let isLedger = !rivalry.weeks.isEmpty && (isBlocked == true || rivalry.belt.isRetired)
+        if let id, let name, !isLedger {
             FriendProfileView(
-                controls: friendControls(id, displayName: person.displayName),
-                isBlocked: store.competition.blockedPeople.map { $0.contains { $0.id == id } },
+                controls: friendControls(id, displayName: name),
+                isBlocked: isBlocked,
                 unblock: { store.send(.competition(.unblockTapped(id))) },
                 challenge: {
-                    store.send(.competition(.challengeRecipientChosen(.init(
-                        AuthenticatedProfile(id: id, displayName: person.displayName)
-                    ))))
-                    isChallengePresented = true
+                    if let latest = rivalry.record?.latest {
+                        challengeAgain(latest.id)
+                    } else {
+                        store.send(.competition(.challengeRecipientChosen(.init(
+                            AuthenticatedProfile(id: id, displayName: name)
+                        ))))
+                        isChallengePresented = true
+                    }
                 },
-                hasPlayed: publication.dashboard.competitions.contains { $0.opponentIdentity == identity }
+                hasPlayed: !theirs.isEmpty,
+                rivalry: rivalry,
+                career: store.competition.careers[id],
+                ownCareer: competitionOwnCareer(competitions).career,
+                muteButton: theirs.first.flatMap(muteButton(for:))
             )
+            .task(id: identity) {
+                guard publication.source == .remoteParticipants else { return }
+                store.send(.competition(.blockedPeopleRequested))
+                store.send(.competition(.careerRequested(id)))
+            }
         } else {
             matchedPersonScreen(identity, publication: publication)
         }

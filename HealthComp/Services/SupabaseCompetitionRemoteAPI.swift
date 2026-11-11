@@ -646,6 +646,34 @@ enum SupabaseCompetitionRemoteAPI {
                 }
                 return settings
             },
+            getCareerSummary: { profileID in
+                let response = try await sendReadOnly(
+                    .rpc(
+                        name: "get_career_summary",
+                        parameters: try encode(["target_profile_id": profileID.uuidString.lowercased()])
+                    ),
+                    transport: transport
+                )
+                return try decodeCareerSummary(response.data)
+            },
+            getCareerSharing: {
+                let response = try await sendReadOnly(
+                    .rpc(name: "get_career_sharing", parameters: try encode(EmptyParameters())),
+                    transport: transport
+                )
+                return try decodeCareerSharing(response.data)
+            },
+            setCareerSharing: { enabled in
+                let response = try await send(
+                    .rpc(name: "set_career_sharing", parameters: try encode(["enabled": enabled])),
+                    transport: transport
+                )
+                let saved = try decodeCareerSharing(response.data)
+                guard saved == enabled else {
+                    throw CompetitionRemoteFailure.serverContractMismatch
+                }
+                return saved
+            },
             listFriends: {
                 let response = try await sendReadOnly(
                     .rpc(name: "list_friends", parameters: try encode(EmptyParameters())),
@@ -1333,6 +1361,36 @@ enum SupabaseCompetitionRemoteAPI {
     }
 
     /// Exactly `{username, show_in_search, challenge_policy}`.
+    /// Reads only the keys it knows, so the server can add more later.
+    static func decodeCareerSummary(_ data: Data) throws -> CompetitionCareer? {
+        let value = try? JSONSerialization.jsonObject(with: data, options: .fragmentsAllowed)
+        if value is NSNull { return nil }
+        guard let object = value as? [String: Any],
+              let wins = object["wins"] as? Int, wins >= 0,
+              let losses = object["losses"] as? Int, losses >= 0,
+              let ties = object["ties"] as? Int, ties >= 0,
+              let people = object["people"] as? Int, people >= 0,
+              let belts = object["belts"] as? Int, belts >= 0,
+              let winStreak = object["win_streak"] as? Int, winStreak >= 0,
+              let centiPoints = object["best_week_centi_points"] as? Int, centiPoints >= 0
+        else {
+            throw CompetitionRemoteFailure.serverContractMismatch
+        }
+        return CompetitionCareer(
+            wins: wins, losses: losses, ties: ties, people: people, belts: belts,
+            winStreak: winStreak, bestWeek: Double(centiPoints) / 100
+        )
+    }
+
+    private static func decodeCareerSharing(_ data: Data) throws -> Bool {
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let enabled = strictBool(object["enabled"])
+        else {
+            throw CompetitionRemoteFailure.serverContractMismatch
+        }
+        return enabled
+    }
+
     private static func decodeFriendSettings(_ data: Data) throws -> FriendSettings {
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               Set(object.keys) == ["username", "show_in_search", "challenge_policy"],

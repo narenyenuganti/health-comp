@@ -814,3 +814,325 @@ func competitionLastPlayedText(
     else { return nil }
     return "Last played \(range) · \(weeks) weeks ago"
 }
+
+// MARK: Profiles
+
+/// What you and they have played, for their profile page.
+struct CompetitionProfileRivalry {
+    let record: CompetitionOpponentRecord?
+    /// Finished, oldest first.
+    let weeks: [LocalCompetitionPresentation]
+    let belt: CompetitionBelt
+    let isLive: Bool
+    /// Nil while anything with them is in flight.
+    let challengeTitle: String?
+    let now: Date
+
+    init(
+        _ competitions: [LocalCompetitionPresentation],
+        identity: String,
+        name: String,
+        now: Date,
+        seen: CompetitionMotionSeen
+    ) {
+        let theirs = competitions.filter { $0.opponentIdentity == identity }
+        let record = competitionOpponentRecords(competitions).first { $0.opponentIdentity == identity }
+        let weeks = competitionRivalryWeeks(competitions, opponentIdentity: identity)
+        let unseen = competitionUnseenResult(weeks, now: now, seen: seen)
+        self.record = record
+        self.weeks = weeks
+        // While a Verdict is unseen the belt holds at the week before it.
+        belt = competitionPersonBelt(weeks, holdingBack: unseen, isRetired: record?.belt.isRetired == true)
+        isLive = theirs.contains {
+            switch $0.lifecycle {
+            case .active, .endsToday, .tallying: true
+            default: false
+            }
+        }
+        challengeTitle = competitionPersonButtonTitle(
+            theirs,
+            opponentName: name,
+            now: now,
+            unseenResult: unseen
+        )
+        self.now = now
+    }
+}
+
+/// Your finished 1v1 weeks across everyone, from what's on this phone.
+struct CompetitionOwnCareer: Equatable {
+    var career = CompetitionCareer()
+    var bestDay = 0.0
+    /// Newest first.
+    var outcomes: [CompetitionOutcome] = []
+}
+
+func competitionOwnCareer(_ competitions: [LocalCompetitionPresentation]) -> CompetitionOwnCareer {
+    let weeks = Array(competitionHistoryWeeks(competitions).reversed())
+    let outcomes = weeks.compactMap(\.terminalResult?.outcome)
+    var streak = 0, longest = 0
+    for outcome in outcomes {
+        streak = outcome == .win ? streak + 1 : 0
+        longest = max(longest, streak)
+    }
+    return CompetitionOwnCareer(
+        career: CompetitionCareer(
+            wins: outcomes.filter { $0 == .win }.count,
+            losses: outcomes.filter { $0 == .loss }.count,
+            ties: outcomes.filter { $0 == .tie }.count,
+            people: Set(weeks.map(\.opponentIdentity)).count,
+            belts: competitionOpponentRecords(competitions).filter { $0.belt.holder == .you }.count,
+            winStreak: longest,
+            bestWeek: weeks.map(\.userPoints).max() ?? 0
+        ),
+        bestDay: weeks.flatMap(\.days).compactMap(\.ownerAcceptedPoints).max() ?? 0,
+        outcomes: outcomes
+    )
+}
+
+/// You on the left, them on the right, the label between.
+struct CompetitionTapeRow: View {
+    let you: String
+    let label: String
+    let them: String
+    let valueFont: Font
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(you)
+                .font(valueFont)
+                .foregroundStyle(Theme.you)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            Text(label)
+                .font(.themeLabel)
+                .tracking(1.1)
+                .foregroundStyle(Theme.secondary)
+                .layoutPriority(1)
+            Text(them)
+                .font(valueFont)
+                .foregroundStyle(Theme.ink)
+                .frame(maxWidth: .infinity, alignment: .trailing)
+        }
+        .lineLimit(1)
+    }
+}
+
+/// Your own page: your career, the belts you hold, and whether others see it.
+struct CompetitionOwnProfileView: View {
+    let publication: LocalCompetitionPublication
+    let name: String
+    /// Nil until the server answers, which hides the switch.
+    let sharesCareer: Bool?
+    let setSharesCareer: (Bool) -> Void
+    let edit: () -> Void
+
+    @Environment(\.locale) private var locale
+    @Environment(\.timeZone) private var timeZone
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @ScaledMetric(relativeTo: .largeTitle) private var nameSize: CGFloat = 52
+    @ScaledMetric(relativeTo: .largeTitle) private var recordSize: CGFloat = 64
+    @ScaledMetric(relativeTo: .title2) private var bestSize: CGFloat = 25
+
+    var body: some View {
+        let competitions = publication.dashboard.competitions
+        let own = competitionOwnCareer(competitions)
+        let belts = competitionOpponentRecords(competitions).filter { $0.belt.holder == .you }
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                HStack(spacing: 16) {
+                    PersonAvatar(name: name, size: 96, isYou: true, initialFont: .largeTitle.weight(.heavy).width(.condensed))
+                    Text("YOU")
+                        .font(.score(size: min(nameSize, 72)))
+                        .foregroundStyle(Theme.you)
+                        .accessibilityAddTraits(.isHeader)
+                }
+                VStack(alignment: .leading, spacing: 4) {
+                    let summary = "\(competitionWeeksText(own.career.weeks)) · \(own.career.people == 1 ? "1 person" : "\(own.career.people) people")"
+                    ViewThatFits(in: .horizontal) {
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            SectionLabel("CAREER")
+                            Spacer(minLength: 8)
+                            careerSummary(summary)
+                        }
+                        VStack(alignment: .leading, spacing: 4) {
+                            SectionLabel("CAREER")
+                            careerSummary(summary)
+                        }
+                    }
+                    competitionRecordText(wins: own.career.wins, losses: own.career.losses, ties: own.career.ties)
+                        .font(.score(size: min(recordSize, 96)).monospacedDigit())
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.5)
+                        .accessibilityLabel(own.career.text)
+                        .accessibilityIdentifier("competition.ownProfile.record")
+                    if own.outcomes.count >= 3 {
+                        CompetitionFormStrip(outcomes: own.outcomes, opponentName: "Opponents")
+                    }
+                }
+                if !belts.isEmpty {
+                    VStack(alignment: .leading, spacing: 10) {
+                        SectionLabel("BELTS · \(belts.count)")
+                            .padding(.horizontal, 4)
+                        VStack(spacing: 0) {
+                            ForEach(belts, id: \.opponentIdentity) { beltRow($0, competitions: competitions) }
+                        }
+                        .themePanel()
+                    }
+                }
+                bestsLayout {
+                    best("BEST WEEK", competitionPointsText(own.career.bestWeek))
+                    best("BEST DAY", competitionPointsText(own.bestDay))
+                    best("WIN STREAK", String(own.career.winStreak))
+                }
+                .padding(.vertical, 14)
+                .themePanel()
+                if let sharesCareer {
+                    Toggle(isOn: Binding(get: { sharesCareer }, set: setSharesCareer)) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Show my career")
+                                .font(.headline)
+                                .foregroundStyle(Theme.ink)
+                            Text("To friends and people you play")
+                                .font(.subheadline)
+                                .foregroundStyle(Theme.secondary)
+                        }
+                    }
+                    .tint(Theme.youFill)
+                    .padding(16)
+                    .themePanel()
+                    .accessibilityIdentifier("competition.ownProfile.share")
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
+            .padding(.bottom, 16)
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("competition.ownProfile")
+        }
+        .background(Theme.ground)
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Button("Edit", action: edit)
+                    .accessibilityIdentifier("competition.ownProfile.edit")
+            }
+        }
+    }
+
+    private func careerSummary(_ text: String) -> some View {
+        Text(text.uppercased(with: locale))
+            .font(.themeLabel)
+            .tracking(1.2)
+            .foregroundStyle(Theme.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var bestsLayout: AnyLayout {
+        dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(spacing: 12))
+            : AnyLayout(HStackLayout(alignment: .firstTextBaseline, spacing: 8))
+    }
+
+    private func beltRow(_ record: CompetitionOpponentRecord, competitions: [LocalCompetitionPresentation]) -> some View {
+        let weeks = competitionRivalryWeeks(competitions, opponentIdentity: record.opponentIdentity)
+        return NavigationLink(value: CompetitionHomeRoute.profile(record.opponentIdentity)) {
+            HStack(spacing: 12) {
+                PersonAvatar(name: record.opponentDisplayName, photo: record.latest.opponentProfileID, size: 32)
+                Text(record.opponentDisplayName)
+                    .font(.headline)
+                    .foregroundStyle(Theme.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 8)
+                if !dynamicTypeSize.isAccessibilitySize, let since = record.belt.current.flatMap({
+                    competitionBeltSinceText($0, weeks: weeks, now: publication.evaluatedAt, locale: locale, timeZone: timeZone)
+                }) {
+                    Text(since)
+                        .font(.subheadline)
+                        .foregroundStyle(Theme.secondary)
+                }
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.bold))
+                    .foregroundStyle(Theme.tertiary)
+            }
+            .padding(.horizontal, 16)
+            .frame(minHeight: 56)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(CompetitionPressButtonStyle())
+    }
+
+    private func best(_ label: String, _ value: String) -> some View {
+        VStack(spacing: 2) {
+            Text(value)
+                .font(.score(size: bestSize).monospacedDigit())
+                .foregroundStyle(Theme.ink)
+                .lineLimit(1)
+                .minimumScaleFactor(0.5)
+            Text(label)
+                .font(.themeLabel)
+                .tracking(1.1)
+                .foregroundStyle(Theme.secondary)
+        }
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+// MARK: Opening a profile
+
+/// The stack's push, set on Home's `NavigationStack`. Nil hides every tap.
+private struct OpenCompetitionProfileKey: EnvironmentKey {
+    static let defaultValue: ((CompetitionHomeRoute) -> Void)? = nil
+}
+
+extension EnvironmentValues {
+    var openCompetitionProfile: ((CompetitionHomeRoute) -> Void)? {
+        get { self[OpenCompetitionProfileKey.self] }
+        set { self[OpenCompetitionProfileKey.self] = newValue }
+    }
+}
+
+/// A match's route to their profile: never practice, a simulated opponent or
+/// a deleted account.
+func competitionProfileRoute(for competition: LocalCompetitionPresentation) -> CompetitionHomeRoute? {
+    guard !competition.isPractice,
+          competition.opponentProfileID != nil,
+          competition.opponentDisplayName != competitionFormerCompetitorName
+    else { return nil }
+    return .profile(competition.opponentIdentity)
+}
+
+func competitionOwnProfileRoute(for competition: LocalCompetitionPresentation) -> CompetitionHomeRoute? {
+    competition.isPractice ? nil : .ownProfile
+}
+
+/// Makes a photo and name open a profile, inside whatever button holds them.
+struct CompetitionProfileTap: ViewModifier {
+    let route: CompetitionHomeRoute?
+    @Environment(\.openCompetitionProfile) private var open
+
+    func body(content: Content) -> some View {
+        if let route, let open {
+            content
+                .contentShape(Rectangle().inset(by: -8))
+                .onTapGesture { open(route) }
+        } else {
+            content
+        }
+    }
+}
+
+/// The same for VoiceOver, on the element that reads the score.
+struct CompetitionProfileAction: ViewModifier {
+    let route: CompetitionHomeRoute?
+    let name: String
+    @Environment(\.openCompetitionProfile) private var open
+
+    func body(content: Content) -> some View {
+        if let route, let open {
+            content.accessibilityAction(named: "\(name)’s profile") { open(route) }
+        } else {
+            content
+        }
+    }
+}

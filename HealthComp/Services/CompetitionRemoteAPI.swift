@@ -209,6 +209,16 @@ struct CompetitionRemoteAPI: Sendable {
     ) async throws -> FriendSettings = { _, _ in
         throw CompetitionRemoteFailure.operationFailed
     }
+    /// Nil unless they share it with you, whatever the reason.
+    var getCareerSummary: @Sendable (UUID) async throws -> CompetitionCareer? = { _ in
+        throw CompetitionRemoteFailure.operationFailed
+    }
+    var getCareerSharing: @Sendable () async throws -> Bool = {
+        throw CompetitionRemoteFailure.operationFailed
+    }
+    var setCareerSharing: @Sendable (Bool) async throws -> Bool = { _ in
+        throw CompetitionRemoteFailure.operationFailed
+    }
     var listFriends: @Sendable () async throws -> FriendsList = {
         throw CompetitionRemoteFailure.operationFailed
     }

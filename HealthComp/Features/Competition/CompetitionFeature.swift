@@ -136,6 +136,11 @@ struct CompetitionFeature {
         var challengeLinkResetFailed = false
         /// People you blocked, newest first; nil until Account loads them.
         var blockedPeople: [AuthenticatedProfile]?
+        /// Careers people share with you, from the last time their page opened.
+        var careers: [UUID: CompetitionCareer] = [:]
+        /// Nil until the server answers, which hides the switch.
+        var sharesCareer: Bool?
+        var isSavingCareerSharing = false
         var unblocksInFlight: Set<UUID> = []
         /// The person whose last Unblock failed; the error shows in their row.
         var unblockFailed: UUID?
@@ -293,6 +298,12 @@ struct CompetitionFeature {
         case declineTapped(CompetitionID)
         /// Decline and block the sender.
         case blockTapped(CompetitionID)
+        case careerRequested(UUID)
+        case careerLoaded(UUID, CompetitionCareer?)
+        case careerSharingRequested
+        case careerSharingLoaded(Bool?)
+        case careerSharingChanged(Bool)
+        case careerSharingSaved(Bool?)
         case blockedPeopleRequested
         case blockedPeopleResponse([AuthenticatedProfile]?)
         case unblockTapped(UUID)
@@ -357,6 +368,8 @@ struct CompetitionFeature {
         case challengeLink
         case challengeLinkReset
         case blockedPeople
+        case career
+        case careerSharing
         case nudge
         case reaction
         case profilePhotos
@@ -824,6 +837,48 @@ struct CompetitionFeature {
                     }
                 }
 
+            case let .careerRequested(id):
+                return .run { send in
+                    await send(.careerLoaded(id, try? await competitionClient.getCareerSummary(id)))
+                }
+                .cancellable(id: CancelID.career, cancelInFlight: true)
+
+            case let .careerLoaded(id, career):
+                // Nil means they stopped sharing, or it can't be known: show nothing.
+                state.careers[id] = career
+                return .none
+
+            case .careerSharingRequested:
+                // It would cancel the save, which shares its id.
+                guard !state.isSavingCareerSharing else { return .none }
+                return .run { send in
+                    await send(.careerSharingLoaded(try? await competitionClient.getCareerSharing()))
+                }
+                .cancellable(id: CancelID.careerSharing, cancelInFlight: true)
+
+            case let .careerSharingLoaded(enabled):
+                guard !state.isSavingCareerSharing else { return .none }
+                state.sharesCareer = enabled
+                return .none
+
+            case let .careerSharingChanged(enabled):
+                guard !state.isSavingCareerSharing, state.sharesCareer != enabled else { return .none }
+                state.isSavingCareerSharing = true
+                state.sharesCareer = enabled
+                return .run { send in
+                    await send(.careerSharingSaved(try? await competitionClient.setCareerSharing(enabled)))
+                }
+                .cancellable(id: CancelID.careerSharing, cancelInFlight: true)
+
+            case let .careerSharingSaved(enabled):
+                state.isSavingCareerSharing = false
+                // A failed save puts the switch back, by asking the server.
+                if let enabled {
+                    state.sharesCareer = enabled
+                    return .none
+                }
+                return .send(.careerSharingRequested)
+
             case .blockedPeopleRequested:
                 state.unblockFailed = nil
                 return .run { send in
@@ -1111,6 +1166,9 @@ struct CompetitionFeature {
                 state.challengeLinkIsResetting = false
                 state.challengeLinkResetFailed = false
                 state.blockedPeople = nil
+                state.careers = [:]
+                state.sharesCareer = nil
+                state.isSavingCareerSharing = false
                 state.unblocksInFlight = []
                 state.unblockFailed = nil
                 state.nudges = [:]
@@ -1132,6 +1190,8 @@ struct CompetitionFeature {
                         .cancel(id: FriendSettingsFeature.CancelID.save),
                         .cancel(id: FriendSettingsFeature.CancelID.availability),
                         .cancel(id: CancelID.profilePhotos),
+                        .cancel(id: CancelID.career),
+                        .cancel(id: CancelID.careerSharing),
                         .cancel(id: CancelID.ownPhoto),
                         .cancel(id: CancelID.reaction),
                         .cancel(id: CancelID.publications),

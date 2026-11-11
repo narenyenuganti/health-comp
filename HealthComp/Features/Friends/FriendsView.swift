@@ -348,7 +348,7 @@ struct FriendsView: View {
         let id = person.id.uuidString.lowercased()
         return VStack(alignment: .leading, spacing: 8) {
             rowLayout {
-                NavigationLink(value: CompetitionHomeRoute.person(person.identity)) {
+                NavigationLink(value: CompetitionHomeRoute.profile(person.identity)) {
                     FriendsPersonLabel(person: person, detail: person.username.map { "@\($0)" })
                 }
                 .buttonStyle(CompetitionRowButtonStyle())
@@ -455,7 +455,7 @@ struct FriendsView: View {
     }
 
     private func friendRow(_ person: FriendPerson) -> some View {
-        NavigationLink(value: CompetitionHomeRoute.person(person.identity)) {
+        NavigationLink(value: CompetitionHomeRoute.profile(person.identity)) {
             HStack(spacing: 12) {
                 FriendsPersonLabel(
                     person: person,
@@ -746,75 +746,70 @@ struct PersonFriendNotes: View {
     }
 }
 
-/// Someone you haven't played: who they are, adding them, and challenging
-/// a friend. Reached through `.person`, when there is no match record to show.
+/// One page for a person, from their photo on a score or from Friends: who
+/// they are, what the two of you have played, and what to do next.
 struct FriendProfileView: View {
     let controls: PersonFriendControls
     var isBlocked: Bool? = false
     var unblock: (() -> Void)? = nil
-    /// The Challenge sheet with this friend chosen.
+    /// The Challenge sheet with this person chosen.
     var challenge: (() -> Void)? = nil
-    /// A challenge or match with them, though no finished week yet.
+    /// A challenge or match with them, finished or not.
     var hasPlayed = false
+    var rivalry: CompetitionProfileRivalry? = nil
+    /// Theirs, only when they share it with you.
+    var career: CompetitionCareer? = nil
+    var ownCareer: CompetitionCareer? = nil
+    var muteButton: CompetitionMuteButton? = nil
 
     @State private var dialog: PersonFriendDialog?
     @State private var isBlocking = false
     @Environment(\.dismiss) private var dismiss
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.locale) private var locale
+    @Environment(\.timeZone) private var timeZone
+    @ScaledMetric(relativeTo: .largeTitle) private var nameSize: CGFloat = 52
+    @ScaledMetric(relativeTo: .largeTitle) private var recordSize: CGFloat = 64
+    @ScaledMetric(relativeTo: .title2) private var tapeValueSize: CGFloat = 21
 
     private var person: FriendPerson { controls.person }
+    private var hasWeeks: Bool { rivalry?.weeks.isEmpty == false }
+    /// Something with them is under way, before any week has finished.
+    private var isFirstMatch: Bool {
+        guard let rivalry else { return false }
+        return rivalry.weeks.isEmpty && rivalry.challengeTitle == nil
+    }
 
     var body: some View {
         // Accessibility sizes scroll the button with the text; pinned, it
         // would squeeze both.
         let pinsButton = !dynamicTypeSize.isAccessibilitySize
         ScrollView {
-            VStack(spacing: 6) {
-                PersonAvatar(
-                    name: person.displayName,
-                    photo: isBlocked == false ? person.id : nil,
-                    size: 112,
-                    initialFont: .largeTitle.weight(.heavy).width(.condensed)
-                )
-                Text(person.displayName)
-                    .font(.title2.weight(.semibold))
-                    .foregroundStyle(Theme.ink)
-                    .multilineTextAlignment(.center)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.top, 12)
-                    .accessibilityAddTraits(.isHeader)
-                    .accessibilityIdentifier("friends.person.name")
-                if let username = person.username {
-                    Text(verbatim: "@\(username)")
-                        .foregroundStyle(Theme.secondary)
-                        .accessibilityIdentifier("friends.person.username")
-                }
+            VStack(alignment: .leading, spacing: 18) {
+                header
                 if isBlocked == true {
-                    Text("\(person.displayName) can’t challenge you.")
-                        .font(.subheadline)
-                        .foregroundStyle(Theme.secondary)
-                        .multilineTextAlignment(.center)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(.top, 28)
-                } else if person.relationship != .friend {
-                    Text("Friends can challenge each other without a link.")
-                        .font(.subheadline)
-                        .foregroundStyle(Theme.secondary)
-                        .multilineTextAlignment(.center)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .padding(.top, 28)
-                        .padding(.horizontal, 16)
+                    quietLine("\(person.displayName) can’t challenge you.")
+                } else if let rivalry, let record = rivalry.record, hasWeeks {
+                    recordSection(record, rivalry: rivalry)
+                } else if isFirstMatch {
+                    beltPrize("FIRST MATCH", line: "Win this week to take it.")
+                } else if person.relationship == .friend {
+                    beltPrize("NOT PLAYED YET", line: "Win your first week with \(person.displayName) to take it.")
+                } else {
+                    quietLine("Friends can challenge each other without a link.")
+                }
+                if isBlocked == false, let career, let ownCareer {
+                    tape(you: ownCareer, them: career)
                 }
                 PersonFriendNotes(failure: nil, isReported: controls.isReported)
-                    .padding(.top, 12)
                 if !pinsButton {
-                    footer.padding(.top, 28)
+                    footer
                 }
             }
             .padding(.horizontal, 16)
-            .padding(.top, 40)
+            .padding(.top, 12)
             .padding(.bottom, 16)
-            .frame(maxWidth: .infinity)
+            .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("friends.person")
         }
@@ -831,10 +826,14 @@ struct FriendProfileView: View {
         .moving(Motion.settle, value: person)
         .moving(Motion.settle, value: controls.failure)
         .moving(Motion.settle, value: controls.isReported)
+        .moving(Motion.settle, value: career)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
                 Menu {
+                    if let muteButton {
+                        muteButton
+                    }
                     PersonFriendMenuItems(
                         name: person.displayName,
                         controls: controls,
@@ -856,6 +855,208 @@ struct FriendProfileView: View {
         }
     }
 
+    /// Side by side, stacking at accessibility sizes where the name needs the width.
+    private var rowLayout: AnyLayout {
+        dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
+            : AnyLayout(HStackLayout(alignment: .center, spacing: 16))
+    }
+
+    private var header: some View {
+        rowLayout {
+            PersonAvatar(
+                name: person.displayName,
+                photo: isBlocked == false ? person.id : nil,
+                size: 96,
+                initialFont: .largeTitle.weight(.heavy).width(.condensed)
+            )
+            VStack(alignment: .leading, spacing: 0) {
+                Text(person.displayName.uppercased(with: locale))
+                    .font(.score(size: dynamicTypeSize.isAccessibilitySize ? min(nameSize, 72) : nameSize))
+                    .foregroundStyle(Theme.ink)
+                    .minimumScaleFactor(dynamicTypeSize.isAccessibilitySize ? 1 : 0.5)
+                    .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityLabel(person.displayName)
+                    .accessibilityAddTraits(.isHeader)
+                    .accessibilityIdentifier("friends.person.name")
+                if let username = person.username {
+                    Text(verbatim: "@\(username)")
+                        .foregroundStyle(Theme.secondary)
+                        .accessibilityIdentifier("friends.person.username")
+                }
+            }
+        }
+    }
+
+    private func quietLine(_ text: String) -> some View {
+        Text(text)
+            .font(.subheadline)
+            .foregroundStyle(Theme.secondary)
+            .fixedSize(horizontal: false, vertical: true)
+            .padding(.horizontal, 4)
+    }
+
+    @ViewBuilder
+    private func recordSection(_ record: CompetitionOpponentRecord, rivalry: CompetitionProfileRivalry) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    recordLabel
+                    Spacer(minLength: 8)
+                    weeksLabel(rivalry.weeks.count)
+                }
+                VStack(alignment: .leading, spacing: 4) {
+                    recordLabel
+                    weeksLabel(rivalry.weeks.count)
+                }
+            }
+            competitionRecordText(record)
+                .font(.score(size: dynamicTypeSize.isAccessibilitySize ? min(recordSize, 96) : recordSize).monospacedDigit())
+                .lineLimit(1)
+                .minimumScaleFactor(0.5)
+                .accessibilityLabel(record.accessibilityText)
+                .accessibilityIdentifier("friends.person.record")
+            if competitionRivalryPieces(weeks: rivalry.weeks.count, isLedger: false).form {
+                CompetitionFormStrip(
+                    outcomes: rivalry.weeks.compactMap(\.terminalResult?.outcome),
+                    opponentName: person.displayName,
+                    isLive: rivalry.isLive
+                )
+            }
+        }
+        beltRow(rivalry)
+    }
+
+    private var recordLabel: some View {
+        SectionLabel("YOUR RECORD WITH \(person.displayName.uppercased(with: locale))")
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func weeksLabel(_ count: Int) -> some View {
+                Text(competitionWeeksText(count).uppercased(with: locale))
+                    .font(.themeLabel)
+                    .tracking(1.2)
+                    .foregroundStyle(Theme.secondary)
+    }
+
+    private func beltRow(_ rivalry: CompetitionProfileRivalry) -> some View {
+        let belt = rivalry.belt
+        let since = belt.holder == nil ? nil : belt.current.flatMap {
+            competitionBeltSinceText($0, weeks: rivalry.weeks, now: rivalry.now, locale: locale, timeZone: timeZone)
+        }
+        let defenses = belt.holder == nil ? 0 : belt.current?.defenses ?? 0
+        let title = competitionBeltTitle(belt, name: person.displayName)
+        return HStack(spacing: 12) {
+            if let holder = belt.holder {
+                CompetitionBeltMark(holder: holder, width: 44)
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title)
+                    .font(.headline)
+                    .foregroundStyle(belt.holder == .you ? Theme.you : Theme.ink)
+                if let since {
+                    Text(since)
+                        .font(.subheadline)
+                        .foregroundStyle(Theme.secondary)
+                }
+                if defenses > 0, dynamicTypeSize.isAccessibilitySize {
+                    Text(competitionDefensesText(defenses).uppercased(with: locale))
+                        .font(.themeLabel)
+                        .tracking(1.2)
+                        .foregroundStyle(Theme.secondary)
+                }
+            }
+            .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 8)
+            if defenses > 0, !dynamicTypeSize.isAccessibilitySize {
+                Text(competitionDefensesText(defenses).uppercased(with: locale))
+                    .font(.themeLabel)
+                    .tracking(1.2)
+                    .foregroundStyle(Theme.secondary)
+            }
+        }
+        .padding(16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .themePanel()
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(
+            [title, since, defenses > 0 ? competitionDefensesText(defenses) : nil]
+                .compactMap { $0 }
+                .joined(separator: ", ")
+        )
+        .accessibilityIdentifier("friends.person.belt")
+    }
+
+    /// The gold belt on offer. Gold here is the owner's call: it's the prize.
+    private func beltPrize(_ label: String, line: String) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Image("BeltHeroGold")
+                .resizable()
+                .scaledToFit()
+                .padding(.horizontal, 8)
+                .padding(.vertical, 16)
+                .frame(maxWidth: .infinity)
+                .background { Theme.beltWell }
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 4) {
+                SectionLabel(label)
+                Text("No one holds the belt yet")
+                    .font(.headline)
+                    .foregroundStyle(Theme.ink)
+                    .padding(.top, 2)
+                Text(line)
+                    .font(.subheadline)
+                    .foregroundStyle(Theme.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(16)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .themePanel()
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("friends.person.prize")
+    }
+
+    private func tape(you: CompetitionCareer, them: CompetitionCareer) -> some View {
+        let rows = [
+            ("CAREER", you.text, them.text),
+            ("BELTS", String(you.belts), String(them.belts)),
+            ("WIN STREAK", String(you.winStreak), String(them.winStreak)),
+            ("BEST WEEK", competitionPointsText(you.bestWeek), competitionPointsText(them.bestWeek)),
+        ]
+        let name = person.displayName
+        return VStack(spacing: 10) {
+            if !dynamicTypeSize.isAccessibilitySize {
+                CompetitionTapeRow(
+                    you: "YOU", label: "TALE OF THE TAPE", them: name.uppercased(with: locale), valueFont: .themeLabel
+                )
+            }
+            ForEach(rows, id: \.0) { label, yours, theirs in
+                if dynamicTypeSize.isAccessibilitySize {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text(label)
+                            .font(.themeLabel)
+                            .tracking(1.1)
+                            .foregroundStyle(Theme.secondary)
+                        Text("You \(yours)").foregroundStyle(Theme.you)
+                        Text("\(name) \(theirs)").foregroundStyle(Theme.ink)
+                    }
+                    .font(.subheadline.bold())
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    CompetitionTapeRow(you: yours, label: label, them: theirs, valueFont: .score(size: tapeValueSize))
+                }
+            }
+        }
+        .padding(16)
+        .themePanel()
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(rows.map { "\($0.0): You \($0.1), \(name) \($0.2)" }.joined(separator: ", "))
+        .accessibilityIdentifier("friends.person.tape")
+    }
+
     @ViewBuilder
     private var footer: some View {
         VStack(spacing: 10) {
@@ -869,7 +1070,18 @@ struct FriendProfileView: View {
                     .accessibilityIdentifier("friends.person.error")
             }
             if isBlocked == false {
-                action
+                if let identity = rivalry?.record?.opponentIdentity, hasWeeks {
+                    NavigationLink("All Weeks with \(person.displayName)", value: CompetitionHomeRoute.person(identity))
+                        .buttonStyle(SecondaryButtonStyle())
+                        .accessibilityIdentifier("competition.profile.weeks")
+                    if let title = rivalry?.challengeTitle, let challenge {
+                        Button(title, action: challenge)
+                            .buttonStyle(PrimaryButtonStyle())
+                            .accessibilityIdentifier("friends.person.challenge")
+                    }
+                } else {
+                    action
+                }
             }
         }
     }
@@ -894,8 +1106,8 @@ struct FriendProfileView: View {
                 .disabled(isInFlight)
                 .accessibilityIdentifier("friends.person.action")
         case .friend:
-            if let challenge {
-                Button("Challenge \(person.displayName)", action: challenge)
+            if let challenge, !isFirstMatch {
+                Button(rivalry?.challengeTitle ?? "Challenge \(person.displayName)", action: challenge)
                     .buttonStyle(PrimaryButtonStyle())
                     .disabled(isInFlight)
                     .accessibilityIdentifier("friends.person.challenge")

@@ -360,8 +360,8 @@ private struct MultiUserCompetitionSharingTestLabView: View {
                     switch route {
                     case .history:
                         CompetitionHistoryView(publication: publication, openRecap: { recapPeriod = $0 })
-                    case .friends:
-                        // The sharing lab has no friends.
+                    case .friends, .profile, .ownProfile:
+                        // The sharing lab has no friends or profiles.
                         EmptyView()
                     case let .person(identity):
                         CompetitionPersonView(
@@ -1088,6 +1088,9 @@ private struct MultiUserCompetitionFriendsTestLabView: View {
                 setUsername: { try await settings.setUsername($0) },
                 usernameAvailable: { try await settings.isAvailable($0) },
                 updateFriendSettings: { try await settings.update($0, $1) },
+                getCareerSummary: { $0 == FriendsTestLabServer.dev.id ? FriendsTestLabServer.devCareer : nil },
+                getCareerSharing: { await server.sharesCareer },
+                setCareerSharing: { await server.setSharesCareer($0) },
                 listFriends: { try await server.list() },
                 searchPeople: { try await server.search($0) },
                 sendFriendRequest: { try await server.add($0) },
@@ -1171,6 +1174,17 @@ private actor FriendsTestLabServer {
     nonisolated static let marcus = person(0xc1, "Marcus Hill", "marcush", .none)
     nonisolated static let mateo = person(0xc2, "Mateo Ruiz", "mateo", .requested)
     nonisolated static let mara = person(0xc3, "Mara Lind", "maral", .none)
+
+    nonisolated static let devCareer = CompetitionCareer(
+        wins: 18, losses: 9, ties: 1, people: 7, belts: 2, winStreak: 5, bestWeek: 2_730
+    )
+
+    private(set) var sharesCareer = false
+
+    func setSharesCareer(_ enabled: Bool) -> Bool {
+        sharesCareer = enabled
+        return enabled
+    }
 
     private var people: [FriendPerson]
     private var addFailed = false
