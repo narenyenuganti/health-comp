@@ -7,6 +7,7 @@ HEALTHCOMP_APPLE_WEB_CLIENT_ID =
 HEALTHCOMP_APP_GROUP = group.com.narenyenuganti.HealthComp
 
 // The one place to bump a release. Every target (app, widgets, watch app and
-// its widgets) reads these, so their versions can't drift apart.
+// its widgets) reads these, so their versions can't drift apart. After a
+// bump, save what the new build can call: scripts/save-released-api.sh.
 MARKETING_VERSION = 1.0.4
 CURRENT_PROJECT_VERSION = 4
