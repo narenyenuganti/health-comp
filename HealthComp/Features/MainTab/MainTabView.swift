@@ -466,11 +466,11 @@ struct MainTabView: View {
         ToolbarItemGroup(placement: .topBarTrailing) {
             // Invitations are private links between real people.
             if store.competition.publication?.source == .remoteParticipants {
-                FriendsToolbarButton(requestCount: store.competition.friends.requestCount) {
-                    store.send(.friendsPresentationChanged(true))
-                }
                 CompetitionChallengeButton {
                     if GroupMatchRollout.showsFormatPicker { isNewMatchPresented = true } else { isChallengePresented = true }
+                }
+                FriendsToolbarButton(requestCount: store.competition.friends.requestCount) {
+                    store.send(.friendsPresentationChanged(true))
                 }
             }
             if let openAccount {
