@@ -270,7 +270,7 @@ actor CompetitionNotificationCoordinator {
         let desiredIDs = Set(
             plan.desiredScheduledRequests.map(\.identifier)
         )
-        let snapshotIDs = Set(snapshot.competitions.map(\.id))
+        let snapshotIDs = Set(snapshot.competitions.map(\.id) + snapshot.groupMatches.map(\.id))
         let obsolete = pendingBefore.filter { identifier in
             guard let id = CompetitionNotificationIdentifier.competitionID(
                 from: identifier
@@ -458,7 +458,8 @@ actor CompetitionNotificationCoordinator {
                     )
                 )
             },
-            knownCompetitionIDs: snapshot.knownCompetitionIDs
+            knownCompetitionIDs: snapshot.knownCompetitionIDs,
+            groupMatches: snapshot.groupMatches
         )
     }
 
@@ -473,7 +474,7 @@ actor CompetitionNotificationCoordinator {
     private func removePendingForSnapshot(
         _ snapshot: CompetitionNotificationPlanningSnapshot
     ) async {
-        let ids = Set(snapshot.competitions.map(\.id))
+        let ids = Set(snapshot.competitions.map(\.id) + snapshot.groupMatches.map(\.id))
         let pending = await notifications.pendingIDs(
             CompetitionNotificationIdentifier.namespace
         )

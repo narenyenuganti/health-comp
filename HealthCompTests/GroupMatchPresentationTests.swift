@@ -53,6 +53,43 @@ final class GroupMatchPresentationTests: XCTestCase {
         )
     }
 
+    // MARK: Banter
+
+    func testBanterShowsFromDayThreeAndPostsOnceAt8PMMatchTime() throws {
+        let match = fixture(.banter)
+        let line = try XCTUnwrap(match.banter)
+        XCTAssertFalse(line.isEmpty)
+        // Quiet on Days 1 and 2, whatever the scores.
+        XCTAssertNil(try dayOne([.you: 0, .sam: 60_000, .priya: 0, .leo: 0]).banter)
+
+        // Lab now is 1 AM Sunday in Los Angeles; Day 4's line posts at 8 PM there.
+        let snapshot = CompetitionNotificationPlanningSnapshot(
+            publicationRevision: 1,
+            evaluatedAt: MultiUserCompetitionTestLabFixtures.labNow,
+            timeZoneIdentifier: "America/Los_Angeles",
+            competitions: [],
+            groupMatches: [match]
+        )
+        let planner = CompetitionNotificationPlanner(policy: .liveV1)
+        let plan = try planner.plan(snapshot, authorization: .authorized, mutedOpponentIdentities: [])
+        let request = try XCTUnwrap(plan.desiredScheduledRequests.first)
+        XCTAssertEqual(plan.desiredScheduledRequests.count, 1)
+        XCTAssertEqual(request.identifier, CompetitionNotificationIdentifier.scheduled(competitionID: match.id, family: .groupBanter))
+        XCTAssertEqual(request.content, CompetitionNotificationContent(title: "Doubles, Day 4", body: line))
+        XCTAssertEqual(request.dateComponents.date, Date(timeIntervalSince1970: 1_786_935_600))
+
+        XCTAssertTrue(try planner.plan(
+            snapshot, authorization: .authorized, mutedOpponentIdentities: [], switchedOff: [.groupBanter]
+        ).desiredScheduledRequests.isEmpty)
+        XCTAssertTrue(try planner.plan(
+            CompetitionNotificationPlanningSnapshot(
+                publicationRevision: 1, evaluatedAt: Date(timeIntervalSince1970: 1_786_935_600),
+                timeZoneIdentifier: "America/Los_Angeles", competitions: [], groupMatches: [match]
+            ),
+            authorization: .authorized, mutedOpponentIdentities: []
+        ).desiredScheduledRequests.isEmpty, "not after 8 PM")
+    }
+
     // MARK: Projections
 
     func testTiedFirstSharesThePlaceAndTheNextIsThird() {
@@ -202,7 +239,15 @@ final class GroupMatchPresentationTests: XCTestCase {
         let now = MultiUserCompetitionTestLabFixtures.labNow
         XCTAssertFalse(competitionHomeLayout(duels, now: now).isEmpty)
         XCTAssertEqual(competitionHomeLayout(mixed, now: now), competitionHomeLayout(duels, now: now))
-        XCTAssertEqual(CompetitionWidgetSnapshot(dashboard: mixed), CompetitionWidgetSnapshot(dashboard: duels))
+        // Glance shows the live one through its own field, with no belt or
+        // chase; the duel entries are unchanged.
+        let glance = CompetitionWidgetSnapshot(dashboard: mixed)
+        let duelGlance = CompetitionWidgetSnapshot(dashboard: duels)
+        XCTAssertEqual(glance.matches.filter { $0.group == nil }, duelGlance.matches)
+        XCTAssertEqual(glance.hasIncomingChallenge, duelGlance.hasIncomingChallenge)
+        let groups = glance.matches.filter { $0.group != nil }
+        XCTAssertEqual(groups.map(\.id), [fixture(.liveFFA).id.rawValue])
+        XCTAssertTrue(groups.allSatisfy { $0.belt == nil && $0.chase == nil && $0.final == nil })
     }
 
     func testDashboardRebuildsKeepGroupMatches() {

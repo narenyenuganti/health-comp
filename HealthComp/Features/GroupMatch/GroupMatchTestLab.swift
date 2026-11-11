@@ -2,6 +2,7 @@
 import CompetitionCore
 import ComposableArchitecture
 import SwiftUI
+import UIKit
 
 /// `-groupLab <setup>` in the `group-matches` Test Lab scenario.
 enum GroupMatchLabSetup: String, CaseIterable, Sendable {
@@ -11,9 +12,18 @@ enum GroupMatchLabSetup: String, CaseIterable, Sendable {
     case botPicker = "bot-picker"
     case lobbyHost = "lobby-host"
     case lobbyDeclined = "lobby-declined"
+    case lobbyInvitee = "lobby-invitee"
+    case lobbyExpired = "lobby-expired"
+    case lobbyShortInvitee = "lobby-short-invitee"
+    case lobbyScheduled = "lobby-scheduled"
+    case lobbyScheduledInvitee = "lobby-scheduled-invitee"
+    case lobbyWithdrew = "lobby-withdrew"
     case inviteFFA = "invite-ffa"
     case versusFFA = "versus-ffa"
     case versusDoubles = "versus-doubles"
+    case versusFFAPhotos = "versus-ffa-photos"
+    case versusDoublesPhotos = "versus-doubles-photos"
+    case versusBot = "versus-bot"
     case home
     case liveFFA = "live-ffa"
     case liveDoubles = "live-doubles"
@@ -22,8 +32,19 @@ enum GroupMatchLabSetup: String, CaseIterable, Sendable {
     case banter
     case resultFFAWon = "result-ffa-won"
     case resultFFATied = "result-ffa-tied"
+    case resultFFALost = "result-ffa-lost"
+    case resultFFATiedThird = "result-ffa-tied-third"
     case resultDoubles = "result-doubles"
+    case resultDoublesTied = "result-doubles-tied"
     case history
+    /// The same History with no group match in it.
+    case historyDuels = "history-duels"
+}
+
+extension GroupMatchLabSetup {
+    var isVersus: Bool {
+        [.versusFFA, .versusDoubles, .versusFFAPhotos, .versusDoublesPhotos, .versusBot].contains(self)
+    }
 }
 
 /// One match per mockup state. Now is Sun Aug 16, Day 4 of a week that began
@@ -46,14 +67,34 @@ enum GroupMatchFixtures {
         var profileID: UUID { UUID(uuidString: "c2000000-0000-4000-8000-00000000000\(rawValue)")! }
     }
 
-    static let samProfile = Player.sam.profileID
+    static func player(_ player: Player) -> GroupMatchPlayer {
+        GroupMatchPlayer(profileID: player.profileID, name: player.name)
+    }
+
+    /// Maya's challenge link finds her; this one belongs to someone you can't add.
+    static let mayaLink = "Mx7kQ2pL9vR4tN8wB3cY6z"
+    static let unavailableLink = "Ux0aB1cD2eF3gH4iJ5kL6m"
+
+    /// Takes a second, so the lookup shows that it's working.
+    static let lookUpLink: @Sendable (CompetitionChallengeLinkCode) async -> GroupMatchLinkLookup = { code in
+        try? await Task.sleep(for: .seconds(1))
+        switch code.rawValue {
+        case mayaLink: return .found(name: "Maya")
+        case unavailableLink: return .unavailable
+        default: return .notFound
+        }
+    }
 
     private static let now = MultiUserCompetitionTestLabFixtures.labNow
     private static let zone = "America/Los_Angeles"
-    private static let schedule = CompetitionSchedule(
-        calendar: try! CompetitionCalendar(timeZoneIdentifier: zone),
-        startDay: try! CompetitionDay(era: 1, year: 2026, month: 8, day: 13, timeZoneIdentifier: zone)
-    )
+    private static func schedule(month: Int, day: Int) -> CompetitionSchedule {
+        CompetitionSchedule(
+            calendar: try! CompetitionCalendar(timeZoneIdentifier: zone),
+            startDay: try! CompetitionDay(era: 1, year: 2026, month: month, day: day, timeZoneIdentifier: zone)
+        )
+    }
+    /// Everyone accepted today, so Day 1 is Monday.
+    private static let tomorrow = (month: 8, day: 17)
 
     private static let fourDays: [Player: [Int]] = [
         .you: [421, 437, 398, 408],
@@ -77,17 +118,29 @@ enum GroupMatchFixtures {
     private static let ffaLineup: [Player] = [.you, .sam, .priya, .leo]
     private static let doublesLineup: [(Player, Int)] = [(.you, 1), (.sam, 2), (.priya, 1), (.leo, 2)]
     private static let live = LocalCompetitionLifecyclePresentation.active(dayOrdinal: 4)
+    /// Answer by Sun 8 PM in Los Angeles.
+    private static let waiting = LocalCompetitionLifecyclePresentation.pending(
+        direction: .outgoing, createdAt: now, expiresAt: now.addingTimeInterval(19 * 3_600)
+    )
+    private static let waitingIncoming = LocalCompetitionLifecyclePresentation.pending(
+        direction: .incoming, createdAt: now, expiresAt: now.addingTimeInterval(19 * 3_600)
+    )
     private static let won = LocalCompetitionLifecyclePresentation.completed(
         outcome: .win, basis: .stableAcrossPostBoundaryReads, completedAt: now
     )
 
     /// The match a setup opens through `MainTabView`, or nil for one drawn on its own.
     static func routed(_ setup: GroupMatchLabSetup) -> GroupMatchPresentation? {
-        switch setup {
+        routed(setup, youLeft: false)
+    }
+
+    /// `youLeft`: as after Leave Match on the live day.
+    static func routed(_ setup: GroupMatchLabSetup, youLeft: Bool) -> GroupMatchPresentation? {
+        let left: [Player: Int] = youLeft ? [.you: 4] : [:]
+        return switch setup {
         case .lobbyHost:
             match(
-                1, .fourWay,
-                .pending(direction: .outgoing, createdAt: now, expiresAt: now.addingTimeInterval(86_400)),
+                1, .fourWay, waiting,
                 ffaLineup,
                 invites: [.priya: .invited, .leo: .invited]
             )
@@ -98,16 +151,33 @@ enum GroupMatchFixtures {
             )
         case .inviteFFA:
             match(
-                3, .fourWay,
-                .pending(direction: .incoming, createdAt: now, expiresAt: now.addingTimeInterval(86_400)),
+                3, .fourWay, waitingIncoming,
                 [.sam, .priya, .leo, .you],
                 viewerInvite: .invited,
                 invites: [.leo: .invited]
             )
-        case .liveFFA: match(4, .fourWay, live, ffaLineup, scores: fourDays)
-        case .liveDoubles: doubles(5, live, scores: fourDays)
-        case .liveBot: match(6, .fourWay, live, [.you, .sam, .erratic, .leo], scores: fourDays)
-        case .banter: doubles(7, live, scores: fourDays)
+        case .lobbyInvitee:
+            match(21, .fourWay, waitingIncoming, [.sam, .you, .priya, .leo], invites: [.leo: .invited])
+        case .lobbyExpired:
+            match(
+                22, .doubles, .expired(at: now, direction: .outgoing), doublesLineup.map(\.0),
+                invites: [.leo: .invited],
+                teams: Dictionary(uniqueKeysWithValues: doublesLineup.map { ($0.0, $0.1) })
+            )
+        case .lobbyShortInvitee:
+            match(
+                23, .fourWay, .declined(at: now, direction: .incoming), [.sam, .you, .priya, .leo],
+                viewerInvite: .invited, invites: [.leo: .declined]
+            )
+        case .lobbyScheduled: match(24, .fourWay, .scheduled, ffaLineup, start: tomorrow)
+        case .lobbyScheduledInvitee: match(25, .fourWay, .scheduled, [.sam, .you, .priya, .leo], start: tomorrow)
+        case .lobbyWithdrew:
+            match(26, .fourWay, .declined(at: now, direction: .outgoing), ffaLineup, invites: [.sam: .withdrew])
+        case .liveFFA: match(4, .fourWay, live, ffaLineup, scores: fourDays, left: left)
+        case .liveDoubles: doubles(5, live, scores: fourDays, left: left)
+        case .liveBot: match(6, .fourWay, live, [.you, .sam, .erratic, .leo], scores: fourDays, left: left)
+        // Leo's slow week leaves Sam carrying their team.
+        case .banter: doubles(7, live, scores: fourDays.merging([.leo: [150, 160, 140, 170]]) { $1 }, left: left)
         case .resultFFAWon: match(8, .fourWay, won, ffaLineup, scores: week, isFrozen: true)
         case .resultFFATied:
             match(
@@ -115,17 +185,106 @@ enum GroupMatchFixtures {
                 .completed(outcome: .tie, basis: .stableAcrossPostBoundaryReads, completedAt: now),
                 ffaLineup, scores: tiedWeek, isFrozen: true
             )
+        case .resultFFALost: history[3]
+        case .resultFFATiedThird:
+            // Leo 1st, Sam 2nd, you and Priya both on 2,610.
+            match(
+                18, .fourWay,
+                .completed(outcome: .loss, basis: .stableAcrossPostBoundaryReads, completedAt: now),
+                ffaLineup,
+                scores: [.you: week[.priya]!, .sam: week[.sam]!, .priya: week[.priya]!, .leo: week[.you]!],
+                isFrozen: true
+            )
         case .resultDoubles: doubles(10, won, scores: week, isFrozen: true)
-        case .formatPicker, .lineupFFA, .lineupDoubles, .botPicker,
-             .versusFFA, .versusDoubles, .home, .day, .history:
+        case .resultDoublesTied:
+            // Both teams on 5,551.
+            doubles(
+                17,
+                .completed(outcome: .tie, basis: .stableAcrossPostBoundaryReads, completedAt: now),
+                scores: week.merging([.leo: [380, 400, 380, 400, 380, 360, 348]]) { $1 },
+                isFrozen: true
+            )
+        case .versusFFA, .versusFFAPhotos: match(11, .fourWay, .scheduled, ffaLineup)
+        case .versusDoubles, .versusDoublesPhotos: doubles(12, .scheduled)
+        case .versusBot: match(27, .fourWay, .scheduled, [.you, .sam, .erratic, .leo])
+        case .formatPicker, .lineupFFA, .lineupDoubles, .botPicker, .home, .day, .history, .historyDuels:
             nil
         }
     }
 
-    static var versusFFA: GroupMatchPresentation { match(11, .fourWay, .scheduled, ffaLineup) }
-    static var versusDoubles: GroupMatchPresentation { doubles(12, .scheduled) }
+    /// Five finished weeks, newest first: a four-way you won, doubles won
+    /// with Priya, a four-way tied for 1st, a three-way in 2nd and doubles
+    /// lost with Sam.
+    static var history: [GroupMatchPresentation] {
+        let lost = LocalCompetitionLifecyclePresentation.completed(
+            outcome: .loss, basis: .stableAcrossPostBoundaryReads, completedAt: now
+        )
+        let tied = LocalCompetitionLifecyclePresentation.completed(
+            outcome: .tie, basis: .stableAcrossPostBoundaryReads, completedAt: now
+        )
+        return [
+            match(8, .fourWay, won, ffaLineup, scores: week, isFrozen: true),
+            match(
+                13, .doubles, won, doublesLineup.map(\.0),
+                teams: Dictionary(uniqueKeysWithValues: doublesLineup.map { ($0.0, $0.1) }),
+                scores: week, isFrozen: true, start: (8, 6)
+            ),
+            match(14, .fourWay, tied, ffaLineup, scores: tiedWeek, isFrozen: true, start: (7, 30)),
+            match(
+                15, .threeWay, lost, [.you, .sam, .leo],
+                scores: [.you: week[.priya]!, .sam: week[.sam]!, .leo: week[.leo]!], isFrozen: true, start: (7, 23)
+            ),
+            match(
+                16, .doubles, lost, ffaLineup, teams: [.you: 1, .sam: 1, .priya: 2, .leo: 2],
+                scores: [.you: week[.leo]!, .sam: week[.priya]!, .priya: week[.sam]!, .leo: week[.you]!],
+                isFrozen: true, start: (7, 16)
+            ),
+        ]
+    }
 
-    static func publication(revision: UInt64, setup: GroupMatchLabSetup) -> LocalCompetitionPublication {
+    /// History with duel weeks, plus the group weeks unless `duelsOnly`.
+    static func historyPublication(duelsOnly: Bool) -> LocalCompetitionPublication {
+        let duels = CompetitionRivalryFixture.publication(weeks: 5)
+        return LocalCompetitionPublication(
+            publicationRevision: duels.publicationRevision,
+            dashboard: LocalCompetitionDashboard(
+                competitions: duels.dashboard.competitions,
+                awards: [],
+                issues: [],
+                hiddenTerminalCompetitionCount: 0,
+                groupMatches: duelsOnly ? [] : history
+            ),
+            evaluatedAt: duels.evaluatedAt,
+            timeZoneIdentifier: duels.timeZoneIdentifier,
+            source: duels.source
+        )
+    }
+
+    /// Placeholder portraits for the photo intros: you, Sam and Priya; Leo
+    /// keeps his initial, as in the mockup.
+    static func photoData(_ setup: GroupMatchLabSetup) -> [UUID: Data] {
+        guard setup == .versusFFAPhotos || setup == .versusDoublesPhotos else { return [:] }
+        let tones: [(Player, UIColor)] = [(.you, .systemTeal), (.sam, .systemPurple), (.priya, .systemPink)]
+        return Dictionary(uniqueKeysWithValues: tones.map { player, tone in
+            let image = UIGraphicsImageRenderer(size: CGSize(width: 400, height: 400)).image { context in
+                tone.setFill()
+                context.fill(CGRect(x: 0, y: 0, width: 400, height: 400))
+                UIColor.white.withAlphaComponent(0.85).setFill()
+                context.cgContext.fillEllipse(in: CGRect(x: 130, y: 70, width: 140, height: 160))
+                context.cgContext.fillEllipse(in: CGRect(x: 60, y: 250, width: 280, height: 260))
+            }
+            return (player.profileID, image.jpegData(compressionQuality: 0.8)!)
+        })
+    }
+
+    /// Home's cards: every state once, in the order Home lists them.
+    static let homeSetups: [GroupMatchLabSetup] = [
+        .inviteFFA, .lobbyHost, .liveFFA, .liveDoubles, .resultFFAWon, .resultDoubles, .lobbyDeclined, .lobbyWithdrew,
+    ]
+
+    static func publication(
+        revision: UInt64, setup: GroupMatchLabSetup, youLeft: Bool = false
+    ) -> LocalCompetitionPublication {
         LocalCompetitionPublication(
             publicationRevision: revision,
             dashboard: LocalCompetitionDashboard(
@@ -133,7 +292,9 @@ enum GroupMatchFixtures {
                 awards: [],
                 issues: [],
                 hiddenTerminalCompetitionCount: 0,
-                groupMatches: [routed(setup)].compactMap { $0 }
+                groupMatches: setup == .home
+                    ? homeSetups.compactMap { routed($0) }
+                    : [routed(setup, youLeft: youLeft)].compactMap { $0 }
             ),
             evaluatedAt: now,
             timeZoneIdentifier: zone,
@@ -145,12 +306,13 @@ enum GroupMatchFixtures {
         _ id: Int,
         _ lifecycle: LocalCompetitionLifecyclePresentation,
         scores: [Player: [Int]] = [:],
-        isFrozen: Bool = false
+        isFrozen: Bool = false,
+        left: [Player: Int] = [:]
     ) -> GroupMatchPresentation {
         match(
             id, .doubles, lifecycle, doublesLineup.map(\.0),
             teams: Dictionary(uniqueKeysWithValues: doublesLineup.map { ($0.0, $0.1) }),
-            scores: scores, isFrozen: isFrozen
+            scores: scores, isFrozen: isFrozen, left: left
         )
     }
 
@@ -164,7 +326,9 @@ enum GroupMatchFixtures {
         invites: [Player: GroupMatchInviteState] = [:],
         teams: [Player: Int] = [:],
         scores: [Player: [Int]] = [:],
-        isFrozen: Bool = false
+        isFrozen: Bool = false,
+        start: (month: Int, day: Int) = (8, 13),
+        left: [Player: Int] = [:]
     ) -> GroupMatchPresentation {
         let seats = lineup.enumerated().map { index, player in
             GroupMatchSeat(
@@ -196,21 +360,26 @@ enum GroupMatchFixtures {
                 )
             }
         }
-        func build(frozen: [GroupMatchStandingRow]?) -> GroupMatchPresentation {
+        /// A finished fixture's server result: its places plus the seat
+        /// totals and day values it was decided on.
+        func build(frozen: GroupMatchPresentation?) -> GroupMatchPresentation {
             try! GroupMatchPresentation(
                 id: CompetitionID(UUID(uuidString: "c3000000-0000-4000-8000-0000000000\(String(format: "%02d", id))")!),
                 lifecycle: lifecycle,
                 format: format,
                 seats: seats,
                 viewerSeatID: Player.you.seatID,
-                schedule: schedule,
+                schedule: schedule(month: start.month, day: start.day),
                 days: days,
                 rings: rings,
-                frozenStandings: frozen
+                leaveCutoffs: Dictionary(uniqueKeysWithValues: left.map { ($0.key.seatID, $0.value) }),
+                frozenStandings: frozen?.standingRows,
+                frozenSeatTotals: frozen?.projection.seatTotals,
+                frozenDays: frozen?.days
             )
         }
         let projected = build(frozen: nil)
-        return isFrozen ? build(frozen: projected.standingRows) : projected
+        return isFrozen ? build(frozen: projected) : projected
     }
 }
 
@@ -225,12 +394,16 @@ struct GroupMatchTestLabView: View {
         self.setup = setup
         let first = GroupMatchFixtures.publication(revision: 1, setup: setup)
         let answer = GroupMatchFixtures.publication(revision: 2, setup: setup)
-        _store = State(initialValue: Store(
-            initialState: MainTabFeature.State(
-                competition: CompetitionFeature.State(publication: first),
-                path: first.dashboard.groupMatches.map(\.id)
-            )
-        ) {
+        let left = GroupMatchFixtures.publication(revision: 2, setup: setup, youLeft: true)
+        let photos = GroupMatchFixtures.photoData(setup)
+        let state = MainTabFeature.State(
+            competition: CompetitionFeature.State(
+                publication: first,
+                ownProfile: AuthenticatedProfile(id: GroupMatchFixtures.Player.you.profileID, displayName: "You")
+            ),
+            path: setup == .home || setup.isVersus ? [] : first.dashboard.groupMatches.map(\.id)
+        )
+        _store = State(initialValue: Store(initialState: state) {
             MainTabFeature()
         } withDependencies: {
             $0.competitionClient = CompetitionClient(
@@ -244,7 +417,12 @@ struct GroupMatchTestLabView: View {
                 reinvite: { first },
                 waitUntil: { _ in },
                 stop: {},
-                groupMatchCommand: { _ in answer }
+                loadProfilePhotos: { _ in throw CompetitionRemoteFailure.notFound },
+                cachedProfilePhotoData: { photos[$0] },
+                groupMatchCommand: { command in
+                    if case .leave = command { return left }
+                    return answer
+                }
             )
             $0.competitionRoutingClient = CompetitionRoutingClient(
                 routes: { AsyncStream { _ in } },
@@ -261,23 +439,58 @@ struct GroupMatchTestLabView: View {
     }
 
     var body: some View {
+        // Fixture times read in the match's zone, whatever the simulator's.
+        content.environment(\.timeZone, TimeZone(identifier: "America/Los_Angeles")!)
+    }
+
+    @ViewBuilder
+    private var content: some View {
         switch setup {
-        case .formatPicker: GroupMatchCreateView(step: .format, store: group)
-        case .lineupFFA: GroupMatchCreateView(step: .lineup(.fourWay), store: group, people: [GroupMatchFixtures.samProfile])
-        case .lineupDoubles: GroupMatchCreateView(step: .lineup(.doubles), store: group, people: [GroupMatchFixtures.samProfile])
-        case .botPicker: GroupMatchCreateView(step: .bots, store: group)
-        // In a ScrollView: the lab root's identifier otherwise replaces a bare stack's.
-        case .versusFFA: ScrollView { GroupMatchVersusIntro(match: GroupMatchFixtures.versusFFA) }
-        case .versusDoubles: ScrollView { GroupMatchVersusIntro(match: GroupMatchFixtures.versusDoubles) }
-        case .home:
-            ScrollView {
-                GroupMatchHomeCards(matches: [.liveFFA, .liveDoubles].compactMap(GroupMatchFixtures.routed))
-            }
+        case .formatPicker:
+            GroupMatchCreateView(store: group, people: [GroupMatchFixtures.Player.sam, .priya, .leo].map(GroupMatchFixtures.player))
+        case .lineupFFA:
+            GroupMatchCreateView(
+                store: group,
+                people: [GroupMatchFixtures.Player.priya, .leo].map(GroupMatchFixtures.player),
+                lineup: GroupMatchLineup(format: .fourWay, entries: [.person(GroupMatchFixtures.player(.sam))]),
+                opensAt: [.lineup],
+                lookUpLink: GroupMatchFixtures.lookUpLink
+            )
+        case .lineupDoubles:
+            GroupMatchCreateView(
+                store: group,
+                people: [GroupMatchFixtures.player(.leo)],
+                lineup: GroupMatchLineup(
+                    format: .doubles, entries: [GroupMatchFixtures.Player.priya, .sam].map { .person(GroupMatchFixtures.player($0)) }
+                ),
+                opensAt: [.lineup],
+                lookUpLink: GroupMatchFixtures.lookUpLink
+            )
+        case .botPicker:
+            GroupMatchCreateView(
+                store: group,
+                people: [GroupMatchFixtures.Player.priya, .leo].map(GroupMatchFixtures.player),
+                lineup: GroupMatchLineup(format: .fourWay, entries: [.person(GroupMatchFixtures.player(.sam))]),
+                opensAt: [.lineup, .bots]
+            )
         case .day:
-            GroupMatchFixtures.routed(.liveFFA).map { GroupMatchDayView(match: $0, ordinal: 3) }
-        case .history: ScrollView { GroupMatchRecord() }
-        case .lobbyHost, .lobbyDeclined, .inviteFFA, .liveFFA, .liveDoubles, .liveBot, .banter,
-             .resultFFAWon, .resultFFATied, .resultDoubles:
+            GroupMatchFixtures.routed(.liveFFA).map { match in
+                NavigationStack { GroupMatchDayView(match: match, ordinal: 3, store: group) }
+            }
+        case .history, .historyDuels:
+            NavigationStack {
+                CompetitionHistoryView(publication: GroupMatchFixtures.historyPublication(duelsOnly: setup == .historyDuels))
+            }
+        case .versusFFA, .versusDoubles, .versusFFAPhotos, .versusDoublesPhotos, .versusBot:
+            // Opened a beat after launch, so the photos are in when the intro decides.
+            MainTabView(store: store)
+                .task {
+                    try? await Task.sleep(for: .seconds(1))
+                    store.send(.pathChanged(store.competition.publication?.dashboard.groupMatches.map(\.id) ?? []))
+                }
+        case .home, .lobbyHost, .lobbyDeclined, .lobbyInvitee, .lobbyExpired, .lobbyShortInvitee,
+             .lobbyScheduled, .lobbyScheduledInvitee, .lobbyWithdrew, .inviteFFA, .liveFFA, .liveDoubles, .liveBot, .banter,
+             .resultFFAWon, .resultFFATied, .resultFFALost, .resultFFATiedThird, .resultDoubles, .resultDoublesTied:
             MainTabView(store: store)
         }
     }

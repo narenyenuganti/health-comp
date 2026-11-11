@@ -426,6 +426,10 @@ final class ChallengeFriendUITests: XCTestCase {
         let open = app.buttons["competition.create.open"]
         XCTAssertTrue(open.waitForExistence(timeout: 5))
         open.tap()
+        // + opens New Match on Duel; Choose Players opens the Challenge sheet.
+        let duel = app.buttons["competition.group.choose-players"]
+        XCTAssertTrue(duel.waitForExistence(timeout: 3))
+        duel.tap()
         XCTAssertTrue(app.buttons["competition.create.done"].waitForExistence(timeout: 3))
     }
 

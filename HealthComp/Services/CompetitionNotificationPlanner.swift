@@ -45,7 +45,7 @@ extension CompetitionNotificationPolicy {
             var calendar = Calendar(identifier: .gregorian)
             calendar.timeZone = timeZone
             return calendar.date(
-                bySettingHour: family == .whatItTakes ? 19 : 9,
+                bySettingHour: family == .whatItTakes ? 19 : family == .groupBanter ? 20 : 9,
                 minute: 0,
                 second: 0,
                 of: baseDate
@@ -86,6 +86,8 @@ extension CompetitionNotificationPolicy {
         }
         let days = daysLeftText(message.dayOrdinal)
         switch message.family {
+        case .scheduled(.groupBanter):
+            return message.banter ?? content("", "")
         case .scheduled(.inviteExpiry):
             let time = message.expiresAt.map {
                 $0.formatted(Date.FormatStyle(
@@ -262,7 +264,7 @@ extension CompetitionNotificationPolicy {
                 title: statusTitle(.tallying(startedAt: .distantPast), opponent: first.opponentDisplayName),
                 body: "HealthComp is checking the latest Activity data before finalizing your results with \(names)."
             )
-        case .scheduled(.inviteExpiry), .scheduled(.whatItTakes), .opportunistic(.leadChange),
+        case .scheduled(.inviteExpiry), .scheduled(.whatItTakes), .scheduled(.groupBanter), .opportunistic(.leadChange),
              .opportunistic(.closeScore), .opportunistic(.dailyMaximum):
             return liveV1Content(first, locale: locale)
         }
@@ -408,6 +410,15 @@ struct CompetitionNotificationPlanner: Sendable {
             }
         }
 
+        if authorization.permitsNotifications, !switchedOff.contains(.groupBanter) {
+            scheduledCandidates += try snapshot.groupMatches.compactMap { match in
+                guard !match.hasLeft(match.viewer), !match.seats.compactMap(\.profileID).contains(where: {
+                    mutedOpponentIdentities.contains(RemoteCompetitionOpponentIdentity.identity(for: $0))
+                }) else { return nil }
+                return try banterCandidate(match, evaluatedAt: snapshot.evaluatedAt)
+            }
+        }
+
         // Each match spends its own per-evaluation cap in `opportunisticPlan`;
         // the sort only keeps the output deterministic.
         decisions.sort {
@@ -482,7 +493,7 @@ struct CompetitionNotificationPlanner: Sendable {
         var handled: Set<Int> = []
         for (index, candidate) in candidates.enumerated() where !handled.contains(index) {
             guard case let .scheduled(family) = candidate.message.family,
-                  family != .inviteExpiry
+                  family != .inviteExpiry, family != .groupBanter
             else {
                 requests.append(candidate.request)
                 continue
@@ -578,6 +589,34 @@ struct CompetitionNotificationPlanner: Sendable {
                 fireDate: fireDate
             )
         }
+    }
+
+    /// Today's banter at 8 PM in the match's zone. One identifier per match,
+    /// so it posts at most once a day; nil before Day 3 or without a line.
+    private func banterCandidate(_ match: GroupMatchPresentation, evaluatedAt: Date) throws -> ScheduledCandidate? {
+        guard let day = match.liveDay, let text = match.banter, let schedule = match.schedule else { return nil }
+        let calendar = schedule.calendar
+        let zone = calendar.timeZoneIdentifier
+        let today = try calendar.startOfDay(calendar.sevenDayWindow(startingOn: schedule.startDay)[day - 1])
+        guard let fireDate = policy.scheduledFireDate(.groupBanter, today, zone), fireDate > evaluatedAt else {
+            return nil
+        }
+        var message = CompetitionNotificationMessage(
+            family: .scheduled(.groupBanter), competitionID: match.id, opponentDisplayName: "",
+            ownerPoints: nil, opponentPoints: nil, outcome: nil
+        )
+        message.dayOrdinal = day
+        message.banter = CompetitionNotificationContent(title: "\(match.format.title), Day \(day)", body: text)
+        return ScheduledCandidate(
+            request: CompetitionScheduledNotificationRequest(
+                identifier: CompetitionNotificationIdentifier.scheduled(competitionID: match.id, family: .groupBanter),
+                content: policy.content(message),
+                dateComponents: try triggerComponents(for: fireDate, timeZoneIdentifier: zone),
+                route: .competition(match.id)
+            ),
+            message: message,
+            fireDate: fireDate
+        )
     }
 
     private func scheduledBases(

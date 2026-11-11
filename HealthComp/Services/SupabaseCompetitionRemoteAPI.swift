@@ -2,8 +2,11 @@ import Foundation
 import Supabase
 
 enum SupabaseCompetitionRemoteAPI {
+    /// `supportsGroupMatches`: this build registers its pushes as able to
+    /// show group matches (the live app); off keeps the older call chain.
     static func make(
-        transport: CompetitionRemoteTransport
+        transport: CompetitionRemoteTransport,
+        supportsGroupMatches: Bool = false
     ) -> CompetitionRemoteAPI {
         CompetitionRemoteAPI(
             bootstrapProfile: { suggestedDisplayName in
@@ -246,11 +249,14 @@ enum SupabaseCompetitionRemoteAPI {
             registerInstallation: { request in
                 // Newest call first. A server without that overload answers
                 // PGRST202 (function not found), with or without an HTTP
-                // status, and only that falls back: 6 args (muted push kinds,
-                // no Friends), then 5 (reactions), 4 (challenges) and the
-                // original 3. Any other failure, 404s included, is thrown.
-                let bodies = [
-                    try encodeWire(request, contract: .installationRequest),
+                // status, and only that falls back: 8 args (group matches,
+                // only where `GroupMatchRollout` shows them), 7 (Friends),
+                // 6 (muted push kinds, no Friends), then 5 (reactions),
+                // 4 (challenges) and the original 3. Any other failure,
+                // 404s included, is thrown.
+                let current = try encodeWire(request, contract: .installationRequest)
+                let bodies = (supportsGroupMatches ? [try groupInstallationBody(current)] : []) + [
+                    current,
                     try encode(MutedKindsInstallationParameters(request)),
                     try encode(ReactionInstallationParameters(request)),
                     try encode(ChallengeInstallationParameters(request)),
@@ -719,8 +725,80 @@ enum SupabaseCompetitionRemoteAPI {
                 else {
                     throw CompetitionRemoteFailure.serverContractMismatch
                 }
+            },
+            listGroupMatches: {
+                try await sendReadOnly(
+                    .rpc(name: "list_group_matches", parameters: try encode(EmptyParameters())),
+                    transport: transport
+                ).data
+            },
+            sendGroupMatchCommand: { command in
+                try await sendGroupMatchCommand(command, transport)
             }
         )
+    }
+
+    /// The eight-argument registration: the current body plus
+    /// `supports_group_matches` (20261110003500).
+    private static func groupInstallationBody(_ current: Data) throws -> Data {
+        guard var object = try? JSONSerialization.jsonObject(with: current) as? [String: Any] else {
+            throw CompetitionRemoteFailure.serverContractMismatch
+        }
+        object["supports_group_matches"] = true
+        return try JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .withoutEscapingSlashes])
+    }
+
+    /// One group RPC and its exact answer.
+    private static func sendGroupMatchCommand(
+        _ command: GroupMatchRemoteCommand,
+        _ transport: CompetitionRemoteTransport
+    ) async throws -> UUID {
+        let (name, parameters) = try command.rpc()
+        let response = try await send(
+            .rpc(name: name, parameters: try JSONSerialization.data(
+                withJSONObject: parameters, options: [.sortedKeys, .withoutEscapingSlashes]
+            )),
+            transport: transport
+        )
+        guard let object = try? JSONSerialization.jsonObject(with: response.data) as? [String: Any] else {
+            throw CompetitionRemoteFailure.serverContractMismatch
+        }
+        let echoed = (object["competition_id"] as? String).flatMap(wireUUID)
+        switch command {
+        case .create:
+            guard Set(object.keys) == ["competition_id"], let echoed else {
+                throw CompetitionRemoteFailure.serverContractMismatch
+            }
+            return echoed
+        case let .accept(id):
+            guard Set(object.keys) == ["competition_id", "state"], echoed == id,
+                  let state = object["state"] as? String, ["pending", "scheduled", "expired"].contains(state)
+            else { throw CompetitionRemoteFailure.serverContractMismatch }
+            // Lapsed before the cleanup job closed it.
+            if state == "expired" { throw CompetitionRemoteFailure.inviteUnavailable }
+            return id
+        case let .decline(id), let .cancel(id):
+            guard Set(object.keys) == ["competition_id"], echoed == id else {
+                throw CompetitionRemoteFailure.serverContractMismatch
+            }
+            return id
+        case let .leave(id):
+            try GroupMatchWire.validateLeave(response.data)
+            return id
+        case let .nudge(id, _):
+            guard Set(object.keys) == ["nudged_at"],
+                  (object["nudged_at"] as? String).flatMap({ try? CompetitionWireCodec.date($0) }) != nil
+            else { throw CompetitionRemoteFailure.serverContractMismatch }
+            return id
+        case let .react(id, _, ordinal, kind):
+            guard Set(object.keys) == ["competition_id", "day_ordinal", "reaction"], echoed == id,
+                  reactionDayOrdinal(object["day_ordinal"]) == .some(ordinal),
+                  object["reaction"] is NSNull
+                    ? kind == nil
+                    : (object["reaction"] as? String).map({ $0 == kind?.rawValue }) == true
+            else { throw CompetitionRemoteFailure.serverContractMismatch }
+            return id
+        }
     }
 
     /// Exactly `{photos}`, only ids that were asked for; an unreadable row
@@ -791,7 +869,9 @@ enum SupabaseCompetitionRemoteAPI {
     static func live(
         provider: SupabaseClientProvider
     ) -> CompetitionRemoteAPI {
-        make(transport: .live(provider: provider))
+        // Only a build that shows group matches may say so: the server
+        // admits invites and leases group pushes on this flag.
+        make(transport: .live(provider: provider), supportsGroupMatches: GroupMatchRollout.showsFormatPicker)
     }
 
     private static func sendReadOnly(
@@ -866,7 +946,7 @@ enum SupabaseCompetitionRemoteAPI {
                 throw CompetitionRemoteFailure.cancelled
             case .network, .relay:
                 throw CompetitionRemoteFailure.retryableTransport
-            case let .server(statusCode, code, message):
+            case let .server(statusCode, code, message, detail, hint):
                 if isMissingRPCFunction(code: code, context: context) {
                     throw MissingRPCFunction()
                 }
@@ -874,6 +954,8 @@ enum SupabaseCompetitionRemoteAPI {
                     statusCode: statusCode,
                     code: code,
                     message: message,
+                    detail: detail,
+                    hint: hint,
                     context: context
                 )
             case .other:
@@ -897,6 +979,8 @@ enum SupabaseCompetitionRemoteAPI {
             statusCode: statusCode,
             code: envelope?.code,
             message: envelope?.message ?? "",
+            detail: envelope?.details,
+            hint: envelope?.hint,
             context: context
         )
     }
@@ -905,6 +989,8 @@ enum SupabaseCompetitionRemoteAPI {
         statusCode: Int?,
         code: String?,
         message: String,
+        detail: String? = nil,
+        hint: String? = nil,
         context: ErrorContext
     ) -> CompetitionRemoteFailure {
         let normalizedCode = code?.lowercased()
@@ -951,6 +1037,22 @@ enum SupabaseCompetitionRemoteAPI {
         }
         if identifiers.contains("own_challenge_link") {
             return .ownChallengeLink
+        }
+        if identifiers.contains("group_update_required") {
+            let suffix = " needs to update HealthComp first."
+            let displayName = hint.flatMap { hint -> String? in
+                guard hint.hasSuffix(suffix) else { return nil }
+                let name = String(hint.dropLast(suffix.count))
+                return (try? validateDisplayName(name)).map { name }
+            }
+            return .groupUpdateRequired(profileID: detail.flatMap(wireUUID), displayName: displayName)
+        }
+        if identifiers.contains("group_creation_limit") {
+            return .groupCreationLimit
+        }
+        // Closed, expired, gone, or hidden by a block: one answer.
+        if identifiers.contains("group_match_unavailable") {
+            return .inviteUnavailable
         }
         if identifiers.contains("invalid_username") {
             return .invalidUsername
@@ -1040,6 +1142,8 @@ enum SupabaseCompetitionRemoteAPI {
             "invalid_request",
             "invalid_installation_request",
             "invalid_notification_mute",
+            "invalid_group_match",
+            "invalid_group_seat",
         ]) {
             return .serverContractMismatch
         }
@@ -1055,6 +1159,8 @@ enum SupabaseCompetitionRemoteAPI {
         if !identifiers.isDisjoint(with: [
             "forbidden",
             "cancel_not_allowed",
+            "withdraw_not_allowed",
+            "leave_not_allowed",
             "nudge_not_allowed",
             "reaction_not_allowed",
             "rematch_not_allowed",
@@ -1730,10 +1836,15 @@ private struct RemoteErrorEnvelope: Decodable {
 
     let code: String?
     let message: String?
+    /// PostgREST's `details`; nil inside an `error` body.
+    var details: String?
+    var hint: String?
 
     private enum CodingKeys: String, CodingKey {
         case code
         case message
+        case details
+        case hint
         case error
     }
 
@@ -1751,6 +1862,8 @@ private struct RemoteErrorEnvelope: Decodable {
                 String.self,
                 forKey: .message
             )
+            self.details = try? container.decodeIfPresent(String.self, forKey: .details)
+            self.hint = try? container.decodeIfPresent(String.self, forKey: .hint)
         }
     }
 }
@@ -1903,7 +2016,9 @@ private actor SupabaseCompetitionClientBox {
             throw CompetitionRemoteTransportFailure.server(
                 statusCode: nil,
                 code: error.code,
-                message: error.message
+                message: error.message,
+                detail: error.details,
+                hint: error.hint
             )
         } catch let error as URLError {
             if error.code == .cancelled {

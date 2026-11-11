@@ -1,14 +1,11 @@
 import CompetitionCore
 import Foundation
 
-/// Hides the group format picker in Release until the server and the remote
-/// commands are live.
+/// On everywhere: the server's group match migrations ship before this app.
+/// Set to false to hide group matches again (format picker, Home's New Match
+/// and the group-capable installation registration).
 enum GroupMatchRollout {
-    #if DEBUG || HEALTHCOMP_STAGING
     static let showsFormatPicker = true
-    #else
-    static let showsFormatPicker = false
-    #endif
 }
 
 enum GroupMatchFormat: String, CaseIterable, Hashable, Sendable {
@@ -31,7 +28,8 @@ extension BotMode {
 }
 
 enum GroupMatchInviteState: Equatable, Sendable {
-    case invited, accepted, declined
+    /// Withdrew after accepting, which closed the match before Day 1.
+    case invited, accepted, declined, withdrew
 }
 
 struct GroupMatchSeat: Identifiable, Equatable, Sendable {
@@ -98,6 +96,10 @@ struct GroupMatchPresentation: Identifiable, Equatable, Sendable {
     let rings: [GroupMatchDayRings]
     /// The server's result, shown as is. Nil until the match finishes.
     let frozenStandings: [GroupMatchStandingRow]?
+    /// Each seat's total in the server's result; nil when the result doesn't carry them.
+    let frozenSeatTotals: [UUID: Int]?
+    /// The day values the server's result was decided on; nil when it doesn't carry them.
+    let frozenDays: [MatchDayScore]?
     let configuration: MatchConfiguration
     let projection: MatchScoreProjection
 
@@ -111,7 +113,9 @@ struct GroupMatchPresentation: Identifiable, Equatable, Sendable {
         days: [MatchDayScore] = [],
         rings: [GroupMatchDayRings] = [],
         leaveCutoffs: [UUID: Int] = [:],
-        frozenStandings: [GroupMatchStandingRow]? = nil
+        frozenStandings: [GroupMatchStandingRow]? = nil,
+        frozenSeatTotals: [UUID: Int]? = nil,
+        frozenDays: [MatchDayScore]? = nil
     ) throws {
         guard seats.count == format.seatCount else { throw MatchScoringError.invalidRoster }
         guard seats.contains(where: { $0.id == viewerSeatID }) else { throw MatchScoringError.unknownSeat }
@@ -131,6 +135,8 @@ struct GroupMatchPresentation: Identifiable, Equatable, Sendable {
         self.days = days
         self.rings = rings
         self.frozenStandings = frozenStandings
+        self.frozenSeatTotals = frozenSeatTotals
+        self.frozenDays = frozenDays
         self.configuration = configuration
         self.projection = try MatchScoring.standings(
             configuration: configuration, days: days, throughDay: Self.throughDay(lifecycle)
@@ -146,6 +152,15 @@ struct GroupMatchPresentation: Identifiable, Equatable, Sendable {
     }
 
     var viewer: GroupMatchSeat { seats.first { $0.id == viewerSeatID }! }
+
+    /// A decline or withdrawal closes the match before other invitees have to answer.
+    var closedBeforeStartSeats: [GroupMatchSeat] {
+        switch lifecycle {
+        case .declined: seats.filter { $0.invite == .declined || $0.invite == .withdrew }
+        case .expired: seats.filter { $0.invite == .invited }
+        default: []
+        }
+    }
 
     /// Your seat, or your team in doubles.
     var viewerSubject: MatchStandingSubject {
@@ -221,7 +236,29 @@ struct GroupMatchPresentation: Identifiable, Equatable, Sendable {
         return (share.numerator * 200 + share.denominator) / (share.denominator * 2)
     }
 
-    private static func placeText(_ place: Int) -> String {
+    /// Days the subject won in the server's result, shared days included.
+    /// Nil without the result's day values.
+    func frozenDaysWon(by subject: MatchStandingSubject) -> Int? {
+        guard let frozenDays else { return nil }
+        return (1...7).filter { ordinal in
+            guard case let .winners(subjects)? = try? MatchScoring.dayWinners(
+                configuration: configuration, days: frozenDays, ordinal: ordinal, throughDay: 7
+            ) else { return false }
+            return subjects.contains(subject)
+        }.count
+    }
+
+    /// This seat's whole-percent share of its team in the server's result.
+    /// Nil without the result's seat totals or while the team has none.
+    func frozenCarryPercent(seatID: UUID) -> Int? {
+        guard let frozenSeatTotals, let team = seats.first(where: { $0.id == seatID })?.team,
+              let numerator = frozenSeatTotals[seatID] else { return nil }
+        let denominator = seats.filter { $0.team == team }.compactMap { frozenSeatTotals[$0.id] }.reduce(0, +)
+        guard denominator > 0 else { return nil }
+        return (numerator * 200 + denominator) / (denominator * 2)
+    }
+
+    static func placeText(_ place: Int) -> String {
         let formatter = NumberFormatter()
         formatter.locale = Locale(identifier: "en_US")
         formatter.numberStyle = .ordinal
@@ -229,7 +266,7 @@ struct GroupMatchPresentation: Identifiable, Equatable, Sendable {
     }
 
     /// Whole points, with decimals only when rounding would hide a real gap.
-    private static func pointsText(_ centipoints: Int) -> String {
+    static func pointsText(_ centipoints: Int) -> String {
         let points = Double(centipoints) / 100
         return competitionPointsText(
             points,

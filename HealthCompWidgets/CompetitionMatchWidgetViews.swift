@@ -40,6 +40,15 @@ struct CompetitionMatchWidgetView: View {
 
     @ViewBuilder
     private func matchView(_ match: CompetitionWidgetSnapshot.Match) -> some View {
+        switch (family, match.group) {
+        case let (.systemSmall, group?): GroupSmallView(match: match, group: group, date: entry.date)
+        case let (.systemMedium, group?): GroupMediumView(match: match, group: group, date: entry.date)
+        default: duelView(match)
+        }
+    }
+
+    @ViewBuilder
+    private func duelView(_ match: CompetitionWidgetSnapshot.Match) -> some View {
         switch family {
         case .systemMedium: MediumView(match: match, date: entry.date)
         case .accessoryRectangular: RectangularView(match: match, date: entry.date)
@@ -313,6 +322,101 @@ private struct MediumView: View {
 
     private var strip: some View {
         CompetitionMatchStrip(match: match, date: date, height: 14, spacing: 4)
+    }
+}
+
+// MARK: Group
+
+/// "2ND" over "48 behind Sam", or the two team totals: your place and the
+/// gap in a free-for-all, the team totals in doubles.
+private struct GroupSmallView: View {
+    let match: CompetitionWidgetSnapshot.Match
+    let group: CompetitionWidgetSnapshot.Group
+    let date: Date
+
+    @ScaledMetric(relativeTo: .largeTitle) private var bigSize: CGFloat = 56
+    @ScaledMetric(relativeTo: .largeTitle) private var teamSize: CGFloat = 40
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            StatusLabel(text: match.groupHeader(at: date) ?? group.title)
+            Spacer(minLength: 4)
+            if group.isDoubles {
+                ForEach(Array(group.rows.sorted { $0.isYou && !$1.isYou }.enumerated()), id: \.offset) { _, row in
+                    number(competitionPointsText(row.points), size: teamSize, isYou: row.isYou)
+                        .scoreRoll(row.points, id: "\(match.id)/\(row.isYou)")
+                }
+            } else if let place = match.groupPlaceText {
+                number(place.uppercased(), size: bigSize, isYou: true)
+            }
+            if let lead = group.lead {
+                Text(lead)
+                    .font(.caption)
+                    .foregroundStyle(Theme.secondary)
+                    .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                    .privacySensitive()
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+    }
+
+    private func number(_ text: String, size: CGFloat, isYou: Bool) -> some View {
+        Text(text)
+            .font(.score(size: size))
+            .monospacedDigit()
+            .minimumScaleFactor(0.4)
+            .lineLimit(1)
+            .foregroundStyle(isYou ? Theme.you : Theme.ink)
+            .widgetAccentable(isYou)
+            .privacySensitive()
+    }
+}
+
+/// The standings, one row per seat or team, under the header and lead.
+private struct GroupMediumView: View {
+    let match: CompetitionWidgetSnapshot.Match
+    let group: CompetitionWidgetSnapshot.Group
+    let date: Date
+
+    @ScaledMetric(relativeTo: .title) private var rowSize: CGFloat = 20
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                StatusLabel(text: match.groupHeader(at: date) ?? group.title)
+                Spacer(minLength: 0)
+                if let lead = group.lead {
+                    Text(lead)
+                        .font(.caption)
+                        .foregroundStyle(Theme.secondary)
+                        .lineLimit(1)
+                        .privacySensitive()
+                }
+            }
+            Spacer(minLength: 0)
+            ForEach(Array(group.rows.enumerated()), id: \.offset) { _, row in
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    if !group.isDoubles {
+                        Text("\(row.place)").font(.score(size: rowSize)).frame(minWidth: 14, alignment: .leading)
+                    }
+                    Text(row.name)
+                        .font(.subheadline.weight(row.isYou ? .bold : .regular))
+                        .lineLimit(1)
+                        .privacySensitive(row.namesSomeone)
+                    Spacer(minLength: 4)
+                    Text(competitionPointsText(row.points))
+                        .font(.score(size: rowSize))
+                        .monospacedDigit()
+                        .lineLimit(1)
+                        .scoreRoll(row.points, id: "\(match.id)/\(row.name)")
+                        .privacySensitive()
+                }
+                .foregroundStyle(row.isYou ? Theme.you : Theme.ink)
+                .widgetAccentable(row.isYou)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
 }
 

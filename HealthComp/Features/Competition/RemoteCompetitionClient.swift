@@ -229,7 +229,8 @@ extension CompetitionClient {
             setProfilePhoto: { try await coordinator.setProfilePhoto($0) },
             removeProfilePhoto: { try await coordinator.removeProfilePhoto() },
             reportProfilePhoto: { try await coordinator.reportProfilePhoto($0) },
-            isProfilePhotoReported: { await coordinator.isProfilePhotoReported($0) }
+            isProfilePhotoReported: { await coordinator.isProfilePhotoReported($0) },
+            groupMatchCommand: { try await coordinator.groupMatchCommand($0) }
         )
     }
 }
@@ -511,6 +512,14 @@ private actor RemoteCompetitionClientCoordinator {
     private var latestChallenges = CompetitionChallengeList.empty
     /// The last reaction list; kept when a refresh can't load it.
     private var latestReactions: [CompetitionReactionRecord] = []
+    /// The group read model: the last good server list, or the disk cache.
+    private var latestGroupMatches: [GroupMatchReadModel] = []
+    /// The group pass in flight and whether another was asked for meanwhile.
+    private var groupSync: (runtime: RemoteCompetitionRuntime, again: Bool)?
+    private var groupSyncTask: Task<Void, Never>?
+    /// A create that failed keeps its key, so tapping again can't make two.
+    /// ponytail: memory only; a relaunch between tries mints a new key (persist like `inviteRequests` if that bites).
+    private var groupCreationKeys: [GroupMatchDraft: (key: UUID, zone: String)] = [:]
     private var hasStarted = false
     private var isStopped = false
     private var healthAuthorizationIssue: CompetitionClientIssue?
@@ -595,6 +604,7 @@ private actor RemoteCompetitionClientCoordinator {
                 self.latestPublication = nil
                 self.latestChallenges = .empty
                 self.latestReactions = []
+                self.latestGroupMatches = []
                 self.hasStarted = false
                 self.isStopped = false
                 let installationStore = CompetitionInstallationStateStore(
@@ -629,6 +639,12 @@ private actor RemoteCompetitionClientCoordinator {
                     ),
                     cacheStore: JSONRemoteCompetitionCacheStore(
                         rootDirectory: paths.serverCursorsDirectory
+                    ),
+                    groupMatchStore: GroupMatchStore(
+                        directory: paths.rootDirectory.appendingPathComponent(
+                            "GroupMatches", isDirectory: true
+                        ),
+                        profileID: profile.id
                     )
                 )
                 self.runtime = runtime
@@ -722,6 +738,7 @@ private actor RemoteCompetitionClientCoordinator {
                     latestPublication = nil
                     latestChallenges = .empty
                     latestReactions = []
+                    latestGroupMatches = []
                     publicationRevision = 0
                     hasStarted = false
                     isStopped = true
@@ -808,6 +825,7 @@ private actor RemoteCompetitionClientCoordinator {
             latestPublication = nil
             latestChallenges = .empty
             latestReactions = []
+            latestGroupMatches = []
             publicationRevision = 0
             hasStarted = false
             isStopped = true
@@ -879,6 +897,10 @@ private actor RemoteCompetitionClientCoordinator {
             return publication
         }
         await installationCoordinator?.reconcile()
+        if latestGroupMatches.isEmpty {
+            latestGroupMatches = await runtime.cachedGroupMatches()
+        }
+        startGroupSync(runtime)
         let outcome = await runtime.synchronizeAll()
         await refreshPractice(.reconciliationProbe)
         if let challenges = try? await remoteAPI.listChallenges() {
@@ -916,6 +938,110 @@ private actor RemoteCompetitionClientCoordinator {
         )
         await completePendingObserverDeliveries(using: publication)
         return publication
+    }
+
+    /// Group matches sync beside the duels and republish when they land, so
+    /// a slow group list or Health read never holds up a duel publication.
+    private func startGroupSync(_ runtime: RemoteCompetitionRuntime) {
+        if let current = groupSync, current.runtime === runtime {
+            groupSync = (runtime, true)
+            return
+        }
+        groupSync = (runtime, false)
+        groupSyncTask = Task { [weak self] in
+            var again = true
+            while again {
+                let matches = await runtime.synchronizeGroupMatches()
+                again = await self?.applyGroupMatches(matches, from: runtime) ?? false
+            }
+        }
+    }
+
+    /// Publishes a finished group pass; true when another pass was asked for.
+    private func applyGroupMatches(_ matches: [GroupMatchReadModel], from runtime: RemoteCompetitionRuntime) async -> Bool {
+        await withOperationGate {
+            // A pass from a torn-down runtime publishes nothing.
+            guard self.runtime === runtime, let current = groupSync, current.runtime === runtime else { return false }
+            guard terminalTeardown == nil, !isStopped else {
+                groupSync = nil
+                return false
+            }
+            if matches != latestGroupMatches {
+                latestGroupMatches = matches
+                if lastPublishInputs != nil { _ = await republishLastInputs() }
+            }
+            groupSync = current.again ? (runtime, false) : nil
+            return current.again
+        }
+    }
+
+    /// One group pass (list, own uploads), published when it lands.
+    private func syncGroupMatchesNow() async {
+        guard let runtime else { return }
+        startGroupSync(runtime)
+        await groupSyncTask?.value
+    }
+
+    /// The server command, then a fresh group list. Leave first sends what
+    /// this phone has: the server banks only what it accepted.
+    func groupMatchCommand(_ command: GroupMatchCommand) async throws -> CompetitionPublication {
+        if case .leave = command { await syncGroupMatchesNow() }
+        try await withCancellableOperationGate {
+            guard terminalTeardown == nil else {
+                throw EnvironmentSignalOwnershipError.activeOwnerNotRetired
+            }
+            guard runtime != nil, let profile else { throw CompetitionRemoteFailure.unauthenticated }
+            if case let .block(id) = command {
+                try await remoteAPI.blockChallenger(id.rawValue)
+                return
+            }
+            // Rematch opens Create prefilled; only its Create Match sends.
+            if case .rematch = command { throw CompetitionRemoteFailure.operationFailed }
+            var draft: GroupMatchDraft?
+            if case let .create(created) = command { draft = created }
+            let remote: GroupMatchRemoteCommand
+            if let draft {
+                var saved = groupCreationKeys[draft]
+                if saved == nil {
+                    saved = (UUID(), await environment.context().timeZoneIdentifier)
+                    groupCreationKeys[draft] = saved
+                }
+                guard let saved else { return }
+                remote = .create(creator: profile.id, draft, timeZoneIdentifier: saved.zone, idempotencyKey: saved.key)
+            } else {
+                switch command {
+                case let .accept(id): remote = .accept(id.rawValue)
+                case let .decline(id), let .withdraw(id): remote = .decline(id.rawValue)
+                case let .cancel(id): remote = .cancel(id.rawValue)
+                case let .leave(id): remote = .leave(id.rawValue)
+                case let .nudge(id):
+                    let match = try group(id)
+                    let team = match.seats.first { $0.profileID == profile.id }?.team
+                    guard let team,
+                          let partner = match.seats.first(where: { $0.team == team && $0.profileID != profile.id })?.profileID
+                    else { throw CompetitionRemoteFailure.forbidden }
+                    remote = .nudge(id.rawValue, recipient: partner)
+                case let .react(id, seatID, ordinal, kind):
+                    guard let target = try group(id).seats.first(where: { $0.id == seatID })?.profileID else {
+                        throw CompetitionRemoteFailure.forbidden
+                    }
+                    remote = .react(id.rawValue, target: target, ordinal: ordinal, kind)
+                case .create, .rematch, .block:
+                    return
+                }
+            }
+            _ = try await remoteAPI.sendGroupMatchCommand(remote)
+            if let draft { groupCreationKeys[draft] = nil }
+        }
+        await syncGroupMatchesNow()
+        return await withOperationGate { latestPublication ?? unpublishedPublication(issues: []) }
+    }
+
+    private func group(_ id: CompetitionID) throws -> GroupMatchReadModel {
+        guard let match = latestGroupMatches.first(where: { $0.id == id.rawValue }) else {
+            throw CompetitionRemoteFailure.inviteUnavailable
+        }
+        return match
     }
 
     func reconcileNotifications() async {
@@ -1412,6 +1538,7 @@ private actor RemoteCompetitionClientCoordinator {
             latestPublication = nil
             latestChallenges = .empty
             latestReactions = []
+            latestGroupMatches = []
             publicationRevision = 0
             hasStarted = false
             router.finishCurrent()
@@ -1744,6 +1871,7 @@ private actor RemoteCompetitionClientCoordinator {
         lastPublishInputs = nil
         latestChallenges = .empty
         latestReactions = []
+        latestGroupMatches = []
         if stoppedTasks.realtime != nil {
             await realtimeClient.stop()
         }
@@ -2060,15 +2188,19 @@ private actor RemoteCompetitionClientCoordinator {
         knownCompetitionIDs: Set<CompetitionID>?
     ) async -> CompetitionPublication {
         let context = await environment.context()
+        var dashboard = RemoteCompetitionProjector.dashboard(
+            materializations: materializations,
+            profile: profile,
+            context: context,
+            issues: Self.deduplicated(issues + practiceIssues),
+            challenges: latestChallenges,
+            reactions: latestReactions
+        )
+        dashboard.groupMatches = latestGroupMatches.compactMap {
+            $0.presentation(viewer: profile.id, now: context.instant.wallDate)
+        }
         let publication = publish(
-            dashboard: RemoteCompetitionProjector.dashboard(
-                materializations: materializations,
-                profile: profile,
-                context: context,
-                issues: Self.deduplicated(issues + practiceIssues),
-                challenges: latestChallenges,
-                reactions: latestReactions
-            ).addingPractice(
+            dashboard: dashboard.addingPractice(
                 LocalCompetitionProjector.practicePresentations(
                     journals: practiceJournals,
                     context: context,
@@ -2367,7 +2499,11 @@ enum RemoteCompetitionProjector {
             evaluatedAt: context.instant.wallDate,
             timeZoneIdentifier: context.timeZoneIdentifier,
             competitions: competitions,
-            knownCompetitionIDs: knownCompetitionIDs
+            // Group matches are known too, so orphan cleanup keeps their banter.
+            knownCompetitionIDs: knownCompetitionIDs.map {
+                $0.union(publication.dashboard.groupMatches.map(\.id))
+            },
+            groupMatches: publication.dashboard.groupMatches
         )
     }
 

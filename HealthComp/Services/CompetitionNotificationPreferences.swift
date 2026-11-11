@@ -185,6 +185,7 @@ enum CompetitionNotificationChoice: String, CaseIterable, Sendable {
     case closeScore = "close-score"
     case whatItTakes = "what-it-takes"
     case finalDay = "final-day"
+    case groupBanter = "group-banter"
     case liveActivity = "live-activity"
     case reaction // raw value = server work kind (20261102002700)
     case nudge // raw value = server work kind (20261101002500)
@@ -202,6 +203,7 @@ enum CompetitionNotificationChoice: String, CaseIterable, Sendable {
         case .nudge: "Nudges"
         case .friendRequest: "Friend requests"
         case .friendAccepted: "Accepted requests"
+        case .groupBanter: "Group match banter"
         }
     }
 

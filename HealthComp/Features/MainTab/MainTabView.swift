@@ -10,6 +10,10 @@ struct MainTabView: View {
 
     @Environment(\.scenePhase) private var scenePhase
     @State private var isChallengePresented = false
+    /// New Match: the format picker, whose Duel opens the Challenge sheet.
+    @State private var isNewMatchPresented = false
+    @State private var newMatchLineup: GroupMatchLineup?
+    @State private var opensDuel = false
     @State private var isPracticePresented = false
     @State private var isVersusPlaying = false
     @State private var replaysVersus = false
@@ -59,7 +63,7 @@ struct MainTabView: View {
         // Keeps the notifications prompt from presenting under the
         // Challenge or practice sheet or the recap deck, where SwiftUI would
         // drop it, or over the versus intro.
-        .onChange(of: isChallengePresented || isPracticePresented || isVersusPlaying || recapPeriod != nil) { _, isOpen in
+        .onChange(of: isChallengePresented || isNewMatchPresented || isPracticePresented || isVersusPlaying || recapPeriod != nil) { _, isOpen in
             store.send(.challengeSheetVisibilityChanged(isOpen))
         }
         .onReceive(
@@ -108,9 +112,22 @@ struct MainTabView: View {
                 close: { store.send(.dismissChallengeFromLink) }
             )
         }
+        .sheet(isPresented: $isNewMatchPresented, onDismiss: {
+            newMatchLineup = nil
+            // After this sheet is gone, so the Challenge sheet can present.
+            if opensDuel { opensDuel = false; isChallengePresented = true }
+        }) {
+            GroupMatchCreateView(
+                store: store.scope(state: \.competition.group, action: \.competition.group),
+                people: newMatchPeople,
+                lineup: newMatchLineup,
+                onDuel: { opensDuel = true; isNewMatchPresented = false }
+            )
+        }
         // A Friends push opens Friends in front of everything.
         .onChange(of: store.friendsRouteCount) { _, _ in
             isChallengePresented = false
+            isNewMatchPresented = false
             isPracticePresented = false
             recapPeriod = nil
         }
@@ -127,6 +144,15 @@ struct MainTabView: View {
         }
         // Last, so every screen and sheet above draws the same photos.
         .environment(\.profilePhotos, store.competition.profilePhotoImages)
+    }
+
+    /// Friends, then people you've had a duel with, once each.
+    private var newMatchPeople: [GroupMatchPlayer] {
+        GroupMatchPlayer.candidates(
+            friends: store.competition.friends.list?.friends ?? [],
+            matches: store.competition.publication?.dashboard.competitions ?? [],
+            blocked: store.competition.blockedPeople ?? []
+        )
     }
 
     private var photoOwners: [UUID] {
@@ -443,7 +469,9 @@ struct MainTabView: View {
                 FriendsToolbarButton(requestCount: store.competition.friends.requestCount) {
                     store.send(.friendsPresentationChanged(true))
                 }
-                CompetitionChallengeButton { isChallengePresented = true }
+                CompetitionChallengeButton {
+                    if GroupMatchRollout.showsFormatPicker { isNewMatchPresented = true } else { isChallengePresented = true }
+                }
             }
             if let openAccount {
                 Button(action: openAccount) {
@@ -526,7 +554,19 @@ struct MainTabView: View {
         ) {
             GroupMatchDestination(
                 match: match,
-                store: store.scope(state: \.competition.group, action: \.competition.group)
+                store: store.scope(state: \.competition.group, action: \.competition.group),
+                createNewMatch: {
+                    newMatchLineup = GroupMatchLineup(match: match)
+                    isNewMatchPresented = true
+                }
+            )
+            .environment(
+                \.groupMatchReplayIntro,
+                CompetitionVersusIntroGate.isEnabled
+                    && store.competition.publication.flatMap {
+                        groupMatchVersusIntroContent(match, source: $0.source, isReplay: true)
+                    } != nil
+                    ? { replaysVersus = true } : nil
             )
         } else if let publication = store.competition.publication,
            let competition = publication.dashboard.competitions.first(

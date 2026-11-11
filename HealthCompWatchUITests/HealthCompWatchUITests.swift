@@ -62,6 +62,23 @@ final class HealthCompWatchUITests: XCTestCase {
         }
     }
 
+    /// A group match: the standings, never a belt.
+    func testGroupMatches() {
+        for (scenario, label) in [
+            ("groupFFA", "Four-Way, Day 4 of 7. You're 2nd. 48 behind Sam."),
+            ("groupDoubles", "Doubles, Day 4 of 7. Your team 3,162 points. Sam + Leo 2,915 points. Your team up 247."),
+        ] {
+            let app = launch(scenario)
+            let match = element(app, "watch.match")
+            XCTAssertTrue(match.waitForExistence(timeout: 15), scenario)
+            XCTAssertEqual(match.label, label)
+            let shot = XCTAttachment(screenshot: app.screenshot())
+            shot.name = "watch-\(scenario)"
+            shot.lifetime = .keepAlways
+            add(shot)
+        }
+    }
+
     func testTheBeltIsSpoken() {
         for (scenario, label) in beltMatches {
             let match = element(launch(scenario), "watch.match")

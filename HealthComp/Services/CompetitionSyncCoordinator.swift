@@ -623,7 +623,8 @@ actor CompetitionSyncCoordinator {
              .activeMatchExists, .incomingChallengeExists, .ownChallengeLink,
              .invalidUsername, .usernameUnavailable, .searchRateLimited,
              .invalidFriendSettings, .invalidQuery, .invalidProfileID,
-             .invalidFriendRequestResponse, .friendRequestLimit, .requestUnavailable:
+             .invalidFriendRequestResponse, .friendRequestLimit, .requestUnavailable,
+             .groupUpdateRequired, .groupCreationLimit:
             .operationFailed
         case .cancelled, .retryableTransport:
             .operationFailed
