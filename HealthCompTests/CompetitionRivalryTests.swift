@@ -316,6 +316,71 @@ final class CompetitionRivalryTests: XCTestCase {
         XCTAssertFalse(showsHistory)
     }
 
+    func testProfilePagesShareOnePlaceOnTheStack() {
+        let verdict = CompetitionID(UUID(uuidString: "00000000-0000-0000-0000-00000000000A")!)
+        let week = CompetitionID(UUID(uuidString: "00000000-0000-0000-0000-00000000000B")!)
+        var path = [verdict]
+        var showsHistory = false
+        var person: String?
+        var place = CompetitionPersonPlace()
+        let stack = CompetitionHomeRoute.stack(
+            path: Binding(get: { path }, set: { path = $0 }),
+            showsHistory: Binding(get: { showsHistory }, set: { showsHistory = $0 }),
+            person: Binding(get: { person }, set: { person = $0 }),
+            personPlace: Binding(get: { place }, set: { place = $0 })
+        )
+        func open(_ route: CompetitionHomeRoute) {
+            stack.wrappedValue = CompetitionHomeRoute.opening(route, on: stack.wrappedValue)
+        }
+
+        open(.profile("sam"))
+        XCTAssertEqual(stack.wrappedValue, [.competition(verdict), .profile("sam")])
+        XCTAssertEqual(person, "sam")
+
+        // All Weeks, then a week from it, then Sam's photo again: back to one page.
+        stack.wrappedValue += [.person("sam"), .competition(week)]
+        XCTAssertEqual(stack.wrappedValue, [.competition(verdict), .profile("sam"), .person("sam"), .competition(week)])
+        open(.profile("sam"))
+        XCTAssertEqual(stack.wrappedValue, [.competition(verdict), .profile("sam")])
+
+        // Your own photo from up there replaces Sam's pages, and a belt row sits on yours.
+        stack.wrappedValue += [.person("sam"), .competition(week)]
+        open(.ownProfile)
+        XCTAssertEqual(stack.wrappedValue, [.competition(verdict), .ownProfile])
+        XCTAssertNil(person)
+        stack.wrappedValue += [.profile("dev")]
+        XCTAssertEqual(stack.wrappedValue, [.competition(verdict), .ownProfile, .profile("dev")])
+
+        // A week above someone's ledger, then Your record with them: one level.
+        stack.wrappedValue = [.competition(verdict), .profile("sam"), .competition(week), .person("sam")]
+        XCTAssertEqual(stack.wrappedValue, [.competition(verdict), .profile("sam")])
+
+        stack.wrappedValue = [.competition(verdict)]
+        XCTAssertEqual(place, CompetitionPersonPlace())
+    }
+
+    func testOwnCareerAddsUpEveryOneYouPlayed() {
+        let own = competitionOwnCareer(ten)
+        XCTAssertEqual(own.career.text, "6–3–1")
+        XCTAssertEqual(own.career.weeks, 10)
+        XCTAssertEqual(own.career.people, 1)
+        XCTAssertEqual(own.career.belts, 1)
+        XCTAssertEqual(own.career.bestWeek, 2223, accuracy: 0.5)
+        XCTAssertEqual(own.bestDay, 395, accuracy: 0.5)
+        XCTAssertEqual(own.outcomes, ten.compactMap(\.terminalResult?.outcome))
+        XCTAssertEqual(competitionOwnCareer([]).career, CompetitionCareer())
+    }
+
+    func testCareerDecodesSharedAndPrivate() throws {
+        let shared = Data(#"{"wins":14,"losses":6,"ties":2,"people":5,"belts":3,"win_streak":4,"best_week_centi_points":250050,"later":1}"#.utf8)
+        XCTAssertEqual(
+            try SupabaseCompetitionRemoteAPI.decodeCareerSummary(shared),
+            CompetitionCareer(wins: 14, losses: 6, ties: 2, people: 5, belts: 3, winStreak: 4, bestWeek: 2500.5)
+        )
+        XCTAssertNil(try SupabaseCompetitionRemoteAPI.decodeCareerSummary(Data("null".utf8)))
+        XCTAssertThrowsError(try SupabaseCompetitionRemoteAPI.decodeCareerSummary(Data(#"{"wins":1}"#.utf8)))
+    }
+
     func testRowsJournaledBeforeRingsTakeThemFromTheBackfill() throws {
         let digest = String(repeating: "a", count: 64)
         let old = try RemoteAcceptedScoreRow(

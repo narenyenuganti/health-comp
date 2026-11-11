@@ -1101,7 +1101,8 @@ private struct CompetitionScoreboardPanel: View {
             total: competition.userPoints,
             color: Theme.you,
             alignment: .leading,
-            identifier: "competition.scoreHeader.naren"
+            identifier: "competition.scoreHeader.naren",
+            profile: competitionOwnProfileRoute(for: competition)
         )
     }
 
@@ -1117,7 +1118,8 @@ private struct CompetitionScoreboardPanel: View {
             total: competition.opponentPoints,
             color: Theme.ink,
             alignment: alignment,
-            identifier: "competition.scoreHeader.alex"
+            identifier: "competition.scoreHeader.alex",
+            profile: competitionProfileRoute(for: competition)
         )
     }
 
@@ -1128,7 +1130,8 @@ private struct CompetitionScoreboardPanel: View {
         total: Double,
         color: Color,
         alignment: HorizontalAlignment,
-        identifier: String
+        identifier: String,
+        profile: CompetitionHomeRoute?
     ) -> some View {
         // Names may wrap at large sizes; scores never do.
         VStack(alignment: alignment, spacing: 4) {
@@ -1139,6 +1142,7 @@ private struct CompetitionScoreboardPanel: View {
                     .tracking(1.4)
                     .multilineTextAlignment(alignment == .trailing ? .trailing : .leading)
             }
+            .modifier(CompetitionProfileTap(route: profile))
             Text(competitionPointsText(total))
                 .font(.score(size: scoreSize).monospacedDigit())
                 .fixedSize()
@@ -1150,6 +1154,7 @@ private struct CompetitionScoreboardPanel: View {
         .accessibilityLabel(
             "\(name), \(periodLabel) \(competitionPointsAccessibilityText(today)), \(competitionScoreTotalLabel(isProvisional: isProvisional).lowercased()) \(competitionPointsAccessibilityText(total))"
         )
+        .modifier(CompetitionProfileAction(route: profile, name: name))
     }
 
     // Visual only: each score block's label already speaks the period points.

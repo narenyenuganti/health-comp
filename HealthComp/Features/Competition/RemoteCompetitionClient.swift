@@ -178,6 +178,15 @@ extension CompetitionClient {
                     try await $0.updateFriendSettings(showInSearch, challengePolicy)
                 }
             },
+            getCareerSummary: { profileID in
+                try await coordinator.remote { try await $0.getCareerSummary(profileID) }
+            },
+            getCareerSharing: {
+                try await coordinator.remote { try await $0.getCareerSharing() }
+            },
+            setCareerSharing: { enabled in
+                try await coordinator.remote { try await $0.setCareerSharing(enabled) }
+            },
             listFriends: {
                 try await coordinator.remote { try await $0.listFriends() }
             },

@@ -19,6 +19,8 @@ final class FriendsUITests: XCTestCase {
         static let mara = "d1000000-0000-4000-8000-0000000000c3"
     }
 
+    private static let mayaHero = "competition.sharing.active.d2000000-0000-4000-8000-000000000001"
+
     private enum Scenario: String {
         case friends
         case empty = "friends-empty"
@@ -199,12 +201,88 @@ final class FriendsUITests: XCTestCase {
         let row = app.buttons["friends.friend.\(Person.dev)"]
         XCTAssertTrue(row.waitForExistence(timeout: 5))
         row.tap()
+        XCTAssertTrue(element("friends.person").waitForExistence(timeout: 5))
+        // All their weeks are one push further.
+        let weeks = app.buttons["competition.profile.weeks"]
+        XCTAssertTrue(weeks.waitForExistence(timeout: 5))
+        weeks.tap()
         XCTAssertTrue(element("competition.person").waitForExistence(timeout: 5))
-        XCTAssertFalse(element("friends.person").exists)
+        back()
+        XCTAssertTrue(element("friends.person").waitForExistence(timeout: 5))
         // Friends stays under it on the stack.
         back()
         XCTAssertTrue(row.waitForExistence(timeout: 3))
         XCTAssertTrue(app.navigationBars["Friends"].exists)
+    }
+
+    /// Each side of Home's score opens that person; the rest of the card
+    /// still opens the match.
+    func testAPhotoOnTheScoreOpensTheProfile() {
+        launch(.friends)
+        let hero = app.buttons[Self.mayaHero]
+        XCTAssertTrue(hero.waitForExistence(timeout: 5))
+        hero.coordinate(withNormalizedOffset: CGVector(dx: 0.74, dy: 0.18)).tap()
+        XCTAssertTrue(element("friends.person").waitForExistence(timeout: 5))
+        XCTAssertEqual(element("friends.person.name").label, "Maya Chen")
+        XCTAssertTrue(element("friends.person.prize").exists, "The belt is on offer")
+        XCTAssertFalse(app.buttons["friends.person.challenge"].exists, "A match is already running")
+        shot("profile-first-match")
+        back()
+
+        XCTAssertTrue(hero.waitForExistence(timeout: 5))
+        hero.coordinate(withNormalizedOffset: CGVector(dx: 0.05, dy: 0.18)).tap()
+        XCTAssertTrue(element("competition.ownProfile").waitForExistence(timeout: 5))
+        XCTAssertEqual(element("competition.ownProfile.record").label, "1–0")
+        let share = app.switches["competition.ownProfile.share"]
+        XCTAssertTrue(share.waitForExistence(timeout: 5))
+        XCTAssertEqual(share.value as? String, "0", "Off until you turn it on")
+        share.coordinate(withNormalizedOffset: CGVector(dx: 0.93, dy: 0.5)).tap()
+        XCTAssertTrue(waitUntil(5) { share.value as? String == "1" })
+        shot("profile-you")
+        back()
+
+        XCTAssertTrue(hero.waitForExistence(timeout: 5))
+        hero.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.45)).tap()
+        XCTAssertTrue(element("competition.scoreHeader.alex").waitForExistence(timeout: 5))
+    }
+
+    func testProfilesFromFriendsAtTheLargestText() throws {
+        let sizes = [("default", "UICTContentSizeCategoryL"), ("ax5", "UICTContentSizeCategoryAccessibilityXXXL")]
+        for (name, size) in sizes {
+            launch(.friends, arguments: ["-UIPreferredContentSizeCategoryName", size])
+            let hero = app.buttons[Self.mayaHero]
+            XCTAssertTrue(hero.waitForExistence(timeout: 5))
+            hero.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.97)).tap()
+            let yours = element("competition.scoreHeader.naren")
+            XCTAssertTrue(yours.waitForExistence(timeout: 5))
+            yours.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.1)).tap()
+            XCTAssertTrue(element("competition.ownProfile").waitForExistence(timeout: 5))
+            XCTAssertTrue(app.switches["competition.ownProfile.share"].waitForExistence(timeout: 5))
+            shot("own-\(name)")
+            try audit("own \(name)")
+            back()
+            back()
+
+            openFriends()
+            let dev = app.buttons["friends.friend.\(Person.dev)"]
+            XCTAssertTrue(dev.waitForExistence(timeout: 5))
+            dev.tap()
+            let tape = element("friends.person.tape")
+            XCTAssertTrue(tape.waitForExistence(timeout: 5), "Dev shares their career")
+            XCTAssertTrue(tape.label.contains("Career: You 1–0, Dev Patel 18–9–1") || tape.label.contains("CAREER: You 1–0, Dev Patel 18–9–1"), tape.label)
+            shot("dev-\(name)")
+            try audit("dev \(name)")
+            back()
+
+            let kai = app.buttons["friends.friend.d1000000-0000-4000-8000-0000000000b4"]
+            XCTAssertTrue(kai.waitForExistence(timeout: 5))
+            kai.tap()
+            XCTAssertTrue(element("friends.person.prize").waitForExistence(timeout: 5))
+            XCTAssertFalse(element("friends.person.tape").exists, "Kai keeps it private")
+            XCTAssertEqual(app.buttons["friends.person.challenge"].label, "Challenge Kai Ito")
+            shot("kai-\(name)")
+            try audit("kai \(name)")
+        }
     }
 
     func testFirstOpenAsksForAUsernameOnce() {

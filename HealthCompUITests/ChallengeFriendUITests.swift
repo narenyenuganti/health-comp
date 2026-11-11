@@ -149,9 +149,8 @@ final class ChallengeFriendUITests: XCTestCase {
     func testRemoveFriend() {
         launch(.challengeFriend)
         openFriend(Person.dev)
-        XCTAssertTrue(element("competition.person").waitForExistence(timeout: 5))
-        // Their username, under the record.
-        XCTAssertTrue(element("competition.person.record").label.contains("@devp"))
+        XCTAssertTrue(element("friends.person").waitForExistence(timeout: 5))
+        XCTAssertEqual(element("friends.person.username").label, "@devp")
         openMenu()
         XCTAssertTrue(menuItem("friends.menu.block").exists)
         XCTAssertTrue(menuItem("friends.menu.report").exists)
@@ -241,7 +240,7 @@ final class ChallengeFriendUITests: XCTestCase {
     func testReportThenReportAndBlock() {
         launch(.challengeFriend)
         openFriend(Person.dev)
-        XCTAssertTrue(element("competition.person").waitForExistence(timeout: 5))
+        XCTAssertTrue(element("friends.person").waitForExistence(timeout: 5))
         openMenu()
         menuItem("friends.menu.report").tap()
         XCTAssertTrue(app.staticTexts["Report Dev Patel?"].waitForExistence(timeout: 3))
@@ -251,7 +250,7 @@ final class ChallengeFriendUITests: XCTestCase {
         let reported = element("friends.person.reported")
         XCTAssertTrue(reported.waitForExistence(timeout: 5))
         XCTAssertEqual(reported.label, "Reported. Thanks.")
-        XCTAssertTrue(element("competition.person").exists, "Reporting doesn't block")
+        XCTAssertTrue(element("friends.person").exists, "Reporting doesn't block")
         XCTAssertEqual(app.alerts.count, 0)
         back()
 
@@ -306,7 +305,7 @@ final class ChallengeFriendUITests: XCTestCase {
                 XCTAssertTrue(app.buttons["competition.create.done"].waitForNonExistence(timeout: 3))
 
                 openFriend(Person.dev)
-                XCTAssertTrue(element("competition.person").waitForExistence(timeout: 5))
+                XCTAssertTrue(element("friends.person").waitForExistence(timeout: 5))
                 shot("friend-page-\(suffix)")
                 try audit("friend page \(suffix)")
                 openMenu()

@@ -453,6 +453,8 @@ struct CompetitionSharingView: View {
                 )
                 .accessibilityHint("Opens this match")
         }
+        .modifier(CompetitionProfileAction(route: competitionOwnProfileRoute(for: competition), name: competition.ownerDisplayName))
+        .modifier(CompetitionProfileAction(route: competitionProfileRoute(for: competition), name: competition.opponentDisplayName))
         .accessibilityIdentifier(competitionSharingIdentifier(competition))
     }
 
@@ -781,6 +783,7 @@ private struct HeroScoreboard: View {
                 .you,
                 name: "You",
                 avatar: PersonAvatar(name: competition.ownerDisplayName, size: avatarSize, isYou: true),
+                route: competitionOwnProfileRoute(for: competition),
                 points: competition.userPoints,
                 color: Theme.you,
                 trailing: false
@@ -800,6 +803,7 @@ private struct HeroScoreboard: View {
                     photo: competition.opponentProfileID,
                     size: avatarSize
                 ),
+                route: competitionProfileRoute(for: competition),
                 points: competition.opponentPoints,
                 color: Theme.ink,
                 trailing: !isStacked
@@ -821,6 +825,7 @@ private struct HeroScoreboard: View {
         _ holder: CompetitionBeltHolder,
         name: String,
         avatar: PersonAvatar,
+        route: CompetitionHomeRoute?,
         points: Double,
         color: Color,
         trailing: Bool
@@ -844,6 +849,7 @@ private struct HeroScoreboard: View {
                     .transition(Motion.appear)
                 }
             }
+            .modifier(CompetitionProfileTap(route: route))
             Text(competitionPointsText(points))
                 .font(.score(size: scoreSize).monospacedDigit())
                 .scoreRoll(points, id: competition.id)
@@ -1355,11 +1361,15 @@ private func competitionHistorySummary(_ records: [CompetitionOpponentRecord]) -
 }
 
 func competitionRecordText(_ record: CompetitionOpponentRecord) -> Text {
-    var text = Text(String(record.wins)).foregroundStyle(Theme.you).bold()
+    competitionRecordText(wins: record.wins, losses: record.losses, ties: record.ties)
+}
+
+func competitionRecordText(wins: Int, losses: Int, ties: Int) -> Text {
+    var text = Text(String(wins)).foregroundStyle(Theme.you).bold()
         + Text("–")
-        + Text(String(record.losses)).foregroundStyle(Theme.ink)
-    if record.ties > 0 {
-        text = text + Text("–") + Text(String(record.ties)).foregroundStyle(Theme.secondary)
+        + Text(String(losses)).foregroundStyle(Theme.ink)
+    if ties > 0 {
+        text = text + Text("–") + Text(String(ties)).foregroundStyle(Theme.secondary)
     }
     return text
 }
@@ -1672,6 +1682,8 @@ struct CompetitionPersonView: View {
             .padding(.vertical, 12)
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("competition.person")
+            // A card here is already about this person.
+            .environment(\.openCompetitionProfile, nil)
         }
         .background(Theme.ground)
         // The next step stays in reach, as on the Verdict.
@@ -2005,7 +2017,7 @@ struct CompetitionPersonView: View {
         showsTape: Bool
     ) -> some View {
         let tape = showsTape && belt.changes > 0 && !belt.isRetired ? competitionTaleOfTheTape(belt) : []
-        let title = beltTitle(belt, name: name)
+        let title = competitionBeltTitle(belt, name: name)
         let since = belt.holder == nil ? nil : belt.current.flatMap { sinceText($0, weeks: weeks) }
         let defenses = belt.holder == nil ? 0 : belt.current?.defenses ?? 0
         return VStack(alignment: .leading, spacing: 12) {
@@ -2118,28 +2130,7 @@ struct CompetitionPersonView: View {
     }
 
     private func tapeRow(you: String, label: String, them: String, valueFont: Font) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 8) {
-            Text(you)
-                .font(valueFont)
-                .foregroundStyle(Theme.you)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            Text(label)
-                .font(.themeLabel)
-                .tracking(1.1)
-                .foregroundStyle(Theme.secondary)
-                .layoutPriority(1)
-            Text(them)
-                .font(valueFont)
-                .foregroundStyle(Theme.ink)
-                .frame(maxWidth: .infinity, alignment: .trailing)
-        }
-        .lineLimit(1)
-    }
-
-    private func beltTitle(_ belt: CompetitionBelt, name: String) -> String {
-        if belt.isRetired { return "The belt is retired" }
-        guard let holder = belt.holder else { return "No one holds the belt yet" }
-        return competitionBeltStandingText(holder, opponentName: name)
+        CompetitionTapeRow(you: you, label: label, them: them, valueFont: valueFont)
     }
 
     /// "Since Nov 8 · 1 week": the last day of the week that took it.
@@ -2147,18 +2138,7 @@ struct CompetitionPersonView: View {
         _ current: CompetitionBeltReign,
         weeks: [LocalCompetitionPresentation]
     ) -> String? {
-        guard let schedule = weeks.first(where: { $0.id == current.startID })?
-            .acceptedConfiguration?.schedule,
-            let lastDay = try? schedule.calendar.sevenDayWindow(startingOn: schedule.startDay).last
-        else { return nil }
-        let day = competitionDayText(
-            lastDay,
-            weekday: false,
-            now: publication.evaluatedAt,
-            locale: locale,
-            timeZone: timeZone
-        )
-        return "Since \(day) · \(competitionWeeksText(current.weeks))"
+        competitionBeltSinceText(current, weeks: weeks, now: publication.evaluatedAt, locale: locale, timeZone: timeZone)
     }
 
     /// Newest first: the latest five then "All N weeks" from six weeks.
@@ -2257,6 +2237,10 @@ struct CompetitionPersonView: View {
 struct CompetitionPersonPlace: Equatable, Sendable {
     var depth = 0
     var showsRecords = false
+    /// Their profile, under their weeks when those are open too.
+    var showsProfile = false
+    var showsWeeks = true
+    var showsOwnProfile = false
 }
 
 /// Home's stack. History, while open, sits at the bottom; one person page can
@@ -2265,8 +2249,11 @@ struct CompetitionPersonPlace: Equatable, Sendable {
 enum CompetitionHomeRoute: Hashable {
     case history
     case friends
-    /// One person's page, by opponent identity.
+    /// One person's weeks with you, by opponent identity.
     case person(String)
+    /// Who they are: reached from a score's photo and Friends.
+    case profile(String)
+    case ownProfile
     /// That person's Records, one push above their page.
     case records(String)
     case competition(CompetitionID)
@@ -2285,13 +2272,14 @@ enum CompetitionHomeRoute: Hashable {
         Binding(
             get: {
                 var routes = path.wrappedValue.map(CompetitionHomeRoute.competition)
+                let place = personPlace.wrappedValue
+                var people: [CompetitionHomeRoute] = place.showsOwnProfile ? [.ownProfile] : []
                 if let identity = person.wrappedValue {
-                    let place = personPlace.wrappedValue
-                    routes.insert(
-                        contentsOf: [.person(identity)] + (place.showsRecords ? [.records(identity)] : []),
-                        at: min(place.depth, routes.count)
-                    )
+                    if place.showsProfile { people.append(.profile(identity)) }
+                    if place.showsWeeks { people.append(.person(identity)) }
+                    if place.showsRecords { people.append(.records(identity)) }
                 }
+                routes.insert(contentsOf: people, at: min(place.depth, routes.count))
                 var bottom: [CompetitionHomeRoute] = []
                 if showsFriends.wrappedValue { bottom.append(.friends) }
                 if showsHistory.wrappedValue { bottom.append(.history) }
@@ -2299,24 +2287,40 @@ enum CompetitionHomeRoute: Hashable {
             },
             set: { newRoutes in
                 var routes = newRoutes
-                if let first = routes.firstIndex(where: \.isPerson),
-                   routes.lastIndex(of: routes[first]) != first {
+                // Opening a page already on the stack pops back to it.
+                if let repeated = routes.indices.first(where: {
+                    routes[$0].isPersonPage && routes[($0 + 1)...].contains(routes[$0])
+                }) {
+                    routes = Array(routes[...repeated])
+                }
+                // Person pages share one place, so none can open above a
+                // match that sits above them. Back to the first instead.
+                if let first = routes.firstIndex(where: \.isPersonPage),
+                   let match = routes[first...].firstIndex(where: \.isCompetition),
+                   routes[match...].contains(where: \.isPersonPage) {
                     routes = Array(routes[...first])
                 }
-                let personIndex = routes.firstIndex(where: \.isPerson)
+                let personIndex = routes.firstIndex(where: \.isPersonPage)
+                let identity = routes.lazy.compactMap(\.personIdentity).first
                 // Both before the person: closing either clears it.
                 showsHistory.wrappedValue = routes.first == .history
                 showsFriends.wrappedValue = routes.first == .friends
-                person.wrappedValue = personIndex.flatMap {
-                    guard case let .person(identity) = routes[$0] else { return nil }
-                    return identity
-                }
+                person.wrappedValue = identity
                 personPlace.wrappedValue = CompetitionPersonPlace(
                     depth: personIndex.map { routes[..<$0].filter(\.isCompetition).count } ?? 0,
                     showsRecords: personIndex != nil && routes.contains {
                         if case .records = $0 { return true }
                         return false
-                    }
+                    },
+                    showsProfile: routes.contains {
+                        if case .profile = $0 { return true }
+                        return false
+                    },
+                    showsWeeks: identity == nil || routes.contains {
+                        if case .person = $0 { return true }
+                        return false
+                    },
+                    showsOwnProfile: routes.contains(.ownProfile)
                 )
                 path.wrappedValue = routes.compactMap { route in
                     guard case let .competition(id) = route else {
@@ -2328,15 +2332,52 @@ enum CompetitionHomeRoute: Hashable {
         )
     }
 
-    private var isPerson: Bool {
-        if case .person = self { return true }
-        return false
+    /// A photo tapped: back to that page if it's open. Otherwise it replaces
+    /// any person pages open, since they share one place on the stack.
+    static func opening(_ route: Self, on routes: [Self]) -> [Self] {
+        if !routes.contains(route), let first = routes.firstIndex(where: \.isPersonPage) {
+            return Array(routes[..<first]) + [route]
+        }
+        return routes + [route]
+    }
+
+    private var isPersonPage: Bool {
+        self == .ownProfile || personIdentity != nil
+    }
+
+    private var personIdentity: String? {
+        switch self {
+        case let .person(identity), let .profile(identity): identity
+        default: nil
+        }
     }
 
     private var isCompetition: Bool {
         if case .competition = self { return true }
         return false
     }
+}
+
+func competitionBeltTitle(_ belt: CompetitionBelt, name: String) -> String {
+    if belt.isRetired { return "The belt is retired" }
+    guard let holder = belt.holder else { return "No one holds the belt yet" }
+    return competitionBeltStandingText(holder, opponentName: name)
+}
+
+/// "Since Nov 8 · 1 week": the last day of the week that took it.
+func competitionBeltSinceText(
+    _ current: CompetitionBeltReign,
+    weeks: [LocalCompetitionPresentation],
+    now: Date,
+    locale: Locale,
+    timeZone: TimeZone
+) -> String? {
+    guard let schedule = weeks.first(where: { $0.id == current.startID })?
+        .acceptedConfiguration?.schedule,
+        let lastDay = try? schedule.calendar.sevenDayWindow(startingOn: schedule.startDay).last
+    else { return nil }
+    let day = competitionDayText(lastDay, weekday: false, now: now, locale: locale, timeZone: timeZone)
+    return "Since \(day) · \(competitionWeeksText(current.weeks))"
 }
 
 /// Home's + button. It opens the new-challenge drawer.
