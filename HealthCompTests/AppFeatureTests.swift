@@ -14,6 +14,38 @@ final class AppFeatureTests: XCTestCase {
         }
     }
 
+    func testLaunchMarkPulsesThenLeavesForHome() {
+        // Whole before the first pulse and between pulses; mid-pulse the
+        // first bar is inside the slash.
+        for time in [0, 1.3] {
+            for length in LaunchMarkFrame(at: time).growth { XCTAssertEqual(length, 1, accuracy: 0.001) }
+        }
+        XCTAssertEqual(LaunchMarkFrame(at: 0.4).growth[0], 0, accuracy: 0.001)
+
+        // Matches arrive mid-pulse: the bars are whole 150 ms in, and both
+        // halves have flown clear of the scoreboard by the end.
+        let whole = LaunchMarkFrame(at: 0.56, handoff: 0.4, landing: .score)
+        for length in whole.growth { XCTAssertEqual(length, 1, accuracy: 0.001) }
+        let split = LaunchMarkFrame(at: 0.4 + LaunchMarkFrame.duration, handoff: 0.4, landing: .score)
+        XCTAssertEqual(split.travel, 1, accuracy: 0.001)
+        XCTAssertEqual(split.barsLeave, 1, accuracy: 0.001)
+        XCTAssertEqual(split.barsOpacity, 0, accuracy: 0.001)
+        XCTAssertEqual(split.blockOpacity, 0, accuracy: 0.001)
+
+        // Empty Home: your bars stay and the block leaves its outline.
+        let slot = LaunchMarkFrame(at: 5 + LaunchMarkFrame.duration, handoff: 5, landing: .slot)
+        XCTAssertEqual(slot.travel, 1, accuracy: 0.001)
+        XCTAssertEqual(slot.barsLeave, 0)
+        XCTAssertEqual(slot.barsOpacity, 1)
+        XCTAssertEqual(slot.blockOpacity, 0, accuracy: 0.001)
+        XCTAssertEqual(slot.slotOpacity, 1, accuracy: 0.001)
+
+        // Nowhere to land: the mark fades where it stands.
+        let faded = LaunchMarkFrame(at: 5.2, handoff: 5)
+        XCTAssertEqual(faded.travel, 0)
+        XCTAssertEqual(faded.barsOpacity, 0, accuracy: 0.001)
+    }
+
     @MainActor
     func testProfileRecoveryAfterTerminalSessionLossRetiresBeforeAllowingSignIn() async throws {
         for deliversSignedOutEvent in [false, true] {

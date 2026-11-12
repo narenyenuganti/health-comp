@@ -135,13 +135,11 @@ struct BrandMark: View {
     var body: some View {
         KeyframeAnimator(initialValue: [1.0, 1, 1], trigger: plays) { growth in
             ZStack {
-                MarkPolygon([(17.4, 8), (57.4, 8), (53.8, 26), (13.8, 26)], growth: growth[0])
-                    .fill(Theme.move)
-                MarkPolygon([(22.8, 31), (52.8, 31), (49.2, 49), (19.2, 49)], growth: growth[1])
-                    .fill(Theme.exercise)
-                MarkPolygon([(12.2, 54), (48.2, 54), (44.6, 72), (8.6, 72)], growth: growth[2])
-                    .fill(Theme.stand)
-                MarkPolygon([(63.4, 8), (91.4, 8), (78.6, 72), (50.6, 72)])
+                ForEach(0..<3, id: \.self) { bar in
+                    MarkPolygon(MarkPolygon.bars[bar], growth: growth[bar])
+                        .fill(MarkPolygon.barColors[bar])
+                }
+                MarkPolygon(MarkPolygon.block)
                     .fill(Theme.ink)
             }
         } keyframes: { _ in
@@ -179,20 +177,51 @@ struct BrandMark: View {
     }
 }
 
-private struct MarkPolygon: Shape {
+struct MarkPolygon: Shape {
+    static let bars: [[(CGFloat, CGFloat)]] = [
+        [(17.4, 8), (57.4, 8), (53.8, 26), (13.8, 26)],
+        [(22.8, 31), (52.8, 31), (49.2, 49), (19.2, 49)],
+        [(12.2, 54), (48.2, 54), (44.6, 72), (8.6, 72)],
+    ]
+    static let barColors = [Theme.move, Theme.exercise, Theme.stand]
+    static let block: [(CGFloat, CGFloat)] = [(63.4, 8), (91.4, 8), (78.6, 72), (50.6, 72)]
+
     let points: [CGPoint]
     /// Bars scale toward their right edge: corners 0 and 3 slide toward 1 and 2.
     let growth: CGFloat
+    /// Launch: how far the shape has left the slash, in the 100-wide box.
+    /// Leftward carries the right edge (a bar), rightward the left edge (the
+    /// block), and `stretch` lengthens the shape away from the slash.
+    let shift: CGFloat
+    let stretch: CGFloat
 
-    init(_ points: [(CGFloat, CGFloat)], growth: CGFloat = 1) {
+    init(
+        _ points: [(CGFloat, CGFloat)],
+        growth: CGFloat = 1,
+        shift: CGFloat = 0,
+        stretch: CGFloat = 1
+    ) {
         self.points = points.map { CGPoint(x: $0.0, y: $0.1) }
         self.growth = growth
+        self.shift = shift
+        self.stretch = stretch
     }
 
     func path(in rect: CGRect) -> Path {
         var points = points
-        points[0].x = points[1].x + (points[0].x - points[1].x) * growth
-        points[3].x = points[2].x + (points[3].x - points[2].x) * growth
+        if shift > 0 {
+            for (left, right) in [(0, 1), (3, 2)] {
+                let width = points[right].x - points[left].x
+                points[left].x += shift
+                points[right].x = points[left].x + width * stretch
+            }
+        } else {
+            for (left, right) in [(0, 1), (3, 2)] {
+                let width = points[right].x - points[left].x
+                points[right].x += shift
+                points[left].x = points[right].x - width * growth * stretch
+            }
+        }
         return Path { path in
             path.addLines(points.map {
                 CGPoint(

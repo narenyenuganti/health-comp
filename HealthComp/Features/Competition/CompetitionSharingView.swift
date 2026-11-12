@@ -52,6 +52,7 @@ struct CompetitionSharingView: View {
 
     @Environment(\.locale) private var locale
     @Environment(\.timeZone) private var timeZone
+    @Environment(\.launchStage) private var launchStage
 
     var body: some View {
         let layout = self.layout
@@ -492,8 +493,11 @@ struct CompetitionSharingView: View {
 
     private var emptyState: some View {
         VStack(spacing: 16) {
+            // At launch the mark lands here and its block leaves this outline.
             OpenSlotMark()
                 .frame(width: 96)
+                .launchLanding(.slot)
+                .opacity(launchStage == .done ? 1 : 0)
 
             VStack(spacing: 6) {
                 Text(records.isEmpty ? "No matches yet" : "Nothing live right now")
@@ -779,6 +783,7 @@ private struct HeroScoreboard: View {
     @ScaledMetric private var scoreSize: CGFloat
     @ScaledMetric(relativeTo: .headline) private var avatarSize: CGFloat = 28
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.launchStage) private var launchStage
 
     init(competition: LocalCompetitionPresentation, isCompact: Bool, belt: CompetitionBelt?) {
         self.competition = competition
@@ -798,10 +803,14 @@ private struct HeroScoreboard: View {
                 trailing: false
             )
             if !isStacked {
+                // At launch the mark splits on this slash, which grows out of it.
                 Rectangle()
                     .fill(Theme.outline)
                     .frame(width: 2, height: scoreSize)
+                    .launchLanding(.score)
+                    .scaleEffect(y: launchStage == .waiting ? 0 : 1)
                     .rotationEffect(.degrees(12))
+                    .moving(Motion.grow, value: launchStage)
                     .accessibilityHidden(true)
             }
             side(
@@ -859,9 +868,11 @@ private struct HeroScoreboard: View {
                 }
             }
             .modifier(CompetitionProfileTap(route: route))
-            Text(competitionPointsText(points))
+            // At launch both scores roll up from zero.
+            let shown = launchStage == .waiting ? 0 : points
+            Text(competitionPointsText(shown))
                 .font(.score(size: scoreSize).monospacedDigit())
-                .scoreRoll(points, id: competition.id)
+                .scoreRoll(shown, id: competition.id)
         }
         .foregroundStyle(color)
         .frame(maxWidth: .infinity, alignment: trailing ? .trailing : .leading)

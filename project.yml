@@ -43,6 +43,7 @@ targets:
         UIApplicationSupportsIndirectInputEvents: true
         UILaunchScreen:
           UIColorName: LaunchGround
+          UIImageName: LaunchMark
         UISupportedInterfaceOrientations:
           - UIInterfaceOrientationPortrait
         UIRequiredDeviceCapabilities:

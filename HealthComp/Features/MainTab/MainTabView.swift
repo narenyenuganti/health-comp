@@ -19,6 +19,7 @@ struct MainTabView: View {
     @State private var isPracticePresented = false
     @State private var isLogoUpdating = false
     @State private var isTodayRingsPresented = false
+    @State private var isLaunchSlow = false
     @State private var isVersusPlaying = false
     @State private var replaysVersus = false
     @State private var recapPeriod: CompetitionRecapPeriod?
@@ -194,8 +195,10 @@ struct MainTabView: View {
 
     private var home: some View {
         NavigationStack(path: homeStack) {
-            // Home lays out finished under the loader, which fades off it.
-            ZStack {
+            LaunchHandoff(
+                isLoading: store.competition.publication == nil,
+                title: "Loading matches…"
+            ) {
                 if let publication = store.competition.publication {
                     CompetitionSharingView(
                         publication: publication,
@@ -252,15 +255,12 @@ struct MainTabView: View {
                         isUpdating: isLogoUpdating
                     )
                     .transition(.identity)
-                } else {
-                    AppProgressView(title: "Loading matches…")
-                        .ignoresSafeArea()
-                        .allowsHitTesting(false)
-                        .transition(.opacity)
-                        .zIndex(1)
                 }
             }
-            .animation(Motion.fade, value: store.competition.publication == nil)
+            .task {
+                try? await Task.sleep(for: .seconds(2))
+                isLaunchSlow = true
+            }
             .toolbar { homeToolbar }
             // Outside Home's `.refreshable`, which a sheet presented from
             // inside it inherits: a drag down would refresh, not close.
@@ -530,43 +530,53 @@ struct MainTabView: View {
 
     @ToolbarContentBuilder
     private var homeToolbar: some ToolbarContent {
-        ToolbarItem(placement: .topBarLeading) {
-            Button(action: updateThenShowRings) {
-                BrandMark(spins: isLogoUpdating).frame(height: 26)
-            }
-            .accessibilityLabel("Today’s rings")
-            .accessibilityIdentifier("home.logo")
-        }
-        ToolbarItemGroup(placement: .topBarTrailing) {
-            // Invitations are private links between real people.
-            if store.competition.publication?.source == .remoteParticipants {
-                CompetitionChallengeButton {
-                    if GroupMatchRollout.showsFormatPicker { isNewMatchPresented = true } else { isChallengePresented = true }
+        // The bar arrives with Home, not ahead of it: the launch mark is
+        // alone on screen until then. Absent rather than faded, because
+        // iOS 26 would draw the empty glass.
+        if isToolbarShown {
+            ToolbarItem(placement: .topBarLeading) {
+                Button(action: updateThenShowRings) {
+                    BrandMark(spins: isLogoUpdating).frame(height: 26)
                 }
-                FriendsToolbarButton(requestCount: store.competition.friends.requestCount) {
-                    store.send(.friendsPresentationChanged(true))
-                }
+                .accessibilityLabel("Today’s rings")
+                .accessibilityIdentifier("home.logo")
             }
-            if let openAccount {
-                Button(action: openAccount) {
-                    if let name = store.competition.ownProfile?.displayName, !name.isEmpty {
-                        PersonAvatar(
-                            name: name,
-                            size: 34,
-                            isYou: true,
-                            initialFont: .headline.width(.condensed)
-                        )
-                    } else {
-                        Image(systemName: "person.fill")
-                            .foregroundStyle(Theme.ink)
-                            .frame(width: 34, height: 34)
-                            .background(Theme.control, in: Circle())
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                // Invitations are private links between real people.
+                if store.competition.publication?.source == .remoteParticipants {
+                    CompetitionChallengeButton {
+                        if GroupMatchRollout.showsFormatPicker { isNewMatchPresented = true } else { isChallengePresented = true }
+                    }
+                    FriendsToolbarButton(requestCount: store.competition.friends.requestCount) {
+                        store.send(.friendsPresentationChanged(true))
                     }
                 }
-                .accessibilityLabel("Account")
-                .accessibilityIdentifier("app.account")
+                if let openAccount {
+                    Button(action: openAccount) {
+                        if let name = store.competition.ownProfile?.displayName, !name.isEmpty {
+                            PersonAvatar(
+                                name: name,
+                                size: 34,
+                                isYou: true,
+                                initialFont: .headline.width(.condensed)
+                            )
+                        } else {
+                            Image(systemName: "person.fill")
+                                .foregroundStyle(Theme.ink)
+                                .frame(width: 34, height: 34)
+                                .background(Theme.control, in: Circle())
+                        }
+                    }
+                    .accessibilityLabel("Account")
+                    .accessibilityIdentifier("app.account")
+                }
             }
         }
+    }
+
+    /// A wait that runs long shows the bar anyway, so Account stays in reach.
+    private var isToolbarShown: Bool {
+        store.competition.publication != nil || isLaunchSlow
     }
 
     /// The fixture reinvites Alex; a real match prefills the Challenge sheet
