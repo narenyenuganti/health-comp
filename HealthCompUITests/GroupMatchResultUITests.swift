@@ -10,6 +10,28 @@ final class GroupMatchResultUITests: XCTestCase {
         XCTAssertTrue(app.groupElement("competition.group.result.no-belt").waitForExistence(timeout: 8))
     }
 
+    func testJudgesRevealPlaysOnceBeforeAFourWayResult() {
+        var app = XCUIApplication.launchGroupLab("result-ffa-won", arguments: ["--judges-decision"])
+        let seal = app.groupElement("competition.judges.seal")
+        XCTAssertTrue(seal.waitForExistence(timeout: 8))
+        seal.press(forDuration: 1.0)
+        XCTAssertTrue(app.staticTexts["Judge Stand"].waitForExistence(timeout: 6))
+        XCTAssertTrue(app.staticTexts["UNANIMOUS DECISION"].waitForExistence(timeout: 4))
+        XCTAssertTrue(app.staticTexts["YOUR WINNER"].waitForExistence(timeout: 8))
+        XCTAssertTrue(app.groupElement("competition.judges.payoff").waitForExistence(timeout: 4))
+        // It ends by itself on the result.
+        XCTAssertTrue(app.groupElement("competition.judges.reveal").waitForNonExistence(timeout: 8))
+        XCTAssertEqual(app.groupElement("competition.group.result.title").label, "You won")
+
+        // Doubles, skipped.
+        app.terminate()
+        app = XCUIApplication.launchGroupLab("result-doubles", arguments: ["--judges-decision"])
+        XCTAssertTrue(app.groupElement("competition.judges.seal").waitForExistence(timeout: 8))
+        app.groupElement("competition.judges.skip").tap()
+        XCTAssertTrue(app.groupElement("competition.group.result.title").waitForExistence(timeout: 4))
+        XCTAssertEqual(app.groupElement("competition.group.result.title").label, "Your team won")
+    }
+
     func testFreeForAllResultShowsSharedPlacesAndRematch() {
         var app = XCUIApplication.launchGroupLab("result-ffa-won")
         XCTAssertTrue(app.groupElement("competition.group.result.title").waitForExistence(timeout: 8))

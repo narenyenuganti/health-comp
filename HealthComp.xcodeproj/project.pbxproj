@@ -237,6 +237,7 @@
 		D92F43292BDA303A6E36A3ED /* GroupMatchResultView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9860234DC7B60172D01026C2 /* GroupMatchResultView.swift */; };
 		DA712552072ED2155F329F48 /* AppAttestClient.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3AB91D67DF671E84BB5BFFEB /* AppAttestClient.swift */; };
 		DA998C07235B49E9345F6FE8 /* JSONCompetitionOutboxStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8249239D6EC13DC41463D081 /* JSONCompetitionOutboxStore.swift */; };
+		DBDE45BEAF2775467C20F34F /* CompetitionJudgesReveal.swift in Sources */ = {isa = PBXBuildFile; fileRef = 22857327F74BD547DAA46137 /* CompetitionJudgesReveal.swift */; };
 		DC35549E42F6B1FA2A07BA25 /* CompetitionSyncCoordinatorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B9DF77F4B53514428AD771C0 /* CompetitionSyncCoordinatorTests.swift */; };
 		DD502924E9311DD9A99C81B2 /* CompetitionRouting.swift in Sources */ = {isa = PBXBuildFile; fileRef = 367629019F65C3FCD66B409F /* CompetitionRouting.swift */; };
 		DFC92BDF11FEACB2873F9887 /* lost.mp4 in Resources */ = {isa = PBXBuildFile; fileRef = 63446332AD0F80011C4D7FFC /* lost.mp4 */; };
@@ -391,6 +392,7 @@
 		1FEF4EE70421B685B8C576F0 /* FriendsUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FriendsUITests.swift; sourceTree = "<group>"; };
 		225974742689A63371700688 /* ClaimCompetitionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaimCompetitionView.swift; sourceTree = "<group>"; };
 		226BA4E27B1F6F1804DEE79E /* StagingScoringResponseCapture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StagingScoringResponseCapture.swift; sourceTree = "<group>"; };
+		22857327F74BD547DAA46137 /* CompetitionJudgesReveal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionJudgesReveal.swift; sourceTree = "<group>"; };
 		2295F1DBB4FBEB22B8B25FA5 /* WatchBoardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchBoardView.swift; sourceTree = "<group>"; };
 		26A5980A0F15213864D963AE /* GroupMatchLiveFFAView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupMatchLiveFFAView.swift; sourceTree = "<group>"; };
 		2888E29265A40B8B0B6C8410 /* defended.mp4 */ = {isa = PBXFileReference; path = defended.mp4; sourceTree = "<group>"; };
@@ -922,6 +924,7 @@
 				45B4CB5326E660812EDE995E /* CompetitionDetailView.swift */,
 				8E8BC3205F9F874134CE71BC /* CompetitionFeature.swift */,
 				F72580283C9D599F21484EB9 /* CompetitionInviteView.swift */,
+				22857327F74BD547DAA46137 /* CompetitionJudgesReveal.swift */,
 				0CBE1B97F76173B8D4292DCA /* CompetitionLeadText.swift */,
 				946DF4B5A3E42EC0930E315D /* CompetitionReactions.swift */,
 				E3D37CEA378DC19DA488A488 /* CompetitionRecapView.swift */,
@@ -1450,6 +1453,7 @@
 				C26DAEF1685314355F596514 /* CompetitionEnvironmentClient.swift in Sources */,
 				0BF4596D63CCDE7A8B41F7D7 /* CompetitionFeature.swift in Sources */,
 				B23F0459A115348014EF4500 /* CompetitionInviteView.swift in Sources */,
+				DBDE45BEAF2775467C20F34F /* CompetitionJudgesReveal.swift in Sources */,
 				013BB3C33F657470E8ED8890 /* CompetitionLeadText.swift in Sources */,
 				2701B2B4654472E74D9F505C /* CompetitionLiveActivities.swift in Sources */,
 				0BD7D8160ECD9E9F9DF4C5EC /* CompetitionNotificationClient.swift in Sources */,

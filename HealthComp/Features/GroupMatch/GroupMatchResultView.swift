@@ -61,6 +61,7 @@ struct GroupMatchResultView: View {
         .navigationBarTitleDisplayMode(.inline)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("competition.group.result")
+        .competitionGroupJudges(match)
     }
 
     private var rematchButton: some View {
