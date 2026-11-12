@@ -1,3 +1,4 @@
+import CompetitionCore
 import ComposableArchitecture
 import Foundation
 import XCTest
@@ -133,6 +134,59 @@ final class CompetitionWatchBoardTests: XCTestCase {
         XCTAssertEqual(several.pages(at: now).first, several.featured(personID: nil, at: now))
         XCTAssertEqual(fixture("samGone").pages(at: now).map(\.name), ["Alex"])
         XCTAssertEqual(fixture("empty").pages(at: now), [])
+        XCTAssertEqual(fixture("card").pages(at: now).map(\.id), fixture("card").matches.map(\.id))
+    }
+
+    // MARK: The card, the week, the alert
+
+    func testCardRowsFollowThePagesAndNeverSpoilAReveal() {
+        let card = fixture("card")
+        let rows = card.pages(at: now).map {
+            $0.cardRow(at: now, firstSight: CompetitionWatchSeen().isFirstSight(of: $0, at: now), locale: en)
+        }
+        XCTAssertEqual(rows.map(\.name), ["Sam", "Four-Way", "Robin", "Riley", "Jo"])
+        XCTAssertEqual(rows.map(\.line), ["Day 5", "48 behind Sam", "372 to lead", "Pending", "Final"])
+        XCTAssertEqual(rows.map(\.value), ["+54", "2nd", "−371", "−19", ""])
+        XCTAssertEqual(rows.map(\.isYours), [true, false, false, false, false])
+        XCTAssertEqual(rows[0].spoken, "You lead Sam by 54 points. Day 5.")
+        XCTAssertEqual(rows[1].spoken, "Four-Way, Day 4 of 7. You're 2nd. 48 behind Sam.")
+        XCTAssertEqual(rows[2].spoken, "Robin leads by 371 points. 372 points to take the lead. 31 of 403 today.")
+        XCTAssertEqual(rows[4].spoken, "Jo, Final.")
+
+        let seen = card.matches.last!.cardRow(at: now, firstSight: false, locale: en)
+        XCTAssertEqual([seen.line, seen.value], ["Final", "Won"])
+        XCTAssertTrue(seen.isYours)
+        XCTAssertEqual(match("lost").cardRow(at: now, firstSight: false, locale: en).value, "Lost")
+        XCTAssertEqual(match("tied").cardRow(at: now, firstSight: false, locale: en).value, "Tied")
+        let out = match("outOfReach").cardRow(at: now, firstSight: false, locale: en)
+        XCTAssertEqual([out.line, out.value], ["Out of reach today", "−471"])
+        let later = match("scheduled").cardRow(at: now, firstSight: false, locale: en)
+        XCTAssertEqual([later.line, later.value], ["Day 1 is Sunday", ""])
+    }
+
+    func testTheWeekIsForDuelsThatHaveStarted() {
+        XCTAssertEqual(
+            ["live", "pending", "won", "scheduled", "groupFFA", "groupDoubles"].map { match($0).hasWeek(at: now) },
+            [true, true, true, false, false, false]
+        )
+        let robin = fixture("card").matches[2]
+        let rows = robin.weekRows(locale: en)
+        XCTAssertEqual(rows.map(\.day), ["W", "T", "F", "S", "S", "M", "T"])
+        XCTAssertEqual(rows[0].spoken, "Wednesday")
+        XCTAssertEqual(rows.map(\.you), ["142", "152", "31", nil, nil, nil, nil])
+        XCTAssertEqual(rows.map(\.them), ["388", "121", "187", nil, nil, nil, nil])
+    }
+
+    /// The watch reads the iPhone's keys without compiling `CompetitionRoute`.
+    func testAnAlertNamesItsMatchWithTheRoutesOwnKeys() {
+        let id = UUID()
+        var userInfo = CompetitionRoute.competition(CompetitionID(id)).userInfo
+        XCTAssertEqual(CompetitionWatchAlert.competitionID(userInfo), id)
+        userInfo["aps"] = ["alert": "Sam took the lead"]
+        userInfo[CompetitionReactionAlert.recipientKey] = UUID().uuidString
+        XCTAssertEqual(CompetitionWatchAlert.competitionID(userInfo), id)
+        XCTAssertNil(CompetitionWatchAlert.competitionID(CompetitionRoute.friends.userInfo))
+        XCTAssertNil(CompetitionWatchAlert.competitionID([:]))
     }
 
     // MARK: Copy

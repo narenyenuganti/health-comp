@@ -92,6 +92,20 @@ extension CompetitionWidgetSnapshot {
     }
 }
 
+/// An iPhone alert the watch mirrored. The keys are `CompetitionRoute`'s,
+/// which the watch doesn't compile; a test pins them to it.
+enum CompetitionWatchAlert {
+    /// The match an alert is about, nil for Friends or anything else. Extra
+    /// keys (`aps`, a reaction's recipient) are fine: the watch only navigates.
+    static func competitionID(_ userInfo: [AnyHashable: Any]) -> UUID? {
+        guard userInfo["healthcomp.route.v"] as? Int == 1,
+              userInfo["healthcomp.route.kind"] as? String == "competition",
+              let id = userInfo["healthcomp.route.competitionID"] as? String
+        else { return nil }
+        return UUID(uuidString: id)
+    }
+}
+
 extension CompetitionWidgetSnapshot.Match {
     /// The Board's line goes after this long without an update from the phone.
     static let staleAfter: TimeInterval = 3_600
@@ -192,6 +206,74 @@ extension CompetitionWidgetSnapshot.Match {
             formatter.numberStyle = .ordinal
             formatter.locale = Locale(identifier: "en_US")
             return ("AND STILL", "\(formatter.string(from: count as NSNumber) ?? "\(count)") title defense", [])
+        }
+    }
+
+    // MARK: The card and the week
+
+    /// One row of the match list. A final whose reveal hasn't played says only
+    /// "Final", so the list can't spoil the Board.
+    func cardRow(
+        at date: Date,
+        firstSight: Bool,
+        locale: Locale = .current
+    ) -> (name: String, line: String, value: String, isYours: Bool, spoken: String) {
+        let board = boardStatus(at: date, locale: locale)
+        if let group {
+            let place = group.yourPlace
+            return (
+                group.title, group.lead ?? board, place.map(group.placeText) ?? "", place == 1,
+                groupAccessibilityLabel(at: date, redacted: false, locale: locale) ?? group.title
+            )
+        }
+        let spoken = accessibilityLabel(at: date, redacted: false, locale: locale)
+        switch state(at: date) {
+        case .scheduled:
+            return (name, status(at: date, locale: locale), "", false, spoken)
+        case let .final(outcome):
+            if firstSight { return (name, board, "", false, "\(name), Final.") }
+            let value = switch outcome {
+            case .win: "Won"
+            case .loss: "Lost"
+            case .tie: "Tied"
+            }
+            return (name, board, value, outcome == .win, spoken)
+        default:
+            let chasing = chase(at: date, locale: locale)
+            let line = chasing.map { $0.lead.map { "\($0) to lead" } ?? $0.line } ?? board
+            let lead = accessibilityLabel(at: date, redacted: false, circular: true, locale: locale)
+            return (
+                name, line, circular(at: date, locale: locale).value, side == .you,
+                "\(lead). \(chasing?.spoken ?? board + ".")"
+            )
+        }
+    }
+
+    /// Day by day for a duel that has started; groups carry no days of their own.
+    func hasWeek(at date: Date) -> Bool {
+        guard group == nil else { return false }
+        return switch state(at: date) {
+        case .live, .finalPending, .final: true
+        case .scheduled, .gone: false
+        }
+    }
+
+    /// Seven rows: "W", your points, theirs, in the match's calendar. A day
+    /// with no points is nil.
+    func weekRows(locale: Locale = .current) -> [(day: String, spoken: String, you: String?, them: String?)] {
+        let formatter = DateFormatter()
+        formatter.calendar = Calendar(identifier: .gregorian)
+        formatter.locale = locale
+        formatter.timeZone = TimeZone(identifier: timeZoneIdentifier) ?? .current
+        func points(_ values: [Double?], _ index: Int) -> String? {
+            guard values.indices.contains(index), let value = values[index] else { return nil }
+            return competitionPointsText(value, locale: locale)
+        }
+        return dayStarts.enumerated().map { index, start in
+            formatter.setLocalizedDateFormatFromTemplate("EEEEE")
+            let day = formatter.string(from: start)
+            formatter.setLocalizedDateFormatFromTemplate("EEEE")
+            return (day, formatter.string(from: start), points(userDayPoints, index), points(opponentDayPoints, index))
         }
     }
 }

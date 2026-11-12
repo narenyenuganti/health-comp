@@ -1,14 +1,18 @@
 import SwiftUI
 import WatchKit
 
-/// The Board or Nothing to show. `drawn` trails the store, so a delivery with
-/// the wrist down doesn't touch the screen until you look.
+/// The card with two or more matches, else the Board or Nothing to show.
+/// `drawn` trails the store, so a delivery with the wrist down doesn't touch
+/// the screen until you look.
 struct WatchRootView: View {
     @ObservedObject var model: WatchSnapshotModel
 
+    /// Over the root: a match's Board from the card, or a duel's week.
+    enum Screen: Hashable { case board(UUID), week(UUID) }
+
     @Environment(\.scenePhase) private var scenePhase
     @State private var drawn: CompetitionWidgetSnapshot?
-    @State private var selection: UUID?
+    @State private var path: [Screen] = []
 
     init(model: WatchSnapshotModel) {
         self.model = model
@@ -16,57 +20,225 @@ struct WatchRootView: View {
     }
 
     var body: some View {
-        TimelineView(.everyMinute) { context in
-            content(at: context.date)
+        NavigationStack(path: $path) {
+            WatchScreen(model: model, screen: nil, drawn: $drawn, path: $path)
+                .navigationDestination(for: Screen.self) { screen in
+                    WatchScreen(model: model, screen: screen, drawn: $drawn, path: $path)
+                }
         }
         .onChange(of: model.snapshot) { _, next in
             if scenePhase == .active { drawn = next }
         }
+        .onChange(of: drawn) {
+            let kept = Self.pruned(path, drawn: drawn, at: Date())
+            if kept != path { path = kept }
+            openTappedAlert()
+        }
+        .onChange(of: model.tappedAlert, initial: true) { openTappedAlert() }
         .onChange(of: scenePhase) { _, phase in
             switch phase {
             case .active:
                 model.refresh()
                 drawn = model.snapshot
             case .background:
-                selection = nil
+                path = []
+                model.tappedAlert = nil
             default:
                 break
             }
         }
     }
 
-    private func content(at date: Date) -> some View {
+    /// Drops what left the snapshot, and a pushed Board once the card is gone.
+    static func pruned(_ path: [Screen], drawn: CompetitionWidgetSnapshot?, at date: Date) -> [Screen] {
         let pages = drawn?.pages(at: date) ?? []
-        return ZStack {
-            if let first = pages.first {
-                board(pages, current: pages.first { $0.id == selection } ?? first, at: date)
-                    .transition(.opacity)
-            } else if case let .empty(text) = CompetitionWidgetSnapshot.content(drawn, personID: nil, at: date) {
-                WatchNothingView(text: text)
-                    .transition(.opacity)
+        return path.filter { screen in
+            switch screen {
+            case let .board(id): pages.count > 1 && pages.contains { $0.id == id }
+            case let .week(id): pages.first { $0.id == id }?.hasWeek(at: date) == true
             }
         }
-        .animation(Motion.fade, value: pages.isEmpty)
+    }
+
+    /// The tapped alert's Board over the card; with one match it is the root.
+    /// Waits for the match to be drawn, until the wrist drops.
+    private func openTappedAlert() {
+        guard let id = model.tappedAlert else { return }
+        let pages = drawn?.pages(at: Date()) ?? []
+        guard pages.contains(where: { $0.id == id }) else { return }
+        model.tappedAlert = nil
+        path = pages.count > 1 ? [.board(id)] : []
+    }
+}
+
+/// The root (`screen` nil) or one pushed screen. Its own view, so a pushed
+/// screen follows `drawn` and `path` as they change.
+private struct WatchScreen: View {
+    @ObservedObject var model: WatchSnapshotModel
+    let screen: WatchRootView.Screen?
+    @Binding var drawn: CompetitionWidgetSnapshot?
+    @Binding var path: [WatchRootView.Screen]
+
+    var body: some View {
+        TimelineView(.everyMinute) { context in
+            content(at: context.date)
+        }
+        .containerBackground(Color.black, for: .navigation)
     }
 
     @ViewBuilder
-    private func board(
-        _ pages: [CompetitionWidgetSnapshot.Match],
-        current: CompetitionWidgetSnapshot.Match,
-        at date: Date
-    ) -> some View {
-        if pages.count > 1 {
-            TabView(selection: Binding(get: { current.id }, set: { selection = $0 })) {
-                ForEach(pages, id: \.id) { match in
-                    WatchBoardPage(model: model, match: match, date: date, isCurrent: match.id == current.id)
-                        .tag(match.id)
+    private func content(at date: Date) -> some View {
+        let pages = drawn?.pages(at: date) ?? []
+        switch screen {
+        case nil:
+            ZStack {
+                if pages.count > 1 {
+                    WatchCard(model: model, pages: pages, date: date)
+                        .transition(.opacity)
+                } else if let only = pages.first {
+                    board(only, at: date, isCurrent: path.isEmpty)
+                        .transition(.opacity)
+                } else if case let .empty(text) = CompetitionWidgetSnapshot.content(drawn, personID: nil, at: date) {
+                    WatchNothingView(text: text)
+                        .transition(.opacity)
                 }
             }
-            .tabViewStyle(.verticalPage)
-            .containerBackground(Color.black, for: .tabView)
-        } else {
-            WatchBoardPage(model: model, match: current, date: date, isCurrent: true)
+            .animation(Motion.fade, value: min(pages.count, 2))
+        case let .board(id)?:
+            if let match = pages.first(where: { $0.id == id }) {
+                board(match, at: date, isCurrent: path.last == screen)
+            } else {
+                gone(at: date)
+            }
+        case let .week(id)?:
+            if let match = pages.first(where: { $0.id == id }), match.hasWeek(at: date) {
+                WatchWeekView(match: match)
+            } else {
+                gone(at: date)
+            }
         }
+    }
+
+    /// A pushed match that left with the clock.
+    private func gone(at date: Date) -> some View {
+        Color.clear.onAppear {
+            let kept = WatchRootView.pruned(path, drawn: drawn, at: date)
+            if kept != path { path = kept }
+        }
+    }
+
+    /// A tap on a duel that has started opens its week.
+    private func board(_ match: CompetitionWidgetSnapshot.Match, at date: Date, isCurrent: Bool) -> some View {
+        let hasWeek = match.hasWeek(at: date)
+        return WatchBoardPage(model: model, match: match, date: date, isCurrent: isCurrent)
+            .contentShape(Rectangle())
+            .onTapGesture { if hasWeek { path.append(.week(match.id)) } }
+            .accessibilityAddTraits(hasWeek ? .isButton : [])
+            .accessibilityAction { if hasWeek { path.append(.week(match.id)) } }
+    }
+}
+
+/// Two or more matches, one row each in the Board's order: name, one line
+/// and the number that matters. A row opens its Board.
+private struct WatchCard: View {
+    @ObservedObject var model: WatchSnapshotModel
+    let pages: [CompetitionWidgetSnapshot.Match]
+    let date: Date
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 0) {
+                ForEach(pages, id: \.id) { match in
+                    let row = match.cardRow(at: date, firstSight: model.seen.isFirstSight(of: match, at: date))
+                    NavigationLink(value: WatchRootView.Screen.board(match.id)) {
+                        HStack(alignment: .firstTextBaseline, spacing: 6) {
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(row.name)
+                                    .font(.themeLabel)
+                                    .tracking(1.2)
+                                    .textCase(.uppercase)
+                                    .privacySensitive(match.group == nil)
+                                Text(row.line)
+                                    .font(.footnote)
+                                    .privacySensitive()
+                            }
+                            .foregroundStyle(Theme.secondary)
+                            .lineLimit(1)
+                            Spacer(minLength: 0)
+                            Text(row.value)
+                                .font(.score(size: 22))
+                                .foregroundStyle(row.isYours ? Theme.you : Theme.ink)
+                                .lineLimit(1)
+                                .fixedSize()
+                                .privacySensitive()
+                        }
+                        .padding(.vertical, 6)
+                        .overlay(alignment: .bottom) {
+                            Rectangle().fill(Theme.outline).frame(height: 1)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(row.spoken)
+                    .accessibilityIdentifier("watch.card.row")
+                }
+            }
+            .padding(.horizontal, 2)
+        }
+        .accessibilityIdentifier("watch.card")
+    }
+}
+
+/// A duel day by day: your points in amber, theirs in ink, a dash for none.
+private struct WatchWeekView: View {
+    let match: CompetitionWidgetSnapshot.Match
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: 0) {
+                    label(match.name)
+                        .privacySensitive()
+                    label(" · Week")
+                        .layoutPriority(1)
+                }
+                ForEach(Array(match.weekRows().enumerated()), id: \.offset) { _, row in
+                    HStack(alignment: .firstTextBaseline, spacing: 0) {
+                        label(row.day)
+                            .frame(width: 24, alignment: .leading)
+                        points(row.you, Theme.you)
+                        Spacer(minLength: 8)
+                        points(row.them, Theme.ink)
+                    }
+                    .accessibilityElement(children: .ignore)
+                    .accessibilityLabel(
+                        row.you == nil && row.them == nil
+                            ? "\(row.spoken). No points."
+                            : "\(row.spoken). You \(row.you ?? "no points"). \(match.name) \(row.them ?? "no points")."
+                    )
+                }
+            }
+            .padding(.horizontal, 2)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .accessibilityIdentifier("watch.week")
+    }
+
+    private func label(_ text: String) -> some View {
+        Text(text)
+            .font(.themeLabel)
+            .tracking(1.2)
+            .textCase(.uppercase)
+            .foregroundStyle(Theme.secondary)
+            .lineLimit(1)
+    }
+
+    private func points(_ text: String?, _ color: Color) -> some View {
+        Text(text ?? "–")
+            .font(.score(size: 15))  // seven days and the header fit 40 mm
+            .foregroundStyle(text == nil ? Theme.secondary : color)
+            .lineLimit(1)
+            .privacySensitive()
     }
 }
 
@@ -75,7 +247,7 @@ private struct WatchBoardPage: View {
     @ObservedObject var model: WatchSnapshotModel
     let match: CompetitionWidgetSnapshot.Match
     let date: Date
-    /// The Crown's page. `TabView` builds its neighbours too.
+    /// On top: a Board under a pushed screen isn't being looked at.
     let isCurrent: Bool
 
     /// How far the first-result clock has run. First sight itself is derived
