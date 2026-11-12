@@ -126,6 +126,8 @@ struct BrandMark: View {
     /// Like the website, the ring bars grow out of the slash, where all
     /// three end: once on appear, again on each tap.
     var grows = false
+    /// The mark as a spinner: while true, the bars keep growing out of the slash.
+    var spins = false
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var plays = 0
@@ -148,6 +150,13 @@ struct BrandMark: View {
         .aspectRatio(1.25, contentMode: .fit)
         .contentShape(Rectangle())
         .onAppear(perform: play)
+        .task(id: spins) {
+            // One lap is the keyframes' 0.75 s. Reduce Motion leaves it still.
+            while spins, !reduceMotion, !Task.isCancelled {
+                plays += 1
+                try? await Task.sleep(for: .seconds(0.75))
+            }
+        }
         .gesture(TapGesture().onEnded(play), including: grows ? .all : .subviews)
         .accessibilityHidden(true)
     }

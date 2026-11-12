@@ -327,3 +327,202 @@ struct CompetitionWhatItTakesPanel: View {
         "\(takes.dayOrdinal)-\(takes.points == nil)"
     }
 }
+
+// MARK: Today, from the Home logo
+
+/// Today's rings for the sheet the Home logo opens.
+struct CompetitionTodayRings: Equatable, Sendable {
+    let panel: CompetitionRingPanel
+    /// Today's points so far; nil when the reading has no score.
+    let points: Double?
+    /// "Updated 9:41 AM"; nil before the first full read.
+    let updated: String?
+}
+
+/// The first match that is scoring today and has a reading for it. Every live
+/// match reads the same rings, so the first one speaks for the day.
+func competitionTodayRings(
+    _ competitions: [LocalCompetitionPresentation],
+    locale: Locale = .current,
+    timeZone: TimeZone = .current
+) -> CompetitionTodayRings? {
+    for competition in competitions {
+        switch competition.lifecycle {
+        case .active, .endsToday: break
+        default: continue
+        }
+        guard let ordinal = competition.currentDayOrdinal,
+              let day = competition.days.first(where: { $0.ordinal == ordinal }),
+              let panel = competitionRingPanel(day, locale: locale)
+        else { continue }
+        let points = panel.rows.compactMap(\.points)
+        return CompetitionTodayRings(
+            panel: panel,
+            points: points.count == panel.rows.count ? points.reduce(0, +) : nil,
+            updated: competition.lastSuccessfulFullWindowRefreshAt.map {
+                "Updated \(competitionUpdatedText($0, now: competition.evaluatedAt, locale: locale, timeZone: timeZone))"
+            }
+        )
+    }
+    return nil
+}
+
+/// Your three rings today as bars, with the points each has earned.
+struct CompetitionTodayRingsSheet: View {
+    let competitions: [LocalCompetitionPresentation]
+
+    @Environment(\.locale) private var locale
+    @Environment(\.timeZone) private var timeZone
+    @State private var height: CGFloat = 240
+    @State private var isShown = false
+
+    private let colors = [Theme.move, Theme.exercise, Theme.stand]
+
+    var body: some View {
+        let today = competitionTodayRings(competitions, locale: locale, timeZone: timeZone)
+        ScrollView {
+            VStack(alignment: .leading, spacing: 18) {
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .firstTextBaseline) {
+                        SectionLabel("YOUR RINGS TODAY")
+                        Spacer(minLength: 8)
+                        updated(today)
+                    }
+                    VStack(alignment: .leading, spacing: 4) {
+                        SectionLabel("YOUR RINGS TODAY")
+                        updated(today)
+                    }
+                }
+                if let today {
+                    rings(today)
+                } else {
+                    Text("No match is scoring today. Your rings show here from Day 1.")
+                        .foregroundStyle(Theme.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("home.todayRings.empty")
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 20)
+            .padding(.top, 28)
+            .padding(.bottom, 20)
+            .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height = $0 }
+        }
+        .scrollBounceBehavior(.basedOnSize)
+        .background(Theme.ground)
+        // As tall as its content; a taller one scrolls.
+        .presentationDetents([.height(height)])
+        .presentationDragIndicator(.visible)
+        .presentationBackground(Theme.ground)
+        .onAppear { isShown = true }
+    }
+
+    @ViewBuilder
+    private func updated(_ today: CompetitionTodayRings?) -> some View {
+        if let updated = today?.updated {
+            Text(updated)
+                .font(.themeLabel)
+                .tracking(1.2)
+                .textCase(.uppercase)
+                .foregroundStyle(Theme.secondary)
+        }
+    }
+
+    private func rings(_ today: CompetitionTodayRings) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 14) {
+                ForEach(Array(today.panel.rows.enumerated()), id: \.offset) { index, row in
+                    // 1 point per 1% of the ring: 100 closes it.
+                    let closes = isShown ? (row.points ?? 0) / 100 : 0
+                    GridRow {
+                        Text(row.title)
+                            .font(.themeLabel)
+                            .tracking(1.2)
+                            .textCase(.uppercase)
+                            .foregroundStyle(Theme.ink)
+                        TodayRingBar(closes: closes, color: colors[index])
+                            .frame(height: 14)
+                            .moving(Motion.grow(index, of: 3), value: closes)
+                        Text(competitionPointsText(row.points, locale: locale))
+                            .font(.headline.weight(.heavy).width(.condensed).monospacedDigit())
+                            .foregroundStyle(Theme.ink)
+                            .gridColumnAlignment(.trailing)
+                    }
+                }
+            }
+            Group {
+                if let points = today.points {
+                    Text(competitionPointsText(points, locale: locale))
+                        .fontWeight(.semibold)
+                        .foregroundStyle(Theme.ink)
+                        + Text(" of \(Self.dailyMaximum) points today")
+                } else {
+                    Text("No points yet today")
+                }
+            }
+            .font(.subheadline)
+            .foregroundStyle(Theme.secondary)
+            if today.panel.isPaused {
+                Text("Activity tracking paused")
+                    .font(.caption.bold())
+                    .foregroundStyle(Theme.ink)
+            }
+            if let note = today.panel.note {
+                Text(note)
+                    .font(.caption)
+                    .foregroundStyle(Theme.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(
+            today.panel.accessibilityLabel + " " + (today.points.map {
+                "\(competitionPointsAccessibilityText($0, locale: locale)) of \(Self.dailyMaximum) today."
+            } ?? "No points yet today.")
+        )
+        .accessibilityIdentifier("home.todayRings")
+    }
+
+    private static let dailyMaximum = Int(ActivityScore.maximumDailyPoints)
+}
+
+/// Two slanted segments, one per 100% of the ring: the first full means the
+/// ring is closed, both full means it has earned all a ring can.
+private struct TodayRingBar: View {
+    let closes: Double
+    let color: Color
+
+    var body: some View {
+        TodayRingSegments(closes: 2)
+            .fill(Theme.track)
+            .overlay { TodayRingSegments(closes: closes).fill(color) }
+    }
+}
+
+/// One shape, so a growing bar fills its first segment before its second.
+private struct TodayRingSegments: Shape {
+    /// 0...2: how much of the two segments to draw.
+    var closes: Double
+
+    var animatableData: Double {
+        get { closes }
+        set { closes = newValue }
+    }
+
+    func path(in rect: CGRect) -> Path {
+        let gap: CGFloat = 4
+        let width = (rect.width - gap) / 2
+        var path = Path()
+        for segment in 0..<2 {
+            let fill = min(1, max(0, closes - Double(segment)))
+            guard fill > 0 else { continue }
+            path.addPath(SlantedBar().path(in: CGRect(
+                x: rect.minX + CGFloat(segment) * (width + gap),
+                y: rect.minY,
+                width: width * fill,
+                height: rect.height
+            )))
+        }
+        return path
+    }
+}

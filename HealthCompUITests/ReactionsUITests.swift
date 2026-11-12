@@ -336,6 +336,40 @@ final class ReactionsUITests: XCTestCase {
     /// never sends a reaction. Each drag here used to send one: the sheet's
     /// own drag didn't cancel the chip's touch. Sam's first save fails, so
     /// one stray send shows the error and a second selects a chip.
+    // MARK: The Home logo
+
+    /// The logo updates the scores, then opens today's rings. In this lab an
+    /// update is what brings Jordan's Day 3 reaction.
+    func testLogoUpdatesThenShowsTodaysRings() {
+        launch()
+        let logo = app.buttons["home.logo"]
+        XCTAssertTrue(logo.waitForExistence(timeout: 5))
+        XCTAssertEqual(logo.label, "Today’s rings")
+        let rings = app.otherElements["home.todayRings"]
+        XCTAssertFalse(rings.exists)
+        let before = card("active", "Jordan")
+        XCTAssertTrue(before.waitForExistence(timeout: 5))
+        XCTAssertFalse(before.label.contains("Fire"), before.label)
+
+        logo.tap()
+        XCTAssertTrue(rings.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["YOUR RINGS TODAY"].exists)
+        XCTAssertTrue(rings.label.hasPrefix("Your rings. Move, "), rings.label)
+        XCTAssertTrue(rings.label.hasSuffix(" points of 600 today."), rings.label)
+
+        rings.swipeDown(velocity: .fast)
+        XCTAssertTrue(waitFor(rings, "exists == false", timeout: 3))
+        let jordan = card("active", "Jordan")
+        XCTAssertTrue(
+            waitFor(jordan, "label ENDSWITH '. Fire. Jordan reacted to your Day 3'", timeout: 5),
+            jordan.label
+        )
+
+        // And again, with nothing new to bring.
+        logo.tap()
+        XCTAssertTrue(rings.waitForExistence(timeout: 5))
+    }
+
     func testDraggingTheDrawerFromAChipSendsNoReaction() {
         launch()
         open("active", "Sam")
