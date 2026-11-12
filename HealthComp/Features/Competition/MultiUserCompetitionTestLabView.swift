@@ -297,6 +297,9 @@ private struct MultiUserCompetitionSharingTestLabView: View {
     init(scenario: MultiUserCompetitionTestLabScenario) {
         self.scenario = scenario
         _recapPeriod = State(initialValue: scenario == .month ? CompetitionMonthFixture.october : nil)
+        _personPlace = State(initialValue: CompetitionPersonPlace(
+            showsOwnProfile: ProcessInfo.processInfo.arguments.contains("--own-profile")
+        ))
         _ = Self.resetReactionsSeen
     }
 
@@ -360,9 +363,21 @@ private struct MultiUserCompetitionSharingTestLabView: View {
                     switch route {
                     case .history:
                         CompetitionHistoryView(publication: publication, openRecap: { recapPeriod = $0 })
-                    case .friends, .profile, .ownProfile:
-                        // The sharing lab has no friends or profiles.
+                    case .friends, .profile:
+                        // The sharing lab has no friends or profiles of others.
                         EmptyView()
+                    case .ownProfile:
+                        // `--own-profile` opens it; nothing is shared or edited here.
+                        CompetitionOwnProfileView(
+                            publication: publication, name: "Beta Alice",
+                            sharesCareer: nil, setSharesCareer: { _ in }, edit: {}
+                        )
+                    case .ownBadges:
+                        CompetitionBadgesView(publication: publication) {
+                            homeStack.wrappedValue.append(.competition($0))
+                        }
+                    case .ownRecords:
+                        CompetitionOwnRecordsView(publication: publication)
                     case let .person(identity):
                         CompetitionPersonView(
                             publication: publication,

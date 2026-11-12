@@ -312,6 +312,18 @@ struct MainTabView: View {
                         CompetitionRecordsView(publication: publication, opponentIdentity: identity)
                             .toolbarRole(.editor)
                     }
+                case .ownBadges:
+                    if let publication = store.competition.publication {
+                        CompetitionBadgesView(publication: publication) {
+                            homeStack.wrappedValue.append(.competition($0))
+                        }
+                        .toolbarRole(.editor)
+                    }
+                case .ownRecords:
+                    if let publication = store.competition.publication {
+                        CompetitionOwnRecordsView(publication: publication)
+                            .toolbarRole(.editor)
+                    }
                 case let .competition(id):
                     competitionScreen(id)
                         .toolbarRole(.editor)
