@@ -273,6 +273,7 @@ jobs:
               GroupMatchLiveDoublesUITests/testBanterShowsUnderTheLeadLine
               GroupMatchResultUITests/testFreeForAllResultShowsSharedPlacesAndRematch
               GroupMatchResultUITests/testDoublesResultShowsTeamsTiesAndWhoCarried
+              GroupMatchResultUITests/testJudgesRevealPlaysOnceBeforeAFourWayResult
               GroupMatchVersusUITests/testReplaysFromTheMenuOnALaterDay
               GroupMatchHistoryUITests/testGroupMatchesSitBelowTheDuelRecordOnlyWhenThereAreSome
               VersusIntroUITests/testEveryMatchupEndsByItself
