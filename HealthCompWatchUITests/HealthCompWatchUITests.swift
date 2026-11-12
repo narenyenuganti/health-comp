@@ -178,7 +178,8 @@ final class HealthCompWatchUITests: XCTestCase {
 
         back(app)
         XCTAssertTrue(week.waitForNonExistence(timeout: 5))
-        XCTAssertTrue(board.waitForExistence(timeout: 5))
+        // A fresh query: the one resolved before the push can miss the Board after the pop.
+        XCTAssertTrue(element(app, "watch.match").waitForExistence(timeout: 5))
     }
 
     /// No week for a group: its Board stays put.

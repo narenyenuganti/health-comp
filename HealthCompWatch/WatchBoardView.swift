@@ -106,7 +106,9 @@ private struct WatchScreen: View {
             .animation(Motion.fade, value: min(pages.count, 2))
         case let .board(id)?:
             if let match = pages.first(where: { $0.id == id }) {
+                // The back button reaches below the safe area on 40 mm.
                 board(match, at: date, isCurrent: path.last == screen)
+                    .padding(.top, 12)
             } else {
                 gone(at: date)
             }
