@@ -262,6 +262,7 @@ jobs:
               NudgeUITests/testFailedNudgeRetriesAndARefusalExplains
               MultiUserCompetitionUITests/testReactionsOnHomeMatchDayDrawerAndResult
               ReactionsUITests/testDraggingTheDrawerFromAChipSendsNoReaction
+              ReactionsUITests/testLogoUpdatesThenShowsTodaysRings
               LiveActivityUITests/testPreviewShowsEveryScoreStateInTheAppsWords
               PracticeMatchUITests/testAFailedStartExplainsOnTheSheetAndAReopenedSheetStartsClean
               NotificationChoicesUITests/testSwitchesRegisterServerHeldKindsAndRetryAfterAFailure

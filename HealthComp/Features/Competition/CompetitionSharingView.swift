@@ -40,6 +40,8 @@ struct CompetitionSharingView: View {
     var refresh: (@Sendable () async -> Void)? = nil
     /// Opens the month or year deck; nil hides its Home row.
     var openRecap: ((CompetitionRecapPeriod) -> Void)? = nil
+    /// The logo's update is running: live matches say so where they say when they end.
+    var isUpdating = false
 
     // ponytail: in-memory, a dismissed row returns after relaunch within its 24 h; persist per profile if that annoys
     @State private var dismissedChallengeIDs: Set<CompetitionID> = []
@@ -85,7 +87,8 @@ struct CompetitionSharingView: View {
                                     competition: hero,
                                     source: publication.source,
                                     belt: belt,
-                                    reaction: unseen(hero)
+                                    reaction: unseen(hero),
+                                    isUpdating: isUpdating
                                 )
                             }
                             .buttonStyle(CompetitionPressButtonStyle())
@@ -112,7 +115,8 @@ struct CompetitionSharingView: View {
                                             source: publication.source,
                                             isCompact: true,
                                             belt: belt,
-                                            reaction: unseen(competition)
+                                            reaction: unseen(competition),
+                                            isUpdating: isUpdating
                                         )
                                     }
                                     .buttonStyle(CompetitionPressButtonStyle())
@@ -599,6 +603,7 @@ private struct CompetitionHeroCard: View {
     var belt: CompetitionBelt? = nil
     /// An unseen reaction from the other person.
     var reaction: CompetitionReaction? = nil
+    var isUpdating = false
 
     @Environment(\.locale) private var locale
     @Environment(\.timeZone) private var timeZone
@@ -606,6 +611,7 @@ private struct CompetitionHeroCard: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
             statusRow
+                .animation(Motion.fade, value: isUpdating)
 
             // With scores up, the belt sits on its holder's side of the board.
             if !competitionShouldShowScores(competition.lifecycle),
@@ -703,7 +709,10 @@ private struct CompetitionHeroCard: View {
 
     @ViewBuilder
     private var statusTrailing: some View {
-        if let timing = status.timing {
+        if isUpdating {
+            Text("Updating…")
+                .foregroundStyle(Theme.secondary)
+        } else if let timing = status.timing {
             Text(timing)
                 .foregroundStyle(Theme.secondary)
                 .fixedSize(horizontal: false, vertical: true)

@@ -644,6 +644,73 @@ final class CompetitionPresentationTests: XCTestCase {
         XCTAssertNil(competitionRingPanel(ringDay(accepted: nil, latest: nil, points: 300)))
     }
 
+    func testTodayRingsComeFromTheFirstMatchScoringTodayThatHasAReading() throws {
+        let en = Locale(identifier: "en_US")
+        let utc = try XCTUnwrap(TimeZone(identifier: "UTC"))
+        let now = Date(timeIntervalSince1970: 1_786_867_200)
+        let readAt = now.addingTimeInterval(-90 * 60)
+        let snapshot = try rings(420, 36, 9)
+        let scored = ringDay(accepted: snapshot, latest: snapshot, points: 279)
+        let unread = ringDay(accepted: nil, latest: nil, points: nil)
+        func match(
+            _ lifecycle: LocalCompetitionLifecyclePresentation,
+            today: Int?,
+            day: LocalCompetitionDayPresentation,
+            readAt: Date? = nil
+        ) -> LocalCompetitionPresentation {
+            LocalCompetitionPresentation(
+                id: CompetitionID(UUID()),
+                ownerDisplayName: "Naren",
+                opponentDisplayName: "Sam",
+                lifecycle: lifecycle,
+                acceptedConfiguration: nil,
+                userPoints: 0,
+                opponentPoints: 0,
+                days: [day],
+                currentDayOrdinal: today,
+                lastRefresh: nil,
+                tally: nil,
+                terminalResult: nil,
+                evaluatedAt: now,
+                lastSuccessfulFullWindowRefreshAt: readAt
+            )
+        }
+        let notScoring = [
+            match(.scheduled, today: nil, day: scored),
+            match(.tallying(startedAt: now), today: 1, day: scored),
+            match(.active(dayOrdinal: 1), today: 1, day: unread),
+        ]
+        XCTAssertNil(competitionTodayRings(notScoring, locale: en, timeZone: utc))
+        XCTAssertNil(competitionTodayRings([], locale: en, timeZone: utc))
+
+        let today = try XCTUnwrap(competitionTodayRings(
+            notScoring + [match(.endsToday, today: 1, day: scored, readAt: readAt)],
+            locale: en,
+            timeZone: utc
+        ))
+        XCTAssertEqual(today.panel.rows.map(\.points), [84, 120, 75])
+        XCTAssertEqual(today.points, 279)
+        XCTAssertEqual(
+            today.updated,
+            "Updated " + competitionUpdatedText(readAt, now: now, locale: en, timeZone: utc)
+        )
+
+        // Synced rings that can't be scored still show, with no total.
+        let paused = try makeSnapshot(
+            moveMode: .activeEnergyKilocalories,
+            standMode: .standHours,
+            pauseState: .paused
+        )
+        let unscored = try XCTUnwrap(competitionTodayRings(
+            [match(.active(dayOrdinal: 1), today: 1, day: ringDay(accepted: nil, latest: paused, points: nil))],
+            locale: en,
+            timeZone: utc
+        ))
+        XCTAssertNil(unscored.points)
+        XCTAssertNil(unscored.updated)
+        XCTAssertTrue(unscored.panel.isPaused)
+    }
+
     func testUnknownStandModeReadsStandOrRoll() throws {
         let snapshot = try makeSnapshot(
             moveMode: .activeEnergyKilocalories,
