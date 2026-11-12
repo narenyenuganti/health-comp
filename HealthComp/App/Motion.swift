@@ -9,7 +9,12 @@ import SwiftUI
 enum Motion {
     /// The brand curve, the only overshoot. Geometry only, never colour.
     /// First full length at about 238 ms: key haptics and later beats off that.
-    static let grow = Animation.timingCurve(0.25, 1.2, 0.5, 1, duration: 0.45)
+    static let grow = Animation.timingCurve(growCurve, duration: 0.45)
+    /// The same curve for motion drawn from a clock, like the launch mark.
+    static let growCurve = UnitCurve.bezier(
+        startControlPoint: UnitPoint(x: 0.25, y: 1.2),
+        endControlPoint: UnitPoint(x: 0.5, y: 1)
+    )
     /// The mark's envelope: 0.3 s of stagger however many items there are.
     static func grow(_ index: Int, of count: Int) -> Animation {
         grow.delay(0.3 * Double(index) / Double(max(count - 1, 1)))

@@ -200,13 +200,17 @@ struct CompetitionWeekStrip: View {
     let currentDayOrdinal: Int?
 
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.launchStage) private var launchStage
 
     var body: some View {
         HStack(alignment: .top, spacing: 6) {
-            ForEach(days, id: \.ordinal) { day in
+            ForEach(Array(days.enumerated()), id: \.element.ordinal) { index, day in
                 VStack(spacing: 6) {
+                    // At launch the bars grow left to right behind the scores.
                     bar(day)
                         .frame(height: 10)
+                        .scaleEffect(x: launchStage == .waiting ? 0 : 1, anchor: .leading)
+                        .moving(Motion.grow(index, of: days.count), value: launchStage)
                     // Seven columns can't hold larger weekday text; the bars
                     // still read in order.
                     if dynamicTypeSize < .xxLarge {
