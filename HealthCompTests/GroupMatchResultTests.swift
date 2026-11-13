@@ -6,6 +6,84 @@ import XCTest
 
 @MainActor
 final class GroupMatchResultTests: XCTestCase {
+    func testJudgesRevealReadsEveryFormatFromTheServersPlaces() throws {
+        let won = try XCTUnwrap(CompetitionJudgesBout(GroupMatchFixtures.routed(.resultFFAWon)!))
+        XCTAssertEqual(won.sides.map(\.label), ["YOU", "SAM", "PRIYA", "LEO"])
+        XCTAssertEqual(won.sides.map(\.place), [1, 2, 3, 4])
+        XCTAssertEqual(won.sides[0].cardTotal(0) ?? 0, 2941 * 0.4, accuracy: 0.001)
+        XCTAssertEqual(won.label, "UNANIMOUS DECISION")
+        XCTAssertEqual(won.title, "YOUR WINNER")
+        XCTAssertEqual(won.heading, "YOU VS SAM VS PRIYA VS LEO · FINAL BELL")
+        // Last place loses its light first; the last two walk to the referee.
+        XCTAssertEqual(won.ring.clock.cuts, [4: 0.8, 3: 1.5])
+        XCTAssertEqual(won.ring.clock.walk, 2.2)
+        XCTAssertEqual(won.ring.clock.raise, 3.4, accuracy: 0.001)
+        XCTAssertEqual(won.ring.stances.map(\.isOut), [false, false, true, true])
+        XCTAssertEqual(won.ring.stances.prefix(2).map(\.x), [72, 288])
+
+        let tied = try XCTUnwrap(CompetitionJudgesBout(GroupMatchFixtures.routed(.resultFFATied)!))
+        XCTAssertEqual(tied.label, "DRAW")
+        XCTAssertEqual(tied.title, "IT’S A DRAW")
+        XCTAssertEqual(tied.ring.stances.map(\.won), [true, true, false, false])
+
+        // You and Priya share 3rd: both lights cut together, Leo's arm goes up.
+        let third = try XCTUnwrap(CompetitionJudgesBout(GroupMatchFixtures.routed(.resultFFATiedThird)!))
+        XCTAssertEqual(third.title, "THE WINNER, LEO")
+        XCTAssertEqual(third.ring.clock.cuts, [3: 0.8])
+        XCTAssertEqual(third.ring.stances.map(\.isOut), [true, false, true, false])
+
+        let doubles = try XCTUnwrap(CompetitionJudgesBout(GroupMatchFixtures.routed(.resultDoubles)!))
+        XCTAssertEqual(doubles.sides.map(\.label), ["YOU + PRIYA", "SAM + LEO"])
+        XCTAssertEqual(doubles.fighters.map(\.name), ["You", "Priya", "Sam", "Leo"])
+        XCTAssertEqual(doubles.title, "YOUR WINNERS")
+        XCTAssertEqual(doubles.ring.clock.raise, 1)
+        XCTAssertEqual(doubles.ring.stances.map(\.isHeld), [true, false, true, false])
+        XCTAssertEqual(
+            try XCTUnwrap(CompetitionJudgesBout(GroupMatchFixtures.routed(.resultDoublesTied)!)).title, "IT’S A DRAW"
+        )
+        // No result yet, no reveal.
+        XCTAssertNil(CompetitionJudgesBout(GroupMatchFixtures.routed(.liveFFA)!))
+    }
+
+    func testJudgesRevealWithoutRingsOrWithATieForSecond() {
+        func bout(_ places: [Int], cards: [[Double?]]) -> CompetitionJudgesBout {
+            CompetitionJudgesBout(
+                format: .freeForAll,
+                fighters: places.indices.map { .init(name: "P\($0)", isYou: $0 == 0, side: $0) },
+                sides: places.enumerated().map { index, place in
+                    .init(label: "P\(index)", isYours: index == 0, place: place, total: Double(700 - place), cards: cards)
+                },
+                dayLabels: (1...7).map(String.init),
+                label: ""
+            )
+        }
+        // A tie for second: the lights cut until the winner stands alone, with no referee.
+        let second = bout([1, 2, 2, 4], cards: []).ring
+        XCTAssertFalse(second.clock.hasReferee)
+        XCTAssertNil(second.clock.walk)
+        XCTAssertEqual(second.clock.cuts, [4: 0.8, 2: 1.5])
+        XCTAssertEqual(second.clock.raise, 2.5, accuracy: 0.001)
+        XCTAssertEqual(second.stances.map(\.isOut), [false, true, true, true])
+        // Three share first: only last place is cut and all three raise.
+        let shared = bout([1, 1, 1, 4], cards: []).ring
+        XCTAssertEqual(shared.clock.cuts, [4: 0.8])
+        XCTAssertEqual(shared.clock.raise, 1.8, accuracy: 0.001)
+        XCTAssertEqual(shared.stances.map(\.isOut), [false, false, false, true])
+        // Cards that add up the same on different days are even, not won.
+        let even = CompetitionJudgesBout.Side(
+            label: "", isYours: true, place: 1, total: 0,
+            cards: [[1.11, 2.22, 3.33, 4.44, 0, 0, 0], [5.55, 5.55, 0, 0, 0, 0, 0], []]
+        )
+        XCTAssertEqual(even.cardTotal(0), even.cardTotal(1))
+        XCTAssertNil(even.cardTotal(2))
+        XCTAssertEqual(competitionJudgesVerdict(winner: [3, 2, 1.0000000001], rest: [[2, 1, 1]]), "MAJORITY DECISION")
+        // A bot has no rings: the cards never decide it.
+        let empty = Array(repeating: [Double?](repeating: nil, count: 7), count: 3)
+        XCTAssertEqual(CompetitionJudgesBout.label(bout([1, 2, 3], cards: empty).sides), "BY TOTAL POINTS")
+        XCTAssertEqual(competitionJudgesVerdict(winner: [3, 2, 1], rest: [[2, 2, 0], [1, 1, 5]]), "BY TOTAL POINTS")
+        XCTAssertEqual(competitionJudgesVerdict(winner: [3, 2, 6], rest: [[2, 2, 0], [1, 1, 5]]), "MAJORITY DECISION")
+    }
+
     func testDoublesCanTieOnTheServersPlaces() {
         let match = GroupMatchFixtures.routed(.resultDoublesTied)!
         XCTAssertEqual(match.standingRows.map(\.place), [1, 1])
