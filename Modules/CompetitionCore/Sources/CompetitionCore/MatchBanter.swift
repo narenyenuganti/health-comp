@@ -63,7 +63,11 @@ public enum MatchBanter {
     /// Second person when the viewer is the subject. The named partner or leader gets that
     /// template's own wording, so a viewer never sees their own name. Everyone else,
     /// including a bot seat, gets third person.
-    public static func render(_ line: Line, names: [UUID: String], viewerSeatID: UUID) -> String {
+    /// `formatPoints` lets the app group digits the way its other gaps read.
+    public static func render(
+        _ line: Line, names: [UUID: String], viewerSeatID: UUID,
+        formatPoints: (Int) -> String = { String($0) }
+    ) -> String {
         let bank = templates(for: line.kind)
         precondition(line.subjectSeatIDs.isEmpty == false && bank.indices.contains(line.templateIndex))
         let template = bank[line.templateIndex]
@@ -78,7 +82,7 @@ public enum MatchBanter {
         }
         var rendered = text
         if let percent = line.percent { rendered = rendered.replacingOccurrences(of: "{percent}", with: String(percent)) }
-        if let points = line.points { rendered = rendered.replacingOccurrences(of: "{points}", with: String(points)) }
+        if let points = line.points { rendered = rendered.replacingOccurrences(of: "{points}", with: formatPoints(points)) }
         rendered = rendered.replacingOccurrences(of: "{subject}", with: names[subject] ?? "")
         if line.subjectSeatIDs.count > 1 {
             let other = names[line.subjectSeatIDs[1]] ?? ""
@@ -297,8 +301,8 @@ private enum MatchBanterCopy {
     ]
 
     static let farOffLead: [MatchBanter.Template] = [
-        .init(thirdPerson: "{subject} is {points} off the lead. Thoughts and prayers.",
-              secondPerson: "You are {points} off the lead. Thoughts and prayers."),
+        .init(thirdPerson: "{subject} is {points} off the lead. Pack a lunch.",
+              secondPerson: "You are {points} off the lead. Pack a lunch."),
         .init(thirdPerson: "{subject} is {points} off the lead. Send a postcard.",
               secondPerson: "You are {points} off the lead. Send a postcard."),
         .init(thirdPerson: "{subject} is {points} off the lead. {leader} is on page one.",

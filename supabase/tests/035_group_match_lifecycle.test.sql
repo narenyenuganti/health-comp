@@ -74,7 +74,8 @@ select is(public.accept_group_match(pg_temp.gid('lobby'))->>'state','pending','f
 select ok((select consumed_at is null and claimed_profile_id is null from public.competition_invites where competition_id=pg_temp.gid('lobby')),'shared invite remains unconsumed');
 select pg_temp.as_user(3);
 select is(public.accept_group_match(pg_temp.gid('lobby'))->>'state','scheduled','last accept schedules');
-select is((select start_day from public.competitions where id=pg_temp.gid('lobby')),current_date+1,'next local day');
+select is((select start_day from public.competitions where id=pg_temp.gid('lobby')),
+  (select (updated_at at time zone 'UTC')::date+1 from public.competitions where id=pg_temp.gid('lobby')),'next local day');
 select ok((select consumed_at is not null from public.competition_invites where competition_id=pg_temp.gid('lobby')),'only last accept consumes invite');
 select lives_ok($$select public.accept_group_match(pg_temp.gid('lobby'))$$,'accept retry idempotent');
 select lives_ok($$select public.decline_group_match(pg_temp.gid('lobby'))$$,'accepted seat can withdraw before day one');

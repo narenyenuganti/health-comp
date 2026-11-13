@@ -2,7 +2,7 @@ import CompetitionCore
 import SwiftUI
 
 /// Flat segments in the app's own surfaces, in place of the system's picker.
-private struct CompetitionSegments<Selection: Hashable>: View {
+struct CompetitionSegments<Selection: Hashable>: View {
     @Binding var selection: Selection
     let options: [(value: Selection, title: String)]
 
@@ -14,7 +14,9 @@ private struct CompetitionSegments<Selection: Hashable>: View {
                 let isSelected = option.value == selection
                 Button { selection = option.value } label: {
                     Text(option.title)
-                        .font(.subheadline.weight(.semibold).width(.condensed))
+                        // Weight and an outlined thumb mark the choice, not tone alone:
+                        // ground on control is only 1.2:1 in either mode.
+                        .font(.subheadline.weight(isSelected ? .heavy : .semibold).width(.condensed))
                         .foregroundStyle(isSelected ? Theme.ink : Theme.secondary)
                         .multilineTextAlignment(.center)
                         .frame(maxWidth: .infinity, minHeight: 44)
@@ -22,6 +24,10 @@ private struct CompetitionSegments<Selection: Hashable>: View {
                             if isSelected {
                                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                                     .fill(Theme.ground)
+                                    .overlay {
+                                        RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                            .strokeBorder(Theme.outline, lineWidth: 1)
+                                    }
                                     .matchedGeometryEffect(id: "thumb", in: thumb)
                             }
                         }
@@ -1066,8 +1072,7 @@ private struct CompetitionScoreboardPanel: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .font(.themeLabel)
-        .tracking(1.2)
+        .themeLabel()
         .textCase(.uppercase)
         // One static element: the hit-region audit treats a traitless
         // element as a control, and this row is read, never tapped.
@@ -1105,7 +1110,8 @@ private struct CompetitionScoreboardPanel: View {
             color: Theme.you,
             alignment: .leading,
             identifier: "competition.scoreHeader.naren",
-            profile: competitionOwnProfileRoute(for: competition)
+            profile: competitionOwnProfileRoute(for: competition),
+            profileName: competition.ownerDisplayName
         )
     }
 
@@ -1122,7 +1128,8 @@ private struct CompetitionScoreboardPanel: View {
             color: Theme.ink,
             alignment: alignment,
             identifier: "competition.scoreHeader.alex",
-            profile: competitionProfileRoute(for: competition)
+            profile: competitionProfileRoute(for: competition),
+            profileName: competition.opponentDisplayName
         )
     }
 
@@ -1134,15 +1141,15 @@ private struct CompetitionScoreboardPanel: View {
         color: Color,
         alignment: HorizontalAlignment,
         identifier: String,
-        profile: CompetitionHomeRoute?
+        profile: CompetitionHomeRoute?,
+        profileName: String
     ) -> some View {
         // Names may wrap at large sizes; scores never do.
         VStack(alignment: alignment, spacing: 4) {
             HStack(spacing: 8) {
                 avatar
                 Text(name.uppercased())
-                    .font(.themeLabel)
-                    .tracking(1.4)
+                    .themeLabel(tracking: 1.4)
                     .multilineTextAlignment(alignment == .trailing ? .trailing : .leading)
             }
             .modifier(CompetitionProfileTap(route: profile))
@@ -1157,7 +1164,7 @@ private struct CompetitionScoreboardPanel: View {
         .accessibilityLabel(
             "\(name), \(periodLabel) \(competitionPointsAccessibilityText(today)), \(competitionScoreTotalLabel(isProvisional: isProvisional).lowercased()) \(competitionPointsAccessibilityText(total))"
         )
-        .modifier(CompetitionProfileAction(route: profile, name: name))
+        .modifier(CompetitionProfileAction(route: profile, name: profileName))
     }
 
     // Visual only: each score block's label already speaks the period points.
@@ -1204,8 +1211,7 @@ private struct CompetitionScoreboardPanel: View {
 
     private var periodTitle: some View {
         Text(periodLabel.uppercased())
-            .font(.themeLabel)
-            .tracking(1.2)
+            .themeLabel()
             .foregroundStyle(Theme.secondary)
             .fixedSize()
     }
@@ -1372,8 +1378,7 @@ func competitionOwnerAvailabilityText(
 struct CompetitionProvisionalTag: View {
     var body: some View {
         Text("PROVISIONAL")
-            .font(.themeLabel)
-            .tracking(1.2)
+            .themeLabel()
             .foregroundStyle(Theme.secondary)
             .padding(.horizontal, 8)
             .padding(.vertical, 2)
@@ -1666,9 +1671,16 @@ private struct CompetitionNudgeControl: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .onChange(of: display) { old, new in
-            if case .button(_, isSending: true) = old, case let .sent(text) = new {
+            guard case .button(_, isSending: true) = old else { return }
+            switch new {
+            case let .sent(text):
                 Sounds.play(.sent)
                 AccessibilityNotification.Announcement(text).post()
+            // The button stays put, so a failure or refusal is otherwise silent.
+            case let .button(.some(text), _), let .notNeeded(text):
+                AccessibilityNotification.Announcement(text).post()
+            case .button(.none, _):
+                break
             }
         }
         .sensoryFeedback(trigger: display) { old, new in

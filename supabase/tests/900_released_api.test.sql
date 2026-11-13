@@ -98,6 +98,14 @@ select is_empty($released$
     where c.fn = r.fn and c.returns = r.returns
       and r.args <@ c.args and c.required <@ r.required
   )
+  -- PostgREST picks an overload by argument names alone and fails the call
+  -- (PGRST203) when two of them accept the names the build sends.
+  or (select count(*) from callable c
+      where c.fn = r.fn
+        and array(select split_part(x, ' ', 1) from unnest(r.args) x)
+          <@ array(select split_part(x, ' ', 1) from unnest(c.args) x)
+        and array(select split_part(x, ' ', 1) from unnest(c.required) x)
+          <@ array(select split_part(x, ' ', 1) from unnest(r.args) x)) <> 1
 $released$,
   'builds up to 1.0.4 (4) can still call every function they shipped with; if not, keep the old function and add the change as optional arguments or a new overload');
 

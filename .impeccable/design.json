@@ -1,0 +1,631 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-11-13T01:53:21Z",
+  "title": "Design System: HealthComp",
+  "extensions": {
+    "colorMeta": {
+      "move": {
+        "role": "secondary",
+        "displayName": "Move Red",
+        "canonical": "#E4003A",
+        "tonalRamp": [
+          "#170506",
+          "#431115",
+          "#781823",
+          "#B21A31",
+          "#EC2043",
+          "#FF7075",
+          "#FFA8A7",
+          "#FFDDDB"
+        ]
+      },
+      "exercise": {
+        "role": "secondary",
+        "displayName": "Exercise Green",
+        "canonical": "#009A4E",
+        "tonalRamp": [
+          "#040E07",
+          "#0E2C18",
+          "#124F29",
+          "#0F743C",
+          "#109C51",
+          "#66BA7F",
+          "#A0D9AF",
+          "#D8F8DF"
+        ]
+      },
+      "stand": {
+        "role": "secondary",
+        "displayName": "Stand Blue",
+        "canonical": "#0072BC",
+        "tonalRamp": [
+          "#050C14",
+          "#10273B",
+          "#19456A",
+          "#20659D",
+          "#2B87D2",
+          "#6BABE6",
+          "#A2CEF9",
+          "#D8F2FF"
+        ]
+      },
+      "you": {
+        "role": "primary",
+        "displayName": "Your Amber (text, light)",
+        "canonical": "#9C6500",
+        "tonalRamp": [
+          "#100A04",
+          "#31220E",
+          "#573C15",
+          "#81581A",
+          "#AD7523",
+          "#C89C64",
+          "#E3C39D",
+          "#FEEBD5"
+        ]
+      },
+      "you-dark": {
+        "role": "primary",
+        "displayName": "Your Amber (text, dark)",
+        "canonical": "#F2A100",
+        "tonalRamp": [
+          "#110902",
+          "#352002",
+          "#5E3800",
+          "#8C5200",
+          "#BB6E00",
+          "#D49842",
+          "#ECC18A",
+          "#FFEACB"
+        ]
+      },
+      "you-fill": {
+        "role": "primary",
+        "displayName": "Your Amber (fill)",
+        "canonical": "#F2A100",
+        "tonalRamp": [
+          "#110902",
+          "#352002",
+          "#5E3800",
+          "#8C5200",
+          "#BB6E00",
+          "#D49842",
+          "#ECC18A",
+          "#FFEACB"
+        ]
+      },
+      "on-you-fill": {
+        "role": "neutral",
+        "displayName": "On You Fill",
+        "canonical": "#111111",
+        "tonalRamp": [
+          "#0B0B0B",
+          "#252525",
+          "#424242",
+          "#616161",
+          "#828282",
+          "#A5A5A5",
+          "#C9C9C9",
+          "#EEEEEE"
+        ]
+      },
+      "ink": {
+        "role": "neutral",
+        "displayName": "Ink",
+        "canonical": "#111111",
+        "tonalRamp": [
+          "#0B0B0B",
+          "#252525",
+          "#424242",
+          "#616161",
+          "#828282",
+          "#A5A5A5",
+          "#C9C9C9",
+          "#EEEEEE"
+        ]
+      },
+      "ink-dark": {
+        "role": "neutral",
+        "displayName": "Ink (Dark)",
+        "canonical": "#F5F5F0",
+        "tonalRamp": [
+          "#0B0B0B",
+          "#252524",
+          "#424240",
+          "#61615E",
+          "#83837E",
+          "#A5A5A2",
+          "#C9C9C7",
+          "#EEEEED"
+        ]
+      },
+      "on-ink": {
+        "role": "neutral",
+        "displayName": "On Ink",
+        "canonical": "#FAFAF7",
+        "tonalRamp": [
+          "#0B0B0B",
+          "#252524",
+          "#424241",
+          "#61615F",
+          "#828280",
+          "#A5A5A3",
+          "#C9C9C8",
+          "#EEEEED"
+        ]
+      },
+      "on-ink-dark": {
+        "role": "neutral",
+        "displayName": "On Ink (Dark)",
+        "canonical": "#0F0F10",
+        "tonalRamp": [
+          "#0B0B0B",
+          "#252525",
+          "#424242",
+          "#616162",
+          "#828283",
+          "#A5A5A6",
+          "#C9C9CA",
+          "#EEEEEF"
+        ]
+      },
+      "ground": {
+        "role": "neutral",
+        "displayName": "Ground",
+        "canonical": "#FAFAF7",
+        "tonalRamp": [
+          "#0B0B0B",
+          "#252524",
+          "#424241",
+          "#61615F",
+          "#828280",
+          "#A5A5A3",
+          "#C9C9C8",
+          "#EEEEED"
+        ]
+      },
+      "ground-dark": {
+        "role": "neutral",
+        "displayName": "Ground (Dark)",
+        "canonical": "#0F0F10",
+        "tonalRamp": [
+          "#0B0B0B",
+          "#252525",
+          "#424242",
+          "#616162",
+          "#828283",
+          "#A5A5A6",
+          "#C9C9CA",
+          "#EEEEEF"
+        ]
+      },
+      "secondary": {
+        "role": "neutral",
+        "displayName": "Secondary",
+        "canonical": "#5E5E62",
+        "tonalRamp": [
+          "#0B0B0B",
+          "#252526",
+          "#424244",
+          "#616164",
+          "#828286",
+          "#A5A5A8",
+          "#C9C9CB",
+          "#EEEEF0"
+        ]
+      },
+      "secondary-dark": {
+        "role": "neutral",
+        "displayName": "Secondary (Dark)",
+        "canonical": "#A3A3A8",
+        "tonalRamp": [
+          "#0B0B0C",
+          "#252526",
+          "#424244",
+          "#616164",
+          "#828286",
+          "#A4A4A8",
+          "#C9C9CB",
+          "#EEEEF0"
+        ]
+      },
+      "tertiary": {
+        "role": "neutral",
+        "displayName": "Tertiary",
+        "canonical": "#6E6E73",
+        "tonalRamp": [
+          "#0B0B0C",
+          "#252526",
+          "#424244",
+          "#616165",
+          "#828287",
+          "#A4A4A9",
+          "#C9C9CC",
+          "#EEEEF0"
+        ]
+      },
+      "tertiary-dark": {
+        "role": "neutral",
+        "displayName": "Tertiary (Dark)",
+        "canonical": "#8E8E93",
+        "tonalRamp": [
+          "#0B0B0C",
+          "#252526",
+          "#424244",
+          "#616164",
+          "#828287",
+          "#A4A4A8",
+          "#C9C9CB",
+          "#EEEEF0"
+        ]
+      },
+      "faint": {
+        "role": "neutral",
+        "displayName": "Faint",
+        "canonical": "#B8B8B2",
+        "tonalRamp": [
+          "#0B0B0B",
+          "#252524",
+          "#42423F",
+          "#61615D",
+          "#83837D",
+          "#A5A5A1",
+          "#C9C9C6",
+          "#EEEEED"
+        ]
+      },
+      "faint-dark": {
+        "role": "neutral",
+        "displayName": "Faint (Dark)",
+        "canonical": "#48484D",
+        "tonalRamp": [
+          "#0B0B0C",
+          "#252526",
+          "#424244",
+          "#616165",
+          "#828287",
+          "#A4A4A9",
+          "#C9C9CC",
+          "#EEEEF0"
+        ]
+      },
+      "panel": {
+        "role": "neutral",
+        "displayName": "Panel",
+        "canonical": "#EFEFEA",
+        "tonalRamp": [
+          "#0B0B0B",
+          "#252524",
+          "#424240",
+          "#61615E",
+          "#83837E",
+          "#A5A5A2",
+          "#C9C9C7",
+          "#EEEEED"
+        ]
+      },
+      "panel-dark": {
+        "role": "neutral",
+        "displayName": "Panel (Dark)",
+        "canonical": "#19191B",
+        "tonalRamp": [
+          "#0B0B0B",
+          "#252526",
+          "#424243",
+          "#616163",
+          "#828284",
+          "#A5A5A7",
+          "#C9C9CA",
+          "#EEEEEF"
+        ]
+      },
+      "control": {
+        "role": "neutral",
+        "displayName": "Control",
+        "canonical": "#E6E6E0",
+        "tonalRamp": [
+          "#0B0B0B",
+          "#252524",
+          "#42423F",
+          "#61615D",
+          "#83837D",
+          "#A5A5A1",
+          "#C9C9C6",
+          "#EEEEED"
+        ]
+      },
+      "control-dark": {
+        "role": "neutral",
+        "displayName": "Control (Dark)",
+        "canonical": "#222225",
+        "tonalRamp": [
+          "#0B0B0B",
+          "#252526",
+          "#424244",
+          "#616164",
+          "#828285",
+          "#A5A5A8",
+          "#C9C9CB",
+          "#EEEEEF"
+        ]
+      },
+      "hairline": {
+        "role": "neutral",
+        "displayName": "Hairline",
+        "canonical": "#DEDED8",
+        "tonalRamp": [
+          "#0B0B0B",
+          "#252524",
+          "#42423F",
+          "#61615D",
+          "#83837D",
+          "#A5A5A1",
+          "#C9C9C6",
+          "#EEEEED"
+        ]
+      },
+      "hairline-dark": {
+        "role": "neutral",
+        "displayName": "Hairline (Dark)",
+        "canonical": "#2C2C30",
+        "tonalRamp": [
+          "#0B0B0C",
+          "#252526",
+          "#424244",
+          "#616164",
+          "#828286",
+          "#A4A4A8",
+          "#C9C9CB",
+          "#EEEEF0"
+        ]
+      },
+      "track": {
+        "role": "neutral",
+        "displayName": "Track",
+        "canonical": "#E2E2DC",
+        "tonalRamp": [
+          "#0B0B0B",
+          "#252524",
+          "#42423F",
+          "#61615D",
+          "#83837D",
+          "#A5A5A1",
+          "#C9C9C6",
+          "#EEEEED"
+        ]
+      },
+      "track-dark": {
+        "role": "neutral",
+        "displayName": "Track (Dark)",
+        "canonical": "#26262A",
+        "tonalRamp": [
+          "#0B0B0C",
+          "#252526",
+          "#424244",
+          "#616164",
+          "#828287",
+          "#A4A4A8",
+          "#C9C9CB",
+          "#EEEEF0"
+        ]
+      },
+      "outline": {
+        "role": "neutral",
+        "displayName": "Outline",
+        "canonical": "#CFCFC9",
+        "tonalRamp": [
+          "#0B0B0B",
+          "#252524",
+          "#42423F",
+          "#61615D",
+          "#83837D",
+          "#A5A5A1",
+          "#C9C9C6",
+          "#EEEEED"
+        ]
+      },
+      "outline-dark": {
+        "role": "neutral",
+        "displayName": "Outline (Dark)",
+        "canonical": "#3A3A40",
+        "tonalRamp": [
+          "#0B0B0C",
+          "#252527",
+          "#424245",
+          "#616166",
+          "#818288",
+          "#A4A4AA",
+          "#C9C9CD",
+          "#EEEEF0"
+        ]
+      },
+      "belt-well": {
+        "role": "neutral",
+        "displayName": "Belt Well",
+        "canonical": "#0F0F10",
+        "tonalRamp": [
+          "#0B0B0B",
+          "#252525",
+          "#424242",
+          "#616162",
+          "#828283",
+          "#A5A5A6",
+          "#C9C9CA",
+          "#EEEEEF"
+        ]
+      },
+      "belt-well-dark": {
+        "role": "neutral",
+        "displayName": "Belt Well (Dark)",
+        "canonical": "#19191B",
+        "tonalRamp": [
+          "#0B0B0B",
+          "#252526",
+          "#424243",
+          "#616163",
+          "#828284",
+          "#A5A5A7",
+          "#C9C9CA",
+          "#EEEEEF"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Score",
+        "purpose": "Scores and the verdict; sized with @ScaledMetric, 28 to 96pt by context."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "The one big statement on a result or ceremony screen."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Names and row leads."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Sentences and supporting detail."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Section and status labels, in capitals."
+      }
+    },
+    "shadows": [],
+    "motion": [
+      {
+        "name": "grow",
+        "value": "450ms cubic-bezier(0.25, 1.2, 0.5, 1)",
+        "purpose": "Length or possession changing once. Geometry only. The only overshoot."
+      },
+      {
+        "name": "settle",
+        "value": "300ms smooth spring, no bounce",
+        "purpose": "Anything live that moves or resizes."
+      },
+      {
+        "name": "fade",
+        "value": "200ms ease-out",
+        "purpose": "Appearance only; what motion becomes under Reduce Motion."
+      },
+      {
+        "name": "press",
+        "value": "140ms ease-out",
+        "purpose": "Touch."
+      },
+      {
+        "name": "late",
+        "value": "150ms ease-out after 200ms",
+        "purpose": "Anything that arrives after its cause, such as a spinner."
+      }
+    ],
+    "breakpoints": []
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "The one pinned action on a screen. Ink, never amber.",
+      "html": "<button class=\"ds-btn-primary\">Challenge Sam</button>",
+      "css": ".ds-btn-primary { font-family: -apple-system, 'SF Pro Display', system-ui, sans-serif; font-stretch: condensed; font-size: 17px; font-weight: 600; width: 100%; min-height: 54px; padding: 12px 18px; border: none; border-radius: 14px; transition: opacity 0.14s ease-out; cursor: pointer; background: #111111; color: #FAFAF7; } .ds-btn-primary:hover, .ds-btn-primary:active { opacity: 0.8; } .ds-btn-primary:focus-visible { outline: 2px solid #111111; outline-offset: 2px; } .ds-btn-primary:disabled { opacity: 0.45; }"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "refersTo": "button-secondary",
+      "description": "The alternative action beside or below a primary.",
+      "html": "<button class=\"ds-btn-secondary\">Not Now</button>",
+      "css": ".ds-btn-secondary { font-family: -apple-system, 'SF Pro Display', system-ui, sans-serif; font-stretch: condensed; font-size: 17px; font-weight: 600; width: 100%; min-height: 54px; padding: 12px 18px; border: none; border-radius: 14px; transition: opacity 0.14s ease-out; cursor: pointer; background: #E6E6E0; color: #111111; } .ds-btn-secondary:hover, .ds-btn-secondary:active { opacity: 0.8; } .ds-btn-secondary:focus-visible { outline: 2px solid #111111; outline-offset: 2px; }"
+    },
+    {
+      "name": "Quiet Button",
+      "kind": "button",
+      "refersTo": "button-quiet",
+      "description": "Rare and destructive text actions, such as Sign Out.",
+      "html": "<button class=\"ds-btn-quiet\">Sign Out</button>",
+      "css": ".ds-btn-quiet { font-family: -apple-system, 'SF Pro Display', system-ui, sans-serif; font-stretch: condensed; font-size: 17px; font-weight: 600; width: 100%; min-height: 44px; background: none; border: none; color: #5E5E62; transition: opacity 0.14s ease-out; cursor: pointer; } .ds-btn-quiet:hover, .ds-btn-quiet:active { opacity: 0.8; } .ds-btn-quiet:focus-visible { outline: 2px solid #111111; outline-offset: 2px; }"
+    },
+    {
+      "name": "Panel",
+      "kind": "card",
+      "refersTo": "panel",
+      "description": "The raised surface for cards and grouped rows: one tone off the ground, no shadow.",
+      "html": "<div class=\"ds-panel\"><div class=\"ds-panel-row\">This week</div><div class=\"ds-panel-row\">Last week</div></div>",
+      "css": ".ds-panel { font-family: -apple-system, 'SF Pro Display', system-ui, sans-serif; background: #EFEFEA; border-radius: 20px; padding: 0 16px; color: #111111; font-size: 15px; } .ds-panel-row { padding: 16px 0; } .ds-panel-row + .ds-panel-row { border-top: 1px solid #DEDED8; }"
+    },
+    {
+      "name": "Section Label",
+      "kind": "custom",
+      "refersTo": "section-label",
+      "description": "Condensed capital label above a section or as a status.",
+      "html": "<div class=\"ds-section-label\">THIS WEEK</div>",
+      "css": ".ds-section-label { font-family: -apple-system, 'SF Pro Display', system-ui, sans-serif; font-stretch: condensed; font-size: 13px; font-weight: 700; letter-spacing: 1.2px; color: #111111; }"
+    },
+    {
+      "name": "Score Numerals",
+      "kind": "custom",
+      "description": "The score: yours in amber, theirs in ink, split by the slash.",
+      "html": "<div class=\"ds-score\"><span class=\"ds-score-you\">412</span><span class=\"ds-score-slash\"></span><span class=\"ds-score-them\">388</span></div>",
+      "css": ".ds-score { font-family: -apple-system, 'SF Pro Display', system-ui, sans-serif; font-stretch: ultra-condensed; font-size: 56px; font-weight: 800; line-height: 1; font-variant-numeric: tabular-nums; display: flex; align-items: center; gap: 14px; } .ds-score-you { color: #9C6500; } .ds-score-them { color: #111111; } .ds-score-slash { width: 6px; height: 48px; background: #CFCFC9; transform: skewX(-12deg); }"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Scoreboard",
+    "overview": "HealthComp looks like the board above an arena. Numbers are the heroes: heavy,\ncompressed numerals sized to be read across a room, under condensed capital\nlabels. Everything that is not a number is flat and neutral, a page tone and a\npanel tone one step apart, so the board never competes with the score. Colour\nis rationed to a single meaning: it is you. Your rings keep Apple's Move,\nExercise and Stand hues; your score, name and wins are amber; your opponent and\nevery piece of structure are ink and grey.\n\nThe mood is sporty and bold. Weight is heavy, edges are firm, type is\ncondensed, and the mark's 12-degree slash runs through bars, splits and\ntransitions as the line between you and them.\n\nIt is not an Apple Fitness clone: no black field of glowing concentric rings as\nthe main visual. And it is not licensed fight branding: the title-fight framing\nuses original art and wording only, never anything that reads as a real\npromotion's graphics.",
+    "keyCharacteristics": [
+      "Heavy compressed score numerals over condensed capital labels.",
+      "One accent, amber, and it always means the viewer.",
+      "Flat surfaces; depth comes from tone, not shadow.",
+      "The 12-degree slash as the recurring divider and the origin of motion.",
+      "System typeface only (SF Pro in its compressed and condensed widths).",
+      "Light and dark are both first-class; the watch is always dark."
+    ],
+    "rules": [
+      {
+        "name": "The Colour Means You Rule",
+        "body": "Ring hues and amber are only ever the viewer's own. The opponent and all structure stay neutral. No new colours are added.",
+        "section": "colors"
+      },
+      {
+        "name": "The Neutral Action Rule",
+        "body": "Primary buttons are ink, not amber. Colour is not spent on calls to action.",
+        "section": "colors"
+      },
+      {
+        "name": "The Three Widths Rule",
+        "body": "Compressed for numbers that are scores, condensed for labels and names, regular for prose. A width is never chosen for looks.",
+        "section": "typography"
+      },
+      {
+        "name": "The Scaled Score Rule",
+        "body": "Fixed-size score numerals go through `@ScaledMetric` relative to a text style. No bare point sizes for text.",
+        "section": "typography"
+      },
+      {
+        "name": "The Flat Board Rule",
+        "body": "No shadows on everyday screens. Glow and flash are allowed only inside the set pieces: the versus intro, the judges' decision and the belt ceremonies.",
+        "section": "elevation"
+      }
+    ],
+    "dos": [
+      "Do keep colour for the viewer: ring hues for their rings, amber for their score, name and wins.",
+      "Do make the number the largest thing on the screen, in compressed heavy tabular figures.",
+      "Do build surfaces from ground, panel and control tones with hairlines.",
+      "Do use the Theme tokens, `SectionLabel`, `themePanel` and the three button styles before making a new one.",
+      "Do choose motion from the five named animations by what changed.",
+      "Do give every moving piece a still state for Reduce Motion.",
+      "Do make controls feel tactile and punchy when refining them."
+    ],
+    "donts": [
+      "Don't colour an opponent, a status or a button with ring hues or amber.",
+      "Don't add a colour that is not in the Theme.",
+      "Don't add shadows to everyday screens.",
+      "Don't make glowing concentric rings on black the main visual.",
+      "Don't use anything that reads as a real fight promotion's graphics, name, logo or catchphrases.",
+      "Don't set text in a bare point size.",
+      "Don't add a second overshooting curve."
+    ]
+  }
+}

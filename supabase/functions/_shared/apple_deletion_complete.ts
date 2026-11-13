@@ -41,8 +41,11 @@ export async function appleDeletionWebCompleteHandler(
   try {
     userID = await dependencies.deletion.authenticate(authorization);
     if (!userID) return reject(401);
-  } catch {
-    return reject(401);
+  } catch (error) {
+    // Auth could not answer (see verifiedUserId): retryable, not signed out.
+    return reject(
+      (error as { status?: unknown } | null)?.status === 503 ? 503 : 401,
+    );
   }
   let requestID: string | null = null;
   let verifier = "";

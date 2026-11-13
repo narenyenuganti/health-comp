@@ -211,38 +211,10 @@ extension CompetitionNotificationPolicy {
         let names = uniqueNamesText(messages, locale: locale)
         switch first.family {
         case .opportunistic(.result):
-            func rank(_ outcome: CompetitionOutcome?) -> Int {
-                switch outcome {
-                case .win: 0
-                case .tie: 1
-                case .loss: 2
-                case nil: 3
-                }
-            }
-            let sorted = messages.sorted {
-                if rank($0.outcome) != rank($1.outcome) {
-                    return rank($0.outcome) < rank($1.outcome)
-                }
-                let order = $0.opponentDisplayName.localizedStandardCompare($1.opponentDisplayName)
-                if order != .orderedSame { return order == .orderedAscending }
-                return $0.competitionID.rawValue.uuidString < $1.competitionID.rawValue.uuidString
-            }
-            let sentences = sorted.map { message -> String in
-                let name = message.opponentDisplayName
-                guard let scores = resultScores(message, locale: locale) else {
-                    return "Your match with \(name) is complete."
-                }
-                let sentence = switch message.outcome {
-                case .win: "You beat \(name) \(scores.own) to \(scores.opp)."
-                case .loss: "\(name) won \(scores.opp) to \(scores.own)."
-                case .tie: "All square with \(name) at \(scores.own)."
-                case nil: "Your match with \(name) is complete."
-                }
-                return [sentence, beltSentence(message)].compactMap { $0 }.joined(separator: " ")
-            }
+            // Same hold-back as the single result: the reveal tells who won.
             return CompetitionNotificationContent(
-                title: "\(messages.count) matches finished",
-                body: sentences.joined(separator: " ")
+                title: "\(messages.count) decisions are in",
+                body: "Your matches with \(names) are scored. Open to hear the decisions."
             )
         case .opportunistic(.catchUp):
             return CompetitionNotificationContent(
@@ -261,8 +233,8 @@ extension CompetitionNotificationPolicy {
             )
         case .scheduled(.competitionEnded):
             return CompetitionNotificationContent(
-                title: statusTitle(.tallying(startedAt: .distantPast), opponent: first.opponentDisplayName),
-                body: "HealthComp is checking the latest Activity data before finalizing your results with \(names)."
+                title: "Judges are tallying…",
+                body: "Your matches with \(names) are in. The decisions are coming."
             )
         case .scheduled(.inviteExpiry), .scheduled(.whatItTakes), .scheduled(.groupBanter), .opportunistic(.leadChange),
              .opportunistic(.closeScore), .opportunistic(.dailyMaximum):
@@ -282,32 +254,6 @@ extension CompetitionNotificationPolicy {
             opponentDisplayName: opponent,
             style: .notification
         ).title
-    }
-
-    /// "You took the belt from Sam." on a take; nil otherwise.
-    private static func beltSentence(_ message: CompetitionNotificationMessage) -> String? {
-        switch message.beltTake {
-        case .took(.you, nil, _): "You took the belt."
-        case .took(.you, _?, _): "You took the belt from \(message.opponentDisplayName)."
-        case .took(.them, _, _): "\(message.opponentDisplayName) took the belt."
-        default: nil
-        }
-    }
-
-    /// Final scores in the user's locale; two decimals only when whole points
-    /// would hide the winner.
-    private static func resultScores(
-        _ message: CompetitionNotificationMessage,
-        locale: Locale
-    ) -> (own: String, opp: String)? {
-        guard let own = message.ownerPoints, let opp = message.opponentPoints else {
-            return nil
-        }
-        let digits = competitionFinalFractionDigits(userPoints: own, opponentPoints: opp)
-        return (
-            competitionPointsText(own, fractionDigits: digits, locale: locale),
-            competitionPointsText(opp, fractionDigits: digits, locale: locale)
-        )
     }
 
     private static func daysLeftText(_ dayOrdinal: Int?) -> String? {

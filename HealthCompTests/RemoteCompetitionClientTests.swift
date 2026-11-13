@@ -3989,6 +3989,16 @@ final class RemoteCompetitionClientTests: XCTestCase {
             )?.lifecycle,
             .pending(direction: .outgoing, expiresAt: expiresAt)
         )
+        // A republish without a read can't vouch for the totals.
+        XCTAssertEqual(
+            RemoteCompetitionProjector.notificationCompetition(
+                from: materialization,
+                profile: profile,
+                context: hourLater,
+                isFresh: false
+            )?.evaluationFreshness,
+            .notFresh
+        )
     }
 
     func testRemoteAwardsAreWinsOnlyNewestFirst() {
@@ -4149,10 +4159,18 @@ final class RemoteCompetitionClientTests: XCTestCase {
             createdAt: createdAt
         )
         let fetches = RemoteCompetitionFetchSequenceProbe(page: page)
+        // sync-11: a pass whose listed cursor has not moved sends no fetch,
+        // so the failing pass lists a newer change for the fetch to fail on.
+        let moved = try pendingDescriptor(
+            competitionID: competitionID,
+            profile: profile,
+            expiresAt: createdAt.addingTimeInterval(48 * 60 * 60),
+            nextServerSequence: 3
+        )
         let notifications = RemoteCompetitionNotificationProbe()
         let client = CompetitionClient.remote(
             remoteAPI: remoteAPI(
-                listCompetitions: { [descriptor] },
+                listCompetitions: { await fetches.isFailing ? [moved] : [descriptor] },
                 fetchChanges: { _, _ in try await fetches.fetch() }
             ),
             environment: try environment(),
@@ -4179,6 +4197,93 @@ final class RemoteCompetitionClientTests: XCTestCase {
 
         let remaining = await notifications.pendingIdentifiers()
         XCTAssertEqual(remaining, [], "Profile teardown must cancel prior work")
+    }
+
+    func testStopCancelsGroupMatchNotificationsOutsideTheMountedDuels() async throws {
+        let (profile, paths) = try widgetTestProfile()
+        let notifications = RemoteCompetitionNotificationProbe()
+        let client = CompetitionClient.remote(
+            remoteAPI: remoteAPI(listCompetitions: { [] }),
+            environment: try environment(),
+            notificationClient: notifications.client,
+            notificationPreferencesFactory: { _ in
+                .constant(mutedOpponentIdentities: [])
+            }
+        )
+        try await client.mountAuthenticatedProfile(profile, paths)
+        var iterator = client.start().makeAsyncIterator()
+        _ = await iterator.next()
+        let banter = CompetitionNotificationIdentifier.competitionPrefix(CompetitionID(UUID())) + "banter"
+        await notifications.seedPending(banter)
+
+        await client.stop()
+
+        let remaining = await notifications.pendingIdentifiers()
+        XCTAssertEqual(remaining, [], "Sign-out must clear group match notifications too")
+    }
+
+    func testRealtimeWakeUpsDuringAPassShareTheNextPass() async throws {
+        let (profile, paths) = try widgetTestProfile()
+        let probe = ReconcileBurstProbe()
+        let client = CompetitionClient.remote(
+            remoteAPI: remoteAPI(listCompetitions: {
+                await probe.list()
+                return []
+            }),
+            environment: try environment(),
+            realtimeClient: CompetitionRealtimeClient(
+                wakeUps: { _ in
+                    AsyncStream(unfolding: { await probe.pull() })
+                },
+                stop: {}
+            )
+        )
+        try await client.mountAuthenticatedProfile(profile, paths)
+        var iterator = client.start().makeAsyncIterator()
+        _ = await iterator.next()
+
+        // The first wake-up's pass is held open; the other four must still
+        // be read, not queued behind it one pass each.
+        var allPulled = false
+        for _ in 0..<500 {
+            allPulled = await probe.allPulled
+            if allPulled { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        XCTAssertTrue(allPulled, "Wake-ups waited behind a pass in flight")
+        await probe.release()
+        await client.stop()
+
+        let lists = await probe.listCount
+        // Start, the held pass and at most one more, instead of one per wake-up.
+        XCTAssertLessThanOrEqual(lists, 3)
+    }
+
+    func testStopCancelsAndJoinsTheGroupPassInFlight() async throws {
+        let (profile, paths) = try widgetTestProfile()
+        let hold = GroupListHold()
+        var api = remoteAPI(listCompetitions: { [] })
+        api.listGroupMatches = {
+            await hold.hold()
+            throw CompetitionRemoteFailure.operationFailed
+        }
+        let client = CompetitionClient.remote(remoteAPI: api, environment: try environment())
+        try await client.mountAuthenticatedProfile(profile, paths)
+        var iterator = client.start().makeAsyncIterator()
+        _ = await iterator.next()
+        for _ in 0..<500 {
+            if await hold.entered { break }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let entered = await hold.entered
+        XCTAssertTrue(entered)
+
+        await client.stop()
+
+        // Otherwise the pass could write GroupMatches/ after teardown removed
+        // the profile directory.
+        let exited = await hold.exited
+        XCTAssertTrue(exited, "stop must cancel and join the group pass")
     }
 
     func testFailedRefreshKeepsTheLastPresentationWithItsIssue()
@@ -4220,9 +4325,17 @@ final class RemoteCompetitionClientTests: XCTestCase {
             createdAt: createdAt
         )
         let fetches = RemoteCompetitionFetchSequenceProbe(page: page)
+        // sync-11: a pass whose listed cursor has not moved sends no fetch,
+        // so the failing pass lists a newer change for the fetch to fail on.
+        let moved = try pendingDescriptor(
+            competitionID: competitionID,
+            profile: profile,
+            expiresAt: createdAt.addingTimeInterval(48 * 60 * 60),
+            nextServerSequence: 3
+        )
         let client = CompetitionClient.remote(
             remoteAPI: remoteAPI(
-                listCompetitions: { [descriptor] },
+                listCompetitions: { await fetches.isFailing ? [moved] : [descriptor] },
                 fetchChanges: { _, _ in try await fetches.fetch() }
             ),
             environment: try environment(),
@@ -4335,13 +4448,10 @@ final class RemoteCompetitionClientTests: XCTestCase {
             [CompetitionID(competitionID)]
         )
         XCTAssertEqual(relaunchedPublication?.dashboard.issues, [])
+        // sync-11: the durable cursor (1) already equals the listed cursor, so
+        // the relaunch sends no fetch; a lost cursor would fetch from 0.
         let observations = await probe.observations()
-        XCTAssertEqual(observations.count, 1)
-        XCTAssertEqual(
-            observations.first?.cursor.lastSeenServerSequence,
-            1
-        )
-        XCTAssertEqual(observations.first?.pageSize, 200)
+        XCTAssertEqual(observations.count, 0)
         await relaunched.stop()
     }
 
@@ -4578,7 +4688,8 @@ final class RemoteCompetitionClientTests: XCTestCase {
         competitionID: UUID,
         profile: AuthenticatedProfile,
         expiresAt: Date,
-        rematchParentID: UUID? = nil
+        rematchParentID: UUID? = nil,
+        nextServerSequence: Int64 = 2
     ) throws -> CompetitionDescriptor {
         try CompetitionDescriptor(
             competitionID: competitionID,
@@ -4590,7 +4701,7 @@ final class RemoteCompetitionClientTests: XCTestCase {
             invitationExpiresAt: expiresAt,
             bestAvailableDeadline: nil,
             rematchParentID: rematchParentID,
-            nextServerSequence: 2,
+            nextServerSequence: nextServerSequence,
             participants: [
                 try CompetitionParticipantDescriptor(
                     profileID: profile.id,
@@ -5463,6 +5574,63 @@ private actor RemoteBlockingCompetitionPushProbe {
     }
 }
 
+/// Holds the second list (the first wake-up's pass) until released, and
+/// hands out five wake-ups, noting when all have been read.
+private actor ReconcileBurstProbe {
+    private(set) var listCount = 0
+    private(set) var allPulled = false
+    private var pulls = 0
+    private var released = false
+    private var held: CheckedContinuation<Void, Never>?
+
+    func list() async {
+        listCount += 1
+        guard listCount == 2, !released else { return }
+        await withCheckedContinuation { held = $0 }
+    }
+
+    func release() {
+        released = true
+        held?.resume()
+        held = nil
+    }
+
+    func pull() -> CompetitionRealtimeWakeUp? {
+        pulls += 1
+        guard pulls <= 5 else {
+            allPulled = true
+            return nil
+        }
+        return CompetitionRealtimeWakeUp(reason: .broadcast, serverCursorHint: nil)
+    }
+}
+
+/// A group list that hangs until its task is cancelled.
+private actor GroupListHold {
+    private(set) var entered = false
+    private(set) var exited = false
+    private var cancelled = false
+    private var continuation: CheckedContinuation<Void, Never>?
+
+    func hold() async {
+        entered = true
+        await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                if cancelled { continuation.resume() } else { self.continuation = continuation }
+            }
+        } onCancel: {
+            Task { await self.cancel() }
+        }
+        exited = true
+    }
+
+    private func cancel() {
+        cancelled = true
+        continuation?.resume()
+        continuation = nil
+    }
+}
+
 private actor RemoteCompetitionNotificationProbe {
     private var upserts: [CompetitionScheduledNotificationRequest] = []
     private var waiters: [
@@ -5495,8 +5663,15 @@ private actor RemoteCompetitionNotificationProbe {
         }
     }
 
+    /// Stands in for a request scheduled outside the duel path (group banter).
+    private var seeded: Set<String> = []
+
+    func seedPending(_ identifier: String) {
+        seeded.insert(identifier)
+    }
+
     func pendingIdentifiers(prefix: String? = nil) -> Set<String> {
-        Set(upserts.map(\.identifier)).filter { identifier in
+        Set(upserts.map(\.identifier)).union(seeded).filter { identifier in
             prefix.map(identifier.hasPrefix) ?? true
         }
     }
@@ -5504,6 +5679,7 @@ private actor RemoteCompetitionNotificationProbe {
     private func removePending(_ identifiers: [String]) {
         let removed = Set(identifiers)
         upserts.removeAll { removed.contains($0.identifier) }
+        seeded.subtract(removed)
     }
 
     private func record(_ request: CompetitionScheduledNotificationRequest) {
@@ -5525,6 +5701,8 @@ private actor RemoteCompetitionFetchSequenceProbe {
     func failSubsequentFetches() {
         shouldFail = true
     }
+
+    var isFailing: Bool { shouldFail }
 
     func fetch() throws -> CompetitionChangePage {
         if shouldFail { throw CompetitionRemoteFailure.operationFailed }
@@ -6240,7 +6418,8 @@ extension RemoteCompetitionClientTests {
         let downloads = await server.downloads
         XCTAssertEqual(downloads, 1)
         let cached = await client.cachedProfilePhotoData(opponent)
-        XCTAssertEqual(cached, first)
+        XCTAssertEqual(cached?.data, first)
+        XCTAssertEqual(cached?.version, references[0].version)
 
         // A block (or their removal) drops them from the list and the cache.
         await server.hideOpponent()
@@ -6258,7 +6437,7 @@ extension RemoteCompetitionClientTests {
         let mine = try await client.setProfilePhoto(server.jpeg)
         XCTAssertEqual(mine.ownerProfileID, profile.id)
         let own = await client.cachedProfilePhotoData(profile.id)
-        XCTAssertEqual(own, server.jpeg)
+        XCTAssertEqual(own?.data, server.jpeg)
         let ownState = try await client.loadOwnProfilePhoto()
         XCTAssertEqual(ownState, OwnProfilePhoto(reference: mine, removedByReview: false))
 

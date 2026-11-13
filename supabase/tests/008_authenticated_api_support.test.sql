@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = extensions, public, pg_catalog;
 
-select plan(111);
+select plan(114);
 
 select has_function(
   'public',
@@ -913,6 +913,36 @@ select throws_ok(
   'unknown installation removal is privacy-collapsed'
 );
 reset role;
+
+set local role authenticated;
+select set_config(
+  'request.jwt.claims',
+  '{"sub":"81000000-0000-0000-0000-000000000004","role":"authenticated"}',
+  true
+);
+select lives_ok(
+  $$select public.register_current_device_installation(
+    '85000000-0000-4000-8000-0000000000a1', repeat('e5', 32), 'production'
+  )$$,
+  'the profile registers a device token'
+);
+-- Teardown lost the local id without revoking the row; the phone made a new one.
+select lives_ok(
+  $$select public.register_current_device_installation(
+    '85000000-0000-4000-8000-0000000000a2', repeat('e5', 32), 'production'
+  )$$,
+  'the same profile re-registers its device token under a new installation id'
+);
+reset role;
+select is((
+  select array_agg(installation_row.state || ':' || coalesce(installation_row.apns_token, 'none')
+    order by installation_row.installation_id)
+  from public.device_installations installation_row
+  where installation_row.profile_id = '82000000-0000-0000-0000-000000000004'
+    and installation_row.installation_id in (
+      '85000000-0000-4000-8000-0000000000a1', '85000000-0000-4000-8000-0000000000a2')
+), array['revoked:none', 'active:' || repeat('e5', 32)],
+  'the stale installation is retired and the new one holds the token');
 
 select has_function(
   'public', 'fetch_competition_changes',

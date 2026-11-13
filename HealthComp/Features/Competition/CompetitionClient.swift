@@ -140,7 +140,7 @@ struct CompetitionClient: Sendable {
     /// The JPEG from this account's disk cache, else downloaded and cached.
     var profilePhotoData: @Sendable (ProfilePhotoReference) async throws -> Data
     /// Any cached photo of this person, without the network.
-    var cachedProfilePhotoData: @Sendable (UUID) async -> Data?
+    var cachedProfilePhotoData: @Sendable (UUID) async -> (data: Data, version: UUID)?
     /// Uploads a `ProfilePhotoImage.jpeg(from:crop:)` result as your photo.
     var setProfilePhoto: @Sendable (Data) async throws -> ProfilePhotoReference
     /// Initials again, and the stored objects are deleted.
@@ -306,7 +306,7 @@ struct CompetitionClient: Sendable {
         profilePhotoData: @escaping @Sendable (ProfilePhotoReference) async throws -> Data = { _ in
             throw CompetitionRemoteFailure.notFound
         },
-        cachedProfilePhotoData: @escaping @Sendable (UUID) async -> Data? = { _ in nil },
+        cachedProfilePhotoData: @escaping @Sendable (UUID) async -> (data: Data, version: UUID)? = { _ in nil },
         setProfilePhoto: @escaping @Sendable (Data) async throws -> ProfilePhotoReference = { _ in
             throw CompetitionRemoteFailure.operationFailed
         },

@@ -345,8 +345,10 @@ struct AppFeature {
                     state.profile = nil
                     state.profileStoragePaths = nil
                     state.mainTab = nil
+                    // A name typed before a failed submit and Try Again stays.
                     state.account = AccountFeature.State(
-                        mode: .settingUpProfile
+                        mode: .settingUpProfile,
+                        displayName: state.account.displayName
                     )
                     return .none
 
@@ -483,13 +485,15 @@ struct AppFeature {
                 // Only Welcome reacts here; MainTab claims the link later.
                 guard case .claimInvite = envelope.route else { return .none }
                 switch state.phase {
+                // Every teardown ends on Welcome or Try Again, so a link
+                // that lands during one is kept for them.
                 case .launching, .signedOut, .bootstrappingProfile,
-                     .settingUpProfile, .launchFailure:
+                     .settingUpProfile, .launchFailure, .tearingDown:
                     state.pendingChallengeSequence = max(
                         state.pendingChallengeSequence ?? 0,
                         envelope.sequence
                     )
-                case .authenticated, .tearingDown:
+                case .authenticated:
                     break
                 }
                 return .none
@@ -593,6 +597,17 @@ struct AppFeature {
                 if state.phase == .launchFailure, state.account.mode == .profileConflict,
                    state.pendingTeardown == nil, state.profile == nil,
                    state.profileStoragePaths == nil, state.mainTab == nil,
+                   authenticationClient.signOutCurrentSession != nil,
+                   authenticationClient.finishRetirement != nil {
+                    state.authEpoch &+= 1
+                    return beginTeardown(
+                        state: &state, epoch: state.authEpoch,
+                        reason: .profileConflict, stopRuntime: false, profileID: nil
+                    )
+                }
+                // No profile yet: only the session to end, as for a conflict.
+                if state.phase == .settingUpProfile, state.pendingTeardown == nil,
+                   state.profile == nil, state.profileStoragePaths == nil, state.mainTab == nil,
                    authenticationClient.signOutCurrentSession != nil,
                    authenticationClient.finishRetirement != nil {
                     state.authEpoch &+= 1
@@ -942,6 +957,10 @@ struct AppFeature {
                     } catch let mountError {
                         guard !Task.isCancelled else { throw mountError }
                         await competitionClient.stop()
+                        // An existing profile keeps its unsent scores and
+                        // practice journal for Try Again; only a root this
+                        // mount just created is removed.
+                        guard paths.isNewlyCreated else { throw mountError }
                         do {
                             try await authenticatedProfileStorage.teardown(
                                 profile.id
@@ -1043,6 +1062,10 @@ struct AppFeature {
                         try await profileTransitionGate.run {
                             // Every signed-out path, with or without a profile.
                             try await competitionWidgetSnapshotClient.clear()
+                            await CompetitionNotificationClient.deleteDonatedInteractions()
+                            // Device-local seen marks belong to the old profile's matches.
+                            UserDefaults.standard.removeObject(forKey: CompetitionReactionsSeen.storageKey)
+                            UserDefaults.standard.removeObject(forKey: CompetitionMotionSeen.storageKey)
                             if let profileID = pendingTeardown.profileID {
                                 try await authenticatedProfileStorage.teardown(
                                     profileID
@@ -1178,7 +1201,11 @@ struct AppFeature {
             state.profile = nil
             state.profileStoragePaths = nil
             state.mainTab = nil
-            state.account = AccountFeature.State(mode: .launchFailure)
+            state.account = AccountFeature.State(
+                mode: .launchFailure,
+                // Kept for the name step after Try Again.
+                displayName: state.account.displayName
+            )
             state.account.message = accountMessage(for: failure)
         }
         return .none

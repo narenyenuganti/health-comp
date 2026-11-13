@@ -398,6 +398,20 @@ final class CompetitionFeatureTests: XCTestCase {
     }
 
     @MainActor
+    func testAnEarlierMuteReadKeepsTheChangeStillSaving() async {
+        let store = TestStore(initialState: CompetitionFeature.State(
+            mutedOpponentIdentities: ["sam"],
+            muteOpponentIdentitiesInFlight: ["sam"]
+        )) {
+            CompetitionFeature()
+        }
+        // Read before the tap: Sam not muted yet, Jo muted elsewhere.
+        await store.send(.mutePreferencesLoaded(["jo"])) {
+            $0.mutedOpponentIdentities = ["jo", "sam"]
+        }
+    }
+
+    @MainActor
     func testMutePersistenceFailureRollsBackOptimisticState() async {
         let identity = LocalCompetitionIdentity.opponentIdentity
         var client = CompetitionReducerClientRecorder().client(

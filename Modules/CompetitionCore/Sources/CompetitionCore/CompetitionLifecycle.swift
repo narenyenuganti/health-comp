@@ -33,6 +33,20 @@ public struct CompetitionSchedule: Codable, Equatable, Sendable {
         self.calendar = calendar
         self.startDay = startDay
     }
+
+    /// When day 7 ends on a device in `timeZone`. Health reads a day by its
+    /// local date, so a player west of the frozen calendar is still filling
+    /// day 7 after the match moves to tallying; a stable attestation waits
+    /// for this instant (capped by the best-available deadline).
+    public func localWindowEnd(in timeZone: TimeZone) throws -> Date {
+        let lastDay = try calendar.sevenDayWindow(startingOn: startDay)[6]
+        let local = try CompetitionCalendar(timeZoneIdentifier: timeZone.identifier)
+        let localLastDay = try CompetitionDay(
+            era: lastDay.era, year: lastDay.year, month: lastDay.month, day: lastDay.day,
+            timeZoneIdentifier: timeZone.identifier
+        )
+        return try local.startOfDay(local.day(after: localLastDay))
+    }
 }
 
 public struct AcceptedCompetitionConfiguration: Codable, Equatable, Sendable {

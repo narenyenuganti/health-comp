@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>HealthComp privacy</title>
   <meta name="description" content="How HealthComp uses and shares information for private Activity competitions.">
+  <meta property="og:title" content="HealthComp privacy">
+  <meta property="og:description" content="How HealthComp uses and shares information for private Activity competitions.">
+  <meta property="og:image" content="https://healthcomp.app/og.png">
   <link rel="icon" href="/apple-touch-icon.png">
   <style>
     :root { color-scheme: light dark; --ground: #FAFAF7; --ink: #111111; --secondary: #5E5E62; }
@@ -25,13 +28,14 @@
     <nav aria-label="Home"><a href="/">HealthComp home</a></nav>
     <article aria-labelledby="privacy-title">
       <h1 id="privacy-title">HealthComp privacy</h1>
-      <p>HealthComp supports private, seven-day Activity competitions between two people.
+      <p>HealthComp supports private, seven-day Activity competitions: one-on-one matches, and
+        group matches of three or four players in which a bot can fill a seat.
         The initial private beta is invitation-only for a small group of adults in the
         United States.</p>
 
       <p><strong>Operator:</strong> Naren Yenuganti.<br>
         <strong>Effective date:</strong> November 10, 2026.<br>
-        <strong>Questions or privacy requests:</strong> <a href="mailto:yrnaren1@gmail.com">yrnaren1@gmail.com</a>.</p>
+        <strong>Questions or privacy requests:</strong> <!--email_off--><a href="mailto:yrnaren1@gmail.com">yrnaren1@gmail.com</a><!--/email_off-->.</p>
 
       <h2>Information used by the app</h2>
       <ul>
@@ -40,6 +44,13 @@
           Auth account and provider identity records can also contain an email address
           supplied by Apple, including a private-relay address, and sign-in metadata.
           Your Apple email-sharing choice affects the information Apple provides.</li>
+        <li><strong>Username, search and friends:</strong> you can choose a username. Show Me in
+          Search is on until you turn it off in account settings. While you have a username and
+          it is on, people signed in to HealthComp can find you by username or display name and
+          see your display name, username and profile photo. The server stores your friends, the
+          friend requests you send and receive, your choice of who can challenge you, and a
+          count of your recent searches to limit them. If you report someone's account, the
+          server records who reported whom and when.</li>
         <li><strong>Profile photo:</strong> if you add one, the app uploads a square JPEG of at most
           512 pixels, without location or other photo metadata, to a private storage bucket, linked
           to your account with a version identifier. If you report someone's photo, the
@@ -56,7 +67,9 @@
         <li><strong>Derived competition data:</strong> our server stores rounded Activity percentages,
           Move/Stand/Roll modes, availability, daily points, competition dates/time zone,
           revision information, results, awards, and the preset reactions you send (👏 🔥 😤 🫡)
-          and when you sent them, linked to participant accounts.
+          and when you sent them (in a group match, also whom you sent them to), linked to
+          participant accounts. A bot in a group match is set from the players' average daily
+          points in earlier matches.
           Keeping raw Health data on-device does not mean no fitness information is
           collected by the service.</li>
         <li><strong>On your Apple Watch:</strong> if you install the Watch app, your iPhone sends
@@ -79,20 +92,24 @@
         cleanup, and investigate support requests and service failures.</p>
 
       <h2>Sharing and service providers</h2>
-      <p>Your competitor can see your display name and shared competition information,
+      <p>Everyone in a match with you (one other person, or up to three in a group match) can
+        see your display name and shared competition information,
         including daily points, availability, dates, results, the reactions you send, rounded
         Move/Exercise/Stand-or-Roll percentages, Activity modes, and when your iPhone
         last updated each daily score. These are derived
-        fitness values, not raw HealthKit samples or workout records. A private invitation
+        fitness values, not raw HealthKit samples or workout records. Before a group match
+        starts, the people invited to it see each other's display names. A private invitation
         link grants its recipient a chance to join; share it only with your intended
         competitor, not in a public issue or support message. Either person can share an
         image of a finished match's result from the app. It shows both final scores, the
         week, which days each person won and up to two highlights, and the person sharing
         can hide the other person's name.</p>
 
-      <p>If you add a profile photo, it is shown to people you have or had a match with
-        and to someone you have a pending challenge out to, unless either of you blocked
-        the other or they reported your photo. Their apps download it with their own
+      <p>If you add a profile photo, it is shown to your friends, to people you sent a friend
+        request to, to people you have or had a match with, to people invited to a group match
+        you are in, and to someone you have a pending challenge out to. While you have a
+        username and Show Me in Search is on, anyone signed in to HealthComp can see it. It is
+        not shown to someone if either of you blocked the other or they reported your photo. Their apps download it with their own
         sign-in and keep a copy on their iPhone to show it; that copy is dropped when your
         photo changes or is removed and their app next refreshes, and when they sign out.</p>
 
@@ -143,7 +160,9 @@
         choose Save Image for a result image, iOS asks for add-only Photos access, which
         you can change in Apple's system controls.</p>
 
-      <p>You can block someone from a challenge they sent you. Blocks are stored with your
+      <p>You can block someone from a challenge they sent you or from their page in Friends.
+        A blocked person can't challenge you or find you in search, and you stop being
+        friends. Blocks are stored with your
         account, aren’t shown to the blocked person, and are removed when either account
         is deleted.</p>
 
@@ -155,16 +174,19 @@
 
       <p><strong>Delete Account</strong> starts an authenticated cleanup workflow. When it completes,
         Apple authorization is revoked, the service authentication identity is removed,
-        active competitions are cancelled, your profile photo and the photo reports made by
-        or about you are deleted, and this profile's local data is cleared. A paired Apple
+        one-on-one matches and group matches that have not started are cancelled, and in a
+        group match that has started your days so far are kept while the others play on.
+        Your username, friends and friend requests, your profile photo, and the photo and
+        account reports made by or about you are deleted, and this profile's local data is
+        cleared. A paired Apple
         Watch clears its copy the next time it connects as your active Watch.
-        Completed shared results remain for the other participant as <strong>Former
+        Completed shared results remain for the other participants as <strong>Former
         competitor</strong>. The service removes the account linkage and replaces display names
         in the protected competition history. Revoked installations lose their push
         tokens; related integrity keys/challenges are purged by the cleanup hooks.</p>
 
       <p>Shared derived results, reactions you sent, stable history identifiers, and some operational records
-        remain. The other participant may already know whom they competed with; the label
+        remain. The other participants may already know whom they competed with; the label
         Former competitor does not guarantee that a person is unidentifiable. Deleting
         the app, signing out, or starting a deletion request is not confirmation that
         server cleanup completed. Contact support if deletion cannot finish.</p>
@@ -179,7 +201,7 @@
         request immediately erases all provider-held copies or backups.</p>
 
       <h2>Questions and requests</h2>
-      <p>Email <a href="mailto:yrnaren1@gmail.com">yrnaren1@gmail.com</a> to ask about information associated with your account,
+      <p>Email <!--email_off--><a href="mailto:yrnaren1@gmail.com">yrnaren1@gmail.com</a><!--/email_off--> to ask about information associated with your account,
         request a correction, or get help with deletion. We may need to verify that the
         request concerns your account before acting. Do not send Apple passwords,
         verification codes, private invitation links, Health screenshots, or unredacted

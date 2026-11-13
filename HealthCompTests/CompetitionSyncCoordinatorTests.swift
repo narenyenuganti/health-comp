@@ -329,6 +329,8 @@ final class CompetitionSyncCoordinatorTests: XCTestCase {
         let request = try scoreRequest()
         let probe = CompetitionSyncCoordinatorProbe()
         let failedAt = Date(timeIntervalSince1970: 1_786_536_010)
+        // A frozen clock with the real sleeper would fire at once and spin.
+        let sleeper = CoordinatorRetrySleeper()
         let coordinator = CompetitionSyncCoordinator(
             profileID: profileID,
             outboxStore: store,
@@ -344,7 +346,10 @@ final class CompetitionSyncCoordinatorTests: XCTestCase {
             acceptedScorePersistence: CompetitionAcceptedScorePersistence {
                 _, _, _, _ in
             },
-            now: { failedAt }
+            now: { failedAt },
+            sleepUntil: { deadline in
+                await sleeper.sleep(until: deadline)
+            }
         )
 
         _ = try await coordinator.enqueue(
@@ -354,10 +359,13 @@ final class CompetitionSyncCoordinatorTests: XCTestCase {
         await coordinator.waitUntilIdle()
         await coordinator.wake()
         await coordinator.waitUntilIdle()
+        await sleeper.waitForSleepCount(1)
 
         let attempts = await probe.remoteCallCount()
         let durable = try await store.entries()
+        let deadlines = await sleeper.deadlines()
         XCTAssertEqual(attempts, 1)
+        XCTAssertEqual(deadlines, [failedAt.addingTimeInterval(1)])
         XCTAssertEqual(
             durable.only?.state,
             .pending(
@@ -381,6 +389,8 @@ final class CompetitionSyncCoordinatorTests: XCTestCase {
             Date(timeIntervalSince1970: 1_786_536_010)
         )
         let probe = CompetitionSyncCoordinatorProbe()
+        // A frozen clock with the real sleeper would fire at once and spin.
+        let sleeper = CoordinatorRetrySleeper()
         let coordinator = CompetitionSyncCoordinator(
             profileID: profileID,
             outboxStore: store,
@@ -396,7 +406,10 @@ final class CompetitionSyncCoordinatorTests: XCTestCase {
             acceptedScorePersistence: CompetitionAcceptedScorePersistence {
                 _, _, _, _ in
             },
-            now: { clock.value }
+            now: { clock.value },
+            sleepUntil: { deadline in
+                await sleeper.sleep(until: deadline)
+            }
         )
 
         _ = try await coordinator.enqueue(
@@ -426,8 +439,12 @@ final class CompetitionSyncCoordinatorTests: XCTestCase {
             await coordinator.waitUntilIdle()
         }
 
+        await sleeper.waitForSleepCount(expectedDelays.count)
         let attempts = await probe.remoteCallCount()
+        let deadlines = await sleeper.deadlines()
         XCTAssertEqual(attempts, expectedDelays.count)
+        // One timer per attempt: a respin would add more.
+        XCTAssertEqual(deadlines.count, expectedDelays.count)
         await coordinator.stop()
     }
 
@@ -616,7 +633,7 @@ final class CompetitionSyncCoordinatorTests: XCTestCase {
 
         await coordinator.wake()
         await coordinator.waitUntilIdle()
-        await fulfillment(of: [scheduleExpectation], timeout: 0.25)
+        await fulfillment(of: [scheduleExpectation], timeout: 2)
 
         XCTAssertEqual(scheduled.values, [retryAt])
     }
@@ -1512,6 +1529,8 @@ final class CompetitionSyncCoordinatorTests: XCTestCase {
         )
         let failedAt = Date(timeIntervalSince1970: 1_786_536_010)
         let probe = CompetitionSyncCoordinatorProbe()
+        // A frozen clock with the real sleeper would fire at once and spin.
+        let sleeper = CoordinatorRetrySleeper()
         let coordinator = CompetitionSyncCoordinator(
             profileID: profileID,
             outboxStore: store,
@@ -1530,7 +1549,10 @@ final class CompetitionSyncCoordinatorTests: XCTestCase {
             acceptedScorePersistence: CompetitionAcceptedScorePersistence {
                 _, _, _, _ in
             },
-            now: { failedAt }
+            now: { failedAt },
+            sleepUntil: { deadline in
+                await sleeper.sleep(until: deadline)
+            }
         )
 
         _ = try await coordinator.enqueue(
@@ -1540,10 +1562,13 @@ final class CompetitionSyncCoordinatorTests: XCTestCase {
         await coordinator.waitUntilIdle()
         await coordinator.wake()
         await coordinator.waitUntilIdle()
+        await sleeper.waitForSleepCount(1)
 
         let attempts = await probe.attestationObservations().count
         let durable = try await store.entries()
+        let deadlines = await sleeper.deadlines()
         XCTAssertEqual(attempts, 1)
+        XCTAssertEqual(deadlines, [failedAt.addingTimeInterval(1)])
         XCTAssertEqual(
             durable.only?.state,
             .pending(
@@ -1878,6 +1903,247 @@ final class CompetitionSyncCoordinatorTests: XCTestCase {
         )
     }
 
+    func testLaterRevisionWaitsWhileAnEarlierOneOfItsMatchBacksOff()
+        async throws
+    {
+        let root = makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = JSONCompetitionOutboxStore(rootDirectory: root, fileProtection: .testNoop)
+        let earlier = try scoreRequest()
+        let later = try scoreRequest(
+            semanticEventID: UUID(uuidString: "64000000-0000-4000-8000-000000000002")!,
+            clientRevision: 2,
+            wireContentSHA256: String(repeating: "b", count: 64)
+        )
+        let otherMatch = try scoreRequest(
+            semanticEventID: UUID(uuidString: "64000000-0000-4000-8000-000000000003")!,
+            competitionID: UUID(uuidString: "63000000-0000-4000-8000-000000000002")!
+        )
+        let now = Date(timeIntervalSince1970: 1_786_536_010)
+        for request in [earlier, later, otherMatch] {
+            _ = try await store.enqueue(.scoreRevision(request), enqueuedAt: now)
+        }
+        let accepted = try scoreResponse(for: otherMatch)
+        let probe = CompetitionSyncCoordinatorProbe()
+        let sleeper = CoordinatorRetrySleeper()
+        let coordinator = CompetitionSyncCoordinator(
+            profileID: profileID,
+            outboxStore: store,
+            remoteAPI: remoteAPI(appendScoreRevision: { submitted in
+                await probe.recordRemoteCall(request: submitted, durableEntries: [])
+                guard submitted == otherMatch else {
+                    throw CompetitionRemoteFailure.retryableTransport
+                }
+                return accepted
+            }),
+            acceptedScorePersistence: CompetitionAcceptedScorePersistence { _, _, _, _ in },
+            now: { now },
+            sleepUntil: { deadline in await sleeper.sleep(until: deadline) }
+        )
+
+        await coordinator.wake()
+        await coordinator.waitUntilIdle()
+
+        // Revision 2 would land first, and the server would then refuse
+        // revision 1 as a regression; the other match isn't held up.
+        let sent = await probe.remoteRequests()
+        let left = try await store.entries().map(\.semanticEventID)
+        XCTAssertEqual(sent, [earlier, otherMatch])
+        XCTAssertEqual(left, [earlier.semanticEventID, later.semanticEventID])
+        await coordinator.stop()
+    }
+
+    func testUnrecordableAnswerParksOnlyItsUploadAndTheQueueMovesOn()
+        async throws
+    {
+        let root = makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = JSONCompetitionOutboxStore(rootDirectory: root, fileProtection: .testNoop)
+        let otherContent = try scoreRequest()
+        let refused = try scoreRequest(
+            semanticEventID: UUID(uuidString: "64000000-0000-4000-8000-000000000002")!,
+            clientRevision: 2,
+            wireContentSHA256: String(repeating: "b", count: 64)
+        )
+        let fine = try scoreRequest(
+            semanticEventID: UUID(uuidString: "64000000-0000-4000-8000-000000000003")!,
+            clientRevision: 3,
+            wireContentSHA256: String(repeating: "d", count: 64)
+        )
+        let now = Date(timeIntervalSince1970: 1_786_536_010)
+        for request in [otherContent, refused, fine] {
+            _ = try await store.enqueue(.scoreRevision(request), enqueuedAt: now)
+        }
+        // An answer for different content than the upload sent.
+        let mismatched = try CompetitionScoreRevisionResponse(
+            disposition: .appended,
+            rejectionCode: nil,
+            acceptedCentiPoints: 27_500,
+            wireContentSHA256: String(repeating: "f", count: 64),
+            acceptedServerSequence: 4,
+            competitionCursor: 4
+        )
+        let refusedResponse = try scoreResponse(for: refused)
+        let fineResponse = try scoreResponse(for: fine)
+        let probe = CompetitionSyncCoordinatorProbe()
+        let coordinator = CompetitionSyncCoordinator(
+            profileID: profileID,
+            outboxStore: store,
+            remoteAPI: remoteAPI(appendScoreRevision: { submitted in
+                await probe.recordRemoteCall(request: submitted, durableEntries: [])
+                if submitted == otherContent { return mismatched }
+                return submitted == refused ? refusedResponse : fineResponse
+            }),
+            acceptedScorePersistence: CompetitionAcceptedScorePersistence {
+                _, request, response, receivedAt in
+                // The journal can't take this row, now or on any retry.
+                if request == refused {
+                    throw CompetitionRemoteFailure.serverContractMismatch
+                }
+                await probe.recordPersistenceCall(
+                    request: request,
+                    response: response,
+                    receivedAt: receivedAt,
+                    durableEntries: []
+                )
+            },
+            now: { now }
+        )
+
+        await coordinator.wake()
+        await coordinator.waitUntilIdle()
+
+        let sent = await probe.remoteRequests()
+        let persisted = await probe.persistenceObservations().map(\.request)
+        let left = try await store.entries()
+        XCTAssertEqual(sent, [otherContent, refused, fine])
+        XCTAssertEqual(persisted, [fine])
+        XCTAssertEqual(left.map(\.semanticEventID), [otherContent.semanticEventID, refused.semanticEventID])
+        XCTAssertEqual(
+            left.map(\.state),
+            [CompetitionOutboxState](
+                repeating: .permanentFailure(.serverContractMismatch, failedAt: now),
+                count: 2
+            )
+        )
+        await coordinator.stop()
+    }
+
+    func testWakeIgnoringBackoffRetriesAtOnce() async throws {
+        let root = makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = JSONCompetitionOutboxStore(rootDirectory: root, fileProtection: .testNoop)
+        let failedAt = Date(timeIntervalSince1970: 1_786_536_010)
+        let probe = CompetitionSyncCoordinatorProbe()
+        let sleeper = CoordinatorRetrySleeper()
+        let coordinator = CompetitionSyncCoordinator(
+            profileID: profileID,
+            outboxStore: store,
+            remoteAPI: remoteAPI(appendScoreRevision: { submitted in
+                await probe.recordRemoteCall(request: submitted, durableEntries: [])
+                throw CompetitionRemoteFailure.retryableTransport
+            }),
+            acceptedScorePersistence: CompetitionAcceptedScorePersistence { _, _, _, _ in },
+            now: { failedAt },
+            sleepUntil: { deadline in await sleeper.sleep(until: deadline) }
+        )
+
+        _ = try await coordinator.enqueue(.scoreRevision(try scoreRequest()), enqueuedAt: failedAt)
+        await coordinator.waitUntilIdle()
+        await coordinator.wake()
+        await coordinator.waitUntilIdle()
+        let whileBackedOff = await probe.remoteCallCount()
+        // The server just answered another call: the backoff earned
+        // offline no longer applies.
+        await coordinator.wake(ignoringBackoff: true)
+        await coordinator.waitUntilIdle()
+        let afterReconnect = await probe.remoteCallCount()
+
+        XCTAssertEqual(whileBackedOff, 1)
+        XCTAssertEqual(afterReconnect, 2)
+        await coordinator.stop()
+    }
+
+    func testWakeDuringAFailedPassStillGetsItsPass() async throws {
+        let root = makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let base = JSONCompetitionOutboxStore(rootDirectory: root, fileProtection: .testNoop)
+        let request = try scoreRequest()
+        let now = Date(timeIntervalSince1970: 1_786_536_010)
+        _ = try await base.enqueue(.scoreRevision(request), enqueuedAt: now)
+        let store = WakeThenFailOnceOutboxStore(base: base)
+        let accepted = try scoreResponse(for: request)
+        let probe = CompetitionSyncCoordinatorProbe()
+        let coordinator = CompetitionSyncCoordinator(
+            profileID: profileID,
+            outboxStore: store,
+            remoteAPI: remoteAPI(appendScoreRevision: { submitted in
+                await probe.recordRemoteCall(request: submitted, durableEntries: [])
+                return accepted
+            }),
+            acceptedScorePersistence: CompetitionAcceptedScorePersistence { _, _, _, _ in },
+            now: { now }
+        )
+        // A wake lands while the first pass is failing.
+        await store.failFirstRead { await coordinator.wake() }
+
+        await coordinator.wake()
+        await coordinator.waitUntilIdle()
+
+        let calls = await probe.remoteCallCount()
+        let left = try await base.entries()
+        XCTAssertEqual(calls, 1)
+        XCTAssertEqual(left, [])
+        await coordinator.stop()
+    }
+
+    func testAcceptedScoreReplaysWithTheReceivedAtItFirstUsed() async throws {
+        let root = makeTemporaryDirectory()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let request = try scoreRequest()
+        let response = try scoreResponse(for: request)
+        // Finer than the outbox's millisecond dates keep.
+        let clock = Date(timeIntervalSince1970: 1_786_536_010.987_654_3)
+        let probe = CompetitionSyncCoordinatorProbe()
+        let crashing = CompetitionSyncCoordinator(
+            profileID: profileID,
+            outboxStore: JSONCompetitionOutboxStore(rootDirectory: root, fileProtection: .testNoop),
+            remoteAPI: remoteAPI(appendScoreRevision: { _ in response }),
+            acceptedScorePersistence: CompetitionAcceptedScorePersistence {
+                _, submitted, accepted, receivedAt in
+                await probe.recordPersistenceCall(
+                    request: submitted, response: accepted, receivedAt: receivedAt, durableEntries: []
+                )
+                throw CoordinatorFixtureFailure.injectedCrash
+            },
+            now: { clock }
+        )
+        _ = try await crashing.enqueue(.scoreRevision(request), enqueuedAt: clock)
+        await crashing.waitUntilIdle()
+        await crashing.stop()
+
+        let relaunched = CompetitionSyncCoordinator(
+            profileID: profileID,
+            outboxStore: JSONCompetitionOutboxStore(rootDirectory: root, fileProtection: .testNoop),
+            remoteAPI: remoteAPI(appendScoreRevision: { _ in response }),
+            acceptedScorePersistence: CompetitionAcceptedScorePersistence {
+                _, submitted, accepted, receivedAt in
+                await probe.recordPersistenceCall(
+                    request: submitted, response: accepted, receivedAt: receivedAt, durableEntries: []
+                )
+            },
+            now: { clock }
+        )
+        await relaunched.wake()
+        await relaunched.waitUntilIdle()
+
+        // The journal receipt carries receivedAt, so a replay must match.
+        let observations = await probe.persistenceObservations()
+        XCTAssertEqual(observations.count, 2)
+        XCTAssertEqual(observations.first?.receivedAt, observations.last?.receivedAt)
+        await relaunched.stop()
+    }
+
     private func scoreRequest(
         semanticEventID: UUID = UUID(
             uuidString: "64000000-0000-4000-8000-000000000001"
@@ -2042,6 +2308,10 @@ private actor CompetitionSyncCoordinatorProbe {
 
     func remoteCallCount() -> Int { remoteObservations.count }
 
+    func remoteRequests() -> [CompetitionScoreRevisionRequest] {
+        remoteObservations.map(\.request)
+    }
+
     func waitForRemoteCallCount(_ count: Int) async {
         guard remoteObservations.count < count else { return }
         await withCheckedContinuation { continuation in
@@ -2116,6 +2386,59 @@ private actor RemoveFailingOutboxStore: CompetitionOutboxStore {
             shouldFailNextRemove = false
             throw CoordinatorFixtureFailure.injectedCrash
         }
+        try await base.remove(
+            semanticEventID,
+            expectedGeneration: expectedGeneration
+        )
+    }
+}
+
+/// Its first read lets `hook` run, then fails, as a drain pass would on an
+/// outbox IO error.
+private actor WakeThenFailOnceOutboxStore: CompetitionOutboxStore {
+    private let base: any CompetitionOutboxStore
+    private var hook: (@Sendable () async -> Void)?
+
+    init(base: any CompetitionOutboxStore) {
+        self.base = base
+    }
+
+    func failFirstRead(after hook: @escaping @Sendable () async -> Void) {
+        self.hook = hook
+    }
+
+    func enqueue(
+        _ payload: CompetitionOutboxPayload,
+        enqueuedAt: Date
+    ) async throws -> CompetitionOutboxEntry {
+        try await base.enqueue(payload, enqueuedAt: enqueuedAt)
+    }
+
+    func entries() async throws -> [CompetitionOutboxEntry] {
+        if let hook {
+            self.hook = nil
+            await hook()
+            throw CoordinatorFixtureFailure.injectedCrash
+        }
+        return try await base.entries()
+    }
+
+    func update(
+        _ semanticEventID: UUID,
+        expectedGeneration: UInt64,
+        state: CompetitionOutboxState
+    ) async throws -> CompetitionOutboxEntry {
+        try await base.update(
+            semanticEventID,
+            expectedGeneration: expectedGeneration,
+            state: state
+        )
+    }
+
+    func remove(
+        _ semanticEventID: UUID,
+        expectedGeneration: UInt64
+    ) async throws {
         try await base.remove(
             semanticEventID,
             expectedGeneration: expectedGeneration

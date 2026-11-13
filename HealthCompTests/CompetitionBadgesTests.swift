@@ -76,6 +76,55 @@ final class CompetitionBadgesTests: XCTestCase {
         XCTAssertEqual(badge(.hotStreak).count, 1, "One run of twelve is one streak")
     }
 
+    func testDayMarksAndSweepReadDaysAsTheResultDoes() {
+        // 300.4 to 300.2 shows as a level day; 0 to 0 is no data.
+        let sample = week(0, you: [300.4, 0, 300, 300, 300, 300, 300], them: [300.2, 0, 290, 290, 290, 290, 290])
+        XCTAssertEqual(competitionDayOutcomes(sample), [.tie, nil, .win, .win, .win, .win, .win])
+        let book = competitionBadgeBook([sample])
+        XCTAssertFalse(book.badges.contains { $0.kind == .sweep && $0.isEarned })
+    }
+
+    func testTiesAndRetiredBeltsInRuns() {
+        let win = (you: Array(repeating: 300.0, count: 7), them: Array(repeating: 290.0, count: 7))
+        let tie = Array(repeating: 300.0, count: 7)
+        func badge(_ kind: CompetitionBadgeKind, _ book: CompetitionBadgeBook) -> CompetitionBadge {
+            book.badges.first { $0.kind == kind } ?? CompetitionBadge(kind: kind)
+        }
+        // A tie ends a streak.
+        let streak = competitionBadgeBook(
+            (0..<4).map { week($0, you: win.you, them: win.them) }
+                + [week(4, you: tie, them: tie), week(5, you: win.you, them: win.them)]
+        )
+        XCTAssertEqual(badge(.hotStreak, streak).count, 0)
+        XCTAssertEqual(badge(.hotStreak, streak).countText, "BEST 4")
+
+        // A tie keeps the belt without defending it; a deleted account's belt is never held.
+        let belts = competitionBadgeBook([
+            week(0, you: win.you, them: win.them),
+            week(1, you: tie, them: tie),
+            week(2, you: win.you, them: win.them),
+            week(3, you: win.you, them: win.them),
+            week(4, "Alex", you: win.you, them: win.them),
+            week(5, competitionFormerCompetitorName, you: win.you, them: win.them),
+        ])
+        XCTAssertEqual(badge(.defender, belts).countText, "2 OF 3")
+        XCTAssertEqual(badge(.collector, belts).countText, "2 OF 3")
+    }
+
+    func testOwnStreakFoldsSameDayWeeksInTheServersOrder() {
+        let win = (you: Array(repeating: 300.0, count: 7), them: Array(repeating: 290.0, count: 7))
+        let weeks = [
+            week(0, you: win.you, them: win.them),
+            week(1, you: win.you, them: win.them),
+            // Same end: the smaller id is the win but finalized later.
+            week(2, "Alex", you: win.you, them: win.them, idNumber: 0x20, finishedLater: 3_600),
+            week(2, "Riley", you: win.them, them: win.you, idNumber: 0x21),
+            week(3, you: win.you, them: win.them),
+        ]
+        // Server order: W W W L W.
+        XCTAssertEqual(competitionOwnCareer(weeks).career.winStreak, 3)
+    }
+
     func testHistoryFiltersByOutcomeAndPerson() {
         let weeks = competitionHistoryWeeks(CompetitionMonthFixture.weeks())
         let alex = CompetitionMonthFixture.alexIdentity
@@ -180,7 +229,9 @@ final class CompetitionBadgesTests: XCTestCase {
         _ number: Int,
         _ opponent: String = "Sam",
         you: [Double],
-        them: [Double]
+        them: [Double],
+        idNumber: Int? = nil,
+        finishedLater: TimeInterval = 0
     ) -> LocalCompetitionPresentation {
         let calendar = try! CompetitionCalendar(timeZoneIdentifier: zone)
         var start = try! CompetitionDay(era: 1, year: 2026, month: 1, day: 4, timeZoneIdentifier: zone)
@@ -206,9 +257,9 @@ final class CompetitionBadgesTests: XCTestCase {
         let userPoints = you.reduce(0, +), opponentPoints = them.reduce(0, +)
         let outcome: CompetitionOutcome = userPoints > opponentPoints ? .win
             : userPoints < opponentPoints ? .loss : .tie
-        let completedAt = competitionScheduleBoundaries(schedule)!.end.addingTimeInterval(43_200)
+        let completedAt = competitionScheduleBoundaries(schedule)!.end.addingTimeInterval(43_200 + finishedLater)
         return LocalCompetitionPresentation(
-            id: CompetitionID(UUID(uuidString: String(format: "B7000000-0000-4000-8000-0000000000%02X", number))!),
+            id: CompetitionID(UUID(uuidString: String(format: "B7000000-0000-4000-8000-0000000000%02X", idNumber ?? number))!),
             ownerDisplayName: "Beta Alice",
             opponentDisplayName: opponent,
             opponentIdentity: "remote-profile:v1:\(opponent.lowercased())",

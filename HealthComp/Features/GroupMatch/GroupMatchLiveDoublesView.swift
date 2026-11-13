@@ -72,8 +72,7 @@ struct GroupMatchLiveDoublesView: View {
         let name = match.name(of: team)
         return VStack(alignment: alignment, spacing: 6) {
             Text(name.uppercased(with: locale))
-                .font(.themeLabel)
-                .tracking(1.2)
+                .themeLabel()
                 .multilineTextAlignment(alignment == .trailing ? .trailing : .leading)
             if competitionShouldShowScores(match.lifecycle) {
                 Text(competitionPointsText(total, locale: locale))
@@ -119,7 +118,8 @@ struct GroupMatchLiveDoublesView: View {
                         .frame(width: width * share)
                     Group {
                         if isYours, !members[1].isBot {
-                            RoundedRectangle(cornerRadius: 4).strokeBorder(Theme.youFill, lineWidth: 2)
+                            // A thin stroke: amber as text, which holds contrast on the panel.
+                            RoundedRectangle(cornerRadius: 4).strokeBorder(Theme.you, lineWidth: 2)
                         } else {
                             RoundedRectangle(cornerRadius: 4).fill(Theme.tertiary)
                         }
@@ -129,15 +129,13 @@ struct GroupMatchLiveDoublesView: View {
             }
             .frame(height: 14)
             .accessibilityHidden(true)
-            HStack(alignment: .firstTextBaseline) {
-                memberLegend(lead, percent: percent)
-                Spacer(minLength: 8)
-                memberLegend(members[1], percent: nil)
-            }
+            pair(memberLegend(lead, percent: percent), memberLegend(members[1], percent: nil))
             .font(.subheadline)
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(members.map(memberLabel).joined(separator: ". "))
+        .modifier(CompetitionProfileAction(route: match.profileRoute(members[0]), name: members[0].name))
+        .modifier(CompetitionProfileAction(route: match.profileRoute(members[1]), name: members[1].name))
     }
 
     /// "You, 1,664 points, 53 percent"
@@ -161,6 +159,21 @@ struct GroupMatchLiveDoublesView: View {
             if seat.isBot { GroupMatchTag("BOT") }
             if match.hasLeft(seat) { GroupMatchTag("LEFT") }
         }
+        .modifier(CompetitionProfileTap(route: match.profileRoute(seat)))
+    }
+
+    /// Two items at either end of a line, or one under the other at
+    /// accessibility sizes, as the scoreboard does.
+    private func pair(_ leading: some View, _ trailing: some View) -> some View {
+        let stacked = dynamicTypeSize.isAccessibilitySize
+        let layout = stacked
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 6))
+            : AnyLayout(HStackLayout(alignment: .firstTextBaseline))
+        return layout {
+            leading
+            if !stacked { Spacer(minLength: 8) }
+            trailing
+        }
     }
 
     private func seatPoints(_ seat: GroupMatchSeat) -> Double {
@@ -173,11 +186,7 @@ struct GroupMatchLiveDoublesView: View {
         let theirs = match.members(of: theirTeam)
         return VStack(alignment: .leading, spacing: 6) {
             ForEach(0..<2, id: \.self) { index in
-                HStack {
-                    todayScore(yours[index], ordinal: ordinal)
-                    Spacer(minLength: 8)
-                    todayScore(theirs[index], ordinal: ordinal)
-                }
+                pair(todayScore(yours[index], ordinal: ordinal), todayScore(theirs[index], ordinal: ordinal))
             }
         }
         .font(.subheadline)
@@ -198,7 +207,7 @@ struct GroupMatchLiveDoublesView: View {
     /// Your partner only, while you both play. Never a bot.
     @ViewBuilder
     private var nudge: some View {
-        if let partner, !partner.isBot, match.liveDay != nil, !match.hasLeft(partner), !match.hasLeft(match.viewer) {
+        if let partner, !partner.isBot, match.canNudgePartner, !match.hasLeft(partner), !match.hasLeft(match.viewer) {
             let command = GroupMatchCommand.nudge(match.id)
             let isSending = store.inFlight.contains(command)
             VStack(alignment: .leading, spacing: 6) {
@@ -220,10 +229,7 @@ struct GroupMatchLiveDoublesView: View {
                     .accessibilityHint("Sends \(partner.name) a notification to open HealthComp.")
                     .accessibilityIdentifier("competition.group.nudge")
                     if let line = store.state.failureLine([command], otherwise: "Couldn’t send the nudge. Try again.") {
-                        Text(line)
-                            .font(.subheadline)
-                            .foregroundStyle(Theme.secondary)
-                            .accessibilityIdentifier("competition.group.nudge.error")
+                        GroupMatchErrorLine(line, identifier: "competition.group.nudge.error")
                     }
                 }
             }

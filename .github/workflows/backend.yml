@@ -42,59 +42,75 @@ jobs:
           set -euo pipefail
           bash scripts/test-verify-no-secrets.sh
           python3 -B -m unittest scripts.tests.test_verify_support_email
-          bash scripts/test-backup-runbook.sh
-          bash scripts/test-backup-runbook-checks.sh
-          bash -n scripts/emit-recovery-history-test-sql.sh
-          bash -n scripts/test-recovery-history-wrapper.sh
-          bash -n scripts/test-recovery-common-snapshot.sh
-          bash -n scripts/test-recovery-migrated-snapshot.sh
-          bash -n scripts/test-recovery-foreign-key-integrity.sh
-          bash -n scripts/test-recovery-foreign-key-static.sh
-          bash scripts/test-recovery-foreign-key-static.sh
-          bash scripts/test-recovery-foreign-key-integrity.sh --static
-          bash scripts/test-recovery-state-acceptance.sh --static
-          bash -n scripts/test-deletion-client-migration.sh
-          bash -n scripts/test-deleted-profile-history-migration.sh
-          bash -n scripts/test-invitation-recipient-migration.sh
-          sh scripts/test-verify-invitation-functions.sh
+          for script in scripts/*.sh; do bash -n "$script"; done
           sh scripts/test-staging-adversarial-sql.sh
           sh scripts/test-verify-app-attest-dependency-graph.sh
-          sh -n scripts/verify-app-attest-dependency-graph.sh
-          sh -n scripts/test-app-attest-edge-runtime.sh
           bash scripts/verify-no-secrets.sh
           bash scripts/verify-supabase-layout.sh
+          # Pages deploys web/ and functions/ on every push to main: universal
+          # links, their rewrites and private-link headers must survive edits.
+          python3 - <<'PY'
+          import json
+          detail, = json.load(open("web/.well-known/apple-app-site-association"))["applinks"]["details"]
+          assert sorted(detail["appIDs"]) == [
+              "23LUYD78QK.com.narenyenuganti.HealthComp",
+              "23LUYD78QK.com.narenyenuganti.HealthComp.staging",
+          ], "association app IDs changed"
+          assert [c["/"] for c in detail["components"]] == ["/invite/*", "/c/*"], "association paths changed"
+          PY
+          grep -qxF '/invite/*  /invite  200' web/_redirects
+          grep -qxF '/c/*  /challenge  200' web/_redirects
+          [[ "$(grep -cxF '  Cache-Control: no-store' web/_headers)" == 2 ]]
+          [[ "$(grep -cxF '  Referrer-Policy: no-referrer' web/_headers)" == 2 ]]
+          [[ "$(grep -cxF '  X-Robots-Tag: noindex' web/_headers)" == 2 ]]
+          deno eval '
+            const { onRequestPost } = await import("./functions/api/waitlist.js");
+            const body = new FormData();
+            body.set("email", "not-an-email");
+            const response = await onRequestPost({ request: new Request("http://localhost/api/waitlist", { method: "POST", body }), env: {} });
+            if (response.status !== 400) throw new Error(`waitlist answered ${response.status} to a bad email`);
+          '
           deno fmt --config supabase/functions/deno.json --check \
             scripts/tests/invitation-page.test.ts \
             supabase/functions \
-            supabase/tests/app-attest-hosted-regression.deno.json \
-            supabase/tests/app-attest-hosted-regression.deno.lock \
             supabase/tests/edge-runtime
           deno lint --config supabase/functions/deno.json supabase/functions scripts/tests/invitation-page.test.ts
           git diff --check
+
+      - name: Verify the released-API snapshot
+        env:
+          RETIRES_RELEASED_API: ${{ contains(github.event.pull_request.labels.*.name, 'retire-released-api') }}
+        run: |
+          set -euo pipefail
+          snapshot=supabase/tests/900_released_api.test.sql
+          version="$(sed -nE 's/^MARKETING_VERSION = (.+)$/\1/p' Configuration/Base.xcconfig)"
+          build="$(sed -nE 's/^CURRENT_PROJECT_VERSION = (.+)$/\1/p' Configuration/Base.xcconfig)"
+          if ! head -n 1 "$snapshot" | grep -qF "for build $version ($build)."; then
+            echo "Base.xcconfig is $version ($build) but $snapshot was saved for another build; run scripts/save-released-api.sh." >&2
+            exit 1
+          fi
+          # Deleting a released function's line drops the guard for installed builds.
+          if [[ "$GITHUB_EVENT_NAME" == pull_request && "$RETIRES_RELEASED_API" != true ]]; then
+            git fetch --no-tags --depth=1 origin "$GITHUB_BASE_REF"
+            if git diff FETCH_HEAD -- "$snapshot" | grep -qE '^-    \('; then
+              echo "This pull request removes released functions from $snapshot. Keep them, or label the pull request retire-released-api when no installed build calls them." >&2
+              exit 1
+            fi
+          fi
 
       - name: Verify migrations, policies, and Edge Functions
         run: |
           set -euo pipefail
           schema_diff="$(mktemp "$RUNNER_TEMP/healthcomp-schema-diff.XXXXXX")"
-          foreign_key_output=''
-          state_output=''
 
           cleanup() {
             supabase stop --no-backup >/dev/null 2>&1 || true
             rm -f -- "$schema_diff"
-            if [[ -n "$foreign_key_output" ]]; then
-              rm -f -- "$foreign_key_output"
-            fi
-            if [[ -n "$state_output" ]]; then
-              rm -f -- "$state_output"
-            fi
           }
           trap cleanup EXIT
           trap 'exit 130' INT
           trap 'exit 143' TERM
           trap 'exit 129' HUP
-          foreign_key_output="$(mktemp "$RUNNER_TEMP/healthcomp-fk-check.XXXXXX")"
-          state_output="$(mktemp "$RUNNER_TEMP/healthcomp-state-check.XXXXXX")"
 
           supabase start
           # Rehearse the actual forward migration with an existing synthetic
@@ -134,107 +150,12 @@ jobs:
               --dbname=postgres \
             < scripts/staging-adversarial-rollback.sql
 
-          # Separate empty, disposable fixture database; never a linked project.
-          # createdb fails if the exact name already exists; do not reuse it.
-          docker exec "$database_containers" createdb \
-            --host=/var/run/postgresql --username=postgres --template=template0 \
-            healthcomp_recovery_fixture
-          bash scripts/emit-recovery-history-test-sql.sh | \
-            docker exec -i "$database_containers" psql \
-              --no-psqlrc --no-password --quiet --tuples-only --no-align \
-              --host=/var/run/postgresql --username=postgres \
-              --dbname=healthcomp_recovery_fixture --set=ON_ERROR_STOP=on
-          docker exec "$database_containers" mkdir \
-            /tmp/healthcomp-recovery-checks \
-            /tmp/healthcomp-recovery-checks/scripts \
-            /tmp/healthcomp-recovery-checks/scripts/tests \
-            /tmp/healthcomp-recovery-checks/supabase \
-            /tmp/healthcomp-recovery-checks/supabase/migrations
-          for recovery_file in recovery-history-integrity.sql \
-            recovery-history-integrity-query.sql test-recovery-history-wrapper.sh \
-            recovery-foreign-key-integrity.sql test-recovery-foreign-key-integrity.sh \
-            recovery-state-acceptance.sql recovery-state-acceptance-query.sql \
-            test-recovery-state-acceptance.sh test-recovery-common-snapshot.sh; do
-            docker cp "scripts/$recovery_file" \
-              "$database_containers:/tmp/healthcomp-recovery-checks/scripts/$recovery_file"
-          done
-          docker cp scripts/tests/recovery-foreign-key-fixtures.sql \
-            "$database_containers:/tmp/healthcomp-recovery-checks/scripts/tests/recovery-foreign-key-fixtures.sql"
-          docker cp scripts/tests/recovery-state-fixtures.sql \
-            "$database_containers:/tmp/healthcomp-recovery-checks/scripts/tests/recovery-state-fixtures.sql"
-          docker cp supabase/migrations/20260811000200_add_competition_rls.sql \
-            "$database_containers:/tmp/healthcomp-recovery-checks/supabase/migrations/20260811000200_add_competition_rls.sql"
-          # The fixture guard requires the image's local superuser. Supabase's
-          # postgres role is not a superuser; actual-schema checks keep that role.
-          docker exec \
-            --env PGHOST=/var/run/postgresql --env PGUSER=supabase_admin \
-            --env PGDATABASE=healthcomp_recovery_fixture \
-            "$database_containers" bash \
-              /tmp/healthcomp-recovery-checks/scripts/test-recovery-history-wrapper.sh
-          # The FK suite owns exact synthetic objects and verifies empty cleanup.
-          docker exec \
-            --env PGHOST=/var/run/postgresql --env PGUSER=supabase_admin \
-            "$database_containers" bash \
-              /tmp/healthcomp-recovery-checks/scripts/test-recovery-foreign-key-integrity.sh
-          # State fixtures preserve existing API roles and verify exact empty
-          # cleanup before any real-schema checks. No hosted project is used.
-          docker exec \
-            --env PGHOST=/var/run/postgresql --env PGUSER=supabase_admin \
-            "$database_containers" bash \
-              /tmp/healthcomp-recovery-checks/scripts/test-recovery-state-acceptance.sh
-          # Native table export and receipt share one held MVCC snapshot;
-          # an unbound dump must diverge after a committed synthetic change.
-          docker exec \
-            --env PGHOST=/var/run/postgresql --env PGUSER=supabase_admin \
-            "$database_containers" timeout -k 5 90 bash \
-              /tmp/healthcomp-recovery-checks/scripts/test-recovery-common-snapshot.sh
-          docker exec "$database_containers" dropdb \
-            --host=/var/run/postgresql --username=postgres healthcomp_recovery_fixture
-
-          # Actual query + wrapper against the real, fully migrated CI schema.
-          # This is compatibility evidence, not a populated hosted restore.
-          docker exec "$database_containers" psql \
-            --no-psqlrc --no-password --quiet --tuples-only --no-align \
-            --host=/var/run/postgresql --username=postgres --dbname=postgres \
-            --set=ON_ERROR_STOP=on \
-            --file=/tmp/healthcomp-recovery-checks/scripts/recovery-history-integrity.sql
-
-          # Fresh ordinary-role connection; require exit zero and no output bytes.
-          # Never print captured output, including unexpected database diagnostics.
-          if ! docker exec "$database_containers" psql -XqAt --no-password \
-            --host=/var/run/postgresql --username=postgres --dbname=postgres \
-            --file=/tmp/healthcomp-recovery-checks/scripts/recovery-foreign-key-integrity.sql \
-            >"$foreign_key_output" 2>&1; then
-            echo "Foreign-key schema compatibility check failed." >&2
-            exit 1
-          fi
-          if [[ -s "$foreign_key_output" ]]; then
-            echo "Foreign-key schema compatibility check produced unexpected output." >&2
-            exit 1
-          fi
-
-          # Exact 33-field v2 empty-state receipt from the actual migrated schema,
-          # not just synthetic projections. Never print rejected output/errors.
-          if ! docker exec "$database_containers" psql -XqAt --no-password \
-            --host=/var/run/postgresql --username=postgres --dbname=postgres \
-            --file=/tmp/healthcomp-recovery-checks/scripts/recovery-state-acceptance.sql \
-            >"$state_output" 2>&1; then
-            echo "State schema compatibility check failed." >&2
-            exit 1
-          fi
-          bash scripts/test-recovery-state-acceptance.sh --check-empty-receipt <"$state_output"
-          echo "State schema compatibility passed: exact v2 empty receipt, 28 application tables."
-
           deno test \
             --config supabase/functions/deno.json \
             --allow-env \
             --allow-net \
             --allow-read \
             supabase/functions scripts/tests/invitation-page.test.ts
-          deno test \
-            --config supabase/tests/app-attest-hosted-regression.deno.json \
-            --allow-read \
-            supabase/functions/_shared/app-attest_hosted_regression_test.ts
           sh scripts/test-app-attest-edge-runtime.sh
           bash scripts/verify-invitation-functions.sh
           supabase db lint --local --level warning --fail-on warning

@@ -117,6 +117,7 @@ expect_clean "$clean_fixture"
 
 filename_cases=(
   ".env|tracked-sensitive-file"
+  "web/.dev.vars|tracked-sensitive-file"
   "Secrets/AuthKey_TEST.p8|tracked-sensitive-file"
   "Secrets/distribution.p12|tracked-sensitive-file"
   "Secrets/distribution.P12|tracked-sensitive-file"
@@ -167,6 +168,9 @@ printf '%s\n%s\n%s\n' \
 add_and_commit "$fixture" Secrets.txt
 expect_rejected "$fixture" private-key Secrets.txt "$pem_body"
 
+resend_key_fixture='re'
+resend_key_fixture+='_AbCd1234_EfGhIjKlMnOpQrStUvWx'
+escaped_pem_fixture="{\"private_key\": \"${pem_header}\\nMIIEvQIBADANBgkqhkiG9w0BAQEFAASC\"}"
 supabase_secret_fixture='sb'
 supabase_secret_fixture+='_secret_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA'
 github_token_fixture='gh'
@@ -188,6 +192,8 @@ database_password_assignment_fixture+='_DB_PASSWORD=do-not-print-this'
 
 pattern_cases=(
   "supabase-secret|$supabase_secret_fixture"
+  "resend-key|$resend_key_fixture"
+  "private-key|$escaped_pem_fixture"
   "github-token|$github_token_fixture"
   "github-token|$github_fine_grained_token_fixture"
   "aws-access-key|$aws_access_key_fixture"

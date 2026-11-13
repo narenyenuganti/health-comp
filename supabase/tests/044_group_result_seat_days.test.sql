@@ -136,4 +136,11 @@ select ok((select bool_and(r.immutable_hash=extensions.digest(convert_to('health
 select ok((select bool_and((match->'result')-array['version','seats']=(to_jsonb(r)-'frozen_payload')||jsonb_build_object('server_seq',r.server_seq::text,'immutable_hash',encode(r.immutable_hash,'hex')))
  from read_models join public.competition_group_results r on r.competition_id=(match->>'competition_id')::uuid),'every pre-existing result field stays byte-for-byte equivalent');
 set constraints all immediate;
+-- Installed builds decode each reaction against exactly seven keys; a later column must not reach them.
+insert into private.competition_reactions(competition_id,author_profile_id,target_profile_id,day_ordinal,reaction)
+  values (pg_temp.gid('doubles'),pg_temp.pid(1),pg_temp.pid(2),1,'clap');
+alter table private.competition_reactions add column probe_later_column integer;
+select pg_temp.as_user(1);
+select is((select array_agg(k order by k) from jsonb_array_elements(public.preview_group_match(pg_temp.gid('doubles'))->'reactions') r,jsonb_object_keys(r) k),
+ array['author_profile_id','competition_id','created_at','day_ordinal','reaction','target_profile_id','updated_at'],'reaction keys stay the seven installed builds decode');
 select * from finish(); rollback;

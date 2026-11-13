@@ -58,6 +58,9 @@ struct AccountView: View {
         .moving(Motion.settle, value: state.message)
         .moving(Motion.settle, value: hasPendingChallenge)
         .sensoryFeedback(.error, trigger: state.message, condition: Self.isFailure)
+        .onChange(of: state.message) { _, new in
+            if let new { AccessibilityNotification.Announcement(new.text).post() }
+        }
     }
 
     /// Account deleted and session ended report something already done.
@@ -156,6 +159,15 @@ struct AccountView: View {
                 .disabled(state.isRequestInFlight)
                 .accessibilityIdentifier("account.sign-in-with-apple.browser")
             }
+            // A way out for the wrong Apple ID or second thoughts.
+            if state.mode == .settingUpProfile {
+                Button("Sign Out") {
+                    store.send(.signOutButtonTapped)
+                }
+                .buttonStyle(QuietButtonStyle())
+                .disabled(state.isRequestInFlight)
+                .accessibilityIdentifier("account.setup.sign-out")
+            }
             Link(destination: URL(string: "https://healthcomp.app/privacy")!) {
                 // 48, not 44: centered content can land on a fractional
                 // origin and round the target below 44 pt.
@@ -224,7 +236,9 @@ struct AccountView: View {
     private var title: String {
         switch state.mode {
         case .signedOut:
-            hasPendingChallenge ? "You have a challenge" : "Welcome to HealthComp"
+            // The Apple sheet has closed but the exchange is still running.
+            state.isRequestInFlight ? "Signing in…"
+                : hasPendingChallenge ? "You have a challenge" : "Welcome to HealthComp"
         case .settingUpProfile: "Choose your display name"
         case .launchFailure: state.message?.failureTitle ?? "Couldn’t connect"
         case .profileConflict: "This iPhone has history for another account"
@@ -256,22 +270,6 @@ enum AppleSignInAppearance {
         colorScheme == .dark ? .white : .black
     }
 
-}
-
-enum AccountProgressAppearance {
-    static func tint(
-        for mode: AccountFeature.State.Mode,
-        colorScheme: ColorScheme
-    ) -> Color {
-        switch mode {
-        case .signedOut:
-            colorScheme == .dark ? .black : .white
-        case .settingUpProfile, .launchFailure, .profileConflict:
-            .white
-        case .authenticated:
-            .primary
-        }
-    }
 }
 
 private struct SignInWithAppleButton: UIViewRepresentable {

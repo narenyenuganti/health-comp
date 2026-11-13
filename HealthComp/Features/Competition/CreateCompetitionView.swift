@@ -171,6 +171,15 @@ struct CreateCompetitionView: View {
         findRecipient()
     }
 
+    private var canGoBack: Bool { !isPicking && !isLocked }
+
+    /// Clearing the code clears the chosen person too.
+    private func goBack() {
+        recipientCodeIsFocused = false
+        entersLink = false
+        recipientCode = ""
+    }
+
     private var recipientName: String {
         recipient?.displayName ?? "them"
     }
@@ -181,6 +190,23 @@ struct CreateCompetitionView: View {
 
     private var header: some View {
         HStack(alignment: .top, spacing: 14) {
+            if canGoBack {
+                // Back to the friend list: a wrong pick or a stray tap on
+                // Paste Their Challenge Link isn't a dead end.
+                Button(action: goBack) {
+                    Image(systemName: "chevron.left")
+                        .font(.footnote.weight(.bold))
+                        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+                        .foregroundStyle(Theme.secondary)
+                        .frame(width: 30, height: 30)
+                        .background(Theme.control, in: Circle())
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Back")
+                .accessibilityIdentifier("competition.create.back")
+            } else {
             // The opponent's slot: empty, then filled in neutral ink once
             // the challenge is sent.
             ZStack {
@@ -199,6 +225,7 @@ struct CreateCompetitionView: View {
             .padding(.horizontal, 6)
             .padding(.top, 2)
             .accessibilityHidden(true)
+            }
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
@@ -290,10 +317,7 @@ struct CreateCompetitionView: View {
                     detailColor: isDimmed ? Theme.ink : Theme.secondary
                 )
                 if blocker == nil {
-                    Image(systemName: "chevron.right")
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(Theme.tertiary)
-                        .accessibilityHidden(true)
+                    DisclosureChevron()
                 }
             }
             .padding(.vertical, 12)
@@ -326,10 +350,7 @@ struct CreateCompetitionView: View {
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             if opens {
-                Image(systemName: "chevron.right")
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(Theme.tertiary)
-                    .accessibilityHidden(true)
+                DisclosureChevron()
             }
         }
         .foregroundStyle(Theme.ink)
@@ -737,6 +758,28 @@ struct ChallengeFromLinkView: View {
         // The success lands in MainTabView: this sheet may never render `.sent`.
         .sensoryFeedback(.error, trigger: status.controlPhase == .failed) { _, new in new }
         .sensoryFeedback(.error, trigger: linkFailed) { _, new in new }
+        // The content and control swap in place, so VoiceOver focus is lost:
+        // say what replaced them.
+        .onChange(of: link.status) { _, newValue in
+            switch newValue {
+            case let .ready(name): announce("Challenge \(name)?")
+            case .ownLink: announce("That’s your link")
+            case .unavailable: announce("Link not found. This challenge link isn’t active.")
+            case .retryable: announce("Couldn’t connect. Check your connection and try again.")
+            case .resolving: break
+            }
+        }
+        .onChange(of: status) { _, newValue in
+            switch newValue {
+            case .creating: announce("Sending")
+            case let .failed(failure): announce(competitionInviteFailureText(failure, opponentName: name))
+            default: break
+            }
+        }
+    }
+
+    private func announce(_ text: String) {
+        AccessibilityNotification.Announcement(text).post()
     }
 
     private var linkFailed: Bool {

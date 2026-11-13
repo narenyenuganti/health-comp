@@ -1293,8 +1293,8 @@ final class MultiUserCompetitionUITests: XCTestCase {
         let disclosure = app.descendants(matching: .any).matching(
             NSPredicate(
                 format: "label CONTAINS %@ AND label CONTAINS %@",
-                "Derived match data is shared",
-                "Daily points, rounded Activity percentages and modes"
+                "Shared with the people you play",
+                "Daily points, rounded ring percentages and ring modes"
             )
         ).firstMatch
         XCTAssertTrue(disclosure.waitForExistence(timeout: 3))
@@ -1323,8 +1323,8 @@ final class MultiUserCompetitionUITests: XCTestCase {
         let disclosure = app.descendants(matching: .any).matching(
             NSPredicate(
                 format: "label CONTAINS %@ AND label CONTAINS %@",
-                "Derived match data is shared",
-                "Daily points, rounded Activity percentages and modes"
+                "Shared with the people you play",
+                "Daily points, rounded ring percentages and ring modes"
             )
         ).firstMatch
         XCTAssertTrue(disclosure.waitForExistence(timeout: 3))

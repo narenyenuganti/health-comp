@@ -1,7 +1,7 @@
 import { assertEquals } from "@std/assert";
 
-const functionsURL = Deno.env.get("HEALTHCOMP_TEST_FUNCTIONS_URL") ??
-  "http://127.0.0.1:54321/functions/v1";
+// No default: port 54321 on a shared machine may belong to another project.
+const functionsURL = Deno.env.get("HEALTHCOMP_TEST_FUNCTIONS_URL") ?? "";
 
 Deno.test("local Edge Runtime boots the score endpoint before request validation", async () => {
   const endpoint = new URL("submit-score-revision", `${functionsURL}/`);

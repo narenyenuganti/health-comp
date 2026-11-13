@@ -66,6 +66,14 @@ struct GroupMatchDayRings: Equatable, Sendable {
     let centipoints: [Int]
 }
 
+/// One person's reaction to another person's day.
+struct GroupMatchReaction: Equatable, Sendable {
+    let authorSeatID: UUID
+    let targetSeatID: UUID
+    let ordinal: Int
+    let kind: CompetitionReactionKind
+}
+
 /// A place in the standings: projected while live, the server's once finished.
 struct GroupMatchStandingRow: Identifiable, Equatable, Sendable {
     let subject: MatchStandingSubject
@@ -94,6 +102,11 @@ struct GroupMatchPresentation: Identifiable, Equatable, Sendable {
     let schedule: CompetitionSchedule?
     let days: [MatchDayScore]
     let rings: [GroupMatchDayRings]
+    /// Everyone's day reactions, in the server's order (oldest first).
+    let reactions: [GroupMatchReaction]
+    /// Doubles: the server would take a nudge for your partner now (see
+    /// `GroupMatchReadModel.canNudgePartner`). Who may be nudged is the screen's.
+    let canNudgePartner: Bool
     /// The server's result, shown as is. Nil until the match finishes.
     let frozenStandings: [GroupMatchStandingRow]?
     /// Each seat's total in the server's result; nil when the result doesn't carry them.
@@ -112,6 +125,9 @@ struct GroupMatchPresentation: Identifiable, Equatable, Sendable {
         schedule: CompetitionSchedule? = nil,
         days: [MatchDayScore] = [],
         rings: [GroupMatchDayRings] = [],
+        reactions: [GroupMatchReaction] = [],
+        /// Nil: any live day.
+        canNudgePartner: Bool? = nil,
         leaveCutoffs: [UUID: Int] = [:],
         frozenStandings: [GroupMatchStandingRow]? = nil,
         frozenSeatTotals: [UUID: Int]? = nil,
@@ -134,6 +150,11 @@ struct GroupMatchPresentation: Identifiable, Equatable, Sendable {
         self.schedule = schedule
         self.days = days
         self.rings = rings
+        self.reactions = reactions
+        switch lifecycle {
+        case .active, .endsToday: self.canNudgePartner = canNudgePartner ?? true
+        default: self.canNudgePartner = canNudgePartner ?? false
+        }
         self.frozenStandings = frozenStandings
         self.frozenSeatTotals = frozenSeatTotals
         self.frozenDays = frozenDays

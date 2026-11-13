@@ -35,7 +35,7 @@ fi
 
 while IFS= read -r -d '' tracked_path; do
   case "$tracked_path" in
-    .env | */.env | .env.* | */.env.* | \
+    .env | */.env | .env.* | */.env.* | .dev.vars | */.dev.vars | \
       *.p8 | *.p12 | *.pfx | *.mobileprovision | *.local.xcconfig | \
       .pgpass | */.pgpass | credentials.json | */credentials.json)
       report_finding tracked-sensitive-file "$tracked_path"
@@ -72,11 +72,15 @@ scan_pattern() {
 # rather than source code that merely contains a PEM-validation expression.
 scan_pattern private-key \
   '^[[:space:]]*-----BEGIN ([A-Z0-9]+ )*PRIVATE KEY-----[[:space:]]*$'
+# A PEM key pasted into JSON or an env value keeps its newlines as "\n".
+scan_pattern private-key \
+  '-----BEGIN ([A-Z0-9]+ )*PRIVATE KEY-----\\n[A-Za-z0-9+/]'
 scan_pattern aws-access-key '(AKIA|ASIA)[0-9A-Z]{16}'
 scan_pattern github-token \
   '(gh[pousr]_[A-Za-z0-9]{36,}|github_pat_[A-Za-z0-9_]{20,})'
 scan_pattern supabase-access-token 'sbp_[A-Za-z0-9]{20,}'
 scan_pattern supabase-secret 'sb_secret_[A-Za-z0-9_-]{20,}'
+scan_pattern resend-key '(^|[^A-Za-z0-9_])re_[A-Za-z0-9]{6,12}_[A-Za-z0-9]{16,}'
 scan_pattern stripe-secret 'sk_(live|test)_[A-Za-z0-9]{20,}'
 scan_pattern literal-jwt \
   'eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}'

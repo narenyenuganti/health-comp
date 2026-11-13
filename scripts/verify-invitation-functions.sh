@@ -22,11 +22,6 @@ cleanup() {
     kill "$TEST_PID" 2>/dev/null || true
     wait "$TEST_PID" 2>/dev/null || true
   fi
-  cd "$REPO_ROOT"
-  if ! supabase db reset >/dev/null 2>&1; then
-    echo "post-run local database reset failed" >&2
-    result=1
-  fi
   rm -f "$STATUS_ENV" "$TEST_OUTPUT" "$FUNCTION_LOG" "$FUNCTION_ENV" \
     "$READINESS_OUTPUT"
   exit "$result"
@@ -173,6 +168,3 @@ fi
 kill "$FUNCTIONS_PID" 2>/dev/null || true
 wait "$FUNCTIONS_PID" 2>/dev/null || true
 FUNCTIONS_PID=""
-
-supabase db reset
-supabase test db

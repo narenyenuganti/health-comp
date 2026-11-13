@@ -413,6 +413,10 @@ struct MainTabView: View {
         let id = RemoteCompetitionOpponentIdentity.profileID(identity)
         let name = id.flatMap { store.competition.friends.people[$0]?.displayName }
             ?? theirs.first?.opponentDisplayName
+            // Someone you only share a group match with.
+            ?? id.flatMap { id in
+                publication.dashboard.groupMatches.flatMap(\.seats).first { $0.profileID == id }?.name
+            }
         let rivalry = CompetitionProfileRivalry(
             competitions, identity: identity, name: name ?? "", now: publication.evaluatedAt, seen: motionSeen
         )

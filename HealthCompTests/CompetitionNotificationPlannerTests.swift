@@ -838,10 +838,10 @@ final class CompetitionNotificationPlannerTests: XCTestCase {
         XCTAssertEqual(requests.count, 1)
         XCTAssertEqual(requests[0].identifier, decisions.map(\.request.identifier).min())
         XCTAssertTrue(requests[0].identifier.hasSuffix(":result:result"))
-        XCTAssertEqual(requests[0].content.title, "2 matches finished")
+        XCTAssertEqual(requests[0].content.title, "2 decisions are in")
         XCTAssertEqual(
             requests[0].content.body,
-            "You beat Priya 3,410 to 3,180. You took the belt. Jordan won 3,302 to 3,117. Jordan took the belt."
+            "Your matches with Jordan and Priya are scored. Open to hear the decisions."
         )
         XCTAssertNil(requests[0].route)
 
@@ -1030,7 +1030,7 @@ final class CompetitionNotificationPlannerTests: XCTestCase {
         XCTAssertEqual(
             merged.map(\.content.body),
             [
-                "HealthComp is checking the latest Activity data before finalizing your results with Jordan and Priya.",
+                "Your matches with Jordan and Priya are in. The decisions are coming.",
                 "Today is the last day of your matches with Jordan and Priya.",
                 "Your matches with Jordan and Priya start today.",
             ]
@@ -1291,14 +1291,14 @@ final class CompetitionNotificationPlannerTests: XCTestCase {
                 named(.opportunistic(.result), "Sam", "02", 3_180, 3_180, .tie),
                 named(.opportunistic(.result), "Priya", "03", 3_410, 3_180, .win),
             ])),
-            "3 matches finished · You beat Priya 3,410 to 3,180. All square with Sam at 3,180. Jordan won 3,302 to 3,117."
+            "3 decisions are in · Your matches with Jordan, Priya, and Sam are scored. Open to hear the decisions."
         )
         XCTAssertEqual(
             summary([
                 named(.opportunistic(.result), "Priya", "02", 3_117, 3_302, .loss),
                 named(.opportunistic(.result), "Priya", "01", 3_410, 3_180, .win),
             ]).body,
-            "You beat Priya 3,410 to 3,180. Priya won 3,302 to 3,117."
+            "Your matches with Priya are scored. Open to hear the decisions."
         )
         XCTAssertEqual(
             line(summary([
@@ -1312,11 +1312,8 @@ final class CompetitionNotificationPlannerTests: XCTestCase {
             named(.scheduled(.competitionEnded), "Priya", "01"),
             named(.scheduled(.competitionEnded), "Jordan", "02"),
         ])
-        XCTAssertEqual(ended.title, formatterTitle(.tallying(startedAt: .distantPast)))
-        XCTAssertEqual(
-            ended.body,
-            "HealthComp is checking the latest Activity data before finalizing your results with Jordan and Priya."
-        )
+        XCTAssertEqual(ended.title, "Judges are tallying…")
+        XCTAssertEqual(ended.body, "Your matches with Jordan and Priya are in. The decisions are coming.")
         XCTAssertEqual(
             line(summary([
                 named(.scheduled(.finalDay), "Priya", "01"),

@@ -41,6 +41,12 @@ final class GroupMatchResultTests: XCTestCase {
         XCTAssertEqual(
             try XCTUnwrap(CompetitionJudgesBout(GroupMatchFixtures.routed(.resultDoublesTied)!)).title, "IT’S A DRAW"
         )
+        // What VoiceOver hears in place of the reveal.
+        XCTAssertTrue(competitionJudgesAnnouncement(won).hasPrefix("You win, unanimous decision, you "))
+        XCTAssertTrue(competitionJudgesAnnouncement(tied).hasPrefix("It is a draw, you "))
+        XCTAssertTrue(competitionJudgesAnnouncement(third).hasPrefix("Leo wins, "))
+        XCTAssertTrue(competitionJudgesAnnouncement(doubles).hasPrefix("You win, "))
+        XCTAssertTrue(competitionJudgesAnnouncement(doubles).contains("you and Priya "))
         // No result yet, no reveal.
         XCTAssertNil(CompetitionJudgesBout(GroupMatchFixtures.routed(.liveFFA)!))
     }

@@ -119,7 +119,9 @@ function rpcClient(
       getUser: () =>
         Promise.resolve({
           data: { user: authenticated ? { id: authUserID } : null },
-          error: authenticated ? null : { message: "invalid token" },
+          error: authenticated
+            ? null
+            : { message: "invalid token", status: 401 },
         }),
     },
     rpc,
@@ -490,6 +492,50 @@ Deno.test("assertion policy-metadata format transitions fail before authorizatio
   }
 });
 
+Deno.test("a changed bundle version after an app update asks the app to re-attest", async () => {
+  // Registered under build 0, asserting as build 1 (allowed by the policy).
+  const response = await submitScoreRevisionHandler(
+    request({
+      version: 1,
+      score,
+      appAttest: {
+        ...proof,
+        proofKind: "assertion",
+        object: Buffer.from("updated-app-assertion").toString("base64"),
+      },
+    }),
+    dependencies({
+      createServiceClient: () =>
+        rpcClient(() =>
+          Promise.resolve({
+            data: {
+              ...context,
+              proofKind: "assertion",
+              registeredKey: {
+                publicKeyPEM,
+                previousSignCount: 1,
+                environment: "development",
+                validationCategory: 3,
+                bundleVersion: "0",
+              },
+            },
+            error: null,
+          })
+        ),
+      verifyAssertion: () => ({
+        signCount: 2,
+        validationCategory: 3,
+        bundleVersion: "1",
+      }),
+    }),
+  );
+  assertEquals(response.status, 409);
+  assertEquals(
+    (await response.json()).error.code,
+    "app_attest_proof_conflict",
+  );
+});
+
 Deno.test("half-null registered policy metadata fails closed before verification", async () => {
   const assertionProof = {
     ...proof,
@@ -578,6 +624,29 @@ Deno.test("submission is POST-only, bearer-authenticated, and configuration-fail
     },
   });
   assertEquals(invalidSession.status, 401);
+
+  // auth-js returns outages as errors (status 0 for network, 5xx, 429): the
+  // app must retry, so never 401.
+  for (const status of [0, 429, 500, 503, undefined]) {
+    const authOutage = await submitScoreRevisionHandler(request(), {
+      ...dependencies(),
+      createUserClient: () => ({
+        auth: {
+          getUser: () =>
+            Promise.resolve({
+              data: { user: null },
+              error: { message: "auth down", status },
+            }),
+        },
+        rpc: () => Promise.reject(new Error("outage must not reach the RPC")),
+      }),
+    });
+    assertEquals(authOutage.status, 503);
+    assertEquals(
+      (await authOutage.json()).error.code,
+      "temporarily_unavailable",
+    );
+  }
 
   const missingConfiguration = await submitScoreRevisionHandler(request(), {
     ...dependencies(),
@@ -1117,4 +1186,10 @@ Deno.test("every frozen privacy and digest-mutation vector remains executable", 
     assertEquals(response.status >= 400, true, vector.name);
   }
   assertEquals(containsFingerprint("benign-wire-digest-value"), false);
+  // Hostile nesting is rejected without overflowing the stack.
+  assertEquals(
+    containsFingerprint(JSON.parse("[".repeat(100_000) + "]".repeat(100_000))),
+    true,
+  );
+  assertEquals(containsFingerprint({ a: [[{ b: "ok" }]] }), false);
 });

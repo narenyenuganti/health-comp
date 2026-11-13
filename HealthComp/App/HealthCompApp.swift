@@ -49,7 +49,9 @@ enum HealthCompLiveComposition {
         let setReaction = SupabaseCompetitionRemoteAPI
             .live(provider: supabaseClientProvider).setReaction
         CompetitionReactionAlert.send = { recipient, reaction in
-            guard supabaseClientProvider.signedInUserID() == recipient else { return }
+            guard supabaseClientProvider.signedInUserID() == recipient else {
+                throw CancellationError()
+            }
             try await setReaction(reaction)
         }
         return Store(initialState: AppFeature.State()) {
@@ -292,6 +294,8 @@ struct AppRootView: View {
         .task {
             await store.send(.task).finish()
         }
+        // After the first frame, before any intro or reveal needs a sound.
+        .task { Sounds.prepare() }
         .onOpenURL { url in
             guard let route = CompetitionRoute(url: url) else { return }
             _ = CompetitionRoutingEnvironment.liveHub.enqueue(route)
@@ -330,6 +334,10 @@ struct AuthenticatedRootView: View {
     let mainStore: StoreOf<MainTabFeature>
     let accountStore: StoreOf<AccountFeature>
 
+    /// Outside the sheet, under the root's nil preference, so it follows the
+    /// iPhone's own setting live.
+    @Environment(\.colorScheme) private var systemColorScheme
+
     var body: some View {
         MainTabView(
             store: mainStore,
@@ -344,6 +352,7 @@ struct AuthenticatedRootView: View {
             AccountSheet(
                 mainStore: mainStore,
                 accountStore: accountStore,
+                systemColorScheme: systemColorScheme,
                 done: { mainStore.send(.accountPresentationChanged(false)) }
             )
         }
@@ -355,6 +364,7 @@ struct AuthenticatedRootView: View {
 private struct AccountSheet: View {
     let mainStore: StoreOf<MainTabFeature>
     let accountStore: StoreOf<AccountFeature>
+    let systemColorScheme: ColorScheme
     let done: () -> Void
 
     @AppStorage(AppAppearance.storageKey)
@@ -363,8 +373,7 @@ private struct AccountSheet: View {
     /// A nil preference doesn't reach an open sheet, so going back to System
     /// here names the iPhone's own setting instead.
     private var colorScheme: ColorScheme {
-        appearance.colorScheme
-            ?? (UIScreen.main.traitCollection.userInterfaceStyle == .dark ? .dark : .light)
+        appearance.colorScheme ?? systemColorScheme
     }
 
     var body: some View {
@@ -410,7 +419,10 @@ private struct AccountSheet: View {
                 connect: { mainStore.send(.connectHealthTapped) }
             )
         }
-        let liveMatchCount = accountLiveMatchCount(competitions)
+        let liveMatchCount = accountLiveMatchCount(
+            competitions,
+            groupMatches: competition.publication?.dashboard.groupMatches ?? []
+        )
         // Challenge links are between real accounts only.
         let challengeLink = mainStore.competition.publication?.source == .remoteParticipants
             ? AccountChallengeLink(
@@ -618,20 +630,23 @@ private struct LaunchMarkLayer: View {
 
     var body: some View {
         GeometryReader { proxy in
-            TimelineView(.animation) { context in
+            // Under Reduce Motion the mark holds still; only the title fades.
+            TimelineView(.animation(minimumInterval: reduceMotion && handoff == nil ? 0.1 : nil)) { context in
                 let placed = placement(at: context.date, in: proxy)
                 ZStack {
                     LaunchMark(moment: placed.moment)
                         .frame(width: placed.width)
                         .position(placed.centre)
+                    // Top-anchored under the mark, so large text wraps
+                    // downward instead of over it.
                     Text(title)
                         .font(.subheadline)
+                        .multilineTextAlignment(.center)
                         .foregroundStyle(Theme.secondary)
                         .opacity(placed.titleOpacity)
-                        .position(
-                            x: proxy.size.width / 2,
-                            y: proxy.size.height / 2 + LaunchMark.width / 2.5 + 30
-                        )
+                        .padding(.horizontal, 24)
+                        .padding(.top, proxy.size.height / 2 + LaunchMark.width / 2.5 + 20)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
                 }
             }
         }

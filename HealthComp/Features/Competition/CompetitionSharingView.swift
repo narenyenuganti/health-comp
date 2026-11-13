@@ -457,6 +457,10 @@ struct CompetitionSharingView: View {
                     ) + (caption.map { ". \($0)" } ?? "")
                 )
                 .accessibilityHint("Opens this match")
+                // Combining puts the activation point on the first tappable child, the
+                // "You" photo, so activating the card opened your profile, not the match.
+                // The centre never holds a photo, the only profile tap on the card.
+                .accessibilityActivationPoint(.center)
         }
         .modifier(CompetitionProfileAction(route: competitionOwnProfileRoute(for: competition), name: competition.ownerDisplayName))
         .modifier(CompetitionProfileAction(route: competitionProfileRoute(for: competition), name: competition.opponentDisplayName))
@@ -475,9 +479,7 @@ struct CompetitionSharingView: View {
                         .foregroundStyle(Theme.secondary)
                 }
                 Spacer(minLength: 8)
-                Image(systemName: "chevron.right")
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(Theme.tertiary)
+                DisclosureChevron()
             }
             .padding(16)
             .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)
@@ -666,8 +668,7 @@ private struct CompetitionHeroCard: View {
             if !isCompact {
                 HStack(spacing: 6) {
                     Text("MATCH DETAILS")
-                        .font(.themeLabel)
-                        .tracking(1.4)
+                        .themeLabel(tracking: 1.4)
                     Image(systemName: "arrow.right")
                         .font(.footnote.weight(.bold))
                 }
@@ -692,8 +693,7 @@ private struct CompetitionHeroCard: View {
                 statusTrailing
             }
         }
-        .font(.themeLabel)
-        .tracking(1.2)
+        .themeLabel()
         .textCase(.uppercase)
     }
 
@@ -850,10 +850,12 @@ private struct HeroScoreboard: View {
     ) -> some View {
         VStack(alignment: trailing ? .trailing : .leading, spacing: 2) {
             HStack(spacing: 8) {
+                // The photo, not the whole name row: at accessibility sizes the sides
+                // stack and a name reaches the card's centre, where activating it touches.
                 avatar
+                    .modifier(CompetitionProfileTap(route: route))
                 Text(name.uppercased(with: .current))
-                    .font(.themeLabel)
-                    .tracking(1.4)
+                    .themeLabel(tracking: 1.4)
                 if belt?.holder == holder {
                     HStack(spacing: 4) {
                         CompetitionBeltMark(holder: holder)
@@ -867,7 +869,6 @@ private struct HeroScoreboard: View {
                     .transition(Motion.appear)
                 }
             }
-            .modifier(CompetitionProfileTap(route: route))
             // At launch both scores roll up from zero.
             let shown = launchStage == .waiting ? 0 : points
             Text(competitionPointsText(shown))
@@ -1068,9 +1069,7 @@ private struct CompetitionSharingRow: View {
                 .background(Theme.ink, in: Capsule())
                 .accessibilityHidden(true)
         } else if opensMatch {
-            Image(systemName: "chevron.right")
-                .font(.caption.weight(.bold))
-                .foregroundStyle(Theme.tertiary)
+            DisclosureChevron()
         }
     }
 }
@@ -1174,8 +1173,7 @@ private struct CompetitionBeltChip: View {
         HStack(spacing: 6) {
             CompetitionBeltMark(holder: holder)
             Text(text)
-                .font(.themeLabel)
-                .tracking(1.2)
+                .themeLabel()
                 .textCase(.uppercase)
                 .foregroundStyle(holder == .you ? Theme.you : Theme.ink)
                 .fixedSize(horizontal: false, vertical: true)
@@ -1491,9 +1489,7 @@ private struct CompetitionRecordRow: View {
             }
             competitionRecordText(record)
                 .font(.title3.weight(.heavy).width(.condensed).monospacedDigit())
-            Image(systemName: "chevron.right")
-                .font(.caption.weight(.bold))
-                .foregroundStyle(Theme.tertiary)
+            DisclosureChevron()
         }
     }
 
@@ -1550,8 +1546,7 @@ struct CompetitionHistoryView: View {
                 SectionLabel("RECORD")
                 Spacer(minLength: 8)
                 Text(weeks.count == 1 ? "1 WEEK" : "\(weeks.count) WEEKS")
-                    .font(.themeLabel)
-                    .tracking(1.2)
+                    .themeLabel()
                     .foregroundStyle(Theme.secondary)
             }
             .padding(.horizontal, 4)
@@ -1621,8 +1616,7 @@ struct CompetitionHistoryView: View {
                 Spacer(minLength: 8)
                 if shown.count < weeks.count {
                     Text("\(shown.count) OF \(weeks.count)")
-                        .font(.themeLabel)
-                        .tracking(1.2)
+                        .themeLabel()
                         .foregroundStyle(Theme.secondary)
                         .accessibilityIdentifier("competition.history.shown")
                 }
@@ -1696,10 +1690,11 @@ struct CompetitionHistoryView: View {
     }
 
     private var outcomePicker: some View {
-        Picker("Show", selection: $filter) {
-            ForEach(CompetitionWeekFilter.allCases) { Text($0.title).tag($0) }
-        }
-        .pickerStyle(.segmented)
+        CompetitionSegments(
+            selection: $filter, options: CompetitionWeekFilter.allCases.map { (value: $0, title: $0.title) }
+        )
+        .accessibilityElement(children: .contain)
+        .accessibilityLabel("Show")
         .accessibilityIdentifier("competition.history.filter")
     }
 
@@ -1724,6 +1719,8 @@ struct CompetitionHistoryView: View {
             .padding(.horizontal, 12)
             .frame(minHeight: 32)
             .background(Theme.control, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
         }
         .accessibilityLabel("With \(name ?? "everyone")")
         .accessibilityIdentifier("competition.history.person")
@@ -1905,9 +1902,7 @@ struct CompetitionPersonView: View {
                             .foregroundStyle(Theme.secondary)
                     }
                     Spacer(minLength: 8)
-                    Image(systemName: "chevron.right")
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(Theme.tertiary)
+                    DisclosureChevron()
                 }
                 .padding(16)
                 .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)
@@ -2114,8 +2109,7 @@ struct CompetitionPersonView: View {
                         .tracking(0)
                 }
             }
-            .font(.themeLabel)
-            .tracking(1.2)
+            .themeLabel()
             .foregroundStyle(Theme.secondary)
         }
         .padding(.horizontal, 4)
@@ -2172,8 +2166,7 @@ struct CompetitionPersonView: View {
                                 color: belt.holder == .you ? Theme.youFill : Theme.ink
                             )
                             Text(competitionDefensesText(defenses).uppercased())
-                                .font(.themeLabel)
-                                .tracking(1.2)
+                                .themeLabel()
                                 .foregroundStyle(Theme.secondary)
                         }
                     }
@@ -2226,8 +2219,7 @@ struct CompetitionPersonView: View {
                 if isStacked {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(row.label.uppercased())
-                            .font(.themeLabel)
-                            .tracking(1.1)
+                            .themeLabel(tracking: 1.1)
                             .foregroundStyle(Theme.secondary)
                         Text("You \(row.you)")
                             .foregroundStyle(Theme.you)
@@ -2642,10 +2634,9 @@ struct CompetitionPressButtonStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
             .scaleEffect(configuration.isPressed && !reduceMotion ? 0.96 : 1)
-            .animation(
-                reduceMotion ? nil : Motion.press,
-                value: configuration.isPressed
-            )
+            // Reduce Motion swaps the scale for the buttons' opacity dip.
+            .opacity(configuration.isPressed && reduceMotion ? 0.8 : 1)
+            .animation(Motion.press, value: configuration.isPressed)
     }
 }
 
@@ -3160,12 +3151,15 @@ struct CompetitionOpponentRecord: Equatable {
 func competitionHistoryWeeks(
     _ competitions: [LocalCompetitionPresentation]
 ) -> [LocalCompetitionPresentation] {
-    competitionHomeSorted(competitions.filter { $0.terminalResult != nil && !$0.isPractice }, [
+    let weeks = competitions.filter { $0.terminalResult != nil && !$0.isPractice }
+    // Calendar maths once per week, not twice per comparison.
+    let ends: [CompetitionID: Date] = Dictionary(weeks.map { week -> (CompetitionID, Date) in
+        (week.id, week.acceptedConfiguration.flatMap { competitionScheduleBoundaries($0.schedule)?.end }
+            ?? week.terminalResult?.completedAt ?? .distantPast)
+    }, uniquingKeysWith: { first, _ in first })
+    return competitionHomeSorted(weeks, [
         competitionAscending {
-            -(
-                $0.acceptedConfiguration.flatMap { competitionScheduleBoundaries($0.schedule)?.end }
-                    ?? $0.terminalResult?.completedAt ?? .distantPast
-            ).timeIntervalSinceReferenceDate
+            -(ends[$0.id] ?? .distantPast).timeIntervalSinceReferenceDate
         },
         competitionAscending {
             -($0.terminalResult?.completedAt ?? .distantPast).timeIntervalSinceReferenceDate

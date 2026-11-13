@@ -50,7 +50,16 @@ export async function attestFinalWindowHandler(
   if (!parsed) {
     return error(400, "invalid_request", "Invalid final-window attestation");
   }
-  const client = await authenticated(request, deps);
+  let client: Awaited<ReturnType<typeof authenticated>>;
+  try {
+    client = await authenticated(request, deps);
+  } catch {
+    return error(
+      503,
+      "temporarily_unavailable",
+      "Unable to process request right now",
+    );
+  }
   if (!client) return error(401, "unauthorized", "Authentication required");
   const { data, error: rpcError } = await client.rpc("attest_final_window", {
     competition_id: parsed.competitionId,

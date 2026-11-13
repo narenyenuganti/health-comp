@@ -65,7 +65,8 @@ final class HealthCompWatchUITests: XCTestCase {
     /// A group match: the standings, never a belt.
     func testGroupMatches() {
         for (scenario, label) in [
-            ("groupFFA", "Four-Way, Day 4 of 7. You're 2nd. 48 behind Sam."),
+            ("groupFFA", "Four-Way, Day 4 of 7. You're 2nd. 48 behind Sam. 1st, Sam, 1,712 points. "
+                + "2nd, You, 1,664 points. 3rd, Priya, 1,498 points. 4th, Leo, 1,203 points."),
             ("groupDoubles", "Doubles, Day 4 of 7. Your team 3,162 points. Sam + Leo 2,915 points. Your team up 247."),
         ] {
             let app = launch(scenario)

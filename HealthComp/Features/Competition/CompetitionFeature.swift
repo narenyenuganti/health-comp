@@ -939,7 +939,8 @@ struct CompetitionFeature {
                           let profileID = RemoteCompetitionOpponentIdentity.profileID(parent.opponentIdentity)
                     else { return .none }
                     switch state.rematchState(for: parent) {
-                    case .available, .failed(.connection):
+                    // A conflict that has since closed can be tried again.
+                    case .available, .failed(.connection), .failed(.alreadyPending), .failed(.conflict):
                         break
                     default:
                         return .none
@@ -1030,7 +1031,11 @@ struct CompetitionFeature {
                     state.mutePreferencesLoadFailed = true
                     return .none
                 }
-                state.mutedOpponentIdentities = identities
+                // A read that started before a tap can't undo the change
+                // still saving.
+                let saving = state.muteOpponentIdentitiesInFlight
+                state.mutedOpponentIdentities = identities.subtracting(saving)
+                    .union(state.mutedOpponentIdentities.intersection(saving))
                 state.mutePreferencesLoadFailed = false
                 return .none
 
@@ -1209,14 +1214,21 @@ struct CompetitionFeature {
 
             case let .profilePhotosNeeded(owners):
                 guard !owners.isEmpty else { return .none }
+                // Each request is everyone who may be on screen: decoded
+                // photos of anyone else (an old search) are let go.
+                let wanted = Set(owners)
+                state.profilePhotos = state.profilePhotos.filter { wanted.contains($0.key) }
                 let missing = owners.filter { state.profilePhotos[$0] == nil }
                 let versions = state.profilePhotos.compactMapValues(\.version)
                 // Each lookup replaces the last. A failure leaves initials
                 // and tries again next time.
                 return .run { send in
+                    var versions = versions
                     for owner in missing {
-                        if let data = await competitionClient.cachedProfilePhotoData(owner),
-                           let photo = ProfilePhoto(jpeg: data, version: nil) {
+                        if let cached = await competitionClient.cachedProfilePhotoData(owner),
+                           let photo = ProfilePhoto(jpeg: cached.data, version: cached.version) {
+                            // Already current once the list confirms it: no second read.
+                            versions[owner] = cached.version
                             await send(.profilePhotoLoaded(owner, photo))
                         }
                     }

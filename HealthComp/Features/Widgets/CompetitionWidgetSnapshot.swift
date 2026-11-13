@@ -361,11 +361,14 @@ extension CompetitionWidgetSnapshot.Match {
         at date: Date,
         redacted: Bool,
         circular: Bool = false,
+        standings: Bool = false,
         locale: Locale = .current,
         timeZone: TimeZone = .current
     ) -> String {
         let state = state(at: date)
-        if let label = groupAccessibilityLabel(at: date, redacted: redacted, locale: locale) { return label }
+        if let label = groupAccessibilityLabel(at: date, redacted: redacted, standings: standings, locale: locale) {
+            return label
+        }
         guard !redacted else {
             return "HealthComp, \(status(at: date, compact: true, locale: locale))."
         }
@@ -432,8 +435,11 @@ extension CompetitionWidgetSnapshot.Match {
         return group.placeText(place)
     }
 
-    /// The widget's one label for a group match.
-    func groupAccessibilityLabel(at date: Date, redacted: Bool, locale: Locale = .current) -> String? {
+    /// The widget's one label for a group match. `standings` reads every seat
+    /// after it, as the iPhone's Home card does, where the standings are drawn.
+    func groupAccessibilityLabel(
+        at date: Date, redacted: Bool, standings: Bool = false, locale: Locale = .current
+    ) -> String? {
         guard let group, !redacted else { return nil }
         let header = "\(group.title), \(status(at: date, locale: locale))."
         if group.isDoubles {
@@ -443,7 +449,10 @@ extension CompetitionWidgetSnapshot.Match {
             return ([header] + teams + [group.lead.map { $0 + "." }].compactMap { $0 }).joined(separator: " ")
         }
         let place = groupPlaceText.map { "You're \($0)." }
-        return [header, place, group.lead.map { $0 + "." }].compactMap { $0 }.joined(separator: " ")
+        let seats = standings ? group.rows.map {
+            "\(group.placeText($0.place)), \($0.name), \(competitionPointsAccessibilityText($0.points, locale: locale))."
+        } : []
+        return ([header, place, group.lead.map { $0 + "." }].compactMap { $0 } + seats).joined(separator: " ")
     }
 }
 

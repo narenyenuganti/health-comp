@@ -133,7 +133,18 @@ export async function createCompetitionInviteHandler(
   const body = parseBody(parsed);
   if (!body) return errorResponse(400, "invalid_request", "Invalid request");
 
-  const authenticated = await authenticatedContext(request, injected);
+  const unavailable = () =>
+    errorResponse(
+      503,
+      "temporarily_unavailable",
+      "Unable to create invitation right now",
+    );
+  let authenticated: Awaited<ReturnType<typeof authenticatedContext>>;
+  try {
+    authenticated = await authenticatedContext(request, injected);
+  } catch {
+    return unavailable();
+  }
   if (!authenticated) {
     return errorResponse(401, "unauthorized", "Authentication required");
   }
@@ -156,7 +167,12 @@ export async function createCompetitionInviteHandler(
   }
   const token = base64UrlEncode(bytes);
   const tokenDigest = `\\x${await sha256Hex(bytes)}`;
-  const serviceClient = injected.createServiceClient();
+  let serviceClient: ReturnType<typeof injected.createServiceClient>;
+  try {
+    serviceClient = injected.createServiceClient();
+  } catch {
+    return unavailable();
+  }
   const shared = {
     token_digest: tokenDigest,
     creator_time_zone_identifier: body.timeZoneIdentifier,
@@ -181,6 +197,14 @@ export async function createCompetitionInviteHandler(
         409,
         "pending_invitation_exists",
         "An invitation to this account is already pending",
+      );
+    }
+    // Raised by the database's per-creator and per-pair challenge caps.
+    if (error.message === "invite_rate_limited") {
+      return errorResponse(
+        429,
+        "invite_rate_limited",
+        "Too many challenges sent. Try again later.",
       );
     }
     if (error.message === "active_match_exists") {

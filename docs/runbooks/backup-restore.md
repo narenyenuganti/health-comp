@@ -16,6 +16,13 @@ requested. This deferral authorizes no export, import, purchase or destructive
 operation and does not relax containment or protection of deleted identities.
 Retain the existing synthetic evidence as synthetic, not a hosted restore pass.
 
+The synthetic recovery suite (`scripts/recovery-*.sql`,
+`scripts/test-recovery-*.sh`, `scripts/emit-recovery-history-test-sql.sh`,
+`scripts/tests/recovery-*.sql` and the runbook's static checks) left the repo
+and Backend CI on November 12, 2026. It lives at commit `2b82e45`; restore it
+and update it to the current schema before any restore below. References to
+those scripts and to Backend CI recovery checks describe that commit.
+
 ## Execution readiness
 
 **NOT QUALIFIED FOR EXECUTION.** The examples below are a reviewed procedure
@@ -68,7 +75,7 @@ upgrade, backup, export, target creation or restore was initiated. That readback
 does not establish production's current health, plan or backup policy.
 
 On September 29, 2026 (UTC), the reusable
-[local-only synthetic recovery test](../../scripts/test-recovery-migrated-snapshot.sh)
+local-only synthetic recovery test (`scripts/test-recovery-migrated-snapshot.sh` at commit `2b82e45`)
 restored PostgreSQL 17.6 with all 21 application migrations through
 `20260928001600` and managed database schemas, retaining owners and privileges.
 The native dump and actual history/state receipts shared one exported snapshot:
@@ -188,7 +195,8 @@ are correct:
 - Vault worker URL/token availability;
 - Cron definitions and recent runs;
 - iOS public URL/publishable-key configuration;
-- DNS, TLS, invitation-domain, or Associated Domains state.
+- DNS, TLS, invitation-domain, or Associated Domains state;
+- `profile-photos` bucket objects.
 
 Read each surface back after recovery. Never copy production secrets into a
 restore rehearsal.
@@ -217,9 +225,11 @@ but is not equivalent to a platform snapshot or PITR.
   sufficient or synthesize missing history with migration repair.
 - Function code, Function secrets, provider settings, and project settings are
   not recreated by the SQL artifacts.
-- Storage database rows are not the same as object bytes. HealthComp does not
-  currently rely on Storage for competition data, but future use requires a
-  separate object backup procedure.
+- Storage database rows are not the same as object bytes. Profile photos live
+  in the private `profile-photos` bucket, and neither PITR nor the SQL dump
+  restores object bytes. No object backup procedure exists yet, so a restore
+  can bring back `profiles.photo_version` and `storage.objects` rows whose
+  photos are missing; record this as an open gap.
 
 Logical dump files can contain emails, provider identifiers, session/auth
 metadata, profile UUIDs, display names, score revisions, results, device
@@ -742,6 +752,10 @@ rewritten. Format-2 checks use frozen commitments and the established
 they do not prove prior accepted attestations or re-finalize results. Format
 1 remains explicitly unverified because the repository does not establish a
 stored-content hash derivation for it. Unknown formats also stop qualification.
+Group-match results in `public.competition_group_results` are outside this
+receipt and the step-2 count/hash receipt, and have no verification rule yet:
+while the source holds any group result rows, this component cannot be
+credited.
 No migration is changed or historical result converted to pass these checks.
 
 The stored-hash aggregate alone omits changes to completion time and top-level

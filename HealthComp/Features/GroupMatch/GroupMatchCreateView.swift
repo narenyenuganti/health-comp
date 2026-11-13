@@ -334,7 +334,7 @@ struct GroupMatchCreateView: View {
                     .frame(minHeight: 56)
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(CompetitionRowButtonStyle())
                 .disabled(lineup.openTeams.isEmpty)
                 .accessibilityIdentifier("competition.group.add-bot")
                 CompetitionRowDivider(inset: 0)
@@ -351,7 +351,7 @@ struct GroupMatchCreateView: View {
                     .frame(minHeight: 56)
                     .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(CompetitionRowButtonStyle())
                 .disabled(lineup.openTeams.isEmpty)
                 .accessibilityIdentifier("competition.group.paste-link")
             }
@@ -599,8 +599,8 @@ struct GroupMatchCreateView: View {
     }
 }
 
-/// A big selectable card: format or bot.
-private struct GroupMatchOptionCard<Glyph: View>: View {
+/// A big selectable card: format or bot. The practice sheet uses it too.
+struct GroupMatchOptionCard<Glyph: View>: View {
     let title: String
     let detail: String
     let isSelected: Bool
@@ -630,7 +630,7 @@ private struct GroupMatchOptionCard<Glyph: View>: View {
             }
             .contentShape(shape)
         }
-        .buttonStyle(.plain)
+        .buttonStyle(CompetitionPressButtonStyle())
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(title), \(detail)")
         .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
@@ -650,7 +650,8 @@ private struct FormatGlyph: View {
             ForEach(marks.indices, id: \.self) { index in
                 switch marks[index] {
                 case .you: SlantedBar().fill(Theme.youFill).frame(width: 11, height: 28)
-                case .partner: SlantedBar().stroke(Theme.youFill, lineWidth: 2).frame(width: 11, height: 28)
+                // A thin stroke: amber as text, which holds contrast.
+                case .partner: SlantedBar().stroke(Theme.you, lineWidth: 2).frame(width: 11, height: 28)
                 case .them: SlantedBar().fill(Theme.ink).frame(width: 11, height: 28)
                 case let .gap(width): Color.clear.frame(width: width, height: 1)
                 }
@@ -687,5 +688,6 @@ private struct GroupMatchPillButtonStyle: ButtonStyle {
             .frame(minHeight: 44)
             .background(Theme.control, in: Capsule())
             .opacity(isEnabled ? (configuration.isPressed ? 0.8 : 1) : 0.45)
+            .animation(Motion.press, value: configuration.isPressed)
     }
 }

@@ -1,4 +1,6 @@
 import { createClient } from "@supabase/supabase-js";
+import { bearerAuthorization, jsonResponse } from "../_shared/invite_http.ts";
+import { readBoundedJson, verifiedUserId } from "../_shared/scoring_http.ts";
 
 export type DeletionPhase =
   | "prepared"
@@ -62,21 +64,6 @@ interface DeleteAccountBody {
   nonce: string;
 }
 
-function jsonResponse(status: number, body: Record<string, string>): Response {
-  return Response.json(body, {
-    status,
-    headers: {
-      "cache-control": "no-store",
-      "content-type": "application/json; charset=utf-8",
-    },
-  });
-}
-
-function bearerAuthorization(request: Request): string | null {
-  const value = request.headers.get("authorization")?.trim() ?? "";
-  return /^Bearer\s+\S+$/i.test(value) ? value : null;
-}
-
 function containsControlOrWhitespace(value: string): boolean {
   for (const scalar of value) {
     const code = scalar.codePointAt(0)!;
@@ -86,28 +73,8 @@ function containsControlOrWhitespace(value: string): boolean {
 }
 
 async function parseBody(request: Request): Promise<DeleteAccountBody> {
-  const contentType = request.headers.get("content-type")?.toLowerCase() ?? "";
-  if (!contentType.startsWith("application/json")) {
-    throw new AccountDeletionHTTPError(400, "invalid_request");
-  }
-
-  const declaredLength = Number(request.headers.get("content-length") ?? "0");
-  if (Number.isFinite(declaredLength) && declaredLength > 8_192) {
-    throw new AccountDeletionHTTPError(400, "invalid_request");
-  }
-
-  const text = await request.text();
-  if (new TextEncoder().encode(text).byteLength > 8_192) {
-    throw new AccountDeletionHTTPError(400, "invalid_request");
-  }
-
-  let value: unknown;
-  try {
-    value = JSON.parse(text);
-  } catch {
-    throw new AccountDeletionHTTPError(400, "invalid_request");
-  }
-
+  // Streamed with a hard cap: this runs before authentication.
+  const value = await readBoundedJson(request, 8_192);
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     throw new AccountDeletionHTTPError(400, "invalid_request");
   }
@@ -228,7 +195,10 @@ export async function deleteAccountHandler(
   let authUserID: string;
   try {
     authUserID = await dependencies.authenticate(authorization);
-  } catch {
+  } catch (error) {
+    if (error instanceof AccountDeletionHTTPError) {
+      return jsonResponse(error.status, { error: error.code });
+    }
     return jsonResponse(401, { error: "authentication_required" });
   }
 
@@ -322,17 +292,11 @@ export async function continueAccountDeletion(
           await dependencies.complete(progress.profileId),
           "completed",
         );
-      } catch {
-        if (deletionError) {
-          throw new AccountDeletionHTTPError(
-            503,
-            "account_deletion_retryable",
-          );
-        }
-        throw new AccountDeletionHTTPError(
-          503,
-          "account_deletion_retryable",
-        );
+      } catch (error) {
+        // The auth user is gone, so the row is already completed through the
+        // auth.users foreign key; a retry would only be rejected as signed out.
+        if (!deletionError) return jsonResponse(200, { status: "deleted" });
+        throw error;
       }
     }
 
@@ -639,9 +603,14 @@ export function createLiveDependencies(
           fetch: configuration.fetch,
         },
       });
-      const { data, error } = await userClient.auth.getUser();
-      if (error || !data.user) throw error ?? new Error("missing user");
-      return data.user.id;
+      let userID: string | null;
+      try {
+        userID = await verifiedUserId(userClient);
+      } catch {
+        throw new AccountDeletionHTTPError(503, "account_deletion_retryable");
+      }
+      if (!userID) throw new Error("authentication_required");
+      return userID;
     },
     begin: async (authUserID) =>
       normalizeProgress(

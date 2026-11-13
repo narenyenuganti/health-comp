@@ -75,30 +75,27 @@ final class ScoreLedgerTests: XCTestCase {
         XCTAssertFalse(revisedDayOne.isFrozen)
     }
 
-    func testSameDayMoveOrStandModeChangeIsRejectedWithoutMutation() throws {
+    func testSameDayMoveOrStandModeChangeRestartsTheDayInTheNewMode() throws {
         var ledger = ScoreLedger()
-        _ = try ledger.record(try snapshot(points: 300), forDayOrdinal: 1)
-        let before = try XCTUnwrap(ledger.entry(forDayOrdinal: 1))
+        _ = try ledger.record(try snapshot(points: 150), forDayOrdinal: 1)
 
-        XCTAssertThrowsError(
-            try ledger.record(
-                try snapshot(points: 300, moveMode: .moveMinutes),
-                forDayOrdinal: 1
-            )
-        ) { error in
-            XCTAssertEqual(error as? ScoreLedgerError, .activityModeChanged)
-        }
-        XCTAssertEqual(ledger.entry(forDayOrdinal: 1), before)
+        let minutes = try ledger.record(
+            try snapshot(points: 100, moveMode: .moveMinutes),
+            forDayOrdinal: 1
+        )
+        XCTAssertEqual(minutes.acceptedScore?.moveMode, .moveMinutes)
+        XCTAssertEqual(minutes.acceptedScore?.points, 100)
 
-        XCTAssertThrowsError(
-            try ledger.record(
-                try snapshot(points: 300, standMode: .rollHours),
-                forDayOrdinal: 1
-            )
-        ) { error in
-            XCTAssertEqual(error as? ScoreLedgerError, .activityModeChanged)
-        }
-        XCTAssertEqual(ledger.entry(forDayOrdinal: 1), before)
+        let rolling = try ledger.record(
+            try snapshot(points: 120, moveMode: .moveMinutes, standMode: .rollHours),
+            forDayOrdinal: 1
+        )
+        XCTAssertEqual(rolling.acceptedScore?.standMode, .rollHours)
+        XCTAssertEqual(rolling.acceptedScore?.points, 120)
+        XCTAssertEqual(
+            ledger.entry(forDayOrdinal: 1)?.latestEvidence.snapshot.standMode,
+            .rollHours
+        )
     }
 
     func testFailedFreezeIsAtomicAndLeavesEveryEntryMutable() throws {
@@ -481,23 +478,19 @@ final class ScoreLedgerTests: XCTestCase {
             accepted.points
         )
 
-        let beforeModeChange = ledger
-        XCTAssertThrowsError(
-            try ledger.record(
-                ActivitySnapshot(
-                    moveMode: source.moveMode,
-                    standMode: .standHours,
-                    move: source.move,
-                    exercise: source.exercise,
-                    standOrRoll: source.standOrRoll,
-                    pauseState: source.pauseState
-                ),
-                forDayOrdinal: 1
-            )
-        ) { error in
-            XCTAssertEqual(error as? ScoreLedgerError, .activityModeChanged)
-        }
-        XCTAssertEqual(ledger, beforeModeChange)
+        let resolved = try ledger.record(
+            ActivitySnapshot(
+                moveMode: source.moveMode,
+                standMode: .standHours,
+                move: source.move,
+                exercise: source.exercise,
+                standOrRoll: source.standOrRoll,
+                pauseState: source.pauseState
+            ),
+            forDayOrdinal: 1
+        )
+        XCTAssertEqual(resolved.acceptedScore?.standMode, .standHours)
+        XCTAssertEqual(resolved.acceptedScore?.points, accepted.points)
     }
 
     func testUnknownOnlyPausePolicyPersistsThroughLedgerEvidence() throws {

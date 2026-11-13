@@ -87,7 +87,20 @@ final class HealthCompAppDelegate: NSObject,
         ) {
             // In the background, without opening the app. iOS keeps it
             // running until this returns; the next open shows what you sent.
-            try? await CompetitionReactionAlert.send?(action.recipientUserID, action.reaction)
+            do {
+                guard let send = CompetitionReactionAlert.send else { throw CancellationError() }
+                try await send(action.recipientUserID, action.reaction)
+            } catch {
+                // Offline, signed out or another account: say so, and keep
+                // the tap that opens the match.
+                let notice = UNMutableNotificationContent()
+                notice.title = "Reaction not sent"
+                notice.body = "Open the match to send it again."
+                notice.userInfo = content.userInfo
+                try? await center.add(
+                    UNNotificationRequest(identifier: UUID().uuidString, content: notice, trigger: nil)
+                )
+            }
             return
         }
         guard let route = CompetitionReactionAlert.route(userInfo: content.userInfo) else {

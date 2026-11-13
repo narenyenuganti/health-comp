@@ -392,9 +392,7 @@ enum SupabaseAuthenticationClient {
             finishRetirement: { try await clientBox.finishRetirement() },
             signOutCurrentSession: {
                 let owner = try provider.authenticationLifetime()
-                guard let accessToken = owner.client.auth.currentSession?.accessToken else {
-                    throw AuthenticationClientFailure.terminalSession
-                }
+                let accessToken = try await owner.confirmableAccessToken()
                 // Preserve retryable storage until the server confirms this
                 // session only. App teardown separately records and retires it.
                 try await owner.confirmLocalSignOut(accessToken)
@@ -544,10 +542,7 @@ private extension SupabaseAuthenticationOperations {
             },
             remoteSignOut: {
                 let owner = try provider.authenticationLifetime()
-                guard let accessToken = owner.client.auth.currentSession?.accessToken
-                else {
-                    throw AuthenticationClientFailure.terminalSession
-                }
+                let accessToken = try await owner.confirmableAccessToken()
                 try await owner.confirmGlobalSignOut(accessToken)
                 // App teardown records this confirmation before the separate,
                 // retryable storage retirement stage. Do not perform a second
@@ -875,5 +870,23 @@ private final class AppleAuthorizationBridge:
         self.continuation = nil
         controller = nil
         continuation.resume(throwing: error)
+    }
+}
+
+fileprivate extension SupabaseAuthenticationLifetime {
+    /// /logout answers an expired token with 401, which reads as a confirmed
+    /// sign-out while the server session lives on. Refresh first; only a
+    /// session the server no longer has counts as already gone.
+    func confirmableAccessToken() async throws -> String {
+        guard client.auth.currentSession != nil else {
+            throw AuthenticationClientFailure.terminalSession
+        }
+        do {
+            return try await client.auth.session.accessToken
+        } catch {
+            throw SupabaseAuthenticationOperations.classifyRefreshFailure(error) == .terminalSession
+                ? AuthenticationClientFailure.terminalSession
+                : AuthenticationClientFailure.operationFailed
+        }
     }
 }

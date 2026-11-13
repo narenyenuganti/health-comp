@@ -1,8 +1,7 @@
 import { assertEquals } from "@std/assert";
 import postgres from "postgres";
 
-const databaseURL = Deno.env.get("HEALTHCOMP_TEST_DATABASE_URL") ??
-  "postgresql://postgres:postgres@127.0.0.1:54322/postgres";
+const databaseURL = Deno.env.get("HEALTHCOMP_TEST_DATABASE_URL") ?? "";
 const sql = postgres(databaseURL, { max: 24 });
 const claims = (id: string, role = "authenticated") =>
   JSON.stringify({ sub: id, role });
@@ -36,6 +35,7 @@ Deno.test({
   sanitizeOps: false,
   fn: async () => {
     if (
+      !databaseURL ||
       !["127.0.0.1", "localhost", "::1"].includes(new URL(databaseURL).hostname)
     ) {
       throw new Error(

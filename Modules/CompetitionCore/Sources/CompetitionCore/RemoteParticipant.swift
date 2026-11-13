@@ -26,10 +26,3 @@ public struct RemoteParticipant: Codable, Equatable, Hashable, Sendable {
 
     private static let nilUUID = UUID(uuidString: "00000000-0000-0000-0000-000000000000")!
 }
-
-/// The counterparty model to be introduced by the v4 remote configuration
-/// event. This type is deliberately not referenced from v1-v3 lifecycle data.
-public enum CompetitionCounterparty: Codable, Equatable, Sendable {
-    case simulated(OpponentPlan)
-    case remote(RemoteParticipant)
-}

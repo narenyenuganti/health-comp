@@ -33,9 +33,7 @@ extension CompetitionClient {
                 preferences.switchedOff = { CompetitionNotificationChoice.switchedOff() }
                 return preferences
             },
-            observerDeliveryReceiptFactory: { paths in
-                .live(directory: paths.observerDeliveryDirectory)
-            },
+            observerDeliveryReceiptFactory: { _ in .processLifetime() },
             widgetSnapshots: .liveValue,
             liveActivities: CompetitionLiveActivities(client: .live)
         )
@@ -323,6 +321,17 @@ private final class RemoteCompetitionPublicationRouter: @unchecked Sendable {
 private struct RemoteCompetitionStoppedTasks {
     let signal: Task<Void, Never>?
     let realtime: Task<Void, Never>?
+    var reconcileDrain: Task<Void, Never>? = nil
+    /// Joined too, so teardown can't remove storage while a group pass writes.
+    var groupSync: Task<Void, Never>? = nil
+
+    /// Outside the operation gate: these tasks take it.
+    func join() async {
+        await signal?.value
+        await realtime?.value
+        await reconcileDrain?.value
+        await groupSync?.value
+    }
 }
 
 private struct RemoteCompetitionCompletedMount {
@@ -488,6 +497,10 @@ private actor RemoteCompetitionClientCoordinator {
     private var latestPublication: CompetitionPublication?
     private var signalTask: Task<Void, Never>?
     private var realtimeTask: Task<Void, Never>?
+    /// One reconciliation for a burst of HealthKit callbacks and realtime
+    /// wake-ups; `reconcileRequested` asks it for one more pass.
+    private var reconcileDrainTask: Task<Void, Never>?
+    private var reconcileRequested = false
     /// Republishes the last inputs when Home's grouping changes on its own.
     private var boundaryTask: Task<Void, Never>?
     private var lastPublishInputs: (
@@ -526,6 +539,9 @@ private actor RemoteCompetitionClientCoordinator {
     /// The group pass in flight and whether another was asked for meanwhile.
     private var groupSync: (runtime: RemoteCompetitionRuntime, again: Bool)?
     private var groupSyncTask: Task<Void, Never>?
+    /// Bumped once a new own photo is cached, so a photo list that was
+    /// already in flight can't evict it.
+    private var ownPhotoSaves: UInt64 = 0
     /// A create that failed keeps its key, so tapping again can't make two.
     /// ponytail: memory only; a relaunch between tries mints a new key (persist like `inviteRequests` if that bites).
     private var groupCreationKeys: [GroupMatchDraft: (key: UUID, zone: String)] = [:]
@@ -773,8 +789,7 @@ private actor RemoteCompetitionClientCoordinator {
                 throw error
             }
         }
-        await completedMount.stoppedTasks.signal?.value
-        await completedMount.stoppedTasks.realtime?.value
+        await completedMount.stoppedTasks.join()
         do {
             try Self.validateMountLease(lease, lifecycle: lifecycle)
         } catch {
@@ -943,7 +958,11 @@ private actor RemoteCompetitionClientCoordinator {
             issues: issues,
             knownCompetitionIDs: outcome.discoveryFailure == nil
                 ? Set(outcome.outcomes.map(\.competitionID))
-                : nil
+                : nil,
+            // Synced and read this pass; the rest are last-good copies.
+            freshCompetitionIDs: Set(reconciled.materializations.map {
+                CompetitionID($0.descriptor.competitionID)
+            }).subtracting(failedIDs).subtracting(activityFailedIDs)
         )
         await completePendingObserverDeliveries(using: publication)
         return publication
@@ -1291,17 +1310,23 @@ private actor RemoteCompetitionClientCoordinator {
     func loadProfilePhotos(_ profileIDs: [UUID]) async throws -> [ProfilePhotoReference] {
         let account = try photoAccount()
         let owners = Array(Set(profileIDs))
+        let ownPhotoSaves = self.ownPhotoSaves
         let references = try await remoteAPI.listProfilePhotos(owners)
         if isMountedPhotoCache(account.cache) {
-            account.cache.retain(references, among: owners)
+            // A list from before your new photo was saved would delete it.
+            account.cache.retain(
+                references,
+                among: ownPhotoSaves == self.ownPhotoSaves ? owners : owners.filter { $0 != account.id }
+            )
         }
         return references
     }
 
     func loadOwnProfilePhoto() async throws -> OwnProfilePhoto {
         let account = try photoAccount()
+        let ownPhotoSaves = self.ownPhotoSaves
         let own = try await remoteAPI.ownProfilePhoto(account.id)
-        if isMountedPhotoCache(account.cache) {
+        if isMountedPhotoCache(account.cache), ownPhotoSaves == self.ownPhotoSaves {
             account.cache.retain(own.reference.map { [$0] } ?? [], among: [account.id])
         }
         return own
@@ -1317,9 +1342,9 @@ private actor RemoteCompetitionClientCoordinator {
         return data
     }
 
-    func cachedProfilePhotoData(_ owner: UUID) -> Data? {
+    func cachedProfilePhotoData(_ owner: UUID) -> (data: Data, version: UUID)? {
         guard runtime != nil, terminalTeardown == nil else { return nil }
-        return photoCache?.latestData(owner: owner)
+        return photoCache?.latest(owner: owner)
     }
 
     /// Revalidate visibility before baking a cached avatar into a local alert.
@@ -1347,6 +1372,7 @@ private actor RemoteCompetitionClientCoordinator {
             let reference = ProfilePhotoReference(ownerProfileID: account.id, version: UUID())
             try await remoteAPI.setProfilePhoto(reference, jpeg)
             try? account.cache.store(jpeg, for: reference)
+            ownPhotoSaves &+= 1
             try? await remoteAPI.removeProfilePhotoObjects(account.id, reference.version)
             return reference
         }
@@ -1424,6 +1450,11 @@ private actor RemoteCompetitionClientCoordinator {
     ) -> CompetitionPublication {
         guard let latestPublication else {
             return publish(materializations: [], issues: [issue])
+        }
+        // Kept for republishes; the next full reconciliation starts over.
+        if var inputs = lastPublishInputs {
+            inputs.issues = Self.deduplicated(inputs.issues + [issue])
+            lastPublishInputs = inputs
         }
         return publish(
             dashboard: CompetitionDashboard(
@@ -1522,6 +1553,8 @@ private actor RemoteCompetitionClientCoordinator {
             // handlers can release external work and make stop bounded.
             signalTask?.cancel()
             realtimeTask?.cancel()
+            reconcileDrainTask?.cancel()
+            groupSyncTask?.cancel()
         }
         let stoppedTasks: RemoteCompetitionStoppedTasks? =
             await withOperationGate {
@@ -1557,8 +1590,7 @@ private actor RemoteCompetitionClientCoordinator {
             }
             return stoppedTasks
         }
-        await stoppedTasks?.signal?.value
-        await stoppedTasks?.realtime?.value
+        await stoppedTasks?.join()
     }
 
     func prepareForProfileTeardown(
@@ -1572,6 +1604,8 @@ private actor RemoteCompetitionClientCoordinator {
             // in the process-rooted source for the quiesce/drain phase below.
             signalTask?.cancel()
             realtimeTask?.cancel()
+            reconcileDrainTask?.cancel()
+            groupSyncTask?.cancel()
         }
         let work = try await withCancellableOperationGate {
             () -> TerminalPreparationWork? in
@@ -1869,12 +1903,20 @@ private actor RemoteCompetitionClientCoordinator {
         healthAuthorizationIssue = nil
         let stoppedTasks = RemoteCompetitionStoppedTasks(
             signal: signalTask,
-            realtime: realtimeTask
+            realtime: realtimeTask,
+            reconcileDrain: reconcileDrainTask,
+            groupSync: groupSyncTask
         )
         stoppedTasks.signal?.cancel()
         stoppedTasks.realtime?.cancel()
+        stoppedTasks.reconcileDrain?.cancel()
+        stoppedTasks.groupSync?.cancel()
         signalTask = nil
         realtimeTask = nil
+        reconcileDrainTask = nil
+        reconcileRequested = false
+        groupSyncTask = nil
+        groupSync = nil
         boundaryTask?.cancel()
         boundaryTask = nil
         lastPublishInputs = nil
@@ -1884,11 +1926,9 @@ private actor RemoteCompetitionClientCoordinator {
         if stoppedTasks.realtime != nil {
             await realtimeClient.stop()
         }
-        for competitionID in mountedCompetitionIDs.sorted(by: {
-            $0.rawValue.uuidString < $1.rawValue.uuidString
-        }) {
-            await notificationCoordinator.cancelAll(competitionID)
-        }
+        // Group matches and unmaterialized duels aren't in
+        // mountedCompetitionIDs, so clear the whole namespace.
+        await notificationCoordinator.removeAll()
         mountedCompetitionIDs = []
         inviteRequests = nil
         photoCache = nil
@@ -1988,8 +2028,34 @@ private actor RemoteCompetitionClientCoordinator {
                         )
                 }
             }
-            _ = await performReconciliation()
+            // Recorded under the gate, so the next pass reads after it.
+            requestReconciliation(generation: generation)
         }
+    }
+
+    /// Callbacks that land while a pass runs share the next one.
+    private func requestReconciliation(generation: UInt64) {
+        reconcileRequested = true
+        guard reconcileDrainTask == nil else { return }
+        reconcileDrainTask = Task { [weak self] in
+            await self?.drainReconciliation(generation: generation)
+        }
+    }
+
+    private func drainReconciliation(generation: UInt64) async {
+        while reconcileRequested, !Task.isCancelled {
+            reconcileRequested = false
+            await withOperationGate {
+                guard terminalTeardown == nil,
+                      generation == runtimeGeneration,
+                      !Task.isCancelled else {
+                    return
+                }
+                _ = await performReconciliation()
+            }
+        }
+        // No suspension since the loop's check, so no request is lost.
+        if generation == runtimeGeneration { reconcileDrainTask = nil }
     }
 
     private func completePendingObserverDeliveries(
@@ -2062,17 +2128,17 @@ private actor RemoteCompetitionClientCoordinator {
         _ wakeUp: CompetitionRealtimeWakeUp,
         generation: UInt64
     ) async {
-        await withOperationGate {
-            guard terminalTeardown == nil,
-                  generation == runtimeGeneration,
-                  !Task.isCancelled else {
-                return
-            }
-            // The reason and cursor are diagnostic hints only. Durable state is
-            // always authoritative, including duplicate and out-of-order hints.
-            _ = wakeUp
-            _ = await performReconciliation()
+        // No gate: a wake-up records nothing, so one landing mid-pass just
+        // asks for the next pass instead of queuing a pass of its own.
+        guard terminalTeardown == nil,
+              generation == runtimeGeneration,
+              !Task.isCancelled else {
+            return
         }
+        // The reason and cursor are diagnostic hints only. Durable state is
+        // always authoritative, including duplicate and out-of-order hints.
+        _ = wakeUp
+        requestReconciliation(generation: generation)
     }
 
     private func withOperationGate<Value>(
@@ -2194,7 +2260,9 @@ private actor RemoteCompetitionClientCoordinator {
         materializations: [RemoteCompetitionMaterialization],
         profile: AuthenticatedProfile,
         issues: [CompetitionClientIssue],
-        knownCompetitionIDs: Set<CompetitionID>?
+        knownCompetitionIDs: Set<CompetitionID>?,
+        /// Matches whose totals this pass read; a republish has none.
+        freshCompetitionIDs: Set<CompetitionID> = []
     ) async -> CompetitionPublication {
         let context = await environment.context()
         var dashboard = RemoteCompetitionProjector.dashboard(
@@ -2253,7 +2321,8 @@ private actor RemoteCompetitionClientCoordinator {
                 materializations: materializations,
                 profile: profile,
                 context: context,
-                knownCompetitionIDs: knownCompetitionIDs
+                knownCompetitionIDs: knownCompetitionIDs,
+                freshCompetitionIDs: freshCompetitionIDs
             )
         )
         await liveActivities?.submit(publication, knownCompetitionIDs: knownCompetitionIDs)
@@ -2494,13 +2563,18 @@ enum RemoteCompetitionProjector {
         materializations: [RemoteCompetitionMaterialization],
         profile: AuthenticatedProfile,
         context: CompetitionEnvironmentContext,
-        knownCompetitionIDs: Set<CompetitionID>?
+        knownCompetitionIDs: Set<CompetitionID>?,
+        /// Nil: every match was read just now.
+        freshCompetitionIDs: Set<CompetitionID>? = nil
     ) -> CompetitionNotificationPlanningSnapshot {
         let competitions = materializations.compactMap { materialization in
             notificationCompetition(
                 from: materialization,
                 profile: profile,
-                context: context
+                context: context,
+                isFresh: freshCompetitionIDs?.contains(
+                    CompetitionID(materialization.descriptor.competitionID)
+                ) ?? true
             )
         }.sorted { $0.id.rawValue.uuidString < $1.id.rawValue.uuidString }
         return CompetitionNotificationPlanningSnapshot(
@@ -2519,7 +2593,8 @@ enum RemoteCompetitionProjector {
     static func notificationCompetition(
         from materialization: RemoteCompetitionMaterialization,
         profile: AuthenticatedProfile,
-        context: CompetitionEnvironmentContext
+        context: CompetitionEnvironmentContext,
+        isFresh: Bool = true
     ) -> CompetitionNotificationCompetitionSnapshot? {
         guard let projected = presentation(
             from: materialization,
@@ -2532,7 +2607,7 @@ enum RemoteCompetitionProjector {
             id: projected.id,
             opponentIdentity: projected.opponentIdentity,
             opponentDisplayName: projected.opponentDisplayName,
-            lifecycle: notificationLifecycle(projected.lifecycle),
+            lifecycle: LocalCompetitionProjector.notificationLifecycle(projected.lifecycle),
             schedule: materialization.journal.projection.competition.schedule,
             ownerPoints: projected.userPoints,
             opponentPoints: projected.opponentPoints,
@@ -2545,10 +2620,13 @@ enum RemoteCompetitionProjector {
             },
             currentDayOrdinal: projected.currentDayOrdinal,
             latestRefresh: .completed,
-            evaluationFreshness: .freshCompletedRefresh(
-                attemptID: "remote-reconciliation-v1:\(materialization.descriptor.serverCursor)",
-                readAt: context.instant.wallDate
-            ),
+            // A republish or a last-good copy: score alerts wait for a read.
+            evaluationFreshness: isFresh
+                ? .freshCompletedRefresh(
+                    attemptID: "remote-reconciliation-v1:\(materialization.descriptor.serverCursor)",
+                    readAt: context.instant.wallDate
+                )
+                : .notFresh,
             terminalResult: projected.terminalResult.map {
                 CompetitionNotificationTerminalSnapshot(
                     ownerPoints: $0.userPoints,
@@ -2576,7 +2654,7 @@ enum RemoteCompetitionProjector {
         let projection = loaded.projection
         let competition = projection.competition
         let opponentID = competition.remoteConfiguration?.remote.profileID
-        let terminal = terminalPresentation(competition.lifecycle)
+        let terminal = LocalCompetitionProjector.terminalPresentation(for: competition.lifecycle)
         let schedule = competition.schedule
         let days = schedule.map {
             dayPresentations(
@@ -2599,8 +2677,8 @@ enum RemoteCompetitionProjector {
                 RemoteCompetitionOpponentIdentity.identity(for: $0)
             } ?? baseline.opponentIdentity,
             opponentDisplayName: baseline.opponentDisplayName,
-            lifecycle: notificationLifecycle(
-                lifecyclePresentation(
+            lifecycle: LocalCompetitionProjector.notificationLifecycle(
+                LocalCompetitionProjector.lifecyclePresentation(
                     competition.lifecycle,
                     direction: loaded.journal.genesis.direction
                 )
@@ -2615,7 +2693,7 @@ enum RemoteCompetitionProjector {
                     opponentRevealedPoints: $0.opponentRevealedPoints
                 )
             },
-            currentDayOrdinal: currentDayOrdinal(
+            currentDayOrdinal: LocalCompetitionProjector.currentDayOrdinal(
                 schedule: schedule,
                 now: baseline.evaluatedAt
             ),
@@ -2638,31 +2716,6 @@ enum RemoteCompetitionProjector {
         )
     }
 
-    private static func notificationLifecycle(
-        _ lifecycle: CompetitionLifecyclePresentation
-    ) -> CompetitionNotificationLifecycle {
-        switch lifecycle {
-        case let .pending(direction, _, expiresAt):
-            .pending(direction: direction, expiresAt: expiresAt)
-        case .declined, .cancelled:
-            .declined
-        case .expired:
-            .expired
-        case .scheduled:
-            .scheduled
-        case let .active(dayOrdinal):
-            .active(dayOrdinal: dayOrdinal)
-        case .endsToday:
-            .endsToday
-        case .tallying:
-            .tallying
-        case .completed:
-            .completed
-        case .archived:
-            .archived
-        }
-    }
-
     /// `closesLapsedChallenges` shows a pending challenge past its expiry as
     /// expired. The server only flips it lazily, so the dashboard does it;
     /// notifications keep the stored lifecycle.
@@ -2674,7 +2727,7 @@ enum RemoteCompetitionProjector {
     ) -> CompetitionPresentation? {
         let projection = materialization.journal.projection
         let competition = projection.competition
-        var lifecycle = lifecyclePresentation(
+        var lifecycle = LocalCompetitionProjector.lifecyclePresentation(
             competition.lifecycle,
             direction: materialization.journal.journal.genesis.direction
         )
@@ -2690,7 +2743,7 @@ enum RemoteCompetitionProjector {
         let ownerName = participantPresentation.ownerName
         let opponentName = participantPresentation.opponentName
         let opponentID = participantPresentation.opponentID
-        let terminal = terminalPresentation(competition.lifecycle)
+        let terminal = LocalCompetitionProjector.terminalPresentation(for: competition.lifecycle)
         let schedule = competition.schedule
         let activity = materialization.ownerActivity
         let days = schedule.map {
@@ -2727,7 +2780,7 @@ enum RemoteCompetitionProjector {
             userPoints: terminal?.userPoints ?? ownerPoints,
             opponentPoints: terminal?.opponentPoints ?? opponentPoints,
             days: days,
-            currentDayOrdinal: currentDayOrdinal(
+            currentDayOrdinal: LocalCompetitionProjector.currentDayOrdinal(
                 schedule: schedule,
                 now: context.instant.wallDate
             ),
@@ -2837,76 +2890,6 @@ enum RemoteCompetitionProjector {
         }
     }
 
-    private static func lifecyclePresentation(
-        _ lifecycle: CompetitionLifecycle,
-        direction: InvitationDirection
-    ) -> CompetitionLifecyclePresentation {
-        switch lifecycle {
-        case let .pendingInvitation(invitation):
-            .pending(
-                direction: invitation.direction,
-                createdAt: invitation.createdAt,
-                expiresAt: invitation.expiresAt
-            )
-        case let .declined(at): .declined(at: at, direction: direction)
-        case let .expired(at): .expired(at: at, direction: direction)
-        case .scheduled: .scheduled
-        case let .active(day): .active(dayOrdinal: day.ordinal)
-        case .endsToday: .endsToday
-        case let .tallying(tally): .tallying(startedAt: tally.startedAt)
-        case let .completed(completed):
-            .completed(
-                outcome: completed.outcome,
-                basis: completed.basis,
-                completedAt: completed.completedAt
-            )
-        case let .archived(archived):
-            .archived(
-                outcome: archived.completed.outcome,
-                basis: archived.completed.basis,
-                completedAt: archived.completed.completedAt,
-                archivedAt: archived.archivedAt
-            )
-        }
-    }
-
-    private static func terminalPresentation(
-        _ lifecycle: CompetitionLifecycle
-    ) -> CompetitionTerminalPresentation? {
-        let completed: CompletedCompetition
-        switch lifecycle {
-        case let .completed(value): completed = value
-        case let .archived(value): completed = value.completed
-        default: return nil
-        }
-        return CompetitionTerminalPresentation(
-            userPoints: completed.snapshot.userPoints,
-            opponentPoints: completed.snapshot.opponentPoints,
-            outcome: completed.outcome,
-            basis: completed.basis,
-            completedAt: completed.completedAt
-        )
-    }
-
-    private static func currentDayOrdinal(
-        schedule: CompetitionSchedule?,
-        now: Date
-    ) -> Int? {
-        guard let schedule,
-              let days = try? schedule.calendar.sevenDayWindow(
-                  startingOn: schedule.startDay
-              )
-        else { return nil }
-        for (offset, day) in days.enumerated() {
-            guard let start = try? schedule.calendar.startOfDay(day),
-                  let next = try? schedule.calendar.day(after: day),
-                  let end = try? schedule.calendar.startOfDay(next)
-            else { continue }
-            if now >= start, now < end { return offset + 1 }
-        }
-        return nil
-    }
-
     private static func tallyPresentation(
         competition: Competition,
         projection: CompetitionReplayProjection,
@@ -2985,4 +2968,51 @@ func competitionRingPoints(
 ) -> [Double]? {
     guard let row else { return nil }
     return (row.ringBasisPoints ?? backfill[row.serverSequence])?.map { Double($0) / 100 }
+}
+
+/// What one processed HealthKit observer callback produced. Signal IDs embed
+/// a per-process UUID, so no later launch can match one: the receipts only
+/// need to live as long as the process (sync-10).
+struct HealthKitObserverDeliveryReceipt: Equatable, Sendable {
+    let signalID: String
+    let trigger: ActivityRefreshTrigger
+    let processedAt: Date
+    let publicationRevision: UInt64
+    let hadIssues: Bool
+}
+
+struct HealthKitObserverDeliveryReceiptClient: Sendable {
+    let contains: @Sendable (_ signalID: String) async throws -> Bool
+    let commit: @Sendable (
+        HealthKitObserverDeliveryReceipt
+    ) async throws -> Void
+
+    init(
+        contains: @escaping @Sendable (String) async throws -> Bool = {
+            _ in false
+        },
+        commit: @escaping @Sendable (
+            HealthKitObserverDeliveryReceipt
+        ) async throws -> Void
+    ) {
+        self.contains = contains
+        self.commit = commit
+    }
+
+    /// Remembers committed signal IDs for this process only.
+    static func processLifetime() -> Self {
+        let committed = CommittedSignalIDs()
+        return Self(
+            contains: { await committed.contains($0) },
+            commit: { await committed.insert($0.signalID) }
+        )
+    }
+
+    static let discarding = Self(commit: { _ in })
+}
+
+private actor CommittedSignalIDs {
+    private var ids: Set<String> = []
+    func contains(_ id: String) -> Bool { ids.contains(id) }
+    func insert(_ id: String) { ids.insert(id) }
 }

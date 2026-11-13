@@ -231,6 +231,10 @@ struct FriendsView: View {
             UsernameSheet(friends: settings)
         }
         .friendsCancelRequestDialog($cancelling) { store.send(.competition(.friends(.changeTapped($0, .cancel)))) }
+        // Outcomes land away from the button that caused them.
+        .onChange(of: spokenStatus) { _, new in
+            if let new { AccessibilityNotification.Announcement(new).post() }
+        }
         .task {
             store.send(.competition(.friends(.requested)))
             store.send(.competition(.friendSettings(.requested)))
@@ -246,6 +250,25 @@ struct FriendsView: View {
         // load and so never changes when they arrive with no username.
         .onChange(of: store.competition.friendSettings.saved.map { $0.username == nil } ?? false, initial: true) { _, _ in
             promptForUsernameOnce()
+        }
+    }
+
+    private var spokenStatus: String? {
+        if let failure = state.failure { return failure.failure.message }
+        if let searchFailureText { return searchFailureText }
+        guard let results = state.results else { return nil }
+        switch results.count {
+        case 0: return "No one found."
+        case 1: return "1 person found"
+        default: return "\(results.count) people found"
+        }
+    }
+
+    private var searchFailureText: String? {
+        state.searchFailure.map {
+            $0 == .rateLimited
+                ? "Too many searches. Try again in a minute."
+                : "Couldn’t search. Check your connection and try again."
         }
     }
 
@@ -319,13 +342,8 @@ struct FriendsView: View {
 
     @ViewBuilder
     private var searchContent: some View {
-        if let failure = state.searchFailure {
-            quietLine(
-                failure == .rateLimited
-                    ? "Too many searches. Try again in a minute."
-                    : "Couldn’t search. Check your connection and try again.",
-                id: "friends.search.error"
-            )
+        if let searchFailureText {
+            quietLine(searchFailureText, id: "friends.search.error")
         } else if let results = state.results {
             if results.isEmpty {
                 quietLine("No one found.", id: "friends.search.empty")
@@ -341,6 +359,9 @@ struct FriendsView: View {
             }
         } else if state.isSearching {
             ProgressView().frame(maxWidth: .infinity)
+        } else {
+            // Search starts at 3 (FriendsFeature.searchableQuery).
+            quietLine("Type at least 3 characters.", id: "friends.search.short")
         }
     }
 
@@ -371,14 +392,16 @@ struct FriendsView: View {
             Button { change(person, .add) } label: { BusyLabel("Add", isBusy: isBusy) }
                 .buttonStyle(FriendsRowButtonStyle())
                 .disabled(isBusy)
+                .accessibilityValue(person.displayName)
+                .accessibilityInputLabels(["Add \(person.displayName)", "Add"])
         case .incoming:
             Button { change(person, .accept) } label: { BusyLabel("Accept", isBusy: isBusy) }
                 .buttonStyle(FriendsRowButtonStyle())
                 .disabled(isBusy)
+                .accessibilityValue(person.displayName)
+                .accessibilityInputLabels(["Accept \(person.displayName)", "Accept"])
         case .requested:
-            Button { cancelling = person } label: { BusyLabel("Requested", isBusy: isBusy) }
-                .buttonStyle(FriendsRowButtonStyle(isProminent: false))
-                .disabled(isBusy)
+            requestedButton(person, isBusy: isBusy)
         case .friend:
             Label("Friends", systemImage: "checkmark")
                 .font(.headline.width(.condensed))
@@ -396,7 +419,7 @@ struct FriendsView: View {
     @ViewBuilder
     private var listContent: some View {
         if let list = state.list {
-            if list.friends.isEmpty, list.incoming.isEmpty {
+            if list.friends.isEmpty, list.incoming.isEmpty, list.outgoing.isEmpty {
                 quietLine("No friends yet. Search for someone or send your link.", id: "friends.empty")
             }
             if !list.incoming.isEmpty {
@@ -407,6 +430,11 @@ struct FriendsView: View {
             if !list.friends.isEmpty {
                 section("FRIENDS · \(list.friends.count)", id: "friends.list") {
                     panel(list.friends) { friendRow($0) }
+                }
+            }
+            if !list.outgoing.isEmpty {
+                section("SENT · \(list.outgoing.count)", id: "friends.sent") {
+                    panel(list.outgoing) { sentRow($0) }
                 }
             }
         } else if state.loadFailed {
@@ -426,11 +454,14 @@ struct FriendsView: View {
         let isBusy = state.inFlight.contains(person.id)
         return VStack(alignment: .leading, spacing: 8) {
             rowLayout {
-                FriendsPersonLabel(person: person, detail: person.username.map { "@\($0)" })
-                HStack(spacing: 2) {
+                personLink(person)
+                // Apart, so a slip off Accept doesn't decline.
+                HStack(spacing: 10) {
                     Button { change(person, .accept) } label: { BusyLabel("Accept", isBusy: isBusy) }
                         .buttonStyle(FriendsRowButtonStyle())
                         .disabled(isBusy)
+                        .accessibilityValue(person.displayName)
+                        .accessibilityInputLabels(["Accept \(person.displayName)", "Accept"])
                         .accessibilityIdentifier("friends.request.accept.\(id)")
                     Button { change(person, .decline) } label: {
                         Image(systemName: "xmark")
@@ -454,6 +485,39 @@ struct FriendsView: View {
         .accessibilityIdentifier("friends.request.\(id)")
     }
 
+    /// A request you sent; Requested asks before cancelling it.
+    private func sentRow(_ person: FriendPerson) -> some View {
+        let id = person.id.uuidString.lowercased()
+        return VStack(alignment: .leading, spacing: 8) {
+            rowLayout {
+                personLink(person)
+                requestedButton(person, isBusy: state.inFlight.contains(person.id))
+            }
+            failureLine(person)
+        }
+        .padding(.vertical, 12)
+        .padding(.horizontal, 14)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("friends.sent.\(id)")
+    }
+
+    private func requestedButton(_ person: FriendPerson, isBusy: Bool) -> some View {
+        Button { cancelling = person } label: { BusyLabel("Requested", isBusy: isBusy) }
+            .buttonStyle(FriendsRowButtonStyle(isProminent: false))
+            .disabled(isBusy)
+            .accessibilityValue(person.displayName)
+            .accessibilityHint("Cancels your request")
+            .accessibilityInputLabels(["Requested \(person.displayName)", "Requested"])
+    }
+
+    /// Their name and photo, opening their page.
+    private func personLink(_ person: FriendPerson) -> some View {
+        NavigationLink(value: CompetitionHomeRoute.profile(person.identity)) {
+            FriendsPersonLabel(person: person, detail: person.username.map { "@\($0)" })
+        }
+        .buttonStyle(CompetitionRowButtonStyle())
+    }
+
     private func friendRow(_ person: FriendPerson) -> some View {
         NavigationLink(value: CompetitionHomeRoute.profile(person.identity)) {
             HStack(spacing: 12) {
@@ -466,10 +530,7 @@ struct FriendsView: View {
                         timeZone: timeZone
                     )
                 )
-                Image(systemName: "chevron.right")
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(Theme.tertiary)
-                    .accessibilityHidden(true)
+                DisclosureChevron()
             }
             .padding(.vertical, 12)
             .padding(.horizontal, 14)
@@ -827,6 +888,12 @@ struct FriendProfileView: View {
         .moving(Motion.settle, value: controls.failure)
         .moving(Motion.settle, value: controls.isReported)
         .moving(Motion.settle, value: career)
+        .onChange(of: controls.failure) { _, new in
+            if let new { AccessibilityNotification.Announcement(new.message).post() }
+        }
+        .onChange(of: controls.isReported) { _, reported in
+            if reported { AccessibilityNotification.Announcement("Reported. Thanks.").post() }
+        }
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .topBarTrailing) {
@@ -935,8 +1002,7 @@ struct FriendProfileView: View {
 
     private func weeksLabel(_ count: Int) -> some View {
                 Text(competitionWeeksText(count).uppercased(with: locale))
-                    .font(.themeLabel)
-                    .tracking(1.2)
+                    .themeLabel()
                     .foregroundStyle(Theme.secondary)
     }
 
@@ -962,8 +1028,7 @@ struct FriendProfileView: View {
                 }
                 if defenses > 0, dynamicTypeSize.isAccessibilitySize {
                     Text(competitionDefensesText(defenses).uppercased(with: locale))
-                        .font(.themeLabel)
-                        .tracking(1.2)
+                        .themeLabel()
                         .foregroundStyle(Theme.secondary)
                 }
             }
@@ -971,8 +1036,7 @@ struct FriendProfileView: View {
             Spacer(minLength: 8)
             if defenses > 0, !dynamicTypeSize.isAccessibilitySize {
                 Text(competitionDefensesText(defenses).uppercased(with: locale))
-                    .font(.themeLabel)
-                    .tracking(1.2)
+                    .themeLabel()
                     .foregroundStyle(Theme.secondary)
             }
         }
@@ -1037,8 +1101,7 @@ struct FriendProfileView: View {
                 if dynamicTypeSize.isAccessibilitySize {
                     VStack(alignment: .leading, spacing: 2) {
                         Text(label)
-                            .font(.themeLabel)
-                            .tracking(1.1)
+                            .themeLabel(tracking: 1.1)
                             .foregroundStyle(Theme.secondary)
                         Text("You \(yours)").foregroundStyle(Theme.you)
                         Text("\(name) \(theirs)").foregroundStyle(Theme.ink)
@@ -1074,7 +1137,10 @@ struct FriendProfileView: View {
                     NavigationLink("All Weeks with \(person.displayName)", value: CompetitionHomeRoute.person(identity))
                         .buttonStyle(SecondaryButtonStyle())
                         .accessibilityIdentifier("competition.profile.weeks")
-                    if let title = rivalry?.challengeTitle, let challenge {
+                    // Their request is answered here too; it's the one primary until then.
+                    if person.relationship == .incoming {
+                        action
+                    } else if let title = rivalry?.challengeTitle, let challenge {
                         Button(title, action: challenge)
                             .buttonStyle(PrimaryButtonStyle())
                             .accessibilityIdentifier("friends.person.challenge")

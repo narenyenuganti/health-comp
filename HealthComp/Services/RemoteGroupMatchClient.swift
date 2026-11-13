@@ -15,6 +15,8 @@ struct GroupMatchReadModel: Codable, Equatable, Sendable {
         let availabilityReason: String
         let wireContentSHA256: String
         let ringBasisPoints: [Int]?
+        /// When the server got it. Nil in caches from before it was kept.
+        var receivedAt: Date? = nil
     }
 
     struct Seat: Codable, Equatable, Sendable {
@@ -33,6 +35,8 @@ struct GroupMatchReadModel: Codable, Equatable, Sendable {
         /// Whole points, fixed when the last person accepts.
         let botDailyTotals: [Int]?
         let days: [Day]
+        /// Their finalization check after Day 7; nil before it, for a bot, or in older caches.
+        var attestationBasis: CompetitionAttestationBasis? = nil
     }
 
     struct Attestation: Codable, Equatable, Sendable {
@@ -90,9 +94,20 @@ struct GroupMatchReadModel: Codable, Equatable, Sendable {
     let ownerRevisionHighWater: Int64
     let ownerAttestation: Attestation?
     let result: Result?
+    /// Everyone's day reactions in this match. Nil in caches from before it was kept.
+    var reactions: [Reaction]? = nil
+
+    /// One person's reaction to another's day.
+    struct Reaction: Codable, Equatable, Sendable {
+        let authorProfileID: UUID
+        let targetProfileID: UUID
+        let ordinal: Int
+        let kind: CompetitionReactionKind
+    }
 }
 
 extension GroupMatchFormat: Codable {}
+extension CompetitionReactionKind: Codable {}
 
 // MARK: - Wire
 
@@ -169,16 +184,21 @@ enum GroupMatchWire {
               seats.contains(where: { $0.profileID == viewer })
         else { throw CompetitionRemoteFailure.serverContractMismatch }
         let attestation = try owner.optional("attestation") { try self.attestation(owner.values[$0], matchID: id, viewer: viewer) }
+        var reactions: [GroupMatchReadModel.Reaction] = []
         for reaction in try object.array("reactions") {
             let row = try WireObject(reaction, keys: reactionKeys)
             guard try row.uuid("competition_id") == id,
-                  CompetitionReactionKind(rawValue: try row.string("reaction")) != nil
+                  let kind = CompetitionReactionKind(rawValue: try row.string("reaction"))
             else { throw CompetitionRemoteFailure.serverContractMismatch }
-            _ = try row.uuid("author_profile_id")
-            _ = try row.optional("target_profile_id") { try row.uuid($0) }
-            _ = try row.optional("day_ordinal") { try row.int($0) }
+            let author = try row.uuid("author_profile_id")
+            let target = try row.optional("target_profile_id") { try row.uuid($0) }
+            let ordinal = try row.optional("day_ordinal") { try row.int($0) }
             _ = try row.date("created_at")
             _ = try row.date("updated_at")
+            // Group matches react to days only; a row without a day isn't shown.
+            if let target, let ordinal {
+                reactions.append(.init(authorProfileID: author, targetProfileID: target, ordinal: ordinal, kind: kind))
+            }
         }
         return GroupMatchReadModel(
             id: id,
@@ -195,7 +215,8 @@ enum GroupMatchWire {
             seats: seats,
             ownerRevisionHighWater: try owner.int64("revision_high_water"),
             ownerAttestation: attestation,
-            result: try object.optional("result") { try result(object.values[$0], matchID: id, format: format) }
+            result: try object.optional("result") { try result(object.values[$0], matchID: id, format: format) },
+            reactions: reactions
         )
     }
 
@@ -207,7 +228,7 @@ enum GroupMatchWire {
               kind == "human" || kind == "bot"
         else { throw CompetitionRemoteFailure.serverContractMismatch }
         _ = try object.bool("can_view_photo")
-        _ = try object.optional("attestation_basis") { try object.basis($0) }
+        let attestationBasis = try object.optional("attestation_basis") { try object.basis($0) }
         _ = try object.optional("bot_baseline") { try object.int($0) }
         _ = try object.optional("bot_generator_version") { try object.int($0) }
         let profileID = try object.optional("profile_id") { try object.uuid($0) }
@@ -256,7 +277,8 @@ enum GroupMatchWire {
             botMode: botMode,
             botSeed: botSeed,
             botDailyTotals: totals,
-            days: days.sorted { $0.ordinal < $1.ordinal }
+            days: days.sorted { $0.ordinal < $1.ordinal },
+            attestationBasis: attestationBasis
         )
     }
 
@@ -281,7 +303,7 @@ enum GroupMatchWire {
         _ = try object.uuid("id")
         _ = try object.uuid("semantic_event_id")
         _ = try object.date("evaluated_at")
-        _ = try object.date("received_at")
+        let receivedAt = try object.date("received_at")
         let revision = try object.int64("client_revision")
         let sequence = try object.int64("server_seq")
         guard revision > 0, sequence > 0, let profileID else { throw CompetitionRemoteFailure.serverContractMismatch }
@@ -305,7 +327,8 @@ enum GroupMatchWire {
             centipoints: centipoints,
             availabilityReason: reason,
             wireContentSHA256: digest,
-            ringBasisPoints: rings
+            ringBasisPoints: rings,
+            receivedAt: receivedAt
         )
     }
 
@@ -768,10 +791,19 @@ struct RemoteGroupMatchSync: Sendable {
             return matches
         }
         var finalWindows: [(id: UUID, readSucceeded: Bool)] = []
+        // The zone Health reads days in: the device's own.
+        var deviceZone = TimeZone.current
+        if let environment, let zone = TimeZone(identifier: await environment.context().timeZoneIdentifier) {
+            deviceZone = zone
+        }
         for match in matches {
             guard let window = uploadWindow(match),
-                  let end = try? window.calendar.startOfDay(window.calendar.day(after: window.days[6]))
+                  let weekEnd = try? window.calendar.startOfDay(window.calendar.day(after: window.days[6]))
             else { continue }
+            // Health reads day 7 by this device's own date, so a player west
+            // of the match calendar seals at their own midnight (by the deadline).
+            let localEnd = (try? match.schedule().localWindowEnd(in: deviceZone)) ?? weekEnd
+            let end = max(weekEnd, min(localEnd, match.bestAvailableDeadline ?? .distantFuture))
             var readAt = try? await upload(match, window: window)
             if now() >= end {
                 // Only a read that started after the week ended can seal it.
@@ -993,14 +1025,24 @@ struct RemoteGroupMatchSync: Sendable {
         let commitment = try RemoteFinalizationWireV1.windowCommitment(
             competitionID: match.id, participantID: profileID, days: days
         )
-        let queued = entries.compactMap { entry -> CompetitionAttestationRequest? in
-            guard case let .finalWindowAttestation(request) = entry.payload else { return nil }
-            return request
+        var queued: [CompetitionAttestationRequest] = []
+        // Only a rejection a retry can't help (the window already closed)
+        // stands in for this attestation; other rejections are sent again.
+        var standing: [CompetitionAttestationRequest] = []
+        var rejected: [CompetitionOutboxEntry] = []
+        for entry in entries {
+            guard case let .finalWindowAttestation(request) = entry.payload else { continue }
+            queued.append(request)
+            if case let .permanentFailure(failure, _) = entry.state, failure != .finalizedCompetition {
+                rejected.append(entry)
+            } else {
+                standing.append(request)
+            }
         }
         let isSame = { (b: CompetitionAttestationBasis, r: [Int64], c: String) in
             b == basis && r == revisions && c == commitment
         }
-        if queued.contains(where: { isSame($0.basis, $0.acceptedRevisions, $0.windowCommitmentSHA256) }) { return }
+        if standing.contains(where: { isSame($0.basis, $0.acceptedRevisions, $0.windowCommitmentSHA256) }) { return }
         if let accepted = match.ownerAttestation,
            isSame(accepted.basis, accepted.acceptedRevisions, accepted.windowCommitmentSHA256) { return }
         let prior = max(match.ownerAttestation?.version ?? 0, queued.map(\.attestationVersion).max() ?? 0)
@@ -1020,6 +1062,11 @@ struct RemoteGroupMatchSync: Sendable {
             )),
             enqueuedAt: now()
         )
+        // The new attestation replaces the rejections it retries, so they
+        // don't pile up. Cleanup only: a failure here costs nothing.
+        for entry in rejected {
+            try? await outboxStore.remove(entry.semanticEventID, expectedGeneration: entry.generation)
+        }
         await syncCoordinator.waitUntilIdle()
     }
 
@@ -1028,6 +1075,13 @@ struct RemoteGroupMatchSync: Sendable {
     private func removeMaterializedAcknowledgments(_ matches: [GroupMatchReadModel]) async throws {
         guard let outboxStore else { return }
         for entry in try await outboxStore.entries() {
+            // A finished match takes no more uploads or attestations, and
+            // nothing else ever settles a rejected one.
+            if case .permanentFailure = entry.state,
+               matches.first(where: { $0.id == entry.payload.competitionID })?.result != nil {
+                try await outboxStore.remove(entry.semanticEventID, expectedGeneration: entry.generation)
+                continue
+            }
             if case let .scoreRevision(request) = entry.payload, case .permanentFailure = entry.state,
                let head = matches.first(where: { $0.id == request.competitionID })?
                    .seats.first(where: { $0.profileID == profileID })?
@@ -1106,8 +1160,9 @@ extension GroupMatchReadModel {
         let lifecycle: LocalCompetitionLifecyclePresentation
         switch self.lifecycle {
         case "pending":
-            // The read model has no creation time; the screens don't show one.
-            lifecycle = .pending(direction: direction, createdAt: .distantPast, expiresAt: invitationExpiresAt)
+            // The read model has no creation time and the screens don't show
+            // one; they format "Answer by" against it, so it is the evaluation time.
+            lifecycle = .pending(direction: direction, createdAt: now, expiresAt: invitationExpiresAt)
         case "declined": lifecycle = .declined(at: closedAt ?? .distantPast, direction: direction)
         case "expired": lifecycle = .expired(at: invitationExpiresAt ?? .distantPast, direction: direction)
         case "cancelled": lifecycle = .cancelled(at: closedAt ?? .distantPast)
@@ -1203,11 +1258,17 @@ extension GroupMatchReadModel {
                     let value: MatchDayValue = switch day.status {
                     case "available": .centipoints(day.centipoints ?? 0)
                     case "afterLeave": leaveCutoffs[seat.id] == nil ? .centipoints(0) : .afterLeave
-                    default: .unavailable
+                    // The result is final: a missing or unavailable day scored zero.
+                    default: .centipoints(0)
                     }
                     return try? MatchDayScore(seatID: seat.id, ordinal: day.ordinal, value: value)
                 }
             }
+        }
+        let seatIDs = Dictionary(seats.compactMap { seat in seat.profileID.map { ($0, seat.id) } }, uniquingKeysWith: { first, _ in first })
+        let reactions = (self.reactions ?? []).compactMap { reaction -> GroupMatchReaction? in
+            guard let author = seatIDs[reaction.authorProfileID], let target = seatIDs[reaction.targetProfileID] else { return nil }
+            return GroupMatchReaction(authorSeatID: author, targetSeatID: target, ordinal: reaction.ordinal, kind: reaction.kind)
         }
         return try? GroupMatchPresentation(
             id: CompetitionID(id),
@@ -1218,11 +1279,39 @@ extension GroupMatchReadModel {
             schedule: schedule,
             days: days,
             rings: rings,
+            reactions: reactions,
+            canNudgePartner: canNudgePartner(viewerSeat: viewerSeat, lifecycle: lifecycle, schedule: schedule, now: now),
             leaveCutoffs: leaveCutoffs,
             frozenStandings: frozen,
             frozenSeatTotals: frozenSeatTotals,
             frozenDays: frozenDays
         )
+    }
+}
+
+extension GroupMatchReadModel {
+    /// The server's nudge rule (`nudge_group_partner`) at `now`: while live,
+    /// your partner's newest upload (or Day 1's start) is over 12 hours old;
+    /// after Day 7, until the deadline, while their stable check is missing.
+    func canNudgePartner(
+        viewerSeat: Seat, lifecycle: LocalCompetitionLifecyclePresentation, schedule: CompetitionSchedule?, now: Date
+    ) -> Bool {
+        guard result == nil, let team = viewerSeat.team,
+              let partner = seats.first(where: { $0.team == team && $0.id != viewerSeat.id }),
+              partner.profileID != nil, partner.leftAt == nil
+        else { return false }
+        switch lifecycle {
+        case .active, .endsToday:
+            guard let since = partner.days.compactMap(\.receivedAt).max()
+                ?? schedule.flatMap({ try? $0.calendar.startOfDay($0.startDay) })
+            else { return false }
+            return now.timeIntervalSince(since) > competitionNudgeStaleInterval
+        case .tallying:
+            guard let bestAvailableDeadline else { return false }
+            return now < bestAvailableDeadline && partner.attestationBasis != .stable
+        default:
+            return false
+        }
     }
 }
 

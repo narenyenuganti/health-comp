@@ -141,6 +141,18 @@ final class RemoteGroupMatchClientTests: XCTestCase {
         XCTAssertEqual(pending.seats[2].invite, .invited)
     }
 
+    func testCarriesReactionsAndTheServersNudgeRuleIntoThePresentation() throws {
+        let model = try XCTUnwrap(GroupMatchWire.decodeList(fixture(), viewer: viewer).first { $0.id == doublesID })
+        let doubles = try XCTUnwrap(model.presentation(viewer: viewer, now: dayThreeNoon))
+        let ids = doubles.seats.map(\.id)
+        // Seat 2 (your partner) fired at your Day 1.
+        XCTAssertEqual(doubles.reactions, [GroupMatchReaction(authorSeatID: ids[1], targetSeatID: ids[0], ordinal: 1, kind: .fire)])
+        // Your partner uploaded at 08:41, under 12 hours before noon; by 21:00 the server takes a nudge.
+        XCTAssertFalse(doubles.canNudgePartner)
+        let evening = try XCTUnwrap(model.presentation(viewer: viewer, now: dayThreeNoon.addingTimeInterval(9 * 3_600)))
+        XCTAssertTrue(evening.canNudgePartner)
+    }
+
     func testAFinishedMatchTakesItsTotalsAndDaysFromTheFrozenResultSeats() throws {
         func days(_ points: [Int]) -> [[String: Any]] {
             points.enumerated().map {
@@ -153,7 +165,12 @@ final class RemoteGroupMatchClientTests: XCTestCase {
             result["seats"] = [
                 ["seat_index": 1, "total_centi_points": "210000", "days": days([40_000, 20_000] + Array(repeating: 30_000, count: 5))],
                 ["seat_index": 2, "total_centi_points": "210000", "days": days([20_000, 40_000] + Array(repeating: 30_000, count: 5))],
-                ["seat_index": 3, "total_centi_points": "0", "days": days(Array(repeating: 0, count: 7))],
+                ["seat_index": 3, "total_centi_points": "0", "days": { () -> [[String: Any]] in
+                    var seatDays = days(Array(repeating: 0, count: 7))
+                    // Never uploaded: still a scored zero, so day 3 has winners.
+                    seatDays[2] = ["ordinal": 3, "status": "unavailable", "centi_points": NSNull(), "reason": "missing"]
+                    return seatDays
+                }()],
             ]
             match["result"] = result
         }
@@ -238,10 +255,17 @@ final class RemoteGroupMatchClientTests: XCTestCase {
         )
 
         _ = await sync.run()
+        // sync-02: days 2 and 3 wait in the outbox behind day 1's failure, so
+        // revisions reach the server in order.
         let failed = await server.attemptedRequests()
-        XCTAssertEqual(failed.map(\.dayOrdinal), [1, 2, 3])
-        XCTAssertEqual(failed.map(\.clientRevision), [4, 5, 6])
-        XCTAssertTrue(failed.allSatisfy {
+        XCTAssertEqual(failed.map(\.dayOrdinal), [1])
+        XCTAssertEqual(failed.map(\.clientRevision), [4])
+        let queued = try await harness.outbox.entries().compactMap { entry -> CompetitionScoreRevisionRequest? in
+            guard case let .scoreRevision(request) = entry.payload else { return nil }
+            return request
+        }
+        XCTAssertEqual(queued.map(\.clientRevision), [4, 5, 6])
+        XCTAssertTrue(queued.allSatisfy {
             $0.semanticEventID == RemoteGroupMatchSync.semanticEventID(wireContentSHA256: $0.wireContentSHA256)
         })
 
@@ -249,7 +273,8 @@ final class RemoteGroupMatchClientTests: XCTestCase {
         clock.now = dayThreeNoon.addingTimeInterval(5)
         _ = await sync.run()
         let accepted = await server.acceptedRequests()
-        XCTAssertEqual(accepted, failed, "a retry sends the same request, evaluation time included")
+        XCTAssertEqual(accepted, queued, "a retry sends the same request, evaluation time included")
+        XCTAssertEqual(accepted.first, failed.first)
         let document = try await XCTUnwrapAsync(await harness.store.owner(doublesID))
         XCTAssertEqual(document.allocatedRevision, 6)
         XCTAssertEqual(document.accepted.map(\.clientRevision), [4, 5, 6])
@@ -259,7 +284,7 @@ final class RemoteGroupMatchClientTests: XCTestCase {
         clock.now = dayThreeNoon.addingTimeInterval(60)
         _ = await sync.run()
         let afterUnchangedRead = await server.attemptedRequests()
-        XCTAssertEqual(afterUnchangedRead.count, 6, "an unchanged reading is not sent again")
+        XCTAssertEqual(afterUnchangedRead.count, 4, "an unchanged reading is not sent again")
         let journal = try await harness.events.load(CompetitionID(doublesID))
         XCTAssertNil(journal, "group scores never reach the duel journal")
     }
@@ -354,6 +379,39 @@ final class RemoteGroupMatchClientTests: XCTestCase {
         XCTAssertFalse(log.contains("attest"))
         let outbox = try await harness.outbox.entries()
         XCTAssertEqual(outbox, [])
+    }
+
+    /// sync-08: a rejected attestation (here a 401 during an auth blip) is
+    /// not "already queued"; the next pass sends it again and drops the
+    /// rejection.
+    func testARejectedAttestationIsSentAgainOnTheNextPass() async throws {
+        let harness = try Harness()
+        let server = try FakeGroupServer(
+            fixture: fixture(), matchID: doublesID, viewer: viewer,
+            startDay: "2026-11-03", deadline: "2026-11-12T00:00:00+00:00"
+        )
+        await server.rejectAttestations(1)
+        let clock = TestClock(dayThreeNoon)
+        let sync = harness.sync(
+            api: server.api(), environment: try health(startDay: (2026, 11, 3), days: 7), now: { clock.now }
+        )
+        _ = await sync.run()
+        var sent = await server.attestations
+        XCTAssertTrue(sent.isEmpty, "the first attestation was refused")
+        let parked = try await harness.outbox.entries().filter {
+            if case .permanentFailure = $0.state { return true } else { return false }
+        }
+        XCTAssertEqual(parked.count, 1)
+
+        clock.now = dayThreeNoon.addingTimeInterval(5)
+        _ = await sync.run()
+        sent = await server.attestations
+        XCTAssertEqual(sent.map(\.basis), [.stable])
+        XCTAssertEqual(sent.map(\.attestationVersion), [2])
+        let outbox = try await harness.outbox.entries()
+        XCTAssertFalse(outbox.contains {
+            if case .permanentFailure = $0.state { return true } else { return false }
+        }, "the retried rejection left the outbox")
     }
 
     func testAFailedFinalReadSendsOnlyBestAvailableAfterTheDeadline() async throws {
@@ -522,6 +580,21 @@ final class RemoteGroupMatchClientTests: XCTestCase {
         XCTAssertEqual(outbox, [], "the rejected requests leave once replaced")
     }
 
+    func testARejectedUploadForAFinishedMatchLeavesTheOutbox() async throws {
+        let harness = try Harness()
+        let entry = try await harness.outbox.enqueue(
+            .scoreRevision(try groupRequest(revision: 4, competitionID: finishedID)), enqueuedAt: dayThreeNoon
+        )
+        _ = try await harness.outbox.update(
+            entry.semanticEventID, expectedGeneration: entry.generation,
+            state: .permanentFailure(.finalizedCompetition, failedAt: dayThreeNoon)
+        )
+        let list = try fixture()
+        _ = await harness.sync(api: groupTestAPI(listGroupMatches: { list }), now: { self.dayThreeNoon }).run()
+        let outbox = try await harness.outbox.entries()
+        XCTAssertEqual(outbox, [], "nothing can settle it once the result is in")
+    }
+
     /// Finding 3: day 7 was accepted as A (revision 10), B (revision 11) is
     /// still queued, and the final read says A again. A goes out above B, so
     /// the sealed week matches the last read.
@@ -548,15 +621,25 @@ final class RemoteGroupMatchClientTests: XCTestCase {
         clock.now = dayThreeNoon
         _ = try await sync(daySevenMove: 420).run()
         var accepted = await server.acceptedRequests()
-        XCTAssertEqual(accepted.map(\.clientRevision), [4, 5, 6, 7, 8, 9, 10, 12], "A goes out above B")
-        XCTAssertEqual(accepted.last?.moveBasisPoints, accepted[6].moveBasisPoints)
+        // sync-02: A is queued above B (revision 12) and waits for B, so the
+        // server takes them in order; nothing is attested meanwhile.
+        XCTAssertEqual(accepted.map(\.clientRevision), [4, 5, 6, 7, 8, 9, 10])
+        let queued = try await harness.outbox.entries().compactMap { entry -> CompetitionScoreRevisionRequest? in
+            guard case let .scoreRevision(request) = entry.payload else { return nil }
+            return request
+        }
+        XCTAssertEqual(queued.map(\.clientRevision), [11, 12], "A goes out above B")
+        XCTAssertEqual(queued.last?.moveBasisPoints, accepted[6].moveBasisPoints)
+        let early = await server.attestations
+        XCTAssertTrue(early.isEmpty)
 
-        // B finally reaches the server and is refused under A.
+        // B finally reaches the server, then A lands above it.
         await server.setFailingRevisions([])
         clock.now = dayThreeNoon.addingTimeInterval(3_600)
         _ = try await sync(daySevenMove: 420).run()
         accepted = await server.acceptedRequests()
         XCTAssertEqual(accepted.map(\.clientRevision).last, 12)
+        XCTAssertEqual(accepted.last?.moveBasisPoints, accepted[6].moveBasisPoints)
         let attestation = try await XCTUnwrapAsync(await server.attestations.first)
         XCTAssertEqual(attestation.basis, .stable)
         XCTAssertEqual(attestation.acceptedRevisions, [4, 5, 6, 7, 8, 9, 12])
@@ -739,7 +822,8 @@ final class RemoteGroupMatchClientTests: XCTestCase {
             api: server.api(), environment: try health(startDay: (2026, 11, 8), days: 1), now: { clock.now }
         ).run()
         let lost = try await harness.outbox.entries()
-        XCTAssertEqual(lost.map(\.payload.competitionID), [doublesID], "revision 4 is still queued")
+        // sync-02: revisions 5 and 6 wait behind the unanswered 4.
+        XCTAssertEqual(lost.map(\.payload.competitionID), [doublesID, doublesID, doublesID], "revision 4 is still queued")
 
         let relaunched = try Harness(root: harness.root)
         clock.now = dayThreeNoon.addingTimeInterval(60)
@@ -1066,6 +1150,7 @@ private actor FakeGroupServer {
     private var sequence: Int64 = 100
     private var attestation: [String: Any]?
     private var failsAppends = false
+    private var rejectedAttestations = 0
     private var failingRevisions: Set<Int64> = []
     private var firstAppend: (@Sendable () async -> Void)?
     private var acceptedDigests: [Int64: (digest: String, sequence: Int64, points: Int?)] = [:]
@@ -1099,6 +1184,8 @@ private actor FakeGroupServer {
     }
 
     func setFailingAppends(_ value: Bool) { failsAppends = value }
+    /// The next `count` attestations are refused with a 401.
+    func rejectAttestations(_ count: Int) { rejectedAttestations = count }
     /// Another device's upload moved the participant's high-water.
     func setHighWater(_ value: Int64) { highWater = value }
     func setFailingRevisions(_ value: Set<Int64>) { failingRevisions = value }
@@ -1188,6 +1275,10 @@ private actor FakeGroupServer {
 
     private func attest(_ request: CompetitionAttestationRequest) throws -> CompetitionAttestationReceipt {
         log.append("attest")
+        if rejectedAttestations > 0 {
+            rejectedAttestations -= 1
+            throw CompetitionRemoteFailure.unauthenticated
+        }
         attestations.append(request)
         sequence += 1
         attestation = [

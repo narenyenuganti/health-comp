@@ -221,6 +221,12 @@ private struct CompetitionBeltCeremony: ViewModifier {
 
     private func playJudges() {
         guard competition != nil else { return }
+        // VoiceOver gets the final state: the result, spoken, in place of the timed reveal.
+        if voiceOver {
+            finishJudges()
+            announcePending()
+            return
+        }
         showsJudges = true
         isCovered = true
         present(true)
@@ -248,9 +254,14 @@ private struct CompetitionBeltCeremony: ViewModifier {
     }
 
     private func announcePending() {
-        guard let pendingAnnouncement else { return }
-        AccessibilityNotification.Announcement(pendingAnnouncement).post()
-        self.pendingAnnouncement = nil
+        guard let text = pendingAnnouncement else { return }
+        pendingAnnouncement = nil
+        // After the push or the cover's dismissal, or VoiceOver's own reading
+        // of the result screen cuts it off (as the versus intro waits).
+        Task {
+            try? await Task.sleep(for: .seconds(0.75))
+            AccessibilityNotification.Announcement(text).post()
+        }
     }
 
     private func playBelt() {
@@ -483,8 +494,7 @@ private struct CompetitionBeltCeremonyWords: View {
                 .minimumScaleFactor(0.6)
             if let detail = script.detail {
                 Text(detail.uppercased())
-                    .font(.themeLabel)
-                    .tracking(1.2)
+                    .themeLabel()
                     .foregroundStyle(Theme.secondary)
             }
             if let defenses = script.defenses {
@@ -494,8 +504,7 @@ private struct CompetitionBeltCeremonyWords: View {
                         .font(.score(size: countSize).monospacedDigit())
                         .foregroundStyle(Theme.ink)
                     Text(rolled == 1 ? "DEFENSE" : "DEFENSES")
-                        .font(.themeLabel)
-                        .tracking(1.2)
+                        .themeLabel()
                         .foregroundStyle(Theme.secondary)
                 }
                 .accessibilityElement(children: .ignore)

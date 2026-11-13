@@ -159,9 +159,7 @@ final class ChallengeFriendUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["Remove Dev Patel as a friend?"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.staticTexts["You can still play each other with a link."].exists)
         confirm("Remove Friend", menuID: "friends.menu.remove")
-        // The menu only changes when it opens again: after the 0.3 s call.
-        Thread.sleep(forTimeInterval: 1)
-        openMenu()
+        reopenMenu { menuItem("friends.menu.add").exists }
         // Played but no longer friends: they can be added again.
         XCTAssertTrue(menuItem("friends.menu.add").exists)
         XCTAssertFalse(menuItem("friends.menu.remove").exists)
@@ -190,8 +188,7 @@ final class ChallengeFriendUITests: XCTestCase {
         XCTAssertFalse(menuItem("friends.menu.add").exists)
         menuItem("friends.menu.cancel-request").tap()
         confirm("Cancel Request", menuID: "friends.menu.cancel-request")
-        Thread.sleep(forTimeInterval: 1)
-        openMenu()
+        reopenMenu { !menuItem("friends.menu.cancel-request").exists }
         // Never played: the page's own button adds them.
         XCTAssertFalse(menuItem("friends.menu.cancel-request").exists)
         XCTAssertFalse(menuItem("friends.menu.add").exists)
@@ -208,8 +205,7 @@ final class ChallengeFriendUITests: XCTestCase {
         XCTAssertFalse(menuItem("friends.menu.add").exists)
         menuItem("friends.menu.remove").tap()
         confirm("Remove Friend", menuID: "friends.menu.remove")
-        Thread.sleep(forTimeInterval: 1)
-        openMenu()
+        reopenMenu { menuItem("friends.menu.add").exists }
         XCTAssertTrue(menuItem("friends.menu.add").exists)
         XCTAssertFalse(menuItem("friends.menu.remove").exists)
     }
@@ -372,6 +368,17 @@ final class ChallengeFriendUITests: XCTestCase {
         XCTAssertTrue(menuItem("friends.menu.block").waitForExistence(timeout: 3))
     }
 
+    /// The menu only changes when it opens again, after the scripted 0.3 s
+    /// call: reopen it until `ready` holds, for up to 5 s.
+    private func reopenMenu(until ready: () -> Bool) {
+        let deadline = Date().addingTimeInterval(5)
+        openMenu()
+        while !ready(), Date() < deadline {
+            closeMenu()
+            openMenu()
+        }
+    }
+
     private func closeMenu() {
         // A tap above the menu, on the navigation bar's title.
         app.navigationBars.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
@@ -456,9 +463,12 @@ final class ChallengeFriendUITests: XCTestCase {
 
     private func scrollTo(_ target: XCUIElement) {
         let window = app.windows.firstMatch
-        for _ in 0..<16 where !(target.exists && target.isHittable) {
-            window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
-                .press(forDuration: 0.05, thenDragTo: window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.4)))
+        // Fully on screen: a row cut by the bottom edge reports hittable,
+        // but a tap there lands on the home indicator.
+        // A swipe, not a press-and-drag: at the largest text size the press
+        // lands on a friend row and the sheet takes it as a tap.
+        for _ in 0..<16 where !(target.exists && target.isHittable && app.frame.contains(target.frame)) {
+            window.swipeUp(velocity: .slow)
         }
         XCTAssertTrue(target.isHittable, "\(target)")
     }
@@ -526,7 +536,8 @@ final class ChallengeFriendUITests: XCTestCase {
                     return true
                 }
                 guard let element = issue.element, !screen.contains(element.frame) else {
-                    guard issue.element != nil else {
+                    // iOS 18 reports some clipping with no element; skip only that.
+                    guard issue.element != nil || issue.auditType != .textClipped else {
                         skipped.append(issue.detailedDescription)
                         return true
                     }

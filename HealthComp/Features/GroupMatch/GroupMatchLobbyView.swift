@@ -50,8 +50,7 @@ struct GroupMatchLobbyView: View {
                 HStack { waitingLabels }
                 VStack(alignment: .leading, spacing: 6) { waitingLabels }
             }
-            .font(.themeLabel)
-            .tracking(1.2)
+            .themeLabel()
             .textCase(.uppercase)
             .foregroundStyle(Theme.secondary)
             .accessibilityElement(children: .combine)
@@ -150,8 +149,7 @@ struct GroupMatchLobbyView: View {
     private var closed: some View {
         GroupMatchPage {
             Text(isCancelled ? "Cancelled" : "Didn’t start")
-                .font(.themeLabel)
-                .tracking(1.2)
+                .themeLabel()
                 .textCase(.uppercase)
                 .foregroundStyle(Theme.secondary)
             GroupMatchHeading(closedTitle, detail: closedDetail)
@@ -224,7 +222,7 @@ struct GroupMatchPage<Content: View, Actions: View>: View {
                 }
             }
             .frame(maxWidth: 560, alignment: .leading)
-            .padding(.horizontal, 20)
+            .padding(.horizontal, 16)
             .padding(.top, 8)
             .padding(.bottom, 20)
             .frame(maxWidth: .infinity)
@@ -234,7 +232,7 @@ struct GroupMatchPage<Content: View, Actions: View>: View {
             if !dynamicTypeSize.isAccessibilitySize {
                 VStack(spacing: 8) { actions }
                     .frame(maxWidth: 560)
-                    .padding(.horizontal, 20)
+                    .padding(.horizontal, 16)
                     .padding(.top, 12)
                     .padding(.bottom, 8)
                     .frame(maxWidth: .infinity)
@@ -288,8 +286,7 @@ struct GroupMatchTeamLabel: View {
 
     var body: some View {
         Text(isYours ? "YOUR TEAM" : "THEIR TEAM")
-            .font(.themeLabel)
-            .tracking(1.2)
+            .themeLabel()
             .foregroundStyle(isYours ? Theme.you : Theme.ink)
             .accessibilityAddTraits(.isHeader)
     }
@@ -334,9 +331,7 @@ struct GroupMatchSeatRow<Trailing: View>: View {
                 .strokeBorder(Theme.tertiary, style: StrokeStyle(lineWidth: 1.5, dash: [3, 3]))
                 .frame(width: 32, height: 32)
                 .accessibilityHidden(true)
-        case .partner:
-            PersonAvatar(name: name, photo: photo, size: 32)
-                .overlay { Circle().strokeBorder(Theme.youFill, lineWidth: 2) }
+        // The amber ring is yours alone; "Your team" marks a partner.
         default:
             PersonAvatar(name: name, photo: photo, size: 32, isYou: kind == .you, isBot: kind == .bot)
         }
@@ -379,7 +374,10 @@ struct GroupMatchLineupPanels: View {
                         .fontWeight(label == "In" ? .bold : nil)
                         .foregroundStyle(label == "In" ? Theme.ink : Theme.secondary)
                 }
+                // Another person opens their profile, where they can be blocked or reported.
+                .modifier(CompetitionProfileTap(route: match.profileRoute(seat)))
                 .accessibilityElement(children: .combine)
+                .modifier(CompetitionProfileAction(route: match.profileRoute(seat), name: seat.name))
                 .accessibilityIdentifier("\(identifier).\(seat.number)")
             }
         }
@@ -406,19 +404,35 @@ struct GroupMatchLineupPanels: View {
     }
 }
 
+extension GroupMatchPresentation {
+    /// Another person's profile, where they can be blocked or reported. Never
+    /// you, a bot or a deleted account.
+    func profileRoute(_ seat: GroupMatchSeat) -> CompetitionHomeRoute? {
+        guard seat.id != viewerSeatID, let id = seat.profileID, seat.name != competitionFormerCompetitorName
+        else { return nil }
+        return .profile(RemoteCompetitionOpponentIdentity.identity(for: id))
+    }
+}
+
+/// Why an action failed: the one style for it on every group screen, read
+/// out by VoiceOver when it appears, since the button's busy state just ends.
 struct GroupMatchErrorLine: View {
     let text: String
+    var identifier = "competition.group.error"
 
-    init(_ text: String) {
+    init(_ text: String, identifier: String = "competition.group.error") {
         self.text = text
+        self.identifier = identifier
     }
 
     var body: some View {
         Text(text)
-            .font(.caption)
-            .foregroundStyle(Theme.secondary)
+            .font(.callout)
+            .foregroundStyle(Theme.ink)
             .frame(maxWidth: .infinity, alignment: .leading)
             .fixedSize(horizontal: false, vertical: true)
-            .accessibilityIdentifier("competition.group.error")
+            .accessibilityIdentifier(identifier)
+            .onAppear { AccessibilityNotification.Announcement(text).post() }
+            .onChange(of: text) { _, text in AccessibilityNotification.Announcement(text).post() }
     }
 }

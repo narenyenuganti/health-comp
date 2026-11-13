@@ -21,7 +21,7 @@ struct CompetitionWeekChart: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
-        VStack(spacing: dynamicTypeSize.isAccessibilitySize ? 12 : 6) {
+        VStack(spacing: dynamicTypeSize >= .xxLarge ? 12 : 6) {
             ForEach(days, id: \.ordinal) { day in
                 // Beside the row, not in it, so the row's tap still opens the day.
                 HStack(spacing: 6) {
@@ -31,7 +31,7 @@ struct CompetitionWeekChart: View {
                     }
                 }
                 .background {
-                    if day.ordinal == currentDayOrdinal, !dynamicTypeSize.isAccessibilitySize {
+                    if day.ordinal == currentDayOrdinal, dynamicTypeSize < .xxLarge {
                         RoundedRectangle(cornerRadius: 8, style: .continuous)
                             .fill(Theme.panel)
                             .padding(.horizontal, -6)
@@ -89,7 +89,7 @@ struct CompetitionWeekChart: View {
 
     @ViewBuilder
     private func row(_ day: LocalCompetitionDayPresentation) -> some View {
-        if dynamicTypeSize.isAccessibilitySize {
+        if dynamicTypeSize >= .xxLarge {
             StackedDayRow(
                 day: day,
                 isToday: day.ordinal == currentDayOrdinal,
@@ -263,7 +263,7 @@ struct CompetitionWeekStrip: View {
 
 /// Your bar (Move, Exercise and Stand or Roll when the days carry a ring
 /// split), the other person's single bar, and the stripe for no data.
-/// Accessibility sizes show named rows instead of bars, so the legend steps
+/// From xxLarge text, named rows replace the bars, so the legend steps
 /// aside.
 struct CompetitionRingLegend: View {
     let days: [LocalCompetitionDayPresentation]
@@ -272,7 +272,7 @@ struct CompetitionRingLegend: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
-        if !dynamicTypeSize.isAccessibilitySize {
+        if dynamicTypeSize < .xxLarge {
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: 12) {
                     rings
@@ -298,7 +298,7 @@ struct CompetitionRingLegend: View {
         if showsNoData {
             HStack(spacing: 5) {
                 HatchBar().frame(width: 10, height: 10)
-                Text("NO DATA").font(.themeLabel).tracking(1.1)
+                Text("NO DATA").themeLabel(tracking: 1.1)
             }
         }
     }
@@ -342,7 +342,7 @@ struct CompetitionRingLegend: View {
     private func swatch(_ color: Color, _ title: String) -> some View {
         HStack(spacing: 5) {
             SlantedBar().fill(color).frame(width: 10, height: 10)
-            Text(title).font(.themeLabel).tracking(1.1)
+            Text(title).themeLabel(tracking: 1.1)
         }
     }
 }
@@ -482,8 +482,7 @@ struct CompetitionLeadLineView: View {
                     Spacer(minLength: 0)
                     if !line.changes.isEmpty {
                         Text(changedText)
-                            .font(.themeLabel)
-                            .tracking(1.2)
+                            .themeLabel()
                             .foregroundStyle(Theme.secondary)
                             .accessibilityHidden(true)
                     }
@@ -528,8 +527,7 @@ struct CompetitionLeadLineView: View {
             CompetitionLeadMomentBadge(number: index + 1, isYours: moment.isYours)
             Text(weekdayText(moment.day))
                 .textCase(.uppercase)
-                .font(.themeLabel)
-                .tracking(1.0)
+                .themeLabel(tracking: 1.0)
                 .foregroundStyle(Theme.secondary)
                 .fixedSize()
             Text(moment.text)
@@ -641,8 +639,7 @@ struct CompetitionLeadLineView: View {
     private func sideLabel(_ text: String, _ color: Color) -> some View {
         Text(text)
             .textCase(.uppercase)
-            .font(.themeLabel)
-            .tracking(1.2)
+            .themeLabel()
             .foregroundStyle(color)
             .lineLimit(1)
             .accessibilityHidden(true)
@@ -891,8 +888,7 @@ private struct DayLabel: View {
         VStack(spacing: 0) {
             Text(isToday ? "Day \(day.ordinal) · Today" : "Day \(day.ordinal) · \(weekdayText(day.day))")
                 .textCase(.uppercase)
-                .font(.themeLabel)
-                .tracking(1.0)
+                .themeLabel(tracking: 1.0)
                 .foregroundStyle(isToday ? Theme.ink : Theme.secondary)
             if showsDates {
                 Text(competitionDayText(day.day, weekday: false, now: now))

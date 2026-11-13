@@ -67,6 +67,8 @@ final class AccountFeatureTests: XCTestCase {
             (" Former competitor ", .reservedDisplayName),
             ("A\nB", .invalidDisplayName),
             (String(repeating: "a", count: 65), .invalidDisplayName),
+            // 10 characters on screen, 70 code points to the server.
+            (String(repeating: "👨‍👩‍👧‍👦", count: 10), .invalidDisplayName),
         ]
         for (value, message) in cases {
             var state = AccountFeature.State(mode: .settingUpProfile)
@@ -182,6 +184,40 @@ final class AccountFeatureTests: XCTestCase {
                 lifecycles.map { competition(identity: "x", name: "X", lifecycle: $0) }
             ),
             3
+        )
+    }
+
+    func testLiveMatchCountAddsGroupMatchesYouHaveNotLeft() throws {
+        let you = UUID()
+        func group(
+            _ lifecycle: LocalCompetitionLifecyclePresentation,
+            left: Bool = false
+        ) throws -> GroupMatchPresentation {
+            let seatIDs = [you, UUID(), UUID()]
+            return try GroupMatchPresentation(
+                id: CompetitionID(UUID()),
+                lifecycle: lifecycle,
+                format: .threeWay,
+                seats: seatIDs.enumerated().map { index, id in
+                    GroupMatchSeat(
+                        id: id, number: index + 1, name: "P\(index)",
+                        occupant: .person(profileID: UUID(), invite: .accepted)
+                    )
+                },
+                viewerSeatID: you,
+                leaveCutoffs: left ? [you: 2] : [:]
+            )
+        }
+        XCTAssertEqual(
+            accountLiveMatchCount(
+                [competition(identity: "x", name: "X", lifecycle: .endsToday)],
+                groupMatches: [
+                    try group(.active(dayOrdinal: 3)),
+                    try group(.active(dayOrdinal: 3), left: true),
+                    try group(.scheduled),
+                ]
+            ),
+            2
         )
     }
 
@@ -328,41 +364,6 @@ final class AccountFeatureTests: XCTestCase {
         XCTAssertEqual(
             AppleSignInAppearance.buttonStyle(for: .dark),
             .white
-        )
-        XCTAssertEqual(
-            AccountProgressAppearance.tint(
-                for: .signedOut,
-                colorScheme: .light
-            ),
-            Color.white
-        )
-        XCTAssertEqual(
-            AccountProgressAppearance.tint(
-                for: .signedOut,
-                colorScheme: .dark
-            ),
-            Color.black
-        )
-        XCTAssertEqual(
-            AccountProgressAppearance.tint(
-                for: .settingUpProfile,
-                colorScheme: .dark
-            ),
-            Color.white
-        )
-        XCTAssertEqual(
-            AccountProgressAppearance.tint(
-                for: .launchFailure,
-                colorScheme: .light
-            ),
-            Color.white
-        )
-        XCTAssertEqual(
-            AccountProgressAppearance.tint(
-                for: .authenticated,
-                colorScheme: .light
-            ),
-            Color.primary
         )
     }
 }

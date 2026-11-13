@@ -408,9 +408,7 @@ struct CompetitionRecordLinkRow: View {
                 Spacer(minLength: 8)
                 competitionRecordText(link.record)
                     .font(.title3.weight(.heavy).width(.condensed).monospacedDigit())
-                Image(systemName: "chevron.right")
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(Theme.tertiary)
+                DisclosureChevron()
             }
             .padding(16)
             .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
@@ -470,7 +468,7 @@ struct CompetitionFormStrip: View {
         switch outcome {
         case .win: Theme.youFill
         case .loss: Theme.ink
-        case .tie: Theme.faint
+        case .tie: Theme.tertiary
         }
     }
 }
@@ -495,12 +493,10 @@ struct CompetitionRingRecordPanel: View {
         VStack(alignment: .leading, spacing: 14) {
             SectionLabel("EACH RING")
             if hasWeeks {
-                Picker("Count", selection: $showsDays) {
-                    Text("Weeks won").tag(false)
-                    Text("Days won").tag(true)
-                }
-                .pickerStyle(.segmented)
-                .accessibilityIdentifier("competition.person.rings.unit")
+                CompetitionSegments(selection: $showsDays, options: [(false, "Weeks won"), (true, "Days won")])
+                    .accessibilityElement(children: .contain)
+                    .accessibilityLabel("Count")
+                    .accessibilityIdentifier("competition.person.rings.unit")
             }
             ForEach(rings.indices, id: \.self) { index in
                 let record = records[index]
@@ -613,7 +609,7 @@ struct CompetitionRecordsView: View {
 
     /// The drag's position; Swift Charts clears it when the finger lifts.
     @State private var selection: Date?
-    /// The last week dragged to, so its row stays to be tapped.
+    /// The last week dragged to, so its row stays to be tapped; nil shows the newest.
     @State private var picked: Date?
     @State private var showsAllTime = false
     @Environment(\.locale) private var locale
@@ -628,11 +624,11 @@ struct CompetitionRecordsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 if let thisYear {
-                    Picker("Records from", selection: $showsAllTime) {
-                        Text(String(thisYear.year)).tag(false)
-                        Text("All time").tag(true)
-                    }
-                    .pickerStyle(.segmented)
+                    CompetitionSegments(
+                        selection: $showsAllTime, options: [(false, String(thisYear.year)), (true, "All time")]
+                    )
+                    .accessibilityElement(children: .contain)
+                    .accessibilityLabel("Records from")
                     .accessibilityIdentifier("competition.records.year")
                 }
                 weeklyPoints(weeks, name: name)
@@ -687,9 +683,11 @@ struct CompetitionRecordsView: View {
     }
 
     private func weeklyPoints(_ weeks: [LocalCompetitionPresentation], name: String) -> some View {
+        // The newest week until one is dragged to, so its row always shows
+        // what the chart opens, and VoiceOver has a way in.
         let selected = picked.flatMap { date in
             weeks.min { abs(start($0).timeIntervalSince(date)) < abs(start($1).timeIntervalSince(date)) }
-        }
+        } ?? weeks.max { start($0) < start($1) }
         return VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .firstTextBaseline, spacing: 12) {
                 SectionLabel("WEEKLY POINTS")
@@ -757,8 +755,7 @@ struct CompetitionRecordsView: View {
         HStack(spacing: 4) {
             Capsule().fill(color).frame(width: 12, height: 3)
             Text(title)
-                .font(.themeLabel)
-                .tracking(1.2)
+                .themeLabel()
                 .foregroundStyle(Theme.secondary)
         }
         .accessibilityHidden(true)
@@ -784,9 +781,7 @@ struct CompetitionRecordsView: View {
                 + Text(" / ").foregroundStyle(Theme.faint)
                 + Text(competitionPointsText(week.opponentPoints, locale: locale)).foregroundStyle(Theme.ink))
                 .font(.headline.weight(.heavy).width(.condensed).monospacedDigit())
-            Image(systemName: "chevron.right")
-                .font(.caption.weight(.bold))
-                .foregroundStyle(Theme.tertiary)
+            DisclosureChevron()
         }
         .padding(12)
         .background(Theme.control, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
@@ -977,9 +972,16 @@ struct CompetitionOwnCareer: Equatable {
 func competitionOwnCareer(_ competitions: [LocalCompetitionPresentation]) -> CompetitionOwnCareer {
     let weeks = Array(competitionHistoryWeeks(competitions).reversed())
     let outcomes = weeks.compactMap(\.terminalResult?.outcome)
+    // The streak folds in the server's order (schedule end, then uuid), as
+    // `competitionBelt` and get_career_summary do, so both read the same.
+    let folded = weeks.map { week in
+        (end: week.acceptedConfiguration.flatMap { competitionScheduleBoundaries($0.schedule)?.end } ?? .distantPast,
+         id: week.id.rawValue.uuidString,
+         outcome: week.terminalResult?.outcome)
+    }.sorted { ($0.end, $0.id) < ($1.end, $1.id) }
     var streak = 0, longest = 0
-    for outcome in outcomes {
-        streak = outcome == .win ? streak + 1 : 0
+    for week in folded where week.outcome != nil {
+        streak = week.outcome == .win ? streak + 1 : 0
         longest = max(longest, streak)
     }
     return CompetitionOwnCareer(
@@ -1011,8 +1013,7 @@ struct CompetitionTapeRow: View {
                 .foregroundStyle(Theme.you)
                 .frame(maxWidth: .infinity, alignment: .leading)
             Text(label)
-                .font(.themeLabel)
-                .tracking(1.1)
+                .themeLabel(tracking: 1.1)
                 .foregroundStyle(Theme.secondary)
                 .layoutPriority(1)
             Text(them)
@@ -1149,8 +1150,7 @@ struct CompetitionOwnProfileView: View {
 
     private func careerSummary(_ text: String) -> some View {
         Text(text.uppercased(with: locale))
-            .font(.themeLabel)
-            .tracking(1.2)
+            .themeLabel()
             .foregroundStyle(Theme.secondary)
             .fixedSize(horizontal: false, vertical: true)
     }
@@ -1178,9 +1178,7 @@ struct CompetitionOwnProfileView: View {
                         .font(.subheadline)
                         .foregroundStyle(Theme.secondary)
                 }
-                Image(systemName: "chevron.right")
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(Theme.tertiary)
+                DisclosureChevron()
             }
             .padding(.horizontal, 16)
             .frame(minHeight: 56)
@@ -1197,8 +1195,7 @@ struct CompetitionOwnProfileView: View {
                 .lineLimit(1)
                 .minimumScaleFactor(0.5)
             Text(label)
-                .font(.themeLabel)
-                .tracking(1.1)
+                .themeLabel(tracking: 1.1)
                 .foregroundStyle(Theme.secondary)
         }
         .frame(maxWidth: .infinity)

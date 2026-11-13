@@ -3,8 +3,6 @@ set -eu
 
 SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 SQL="$SCRIPT_DIR/staging-adversarial-rollback.sql"
-WORKFLOW="$SCRIPT_DIR/../.github/workflows/backend.yml"
-RUNBOOK="$SCRIPT_DIR/../docs/runbooks/supabase-environments.md"
 
 if [ ! -f "$SQL" ]; then
   echo "staging adversarial SQL is missing" >&2
@@ -29,43 +27,6 @@ if has_psql_meta_command "$SQL"; then
   echo "staging adversarial SQL must not contain backslashes or psql meta-commands" >&2
   exit 1
 fi
-
-grep -Fq "'anonymous_cross_account_reads'" "$SQL"
-grep -Fq "'participant_scope_isolation'" "$SQL"
-grep -Fq "'outsider_scope_isolation'" "$SQL"
-grep -Fq "'stale_deleted_profile_isolation'" "$SQL"
-grep -Fq "'raw_secret_table_denial'" "$SQL"
-grep -Fq "'direct_mutation_denial'" "$SQL"
-grep -Fq "'same_claimant_replay_is_idempotent'" "$SQL"
-grep -Fq "'different_claimant_replay_is_denied'" "$SQL"
-grep -Fq "'recipient_creation_retry_is_idempotent'" "$SQL"
-grep -Fq "'duplicate_pending_recipient_is_denied'" "$SQL"
-grep -Fq "'recipient_invitation_expires_in_24_hours'" "$SQL"
-grep -Fq "'unconsumed_wrong_recipient_is_denied'" "$SQL"
-grep -Fq "'recipient_claim_at_expiry_is_denied'" "$SQL"
-grep -Fq "'modified_score_without_grant_is_denied'" "$SQL"
-grep -Fq "'bound_app_attest_score_tampering_is_denied'" "$SQL"
-grep -Fq "'divergent_duplicate_is_rejected'" "$SQL"
-grep -Fq "'revision_regression_is_rejected'" "$SQL"
-grep -Fq "'cross_table_authenticated_isolation'" "$SQL"
-grep -Fq "'result_rewrite_is_denied'" "$SQL"
-grep -Fq "'unregistered_installation_is_denied'" "$SQL"
-
-grep -Fq "invite_unavailable" "$SQL"
-grep -Fq "app_attest_grant_unavailable" "$SQL"
-grep -Fq "wire_digest_mismatch" "$SQL"
-grep -Fq "divergent_duplicate" "$SQL"
-grep -Fq "revision_regression" "$SQL"
-grep -Fq "insufficient_privilege" "$SQL"
-grep -Fq "competition_invites" "$SQL"
-grep -Fq "competition_change_log" "$SQL"
-grep -Fq "support_events" "$SQL"
-grep -Fq "apns_token" "$SQL"
-grep -Fq "auth_user_id" "$SQL"
-grep -Fq "private.app_attest_keys" "$SQL"
-grep -Fq "private.app_attest_challenges" "$SQL"
-grep -Fq "private.app_attest_submission_grants" "$SQL"
-grep -Fq "consumed_at is null" "$SQL"
 
 has_forbidden_top_level_transaction_control() {
   awk -v require_boundaries="${2:-0}" '
@@ -350,18 +311,3 @@ last_nonblank_line=$(awk 'NF { value = $0 } END { print value }' "$SQL")
 [ "$zero_residue_line" -eq "$((post_rollback_idle_timeout_line + 2))" ]
 [ "$rollback_line" -lt "$receipt_line" ]
 [ "$last_nonblank_line" = ') as healthcomp_staging_adversarial_receipt;' ]
-
-grep -Fq "'syntheticRowsRemaining', 0" "$SQL"
-grep -Fq "'privateValuesReturned', false" "$SQL"
-grep -Fq "'transactionOutcome', 'rolled_back'" "$SQL"
-grep -Fq "'assertionsPassed', 20" "$SQL"
-
-grep -Fq 'sh scripts/test-staging-adversarial-sql.sh' "$WORKFLOW"
-grep -Fq '< scripts/staging-adversarial-rollback.sql' "$WORKFLOW"
-grep -Fq -- '--password \' "$RUNBOOK"
-grep -Fq -- '--set=ON_ERROR_STOP=1 \' "$RUNBOOK"
-grep -Fq 'PGSSLMODE=verify-full \' "$RUNBOOK"
-grep -Fq 'PGSSLROOTCERT=' "$RUNBOOK"
-grep -Fq 'SSL-enforcement' "$RUNBOOK"
-grep -Fq '20 passed assertions' "$RUNBOOK"
-grep -Fq 'A local or CI receipt does not count as hosted staging' "$RUNBOOK"

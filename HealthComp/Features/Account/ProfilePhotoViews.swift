@@ -6,8 +6,9 @@ import UIKit
 /// A decoded photo you may see. A new version is a new value, so it
 /// crossfades over the old one.
 struct ProfilePhoto: Equatable, @unchecked Sendable {
-    /// Nil when it came from this iPhone's cache, before the server said
-    /// which version is current.
+    /// The server's version of this photo. A cached photo carries the
+    /// version its cache file was saved under, so the server's list can
+    /// confirm it without a second read. The app never passes nil.
     let version: UUID?
     let image: UIImage
 
@@ -80,6 +81,11 @@ struct PersonAvatar: View {
         ZStack {
             Text(name.first.map { String($0).uppercased() } ?? "")
                 .font(initialFont)
+                // A text-style initial grows with Dynamic Type; shrink it
+                // to stay inside the circle instead of clipping.
+                .lineLimit(1)
+                .minimumScaleFactor(0.1)
+                .padding(size * 0.15)
                 .foregroundStyle(isBot ? Theme.onInk : isYou ? Theme.you : Theme.ink)
             if let shown {
                 Image(uiImage: shown.image)
@@ -188,12 +194,15 @@ struct ProfilePhotoCropView: View {
 
     var body: some View {
         NavigationStack {
+            // The text takes its height first; the circle fits what is left.
             GeometryReader { proxy in
-                let side = max(proxy.size.width - 32, 1)
+                let side = max(min(proxy.size.width, proxy.size.height) - 32, 1)
+                circle(side)
+                    .frame(width: proxy.size.width, height: proxy.size.height)
+                    .onChange(of: side, initial: true) { _, new in diameter = new }
+            }
+            .safeAreaInset(edge: .bottom, spacing: 0) {
                 VStack(spacing: 12) {
-                    Spacer(minLength: 16)
-                    circle(side)
-                    Spacer(minLength: 16)
                     if saveFailed || encodeFailed {
                         Text("Couldn’t save your photo. Check your connection and try again.")
                             .font(.callout)
@@ -203,15 +212,16 @@ struct ProfilePhotoCropView: View {
                             .transition(Motion.appear)
                             .accessibilityIdentifier("account.photo.crop.error")
                     }
-                    Text("Only people you play can see it.")
+                    // Who can see it: private.can_view_profile_photo.
+                    Text("Friends and people you play can see it, and anyone who finds you in search.")
                         .font(.subheadline)
                         .foregroundStyle(Theme.secondary)
                         .multilineTextAlignment(.center)
-                        .padding(.bottom, 12)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
+                .frame(maxWidth: .infinity)
                 .padding(.horizontal, 16)
-                .frame(width: proxy.size.width, height: proxy.size.height)
-                .onChange(of: side, initial: true) { _, new in diameter = new }
+                .padding(.bottom, 12)
             }
             .background(Color.black)
             .clipped()

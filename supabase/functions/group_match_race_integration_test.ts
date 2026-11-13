@@ -11,6 +11,16 @@ const databaseURL = Deno.env.get("HEALTHCOMP_TEST_DATABASE_URL");
 const claims = (id: string, role = "authenticated") =>
   JSON.stringify({ sub: id, role });
 
+// A losing call may fail only with a raised domain error (P0001); a deadlock
+// (40P01), lock timeout or other exception is a regression the end state hides.
+function assertOnlyDomainErrors(results: PromiseSettledResult<unknown>[]) {
+  for (const result of results) {
+    if (result.status === "rejected") {
+      assertEquals((result.reason as { code?: string })?.code, "P0001");
+    }
+  }
+}
+
 Deno.test({
   name:
     "group admission, last accepts, cancellation, blocks and leave/upload races serialize",
@@ -113,6 +123,7 @@ Deno.test({
         rpc(0, "cancel_group_match", { competition_id: cancelled }),
       ]);
       assertEquals(cancelRace[1].status, "fulfilled");
+      assertOnlyDomainErrors(cancelRace);
       assertEquals(
         (await sql`select lifecycle from public.competitions where id=${cancelled}::uuid`)[
           0
@@ -120,10 +131,12 @@ Deno.test({
         "cancelled",
       );
       const blocked = (await create()).competition_id;
-      await Promise.allSettled([
-        rpc(1, "accept_group_match", { competition_id: blocked }),
-        rpc(1, "block_challenger", { competition_id: blocked }),
-      ]);
+      assertOnlyDomainErrors(
+        await Promise.allSettled([
+          rpc(1, "accept_group_match", { competition_id: blocked }),
+          rpc(1, "block_challenger", { competition_id: blocked }),
+        ]),
+      );
       assert(
         ["declined", "scheduled"].includes(
           (await sql`select lifecycle from public.competitions where id=${blocked}::uuid`)[

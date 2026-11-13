@@ -217,6 +217,48 @@ final class AppFeatureTests: XCTestCase {
     }
 
     @MainActor
+    func testNameStepCanSignOutAndKeepsTheTypedNameAcrossTryAgain() async {
+        let calls = OrderedCallRecorder()
+        var authentication = AuthenticationClient.test(
+            restoreSession: { AuthenticationSession(userID: UUID(), expiresAt: .distantFuture) },
+            bootstrapProfile: { name in
+                guard name != nil else { throw AuthenticationClientFailure.displayNameRequired }
+                throw AuthenticationClientFailure.operationFailed
+            },
+            signOut: { calls.record("global-logout") }
+        )
+        authentication.signOutCurrentSession = { calls.record("current-session-logout") }
+        authentication.finishRetirement = { calls.record("retire") }
+        let store = TestStore(
+            initialState: AppFeature.State(
+                phase: .settingUpProfile,
+                account: AccountFeature.State(mode: .settingUpProfile),
+                authEpoch: 1
+            )
+        ) { AppFeature() } withDependencies: {
+            $0.authenticationClient = authentication
+        }
+        store.exhaustivity = .off(showSkippedAssertions: false)
+
+        await store.send(.account(.displayNameChanged("Taylor")))
+        await store.send(.account(.submitDisplayNameButtonTapped))
+        await store.finish()
+        await store.skipReceivedActions(strict: false)
+        XCTAssertEqual(store.state.phase, .launchFailure)
+        await store.send(.account(.retryButtonTapped))
+        await store.finish()
+        await store.skipReceivedActions(strict: false)
+        XCTAssertEqual(store.state.phase, .settingUpProfile)
+        XCTAssertEqual(store.state.account.displayName, "Taylor")
+
+        await store.send(.account(.signOutButtonTapped))
+        await store.finish()
+        await store.skipReceivedActions(strict: false)
+        XCTAssertEqual(store.state.phase, .signedOut)
+        XCTAssertEqual(calls.calls, ["current-session-logout", "retire"])
+    }
+
+    @MainActor
     func testConfirmedDeletionRetirementRetryDoesNotRepeatServerOrProfileTeardown() async {
         for inBrowser in [false, true] {
             let calls = OrderedCallRecorder()
@@ -631,6 +673,16 @@ final class AppFeatureTests: XCTestCase {
             $0.pendingChallengeSequence = 4
         }
         XCTAssertTrue(signedOut.state.hasPendingChallenge)
+
+        // A link that lands mid-teardown is kept for the Welcome that follows.
+        let tearingDown = TestStore(initialState: AppFeature.State(phase: .tearingDown)) {
+            AppFeature()
+        } withDependencies: {
+            $0.competitionRoutingClient = neverConsumed
+        }
+        await tearingDown.send(.routeReceived(envelope)) {
+            $0.pendingChallengeSequence = 4
+        }
 
         // Submitting a name creates the account, so the link can't be for
         // it. The boundary survives a failed bootstrap and Try Again.
@@ -2447,9 +2499,22 @@ final class AppFeatureTests: XCTestCase {
 
     @MainActor
     func testCompetitionMountFailureCleansUpMountedProfileStorage() async {
+        // Only a root this mount created goes; an existing profile keeps its
+        // unsent scores and practice journal for Try Again.
+        for isNewlyCreated in [true, false] {
         let calls = OrderedCallRecorder()
         let profile = profile
-        let storage = profileStorageFixture(for: profile, recorder: calls)
+        let fixture = profileStorageFixture(for: profile, recorder: calls)
+        let fixtureClient = fixture.client
+        var mountedPaths = fixture.paths
+        mountedPaths.isNewlyCreated = isNewlyCreated
+        let storage = AuthenticatedProfileStorage(
+            mount: { [mountedPaths] id in
+                _ = try await fixtureClient.mount(id)
+                return mountedPaths
+            },
+            teardown: fixtureClient.teardown
+        )
         var competitionClient = CompetitionClient.test(
             stop: { calls.record("runtime-stop") }
         )
@@ -2465,7 +2530,7 @@ final class AppFeatureTests: XCTestCase {
         ) {
             AppFeature()
         } withDependencies: {
-            $0.authenticatedProfileStorage = storage.client
+            $0.authenticatedProfileStorage = storage
             $0.competitionClient = competitionClient
         }
 
@@ -2488,14 +2553,11 @@ final class AppFeatureTests: XCTestCase {
         }
         XCTAssertEqual(
             calls.calls,
-            [
-                "storage-mount",
-                "competition-mount",
-                "runtime-stop",
-                "storage-teardown",
-            ]
+            ["storage-mount", "competition-mount", "runtime-stop"]
+                + (isNewlyCreated ? ["storage-teardown"] : [])
         )
         XCTAssertNil(store.state.mainTab)
+        }
     }
 
     @MainActor

@@ -15,7 +15,13 @@ for (
   const pathPrefix = route === "invite" ? "/invite/" : "/c/";
 
   for (
-    const { name, hostname, path, expectedHref } of [
+    const {
+      name,
+      hostname,
+      path,
+      expectedHref,
+      userAgent = "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X)",
+    } of [
       {
         name: `Production ${route} fallback opens Release`,
         hostname: "healthcomp.app",
@@ -46,6 +52,13 @@ for (
         path: value === fakeToken ? fakeCode : fakeToken,
         expectedHref: null,
       },
+      {
+        name: `${route} page shows no app link off iPhone`,
+        hostname: "healthcomp.app",
+        path: value,
+        expectedHref: null,
+        userAgent: "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)",
+      },
     ]
   ) {
     Deno.test(name, () => {
@@ -56,9 +69,10 @@ for (
           return link;
         },
       };
-      new Function("location", "document", script)(
+      new Function("location", "document", "navigator", script)(
         { hostname, pathname: `${pathPrefix}${path}` },
         document,
+        { userAgent },
       );
       if (
         link.href !== expectedHref || link.hidden !== (expectedHref === null)

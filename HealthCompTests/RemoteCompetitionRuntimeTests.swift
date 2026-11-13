@@ -123,6 +123,27 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
         await pendingRuntime.stop()
     }
 
+    func testUnknownStandModeStillEncodesAScoredDay() throws {
+        let day = try CompetitionDay(era: 1, year: 2026, month: 8, day: 13, timeZoneIdentifier: "America/Los_Angeles")
+        let snapshot = ActivitySnapshot(
+            moveMode: .activeEnergyKilocalories,
+            standMode: .unknown,
+            move: try ActivityRingReading(value: 420, goal: 600),
+            exercise: try ActivityRingReading(value: 24, goal: 30),
+            standOrRoll: try ActivityRingReading(value: 10, goal: 12),
+            pauseState: .running
+        )
+        let evidence = try RemoteCompetitionRuntime.remoteEvidence(from: .snapshot(day: day, snapshot: snapshot))
+        XCTAssertEqual(evidence.availabilityReason, "available")
+        XCTAssertEqual(evidence.standMode, "standHours")
+        let wire = try RemoteCompetitionRuntime.wire(
+            competitionID: UUID(uuidString: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")!,
+            profileID: UUID(uuidString: "11111111-1111-1111-1111-111111111111")!,
+            ordinal: 1, evidence: evidence, clientRevision: 1
+        )
+        XCTAssertNotNil(wire.acceptedCentiPoints)
+    }
+
     func testCacheSaveRejectsSymlinkWithoutChangingItsTarget() async throws {
         let root = try makeTemporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
@@ -1763,7 +1784,8 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
         await offlineRuntime.stop()
 
         // Run 2: the woken outbox lands revision 1 only after the match has
-        // loaded and its changes were read, then a newer reading is scored.
+        // been listed, then a newer reading is scored. (sync-11: the listed
+        // cursor has not moved, so this pass sends no fetchChanges to hook.)
         let outbox = JSONCompetitionOutboxStore(
             rootDirectory: harness.root.appendingPathComponent("outbox"),
             fileProtection: JSONCompetitionEventStoreFileProtection { _, _ in }
@@ -1775,7 +1797,7 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
             beforeAppend: { request in
                 if request.clientRevision == 1 { await delivery.suspendUntilReleased() }
             },
-            afterFetchChanges: {
+            afterList: {
                 await delivery.release()
                 for _ in 0..<500 {
                     if (try? await outbox.entries().isEmpty) == true { return }
@@ -1794,6 +1816,125 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
             try run.successfulCompetitions.first?.journal.projection
                 .remoteScoreLedgers[profileID]?.visibleEntry(forActiveDayOrdinal: 1)?.clientRevision,
             2
+        )
+    }
+
+    func testRejectedUploadIsQueuedAgainForTheSameReading() async throws {
+        let harness = try ownerActivityHarness()
+        defer { try? FileManager.default.removeItem(at: harness.root) }
+        let reading = try harness.snapshot(move: 420)
+        // Run 1: an auth blip rejects revision 1 for good.
+        let rejected = ownerRuntime(
+            harness, at: harness.dayOneNoon, snapshots: [1: reading],
+            acceptsAppend: { _ in false }, failure: .unauthenticated
+        )
+        _ = await rejected.synchronizeAll()
+        await rejected.stop()
+
+        // Run 2: the reading hasn't changed, and it still goes out.
+        let retried = ownerRuntime(
+            harness, at: harness.dayOneNoon.addingTimeInterval(600), snapshots: [1: reading]
+        )
+        let run = await retried.synchronizeAll()
+        await retried.stop()
+
+        XCTAssertEqual(run.failures, [])
+        XCTAssertEqual(
+            try run.successfulCompetitions.first?.journal.projection
+                .remoteScoreLedgers[profileID]?.visibleEntry(forActiveDayOrdinal: 1)?.clientRevision,
+            2
+        )
+        let left = try await JSONCompetitionOutboxStore(
+            rootDirectory: harness.root.appendingPathComponent("outbox"),
+            fileProtection: JSONCompetitionEventStoreFileProtection { _, _ in }
+        ).entries()
+        XCTAssertEqual(left, [])
+    }
+
+    func testStableCheckWaitsForAPostWindowReadAndEveryUpload() async throws {
+        let harness = try ownerActivityHarness()
+        defer { try? FileManager.default.removeItem(at: harness.root) }
+        let outbox = JSONCompetitionOutboxStore(
+            rootDirectory: harness.root.appendingPathComponent("outbox"),
+            fileProtection: JSONCompetitionEventStoreFileProtection { _, _ in }
+        )
+        func attestations() async throws -> [CompetitionAttestationRequest] {
+            try await outbox.entries().compactMap { entry in
+                guard case let .finalWindowAttestation(request) = entry.payload else { return nil }
+                return request
+            }
+        }
+        var week: [Int: ActivitySnapshot] = [:]
+        for ordinal in 1...7 { week[ordinal] = try harness.snapshot(move: 420) }
+        let daySevenNoon = harness.dayOneNoon.addingTimeInterval(6 * 86_400)
+        let dayEightNoon = daySevenNoon.addingTimeInterval(86_400)
+        // Every day lands while the match is still on (revisions 1...7).
+        let live = ownerRuntime(harness, at: daySevenNoon, snapshots: week)
+        let first = await live.synchronizeAll()
+        await live.stop()
+        XCTAssertEqual(first.failures, [])
+
+        // After the window: the phone is locked, so Health can't be read.
+        let locked = ownerRuntime(
+            harness, at: dayEightNoon, snapshots: week, readFailure: .protectedDataUnavailable
+        )
+        _ = await locked.synchronizeAll()
+        await locked.stop()
+        let afterLockedRead = try await attestations()
+        XCTAssertEqual(afterLockedRead, [])
+
+        // Day 7 grew before midnight, and that upload is backing off.
+        week[7] = try harness.snapshot(move: 560)
+        let backingOff = ownerRuntime(
+            harness, at: dayEightNoon.addingTimeInterval(600), snapshots: week,
+            acceptsAppend: { _ in false }
+        )
+        _ = await backingOff.synchronizeAll()
+        await backingOff.stop()
+        let afterBackoff = try await attestations()
+        XCTAssertEqual(afterBackoff, [])
+
+        // Once it lands, the window is stable on day 7's last reading.
+        let settled = ownerRuntime(harness, at: dayEightNoon.addingTimeInterval(1_200), snapshots: week)
+        _ = await settled.synchronizeAll()
+        await settled.stop()
+        let afterSettling = try await attestations()
+        XCTAssertEqual(afterSettling.map(\.basis), [.stable])
+        XCTAssertEqual(afterSettling.first?.acceptedRevisions, [1, 2, 3, 4, 5, 6, 8])
+    }
+
+    func testChangeLandingBetweenListAndFetchWaitsForTheNextPass() async throws {
+        let harness = try ownerActivityHarness()
+        defer { try? FileManager.default.removeItem(at: harness.root) }
+        let server = harness.server
+        let ownerID = profileID
+        let opponentRow = harness
+        let runtime = RemoteCompetitionRuntime(
+            profileID: ownerID,
+            store: makeStore(root: harness.root.appendingPathComponent("events")),
+            remoteAPI: remoteAPI(
+                listCompetitions: {
+                    let listed = try await server.listCompetitions(for: ownerID)
+                    // The opponent's upload lands after the list call.
+                    try await opponentRow.append(
+                        for: opponentRow.creatorID, ordinal: 1, revision: 1, at: opponentRow.dayOneNoon
+                    )
+                    return listed
+                },
+                fetchChanges: { cursor, pageSize in
+                    try await server.fetchChanges(for: ownerID, cursor: cursor, pageSize: pageSize)
+                }
+            ),
+            now: { opponentRow.dayOneNoon }
+        )
+
+        let outcome = await runtime.synchronizeAll()
+        await runtime.stop()
+
+        XCTAssertEqual(outcome.failures, [])
+        XCTAssertNil(
+            try outcome.successfulCompetitions.first?.journal.projection
+                .remoteScoreLedgers[harness.creatorID]?.visibleEntry(forActiveDayOrdinal: 1)
         )
     }
 
@@ -2346,7 +2487,7 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
             await runtime.synchronizeAll()
         }
         await submission.waitUntilStarted()
-        await fulfillment(of: [discoveryStarted], timeout: 0.25)
+        await fulfillment(of: [discoveryStarted], timeout: 2)
         await submission.release()
         let outcome = await synchronization.value
         await runtime.stop()
@@ -4043,10 +4184,11 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
         snapshots: [Int: ActivitySnapshot]?,
         acceptsAppend: @escaping @Sendable (CompetitionScoreRevisionRequest) -> Bool = { _ in true },
         failure: CompetitionRemoteFailure = .retryableTransport,
+        readFailure: CompetitionActivitySourceError? = nil,
         offline: Bool = false,
         beforeList: @escaping @Sendable () async -> Void = {},
         beforeAppend: @escaping @Sendable (CompetitionScoreRevisionRequest) async -> Void = { _ in },
-        afterFetchChanges: @escaping @Sendable () async -> Void = {}
+        afterList: @escaping @Sendable () async -> Void = {}
     ) -> RemoteCompetitionRuntime {
         let noProtection = JSONCompetitionEventStoreFileProtection { _, _ in }
         let server = harness.server
@@ -4055,12 +4197,12 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
             listCompetitions: {
                 if offline { throw CompetitionRemoteFailure.retryableTransport }
                 await beforeList()
-                return try await server.listCompetitions(for: ownerID)
+                let listed = try await server.listCompetitions(for: ownerID)
+                await afterList()
+                return listed
             },
             fetchChanges: { cursor, pageSize in
-                let page = try await server.fetchChanges(for: ownerID, cursor: cursor, pageSize: pageSize)
-                await afterFetchChanges()
-                return page
+                try await server.fetchChanges(for: ownerID, cursor: cursor, pageSize: pageSize)
             },
             appendScoreRevision: { request in
                 await beforeAppend(request)
@@ -4080,6 +4222,7 @@ final class RemoteCompetitionRuntimeTests: XCTestCase {
                         snapshots[offset + 1].map { .snapshot(day: day, snapshot: $0) }
                             ?? .missing(day: day)
                     },
+                    initialReadState: readFailure.map(FixtureActivityReadState.failure) ?? .available,
                     changes: []
                 )
             ))

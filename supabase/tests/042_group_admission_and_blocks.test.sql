@@ -113,6 +113,9 @@ select is((select count(*) from private.competition_notification_work where comp
 
 -- Co-invitee blocks must close the third party's pending match but preserve a scheduled match.
 insert into private.friendships(profile_low,profile_high) values(least(pg_temp.pid(4),pg_temp.pid(5)),greatest(pg_temp.pid(4),pg_temp.pid(5)));
+-- Player 3 met 4 only in player 1's lineup, which is no challenge credential.
+insert into private.friendships(profile_low,profile_high) values(least(pg_temp.pid(3),pg_temp.pid(4)),greatest(pg_temp.pid(3),pg_temp.pid(4))),
+  (least(pg_temp.pid(3),pg_temp.pid(5)),greatest(pg_temp.pid(3),pg_temp.pid(5)));
 select pg_temp.as_user(3);
 insert into gm values('co-block',(public.create_group_match('three_way',jsonb_build_array(
  jsonb_build_object('kind','human','profile_id',pg_temp.pid(3)),jsonb_build_object('kind','human','profile_id',pg_temp.pid(4)),jsonb_build_object('kind','human','profile_id',pg_temp.pid(5))),'UTC',extensions.gen_random_uuid())->>'competition_id')::uuid);

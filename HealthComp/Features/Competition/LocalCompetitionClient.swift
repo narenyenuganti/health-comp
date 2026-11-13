@@ -496,6 +496,8 @@ enum LocalCompetitionStoreAvailability: Sendable {
 }
 
 extension CompetitionClient {
+    // The on-device fixture runtime: Test Lab and unit tests only.
+    #if DEBUG
     static func make(
         environment: CompetitionEnvironmentClient,
         storeAvailability: LocalCompetitionStoreAvailability,
@@ -627,6 +629,7 @@ extension CompetitionClient {
             stop: { await coordinator.stop() }
         )
     }
+    #endif
 
     static func storageUnavailable() -> Self {
         closed(issue: .storageUnavailable)
@@ -703,6 +706,7 @@ extension CompetitionClient: TestDependencyKey {
 
 // MARK: - Serialized coordinator
 
+#if DEBUG
 private actor LocalCompetitionCoordinator {
     private let environment: CompetitionEnvironmentClient
     private let runtime: LocalCompetitionRuntime?
@@ -1264,6 +1268,7 @@ private actor LocalCompetitionCoordinator {
         return result
     }
 }
+#endif
 
 // MARK: - Privacy-preserving projection
 
@@ -1420,7 +1425,8 @@ enum LocalCompetitionProjector {
         )
     }
 
-    private static func notificationLifecycle(
+    /// Shared with `RemoteCompetitionProjector`.
+    static func notificationLifecycle(
         _ lifecycle: LocalCompetitionLifecyclePresentation
     ) -> CompetitionNotificationLifecycle {
         switch lifecycle {
@@ -1517,7 +1523,8 @@ enum LocalCompetitionProjector {
         )
     }
 
-    private static func lifecyclePresentation(
+    /// Shared with `RemoteCompetitionProjector`.
+    static func lifecyclePresentation(
         _ lifecycle: CompetitionLifecycle,
         direction: InvitationDirection
     ) -> LocalCompetitionLifecyclePresentation {
@@ -1550,7 +1557,8 @@ enum LocalCompetitionProjector {
         }
     }
 
-    private static func terminalPresentation(
+    /// Shared with `RemoteCompetitionProjector`.
+    static func terminalPresentation(
         for lifecycle: CompetitionLifecycle
     ) -> LocalCompetitionTerminalPresentation? {
         let completed: CompletedCompetition
@@ -1568,7 +1576,8 @@ enum LocalCompetitionProjector {
         )
     }
 
-    private static func currentDayOrdinal(
+    /// Shared with `RemoteCompetitionProjector`.
+    static func currentDayOrdinal(
         schedule: CompetitionSchedule?,
         now: Date
     ) -> Int? {

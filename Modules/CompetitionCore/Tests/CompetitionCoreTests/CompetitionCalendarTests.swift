@@ -144,6 +144,26 @@ final class CompetitionCalendarTests: XCTestCase {
         )
     }
 
+    func testLocalWindowEndFollowsTheDevicesOwnDaySeven() throws {
+        let newYork = try CompetitionCalendar(timeZoneIdentifier: "America/New_York")
+        let schedule = CompetitionSchedule(
+            calendar: newYork,
+            startDay: try CompetitionDay(era: 1, year: 2026, month: 8, day: 10, timeZoneIdentifier: "America/New_York")
+        )
+        let creatorEnd = try newYork.startOfDay(
+            try CompetitionDay(era: 1, year: 2026, month: 8, day: 17, timeZoneIdentifier: "America/New_York")
+        )
+        XCTAssertEqual(try schedule.localWindowEnd(in: XCTUnwrap(TimeZone(identifier: "America/New_York"))), creatorEnd)
+        XCTAssertEqual(
+            try schedule.localWindowEnd(in: XCTUnwrap(TimeZone(identifier: "America/Los_Angeles"))),
+            creatorEnd.addingTimeInterval(3 * 60 * 60)
+        )
+        XCTAssertEqual(
+            try schedule.localWindowEnd(in: XCTUnwrap(TimeZone(identifier: "Asia/Tokyo"))),
+            creatorEnd.addingTimeInterval(-13 * 60 * 60)
+        )
+    }
+
     func testSevenDayWindowIncludesDayOneAndDaySevenAcrossMonthBoundary() throws {
         let competitionCalendar = try CompetitionCalendar(
             timeZoneIdentifier: "America/Los_Angeles"

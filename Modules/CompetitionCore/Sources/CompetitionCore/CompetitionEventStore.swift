@@ -630,7 +630,10 @@ public enum CompetitionDomainEvent: Codable, Equatable, Sendable {
         case let .activitySnapshotRecorded(event): event.observedAt
         case let .activityRefreshAttemptRecorded(event): event.readAt
         case let .notificationEmissionRecorded(event): event.decidedAt
-        case let .remoteConfigurationAccepted(event): event.bestAvailableDeadline
+        // No acceptance time is stored; the schedule start is its closest bound.
+        case let .remoteConfigurationAccepted(event):
+            (try? event.acceptedSchedule.calendar.startOfDay(event.acceptedSchedule.startDay))
+                ?? event.bestAvailableDeadline
         case let .remoteScoreRevisionRecorded(event): event.recordedAt
         case let .remoteFinalWindowAttested(event): event.attestedAt
         case let .sharedResultConfirmed(event): event.confirmedAt
@@ -1568,9 +1571,17 @@ public enum CompetitionReplayer {
                 guard let configuration = workingCompetition.remoteConfiguration,
                       attestation.competitionID == configuration.competitionID,
                       attestation.participant == configuration.owner,
-                      { if case .tallying = workingCompetition.lifecycle { return true }; return false }(),
-                      let ledger = workingRemoteLedgers[attestation.participant.profileID]
+                      { if case .tallying = workingCompetition.lifecycle { return true }; return false }()
                 else { throw CompetitionJournalError.invalidDomainTransition(sequence: sequence) }
+                // An owner with no accepted rows attests best-available with an
+                // all-zero vector; the stable branch below still requires rows.
+                let ledger = try workingRemoteLedgers[attestation.participant.profileID]
+                    ?? RemoteScoreLedger(
+                        competitionID: configuration.competitionID,
+                        participant: attestation.participant,
+                        acceptedSchedule: configuration.acceptedSchedule,
+                        scoringPolicyIdentity: configuration.scoringPolicyIdentity
+                    )
                 let vector = try (1...7).map { try ledger.visibleEntry(forActiveDayOrdinal: $0)?.clientRevision ?? 0 }
                 guard vector == attestation.acceptedRevisions else { throw CompetitionJournalError.invalidDomainTransition(sequence: sequence) }
                 if attestation.basis == .stable {

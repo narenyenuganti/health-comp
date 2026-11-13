@@ -11,6 +11,7 @@ struct GroupMatchLiveFFAView: View {
     @ScaledMetric(relativeTo: .title) private var placeSize: CGFloat = 28
     @ScaledMetric(relativeTo: .headline) private var avatarSize: CGFloat = 32
     @Environment(\.locale) private var locale
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         GroupMatchLiveScreen(match: match, store: store) { openDay in
@@ -85,44 +86,78 @@ struct GroupMatchLiveFFAView: View {
         let isYou = seat.id == match.viewerSeatID
         let showsScores = competitionShouldShowScores(match.lifecycle)
         let points = Double(row.centipoints) / 100
-        return HStack(spacing: 12) {
-            if showsScores {
-                Text("\(row.place)")
-                    .font(.score(size: placeSize))
-                    .foregroundStyle(isYou ? Theme.you : Theme.ink)
-                    .frame(minWidth: 16, alignment: .leading)
+        let isLarge = dynamicTypeSize.isAccessibilitySize
+        let place = Text("\(row.place)")
+            .font(.score(size: placeSize))
+            .foregroundStyle(isYou ? Theme.you : Theme.ink)
+            .frame(minWidth: 16, alignment: .leading)
+        let avatar = PersonAvatar(
+            name: seat.name, photo: seat.profileID, size: isLarge ? min(avatarSize, 56) : avatarSize,
+            isYou: isYou, isBot: seat.isBot
+        )
+        let name = Text(isYou ? "You" : seat.name)
+            .fontWeight(isYou ? .bold : .regular)
+            .foregroundStyle(isYou ? Theme.you : Theme.ink)
+            .fixedSize(horizontal: false, vertical: true)
+        let tags = HStack(spacing: 6) {
+            if seat.isBot { GroupMatchTag("BOT") }
+            if match.hasLeft(seat) { GroupMatchTag("LEFT") }
+        }
+        // A thin bar: amber as text, which holds contrast on the panel.
+        let bar = Capsule()
+            .fill(Theme.hairline)
+            .frame(height: 4)
+            .overlay(alignment: .leading) {
+                Capsule()
+                    .fill(isYou ? Theme.you : Theme.ink)
+                    .scaleEffect(x: share, anchor: .leading)
             }
-            PersonAvatar(name: seat.name, photo: seat.profileID, size: avatarSize, isYou: isYou, isBot: seat.isBot)
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 6) {
-                    Text(isYou ? "You" : seat.name)
-                        .fontWeight(isYou ? .bold : .regular)
-                        .foregroundStyle(isYou ? Theme.you : Theme.ink)
-                    if seat.isBot { GroupMatchTag("BOT") }
-                    if match.hasLeft(seat) { GroupMatchTag("LEFT") }
-                }
-                if showsScores {
-                    Capsule()
-                        .fill(Theme.hairline)
-                        .frame(height: 4)
-                        .overlay(alignment: .leading) {
-                            Capsule()
-                                .fill(isYou ? Theme.youFill : Theme.ink)
-                                .scaleEffect(x: share, anchor: .leading)
+        let total = Text(competitionPointsText(points, locale: locale))
+            .font(.score(size: placeSize).monospacedDigit())
+            .foregroundStyle(isYou ? Theme.you : Theme.ink)
+            .fixedSize()
+        return Group {
+            if isLarge {
+                // Stacked so the name keeps the width: place, avatar and
+                // name, then the tags, then the points with their bar beside
+                // them, so the bar reads as a meter and not an underline.
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(spacing: 12) {
+                        if showsScores { place }
+                        avatar
+                        name
+                    }
+                    if seat.isBot || match.hasLeft(seat) { tags }
+                    if showsScores {
+                        HStack(spacing: 12) {
+                            total
+                            bar
                         }
+                    }
                 }
-            }
-            .frame(maxWidth: .infinity, alignment: .leading)
-            if showsScores {
-                Text(competitionPointsText(points, locale: locale))
-                    .font(.score(size: placeSize).monospacedDigit())
-                    .foregroundStyle(isYou ? Theme.you : Theme.ink)
-                    .fixedSize()
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 8)
+            } else {
+                HStack(spacing: 12) {
+                    if showsScores { place }
+                    avatar
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(spacing: 6) {
+                            name
+                            tags
+                        }
+                        if showsScores { bar }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    if showsScores { total }
+                }
             }
         }
         .frame(minHeight: 64)
+        .modifier(CompetitionProfileTap(route: match.profileRoute(seat)))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(standingLabel(row, seat: seat, isYou: isYou, showsScores: showsScores))
+        .modifier(CompetitionProfileAction(route: match.profileRoute(seat), name: seat.name))
         .accessibilityIdentifier("competition.group.standing.\(row.place)")
     }
 
@@ -184,15 +219,11 @@ struct GroupMatchLiveScreen<Content: View>: View {
                 if let line = store.state.failureLine(
                     [.leave(match.id)], otherwise: "Couldn’t leave the match. Check your connection and try again."
                 ) {
-                    Text(line)
-                        .font(.callout)
-                        .foregroundStyle(Theme.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .accessibilityIdentifier("competition.group.leave.error")
+                    GroupMatchErrorLine(line, identifier: "competition.group.leave.error")
                 }
                 content { day = $0 }
             }
-            .padding(.horizontal, 20)
+            .padding(.horizontal, 16)
             .padding(.top, 12)
             .padding(.bottom, 24)
         }
@@ -277,8 +308,7 @@ struct GroupMatchStatusRow: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .font(.themeLabel)
-        .tracking(1.2)
+        .themeLabel()
         .textCase(.uppercase)
         .accessibilityElement(children: .ignore)
         .accessibilityAddTraits(.isStaticText)

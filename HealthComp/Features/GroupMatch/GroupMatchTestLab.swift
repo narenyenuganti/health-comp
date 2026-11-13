@@ -418,7 +418,7 @@ struct GroupMatchTestLabView: View {
                 waitUntil: { _ in },
                 stop: {},
                 loadProfilePhotos: { _ in throw CompetitionRemoteFailure.notFound },
-                cachedProfilePhotoData: { photos[$0] },
+                cachedProfilePhotoData: { photos[$0].map { (data: $0, version: UUID()) } },
                 groupMatchCommand: { command in
                     if case .leave = command { return left }
                     return answer

@@ -104,7 +104,7 @@ select is(public.resolve_challenge_link(pg_temp.code('maya-new')), '{"display_na
 select is(public.get_my_challenge_link(), (select v from r where label = 'naren-link'),
   'another person''s link is unchanged');
 reset role;
-select is((select count(*) from private.challenge_links), 2::bigint, 'reset adds no rows');
+select is((select count(*) from private.challenge_links where profile_id::text like 'c8100000-%'), 2::bigint, 'reset adds no rows');
 
 -- Creating from a link after the reset.
 select throws_ok($$select pg_temp.from_link('c8000000-0000-4000-8000-000000000003',

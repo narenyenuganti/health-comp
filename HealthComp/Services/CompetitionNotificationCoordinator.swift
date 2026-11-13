@@ -67,6 +67,9 @@ struct CompetitionNotificationCoordinatorClient: Sendable {
     ) async -> Void
     var reconcileLatest: @Sendable () async -> Void
     var cancelAll: @Sendable (CompetitionID) async -> Void
+    /// Every pending and delivered competition notification, group matches
+    /// included: for sign-out.
+    var removeAll: @Sendable () async -> Void = {}
 
     static let noop = Self(
         submit: { _ in },
@@ -109,7 +112,8 @@ struct CompetitionNotificationCoordinatorClient: Sendable {
         return Self(
             submit: { snapshot in await coordinator.submit(snapshot) },
             reconcileLatest: { await coordinator.reconcileLatest() },
-            cancelAll: { id in await coordinator.cancelAll(id) }
+            cancelAll: { id in await coordinator.cancelAll(id) },
+            removeAll: { await coordinator.removeOrphans(knownCompetitionIDs: []) }
         )
     }
 }
@@ -140,6 +144,10 @@ actor CompetitionNotificationCoordinator {
     private var committedRecords: [
         CompetitionID: [NotificationEmissionRecorded]
     ] = [:]
+    /// Last mute list read successfully. Publishes reuse it instead of a
+    /// remote read each; `reconcileLatest` (foreground, mute change) re-reads.
+    private var cachedMuted: Set<String>?
+    private var mutedNeedsRead = true
 
     init(
         planner: CompetitionNotificationPlanner,
@@ -172,6 +180,7 @@ actor CompetitionNotificationCoordinator {
     }
 
     func reconcileLatest() async {
+        mutedNeedsRead = true
         guard let latestSnapshot else { return }
         await submit(latestSnapshot)
     }
@@ -236,13 +245,24 @@ actor CompetitionNotificationCoordinator {
         let authorization = await notifications.authorizationState()
         guard !isSuperseded(snapshot) else { return }
         let muted: Set<String>
-        do {
-            muted = try await preferences.mutedOpponentIdentities()
-        } catch {
-            guard !isSuperseded(snapshot) else { return }
-            reportError("notification-preferences-read-failed")
-            await removePendingForSnapshot(snapshot)
-            return
+        if let cachedMuted, !mutedNeedsRead {
+            muted = cachedMuted
+        } else {
+            mutedNeedsRead = false
+            do {
+                muted = try await preferences.mutedOpponentIdentities()
+                cachedMuted = muted
+            } catch {
+                mutedNeedsRead = true
+                guard !isSuperseded(snapshot) else { return }
+                reportError("notification-preferences-read-failed")
+                // Offline: plan with the last good list. Never read: clear.
+                guard let cachedMuted else {
+                    await removePendingForSnapshot(snapshot)
+                    return
+                }
+                muted = cachedMuted
+            }
         }
         guard !isSuperseded(snapshot) else { return }
         let switchedOff = preferences.switchedOff()

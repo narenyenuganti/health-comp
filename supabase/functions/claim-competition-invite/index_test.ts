@@ -80,7 +80,7 @@ Deno.test("claim verifies the bearer user before calling the RPC", async () => {
           getUser: () =>
             Promise.resolve({
               data: { user: null },
-              error: { message: "bad jwt" },
+              error: { message: "bad jwt", status: 401 },
             }),
         },
         rpc: () => {

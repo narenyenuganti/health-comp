@@ -2517,7 +2517,7 @@ final class CompetitionPresentationTests: XCTestCase {
         XCTAssertEqual(CompetitionRoute(url: match.url), .competition(live.id))
     }
 
-    func testWidgetSnapshotUpdatedAtIsTheNewerSide() throws {
+    func testWidgetSnapshotUpdatedAtIsTheOlderSide() throws {
         let base = homePresentation(id: 3, lifecycle: .active(dayOrdinal: 3))
         func updatedAt(you: Date?, them: Date?) throws -> Date? {
             let presentation = LocalCompetitionPresentation(
@@ -2546,8 +2546,8 @@ final class CompetitionPresentationTests: XCTestCase {
         }
         let earlier = homeInstant("2026-10-30T15:00:00Z")
         let later = homeInstant("2026-10-30T16:30:00Z")
-        XCTAssertEqual(try updatedAt(you: earlier, them: later), later)
-        XCTAssertEqual(try updatedAt(you: later, them: earlier), later)
+        XCTAssertEqual(try updatedAt(you: earlier, them: later), earlier)
+        XCTAssertEqual(try updatedAt(you: later, them: earlier), earlier)
         XCTAssertEqual(try updatedAt(you: earlier, them: nil), earlier)
         XCTAssertNil(try updatedAt(you: nil, them: nil))
     }

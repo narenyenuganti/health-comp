@@ -45,7 +45,8 @@ expect /support 200 'HealthComp beta support' \
   'Naren Yenuganti' 'Do not send' 'Health screenshots'
 expect /privacy 200 'HealthComp privacy' \
   'rounded Activity percentages' 'no fixed automatic deletion schedule' \
-  'does not display advertising' 'Former competitor' 'image of a finished match'
+  'does not display advertising' 'Former competitor' 'image of a finished match' \
+  'Show Me in Search' 'group match'
 # Without a top-level 404.html, Pages answers every unknown path with
 # index.html and 200.
 expect /no-such-page 404 'Page not found'

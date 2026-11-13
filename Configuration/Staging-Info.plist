@@ -55,6 +55,8 @@
 	<string>HealthComp uses read-only Health access for Activity matches and does not save or change Health data.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>HealthComp saves your match result image to Photos when you choose Save Image.</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>NSSupportsLiveActivities</key>
 	<true/>
 	<key>SUPABASE_PUBLISHABLE_KEY</key>

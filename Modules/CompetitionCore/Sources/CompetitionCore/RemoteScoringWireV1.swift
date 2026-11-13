@@ -3,6 +3,17 @@ import Foundation
 public enum RemoteScoringWireV1 {
     public static let policyIdentity = "healthcomp.activity-score.v1"
 
+    /// The closed set of reasons a day can be unavailable, matching the
+    /// server's submit_score_revision. Every Core and app check reads this one.
+    public static let unavailableReasons: Set<String> = [
+        "sourceDataUnavailable", "unsupportedActivityConfiguration",
+        "invalidSourceData", "missingMoveValue", "missingMoveGoal",
+        "nonPositiveMoveGoal", "missingExerciseValue", "missingExerciseGoal",
+        "nonPositiveExerciseGoal", "missingStandOrRollValue", "missingStandOrRollGoal",
+        "nonPositiveStandOrRollGoal", "summaryPaused", "summaryPauseStateUnknown",
+        "invalidNumericCalculation",
+    ]
+
     public enum ValidationError: Error, Equatable, Sendable {
         case invalidPercent
         case invalidIdentity
@@ -87,7 +98,7 @@ public struct RemoteScoreRevisionWireV1: Equatable, Sendable {
             else { throw RemoteScoringWireV1.ValidationError.invalidBasisPoints }
             accepted = min(moveBasisPoints + exerciseBasisPoints + standBasisPoints, 60_000)
         } else {
-            guard Self.unavailableReasons.contains(availabilityReason),
+            guard RemoteScoringWireV1.unavailableReasons.contains(availabilityReason),
                   moveBasisPoints == nil, exerciseBasisPoints == nil, standBasisPoints == nil
             else { throw RemoteScoringWireV1.ValidationError.invalidAvailability }
             accepted = nil
@@ -116,15 +127,6 @@ public struct RemoteScoreRevisionWireV1: Equatable, Sendable {
         self.canonicalContentHex = content.map { String(format: "%02x", $0) }.joined()
         self.wireContentSHA256 = SHA256Digest.hexDigest(content)
     }
-
-    private static let unavailableReasons: Set<String> = [
-        "sourceDataUnavailable", "unsupportedActivityConfiguration",
-        "invalidSourceData", "missingMoveValue", "missingMoveGoal",
-        "nonPositiveMoveGoal", "missingExerciseValue", "missingExerciseGoal",
-        "nonPositiveExerciseGoal", "missingStandOrRollValue", "missingStandOrRollGoal",
-        "nonPositiveStandOrRollGoal", "summaryPaused", "summaryPauseStateUnknown",
-        "invalidNumericCalculation",
-    ]
 
     private static func content(
         competitionID: UUID, participantID: UUID, dayOrdinal: Int,

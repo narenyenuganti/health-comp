@@ -183,6 +183,23 @@ Deno.test("live deletion adapters route Auth and RPC through the configured fetc
   assertEquals(await live.authenticate("Bearer synthetic-user"), authUserID);
   assertEquals((await live.begin(authUserID)).phase, "prepared");
   assertEquals(paths, ["/auth/v1/user", "/rest/v1/rpc/begin_account_deletion"]);
+
+  // Real auth-js: a rejected token is 401, an Auth outage is retryable 503.
+  for (const [authStatus, expected] of [[403, 401], [503, 503], [429, 503]]) {
+    const outage = createLiveDependencies({
+      environment: (name) => ({
+        SUPABASE_URL: "https://example.invalid",
+        SUPABASE_ANON_KEY: "synthetic-anon",
+        SUPABASE_SERVICE_ROLE_KEY: "synthetic-service",
+      }[name] ?? ""),
+      fetch: () =>
+        Promise.resolve(
+          Response.json({ code: "x", msg: "x" }, { status: authStatus }),
+        ),
+    });
+    const response = await deleteAccountHandler(request(), outage);
+    assertEquals(response.status, expected);
+  }
 });
 
 Deno.test("delete account rejects malformed or expansive reauthentication input", async () => {
@@ -541,6 +558,19 @@ Deno.test("lost auth-delete response succeeds only when durable completion confi
   assertEquals(await notCommitted.json(), {
     error: "account_deletion_retryable",
   });
+
+  // The user is gone; a 503 would make the retry hit 401 and look signed out.
+  const confirmReadFailed = await deleteAccountHandler(
+    request(),
+    dependencies({
+      begin: async () => progress("auth_delete_pending"),
+      complete: async () => {
+        throw new Error("read timed out");
+      },
+    }),
+  );
+  assertEquals(confirmReadFailed.status, 200);
+  assertEquals(await confirmReadFailed.json(), { status: "deleted" });
 });
 
 Deno.test("completed deletion is idempotent and performs no external work", async () => {

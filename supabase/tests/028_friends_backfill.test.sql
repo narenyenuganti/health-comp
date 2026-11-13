@@ -80,9 +80,15 @@ begin
   end loop;
 end;
 $$;
-select is((select count(*) from private.friendships),6::bigint,'backfill includes exactly six qualifying pairs');
+-- The replay also put that migration's older function bodies back for the
+-- rest of this transaction: assert only on the backfill below, nothing that
+-- invites, blocks or reads photos.
+create temporary table fixture_people as select pg_temp.pid(n) as id from generate_series(1,20) n;
+create temporary view fixture_friendships as select f.* from private.friendships f
+  where f.profile_low in (select id from fixture_people) and f.profile_high in (select id from fixture_people);
+select is((select count(*) from fixture_friendships),6::bigint,'backfill includes exactly six qualifying pairs');
 select results_eq($$select case when profile_low=pg_temp.pid(1) then profile_high else profile_low end
-  from private.friendships order by 1$$,
+  from fixture_friendships order by 1$$,
   $$select pg_temp.pid(n) from generate_series(2,7) n order by 1$$,
   'backfill all six lifecycles; excludes cancelled, pending, declined, expired, unaccepted, inactive, blocks both ways');
 select ok(not exists(select 1 from private.friendships where pg_temp.pid(16) in(profile_low,profile_high)),

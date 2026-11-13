@@ -117,7 +117,8 @@ struct GroupMatchVersusIntroView: View {
     let photos: [UUID: ProfilePhoto]
     let finished: () -> Void
 
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+    private var reduceMotion: Bool { systemReduceMotion || CompetitionVersusIntroGate.assumesReduceMotion }
     @ScaledMetric(relativeTo: .subheadline) private var labelLine: CGFloat = 20
     @State private var start = Date()
     @State private var isSkipped = false

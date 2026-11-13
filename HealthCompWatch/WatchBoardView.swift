@@ -136,6 +136,7 @@ private struct WatchScreen: View {
             .contentShape(Rectangle())
             .onTapGesture { if hasWeek { path.append(.week(match.id)) } }
             .accessibilityAddTraits(hasWeek ? .isButton : [])
+            .accessibilityHint(hasWeek ? "Shows the week" : "")
             .accessibilityAction { if hasWeek { path.append(.week(match.id)) } }
     }
 }
@@ -147,6 +148,9 @@ private struct WatchCard: View {
     let pages: [CompetitionWidgetSnapshot.Match]
     let date: Date
 
+    @ScaledMetric(relativeTo: .body) private var valueSize: CGFloat = 22
+    @Environment(\.dynamicTypeSize) private var typeSize
+
     var body: some View {
         ScrollView {
             VStack(spacing: 0) {
@@ -156,8 +160,7 @@ private struct WatchCard: View {
                         HStack(alignment: .firstTextBaseline, spacing: 6) {
                             VStack(alignment: .leading, spacing: 1) {
                                 Text(row.name)
-                                    .font(.themeLabel)
-                                    .tracking(1.2)
+                                    .themeLabel()
                                     .textCase(.uppercase)
                                     .privacySensitive(match.group == nil)
                                 Text(row.line)
@@ -165,10 +168,10 @@ private struct WatchCard: View {
                                     .privacySensitive()
                             }
                             .foregroundStyle(Theme.secondary)
-                            .lineLimit(1)
+                            .lineLimit(typeSize < .accessibility1 ? 1 : 2)
                             Spacer(minLength: 0)
                             Text(row.value)
-                                .font(.score(size: 22))
+                                .font(.score(size: valueSize))
                                 .foregroundStyle(row.isYours ? Theme.you : Theme.ink)
                                 .lineLimit(1)
                                 .fixedSize()
@@ -195,6 +198,10 @@ private struct WatchCard: View {
 private struct WatchWeekView: View {
     let match: CompetitionWidgetSnapshot.Match
 
+    // Seven days and the header fit 40 mm at the default size; larger text scrolls.
+    @ScaledMetric(relativeTo: .body) private var pointsSize: CGFloat = 15
+    @ScaledMetric(relativeTo: .footnote) private var dayWidth: CGFloat = 24
+
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 0) {
@@ -207,7 +214,7 @@ private struct WatchWeekView: View {
                 ForEach(Array(match.weekRows().enumerated()), id: \.offset) { _, row in
                     HStack(alignment: .firstTextBaseline, spacing: 0) {
                         label(row.day)
-                            .frame(width: 24, alignment: .leading)
+                            .frame(width: dayWidth, alignment: .leading)
                         points(row.you, Theme.you)
                         Spacer(minLength: 8)
                         points(row.them, Theme.ink)
@@ -228,8 +235,7 @@ private struct WatchWeekView: View {
 
     private func label(_ text: String) -> some View {
         Text(text)
-            .font(.themeLabel)
-            .tracking(1.2)
+            .themeLabel()
             .textCase(.uppercase)
             .foregroundStyle(Theme.secondary)
             .lineLimit(1)
@@ -237,9 +243,10 @@ private struct WatchWeekView: View {
 
     private func points(_ text: String?, _ color: Color) -> some View {
         Text(text ?? "–")
-            .font(.score(size: 15))  // seven days and the header fit 40 mm
+            .font(.score(size: pointsSize))
             .foregroundStyle(text == nil ? Theme.secondary : color)
             .lineLimit(1)
+            .minimumScaleFactor(0.6)
             .privacySensitive()
     }
 }
@@ -270,6 +277,11 @@ private struct WatchBoardPage: View {
     private var isFirstSight: Bool { model.seen.isFirstSight(of: match, at: date) }
     private var cardText: (headline: String, line: String, detail: [String])? {
         voiceOver ? nil : match.beltCardText
+    }
+    /// VoiceOver skips the card, so its words join the label while the result stands.
+    private var spokenCard: String? {
+        guard voiceOver, let card = match.beltCardText else { return nil }
+        return ([card.line] + card.detail).map { $0 + "." }.joined(separator: " ")
     }
 
     /// Your bars and number wait for the clock; the lead goes first on it.
@@ -303,8 +315,8 @@ private struct WatchBoardPage: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(
-            [match.accessibilityLabel(at: date, redacted: false), match.chase(at: date)?.spoken,
-             match.beltAccessibilityText]
+            [match.accessibilityLabel(at: date, redacted: false, standings: true), match.chase(at: date)?.spoken,
+             spokenCard, match.beltAccessibilityText]
                 .compactMap { $0 }.joined(separator: " ")
         )
         .accessibilityIdentifier("watch.match")
@@ -386,41 +398,42 @@ private struct WatchBoardPage: View {
         .animation(Motion.fade, value: match.isStale(at: date))
     }
 
-    /// A group match: the standings, you in amber. No belt, no chase.
+    /// A group match: the standings, you in amber. No belt, no chase. Four seats
+    /// at large text run past a 40 mm screen, so it scrolls as the list does.
     private func groupBoard(_ group: CompetitionWidgetSnapshot.Group, status: String) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            label("\(group.title) · \(status)")
-                .padding(.trailing, 12)  // the page dots
-            ForEach(Array(group.rows.enumerated()), id: \.offset) { _, row in
-                HStack(alignment: .firstTextBaseline, spacing: 4) {
-                    Text(group.isDoubles ? row.name : "\(row.place) \(row.name)")
-                        .fontWeight(row.isYou ? .bold : .regular)
-                        .lineLimit(1)
-                        .privacySensitive(row.namesSomeone)
-                    Spacer(minLength: 4)
-                    Text(competitionPointsText(row.points))
-                        .font(.score(size: 20))
-                        .lineLimit(1)
-                        .scoreRoll(row.points, id: "\(match.id)/\(row.name)")
+        ScrollView {
+            VStack(alignment: .leading, spacing: 6) {
+                label("\(group.title) · \(status)")
+                ForEach(Array(group.rows.enumerated()), id: \.offset) { _, row in
+                    HStack(alignment: .firstTextBaseline, spacing: 4) {
+                        Text(group.isDoubles ? row.name : "\(row.place) \(row.name)")
+                            .fontWeight(row.isYou ? .bold : .regular)
+                            .lineLimit(1)
+                            .privacySensitive(row.namesSomeone)
+                        Spacer(minLength: 4)
+                        Text(competitionPointsText(row.points))
+                            .font(.score(size: 20))
+                            .lineLimit(1)
+                            .scoreRoll(row.points, id: "\(match.id)/\(row.name)")
+                            .privacySensitive()
+                    }
+                    .foregroundStyle(row.isYou ? Theme.you : Theme.ink)
+                }
+                if let lead = group.lead, typeSize < .accessibility1 {
+                    Text(lead)
+                        .font(.footnote)
+                        .foregroundStyle(Theme.secondary)
+                        .lineLimit(2)
                         .privacySensitive()
                 }
-                .foregroundStyle(row.isYou ? Theme.you : Theme.ink)
+                Spacer(minLength: 0)
             }
-            if let lead = group.lead, typeSize < .accessibility1 {
-                Text(lead)
-                    .font(.footnote)
-                    .foregroundStyle(Theme.secondary)
-                    .lineLimit(2)
-                    .privacySensitive()
-            }
-            Spacer(minLength: 0)
         }
     }
 
     private func scheduled(_ status: String) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             label(status)
-                .padding(.trailing, 12)
             Text(match.name)
                 .font(.title2.weight(.heavy).width(.condensed))
                 .foregroundStyle(Theme.ink)
@@ -443,13 +456,11 @@ private struct WatchBoardPage: View {
                 .contentTransition(.opacity)
                 .animation(Motion.fade, value: status)
         }
-        .padding(.trailing, 12)  // the page dots
     }
 
     private func label(_ text: String) -> some View {
         Text(text)
-            .font(.themeLabel)
-            .tracking(1.2)
+            .themeLabel()
             .textCase(.uppercase)
             .foregroundStyle(Theme.secondary)
             .lineLimit(1)
@@ -535,10 +546,13 @@ private struct WatchBoardPage: View {
     }
 
     private var lead: some View {
+        // A long name gives way in the middle, so the margin at the end stays.
         leadText
             .font(.footnote)
             .foregroundStyle(Theme.secondary)
             .lineLimit(typeSize < .accessibility1 ? 1 : 2)
+            .minimumScaleFactor(0.8)
+            .truncationMode(.middle)
             .privacySensitive()
             .contentTransition(.opacity)
             .animation(Motion.late, value: match.side)
@@ -673,12 +687,9 @@ private struct WatchBeltCard: View {
 private struct WatchBeltPlate: View {
     let gold: Bool
 
-    private static let bars: [[CGPoint]] = [
-        [(17.4, 8), (57.4, 8), (53.8, 26), (13.8, 26)],
-        [(22.8, 31), (52.8, 31), (49.2, 49), (19.2, 49)],
-        [(12.2, 54), (48.2, 54), (44.6, 72), (8.6, 72)],
-        [(63.4, 8), (91.4, 8), (78.6, 72), (50.6, 72)],
-    ].map { $0.map { CGPoint(x: $0.0, y: $0.1) } }
+    /// The mark's own bars and block, so the plate follows the brand mark.
+    private static let bars: [[CGPoint]] = (MarkPolygon.bars + [MarkPolygon.block])
+        .map { $0.map { CGPoint(x: $0.0, y: $0.1) } }
 
     private func color(_ hex: UInt32) -> Color { Color(uiColor: UIColor(hex: hex)) }
 
@@ -686,8 +697,10 @@ private struct WatchBeltPlate: View {
         let strap = color(gold ? 0x241A0E : 0x1E1F22)
         let stitch = color(gold ? 0x8A6414 : 0x55575C)
         let frame = color(gold ? 0xC98A12 : 0x8A8C91)
-        let fills = (gold ? [0xE4003A, 0x009A4E, 0x0072BC, 0xF2A100] : [0x45464A, 0x66686C, 0x2C2D30, 0x74767B])
-            .map { color(UInt32($0)) }
+        // Gold is the mark's ring colours and amber; pewter is the art's own.
+        let fills = gold
+            ? [Theme.move, Theme.exercise, Theme.stand, Theme.youFill]
+            : ([0x45464A, 0x66686C, 0x2C2D30, 0x74767B] as [UInt32]).map { color($0) }
         Canvas { context, size in
             context.scaleBy(x: size.width / 144, y: size.height / 80)
             context.translateBy(x: 22, y: 0)

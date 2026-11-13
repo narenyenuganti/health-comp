@@ -37,6 +37,8 @@
 	<string>$(HEALTHCOMP_APP_GROUP)</string>
 	<key>HEALTHCOMP_INVITE_HOST</key>
 	<string>$(HEALTHCOMP_INVITE_HOST)</string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>NSHealthShareUsageDescription</key>
 	<string>HealthComp reads your Activity data to score matches with friends.</string>
 	<key>NSHealthUpdateUsageDescription</key>

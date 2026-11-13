@@ -2,6 +2,7 @@ import { assertEquals } from "@std/assert";
 import {
   competitionNotificationPayload,
   createApnsProviderToken,
+  forgetApnsProviderToken,
   type NotificationRpcClient,
   type NotificationWorkerDependencies,
   sendCompetitionNotificationHandler,
@@ -574,6 +575,19 @@ Deno.test("APNs provider token is a verifiable ES256 JWT", async () => {
     ),
     true,
   );
+
+  // Reused across runs (Apple throttles token refreshes) for 40 minutes.
+  const config = { ...configuration, privateKey };
+  assertEquals(await createApnsProviderToken(config), token);
+  const realNow = Date.now;
+  Date.now = () => realNow() + 41 * 60 * 1000;
+  try {
+    const renewed = await createApnsProviderToken(config);
+    assertEquals(renewed === token, false);
+  } finally {
+    Date.now = realNow;
+    forgetApnsProviderToken();
+  }
 });
 
 Deno.test("successful APNs post resolves durable work without leaking identifiers", async () => {

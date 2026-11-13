@@ -49,8 +49,7 @@ struct PermissionOnboardingView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(step == .health ? "HEALTH" : "NOTIFICATIONS")
-                .font(.themeLabel)
-                .tracking(1.4)
+                .themeLabel()
                 .foregroundStyle(Theme.secondary)
             Text(title)
                 .font(.largeTitle.weight(.heavy).width(.condensed))
@@ -87,13 +86,10 @@ struct PermissionOnboardingView: View {
     private var healthDetails: some View {
         VStack(spacing: 12) {
             VStack(alignment: .leading, spacing: 14) {
-                ringRow(Theme.move, "Move", "Calories or move time toward your goal")
-                ringRow(Theme.exercise, "Exercise", "Minutes of brisk activity")
-                ringRow(
-                    Theme.stand,
-                    "Stand",
-                    "Hours you stood, or rolled, and moved for a minute"
-                )
+                // The person already closes these rings; names are enough.
+                ringRow(Theme.move, "Move")
+                ringRow(Theme.exercise, "Exercise")
+                ringRow(Theme.stand, "Stand")
                 Rectangle().fill(Theme.hairline).frame(height: 1)
                 Text("1 point for every 1% of each ring, up to 600 a day.")
                     .font(.subheadline)
@@ -111,9 +107,9 @@ struct PermissionOnboardingView: View {
                 )
                 Rectangle().fill(Theme.hairline).frame(height: 1)
                 privacyRow(
-                    "lock",
-                    "Derived match data is shared",
-                    "Daily points, rounded Activity percentages and modes"
+                    "person.2",
+                    "Shared with the people you play",
+                    "Daily points, rounded ring percentages and ring modes"
                 )
             }
             .padding(.horizontal, 16)
@@ -122,24 +118,14 @@ struct PermissionOnboardingView: View {
         }
     }
 
-    private func ringRow(
-        _ color: Color,
-        _ title: String,
-        _ detail: String
-    ) -> some View {
+    private func ringRow(_ color: Color, _ title: String) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 14) {
             SlantedBar().fill(color).frame(width: 22, height: 8)
                 .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.headline)
-                    .foregroundStyle(Theme.ink)
-                Text(detail)
-                    .font(.subheadline)
-                    .foregroundStyle(Theme.secondary)
-            }
+            Text(title)
+                .font(.headline)
+                .foregroundStyle(Theme.ink)
         }
-        .accessibilityElement(children: .combine)
     }
 
     private func privacyRow(
@@ -272,9 +258,7 @@ struct PermissionOnboardingView: View {
                     .padding(.top, 6)
             } else {
                 Button("Not now", action: notNowTapped)
-                    .font(.body.weight(.semibold))
-                    .foregroundStyle(Theme.secondary)
-                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .buttonStyle(QuietButtonStyle())
                     .accessibilityIdentifier("onboarding.notNow")
             }
         }
