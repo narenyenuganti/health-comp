@@ -39,8 +39,10 @@ struct CompetitionJudgesBout: Equatable {
         let cards: [[Double?]]
 
         func cardTotal(_ ring: Int) -> Double? {
-            let points = cards[ring]
-            return points.count == 7 && points.allSatisfy { $0 != nil } ? points.compactMap { $0 }.reduce(0, +) : nil
+            guard cards.indices.contains(ring), cards[ring].count == 7, cards[ring].allSatisfy({ $0 != nil })
+            else { return nil }
+            // Whole centipoints, so two equal cards compare equal.
+            return (cards[ring].compactMap { $0 }.reduce(0, +) * 100).rounded() / 100
         }
     }
 
@@ -73,7 +75,7 @@ func competitionJudgesVerdict(winner: [Double], rest: [[Double]]) -> String {
     var wins = 0, even = 0
     for ring in 0..<3 {
         let best = rest.map { $0[ring] }.max() ?? -.infinity
-        if winner[ring] > best { wins += 1 } else if winner[ring] == best { even += 1 }
+        if winner[ring] > best + 0.001 { wins += 1 } else if winner[ring] > best - 0.001 { even += 1 }
     }
     if wins == 3 { return "UNANIMOUS DECISION" }
     if wins == 2 { return even == 1 ? "MAJORITY DECISION" : "SPLIT DECISION" }
@@ -124,6 +126,8 @@ extension CompetitionJudgesBout {
         func points(_ side: MatchStandingSubject, ring: Int, ordinal: Int) -> Double? {
             var sum = 0
             for seat in members(side) {
+                // Days after a player left score nothing.
+                if let cutoff = match.configuration.leaveCutoffs[seat.id], ordinal > cutoff { continue }
                 guard let rings = match.rings.first(where: { $0.seatID == seat.id && $0.ordinal == ordinal }),
                       rings.centipoints.count == 3 else { return nil }
                 sum += rings.centipoints[ring]
@@ -204,6 +208,7 @@ struct CompetitionJudgesRingClock: Equatable {
 extension CompetitionJudgesBout {
     /// A duel and doubles are the shipped raise. A free-for-all cuts the
     /// lights from last place up until two stand, then is the same raise.
+    /// When a tie means no cut leaves two, it cuts until only the winners stand.
     var ring: (stances: [CompetitionJudgesStance], clock: CompetitionJudgesRingClock) {
         let lineup: [(CGFloat, CGFloat)] = switch format {
         case .duel: [(72, 1), (288, 1)]
@@ -224,13 +229,14 @@ extension CompetitionJudgesBout {
             )
         }
         guard format == .freeForAll else { return (stances, clock) }
-        for (step, place) in Set(stances.map(\.place)).filter({ $0 >= 3 }).sorted(by: >).enumerated() {
+        let keep = stances.filter { $0.place < 3 }.count == 2 ? 2 : 1
+        for (step, place) in Set(stances.map(\.place)).filter({ $0 > keep }).sorted(by: >).enumerated() {
             clock.cuts[place] = 0.8 + 0.7 * Double(step)
         }
         let lastCut = clock.cuts.values.max() ?? 0
-        let standing = stances.indices.filter { stances[$0].place < 3 }
-        for index in stances.indices where stances[index].place >= 3 { stances[index].isOut = true }
-        if standing.count == 2 {
+        let standing = stances.indices.filter { stances[$0].place <= keep }
+        for index in stances.indices where stances[index].place > keep { stances[index].isOut = true }
+        if keep == 2 {
             clock.walk = lastCut + 0.7
             clock.raise = lastCut + 1.9
             for (corner, index) in standing.enumerated() {
@@ -240,8 +246,8 @@ extension CompetitionJudgesBout {
                 stances[index].isHeld = true
             }
         } else {
-            // A tie leaves more than two standing: no referee, and each
-            // winner raises their own arms.
+            // Only the winners stand, one or several: no referee, and each
+            // raises their own arms.
             clock.hasReferee = false
             clock.raise = lastCut + 1
         }
@@ -598,7 +604,7 @@ struct CompetitionJudgesReveal: View {
             CompetitionJudgesRing(
                 bout: bout,
                 start: ringStart,
-                still: reduceMotion ? (focused ? clock.focus + 1 : clock.raise + 2) : nil
+                still: reduceMotion ? (focused ? clock.focus + 1 : clock.focus) : nil
             )
             .id(reduceMotion && focused)
             .transition(.opacity)
@@ -661,6 +667,8 @@ private struct CompetitionGroupJudges: ViewModifier {
     @AppStorage(CompetitionMotionSeen.storageKey) private var seen = CompetitionMotionSeen()
     @State private var didStart = false
     @State private var isShowing = false
+    /// Held from the start, so a refresh mid-reveal cannot change or empty it.
+    @State private var playing: CompetitionJudgesBout?
 
     private var bout: CompetitionJudgesBout? {
         guard competitionJudgesAreOn, case .completed = match.lifecycle, !seen.hasSeen(.judges, match.id)
@@ -673,15 +681,16 @@ private struct CompetitionGroupJudges: ViewModifier {
             // Nothing of the result shows before the reveal covers it.
             .overlay { if isShowing || (!didStart && bout != nil) { Theme.ground.ignoresSafeArea() } }
             .fullScreenCover(isPresented: $isShowing) {
-                if let bout = CompetitionJudgesBout(match) {
-                    CompetitionJudgesReveal(bout: bout, onFinished: finish, onSkip: finish, onBackground: finish)
+                if let playing {
+                    CompetitionJudgesReveal(bout: playing, onFinished: finish, onSkip: finish, onBackground: finish)
                         .presentationBackground(Theme.ground)
                 }
             }
             .onAppear {
                 guard !didStart else { return }
                 didStart = true
-                if bout != nil { present(true) }
+                playing = bout
+                if playing != nil { present(true) }
             }
     }
 
@@ -740,10 +749,10 @@ private struct CompetitionJudgesRing: View {
                         context.scaleBy(x: size.width / 360, y: size.height / 340)
                         JudgesRing.draw(frame, in: context)
                     }
-                    .opacity(1 - min(1, focus))
+                    .opacity(Double(1 - min(1, focus)))
                     RadialGradient(colors: [Theme.secondary.opacity(0.18), Theme.secondary.opacity(0)],
                                    center: .center, startRadius: 20, endRadius: 180)
-                        .opacity(min(1, focus))
+                        .opacity(Double(min(1, focus)))
                     ForEach(frame.figures, id: \.index) { figure in
                         head(figure, focus: focus, winners: winners, size: geometry.size)
                     }

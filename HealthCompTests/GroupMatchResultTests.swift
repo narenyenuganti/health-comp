@@ -57,11 +57,26 @@ final class GroupMatchResultTests: XCTestCase {
                 label: ""
             )
         }
-        // Three still standing: no referee, and the raise waits for the one cut.
-        let clock = bout([1, 2, 2, 4], cards: []).ring.clock
-        XCTAssertFalse(clock.hasReferee)
-        XCTAssertNil(clock.walk)
-        XCTAssertEqual(clock.raise, 1.8, accuracy: 0.001)
+        // A tie for second: the lights cut until the winner stands alone, with no referee.
+        let second = bout([1, 2, 2, 4], cards: []).ring
+        XCTAssertFalse(second.clock.hasReferee)
+        XCTAssertNil(second.clock.walk)
+        XCTAssertEqual(second.clock.cuts, [4: 0.8, 2: 1.5])
+        XCTAssertEqual(second.clock.raise, 2.5, accuracy: 0.001)
+        XCTAssertEqual(second.stances.map(\.isOut), [false, true, true, true])
+        // Three share first: only last place is cut and all three raise.
+        let shared = bout([1, 1, 1, 4], cards: []).ring
+        XCTAssertEqual(shared.clock.cuts, [4: 0.8])
+        XCTAssertEqual(shared.clock.raise, 1.8, accuracy: 0.001)
+        XCTAssertEqual(shared.stances.map(\.isOut), [false, false, false, true])
+        // Cards that add up the same on different days are even, not won.
+        let even = CompetitionJudgesBout.Side(
+            label: "", isYours: true, place: 1, total: 0,
+            cards: [[1.11, 2.22, 3.33, 4.44, 0, 0, 0], [5.55, 5.55, 0, 0, 0, 0, 0], []]
+        )
+        XCTAssertEqual(even.cardTotal(0), even.cardTotal(1))
+        XCTAssertNil(even.cardTotal(2))
+        XCTAssertEqual(competitionJudgesVerdict(winner: [3, 2, 1.0000000001], rest: [[2, 1, 1]]), "MAJORITY DECISION")
         // A bot has no rings: the cards never decide it.
         let empty = Array(repeating: [Double?](repeating: nil, count: 7), count: 3)
         XCTAssertEqual(CompetitionJudgesBout.label(bout([1, 2, 3], cards: empty).sides), "BY TOTAL POINTS")
