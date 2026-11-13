@@ -894,6 +894,9 @@ private struct CompetitionSharingRow: View {
     var reaction: CompetitionReaction? = nil
     /// False on the person page's card for the match it was opened from.
     var opensMatch = true
+    /// History: the week's seven days and the badge it earned.
+    var dayMarks: [CompetitionOutcome?]? = nil
+    var badgeName: String? = nil
 
     @ScaledMetric(relativeTo: .headline) private var badgeSize: CGFloat = 40
     @Environment(\.locale) private var locale
@@ -904,6 +907,17 @@ private struct CompetitionSharingRow: View {
         // whether the score fits beside the name.
         VStack(alignment: .leading, spacing: 10) {
             rowContent
+            if dayMarks != nil || badgeName != nil {
+                HStack(spacing: 8) {
+                    if let badgeName {
+                        CompetitionBadgeTag(name: badgeName)
+                    }
+                    Spacer(minLength: 8)
+                    if let dayMarks {
+                        CompetitionDayMarks(outcomes: dayMarks)
+                    }
+                }
+            }
             if let reaction {
                 CompetitionReactionLine(
                     reaction: reaction,
@@ -1494,6 +1508,9 @@ struct CompetitionHistoryView: View {
     /// Opens a month or year deck; nil hides Recaps.
     var openRecap: ((CompetitionRecapPeriod) -> Void)? = nil
 
+    @State private var filter = CompetitionWeekFilter.all
+    /// An opponent identity; nil lists everyone.
+    @State private var person: String?
     @Environment(\.locale) private var locale
     @Environment(\.timeZone) private var timeZone
 
@@ -1592,42 +1609,124 @@ struct CompetitionHistoryView: View {
         .accessibilityIdentifier("competition.recaps")
     }
 
+    /// Every week, with Won / Lost and a person to narrow it once there are
+    /// more than three. Each row carries its seven days and the badge it earned.
     private func weeksSection(_ weeks: [LocalCompetitionPresentation]) -> some View {
-        VStack(alignment: .leading, spacing: 10) {
-            SectionLabel("WEEKS")
-                .padding(.horizontal, 4)
-
-            VStack(spacing: 0) {
-                ForEach(Array(weeks.enumerated()), id: \.element.id) { index, competition in
-                    if index > 0 {
-                        CompetitionRowDivider()
-                    }
-                    NavigationLink(
-                        value: CompetitionHomeRoute.competition(competition.id)
-                    ) {
-                        CompetitionSharingRow(
-                            competition: competition,
-                            source: publication.source
-                        )
-                        .contentShape(Rectangle())
-                        .accessibilityElement(children: .combine)
-                        .accessibilityLabel(
-                            sharingAccessibilitySummary(
-                                competition,
-                                source: publication.source,
-                                locale: locale,
-                                timeZone: timeZone
-                            )
-                        )
-                        .accessibilityHint("Opens this match")
-                    }
-                    .buttonStyle(CompetitionRowButtonStyle())
-                    .accessibilityIdentifier(competitionSharingIdentifier(competition))
+        let records = competitionOpponentRecords(publication.dashboard.competitions)
+        let book = competitionBadgeBook(publication.dashboard.competitions)
+        let shown = competitionFilteredWeeks(weeks, filter: filter, person: person)
+        return VStack(alignment: .leading, spacing: 10) {
+            HStack(alignment: .firstTextBaseline) {
+                SectionLabel("WEEKS")
+                Spacer(minLength: 8)
+                if shown.count < weeks.count {
+                    Text("\(shown.count) OF \(weeks.count)")
+                        .font(.themeLabel)
+                        .tracking(1.2)
+                        .foregroundStyle(Theme.secondary)
+                        .accessibilityIdentifier("competition.history.shown")
                 }
             }
-            .themePanel()
-            .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .padding(.horizontal, 4)
+
+            if weeks.count > 3 {
+                weekFilters(records)
+            }
+
+            if shown.isEmpty {
+                Text("No weeks match.")
+                    .font(.subheadline)
+                    .foregroundStyle(Theme.secondary)
+                    .padding(.horizontal, 4)
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(Array(shown.enumerated()), id: \.element.id) { index, competition in
+                        if index > 0 {
+                            CompetitionRowDivider()
+                        }
+                        weekRow(competition, badge: book.byWeek[competition.id]?.first?.name)
+                    }
+                }
+                .themePanel()
+                .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            }
         }
+    }
+
+    private func weekRow(_ competition: LocalCompetitionPresentation, badge: String?) -> some View {
+        let days = competitionDayOutcomes(competition)
+        return NavigationLink(
+            value: CompetitionHomeRoute.competition(competition.id)
+        ) {
+            CompetitionSharingRow(
+                competition: competition,
+                source: publication.source,
+                dayMarks: days,
+                badgeName: badge
+            )
+            .contentShape(Rectangle())
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(
+                sharingAccessibilitySummary(
+                    competition,
+                    source: publication.source,
+                    locale: locale,
+                    timeZone: timeZone
+                )
+                    + ". You won \(days.filter { $0 == .win }.count) of \(days.count) days"
+                    + (badge.map { ". \($0) badge" } ?? "")
+            )
+            .accessibilityHint("Opens this match")
+        }
+        .buttonStyle(CompetitionRowButtonStyle())
+        .accessibilityIdentifier(competitionSharingIdentifier(competition))
+    }
+
+    private func weekFilters(_ records: [CompetitionOpponentRecord]) -> some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 8) {
+                outcomePicker
+                if records.count > 1 { personMenu(records) }
+            }
+            VStack(alignment: .leading, spacing: 8) {
+                outcomePicker
+                if records.count > 1 { personMenu(records) }
+            }
+        }
+    }
+
+    private var outcomePicker: some View {
+        Picker("Show", selection: $filter) {
+            ForEach(CompetitionWeekFilter.allCases) { Text($0.title).tag($0) }
+        }
+        .pickerStyle(.segmented)
+        .accessibilityIdentifier("competition.history.filter")
+    }
+
+    private func personMenu(_ records: [CompetitionOpponentRecord]) -> some View {
+        let name = records.first { $0.opponentIdentity == person }?.opponentDisplayName
+        return Menu {
+            Picker("With", selection: $person) {
+                Text("Everyone").tag(String?.none)
+                ForEach(records, id: \.opponentIdentity) {
+                    Text($0.opponentDisplayName).tag(String?.some($0.opponentIdentity))
+                }
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Text(name ?? "Everyone")
+                    .lineLimit(1)
+                Image(systemName: "chevron.down")
+                    .font(.caption2.weight(.bold))
+            }
+            .font(.subheadline.weight(.medium))
+            .foregroundStyle(Theme.ink)
+            .padding(.horizontal, 12)
+            .frame(minHeight: 32)
+            .background(Theme.control, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+        }
+        .accessibilityLabel("With \(name ?? "everyone")")
+        .accessibilityIdentifier("competition.history.person")
     }
 }
 
@@ -1791,8 +1890,8 @@ struct CompetitionPersonView: View {
             quietLine(text)
         }
         beltPanel(belt, name: name, weeks: oldestFirst, showsTape: pieces.tape)
-        if pieces.rings, let counts = competitionRingDaysWon(oldestFirst) {
-            CompetitionRingDaysPanel(counts: counts, opponentName: name)
+        if pieces.rings, let rings = competitionRingRecords(oldestFirst) {
+            CompetitionRingRecordPanel(records: rings, opponentName: name)
         }
         if pieces.records {
             NavigationLink(value: CompetitionHomeRoute.records(opponentIdentity)) {
@@ -2261,6 +2360,9 @@ struct CompetitionPersonPlace: Equatable, Sendable {
     var showsProfile = false
     var showsWeeks = true
     var showsOwnProfile = false
+    /// Above your profile, while it is open.
+    var showsOwnBadges = false
+    var showsOwnRecords = false
 }
 
 /// Home's stack. History, while open, sits at the bottom; one person page can
@@ -2274,6 +2376,9 @@ enum CompetitionHomeRoute: Hashable {
     /// Who they are: reached from a score's photo and Friends.
     case profile(String)
     case ownProfile
+    /// Your badges and your records, each one push above your profile.
+    case ownBadges
+    case ownRecords
     /// That person's Records, one push above their page.
     case records(String)
     case competition(CompetitionID)
@@ -2294,6 +2399,8 @@ enum CompetitionHomeRoute: Hashable {
                 var routes = path.wrappedValue.map(CompetitionHomeRoute.competition)
                 let place = personPlace.wrappedValue
                 var people: [CompetitionHomeRoute] = place.showsOwnProfile ? [.ownProfile] : []
+                if place.showsOwnProfile, place.showsOwnBadges { people.append(.ownBadges) }
+                if place.showsOwnProfile, place.showsOwnRecords { people.append(.ownRecords) }
                 if let identity = person.wrappedValue {
                     if place.showsProfile { people.append(.profile(identity)) }
                     if place.showsWeeks { people.append(.person(identity)) }
@@ -2318,7 +2425,14 @@ enum CompetitionHomeRoute: Hashable {
                 if let first = routes.firstIndex(where: \.isPersonPage),
                    let match = routes[first...].firstIndex(where: \.isCompetition),
                    routes[match...].contains(where: \.isPersonPage) {
-                    routes = Array(routes[...first])
+                    if routes[first] == .ownProfile {
+                        // A week opened from your records: their page takes
+                        // the place and your own pages leave the stack.
+                        let own: [CompetitionHomeRoute] = [.ownProfile, .ownBadges, .ownRecords]
+                        routes.removeAll { own.contains($0) }
+                    } else {
+                        routes = Array(routes[...first])
+                    }
                 }
                 let personIndex = routes.firstIndex(where: \.isPersonPage)
                 let identity = routes.lazy.compactMap(\.personIdentity).first
@@ -2340,7 +2454,9 @@ enum CompetitionHomeRoute: Hashable {
                         if case .person = $0 { return true }
                         return false
                     },
-                    showsOwnProfile: routes.contains(.ownProfile)
+                    showsOwnProfile: routes.contains(.ownProfile),
+                    showsOwnBadges: routes.contains(.ownBadges),
+                    showsOwnRecords: routes.contains(.ownRecords)
                 )
                 path.wrappedValue = routes.compactMap { route in
                     guard case let .competition(id) = route else {

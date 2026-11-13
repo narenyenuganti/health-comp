@@ -260,6 +260,7 @@ jobs:
               WidgetUITests/testMatchWidgetShowsTheSampleScoreAndPicksAPerson
               MultiUserCompetitionUITests/testStaleMatchOffersOneNudgeADay
               NudgeUITests/testFailedNudgeRetriesAndARefusalExplains
+              RecordsAndBadgesUITests
               MultiUserCompetitionUITests/testReactionsOnHomeMatchDayDrawerAndResult
               ReactionsUITests/testDraggingTheDrawerFromAChipSendsNoReaction
               ReactionsUITests/testLogoUpdatesThenShowsTodaysRings

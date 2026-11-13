@@ -92,6 +92,67 @@ func competitionRingDaysWon(_ weeks: [LocalCompetitionPresentation]) -> [(you: I
     return counted ? counts : nil
 }
 
+/// One ring between the two of you. Weeks count only where every scored day
+/// kept its split; days, averages and bests use each day with both sides' rings.
+struct CompetitionRingRecord: Equatable {
+    var weeksYou = 0
+    var weeksThem = 0
+    var daysYou = 0
+    var daysThem = 0
+    var averageYou = 0.0
+    var averageThem = 0.0
+    var bestYou = 0.0
+    var bestThem = 0.0
+}
+
+/// Move, Exercise and Stand, in that order. Nil until a day has both sides' rings.
+func competitionRingRecords(_ weeks: [LocalCompetitionPresentation]) -> [CompetitionRingRecord]? {
+    guard let days = competitionRingDaysWon(weeks) else { return nil }
+    let both = weeks.flatMap(\.days).compactMap { day -> (you: [Double], them: [Double])? in
+        guard let you = day.ownerRingPoints, let them = day.opponentRingPoints,
+              you.count == 3, them.count == 3
+        else { return nil }
+        return (you, them)
+    }
+    let splits = weeks.compactMap { competitionRingSplit($0.days) }
+    let count = Double(both.count)
+    return (0..<3).map { ring -> CompetitionRingRecord in
+        let you: [Double] = both.map { $0.you[ring] }
+        let them: [Double] = both.map { $0.them[ring] }
+        var record = CompetitionRingRecord()
+        record.weeksYou = splits.filter { $0.you[ring] > $0.them[ring] }.count
+        record.weeksThem = splits.filter { $0.them[ring] > $0.you[ring] }.count
+        record.daysYou = days[ring].you
+        record.daysThem = days[ring].them
+        record.averageYou = you.reduce(0, +) / count
+        record.averageThem = them.reduce(0, +) / count
+        record.bestYou = you.max() ?? 0
+        record.bestThem = them.max() ?? 0
+        return record
+    }
+}
+
+/// "Your edge: Stand, +7 a day. Sam’s edge: Exercise, +9 a day.", each half
+/// only where that side averages at least a point more.
+func competitionRingEdgeText(
+    _ records: [CompetitionRingRecord],
+    opponentName: String,
+    locale: Locale = .current
+) -> String? {
+    let names = ["Move", "Exercise", "Stand"]
+    guard records.count == names.count else { return nil }
+    let leads = records.map { ($0.averageYou - $0.averageThem).rounded() }
+    func line(_ who: String, _ lead: Double?, _ sign: Double) -> String? {
+        guard let lead, lead * sign >= 1, let ring = leads.firstIndex(of: lead) else { return nil }
+        return "\(who) edge: \(names[ring]), +\(competitionPointsText(lead * sign, locale: locale)) a day."
+    }
+    let parts = [
+        line("Your", leads.max(), 1),
+        line("\(opponentName)’s", leads.min(), -1),
+    ].compactMap { $0 }
+    return parts.isEmpty ? nil : parts.joined(separator: " ")
+}
+
 /// The decided week with the smallest margin; the later one on a tie.
 func competitionClosestFinish(_ weeks: [LocalCompetitionPresentation]) -> LocalCompetitionPresentation? {
     weeks.filter { $0.terminalResult.map { $0.outcome != .tie } ?? false }
@@ -414,32 +475,57 @@ struct CompetitionFormStrip: View {
     }
 }
 
-/// Days won per ring: amber you, ink them, grey bars on a tie. Counts only.
-struct CompetitionRingDaysPanel: View {
-    let counts: [(you: Int, them: Int)]
+/// Each ring between you: weeks or days won, then an average and a best
+/// day. Amber you, ink them, grey bars on a tie.
+struct CompetitionRingRecordPanel: View {
+    let records: [CompetitionRingRecord]
     let opponentName: String
 
+    @State private var showsDays = false
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @Environment(\.locale) private var locale
     private let rings: [(name: String, color: Color)] = [
         ("Move", Theme.move), ("Exercise", Theme.exercise), ("Stand", Theme.stand),
     ]
 
     var body: some View {
+        // Weeks need every day's split; without one, only days can be counted.
+        let hasWeeks = records.contains { $0.weeksYou + $0.weeksThem > 0 }
+        let byDays = showsDays || !hasWeeks
         VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                SectionLabel("EACH RING")
-                Spacer(minLength: 8)
-                Text("DAYS WON PER RING")
-                    .font(.themeLabel)
-                    .tracking(1.2)
-                    .foregroundStyle(Theme.secondary)
+            SectionLabel("EACH RING")
+            if hasWeeks {
+                Picker("Count", selection: $showsDays) {
+                    Text("Weeks won").tag(false)
+                    Text("Days won").tag(true)
+                }
+                .pickerStyle(.segmented)
+                .accessibilityIdentifier("competition.person.rings.unit")
             }
             ForEach(rings.indices, id: \.self) { index in
-                row(rings[index], counts[index])
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel(
-                        "\(rings[index].name): you won \(dayCount(counts[index].you)), \(opponentName) \(counts[index].them)"
-                    )
+                let record = records[index]
+                let count = byDays
+                    ? (you: record.daysYou, them: record.daysThem)
+                    : (you: record.weeksYou, them: record.weeksThem)
+                VStack(alignment: .leading, spacing: 6) {
+                    row(rings[index], count)
+                    stat("AVERAGE DAY", record.averageYou, record.averageThem)
+                    stat("BEST DAY", record.bestYou, record.bestThem)
+                }
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(
+                    "\(rings[index].name): you won \(countText(count.you, byDays)), \(opponentName) \(count.them). "
+                        + "Average day \(points(record.averageYou)) to \(points(record.averageThem)). "
+                        + "Best day \(points(record.bestYou)) to \(points(record.bestThem))"
+                )
+                .accessibilityIdentifier("competition.person.rings.\(rings[index].name.lowercased())")
+            }
+            if let edge = competitionRingEdgeText(records, opponentName: opponentName, locale: locale) {
+                Text(edge)
+                    .font(.footnote)
+                    .foregroundStyle(Theme.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("competition.person.rings.edge")
             }
         }
         .padding(16)
@@ -449,7 +535,28 @@ struct CompetitionRingDaysPanel: View {
         .accessibilityIdentifier("competition.person.rings")
     }
 
-    private func dayCount(_ value: Int) -> String { value == 1 ? "1 day" : "\(value) days" }
+    private func points(_ value: Double) -> String { competitionPointsText(value, locale: locale) }
+
+    private func countText(_ value: Int, _ byDays: Bool) -> String {
+        "\(value) \(byDays ? (value == 1 ? "day" : "days") : (value == 1 ? "week" : "weeks"))"
+    }
+
+    // You on the left, them on the right; stacked at accessibility sizes.
+    @ViewBuilder
+    private func stat(_ label: String, _ you: Double, _ them: Double) -> some View {
+        if dynamicTypeSize.isAccessibilitySize {
+            Text("\(label.capitalized(with: locale)): you \(points(you)), \(opponentName) \(points(them))")
+                .font(.caption.weight(.semibold))
+                .foregroundStyle(Theme.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        } else {
+            CompetitionTapeRow(
+                you: points(you), label: label, them: points(them),
+                valueFont: .caption.weight(.semibold).monospacedDigit()
+            )
+            .padding(.leading, 96)
+        }
+    }
 
     // At accessibility sizes the ring's name sits above its bar.
     private func row(_ ring: (name: String, color: Color), _ count: (you: Int, them: Int)) -> some View {
@@ -969,6 +1076,13 @@ struct CompetitionOwnProfileView: View {
                         CompetitionFormStrip(outcomes: own.outcomes, opponentName: "Opponents")
                     }
                 }
+                if own.career.weeks > 0 {
+                    NavigationLink(value: CompetitionHomeRoute.ownBadges) {
+                        CompetitionBadgesRow(badges: competitionBadgeBook(competitions).badges)
+                    }
+                    .buttonStyle(CompetitionPressButtonStyle())
+                    .accessibilityIdentifier("competition.ownProfile.badges")
+                }
                 if !belts.isEmpty {
                     VStack(alignment: .leading, spacing: 10) {
                         SectionLabel("BELTS · \(belts.count)")
@@ -979,13 +1093,27 @@ struct CompetitionOwnProfileView: View {
                         .themePanel()
                     }
                 }
-                bestsLayout {
-                    best("BEST WEEK", competitionPointsText(own.career.bestWeek))
-                    best("BEST DAY", competitionPointsText(own.bestDay))
-                    best("WIN STREAK", String(own.career.winStreak))
+                NavigationLink(value: CompetitionHomeRoute.ownRecords) {
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            SectionLabel("RECORDS")
+                            Spacer(minLength: 8)
+                            CompetitionAllLabel()
+                        }
+                        .padding(.horizontal, 4)
+                        bestsLayout {
+                            best("BEST WEEK", competitionPointsText(own.career.bestWeek))
+                            best("BEST DAY", competitionPointsText(own.bestDay))
+                            best("WIN STREAK", String(own.career.winStreak))
+                        }
+                        .padding(.vertical, 14)
+                        .themePanel()
+                    }
+                    .contentShape(Rectangle())
                 }
-                .padding(.vertical, 14)
-                .themePanel()
+                .buttonStyle(CompetitionPressButtonStyle())
+                .accessibilityHint("Opens your records")
+                .accessibilityIdentifier("competition.ownProfile.records")
                 if let sharesCareer {
                     Toggle(isOn: Binding(get: { sharesCareer }, set: setSharesCareer)) {
                         VStack(alignment: .leading, spacing: 2) {
