@@ -639,6 +639,14 @@ extension CompetitionWidgetSnapshot {
         let theirs: [Double?] = [230, 260, 280, 192, 188, 250, 240]
         let sam = match(5, "Sam", currentDay: 5, you: 1_204, them: 1_150, youDays: week, themDays: theirs)
         let alex = match(6, "Alex", currentDay: 2, you: 480, them: 455, youDays: [250, 230], themDays: [230, 225])
+        var four = match(11, "Sam", person: "group:four", currentDay: 4, you: 1_664, them: 1_712,
+                         youDays: [421, 437, 398, 408], themDays: [448, 402, 451, 411], updated: false)
+        four.group = Group(title: "Four-Way", isDoubles: false, rows: [
+            .init(place: 1, name: "Sam", points: 1_712, isYou: false),
+            .init(place: 2, name: "You", points: 1_664, isYou: true),
+            .init(place: 3, name: "Priya", points: 1_498, isYou: false),
+            .init(place: 4, name: "Leo", points: 1_203, isYou: false),
+        ], lead: "48 behind Sam")
         let matches: [Match]
         var hasIncomingChallenge = false
         switch scenario {
@@ -688,6 +696,17 @@ extension CompetitionWidgetSnapshot {
                 match(10, "Former competitor", person: "sample:former", currentDay: 9,
                       you: 1_840, them: 1_726, final: .win),
             ]
+        // The watch's match list: a lead, a group, a chase, a pending score
+        // and a result the watch hasn't revealed.
+        case "card":
+            matches = [
+                sam, four,
+                match(13, "Robin", currentDay: 3, you: 325, them: 696, youDays: [142, 152, 31],
+                      themDays: [388, 121, 187], chase: Chase(day: 3, points: 372)),
+                match(8, "Riley", currentDay: 8, you: 2_171, them: 2_190, youDays: theirs, themDays: week),
+                match(14, "Jo", currentDay: 9, you: 1_840, them: 1_726, youDays: week, themDays: theirs,
+                      final: .win),
+            ]
         case "noData":
             matches = [match(5, "Sam", currentDay: 4, you: 742, them: 510,
                              youDays: [250, 230, 262], themDays: [230, 280, nil], updated: false)]
@@ -696,16 +715,7 @@ extension CompetitionWidgetSnapshot {
             matches = [alex, match(5, "Sam", currentDay: 12, you: 1_840, them: 1_726, final: .win, leavesInDays: -1)]
         case "noSam": matches = [alex]
         // Group matches: the legacy fields are you against the next place up.
-        case "groupFFA":
-            var four = match(11, "Sam", person: "group:four", currentDay: 4, you: 1_664, them: 1_712,
-                             youDays: [421, 437, 398, 408], themDays: [448, 402, 451, 411], updated: false)
-            four.group = Group(title: "Four-Way", isDoubles: false, rows: [
-                .init(place: 1, name: "Sam", points: 1_712, isYou: false),
-                .init(place: 2, name: "You", points: 1_664, isYou: true),
-                .init(place: 3, name: "Priya", points: 1_498, isYou: false),
-                .init(place: 4, name: "Leo", points: 1_203, isYou: false),
-            ], lead: "48 behind Sam")
-            matches = [four]
+        case "groupFFA": matches = [four]
         case "groupDoubles":
             var doubles = match(12, "Sam + Leo", person: "group:doubles", currentDay: 4, you: 3_162, them: 2_915,
                                 youDays: [801, 802, 800, 759], themDays: [758, 744, 739, 674], updated: false)

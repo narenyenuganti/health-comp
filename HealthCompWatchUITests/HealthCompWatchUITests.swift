@@ -103,23 +103,115 @@ final class HealthCompWatchUITests: XCTestCase {
         }
     }
 
-    /// Crown pages between people, and exactly one page is on screen.
-    func testCrownMovesBetweenMatches() {
-        let app = launch("several")
-        let match = element(app, "watch.match")
-        XCTAssertTrue(match.waitForExistence(timeout: 15))
-        let pages = app.descendants(matching: .any).matching(identifier: "watch.match")
-        func hittable() -> [XCUIElement] {
-            pages.allElementsBoundByIndex.filter { $0.exists && $0.isHittable }
-        }
-        XCTAssertEqual(hittable().count, 1)
-        XCTAssertTrue(hittable()[0].label.hasPrefix("Sam, Day 5 of 7."), hittable()[0].label)
+    private func rows(_ app: XCUIApplication) -> [String] {
+        app.descendants(matching: .any).matching(identifier: "watch.card.row").allElementsBoundByIndex.map(\.label)
+    }
 
-        // Half a turn or less snaps back; a full turn pages twice.
-        XCUIDevice.shared.rotateDigitalCrown(delta: 0.75)
-        sleep(2)
-        XCTAssertEqual(hittable().count, 1)
-        XCTAssertTrue(hittable()[0].label.hasPrefix("Alex, Day 2 of 7."), hittable()[0].label)
+    private func row(_ app: XCUIApplication, _ prefix: String) -> XCUIElement {
+        app.descendants(matching: .any)
+            .matching(NSPredicate(format: "identifier == 'watch.card.row' AND label BEGINSWITH %@", prefix))
+            .firstMatch
+    }
+
+    /// The back button on screen. By query, the first match can be the one
+    /// under a pushed screen, which does nothing.
+    private func back(_ app: XCUIApplication) {
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.15, dy: 0.14)).tap()
+    }
+
+    private func shoot(_ app: XCUIApplication, _ name: String) {
+        let shot = XCTAttachment(screenshot: app.screenshot())
+        shot.name = name
+        shot.lifetime = .keepAlways
+        add(shot)
+    }
+
+    /// Two or more matches open on the card, in the Board's order. An
+    /// unrevealed final says only "Final" until its Board has played.
+    func testTheCardListsEveryMatch() {
+        let app = launch("card")
+        XCTAssertTrue(element(app, "watch.card").waitForExistence(timeout: 15))
+        XCTAssertFalse(element(app, "watch.match").exists)
+        XCTAssertEqual(rows(app), [
+            "You lead Sam by 54 points. Day 5.",
+            "Four-Way, Day 4 of 7. You're 2nd. 48 behind Sam.",
+            "Robin leads by 371 points. 372 points to take the lead. 31 of 403 today.",
+            "Riley leads by 19 points. Pending.",
+            "Jo, Final.",
+        ])
+        shoot(app, "watch-card")
+        app.swipeUp()
+        sleep(1)
+        shoot(app, "watch-card-end")
+
+        let jo = row(app, "Jo")
+        jo.tap()
+        let board = element(app, "watch.match")
+        XCTAssertTrue(board.waitForExistence(timeout: 5))
+        XCTAssertTrue(board.label.hasPrefix("Jo, Final."), board.label)
+        sleep(4)  // the reveal
+        back(app)
+        XCTAssertTrue(element(app, "watch.card").waitForExistence(timeout: 5))
+        XCTAssertTrue(row(app, "Jo").label.contains("Won by 114 points."), row(app, "Jo").label)
+    }
+
+    /// A row opens its Board; a duel's Board opens its week.
+    func testARowOpensTheBoardAndTheBoardOpensTheWeek() {
+        let app = launch("card")
+        XCTAssertTrue(element(app, "watch.card").waitForExistence(timeout: 15))
+        row(app, "Robin").tap()
+        let board = element(app, "watch.match")
+        XCTAssertTrue(board.waitForExistence(timeout: 5))
+        XCTAssertTrue(board.label.hasPrefix("Robin, Day 3 of 7."), board.label)
+        shoot(app, "watch-card-board")
+
+        board.tap()
+        let week = element(app, "watch.week")
+        XCTAssertTrue(week.waitForExistence(timeout: 5))
+        // Day 1 is two days ago, whatever weekday that is.
+        let first = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label ENDSWITH '. You 142. Robin 388.'")).firstMatch
+        XCTAssertTrue(first.exists, app.debugDescription)
+        let empty = app.descendants(matching: .any).matching(NSPredicate(format: "label ENDSWITH '. No points.'"))
+        XCTAssertEqual(empty.count, 4)
+        shoot(app, "watch-week")
+
+        back(app)
+        XCTAssertTrue(week.waitForNonExistence(timeout: 5))
+        // A fresh query: the one resolved before the push can miss the Board after the pop.
+        XCTAssertTrue(element(app, "watch.match").waitForExistence(timeout: 5))
+    }
+
+    /// No week for a group: its Board stays put.
+    func testAGroupBoardHasNoWeek() {
+        let app = launch("card")
+        XCTAssertTrue(element(app, "watch.card").waitForExistence(timeout: 15))
+        row(app, "Four-Way").tap()
+        let board = element(app, "watch.match")
+        XCTAssertTrue(board.waitForExistence(timeout: 5))
+        board.tap()
+        sleep(1)
+        XCTAssertFalse(element(app, "watch.week").exists)
+    }
+
+    /// One match opens straight on its Board, which still opens the week.
+    func testOneMatchOpensOnTheBoard() {
+        let app = launch("live")
+        let board = element(app, "watch.match")
+        XCTAssertTrue(board.waitForExistence(timeout: 15))
+        XCTAssertFalse(element(app, "watch.card").exists)
+        board.tap()
+        XCTAssertTrue(element(app, "watch.week").waitForExistence(timeout: 5))
+    }
+
+    /// A tapped alert opens its match over the card.
+    func testATappedAlertOpensItsMatch() {
+        let app = launch("card", "--watch-alert", "00000000-0000-0000-0000-000000000013")
+        let board = element(app, "watch.match")
+        XCTAssertTrue(board.waitForExistence(timeout: 15))
+        XCTAssertTrue(board.label.hasPrefix("Robin, Day 3 of 7."), board.label)
+        back(app)
+        XCTAssertTrue(element(app, "watch.card").waitForExistence(timeout: 5))
     }
 
     /// The default face's bottom slot reads the file the app just wrote. The

@@ -1,15 +1,18 @@
 import Foundation
+import UserNotifications
 import WatchConnectivity
 import WidgetKit
 
 /// The last snapshot from the iPhone, kept in this watch's App Group so the
 /// complication can read it. The group is per device, not shared with the phone.
 @MainActor
-final class WatchSnapshotModel: NSObject, ObservableObject, WCSessionDelegate {
+final class WatchSnapshotModel: NSObject, ObservableObject, WCSessionDelegate, UNUserNotificationCenterDelegate {
     static let shared = WatchSnapshotModel()
 
     @Published private(set) var snapshot: CompetitionWidgetSnapshot?
     @Published private(set) var seen = CompetitionWatchSeen()
+    /// The match of the alert just tapped on this watch, until the root opens it.
+    @Published var tappedAlert: UUID?
 
     private let fileURL = CompetitionWidgetSnapshot.fileURL()
     private let seenURL = URL.applicationSupportDirectory.appendingPathComponent("WatchSeen.json")
@@ -17,6 +20,8 @@ final class WatchSnapshotModel: NSObject, ObservableObject, WCSessionDelegate {
 
     override init() {
         super.init()
+        // Here, at launch, so a tap that launches the app isn't missed.
+        UNUserNotificationCenter.current().delegate = self
         snapshot = .load(from: fileURL)
         if let data = try? Data(contentsOf: seenURL),
            let seen = try? JSONDecoder().decode(CompetitionWatchSeen.self, from: data) {
@@ -27,6 +32,10 @@ final class WatchSnapshotModel: NSObject, ObservableObject, WCSessionDelegate {
         let arguments = ProcessInfo.processInfo.arguments
         if let scenario = zip(arguments, arguments.dropFirst()).first(where: { $0.0 == "--watch-scenario" })?.1 {
             isFixture = true
+            // An alert tap, as the delegate would report it.
+            if let id = zip(arguments, arguments.dropFirst()).first(where: { $0.0 == "--watch-alert" })?.1 {
+                tappedAlert = UUID(uuidString: id)
+            }
             seen = CompetitionWatchSeen()
             try? FileManager.default.removeItem(at: seenURL)
             if let fixture = CompetitionWidgetSnapshot.testLab(scenario, now: Date(), scheme: "healthcomp"),
@@ -121,6 +130,20 @@ final class WatchSnapshotModel: NSObject, ObservableObject, WCSessionDelegate {
         } catch {
             // ponytail: a failed save replays a reveal once; nothing is lost
         }
+    }
+
+    // MARK: UNUserNotificationCenterDelegate
+
+    /// A mirrored iPhone alert tapped on the watch launches this app and lands
+    /// here. No `willPresent`: alerts stay silent while the app is in front.
+    nonisolated func userNotificationCenter(
+        _ center: UNUserNotificationCenter,
+        didReceive response: UNNotificationResponse
+    ) async {
+        guard response.actionIdentifier == UNNotificationDefaultActionIdentifier,
+              let id = CompetitionWatchAlert.competitionID(response.notification.request.content.userInfo)
+        else { return }
+        await MainActor.run { tappedAlert = id }
     }
 
     // MARK: WCSessionDelegate
