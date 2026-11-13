@@ -303,7 +303,7 @@ struct CompetitionJudgesReveal: View {
                 }
                 .scrollIndicators(.hidden)
             }
-            Button(action: onSkip) {
+            Button(action: skip) {
                 Text("Skip reveal")
                     .font(.themeLabel)
                     .foregroundStyle(Theme.secondary)
@@ -316,7 +316,7 @@ struct CompetitionJudgesReveal: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.ground.ignoresSafeArea())
         .contentShape(Rectangle())
-        .onTapGesture { if stage > 0 || !breakingSeal { onSkip() } }
+        .onTapGesture { if stage > 0 || !breakingSeal { skip() } }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("competition.judges.reveal")
         .sensoryFeedback(.impact(weight: .light), trigger: ticks)
@@ -347,6 +347,8 @@ struct CompetitionJudgesReveal: View {
                     guard (try? await Task.sleep(for: .seconds(0.1))) != nil else { return }
                     if !reduceMotion { rows = row }
                 }
+                // On the pen's circle, just after the totals show.
+                if bout.sides.allSatisfy({ $0.cardTotal(card) != nil }) { Sounds.play(.total, in: 0.2) }
                 guard (try? await Task.sleep(for: .seconds(0.5))) != nil else { return }
             }
             // The stamp slams on the versus intro's curve.
@@ -354,13 +356,16 @@ struct CompetitionJudgesReveal: View {
                 stamped = true
             }
             thuds += 1
+            Sounds.play(.stamp, in: reduceMotion ? 0 : VersusClock.slam)
             guard (try? await Task.sleep(for: .seconds(1))) != nil else { return }
             ringStart = .now
+            Sounds.play(.clear)
             withAnimation(Motion.fade) { stage = 2 }
         }
         .task(id: stage == 2) {
             guard stage == 2 else { return }
             let clock = bout.ring.clock
+            if bout.yoursWon { Sounds.play(.cheer, in: reduceMotion ? 0 : clock.raise) }
             if !reduceMotion {
                 // One thud for each light that cuts, then the raise.
                 var now = 0.0
@@ -377,7 +382,12 @@ struct CompetitionJudgesReveal: View {
             guard (try? await Task.sleep(for: .seconds(1.5))) != nil else { return }
             onFinished()
         }
-        .onChange(of: scenePhase) { _, phase in if phase == .background { onBackground() } }
+        .onChange(of: scenePhase) { _, phase in
+            if phase == .background {
+                Sounds.stop()
+                onBackground()
+            }
+        }
     }
 
     private var seal: some View {
@@ -445,6 +455,13 @@ struct CompetitionJudgesReveal: View {
         guard stage == 0, !breakingSeal else { return }
         progress = 1
         withAnimation(Motion.fade) { breakingSeal = true }
+        // On the cut to the scorecards.
+        Sounds.play(.final, in: 0.3)
+    }
+
+    private func skip() {
+        Sounds.stop()
+        onSkip()
     }
 
     private var scorecards: some View {

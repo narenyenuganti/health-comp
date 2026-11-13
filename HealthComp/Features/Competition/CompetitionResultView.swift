@@ -179,6 +179,7 @@ struct CompetitionResultView: View {
             guard oldValue == .sending, newValue != .sending,
                   let text = rematchAnnouncement(newValue)
             else { return }
+            if case .sent = newValue { Sounds.play(.sent) }
             AccessibilityNotification.Announcement(text).post()
         }
         .sensoryFeedback(trigger: rematchStage) { old, new in

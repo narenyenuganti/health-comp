@@ -363,6 +363,9 @@ struct CompetitionDetailView: View {
             .sensoryFeedback(.impact(weight: .medium), trigger: side) { old, new in
                 new == .you && old != .you
             }
+            .onChange(of: side) { old, new in
+                if new == .you && old != .you { Sounds.play(.ahead) }
+            }
         }
     }
 
@@ -1664,6 +1667,7 @@ private struct CompetitionNudgeControl: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .onChange(of: display) { old, new in
             if case .button(_, isSending: true) = old, case let .sent(text) = new {
+                Sounds.play(.sent)
                 AccessibilityNotification.Announcement(text).post()
             }
         }

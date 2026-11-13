@@ -1407,6 +1407,37 @@ final class MultiUserCompetitionUITests: XCTestCase {
         defer { app.terminate() }
         assertRemoteRenderedConfiguration("Appearance: Light; Dynamic Type: large")
         XCTAssertTrue(app.navigationBars["Account"].waitForExistence(timeout: 8))
+
+        // Sounds: the switch greys the volume out, and the row says so.
+        let sounds = element("account.sounds")
+        scrollToElement(sounds)
+        sounds.tap()
+        XCTAssertTrue(app.navigationBars["Sounds"].waitForExistence(timeout: 3))
+        let soundSwitch = app.switches["account.sounds.enabled"].firstMatch
+        let volume = app.sliders["account.sounds.volume"].firstMatch
+        XCTAssertTrue(volume.exists)
+        // Flipped twice, so the simulator's setting ends as it began.
+        for _ in 0..<2 {
+            let wasOn = soundSwitch.value as? String == "1"
+            XCTAssertEqual(volume.isEnabled, wasOn)
+            // A row-wide switch: its centre can land on the label.
+            let knob = soundSwitch.switches.firstMatch
+            if knob.exists {
+                knob.tap()
+            } else {
+                soundSwitch.coordinate(withNormalizedOffset: CGVector(dx: 0.93, dy: 0.5)).tap()
+            }
+            XCTAssertEqual(soundSwitch.value as? String, wasOn ? "0" : "1")
+            XCTAssertEqual(volume.isEnabled, !wasOn)
+            app.navigationBars["Sounds"].buttons["Account"].tap()
+            XCTAssertTrue(app.navigationBars["Account"].waitForExistence(timeout: 3))
+            XCTAssertTrue(sounds.label.contains(wasOn ? "Off" : "On"), sounds.label)
+            sounds.tap()
+            XCTAssertTrue(app.navigationBars["Sounds"].waitForExistence(timeout: 3))
+        }
+        app.navigationBars["Sounds"].buttons["Account"].tap()
+        XCTAssertTrue(app.navigationBars["Account"].waitForExistence(timeout: 3))
+
         let privacy = element("account.privacy")
         scrollToElement(privacy)
         privacy.tap()
