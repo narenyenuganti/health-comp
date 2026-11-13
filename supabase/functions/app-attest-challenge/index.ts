@@ -4,6 +4,7 @@ import {
   defaultUserDependencies,
   error,
   json,
+  readBoundedJson,
   type RpcError,
   type ScoringRpcClient,
   type UserDependencies,
@@ -76,53 +77,6 @@ function isTimestamp(value: unknown): value is string {
         value,
       ) &&
     Number.isFinite(Date.parse(value));
-}
-
-async function readBoundedJson(request: Request): Promise<unknown | null> {
-  const contentType = request.headers.get("content-type")?.split(";", 1)[0]
-    .trim().toLowerCase();
-  if (contentType !== "application/json") return null;
-
-  const contentLength = request.headers.get("content-length");
-  if (
-    contentLength !== null &&
-    (!/^[0-9]+$/.test(contentLength) ||
-      Number(contentLength) > maximumBodyBytes)
-  ) return null;
-  if (!request.body) return null;
-
-  const reader = request.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let length = 0;
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      length += value.length;
-      if (length > maximumBodyBytes) {
-        await reader.cancel();
-        return null;
-      }
-      chunks.push(value);
-    }
-  } catch {
-    return null;
-  } finally {
-    reader.releaseLock();
-  }
-
-  const bytes = new Uint8Array(length);
-  let offset = 0;
-  for (const chunk of chunks) {
-    bytes.set(chunk, offset);
-    offset += chunk.length;
-  }
-  try {
-    const jsonText = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-    return JSON.parse(jsonText);
-  } catch {
-    return null;
-  }
 }
 
 function parseRequest(value: unknown): ChallengeRequest | null {
@@ -205,7 +159,7 @@ export async function appAttestChallengeHandler(
     return error(405, "method_not_allowed", "Method not allowed");
   }
 
-  const parsed = parseRequest(await readBoundedJson(request));
+  const parsed = parseRequest(await readBoundedJson(request, maximumBodyBytes));
   if (!parsed) {
     return error(400, "invalid_request", "Invalid challenge request");
   }

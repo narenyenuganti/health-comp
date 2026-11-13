@@ -386,6 +386,40 @@ final class CompetitionNotificationCoordinatorTests: XCTestCase {
         XCTAssertTrue(committed.isEmpty)
     }
 
+    func testPublishesReuseTheLastMuteListAndAFailedReReadKeepsReminders()
+        async throws {
+        let center = StatefulNotificationCenterRecorder()
+        let snapshot = try scheduledSnapshot()
+        let reads = NotificationRevisionRecorder()
+        let coordinator = CompetitionNotificationCoordinator(
+            planner: CompetitionNotificationPlanner(policy: .coordinatorFixture),
+            notifications: center.client,
+            preferences: CompetitionNotificationPreferencesClient(
+                mutedOpponentIdentities: {
+                    await reads.append(0)
+                    if await reads.values.count > 1 {
+                        throw CoordinatorFixtureError.preferencesUnavailable
+                    }
+                    return []
+                },
+                setMuted: { _, _ in }
+            ),
+            commitDecisions: { _, _ in .noDecision }
+        )
+
+        await coordinator.submit(snapshot)
+        await coordinator.submit(snapshot)
+        let removedBefore = await center.snapshot.removedPending.count
+        let readsAfterPublishes = await reads.values.count
+        await coordinator.reconcileLatest()
+
+        XCTAssertEqual(readsAfterPublishes, 1)
+        let readsAfterReconcile = await reads.values.count
+        XCTAssertEqual(readsAfterReconcile, 2)
+        let removedAfter = await center.snapshot.removedPending.count
+        XCTAssertEqual(removedAfter, removedBefore)
+    }
+
     func testOrphanCleanupRunsOnlyAfterSuccessfulStoreEnumeration()
         async throws {
         let center = CleanupOperationRecorder()

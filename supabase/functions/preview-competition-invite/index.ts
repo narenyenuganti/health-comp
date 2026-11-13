@@ -61,7 +61,16 @@ export async function previewCompetitionInviteHandler(
     return errorResponse(400, "invalid_request", "Invalid invitation token");
   }
 
-  const client = await authenticatedClient(request, dependencies);
+  let client: Awaited<ReturnType<typeof authenticatedClient>>;
+  try {
+    client = await authenticatedClient(request, dependencies);
+  } catch {
+    return errorResponse(
+      503,
+      "temporarily_unavailable",
+      "Unable to open invitation right now",
+    );
+  }
   if (!client) {
     return errorResponse(401, "unauthorized", "Authentication required");
   }

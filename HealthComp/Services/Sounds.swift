@@ -77,11 +77,21 @@ enum Sounds {
 
     /// Plays so the sound's hit lands `delay` seconds from now.
     static func play(_ effect: SoundEffect, in delay: TimeInterval = 0) {
+        let calledAt = ProcessInfo.processInfo.systemUptime
         guard let level = level(effect), level > 0, let player = player(effect) else { return }
         player.stop()
         player.currentTime = 0
         player.volume = isMuted ? 0 : level
-        player.play(atTime: player.deviceCurrentTime + max(0, delay - effect.accent))
+        // A first-use load took time: aim at the moment asked for, not later.
+        let loading = ProcessInfo.processInfo.systemUptime - calledAt
+        player.play(atTime: player.deviceCurrentTime + max(0, delay - loading - effect.accent))
+    }
+
+    /// Loads every sound ahead of its first moment, so no animation opens
+    /// with a file load. Call once the first frame is up.
+    static func prepare() {
+        guard level(.versus) != nil else { return }
+        SoundEffect.allCases.forEach { _ = player($0) }
     }
 
     /// A skipped animation takes its sounds with it, waiting ones too.

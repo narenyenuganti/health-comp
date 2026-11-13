@@ -124,14 +124,18 @@ struct AccountHealthSettings {
 }
 
 /// Matches whose points stop reaching the server while signed out.
-func accountLiveMatchCount(_ competitions: [LocalCompetitionPresentation]) -> Int {
-    competitions.filter {
-        guard !$0.isPractice else { return false }
-        switch $0.lifecycle {
+func accountLiveMatchCount(
+    _ competitions: [LocalCompetitionPresentation],
+    groupMatches: [GroupMatchPresentation] = []
+) -> Int {
+    let isLive: (LocalCompetitionLifecyclePresentation) -> Bool = {
+        switch $0 {
         case .active, .endsToday, .tallying: return true
         default: return false
         }
-    }.count
+    }
+    return competitions.filter { !$0.isPractice && isLive($0.lifecycle) }.count
+        + groupMatches.filter { isLive($0.lifecycle) && !$0.hasLeft($0.viewer) }.count
 }
 
 /// Sign-out is global, so the copy says "your points", not "this iPhone".
@@ -209,6 +213,18 @@ struct AccountSettingsView: View {
             .overlay {
                 AccountProgressOverlay(store: store)
             }
+            // Messages land away from the button that caused them.
+            .onChange(of: spokenMessage) { _, new in
+                if let new { AccessibilityNotification.Announcement(new).post() }
+            }
+    }
+
+    private var spokenMessage: String? {
+        if let message = store.message { return message.text }
+        if let photoMessage { return photoMessage }
+        if blockedPeople?.unblockFailed != nil { return "Couldn’t unblock. Check your connection and try again." }
+        if challengeLink?.resetFailed == true { return "Couldn’t reset your link. Try again." }
+        return nil
     }
 
     private var list: some View {
@@ -411,7 +427,7 @@ struct AccountSettingsView: View {
                             Label("Change Photo", systemImage: "photo")
                         }
                         Button { isRemovePhotoConfirmationPresented = true } label: {
-                            Label("Remove Photo", systemImage: "delete.left")
+                            Label("Remove Photo", systemImage: "trash")
                         }
                     } label: {
                         avatarFace
@@ -485,7 +501,7 @@ struct AccountSettingsView: View {
             name: store.displayName,
             size: 80,
             isYou: true,
-            initialFont: .system(size: 36, weight: .heavy).width(.condensed)
+            initialFont: .largeTitle.weight(.heavy).width(.condensed)
         )
         .overlay(alignment: .bottomTrailing) {
             if profilePhoto != nil {
@@ -525,6 +541,11 @@ struct AccountSettingsView: View {
                         .font(.footnote.monospaced())
                         .foregroundStyle(Theme.secondary)
                         .textSelection(.enabled)
+                        // At accessibility sizes it would break mid-word every few
+                        // letters: one line, cut in the middle. Share and Show Code
+                        // carry the full link.
+                        .lineLimit(dynamicTypeSize.isAccessibilitySize ? 1 : nil)
+                        .truncationMode(.middle)
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityLabel("Your challenge link")
                         .accessibilityValue(Self.displayText(url))
@@ -875,6 +896,7 @@ private struct AccountSoundsPage: View {
                     .accessibilityIdentifier("account.sounds.enabled")
                 HStack(spacing: 12) {
                     Image(systemName: "speaker.fill")
+                        .accessibilityHidden(true)
                     // Letting go plays the "you move ahead" sound at the new volume.
                     Slider(value: $volume, in: 0...1, step: 0.05) { isDragging in
                         if !isDragging { Sounds.play(.ahead) }
@@ -883,6 +905,7 @@ private struct AccountSoundsPage: View {
                     .accessibilityLabel("Volume")
                     .accessibilityIdentifier("account.sounds.volume")
                     Image(systemName: "speaker.wave.3.fill")
+                        .accessibilityHidden(true)
                 }
                 .foregroundStyle(Theme.secondary)
                 .frame(minHeight: 44)
@@ -912,6 +935,7 @@ private struct AccountHealthPage: View {
                     LabeledContent("Health access", value: "Off")
                     Button("Connect Health", action: settings.connect)
                         .frame(minHeight: 44)
+                        .accountAction()
                         .accessibilityIdentifier("account.health.connect")
                 case .unavailable:
                     LabeledContent("Health access", value: "Unavailable")
@@ -934,6 +958,7 @@ private struct AccountHealthPage: View {
             openURL(URL(string: UIApplication.openSettingsURLString)!)
         }
         .frame(minHeight: 44)
+        .accountAction()
         .accessibilityIdentifier("account.health.settings")
     }
 
@@ -972,13 +997,10 @@ private struct AccountNotificationsPage: View {
                 switch settings.authorization {
                 case .notDetermined:
                     Button(action: settings.request) {
-                        if settings.isRequestInFlight {
-                            ProgressView()
-                        } else {
-                            Text("Turn On Notifications")
-                        }
+                        BusyLabel("Turn On Notifications", isBusy: settings.isRequestInFlight)
                     }
                     .frame(minHeight: 44)
+                    .accountAction()
                     .disabled(settings.isRequestInFlight)
                     .accessibilityIdentifier("competition.notifications.enable")
 
@@ -1049,6 +1071,7 @@ private struct AccountNotificationsPage: View {
                         openURL(URL(string: UIApplication.openSettingsURLString)!)
                     }
                     .frame(minHeight: 44)
+                    .accountAction()
                     // The status section has its own Open Settings; VoiceOver
                     // tells them apart.
                     .accessibilityLabel("Open Settings for Live Activities")
@@ -1066,6 +1089,7 @@ private struct AccountNotificationsPage: View {
             openURL(URL(string: UIApplication.openNotificationSettingsURLString)!)
         }
         .frame(minHeight: 44)
+        .accountAction()
         .accessibilityIdentifier("account.notifications.settings")
     }
 
@@ -1158,12 +1182,16 @@ private struct AccountPrivacyPage: View {
                         .frame(minHeight: 44)
                         .contentShape(Rectangle())
                 }
+                .accountAction()
                 .accessibilityIdentifier("account.privacy-policy")
             }
             .listRowBackground(Theme.panel)
         }
         .moving(Motion.settle, value: friends?.state)
         .accountPageStyle(title: "Privacy")
+        .onChange(of: friends?.state.failedField) { _, new in
+            if new != nil { AccessibilityNotification.Announcement(Self.saveErrorText).post() }
+        }
         // The id, as Account can open before the publication mounts these.
         .task(id: friends != nil) { friends?.send(.requested) }
         .sheet(isPresented: Binding(
@@ -1204,6 +1232,7 @@ private struct AccountPrivacyPage: View {
                         .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
                         .contentShape(Rectangle())
                 }
+                .accountAction()
                 .disabled(friends.state.isSaving)
                 .accessibilityIdentifier("account.privacy.username.choose")
             }
@@ -1255,6 +1284,9 @@ private struct AccountPrivacyPage: View {
                     }
                     .frame(minHeight: 44)
                     .contentShape(Rectangle())
+                    // Choices, not actions, so not semibold; dimmed while
+                    // saving, which the page's ink style would otherwise hide.
+                    .opacity(friends.state.isSaving ? 0.45 : 1)
                 }
                 .disabled(friends.state.isSaving)
                 .accessibilityAddTraits(isSelected ? .isSelected : [])
@@ -1267,8 +1299,10 @@ private struct AccountPrivacyPage: View {
         .listRowBackground(Theme.panel)
     }
 
+    private static let saveErrorText = "Couldn’t save. Check your connection and try again."
+
     private var saveError: some View {
-        Text("Couldn’t save. Check your connection and try again.")
+        Text(Self.saveErrorText)
             .font(.callout)
             .foregroundStyle(Theme.ink)
             .fixedSize(horizontal: false, vertical: true)
@@ -1449,7 +1483,21 @@ private struct StagingScoringDiagnosticPage: View {
 }
 #endif
 
+/// An action row: semibold, so it reads apart from the static rows beside
+/// it, and dimmed while disabled, which the page's ink style would hide.
+private struct AccountAction: ViewModifier {
+    @Environment(\.isEnabled) private var isEnabled
+
+    func body(content: Content) -> some View {
+        content
+            .fontWeight(.semibold)
+            .opacity(isEnabled ? 1 : 0.45)
+    }
+}
+
 private extension View {
+    func accountAction() -> some View { modifier(AccountAction()) }
+
     /// Account's pages share one surface and an inline title.
     func accountPageStyle(title: String) -> some View {
         scrollContentBackground(.hidden)

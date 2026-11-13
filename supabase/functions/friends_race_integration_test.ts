@@ -6,9 +6,9 @@ Deno.test({
   sanitizeResources: false,
   sanitizeOps: false,
   fn: async () => {
-    const databaseURL = Deno.env.get("HEALTHCOMP_TEST_DATABASE_URL") ??
-      "postgresql://postgres:postgres@127.0.0.1:54322/postgres";
+    const databaseURL = Deno.env.get("HEALTHCOMP_TEST_DATABASE_URL") ?? "";
     if (
+      !databaseURL ||
       !["127.0.0.1", "localhost", "::1"].includes(new URL(databaseURL).hostname)
     ) {
       throw new Error("username race requires disposable local database");

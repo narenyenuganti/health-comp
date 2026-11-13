@@ -204,7 +204,7 @@ Deno.test("create verifies the bearer user before calling the RPC", async () => 
           getUser: () =>
             Promise.resolve({
               data: { user: null },
-              error: { message: "bad jwt" },
+              error: { message: "bad jwt", status: 401 },
             }),
         },
         rpc: () => {
@@ -449,6 +449,11 @@ Deno.test("create reports pending, overlap, reciprocal and unavailable recipient
           "This account already challenged you",
         ],
         ["recipient_unavailable", 404, "Recipient unavailable"],
+        [
+          "invite_rate_limited",
+          429,
+          "Too many challenges sent. Try again later.",
+        ],
       ] as const
     ) {
       const response = await createCompetitionInviteHandler(

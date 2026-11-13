@@ -251,7 +251,7 @@ final class CompetitionPushRegistrationTests: XCTestCase {
         let root = try temporaryDirectory()
         defer { try? FileManager.default.removeItem(at: root) }
         let registration = PushRegistrationProbe(token: String(repeating: "ab", count: 32))
-        let remote = RemoteInstallationProbe(registrationDelay: .milliseconds(400))
+        let remote = RemoteInstallationProbe()
         let kinds = LockIsolated<[String]>([])
         let coordinator = CompetitionInstallationCoordinator(
             remoteAPI: remote.api,
@@ -267,11 +267,13 @@ final class CompetitionPushRegistrationTests: XCTestCase {
         )
         try await coordinator.start()
 
+        await remote.holdNextRegistration()
         kinds.setValue(["nudge"])
         let off = Task { await coordinator.reconcile() }
-        try await Task.sleep(for: .milliseconds(150))
+        await remote.waitUntilHeld()
         kinds.setValue([])
         await coordinator.reconcile()
+        await remote.releaseHeld()
         await off.value
 
         let requests = await remote.registrationRequests()
@@ -327,14 +329,26 @@ private actor RemoteInstallationProbe {
     private var registrations: [CompetitionInstallationRequest] = []
     private var removals: [UUID] = []
     private let removalFailure: CompetitionRemoteFailure?
-    private let registrationDelay: Duration
+    private var holdsNext = false
+    private var isHolding = false
+    private var held: CheckedContinuation<Void, Never>?
+    private var heldWaiters: [CheckedContinuation<Void, Never>] = []
 
-    init(
-        removalFailure: CompetitionRemoteFailure? = nil,
-        registrationDelay: Duration = .zero
-    ) {
+    init(removalFailure: CompetitionRemoteFailure? = nil) {
         self.removalFailure = removalFailure
-        self.registrationDelay = registrationDelay
+    }
+
+    /// The next registration records its request, then waits for `releaseHeld`.
+    func holdNextRegistration() { holdsNext = true }
+
+    func waitUntilHeld() async {
+        guard !isHolding else { return }
+        await withCheckedContinuation { heldWaiters.append($0) }
+    }
+
+    func releaseHeld() {
+        held?.resume()
+        held = nil
     }
 
     nonisolated var api: CompetitionRemoteAPI {
@@ -394,7 +408,15 @@ private actor RemoteInstallationProbe {
         _ request: CompetitionInstallationRequest
     ) async throws -> CompetitionInstallation {
         registrations.append(request)
-        if registrationDelay > .zero { try await Task.sleep(for: registrationDelay) }
+        if holdsNext {
+            holdsNext = false
+            await withCheckedContinuation { continuation in
+                held = continuation
+                isHolding = true
+                heldWaiters.forEach { $0.resume() }
+                heldWaiters = []
+            }
+        }
         return try CompetitionInstallation(
             installationID: request.installationID,
             environment: request.environment,

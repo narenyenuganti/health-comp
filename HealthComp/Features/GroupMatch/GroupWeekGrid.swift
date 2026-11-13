@@ -21,7 +21,8 @@ extension GroupMatchPresentation {
             matchID: id.rawValue, configuration: configuration, dayOrdinal: liveDay, days: days, botModes: bots
         ) else { return nil }
         return MatchBanter.render(
-            line, names: Dictionary(uniqueKeysWithValues: seats.map { ($0.id, $0.name) }), viewerSeatID: viewerSeatID
+            line, names: Dictionary(uniqueKeysWithValues: seats.map { ($0.id, $0.name) }), viewerSeatID: viewerSeatID,
+            formatPoints: { competitionPointsText(Double($0)) }
         )
     }
 
@@ -132,7 +133,9 @@ struct GroupWeekGrid: View {
 
     private func rowName(_ subject: MatchStandingSubject) -> some View {
         let isYou = subject == match.viewerSubject
-        let name = isYou && match.format == .doubles ? "Your team" : match.name(of: subject)
+        // Doubles rows say whose team, not both full names, which would take
+        // the days' width; the scoreboard above names the teams.
+        let name = match.format == .doubles ? (isYou ? "Your team" : "Their team") : match.name(of: subject)
         return Text(name)
             .font(.subheadline.weight(isYou ? .bold : .regular))
             .foregroundStyle(isYou ? Theme.you : Theme.ink)

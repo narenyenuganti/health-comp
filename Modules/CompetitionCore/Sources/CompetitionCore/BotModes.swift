@@ -11,6 +11,11 @@ public enum BotMode: String, Codable, CaseIterable, Sendable {
 
 /// Deterministic week and intraday reveal for one bot.
 ///
+/// `dailyTotals` is the practice (opponent plan v3) generator only. Group-match
+/// totals come from the server's own generator (`private.group_bot_week`), which
+/// is deliberately different; do not change either to match the other, since
+/// that would alter weeks already stored.
+///
 /// Totals and reveal are whole points in `0...600`. Scoring elsewhere multiplies
 /// by 100 once to get centipoints. A `UInt64` seed is a decimal string on the
 /// wire (`BotWeek.decimalEncoding(of:)`): no sign and no leading zeros, except
@@ -38,10 +43,10 @@ public enum BotMode: String, Codable, CaseIterable, Sendable {
 ///     if candidate >= threshold: return candidate mod u
 /// ```
 ///
-/// A port can check seed 0: the first `next` is `0xE220A8397B1DCDAF`, then
+/// Seed 0 gives a first `next` of `0xE220A8397B1DCDAF`, then
 /// `next(upperBound: 1)` is 0 and the next `next(upperBound: 601)` is 273.
 /// Products in the point formulas fit in a signed 64-bit integer. `/` truncates
-/// toward zero. SQL should use the same `bigint` division.
+/// toward zero.
 ///
 /// `dailyTotals` builds one stream from `SplitMix64(seed: seed)` and draws in
 /// this order. It does not hash the seed and it does not read the schedule.

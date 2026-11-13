@@ -45,7 +45,9 @@ function client(
       getUser: () =>
         Promise.resolve({
           data: { user: authenticated ? { id: "auth-user" } : null },
-          error: authenticated ? null : { message: "invalid token" },
+          error: authenticated
+            ? null
+            : { message: "invalid token", status: 401 },
         }),
     },
     rpc,

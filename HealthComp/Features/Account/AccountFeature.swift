@@ -318,7 +318,8 @@ struct AccountFeature {
     private func displayNameProblem(_ value: String) -> Message? {
         let value = trimmedDisplayName(value)
         if value == "Former competitor" { return .reservedDisplayName }
-        guard (1...64).contains(value.count),
+        // Code points, as the server's char_length counts them.
+        guard (1...64).contains(value.unicodeScalars.count),
               !value.unicodeScalars.contains(where: {
                 CharacterSet.controlCharacters.contains($0)
               })

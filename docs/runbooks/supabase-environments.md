@@ -31,7 +31,7 @@ Baseline authenticated environment evidence through 2026-08-25 PDT:
 | --- | --- | --- | --- |
 | Development | Disposable local CLI stack (project ID health-comp) | Verified locally | com.narenyenuganti.HealthComp, sandbox APNs, development App Attest |
 | Staging | healthcomp-staging (xhfdfdrtxwptrwhvvlhg) | ACTIVE_HEALTHY; 14 migrations through 20260811000900 and nine Functions read back; only `submit-score-revision` was advanced to active version 11 from merged main `bb2910f` on 2026-08-25 PDT, its downloaded entry point, two shared dependencies, and import map matched merged main byte-for-byte, and its credential-free boot probe retained the expected `400 invalid_request` boundary; Apple Auth and a topic-restricted server key are configured for the exact staging bundle; Function secrets, worker Vault entries, notification repair, and the corrected finalizer schedule are configured; both hosted jobs have succeeded; SSL enforcement is enabled; the rollback-only hosted database adversarial verifier passed 15/15 with zero residue | com.narenyenuganti.HealthComp.staging, sandbox APNs, development App Attest |
-| Production | healthcomp-production | Dedicated project exists and is healthy, but has zero deployed Edge Functions, zero configured secret names, no repository link, and no approved promotion | com.narenyenuganti.HealthComp, production APNs, production App Attest |
+| Production | healthcomp-production | (Superseded; production now serves TestFlight.) Dedicated project exists and is healthy, but has zero deployed Edge Functions, zero configured secret names, no repository link, and no approved promotion | com.narenyenuganti.HealthComp, production APNs, production App Attest |
 
 The 2026-08-15 staging promotion and readback established all of the following:
 
@@ -144,9 +144,11 @@ secret values, migration history, provider settings, or private rows. The older
 inactive project named “naren-polymath's Project” remains unrelated and must
 not be renamed, reactivated, or treated as HealthComp production.
 
-Project existence is not promotion evidence. Production remains unconfigured
-and must not receive migrations, Functions, schedules, secrets, providers, or
-client traffic until the checked promotion gates and fresh action-time approval
+Project existence is not promotion evidence. (Superseded: production has since
+been configured and serves the 1.0.2 TestFlight build; see the November 4
+update above.) At the time, production remained unconfigured and was not to
+receive migrations, Functions, schedules, secrets, providers, or client traffic
+until the checked promotion gates and fresh action-time approval
 for those mutations are satisfied.
 
 HealthComp uses local development plus two hosted projects. It does not require
@@ -238,13 +240,13 @@ Example shape:
 ~~~xcconfig
 SUPABASE_URL = https:/$()/PROJECT_REF.supabase.co
 SUPABASE_PUBLISHABLE_KEY = sb_publishable_VALUE_FROM_THE_SAME_PROJECT
-HEALTHCOMP_INVITE_HOST =
 ~~~
 
 The empty $() preserves // through xcconfig parsing. Never copy a sb_secret_
 value or legacy service-role JWT into an app configuration.
-HEALTHCOMP_INVITE_HOST stays blank until its exact HTTPS domain and AASA
-response pass physical-device verification.
+Base.xcconfig sets HEALTHCOMP_INVITE_HOST to healthcomp.app and
+Staging.xcconfig to staging.healthcomp.app. A local file must not set it: an
+empty value turns off invitations and signs `applinks:` with no domain.
 
 Before a signed build, inspect the resolved settings without printing a key:
 
@@ -287,7 +289,8 @@ export HEALTHCOMP_ENVIRONMENT=staging
 export SUPABASE_PROJECT_REF=xhfdfdrtxwptrwhvvlhg
 ~~~
 
-Production has no approved ref. Do not substitute one.
+Production's ref is not recorded in this runbook. Take it from the owner with
+the action-time approval; never guess it from a project listing.
 
 Confirm the selected project name, organization, region, database major
 version, and health with supabase projects list. The database major version
@@ -328,7 +331,10 @@ supabase db push --linked --dry-run
 ~~~
 
 Review every proposed filename. A fresh environment should receive only the
-checked-in lowercase migration chain. After explicit action-time approval:
+checked-in lowercase migration chain. If the proposed set includes
+`20261101002500` or `20261102002700`, complete step 5 for
+`send-competition-notification` first (see Nudges and Reactions below). After
+explicit action-time approval:
 
 ~~~bash
 supabase db push --linked
@@ -401,9 +407,10 @@ portal/dashboard readback; source configuration alone is not proof.
      that group for both the app App ID and its widget App ID. The widget App
      ID gets nothing else. Signing fails for an App ID without the group once
      the entitlements carry it.
-4. Do not add an Associated Domains entitlement, route, or domain until an
-   invitation domain is selected. A portal capability toggle by itself is not
-   signed-app or domain-association evidence.
+4. Turn on Associated Domains. The entitlement is
+   `applinks:$(HEALTHCOMP_INVITE_HOST)` (healthcomp.app, or
+   staging.healthcomp.app for staging). A portal capability toggle by itself is
+   not signed-app or domain-association evidence.
 5. Regenerate and install the provisioning profile after capability changes,
    and create one for the widget App ID. At archive, confirm
    `PlugIns/HealthCompWidgets.appex` is signed with the widget profile and has
@@ -412,6 +419,9 @@ portal/dashboard readback; source configuration alone is not proof.
 6. For native `signInWithIdToken`, enable Apple Auth in the matching Supabase
    project and register the matching bundle ID as its Client ID. Native-only
    login does not require an OAuth Services ID or OAuth client secret.
+   Turn off the Email provider (or at least "Allow new users to sign up" for
+   email) in staging and production: the app signs in only with Apple, and an
+   open email sign-up lets anyone with the shipped anon key mint accounts.
 7. Only for an explicitly enabled browser `signInWithOAuth` flow, put that
    environment's Services ID first in Client IDs, followed by its native bundle
    ID, and configure the generated OAuth client secret. Record its expiry and
@@ -645,8 +655,8 @@ old sender leaves friend work pending after it. Match items retain exactly
 seven keys in both paths; friend items have the additional
 `supportsFriends=true` key and a null `competitionId`.
 
-Clients call the seven-argument registration and fall back to six arguments
-on PGRST202, preserving the supported mute values. The six-argument overload
+Clients call the eight-argument registration (group matches, below), then
+seven, and fall back to six arguments on PGRST202, preserving the supported mute values. The six-argument overload
 in this migration delegates with `supports_friends=false` and preserves its
 supplied mute array; before the migration its validation accepts only `nudge`
 and `reaction`, so omit friend-kind mutes from that fallback request. Existing
@@ -691,9 +701,11 @@ and `report_profile_photo(uuid)`, plus the operator-only
 
 - Objects are `<profile id>/<version>.jpg`. The owner can write (three objects
   at most, no overwrite), read and delete only their own folder. Anyone else
-  can read only the current version of someone they have or had a match with,
-  or who has a pending challenge out to them, and never through a block either
-  way or after reporting that person. There are no public or signed URLs in
+  can read only the current version, when `private.can_view_profile_photo`
+  allows it (its latest definition is in `20261110003800`: friends, incoming
+  friend requests, searchable profiles, match and group-lineup partners, and
+  pending challengers), and never through a block either way or after
+  reporting that person. There are no public or signed URLs in
   the app: it downloads with the user's session, and storage RLS refuses to
   sign anyone else's photo (`storage.operation` is `storage.object.sign` or
   `sign_many`), so no viewer can mint a bearer link that outlives a block.
@@ -720,6 +732,53 @@ and `report_profile_photo(uuid)`, plus the operator-only
 Either order works for the migration and `delete-account` (before the
 bucket exists, its listing is empty). The app build that sets photos needs
 both in production before it reaches TestFlight.
+
+### Friends
+
+Migration `20261109003000` adds `profiles.username`, `show_in_search`
+(default true) and `challenge_policy`, the private `friendships`,
+`friend_requests`, `profile_reports` and `people_search_limits` tables, and
+the Friends RPCs (`search_people`, `list_friends`, `send_friend_request`,
+`report_profile` and others). Released builds never call them. The app build
+with Friends needs this migration, and `20261109003100` for its pushes, in
+production before it reaches TestFlight.
+
+`report_profile` stores only reporter, reported and time in
+`private.profile_reports`; nothing alerts anyone. Review the rows with
+`select reported_profile_id, pg_catalog.count(*), max(created_at) from
+private.profile_reports group by 1 order by 3 desc;`. No operator function
+acts on a reported account yet (only photos have
+`remove_profile_photo_after_review`), and the app tells the reporter "We'll
+review this account."
+
+### Group matches
+
+Migrations `20261110003500` through `20261110003900` add `competitions.format`
+and `seat_count`, `competition_seats` (bots live only there),
+`competition_group_results`, the group RPCs (`create_group_match`,
+`accept_group_match`, `leave_group_match`, `list_group_matches`,
+`preview_group_match` and others), and an eight-argument
+`register_current_device_installation` that sets
+`device_installations.supports_group_matches` (default false). Older overloads
+delegate with false. The notification lease discards group-match work for an
+installation without it, so older builds get no group pushes, and
+`create_group_match` refuses (`group_update_required`) while any invited person
+has no group-capable installation. No new notification kind is added, so
+`send-competition-notification` needs no redeploy.
+
+The app shows the format picker and registers with eight arguments because
+`GroupMatchRollout.showsFormatPicker` is true. All five migrations must be in
+production before that build reaches TestFlight, or creating a group match
+fails. **Kill switch:** a build with `showsFormatPicker = false` hides group
+matches and goes back to the seven-argument chain; server-side, use a forward
+migration. Never remove overloads or rows.
+
+### Career sharing
+
+Migration `20261110004000` adds `profiles.show_career` (default false) and
+`get_career_summary`, `get_career_sharing` and `set_career_sharing`. Released
+builds never call them. The build with career sharing needs it in production
+before it reaches TestFlight.
 
 ## Finalizer and notification repair schedules
 

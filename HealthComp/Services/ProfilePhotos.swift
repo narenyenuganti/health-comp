@@ -135,7 +135,18 @@ struct ProfilePhotoCache: Sendable {
 
     /// Any cached version of this person's photo, without the network.
     func latestData(owner: UUID) -> Data? {
-        files(owner: owner).lazy.compactMap { try? Data(contentsOf: $0) }.first
+        latest(owner: owner)?.data
+    }
+
+    /// The same, with the version its file name records.
+    func latest(owner: UUID) -> (data: Data, version: UUID)? {
+        let prefix = owner.uuidString.lowercased().count + 1
+        return files(owner: owner).lazy.compactMap { url -> (data: Data, version: UUID)? in
+            let name = url.deletingPathExtension().lastPathComponent
+            guard let version = UUID(uuidString: String(name.dropFirst(prefix))),
+                  let data = try? Data(contentsOf: url) else { return nil }
+            return (data, version)
+        }.first
     }
 
     /// Keeps only this version of the owner's photo.
@@ -155,11 +166,15 @@ struct ProfilePhotoCache: Sendable {
     /// After a lookup of `owners`: drops every cached photo that is no longer
     /// the visible version (removed, changed, blocked or reported).
     func retain(_ references: [ProfilePhotoReference], among owners: [UUID]) {
-        let current = Set(references.map { fileURL($0) })
-        for owner in owners {
-            for file in files(owner: owner) where !current.contains(file) {
-                try? FileManager.default.removeItem(at: file)
-            }
+        let current = Set(references.map { fileURL($0).lastPathComponent })
+        let prefixes = Set(owners.map { "\($0.uuidString.lowercased())_" })
+        // One listing, not one per owner. Names are `<owner>_<version>.jpg`.
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
+        for name in names where name.hasSuffix(".jpg") && !current.contains(name) {
+            guard let separator = name.firstIndex(of: "_"),
+                  prefixes.contains(String(name[...separator]))
+            else { continue }
+            try? FileManager.default.removeItem(at: directory.appendingPathComponent(name))
         }
     }
 

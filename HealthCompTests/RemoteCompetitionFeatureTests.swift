@@ -614,6 +614,37 @@ final class RemoteCompetitionFeatureTests: XCTestCase {
     }
 
     @MainActor
+    func testRematchConflictCanBeTriedAgainOnceItCloses() async {
+        let parentID = CompetitionID(UUID())
+        let firstKey = UUID()
+        let secondKey = UUID()
+        let recorder = InviteCreationRecorder(results: [.failure(.activeMatchExists), .failure(.activeMatchExists)])
+        let store = TestStore(initialState: CompetitionFeature.State(
+            publication: .remote(revision: 1, competitions: [Self.presentation(parentID)])
+        )) {
+            CompetitionFeature()
+        } withDependencies: {
+            $0.competitionClient = recorder.client
+            $0.competitionInviteLinkClient = .fixture(
+                host: Self.host, timeZoneIdentifier: "UTC", idempotencyKeys: [firstKey, secondKey]
+            )
+        }
+        store.exhaustivity = .off
+        await store.send(.rematchTapped(parentID))
+        await store.receive(.createInviteResponse(.rematch(of: parentID), idempotencyKey: firstKey, .failure(.activeMatchExists)))
+        XCTAssertEqual(store.state.rematchState(for: Self.presentation(parentID)), .failed(.conflict))
+        // The conflicting match is gone from the dashboard, so the tap sends a fresh request.
+        await store.send(.rematchTapped(parentID)) {
+            $0.inviteCreations[.rematch(of: parentID)] = Creation(
+                recipient: .profile(Self.recipient.id), idempotencyKey: secondKey, status: .creating
+            )
+        }
+        await store.receive(.createInviteResponse(.rematch(of: parentID), idempotencyKey: secondKey, .failure(.activeMatchExists)))
+        XCTAssertEqual(recorder.requestCount, 2)
+        await store.finish()
+    }
+
+    @MainActor
     func testSheetAccountGoneKeepsAKnownPersonAndSaysTheyCantBeChallenged() async {
         let key = UUID()
         let recorder = InviteCreationRecorder(results: [.failure(.recipientUnavailable)])

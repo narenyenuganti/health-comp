@@ -244,13 +244,40 @@ function pkcs8Bytes(pem: string): ArrayBuffer {
   }
 }
 
+// Apple wants a provider token refreshed at most once per 20 minutes and
+// rejects one older than an hour, so a warm worker reuses it for 40 minutes.
+// A 403 from APNs (expired or invalid token) drops it early.
+let cachedProviderToken:
+  | { key: string; token: string; issuedAt: number }
+  | null = null;
+
+export function forgetApnsProviderToken() {
+  cachedProviderToken = null;
+}
+
 export async function createApnsProviderToken(
   configuration: ApnsConfiguration,
+): Promise<string> {
+  const cacheKey =
+    `${configuration.teamId}\0${configuration.keyId}\0${configuration.privateKey}`;
+  if (
+    cachedProviderToken?.key === cacheKey &&
+    Date.now() - cachedProviderToken.issuedAt < 40 * 60 * 1000
+  ) return cachedProviderToken.token;
+  const issuedAt = Date.now();
+  const token = await signApnsProviderToken(configuration, issuedAt);
+  cachedProviderToken = { key: cacheKey, token, issuedAt };
+  return token;
+}
+
+async function signApnsProviderToken(
+  configuration: ApnsConfiguration,
+  issuedAt: number,
 ): Promise<string> {
   const header = encodedJSON({ alg: "ES256", kid: configuration.keyId });
   const payload = encodedJSON({
     iss: configuration.teamId,
-    iat: Math.floor(Date.now() / 1000),
+    iat: Math.floor(issuedAt / 1000),
   });
   const input = `${header}.${payload}`;
   const key = await crypto.subtle.importKey(
@@ -505,17 +532,11 @@ export async function sendCompetitionNotificationHandler(
             decision = { outcome: "discard", retryAfterSeconds: null };
           } else {
             try {
-              decision = await resolution(
-                await deps.send(
-                  apnsRequest(
-                    item,
-                    deps.configuration!,
-                    providerToken,
-                    payload,
-                  ),
-                ),
-                item.environment,
+              const response = await deps.send(
+                apnsRequest(item, deps.configuration!, providerToken, payload),
               );
+              if (response.status === 403) forgetApnsProviderToken();
+              decision = await resolution(response, item.environment);
             } catch {
               decision = { outcome: "retry", retryAfterSeconds: 60 };
             }

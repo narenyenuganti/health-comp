@@ -38,3 +38,9 @@ fastlane/test_output
 # Project-specific
 .worktrees/
 Configuration/*.local.xcconfig
+.env
+.env.*
+.dev.vars
+.wrangler/
+node_modules/
+*.p8

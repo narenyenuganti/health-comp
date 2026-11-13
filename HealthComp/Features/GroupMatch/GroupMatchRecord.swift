@@ -169,16 +169,23 @@ struct GroupMatchRecord: View {
             isWin = place == 1
         }
         let detail = [weekText(match), names].compactMap { $0 }.joined(separator: " · ")
+        // The chevron tells these rows from the record rows above, which don't open.
+        let chevron = DisclosureChevron()
         return NavigationLink(value: CompetitionHomeRoute.competition(match.id)) {
             ViewThatFits(in: .horizontal) {
                 HStack(spacing: 12) {
                     labels(title, detail)
                     Spacer(minLength: 8)
                     Text(verdict).bold().foregroundStyle(isWin ? Theme.you : Theme.ink).fixedSize()
+                    chevron
                 }
-                VStack(alignment: .leading, spacing: 6) {
-                    labels(title, detail)
-                    Text(verdict).bold().foregroundStyle(isWin ? Theme.you : Theme.ink)
+                HStack(spacing: 12) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        labels(title, detail)
+                        Text(verdict).bold().foregroundStyle(isWin ? Theme.you : Theme.ink)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    chevron
                 }
             }
             .foregroundStyle(Theme.ink)
@@ -190,6 +197,7 @@ struct GroupMatchRecord: View {
         .buttonStyle(CompetitionRowButtonStyle())
         .accessibilityElement(children: .ignore)
         .accessibilityLabel("\(title), \(detail), \(verdict)")
+        .accessibilityAddTraits(.isButton)
         .accessibilityHint("Opens this match")
         .accessibilityIdentifier("competition.group.record.week.\(match.id.rawValue.uuidString.lowercased())")
     }

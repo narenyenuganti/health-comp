@@ -1,11 +1,20 @@
 import { assertEquals } from "@std/assert";
 import postgres from "postgres";
 
-const databaseURL = Deno.env.get("HEALTHCOMP_TEST_DATABASE_URL") ??
-  "postgresql://postgres:postgres@127.0.0.1:54322/postgres";
+const databaseURL = Deno.env.get("HEALTHCOMP_TEST_DATABASE_URL") ?? "";
 const sql = postgres(databaseURL, { max: 24 });
 const claims = (id: string, role = "authenticated") =>
   JSON.stringify({ sub: id, role });
+
+// A losing call may fail only with a raised domain error (P0001); a deadlock
+// (40P01), lock timeout or other exception is a regression the end state hides.
+function assertOnlyDomainErrors(results: PromiseSettledResult<unknown>[]) {
+  for (const result of results) {
+    if (result.status === "rejected") {
+      assertEquals((result.reason as { code?: string })?.code, "P0001");
+    }
+  }
+}
 
 Deno.test({
   name: "DB-backed scoring/finalization contention matrix runs 100-way",
@@ -13,6 +22,7 @@ Deno.test({
   sanitizeOps: false,
   fn: async () => {
     if (
+      !databaseURL ||
       !["127.0.0.1", "localhost", "::1"].includes(new URL(databaseURL).hostname)
     ) throw new Error("race matrix requires disposable local database");
     const userA = crypto.randomUUID(),
@@ -137,6 +147,7 @@ Deno.test({
         })),
     ]);
     assertEquals(deadlineRace.length, 200);
+    assertOnlyDomainErrors(deadlineRace);
     assertEquals(
       deadlineRace.slice(0, 100).every((result) =>
         result.status === "fulfilled" &&

@@ -21,7 +21,8 @@ struct CompetitionMatchWidgetView: View {
                     .accessibilityLabel(match.accessibilityLabel(
                         at: entry.date,
                         redacted: redacted,
-                        circular: family == .accessoryCircular
+                        circular: family == .accessoryCircular,
+                        standings: family == .systemMedium
                     ))
                     .accessibilityIdentifier("widget.match")
                     .widgetURL(match.url)
@@ -90,8 +91,7 @@ private struct StatusLabel: View {
 
     var body: some View {
         Text(text)
-            .font(.themeLabel)
-            .tracking(1.2)
+            .themeLabel()
             .textCase(.uppercase)
             .foregroundStyle(Theme.secondary)
             .lineLimit(1)
@@ -146,10 +146,13 @@ private struct SmallView: View {
             row("You", match.userPointsText(), match.userPoints, Theme.you, isYou: true)
             row(match.name, match.opponentPointsText(), match.opponentPoints, Theme.ink, isYou: false)
             if showsLead, let lead = match.leadLine(at: date) {
+                // A long name gives way in the middle, so the margin at the end stays.
                 Text(lead)
                     .font(.caption)
                     .foregroundStyle(Theme.secondary)
                     .lineLimit(1)
+                    .minimumScaleFactor(0.8)
+                    .truncationMode(.middle)
                     .privacySensitive()
             }
             if let updated = match.updatedLine(at: date) {
@@ -312,8 +315,7 @@ private struct MediumView: View {
     /// pushing out the strip and the Today lines.
     private func caption(_ text: String, isYou: Bool) -> some View {
         Text(text)
-            .font(.themeLabel)
-            .tracking(1.2)
+            .themeLabel()
             .foregroundStyle(Theme.secondary)
             .lineLimit(1)
             .frame(maxWidth: scoreSize * 2.5, alignment: isYou ? .leading : .trailing)
@@ -321,7 +323,10 @@ private struct MediumView: View {
     }
 
     private var strip: some View {
-        CompetitionMatchStrip(match: match, date: date, height: 14, spacing: 4)
+        // Won days stay apart from lost ones on a tinted Home Screen.
+        CompetitionMatchStrip(match: match, date: date, height: 14, spacing: 4) { _, outcome, bar in
+            bar.widgetAccentable(outcome == .won)
+        }
     }
 }
 
@@ -381,12 +386,24 @@ private struct GroupMediumView: View {
 
     @ScaledMetric(relativeTo: .title) private var rowSize: CGFloat = 20
 
+    /// Large text drops the lead, then every row but yours and the one above
+    /// (below, when you're first). VoiceOver still reads every seat.
     var body: some View {
+        let you = group.rows.firstIndex(where: \.isYou) ?? 0
+        let start = max(0, min(you - 1, group.rows.count - 2))
+        ViewThatFits(in: .vertical) {
+            layout(group.rows, showsLead: true)
+            layout(group.rows, showsLead: false)
+            layout(Array(group.rows[start..<min(start + 2, group.rows.count)]), showsLead: false)
+        }
+    }
+
+    private func layout(_ rows: [CompetitionWidgetSnapshot.Group.Row], showsLead: Bool) -> some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 StatusLabel(text: match.groupHeader(at: date) ?? group.title)
                 Spacer(minLength: 0)
-                if let lead = group.lead {
+                if showsLead, let lead = group.lead {
                     Text(lead)
                         .font(.caption)
                         .foregroundStyle(Theme.secondary)
@@ -395,7 +412,7 @@ private struct GroupMediumView: View {
                 }
             }
             Spacer(minLength: 0)
-            ForEach(Array(group.rows.enumerated()), id: \.offset) { _, row in
+            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     if !group.isDoubles {
                         Text("\(row.place)").font(.score(size: rowSize)).frame(minWidth: 14, alignment: .leading)

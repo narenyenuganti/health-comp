@@ -36,7 +36,7 @@ public struct RemoteAcceptedScoreRow: Codable, Equatable, Sendable {
         if let acceptedCentiPoints {
             guard (0...60_000).contains(acceptedCentiPoints), availabilityReason == nil else { throw ValidationError.invalidAcceptedScore }
         } else {
-            guard let availabilityReason, Self.closedUnavailableReasons.contains(availabilityReason) else { throw ValidationError.invalidAvailability }
+            guard let availabilityReason, RemoteScoringWireV1.unavailableReasons.contains(availabilityReason) else { throw ValidationError.invalidAvailability }
         }
         if let ringBasisPoints {
             guard ringBasisPoints.count == 3, ringBasisPoints.allSatisfy({ (0...20_000).contains($0) }),
@@ -79,19 +79,11 @@ public struct RemoteAcceptedScoreRow: Codable, Equatable, Sendable {
             ringBasisPoints: container.decodeIfPresent([Int].self, forKey: .ringBasisPoints)
         )
     }
-
-    private static let closedUnavailableReasons: Set<String> = [
-        "sourceDataUnavailable", "unsupportedActivityConfiguration", "invalidSourceData",
-        "missingMoveValue", "missingMoveGoal", "nonPositiveMoveGoal",
-        "missingExerciseValue", "missingExerciseGoal", "nonPositiveExerciseGoal",
-        "missingStandOrRollValue", "missingStandOrRollGoal", "nonPositiveStandOrRollGoal",
-        "summaryPaused", "summaryPauseStateUnknown", "invalidNumericCalculation",
-    ]
 }
 
 /// The authoritative, privacy-minimal remote score state for one participant.
-/// Rows may arrive out of order by server sequence, but client revisions are
-/// participant-global and may only advance once a server accepts them.
+/// Rows may arrive out of order by server sequence and by client revision;
+/// client revisions are participant-global, and each day shows its highest.
 public struct RemoteScoreLedger: Codable, Equatable, Sendable {
     public enum ValidationError: Error, Equatable, Sendable {
         case invalidCompetitionID, invalidAcceptedSchedule, staleRevision, revisionCollision, serverSequenceCollision, divergentDuplicate, incompleteWindow, invalidTotal
@@ -134,7 +126,11 @@ public struct RemoteScoreLedger: Codable, Equatable, Sendable {
     @discardableResult
     public mutating func accept(_ row: RemoteAcceptedScoreRow) throws -> Bool {
         guard row.scoringPolicyIdentity == scoringPolicyIdentity else { throw RemoteAcceptedScoreRow.ValidationError.invalidPolicy }
-        if acceptedHistory.contains(row) { return false }
+        if let index = acceptedHistory.firstIndex(of: row) {
+            // A replay carrying rings fills in a row stored before they were kept.
+            if acceptedHistory[index].ringBasisPoints == nil, row.ringBasisPoints != nil { acceptedHistory[index] = row }
+            return false
+        }
         if acceptedHistory.contains(where: { $0.serverSequence == row.serverSequence }) {
             throw ValidationError.serverSequenceCollision
         }
@@ -142,9 +138,9 @@ public struct RemoteScoreLedger: Codable, Equatable, Sendable {
             if sameRevision.ordinal == row.ordinal { throw ValidationError.divergentDuplicate }
             throw ValidationError.revisionCollision
         }
-        if let latestRevision = acceptedHistory.map(\.clientRevision).max(), row.clientRevision < latestRevision {
-            throw ValidationError.staleRevision
-        }
+        // Revisions are participant-global across days, so a lower revision
+        // whose response was lost can arrive after a later one. It is kept as
+        // history; visibleEntry still shows the highest revision per day.
         acceptedHistory.append(row)
         guard totalAcceptedCentiPoints <= 420_000 else { throw ValidationError.invalidTotal }
         return true

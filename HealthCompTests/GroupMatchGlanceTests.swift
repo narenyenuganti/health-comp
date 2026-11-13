@@ -77,6 +77,14 @@ final class GroupMatchGlanceTests: XCTestCase {
             match.accessibilityLabel(at: now, redacted: false, locale: locale),
             "Four-Way, Day 4 of 7. You're 2nd. 48 behind Sam."
         )
+        XCTAssertEqual(
+            match.accessibilityLabel(at: now, redacted: false, standings: true, locale: locale),
+            "Four-Way, Day 4 of 7. You're 2nd. 48 behind Sam. 1st, Sam, 1,712 points. "
+                + "2nd, You, 1,664 points. 3rd, Priya, 1,498 points. 4th, Leo, 1,203 points."
+        )
+        XCTAssertEqual(
+            match.accessibilityLabel(at: now, redacted: true, standings: true, locale: locale), "HealthComp, Day 4."
+        )
         XCTAssertEqual(match.accessibilityLabel(at: now, redacted: true, locale: locale), "HealthComp, Day 4.")
         XCTAssertEqual(match.rectangularLines(at: now, locale: locale).first, ["Four-Way · Day 4", "Four-Way"])
         XCTAssertEqual(match.rectangularLines(at: now, locale: locale).last, ["2nd · 48 behind Sam", "2nd"])

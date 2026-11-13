@@ -1688,6 +1688,30 @@ final class MainTabFeatureTests: XCTestCase {
     }
 
     @MainActor
+    func testFriendsRouteReleasesAHeldMatchRouteFromTheHub() async {
+        let unknownID = competitionID("81000000-0000-0000-0000-00000000000E")
+        let routing = MainTabRoutingRecorder()
+        let held = CompetitionRouteEnvelope(sequence: 3, route: .competition(unknownID))
+        let initial = MainTabFeature.State(
+            competition: CompetitionFeature.State(publication: publication(revision: 1, visibleIDs: [])),
+            pendingRoute: held
+        )
+        let store = TestStore(initialState: initial) {
+            MainTabFeature()
+        } withDependencies: {
+            $0.competitionRoutingClient = routing.client
+            $0.competitionClient = CompetitionClient.testValue
+        }
+
+        await store.send(.routeReceived(CompetitionRouteEnvelope(sequence: 4, route: .friends))) {
+            $0.pendingRoute = nil
+            $0.lastHandledRouteSequence = 4
+        }
+        await store.finish()
+        XCTAssertEqual(Set(routing.consumedSequences), [3, 4])
+    }
+
+    @MainActor
     func testHistoryAndAccountPresentationActionsSetState() async {
         let store = TestStore(initialState: MainTabFeature.State()) {
             MainTabFeature()
@@ -2359,6 +2383,8 @@ final class MainTabFeatureTests: XCTestCase {
         let duplicate = CompetitionRouteEnvelope(sequence: 22, route: first.route)
         await store.send(.routeReceived(duplicate))
         XCTAssertEqual(store.state.pendingClaimRoute, first)
+        // A replay of the held envelope is not a second tap: not consumed.
+        await store.send(.routeReceived(first))
 
         await store.send(.notNowClaimTapped) {
             $0.pendingClaimRoute = second

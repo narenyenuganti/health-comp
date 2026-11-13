@@ -363,9 +363,13 @@ struct MainTabFeature {
                             competitionRoutingClient.consume(envelope.sequence)
                         }
                     }
-                    // The same link again is ignored.
-                    if state.pendingClaimRoute?.route == envelope.route
-                        || state.queuedClaimRoute?.route == envelope.route {
+                    // The same link again is ignored. A replay of the held
+                    // envelope itself (after re-subscribing) stays in the hub
+                    // until that link is answered.
+                    if let held = [state.pendingClaimRoute, state.queuedClaimRoute]
+                        .compactMap({ $0 })
+                        .first(where: { $0.route == envelope.route }) {
+                        guard held.sequence != envelope.sequence else { return .none }
                         return .run { _ in
                             competitionRoutingClient.consume(envelope.sequence)
                         }
@@ -393,7 +397,12 @@ struct MainTabFeature {
                 guard state.competition.publication != nil else {
                     if envelope.sequence
                         >= (state.pendingRoute?.sequence ?? 0) {
+                        let replaced = state.pendingRoute?.sequence
                         state.pendingRoute = envelope
+                        // The older one is dropped: release it from the hub.
+                        if let replaced, replaced != envelope.sequence {
+                            return .run { _ in competitionRoutingClient.consume(replaced) }
+                        }
                     }
                     return .none
                 }
@@ -940,6 +949,15 @@ struct MainTabFeature {
         guard envelope.sequence > state.lastHandledRouteSequence else {
             state.pendingRoute = nil
             return .none
+        }
+        // A newer route of any kind supersedes a held one: release the held
+        // one from the hub, or it replays to the next Home.
+        if let held = state.pendingRoute, held.sequence < envelope.sequence {
+            state.pendingRoute = nil
+            return .merge(
+                .run { _ in competitionRoutingClient.consume(held.sequence) },
+                resolve(envelope, state: &state)
+            )
         }
         switch envelope.route {
         case let .competition(id):

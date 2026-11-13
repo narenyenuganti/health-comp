@@ -338,23 +338,7 @@ struct CompetitionScoreRevisionRequest: Codable, Equatable, Sendable {
         "rollHours",
         "unknown",
     ]
-    fileprivate static let unavailableReasons: Set<String> = [
-        "sourceDataUnavailable",
-        "unsupportedActivityConfiguration",
-        "invalidSourceData",
-        "missingMoveValue",
-        "missingMoveGoal",
-        "nonPositiveMoveGoal",
-        "missingExerciseValue",
-        "missingExerciseGoal",
-        "nonPositiveExerciseGoal",
-        "missingStandOrRollValue",
-        "missingStandOrRollGoal",
-        "nonPositiveStandOrRollGoal",
-        "summaryPaused",
-        "summaryPauseStateUnknown",
-        "invalidNumericCalculation",
-    ]
+    fileprivate static let unavailableReasons: Set<String> = RemoteScoringWireV1.unavailableReasons
     fileprivate static let nilUUID = UUID(
         uuidString: "00000000-0000-0000-0000-000000000000"
     )!
@@ -3019,23 +3003,7 @@ private enum CompetitionWireValue {
     static let nilUUID = UUID(
         uuidString: "00000000-0000-0000-0000-000000000000"
     )!
-    static let unavailableReasons: Set<String> = [
-        "sourceDataUnavailable",
-        "unsupportedActivityConfiguration",
-        "invalidSourceData",
-        "missingMoveValue",
-        "missingMoveGoal",
-        "nonPositiveMoveGoal",
-        "missingExerciseValue",
-        "missingExerciseGoal",
-        "nonPositiveExerciseGoal",
-        "missingStandOrRollValue",
-        "missingStandOrRollGoal",
-        "nonPositiveStandOrRollGoal",
-        "summaryPaused",
-        "summaryPauseStateUnknown",
-        "invalidNumericCalculation",
-    ]
+    static let unavailableReasons: Set<String> = RemoteScoringWireV1.unavailableReasons
 
     static func validUUID(_ value: UUID) -> Bool {
         value != nilUUID

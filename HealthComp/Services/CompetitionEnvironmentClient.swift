@@ -168,166 +168,40 @@ struct CompetitionEnvironmentClient: Sendable {
     }
 
     let kind: Kind
+    private let source: any CompetitionActivitySource
     private let contextOperation: @Sendable () async -> CompetitionEnvironmentContext
-    private let requestAuthorizationOperation: @Sendable () async throws -> Void
-    private let readOperation: @Sendable (CompetitionActivityWindow) async throws -> ActivityWindowRead
-    private let activateSignalOwnershipOperation: @Sendable (
-        UUID
-    ) async throws -> EnvironmentSignalOwnershipActivation
-    private let commitSignalOwnershipActivationOperation: @Sendable (
-        EnvironmentSignalOwnershipActivation
-    ) async throws -> Void
-    private let rollbackSignalOwnershipActivationOperation: @Sendable (
-        EnvironmentSignalOwnershipActivation
-    ) async -> Void
-    private let quiesceSignalOwnershipOperation: @Sendable (
-        EnvironmentSignalOwnershipLease
-    ) async throws -> [EnvironmentSignal]
-    private let retireSignalOwnershipOperation: @Sendable (
-        EnvironmentSignalOwnershipLease
-    ) async throws -> Void
-    private let synchronizeSummarySubscriptionsOperation: @Sendable (
-        Set<CompetitionActivityWindow>
-    ) async -> Void
-    private let signalsOperation: @Sendable () async -> AsyncStream<EnvironmentSignal>
-    private let completeSignalOperation: @Sendable (String) async -> Bool
     private let waitOperation: @Sendable (Date) async throws -> Void
 #if DEBUG
-    private let advanceFixtureOperation: @Sendable (Date) async throws -> Void
+    private var advanceFixtureOperation: (@Sendable (Date) async throws -> Void)?
 #endif
 
     private init(
         kind: Kind,
+        source: any CompetitionActivitySource,
         context: @escaping @Sendable () async -> CompetitionEnvironmentContext,
-        requestAuthorization: @escaping @Sendable () async throws -> Void,
-        read: @escaping @Sendable (CompetitionActivityWindow) async throws -> ActivityWindowRead,
-        activateSignalOwnership: @escaping @Sendable (
-            UUID
-        ) async throws -> EnvironmentSignalOwnershipActivation,
-        commitSignalOwnershipActivation: @escaping @Sendable (
-            EnvironmentSignalOwnershipActivation
-        ) async throws -> Void,
-        rollbackSignalOwnershipActivation: @escaping @Sendable (
-            EnvironmentSignalOwnershipActivation
-        ) async -> Void,
-        quiesceSignalOwnership: @escaping @Sendable (
-            EnvironmentSignalOwnershipLease
-        ) async throws -> [EnvironmentSignal],
-        retireSignalOwnership: @escaping @Sendable (
-            EnvironmentSignalOwnershipLease
-        ) async throws -> Void,
-        synchronizeSummarySubscriptions: @escaping @Sendable (
-            Set<CompetitionActivityWindow>
-        ) async -> Void,
-        signals: @escaping @Sendable () async -> AsyncStream<EnvironmentSignal>,
-        completeSignal: @escaping @Sendable (String) async -> Bool,
         wait: @escaping @Sendable (Date) async throws -> Void
     ) {
         self.kind = kind
+        self.source = source
         self.contextOperation = context
-        self.requestAuthorizationOperation = requestAuthorization
-        self.readOperation = read
-        self.activateSignalOwnershipOperation = activateSignalOwnership
-        self.commitSignalOwnershipActivationOperation =
-            commitSignalOwnershipActivation
-        self.rollbackSignalOwnershipActivationOperation =
-            rollbackSignalOwnershipActivation
-        self.quiesceSignalOwnershipOperation = quiesceSignalOwnership
-        self.retireSignalOwnershipOperation = retireSignalOwnership
-        self.synchronizeSummarySubscriptionsOperation = synchronizeSummarySubscriptions
-        self.signalsOperation = signals
-        self.completeSignalOperation = completeSignal
         self.waitOperation = wait
-#if DEBUG
-        self.advanceFixtureOperation = { _ in
-            throw CompetitionEnvironmentError.fixtureControlsUnavailable
-        }
-#endif
     }
 
 #if DEBUG
-    private init(
-        kind: Kind,
-        context: @escaping @Sendable () async -> CompetitionEnvironmentContext,
-        requestAuthorization: @escaping @Sendable () async throws -> Void,
-        read: @escaping @Sendable (CompetitionActivityWindow) async throws -> ActivityWindowRead,
-        activateSignalOwnership: @escaping @Sendable (
-            UUID
-        ) async throws -> EnvironmentSignalOwnershipActivation,
-        commitSignalOwnershipActivation: @escaping @Sendable (
-            EnvironmentSignalOwnershipActivation
-        ) async throws -> Void,
-        rollbackSignalOwnershipActivation: @escaping @Sendable (
-            EnvironmentSignalOwnershipActivation
-        ) async -> Void,
-        quiesceSignalOwnership: @escaping @Sendable (
-            EnvironmentSignalOwnershipLease
-        ) async throws -> [EnvironmentSignal],
-        retireSignalOwnership: @escaping @Sendable (
-            EnvironmentSignalOwnershipLease
-        ) async throws -> Void,
-        synchronizeSummarySubscriptions: @escaping @Sendable (
-            Set<CompetitionActivityWindow>
-        ) async -> Void,
-        signals: @escaping @Sendable () async -> AsyncStream<EnvironmentSignal>,
-        completeSignal: @escaping @Sendable (String) async -> Bool,
-        wait: @escaping @Sendable (Date) async throws -> Void,
-        advanceFixture: @escaping @Sendable (Date) async throws -> Void
-    ) {
-        self.kind = kind
-        self.contextOperation = context
-        self.requestAuthorizationOperation = requestAuthorization
-        self.readOperation = read
-        self.activateSignalOwnershipOperation = activateSignalOwnership
-        self.commitSignalOwnershipActivationOperation =
-            commitSignalOwnershipActivation
-        self.rollbackSignalOwnershipActivationOperation =
-            rollbackSignalOwnershipActivation
-        self.quiesceSignalOwnershipOperation = quiesceSignalOwnership
-        self.retireSignalOwnershipOperation = retireSignalOwnership
-        self.synchronizeSummarySubscriptionsOperation = synchronizeSummarySubscriptions
-        self.signalsOperation = signals
-        self.completeSignalOperation = completeSignal
-        self.waitOperation = wait
-        self.advanceFixtureOperation = advanceFixture
-    }
-
     static func accelerated(fixture: ActivityFixture) -> Self {
         let source = FixtureActivitySource(fixture: fixture)
         return accelerated(source: source)
     }
 
     static func accelerated(source: FixtureActivitySource) -> Self {
-        return Self(
+        var client = Self(
             kind: .accelerated,
+            source: source,
             context: { await source.context() },
-            requestAuthorization: {
-                try await source.requestReadAuthorization()
-            },
-            read: { window in try await source.read(window) },
-            activateSignalOwnership: { profileID in
-                try await source.activateSignalOwnership(for: profileID)
-            },
-            commitSignalOwnershipActivation: { activation in
-                try await source.commitSignalOwnershipActivation(activation)
-            },
-            rollbackSignalOwnershipActivation: { activation in
-                await source.rollbackSignalOwnershipActivation(activation)
-            },
-            quiesceSignalOwnership: { lease in
-                try await source.quiesceSignalOwnership(lease)
-            },
-            retireSignalOwnership: { lease in
-                try await source.retireSignalOwnership(lease)
-            },
-            synchronizeSummarySubscriptions: { windows in
-                await source.synchronizeSummarySubscriptions(to: windows)
-            },
-            signals: { await source.signals() },
-            completeSignal: { id in await source.completeSignal(id) },
-            wait: { date in try await source.wait(until: date) },
-            advanceFixture: { date in try await source.advance(to: date) }
+            wait: { date in try await source.wait(until: date) }
         )
+        client.advanceFixtureOperation = { date in try await source.advance(to: date) }
+        return client
     }
 
     /// A DEBUG-only production-shaped adapter used to prove that calendar-time
@@ -339,35 +213,9 @@ struct CompetitionEnvironmentClient: Sendable {
     ) -> Self {
         Self(
             kind: .production,
+            source: source,
             context: { await source.context() },
-            requestAuthorization: {
-                try await source.requestReadAuthorization()
-            },
-            read: { window in try await source.read(window) },
-            activateSignalOwnership: { profileID in
-                try await source.activateSignalOwnership(for: profileID)
-            },
-            commitSignalOwnershipActivation: { activation in
-                try await source.commitSignalOwnershipActivation(activation)
-            },
-            rollbackSignalOwnershipActivation: { activation in
-                await source.rollbackSignalOwnershipActivation(activation)
-            },
-            quiesceSignalOwnership: { lease in
-                try await source.quiesceSignalOwnership(lease)
-            },
-            retireSignalOwnership: { lease in
-                try await source.retireSignalOwnership(lease)
-            },
-            synchronizeSummarySubscriptions: { windows in
-                await source.synchronizeSummarySubscriptions(to: windows)
-            },
-            signals: { await source.signals() },
-            completeSignal: { id in await source.completeSignal(id) },
-            wait: { date in try await source.wait(until: date) },
-            advanceFixture: { _ in
-                throw CompetitionEnvironmentError.fixtureControlsUnavailable
-            }
+            wait: { date in try await source.wait(until: date) }
         )
     }
 #endif
@@ -383,6 +231,7 @@ struct CompetitionEnvironmentClient: Sendable {
         )
         return Self(
             kind: .production,
+            source: source,
             context: {
                 let wallDate = Date()
                 return CompetitionEnvironmentContext(
@@ -396,30 +245,6 @@ struct CompetitionEnvironmentClient: Sendable {
                     timeZoneIdentifier: TimeZone.current.identifier
                 )
             },
-            requestAuthorization: {
-                try await source.requestReadAuthorization()
-            },
-            read: { window in try await source.read(window) },
-            activateSignalOwnership: { profileID in
-                try await source.activateSignalOwnership(for: profileID)
-            },
-            commitSignalOwnershipActivation: { activation in
-                try await source.commitSignalOwnershipActivation(activation)
-            },
-            rollbackSignalOwnershipActivation: { activation in
-                await source.rollbackSignalOwnershipActivation(activation)
-            },
-            quiesceSignalOwnership: { lease in
-                try await source.quiesceSignalOwnership(lease)
-            },
-            retireSignalOwnership: { lease in
-                try await source.retireSignalOwnership(lease)
-            },
-            synchronizeSummarySubscriptions: { windows in
-                await source.synchronizeSummarySubscriptions(to: windows)
-            },
-            signals: { await source.signals() },
-            completeSignal: { id in await source.completeSignal(id) },
             wait: { date in
                 let delay = date.timeIntervalSinceNow
                 guard delay > 0 else { return }
@@ -461,57 +286,57 @@ struct CompetitionEnvironmentClient: Sendable {
     }
 
     func requestHealthAuthorization() async throws {
-        try await requestAuthorizationOperation()
+        try await source.requestReadAuthorization()
     }
 
     func read(
         _ window: CompetitionActivityWindow
     ) async throws -> ActivityWindowRead {
-        try await readOperation(window)
+        try await source.read(window)
     }
 
     func activateSignalOwnership(
         for profileID: UUID
     ) async throws -> EnvironmentSignalOwnershipActivation {
-        try await activateSignalOwnershipOperation(profileID)
+        try await source.activateSignalOwnership(for: profileID)
     }
 
     func commitSignalOwnershipActivation(
         _ activation: EnvironmentSignalOwnershipActivation
     ) async throws {
-        try await commitSignalOwnershipActivationOperation(activation)
+        try await source.commitSignalOwnershipActivation(activation)
     }
 
     func rollbackSignalOwnershipActivation(
         _ activation: EnvironmentSignalOwnershipActivation
     ) async {
-        await rollbackSignalOwnershipActivationOperation(activation)
+        await source.rollbackSignalOwnershipActivation(activation)
     }
 
     func quiesceSignalOwnership(
         _ lease: EnvironmentSignalOwnershipLease
     ) async throws -> [EnvironmentSignal] {
-        try await quiesceSignalOwnershipOperation(lease)
+        try await source.quiesceSignalOwnership(lease)
     }
 
     func retireSignalOwnership(
         _ lease: EnvironmentSignalOwnershipLease
     ) async throws {
-        try await retireSignalOwnershipOperation(lease)
+        try await source.retireSignalOwnership(lease)
     }
 
     func synchronizeSummarySubscriptions(
         to desiredWindows: Set<CompetitionActivityWindow>
     ) async {
-        await synchronizeSummarySubscriptionsOperation(desiredWindows)
+        await source.synchronizeSummarySubscriptions(to: desiredWindows)
     }
 
     func signals() async -> AsyncStream<EnvironmentSignal> {
-        await signalsOperation()
+        await source.signals()
     }
 
     func completeSignal(_ id: String) async -> Bool {
-        await completeSignalOperation(id)
+        await source.completeSignal(id)
     }
 
     func wait(until date: Date) async throws {
@@ -520,6 +345,9 @@ struct CompetitionEnvironmentClient: Sendable {
 
 #if DEBUG
     func advanceFixture(to date: Date) async throws {
+        guard let advanceFixtureOperation else {
+            throw CompetitionEnvironmentError.fixtureControlsUnavailable
+        }
         try await advanceFixtureOperation(date)
     }
 #endif
@@ -529,4 +357,8 @@ struct CompetitionEnvironmentClient: Sendable {
 enum CompetitionEnvironmentError: Error, Equatable, Sendable {
     case fixtureControlsUnavailable
 }
+#endif
+
+#if os(iOS)
+extension HealthKitProvider: CompetitionActivitySource {}
 #endif

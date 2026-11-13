@@ -113,7 +113,7 @@ select pg_temp.make_match('deadline');
 select pg_temp.make_live(pg_temp.gid('deadline'),10);
 select is(private.finalize_competition_locked(pg_temp.gid('deadline'),now())->>'basis','best_available','deadline falls back with missing days');
 select is((select standings->0->>'centipoints' from public.competition_group_results where competition_id=pg_temp.gid('deadline')),'0','missing fallback scores zero');
-select is((select count(*) from public.competition_group_results),7::bigint,'one group result per case');
+select is((select count(*) from public.competition_group_results where competition_id in (select id from gm)),7::bigint,'one group result per case');
 select ok((select bool_and(r.server_seq>0 and exists(select 1 from public.competition_change_log l where l.competition_id=r.competition_id and l.server_seq=r.server_seq and l.change_kind='group_result_confirmed')) from public.competition_group_results r),'results allocated in shared sequence with new change kind');
 set constraints all immediate;
 select * from finish(); rollback;

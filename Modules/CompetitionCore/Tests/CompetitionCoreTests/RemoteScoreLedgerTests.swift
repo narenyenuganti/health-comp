@@ -3,11 +3,9 @@ import XCTest
 @testable import CompetitionCore
 
 final class RemoteScoreLedgerTests: XCTestCase {
-    func testRemoteParticipantCarriesOnlyStableProfileIDAndCounterpartyRoundTrips() throws {
+    func testRemoteParticipantCarriesOnlyStableProfileIDAndRoundTrips() throws {
         let participant = try RemoteParticipant(profileID: UUID(uuidString: "11111111-1111-1111-1111-111111111111")!)
         XCTAssertEqual(try JSONDecoder().decode(RemoteParticipant.self, from: JSONEncoder().encode(participant)), participant)
-        let counterparty: CompetitionCounterparty = .remote(participant)
-        XCTAssertEqual(try JSONDecoder().decode(CompetitionCounterparty.self, from: JSONEncoder().encode(counterparty)), counterparty)
         XCTAssertFalse(String(data: try JSONEncoder().encode(participant), encoding: .utf8)!.contains("display"))
     }
 
@@ -47,6 +45,7 @@ final class RemoteScoreLedgerTests: XCTestCase {
         let stored = try row(ordinal: 1, points: 17_500, revision: 1, sequence: 2)
         XCTAssertTrue(try ledger.accept(stored))
         XCTAssertFalse(try ledger.accept(rings))
+        XCTAssertEqual(try ledger.visibleEntry(forActiveDayOrdinal: 1)?.ringBasisPoints, [10_000, 5_000, 2_500])
         XCTAssertNil(try JSONDecoder().decode(RemoteAcceptedScoreRow.self, from: JSONEncoder().encode(stored)).ringBasisPoints)
     }
 
@@ -102,24 +101,26 @@ final class RemoteScoreLedgerTests: XCTestCase {
         XCTAssertThrowsError(try ledger.accept(try row(ordinal: 3, points: 1, revision: 2, sequence: 40)))
     }
 
+    func testLowerRevisionForAnotherDayArrivingLateIsKeptWithoutHidingTheLatest() throws {
+        var ledger = try fixtureLedger()
+        let daySevenFirst = try row(ordinal: 7, points: 900, revision: 6, sequence: 11)
+        let daySixLate = try row(ordinal: 6, points: 800, revision: 5, sequence: 12)
+        let daySevenOlder = try row(ordinal: 7, points: 100, revision: 4, sequence: 13)
+        XCTAssertTrue(try ledger.accept(daySevenFirst))
+        XCTAssertTrue(try ledger.accept(daySixLate))
+        XCTAssertTrue(try ledger.accept(daySevenOlder))
+        XCTAssertEqual(try ledger.visibleEntry(forActiveDayOrdinal: 6), daySixLate)
+        XCTAssertEqual(try ledger.visibleEntry(forActiveDayOrdinal: 7), daySevenFirst)
+        XCTAssertEqual(ledger.totalAcceptedCentiPoints, 1_700)
+        XCTAssertFalse(try ledger.accept(daySixLate))
+    }
+
     func testCodableRoundTripDoesNotEncodePrivateHealthOrDisplayData() throws {
         let ledger = try RemoteScoreLedger(competitionID: CompetitionID(UUID(uuidString: "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")!), participant: try RemoteParticipant(profileID: UUID(uuidString: "11111111-1111-1111-1111-111111111111")!), acceptedSchedule: fixtureSchedule(), acceptedRows: [try row(ordinal: 1, points: 1, revision: 1, sequence: 1)])
         let encoded = try JSONEncoder().encode(ledger)
         XCTAssertEqual(try JSONDecoder().decode(RemoteScoreLedger.self, from: encoded), ledger)
         let json = String(data: encoded, encoding: .utf8)!
         for prohibited in ["fingerprint", "display", "moveBasis", "exerciseBasis", "standBasis"] { XCTAssertFalse(json.localizedCaseInsensitiveContains(prohibited)) }
-    }
-
-    func testSimulatedCounterpartyRoundTrips() throws {
-        let schedule = try fixtureSchedule()
-        let plan = try OpponentPlanGenerator.generate(
-            seed: 9,
-            generatorVersion: .v1,
-            difficulty: .balanced,
-            schedule: schedule
-        )
-        let counterparty: CompetitionCounterparty = .simulated(plan)
-        XCTAssertEqual(try JSONDecoder().decode(CompetitionCounterparty.self, from: JSONEncoder().encode(counterparty)), counterparty)
     }
 
     func testLedgerRejectsScheduleWhoseStartDayIsOutsideItsCalendarAndPoisonedDecode() throws {

@@ -111,19 +111,28 @@ final class WidgetUITests: XCTestCase {
         addWidget(sizeSwipes: 1)  // medium
         addWidget(sizeSwipes: 0)  // small
         XCTAssertTrue(ourWidgets().firstMatch.waitForExistence(timeout: 15), springboard.debugDescription)
-        for state in [
-            Expectation(scenario: "groupFFA", label: "Four-Way, Day 4 of 7. You're 2nd. 48 behind Sam.", updated: false),
-            Expectation(
-                scenario: "groupDoubles",
-                label: "Doubles, Day 4 of 7. Your team 3,162 points. Sam + Leo 2,915 points. Your team up 247.",
-                updated: false
-            ),
-        ] {
-            launch(scenario: state.scenario)
-            XCUIDevice.shared.press(.home)
-            assertWidgets(state, count: 2)
-            sleep(2)
-            shot("home-\(state.scenario)-light")
+        let ffa = "Four-Way, Day 4 of 7. You're 2nd. 48 behind Sam."
+        let doubles = "Doubles, Day 4 of 7. Your team 3,162 points. Sam + Leo 2,915 points. Your team up 247."
+        // Then again at the largest text size, where the medium drops rows.
+        for largest in [false, true] {
+            setLargestText(largest)
+            // The medium widget draws every seat, so it reads them too.
+            for (state, medium) in [
+                (Expectation(scenario: "groupFFA", label: ffa, updated: false),
+                 ffa + " 1st, Sam, 1,712 points. 2nd, You, 1,664 points. 3rd, Priya, 1,498 points. 4th, Leo, 1,203 points."),
+                (Expectation(scenario: "groupDoubles", label: doubles, updated: false), doubles),
+            ] {
+                launch(scenario: state.scenario)
+                XCUIDevice.shared.press(.home)
+                if medium == state.label {
+                    assertWidgets(state, count: 2)
+                } else {
+                    assertWidgets(state, count: 1)
+                    assertWidgets(Expectation(scenario: state.scenario, label: medium, updated: false), count: 1)
+                }
+                sleep(2)
+                shot("home-\(state.scenario)-light" + (largest ? "-ax5" : ""))
+            }
         }
     }
 
@@ -483,12 +492,14 @@ final class WidgetUITests: XCTestCase {
         // One VoiceOver element per widget, with the whole score read out.
         let widgets = widgetElements()
         XCTAssertTrue(widgets.firstMatch.waitForExistence(timeout: 15), springboard.debugDescription)
-        XCTAssertEqual(widgets.count, 2)
+        assertOnScreen(widgetPredicate, count: 2, name: "added", expected: sampleLabel,
+                       file: #filePath, line: #line)
         shot("home-light")
 
         XCUIDevice.shared.appearance = .dark
         sleep(4)
-        XCTAssertEqual(widgetElements().count, 2)
+        assertOnScreen(widgetPredicate, count: 2, name: "dark", expected: sampleLabel,
+                       file: #filePath, line: #line)
         shot("home-dark")
         XCUIDevice.shared.appearance = .light
         sleep(3)

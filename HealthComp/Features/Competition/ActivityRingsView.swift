@@ -421,8 +421,7 @@ struct CompetitionTodayRingsSheet: View {
     private func updated(_ today: CompetitionTodayRings?) -> some View {
         if let updated = today?.updated {
             Text(updated)
-                .font(.themeLabel)
-                .tracking(1.2)
+                .themeLabel()
                 .textCase(.uppercase)
                 .foregroundStyle(Theme.secondary)
         }
@@ -436,8 +435,7 @@ struct CompetitionTodayRingsSheet: View {
                     let closes = isShown ? (row.points ?? 0) / 100 : 0
                     GridRow {
                         Text(row.title)
-                            .font(.themeLabel)
-                            .tracking(1.2)
+                            .themeLabel()
                             .textCase(.uppercase)
                             .foregroundStyle(Theme.ink)
                         TodayRingBar(closes: closes, color: colors[index])

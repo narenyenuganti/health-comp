@@ -305,9 +305,11 @@ struct ClaimCompetitionView: View {
                     // Shown over Health before anything has started, the
                     // challenge has no preview yet, so there's nothing to
                     // decline on the server; Not Now still works.
-                    quietButton("Decline", role: .destructive) {
+                    Button("Decline", role: .destructive) {
                         showsDeclineConfirmation = true
                     }
+                    .buttonStyle(QuietButtonStyle())
+                    .frame(maxWidth: 440)
                     .accessibilityLabel("Decline \(senderName)’s challenge")
                     .accessibilityHint("\(senderName) is told")
                     .accessibilityIdentifier("competition.claim.decline")
@@ -369,22 +371,6 @@ struct ClaimCompetitionView: View {
         }
     }
 
-    // Declining is quiet and neutral; color is reserved for you and your rings.
-    private func quietButton(
-        _ title: String,
-        role: ButtonRole?,
-        action: @escaping () -> Void
-    ) -> some View {
-        Button(role: role, action: action) {
-            Text(title)
-                .font(.headline.width(.condensed))
-                .foregroundStyle(Theme.secondary)
-                .frame(maxWidth: 440, minHeight: 44)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-    }
-
     private var title: String {
         switch status {
         case .loadingPreview:
@@ -416,12 +402,10 @@ struct ClaimCompetitionView: View {
             nil
         case .idle, .ready, .declining:
             "Accept to start a private seven-day Activity match on the sender’s calendar."
-        case .claiming:
-            "HealthComp is securely accepting this single-use challenge."
-        case .waitingForCompetition:
-            "The server accepted your challenge. Waiting for the confirmed match before opening it."
+        case .claiming, .waitingForCompetition:
+            nil
         case .confirmationTimedOut:
-            "The server accepted your challenge, but HealthComp hasn’t received the confirmed match yet. Try refreshing or check Home later."
+            "It’s accepted. The match will appear on Home."
         case .ownChallenge:
             "You sent this link. Only the person you challenged can accept it."
         case .activeMatchExists:
@@ -431,7 +415,7 @@ struct ClaimCompetitionView: View {
         case .wrongAccount:
             "Only the account it was sent to can accept it. Ask the sender to challenge this account."
         case .retryable:
-            "The challenge is still private on this device. Check your connection and try again."
+            "Check your connection and try again."
         }
     }
 }

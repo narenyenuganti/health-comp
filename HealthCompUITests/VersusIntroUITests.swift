@@ -150,8 +150,10 @@ final class VersusIntroUITests: XCTestCase {
         }
     }
 
+    // A launch argument can't switch Reduce Motion on in a simulator;
+    // `--versus-reduce-motion` takes the app's Reduce Motion path.
     func testReduceMotionShowsTheComposedScreenAndATapEndsIt() {
-        launch(["-UIAccessibilityReduceMotionEnabled", "YES"])
+        launch(["--versus-reduce-motion"])
         open("active", 0x04)
         XCTAssertTrue(intro.waitForExistence(timeout: 3))
         capture("Reduce Motion")
@@ -162,7 +164,7 @@ final class VersusIntroUITests: XCTestCase {
     }
 
     func testReduceMotionEndsByItself() {
-        launch(["-UIAccessibilityReduceMotionEnabled", "YES"], holds: false)
+        launch(["--versus-reduce-motion"], holds: false)
         for (state, byte, title) in Self.matchups.prefix(2) {
             open(state, byte)
             assertEnds()

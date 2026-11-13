@@ -712,7 +712,7 @@ struct CompetitionRecapSheet: View {
             .accessibilityIdentifier(isSticker ? "competition.recap.sticker" : "competition.recap.card")
     }
 
-    /// Two answers. A segmented label can't wrap; larger text gets a switch.
+    /// Two answers as segments; the largest sizes get a switch.
     @ViewBuilder
     private func choice(
         _ title: String,
@@ -722,12 +722,10 @@ struct CompetitionRecapSheet: View {
         id: String
     ) -> some View {
         if dynamicTypeSize < .xxLarge {
-            Picker(title, selection: selection) {
-                Text(off).tag(false)
-                Text(on).tag(true)
-            }
-            .pickerStyle(.segmented)
-            .accessibilityIdentifier(id)
+            CompetitionSegments(selection: selection, options: [(false, off), (true, on)])
+                .accessibilityElement(children: .contain)
+                .accessibilityLabel(title)
+                .accessibilityIdentifier(id)
         } else {
             Toggle(on, isOn: selection)
                 .font(.body)
@@ -1253,8 +1251,7 @@ struct CompetitionRecapDeck: View {
             .accessibilityLabel("Card \(index + 1) of \(cards.count)")
             HStack(spacing: 12) {
                 Text(period.headline(locale: locale).uppercased())
-                    .font(.themeLabel)
-                    .tracking(1.2)
+                    .themeLabel()
                     .foregroundStyle(Theme.ink)
                     .accessibilityAddTraits(.isHeader)
                 Spacer(minLength: 8)
@@ -1298,8 +1295,7 @@ struct CompetitionRecapDeck: View {
         VStack(alignment: .leading, spacing: 20) {
             VStack(alignment: .leading, spacing: 6) {
                 Text(card.label.uppercased())
-                    .font(.themeLabel)
-                    .tracking(1.2)
+                    .themeLabel()
                     .foregroundStyle(Theme.secondary)
                 competitionRecapValueText(card.value)
                     .font(.score(size: min(valueSize, 180)))
@@ -1346,7 +1342,7 @@ struct CompetitionRecapDeck: View {
         return HStack(spacing: 12) {
             if let side = row.side {
                 SlantedBar()
-                    .fill(side == .you ? Theme.youFill : side == .them ? Theme.ink : Theme.faint)
+                    .fill(side == .you ? Theme.youFill : side == .them ? Theme.ink : Theme.tertiary)
                     .frame(width: 26, height: 16)
             }
             layout {
@@ -1361,9 +1357,7 @@ struct CompetitionRecapDeck: View {
                     .foregroundStyle(row.side == .you ? Theme.you : Theme.secondary)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            Image(systemName: "chevron.right")
-                .font(.caption.weight(.bold))
-                .foregroundStyle(Theme.tertiary)
+            DisclosureChevron()
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
@@ -1442,9 +1436,7 @@ struct CompetitionRecapRow: View {
                         .foregroundStyle(Theme.secondary)
                 }
                 Spacer(minLength: 8)
-                Image(systemName: "chevron.right")
-                    .font(.caption.weight(.bold))
-                    .foregroundStyle(Theme.tertiary)
+                DisclosureChevron()
             }
             .padding(16)
             .frame(maxWidth: .infinity, minHeight: 64, alignment: .leading)

@@ -458,7 +458,9 @@ final class FriendsUITests: XCTestCase {
         // A drag from mid-screen: the scroll view's own centre is on the
         // keyboard's top edge, where a swipe scrolls nothing.
         let window = app.windows.firstMatch
-        for _ in 0..<12 where !(target.exists && target.isHittable) {
+        // Fully on screen: a row cut by the bottom edge reports hittable,
+        // but a tap there lands on the home indicator.
+        for _ in 0..<12 where !(target.exists && target.isHittable && app.frame.contains(target.frame)) {
             window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5))
                 .press(forDuration: 0.05, thenDragTo: window.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3)))
         }
@@ -494,7 +496,8 @@ final class FriendsUITests: XCTestCase {
                     return true
                 }
                 guard let element = issue.element, !screen.contains(element.frame) else {
-                    guard issue.element != nil else {
+                    // iOS 18 reports some clipping with no element; skip only that.
+                    guard issue.element != nil || issue.auditType != .textClipped else {
                         skipped.append(issue.detailedDescription)
                         return true
                     }

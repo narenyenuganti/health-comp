@@ -31,11 +31,15 @@ struct WatchMatchProvider: TimelineProvider {
     }
 
     /// Now, plus each day start, end and result leaving, so the face moves on
-    /// without the phone. `.atEnd` on just `[now]` would reload in a loop.
+    /// without the phone, and the moment each score goes stale, so the face
+    /// says how old it is. `.atEnd` on just `[now]` would reload in a loop.
     func getTimeline(in context: Context, completion: @escaping (Timeline<WatchMatchEntry>) -> Void) {
         let now = Date()
         let snapshot = stored
-        let boundaries = snapshot?.timelineDates(after: now) ?? []
+        let stale = (snapshot?.matches ?? []).compactMap {
+            $0.updatedAt?.addingTimeInterval(CompetitionWidgetSnapshot.Match.staleAfter)
+        }
+        let boundaries = Array(Set((snapshot?.timelineDates(after: now) ?? []) + stale.filter { $0 > now })).sorted()
         let entries = ([now] + boundaries).map { WatchMatchEntry(date: $0, snapshot: snapshot) }
         completion(Timeline(entries: entries, policy: boundaries.isEmpty ? .never : .atEnd))
     }
@@ -66,11 +70,14 @@ struct WatchMatchComplicationView: View {
     var body: some View {
         switch CompetitionWidgetSnapshot.content(entry.snapshot, personID: nil, at: entry.date) {
         case let .match(match):
+            // The circle's short label leaves out the Updated time the others read.
+            let updated = family == .accessoryCircular && match.isStale(at: entry.date)
+                ? match.updatedLine(at: entry.date).map { " \($0)." } : nil
             matchView(match)
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(match.accessibilityLabel(
                     at: entry.date, redacted: redacted, circular: family == .accessoryCircular
-                ))
+                ) + (updated ?? ""))
         case let .empty(text):
             emptyView(text)
                 .accessibilityElement(children: .ignore)
@@ -81,15 +88,19 @@ struct WatchMatchComplicationView: View {
     @ViewBuilder
     private func matchView(_ match: CompetitionWidgetSnapshot.Match) -> some View {
         let circular = match.circular(at: entry.date)
+        // Without the phone for an hour: the time it was last right, not "LEAD".
+        let staleTime = match.isStale(at: entry.date)
+            ? match.updatedAt.map { competitionUpdatedText($0, now: entry.date) } : nil
         switch family {
         case .accessoryCircular:
             ZStack {
                 AccessoryWidgetBackground()
                 VStack(spacing: 0) {
-                    Text(circular.caption)
+                    Text(staleTime ?? circular.caption)
                         .font(.caption2.weight(.bold).width(.condensed))
                         .foregroundStyle(Theme.secondary)
                         .lineLimit(1)
+                        .minimumScaleFactor(0.6)
                     margin(circular.value, match, size: 21)
                 }
                 .padding(4)
@@ -106,13 +117,15 @@ struct WatchMatchComplicationView: View {
         }
     }
 
+    /// Grey and never accented once stale, so an old lead doesn't read as live.
     private func margin(_ text: String, _ match: CompetitionWidgetSnapshot.Match, size: CGFloat) -> some View {
-        Text(text)
+        let stale = match.isStale(at: entry.date)
+        return Text(text)
             .font(.score(size: size))
-            .foregroundStyle(match.side == .you ? Theme.you : Theme.ink)
+            .foregroundStyle(stale ? Theme.secondary : match.side == .you ? Theme.you : Theme.ink)
             .lineLimit(1)
             .minimumScaleFactor(0.5)
-            .widgetAccentable(match.side == .you)
+            .widgetAccentable(match.side == .you && !stale)
             .privacySensitive()
     }
 
@@ -187,12 +200,17 @@ private struct WatchRectangularView: View {
         }
     }
 
+    /// Stale, the status gives way to "Updated 9:30 AM".
+    private var status: String {
+        (match.isStale(at: date) ? match.updatedLine(at: date) : nil) ?? match.boardStatus(at: date)
+    }
+
     private var header: some View {
         HStack(spacing: 0) {
             // A group match by its format; the place and gap are in the label.
             label(match.group?.title ?? match.name)
                 .privacySensitive(match.group == nil)
-            label(" · \(match.boardStatus(at: date))")
+            label(" · \(status)")
                 .layoutPriority(1)
         }
     }

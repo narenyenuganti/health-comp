@@ -106,7 +106,7 @@ struct CompetitionResultView: View {
 
                 if isBestAvailableResult {
                     Label(
-                        "Finalized from the best available accepted Activity data after the reconciliation deadline.",
+                        "Someone didn’t sync in time, so this result uses the scores that were in.",
                         systemImage: "info.circle"
                     )
                     .font(.caption)
@@ -122,7 +122,7 @@ struct CompetitionResultView: View {
 
                 if dataControl == .preservedHistory {
                     Label(
-                        "Archived match history is preserved.",
+                        "This match stays in History.",
                         systemImage: "archivebox.fill"
                     )
                     .font(.footnote)
@@ -358,8 +358,7 @@ struct CompetitionResultView: View {
         VStack(spacing: 10) {
             Text(resultKicker)
                 .textCase(.uppercase)
-                .font(.themeLabel)
-                .tracking(1.2)
+                .themeLabel()
                 .foregroundStyle(Theme.secondary)
                 .multilineTextAlignment(.center)
             Text(resultTitle)
@@ -505,9 +504,7 @@ struct CompetitionResultView: View {
                 HStack(spacing: 8) {
                     SectionLabel("THE WEEK")
                     Spacer(minLength: 8)
-                    Image(systemName: "chevron.right")
-                        .font(.caption.weight(.bold))
-                        .foregroundStyle(Theme.tertiary)
+                    DisclosureChevron()
                 }
                 CompetitionWeekStrip(
                     days: competition.days,
@@ -666,8 +663,7 @@ struct CompetitionResultView: View {
         ForEach(totals.indices, id: \.self) { index in
             VStack(alignment: .leading, spacing: 2) {
                 Text(totals[index].title)
-                    .font(.themeLabel)
-                    .tracking(1.1)
+                    .themeLabel(tracking: 1.1)
                     .foregroundStyle(Theme.secondary)
                 Text(competitionPointsText(shown[index], locale: locale))
                     .font(.title2.weight(.heavy).width(.condensed).monospacedDigit())
@@ -906,7 +902,7 @@ struct CompetitionResultView: View {
                     .foregroundStyle(Theme.secondary)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("competition.rematch.error")
-                if failure == .connection {
+                if failure != .recipientGone, failure != .unavailable {
                     Button("Try Again") {
                         send(.rematchTapped(competition.id))
                     }
@@ -1032,10 +1028,7 @@ struct CompetitionResultView: View {
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .fixedSize(horizontal: false, vertical: true)
-                Image(systemName: "chevron.right")
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(Theme.tertiary)
-                    .accessibilityHidden(true)
+                DisclosureChevron()
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 10)

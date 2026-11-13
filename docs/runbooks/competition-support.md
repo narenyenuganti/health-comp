@@ -138,6 +138,8 @@ with target as (
 )
 select
   competition_record.lifecycle,
+  competition_record.format,
+  competition_record.seat_count,
   competition_record.start_day,
   competition_record.time_zone_identifier,
   competition_record.invitation_expires_at,
@@ -162,16 +164,21 @@ with target as (
 select
   participant_record.role,
   participant_record.state,
+  participant_record.seat_index,
+  participant_record.left_at is not null as left_match,
   participant_record.joined_at,
   participant_record.updated_at
 from target
 join public.competition_participants participant_record
   on participant_record.competition_id = target.competition_id
-order by participant_record.role;
+order by participant_record.role, participant_record.seat_index;
 ~~~
 
-Expected invariant: a scheduled or later competition has exactly two
-participants, one creator and one invitee. The rows intentionally omit profile
+Expected invariant: a scheduled or later duel has exactly two participants,
+one creator and one invitee. A group match (format three_way, four_way or
+doubles) has one creator and invitees; bots live only in
+`public.competition_seats`, so people plus bot seats equal seat_count. A
+group participant with left_match true banked their seat and is expected. The rows intentionally omit profile
 IDs and names.
 
 ### Invitation state
@@ -322,6 +329,21 @@ from target
 join public.competition_results result_record
   on result_record.competition_id = target.competition_id;
 
+-- Group matches store their result here instead.
+with target as (
+  select :'competition_id'::uuid as competition_id
+)
+select
+  result_record.format,
+  result_record.finalization_basis,
+  result_record.completed_at,
+  result_record.server_seq,
+  pg_catalog.encode(result_record.immutable_hash, 'hex')
+    as immutable_result_hash
+from target
+join public.competition_group_results result_record
+  on result_record.competition_id = target.competition_id;
+
 with target as (
   select :'competition_id'::uuid as competition_id
 )
@@ -339,7 +361,7 @@ join public.competition_participants participant_record
 order by award_record.server_seq;
 ~~~
 
-Never select totals or frozen_window for routine support. A stored immutable
+Never select totals, frozen_window, standings or frozen_payload for routine support. A stored immutable
 hash mismatch is an engineering and security incident. Results and awards are
 append-only server facts; there is no support edit path.
 

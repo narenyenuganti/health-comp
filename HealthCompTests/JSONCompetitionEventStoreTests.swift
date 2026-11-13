@@ -1069,6 +1069,10 @@ final class JSONCompetitionEventStoreTests: XCTestCase {
         try primaryBytes.write(to: primary)
         try previousBytes.write(to: previous)
 
+        // Listing still succeeds; only this match's load fails.
+        let listed = try await store.ids()
+        XCTAssertEqual(listed, [genesis.competitionID])
+
         do {
             _ = try await store.load(genesis.competitionID)
             XCTFail("Expected corrupt-candidate failure")

@@ -22,7 +22,8 @@ struct UsernameSheet: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 Text("Pick a username")
-                    .font(.title.weight(.semibold))
+                    // GroupMatchHeading's font; not uppercased, as UI tests read the label.
+                    .font(.largeTitle.weight(.heavy).width(.condensed))
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityAddTraits(.isHeader)
                 Text("Friends find you by it.")
@@ -60,6 +61,17 @@ struct UsernameSheet: View {
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("account.username.sheet")
         .onAppear { focusRequest += 1 }
+        // VoiceOver hears what appears under the field.
+        .onChange(of: sheet.availability) { _, new in
+            if new == .available || new == .taken {
+                AccessibilityNotification.Announcement(new == .available ? "Available" : "Taken").post()
+            }
+        }
+        .onChange(of: sheet.failure) { _, new in
+            if let new {
+                AccessibilityNotification.Announcement(Self.text(for: new)).post()
+            }
+        }
         // Disabling the field while saving drops its focus; a failed save
         // leaves you typing again.
         .onChange(of: sheet.isSaving) { _, isSaving in
@@ -108,14 +120,18 @@ struct UsernameSheet: View {
                 .transition(Motion.appear)
         }
         if let failure = sheet.failure {
-            Text(failure == .invalid
-                ? "Use 3 to 20 letters, numbers or underscores."
-                : "Couldn’t save. Check your connection and try again.")
+            Text(Self.text(for: failure))
                 .font(.callout)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityIdentifier("account.username.error")
                 .transition(Motion.appear)
         }
+    }
+
+    private static func text(for failure: FriendSettingsFeature.UsernameFailure) -> String {
+        failure == .invalid
+            ? "Use 3 to 20 letters, numbers or underscores."
+            : "Couldn’t save. Check your connection and try again."
     }
 
     private var buttons: some View {

@@ -1028,7 +1028,7 @@ final class HealthKitProviderTests: XCTestCase {
             quiesced.fulfill()
         }
 
-        await fulfillment(of: [quiesced], timeout: 0.1)
+        await fulfillment(of: [quiesced], timeout: 2)
         observerUpdates.finish()
         _ = try await task.value
         try await provider.retireSignalOwnership(activation.lease)

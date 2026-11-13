@@ -10,7 +10,9 @@ history remains, with the deleted participant shown only as Former competitor.
 A deletion is complete only when all of the following are true:
 
 - Apple accepted revocation of the user's refresh token;
-- unfinished competitions involving the profile were cancelled;
+- unfinished competitions involving the profile were cancelled, except a group
+  match that had started, where the profile's seat was banked (left_at set)
+  and the others play on;
 - pending invitations for those cancelled competitions were removed;
 - device installations were revoked and pending notification work was
   superseded;
@@ -147,7 +149,7 @@ acceptance receipt.
 | Phase | Durable state | Safe recovery behavior |
 | --- | --- | --- |
 | prepared | The deletion row is bound to the authenticated Supabase user and Apple identity. The profile is still active. No Apple token is stored yet. | The user retries in the app with fresh Apple reauthorization. Never replay an old authorization code. |
-| token_ready | The exchanged Apple refresh token is in Vault. The profile is deleting. Unfinished competitions are cancelled, unconsumed invites for them are removed, installations are revoked, notification work is superseded, and notification mutes are removed. | An authenticated app retry resumes from the stored token and must not exchange the old single-use code again. |
+| token_ready | The exchanged Apple refresh token is in Vault. The profile is deleting. Unfinished competitions are cancelled (a started group match banks the seat instead), unconsumed invites for them are removed, installations are revoked, notification work is superseded, and notification mutes are removed. | An authenticated app retry resumes from the stored token and must not exchange the old single-use code again. |
 | apple_revoked | Apple revocation succeeded and the Vault token was deleted. | An authenticated app retry advances anonymization. Do not recreate a token or move the phase backward. |
 | auth_delete_pending | Participant rows and the profile are anonymized; the profile has no auth_user_id and displays only Former competitor. The deletion record still tracks the Auth user needed for removal. | An authenticated retry requests Auth deletion. Auth removal automatically moves the row to completed. |
 | completed | The Auth user and Apple identity reference are gone, completed_at is set, the temporary Vault token is absent, and a completed support event exists. | Terminal. Never relink, deanonymize, or reuse the profile. A future signup creates a new profile. |
@@ -162,8 +164,14 @@ reversed, or manually rewritten.
 | 200, status deleted | Server-confirmed terminal completion. | Allow the app's local teardown to finish. |
 | 400, invalid_request | The reauthorization body is malformed or stale. | Restart deletion in the app to obtain fresh Apple input. Do not copy the value into support. |
 | 401, authentication_required | No valid Supabase session remains. | Sign in normally, verify the account, then restart deletion. |
+| 401, reauthentication_required | Apple rejected the authorization code (invalid_grant). | Restart deletion in the app for a fresh Apple authorization. Do not sign out. |
 | 403, apple_identity_mismatch | Apple identity, client, nonce, issuer, or expiry did not match. | Stop and escalate if a clean fresh reauthorization repeats the failure. |
 | 503, account_deletion_retryable | A durable phase did not finish. | Keep the app installed and retry through the authenticated deletion flow. Inspect phase using the read-only procedure below. |
+| 503, apple_token_exchange_retryable or apple_revocation_retryable | Apple's token endpoint did not succeed. | Retry later through the authenticated deletion flow. |
+| 503, account_deletion_client_binding_required or account_deletion_client_binding_unsupported | The stored deletion has no usable Apple client binding for this worker. | Do not retry. Escalate under the client-binding rules in the staging deployment gate above. |
+| 502, apple_contract_mismatch | Apple's response was not the expected shape. | Escalate; do not retry repeatedly. |
+| 503, account_deletion_unavailable | The worker could not start (configuration). | Escalate. |
+| 405, method_not_allowed | Not a POST. | None for users; the app always posts. |
 
 Cancellation by the user before a fresh Apple authorization succeeds leaves
 the account active. Once token_ready is reached, deletion has already started
@@ -347,6 +355,7 @@ select
       and competition_record.lifecycle in (
         'pending', 'scheduled', 'active', 'ends_today', 'tallying'
       )
+      and participant_record.left_at is null
   ) as unfinished_competition_count,
   (
     select pg_catalog.count(*)

@@ -11,12 +11,11 @@ public struct RemoteFinalizationDayV1: Equatable, Sendable {
         switch (source,status) {
         case (.deadlineMissing,.unavailable): guard points == nil,reason=="missing",wireContentSHA256==nil,clientRevision==nil,serverSequence==nil else { throw RemoteFinalizationWireV1.ValidationError.invalidWindow }
         case (.acceptedRevision,.points): guard let points,(0...60000).contains(points),reason==nil,digestOK,(clientRevision ?? 0)>0,(serverSequence ?? 0)>0 else { throw RemoteFinalizationWireV1.ValidationError.invalidWindow }
-        case (.acceptedRevision,.unavailable): guard points==nil,reason.map(Self.unavailableReasons.contains)==true,digestOK,(clientRevision ?? 0)>0,(serverSequence ?? 0)>0 else { throw RemoteFinalizationWireV1.ValidationError.invalidWindow }
+        case (.acceptedRevision,.unavailable): guard points==nil,reason.map(RemoteScoringWireV1.unavailableReasons.contains)==true,digestOK,(clientRevision ?? 0)>0,(serverSequence ?? 0)>0 else { throw RemoteFinalizationWireV1.ValidationError.invalidWindow }
         default: throw RemoteFinalizationWireV1.ValidationError.invalidWindow
         }
         self.ordinal=ordinal;self.status=status;self.source=source;self.points=points;self.reason=reason;self.wireContentSHA256=wireContentSHA256;self.clientRevision=clientRevision;self.serverSequence=serverSequence
     }
-    private static let unavailableReasons:Set<String>=["sourceDataUnavailable","unsupportedActivityConfiguration","invalidSourceData","missingMoveValue","missingMoveGoal","nonPositiveMoveGoal","missingExerciseValue","missingExerciseGoal","nonPositiveExerciseGoal","missingStandOrRollValue","missingStandOrRollGoal","nonPositiveStandOrRollGoal","summaryPaused","summaryPauseStateUnknown","invalidNumericCalculation"]
 }
 
 public enum RemoteFinalizationWireV1 {

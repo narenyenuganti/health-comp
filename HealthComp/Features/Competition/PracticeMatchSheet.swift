@@ -96,47 +96,23 @@ struct PracticeMatchSheet: View {
         detail: String,
         bars: [CGFloat]
     ) -> some View {
-        let isSelected = selection == difficulty
-        let title = PracticeMatch.opponentDisplayName(for: difficulty)
-        let shape = RoundedRectangle(cornerRadius: 20, style: .continuous)
-        return Button {
+        GroupMatchOptionCard(
+            title: PracticeMatch.opponentDisplayName(for: difficulty),
+            detail: detail,
+            isSelected: selection == difficulty,
+            identifier: "competition.practice.pace.\(difficulty.rawValue)"
+        ) {
+            HStack(alignment: .bottom, spacing: 3) {
+                ForEach(Array(bars.enumerated()), id: \.offset) { _, height in
+                    RoundedRectangle(cornerRadius: 1)
+                        .fill(Theme.ink)
+                        .frame(width: 5, height: height)
+                }
+            }
+            .frame(height: 28, alignment: .bottom)
+        } action: {
             selection = difficulty
-        } label: {
-            HStack(spacing: 16) {
-                HStack(alignment: .bottom, spacing: 3) {
-                    ForEach(Array(bars.enumerated()), id: \.offset) { _, height in
-                        RoundedRectangle(cornerRadius: 1)
-                            .fill(Theme.ink)
-                            .frame(width: 5, height: height)
-                    }
-                }
-                .frame(height: 28, alignment: .bottom)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title)
-                        .font(.body.weight(.bold))
-                        .foregroundStyle(Theme.ink)
-                    Text(detail)
-                        .font(.subheadline)
-                        .foregroundStyle(Theme.secondary)
-                }
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
-            .frame(maxWidth: .infinity, minHeight: 78, alignment: .leading)
-            .background(Theme.panel, in: shape)
-            .overlay {
-                shape.strokeBorder(isSelected ? Theme.ink : Theme.panel, lineWidth: 2)
-                    .animation(Motion.fade, value: isSelected)
-            }
-            .contentShape(shape)
         }
-        .buttonStyle(.plain)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel("\(title), \(detail)")
-        .accessibilityAddTraits(isSelected ? [.isButton, .isSelected] : .isButton)
-        .accessibilityIdentifier("competition.practice.pace.\(difficulty.rawValue)")
     }
 
     private var startControl: some View {

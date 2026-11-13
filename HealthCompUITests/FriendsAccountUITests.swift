@@ -362,7 +362,8 @@ final class FriendsAccountUITests: XCTestCase {
                     return true
                 }
                 guard let element = issue.element, !screen.contains(element.frame) else {
-                    guard issue.element != nil else {
+                    // iOS 18 reports some clipping with no element; skip only that.
+                    guard issue.element != nil || issue.auditType != .textClipped else {
                         skipped.append(issue.detailedDescription)
                         return true
                     }

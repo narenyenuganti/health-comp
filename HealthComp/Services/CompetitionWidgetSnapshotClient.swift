@@ -92,11 +92,29 @@ private actor CompetitionWidgetSnapshotStore {
 }
 
 extension CompetitionWidgetSnapshotClient: DependencyKey {
-    static let liveValue = Self.live(
-        fileURL: CompetitionWidgetSnapshot.fileURL(),
-        reload: { WidgetCenter.shared.reloadAllTimelines() },
-        mirror: { CompetitionWatchSync.shared.mirror($0, material: $1) }
-    )
+    static let liveValue: Self = {
+        let snapshots = Self.live(
+            fileURL: CompetitionWidgetSnapshot.fileURL(),
+            reload: { WidgetCenter.shared.reloadAllTimelines() },
+            mirror: { CompetitionWatchSync.shared.mirror($0, material: $1) }
+        )
+        let notifications = CompetitionNotificationClient.liveValue
+        return Self(
+            write: snapshots.write,
+            // Every signed-out path clears here. A session that ended while
+            // the app was closed has no runtime to cancel its reminders or
+            // end its Live Activity, so they go here too.
+            clear: {
+                try await snapshots.clear()
+                await CompetitionLiveActivities(client: .live).endAll()
+                let namespace = CompetitionNotificationIdentifier.namespace
+                let pending = await notifications.pendingIDs(namespace)
+                if !pending.isEmpty { await notifications.removePending(pending.sorted()) }
+                let delivered = await notifications.deliveredIDs(namespace)
+                if !delivered.isEmpty { await notifications.removeDelivered(delivered.sorted()) }
+            }
+        )
+    }()
     static let testValue = Self.noop
 }
 
@@ -260,8 +278,10 @@ extension CompetitionWidgetSnapshot.Match {
             opponentPoints: p.opponentPoints,
             userDayPoints: (1...7).map { days[$0]?.ownerAcceptedPoints },
             opponentDayPoints: (1...7).map { days[$0]?.opponentRevealedPoints },
+            // The older side: a fresh opponent must not hide your own stale
+            // score from the watch's stale line.
             updatedAt: [p.lastSuccessfulFullWindowRefreshAt, p.opponentUpdatedAt]
-                .compactMap { $0 }.max(),
+                .compactMap { $0 }.min(),
             final: final,
             chase: competitionWhatItTakes(p).map {
                 CompetitionWidgetSnapshot.Chase(day: $0.dayOrdinal, points: $0.points)

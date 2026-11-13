@@ -14,8 +14,7 @@ struct GroupMatchInviteView: View {
     var body: some View {
         GroupMatchPage {
             Text("\(host) challenged you")
-                .font(.themeLabel)
-                .tracking(1.2)
+                .themeLabel()
                 .textCase(.uppercase)
                 .foregroundStyle(Theme.secondary)
             GroupMatchHeading(match.format.title, detail: detail)
@@ -30,7 +29,7 @@ struct GroupMatchInviteView: View {
                 .fixedSize(horizontal: false, vertical: true)
         } actions: {
             if let line = store.state.failureLine(
-                [.accept(match.id), .decline(match.id)],
+                [.accept(match.id), .decline(match.id), .block(match.id)],
                 otherwise: "Couldn’t complete that. Check your connection and try again."
             ) {
                 GroupMatchErrorLine(line)
@@ -49,7 +48,10 @@ struct GroupMatchInviteView: View {
             Button(role: .destructive) {
                 confirmsDecline = true
             } label: {
-                BusyLabel("Decline", isBusy: store.inFlight.contains(.decline(match.id)))
+                BusyLabel(
+                    "Decline",
+                    isBusy: store.inFlight.contains(.decline(match.id)) || store.inFlight.contains(.block(match.id))
+                )
             }
             .buttonStyle(QuietButtonStyle())
             .disabled(isAnswering)
@@ -62,9 +64,15 @@ struct GroupMatchInviteView: View {
                 store.send(.commandTapped(.decline(match.id)))
             }
             .accessibilityIdentifier("competition.group.invite.decline.confirm")
+            if !host.isEmpty {
+                Button("Decline and Block \(host)", role: .destructive) {
+                    store.send(.commandTapped(.block(match.id)))
+                }
+                .accessibilityIdentifier("competition.group.invite.decline-block")
+            }
             Button("Keep Challenge", role: .cancel) {}
         } message: {
-            Text("It won’t start for anyone.")
+            Text("It won’t start for anyone. If you block \(host.isEmpty ? "the host" : host), they can’t challenge you again. To block or report anyone else, tap their name.")
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("competition.group.invite")
@@ -76,6 +84,7 @@ struct GroupMatchInviteView: View {
 
     private var isAnswering: Bool {
         store.inFlight.contains(.accept(match.id)) || store.inFlight.contains(.decline(match.id))
+            || store.inFlight.contains(.block(match.id))
     }
 
     private var detail: String {

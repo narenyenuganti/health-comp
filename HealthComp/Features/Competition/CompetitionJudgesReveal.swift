@@ -267,6 +267,9 @@ struct CompetitionJudgesReveal: View {
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
     @Environment(\.scenePhase) private var scenePhase
+    @Environment(\.dynamicTypeSize) private var typeSize
+    /// Follows the reader's text size, capped so a headline still fits a line or two.
+    @ScaledMetric(relativeTo: .title) private var textScale: CGFloat = 1
     @State private var stage = 0
     @State private var pressing = false
     @State private var breakingSeal = false
@@ -284,14 +287,24 @@ struct CompetitionJudgesReveal: View {
 
     private var isWide: Bool { bout.sides.count > 2 }
 
+    private func scaled(_ size: CGFloat) -> CGFloat { size * min(textScale, 1.6) }
+
     var body: some View {
         VStack(spacing: 16) {
-            HStack {
-                Text("HEALTHCOMP /").foregroundStyle(Theme.ink)
-                Spacer()
-                Text("7 ROUNDS").foregroundStyle(Theme.secondary)
+            // One line when it fits; stacked rather than hyphenating the name.
+            ViewThatFits(in: .horizontal) {
+                HStack {
+                    Text("HEALTHCOMP /").foregroundStyle(Theme.ink)
+                    Spacer()
+                    Text("7 ROUNDS").foregroundStyle(Theme.secondary)
+                }
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("HEALTHCOMP /").foregroundStyle(Theme.ink)
+                    Text("7 ROUNDS").foregroundStyle(Theme.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .font(.themeLabel).tracking(1.3)
+            .themeLabel(tracking: 1.3)
             GeometryReader { geometry in
                 ScrollView {
                     ZStack {
@@ -316,7 +329,8 @@ struct CompetitionJudgesReveal: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Theme.ground.ignoresSafeArea())
         .contentShape(Rectangle())
-        .onTapGesture { if stage > 0 || !breakingSeal { skip() } }
+        // The seal's card has its own tap and a Skip button; only the cards and the raise skip on a tap.
+        .onTapGesture { if stage > 0 { skip() } }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("competition.judges.reveal")
         .sensoryFeedback(.impact(weight: .light), trigger: ticks)
@@ -398,12 +412,14 @@ struct CompetitionJudgesReveal: View {
             Text(bout.heading)
                 .font(.themeLabel).foregroundStyle(Theme.secondary)
             Text("The decision.\nUnder seal.")
-                .font(.score(size: 52)).foregroundStyle(Theme.ink)
+                .font(.score(size: scaled(52))).foregroundStyle(Theme.ink)
                 .minimumScaleFactor(0.6)
             Text("After seven rounds…\nwe go to the judges’ scorecards.")
                 .foregroundStyle(Theme.secondary)
             VStack(spacing: 28) {
-                Text("OFFICIAL SCORECARDS").font(.themeLabel).tracking(2)
+                Text("OFFICIAL SCORECARDS").themeLabel(tracking: 2)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
                     .foregroundStyle(Theme.secondary)
                     .environment(\.colorScheme, .dark)
                 ZStack {
@@ -441,7 +457,7 @@ struct CompetitionJudgesReveal: View {
                 .accessibilityAddTraits(.isButton)
                 .accessibilityAction(.default, open)
                 .accessibilityIdentifier("competition.judges.seal")
-                Text("THREE RINGS. THREE JUDGES.").font(.themeLabel).tracking(1.5)
+                Text("THREE RINGS. THREE JUDGES.").themeLabel(tracking: 1.5)
                     .foregroundStyle(Theme.secondary)
                     .environment(\.colorScheme, .dark)
             }
@@ -466,7 +482,7 @@ struct CompetitionJudgesReveal: View {
 
     private var scorecards: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("Every round.\nOn the record.").font(.score(size: 46)).foregroundStyle(Theme.ink)
+            Text("Every round.\nOn the record.").font(.score(size: scaled(46))).foregroundStyle(Theme.ink)
             HStack {
                 Text("Three rings. Three judges.")
                 Spacer()
@@ -497,7 +513,7 @@ struct CompetitionJudgesReveal: View {
     /// Lands a little crooked, with a ring of ink that spreads and fades.
     private var stamp: some View {
         Text(bout.label)
-            .font(.score(size: 30)).minimumScaleFactor(0.5).lineLimit(1)
+            .font(.score(size: scaled(30))).minimumScaleFactor(0.5).lineLimit(1)
             .padding(.horizontal, 12).padding(.vertical, 6)
             .foregroundStyle(Theme.ink)
             .overlay(Rectangle().stroke(Theme.ink, lineWidth: 3))
@@ -555,7 +571,7 @@ struct CompetitionJudgesReveal: View {
                         .frame(maxWidth: .infinity)
                     }
                 }
-                .font(.score(size: 24).monospacedDigit()).lineLimit(1).minimumScaleFactor(0.6)
+                .font(.score(size: scaled(24)).monospacedDigit()).lineLimit(1).minimumScaleFactor(0.6)
                 .animation(reduceMotion ? nil : Motion.press, value: rows)
             }
             Divider()
@@ -574,13 +590,13 @@ struct CompetitionJudgesReveal: View {
 
     /// The row's label; narrow once there are more than two columns of points.
     private func lead(_ text: Text) -> some View {
-        text.frame(maxWidth: isWide ? 44 : .infinity, alignment: .leading)
+        text.frame(maxWidth: isWide && !typeSize.isAccessibilitySize ? 44 : .infinity, alignment: .leading)
     }
 
     /// The winning total is circled by pen once the card is full.
     private func total(_ value: Double?, wins: Bool, own: Bool) -> some View {
         Text(value.map { competitionPointsText($0) } ?? "—")
-            .font(.score(size: isWide ? 24 : 27)).lineLimit(1)
+            .font(.score(size: scaled(isWide ? 24 : 27))).lineLimit(1).minimumScaleFactor(0.6)
             .fixedSize(horizontal: false, vertical: true)
             .foregroundStyle(own ? Theme.you : Theme.ink)
             .padding(.vertical, 8).frame(maxWidth: .infinity)
@@ -613,11 +629,11 @@ struct CompetitionJudgesReveal: View {
         let clock = bout.ring.clock
         return VStack(spacing: 20) {
             Text(raised ? bout.title : "THE DECISION…")
-                .font(.score(size: 44)).multilineTextAlignment(.center)
+                .font(.score(size: scaled(44))).multilineTextAlignment(.center)
                 .foregroundStyle(raised && bout.yoursWon ? Theme.you : Theme.ink)
                 .minimumScaleFactor(0.5).lineLimit(2)
                 .accessibilityIdentifier("competition.judges.winner")
-            Text(bout.label).font(.themeLabel).tracking(2).foregroundStyle(Theme.secondary)
+            Text(bout.label).themeLabel(tracking: 2).foregroundStyle(Theme.secondary)
             CompetitionJudgesRing(
                 bout: bout,
                 start: ringStart,
@@ -626,7 +642,8 @@ struct CompetitionJudgesReveal: View {
             .id(reduceMotion && focused)
             .transition(.opacity)
             .animation(Motion.fade, value: focused)
-            .frame(height: 310)
+            // One scale both ways, so the figures keep their drawn proportions.
+            .aspectRatio(360.0 / 340.0, contentMode: .fit)
             .background(Theme.beltWell)
             .clipShape(RoundedRectangle(cornerRadius: 20))
             .accessibilityHidden(true)
@@ -642,7 +659,7 @@ struct CompetitionJudgesReveal: View {
                     }
                     VStack {
                         Text(side.label).font(.themeLabel).lineLimit(1).minimumScaleFactor(0.5)
-                        Text(competitionPointsText(side.total)).font(.score(size: isWide ? 32 : 42))
+                        Text(competitionPointsText(side.total)).font(.score(size: scaled(isWide ? 32 : 42))).lineLimit(1).minimumScaleFactor(0.5)
                     }
                     .foregroundStyle(side.isYours ? Theme.you : Theme.ink)
                 }
@@ -671,6 +688,25 @@ private struct CompetitionJudgesPenCircle: Shape {
 
 // MARK: Group matches
 
+/// "You win, unanimous decision, you 512, Sam 498, Alex 450."
+func competitionJudgesAnnouncement(_ bout: CompetitionJudgesBout) -> String {
+    func names(_ side: Int) -> String {
+        bout.fighters.filter { $0.side == side }.map { $0.isYou ? "you" : $0.name }.joined(separator: " and ")
+    }
+    let result: String
+    if bout.isDraw {
+        result = "It is a draw"
+    } else if bout.yoursWon {
+        result = "You win, \(bout.label.lowercased())"
+    } else {
+        let winner = bout.winners[0]
+        let plural = bout.fighters.filter { $0.side == winner }.count > 1
+        result = "\(names(winner)) \(plural ? "win" : "wins"), \(bout.label.lowercased())"
+    }
+    let scores = bout.sides.indices.map { "\(names($0)) \(competitionPointsText(bout.sides[$0].total))" }
+    return "\(result), \(scores.joined(separator: ", "))."
+}
+
 extension View {
     /// The judges' reveal over a finished group match, once, on the first
     /// visit. A group match never moves a belt, so nothing follows it.
@@ -681,6 +717,7 @@ extension View {
 
 private struct CompetitionGroupJudges: ViewModifier {
     let match: GroupMatchPresentation
+    @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
     @AppStorage(CompetitionMotionSeen.storageKey) private var seen = CompetitionMotionSeen()
     @State private var didStart = false
     @State private var isShowing = false
@@ -696,7 +733,7 @@ private struct CompetitionGroupJudges: ViewModifier {
     func body(content: Content) -> some View {
         content
             // Nothing of the result shows before the reveal covers it.
-            .overlay { if isShowing || (!didStart && bout != nil) { Theme.ground.ignoresSafeArea() } }
+            .overlay { if isShowing || (!didStart && bout != nil && !voiceOver) { Theme.ground.ignoresSafeArea() } }
             .fullScreenCover(isPresented: $isShowing) {
                 if let playing {
                     CompetitionJudgesReveal(bout: playing, onFinished: finish, onSkip: finish, onBackground: finish)
@@ -707,7 +744,19 @@ private struct CompetitionGroupJudges: ViewModifier {
                 guard !didStart else { return }
                 didStart = true
                 playing = bout
-                if playing != nil { present(true) }
+                guard let playing else { return }
+                // VoiceOver gets the final state: the result, spoken, in place of the timed reveal.
+                if voiceOver {
+                    seen = seen.marking(.judges, match.id)
+                    let text = competitionJudgesAnnouncement(playing)
+                    Task {
+                        // After the push, or VoiceOver's own reading of the new screen cuts it off.
+                        try? await Task.sleep(for: .seconds(0.75))
+                        AccessibilityNotification.Announcement(text).post()
+                    }
+                } else {
+                    present(true)
+                }
             }
     }
 
@@ -796,7 +845,7 @@ private struct CompetitionJudgesRing: View {
             .overlay(Circle().fill(Theme.beltWell.opacity(0.75 * Double(1 - figure.lit))))
             .overlay(alignment: .bottom) {
                 Text(fighter.isYou ? "YOU" : fighter.name.uppercased())
-                    .font(.themeLabel).tracking(1.5).foregroundStyle(isYours ? Theme.youFill : Theme.ink)
+                    .themeLabel(tracking: 1.5).foregroundStyle(isYours ? Theme.youFill : Theme.ink)
                     .fixedSize().offset(y: 28).opacity(slot == nil ? 0 : Double(min(1, focus)))
             }
             .opacity(Double(figure.alpha) * (slot == nil ? 1 - Double(min(1, focus)) : 1))
@@ -815,7 +864,6 @@ private enum JudgesRing {
         Color(red: 134 / 255, green: 134 / 255, blue: 142 / 255),
         Color(red: 116 / 255, green: 116 / 255, blue: 124 / 255),
     ]
-    static let partnerTone = Color(red: 216 / 255, green: 143 / 255, blue: 0)
     static let paper = Color(red: 245 / 255, green: 245 / 255, blue: 240 / 255)
 
     struct Pose {
@@ -974,7 +1022,7 @@ private enum JudgesRing {
                 breath: breath, dip: isHeld ? dip : 0, loose: loose
             )
             let tone: Color = bout.format == .doubles && index == 1
-                ? (bout.fighters[index].isBot ? tones[2] : partnerTone) : tones[min(index, 3)]
+                ? (bout.fighters[index].isBot ? tones[2] : tones[1]) : tones[min(index, 3)]
             figures.append(Figure(
                 index: index, stance: stance, x: x, scale: scale, pose: joints, tone: tone,
                 lit: lit, alpha: 1 - gone, rise: rise,

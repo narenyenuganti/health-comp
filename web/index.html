@@ -3,10 +3,14 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>HealthComp</title>
+  <title>HealthComp: seven-day Activity matches</title>
+  <meta name="description" content="Private, seven-day matches scored from your Activity rings. Coming soon to iPhone.">
   <link rel="canonical" href="https://healthcomp.app/">
   <meta property="og:site_name" content="HealthComp">
   <meta property="og:title" content="HealthComp">
+  <meta property="og:description" content="Private, seven-day matches scored from your Activity rings. Coming soon to iPhone.">
+  <meta property="og:url" content="https://healthcomp.app/">
+  <meta property="og:type" content="website">
   <meta property="og:image" content="https://healthcomp.app/og.png">
   <meta property="og:image:width" content="1200">
   <meta property="og:image:height" content="630">
@@ -32,14 +36,18 @@
     p { margin: 0; color: var(--secondary); }
     h1, p { text-wrap: balance; }
     form { position: relative; margin-top: 32px; }
-    input { box-sizing: border-box; width: 100%; padding: 14px 56px 14px 20px; border: 1px solid color-mix(in srgb, var(--secondary) 40%, transparent);
+    label { display: block; margin-bottom: 8px; color: var(--secondary); }
+    input { box-sizing: border-box; width: 100%; padding: 16px 60px 16px 20px; border: 1px solid var(--secondary);
             border-radius: 999px; background: transparent; color: var(--ink); font: inherit; text-align: left; }
+    input::placeholder { color: var(--secondary); opacity: 1; }
     input:focus { outline: 2px solid var(--ink); outline-offset: 1px; }
-    form button { position: absolute; top: 6px; right: 6px; width: 40px; height: 40px; border: 0; border-radius: 50%;
+    form button { position: absolute; bottom: 7px; right: 7px; width: 44px; height: 44px; border: 0; border-radius: 50%;
                   background: var(--ink); color: var(--ground); font-size: 20px; cursor: pointer; }
     form button:disabled { opacity: .4; }
     #status { margin-top: 32px; }
     #status:empty { display: none; }
+    footer { margin-top: 32px; }
+    footer a { display: inline-block; padding: 12px; color: var(--secondary); text-underline-offset: 3px; }
   </style>
 </head>
 <body>
@@ -59,11 +67,13 @@
     <p>Coming soon to iPhone</p>
     <!-- /functions/api/waitlist.js emails each signup. -->
     <form id="waitlist" action="/api/waitlist" method="POST">
-      <input type="email" name="email" placeholder="Join the waitlist" aria-label="Email address" autocomplete="email" required>
+      <label for="email">Join the waitlist</label>
+      <input type="email" id="email" name="email" placeholder="Email address" autocomplete="email" required>
       <input type="text" name="_honey" hidden tabindex="-1" autocomplete="off">
       <button aria-label="Join the waitlist">&rarr;</button>
     </form>
     <p id="status" role="status"></p>
+    <footer><a href="/privacy">Privacy</a> <a href="/support">Support</a></footer>
   </main>
   <script>
     // Tapping the mark replays the grow: drop the class, flush styles, add it back.
@@ -79,15 +89,19 @@
     form.addEventListener("submit", async (event) => {
       event.preventDefault();
       form.querySelector("button").disabled = true;
+      // Only text the server chose; browser errors (offline, non-JSON) get the fallback.
+      let message = "Couldn\u2019t sign you up. Try again.";
       try {
         const response = await fetch(form.action, { method: "POST", body: new FormData(form) });
-        const { error } = await response.json();
-        if (!response.ok) throw new Error(error);
+        if (!response.ok) {
+          message = (await response.json().catch(() => ({}))).error || message;
+          throw new Error(message);
+        }
         form.remove();
         status.textContent = "You\u2019re on the list.";
-      } catch (failure) {
+      } catch {
         form.querySelector("button").disabled = false;
-        status.textContent = failure.message || "Couldn\u2019t sign you up. Try again.";
+        status.textContent = message;
       }
     });
   </script>

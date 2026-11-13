@@ -20,6 +20,7 @@ import {
   isUuid,
   json,
   mapRpcError,
+  readBoundedJson,
   type RpcError,
   type ScoringRpcClient,
   type ServiceDependencies,
@@ -216,51 +217,6 @@ function decodeCanonicalBase64(
       btoa(decoded) !== value
     ) return null;
     return Uint8Array.from(decoded, (character) => character.charCodeAt(0));
-  } catch {
-    return null;
-  }
-}
-
-async function readBoundedJson(request: Request): Promise<unknown | null> {
-  const contentType = request.headers.get("content-type")?.split(";", 1)[0]
-    .trim().toLowerCase();
-  if (contentType !== "application/json") return null;
-  const contentLength = request.headers.get("content-length");
-  if (
-    contentLength !== null &&
-    (!/^[0-9]+$/.test(contentLength) ||
-      Number(contentLength) > maximumSubmissionBodyBytes)
-  ) return null;
-  if (!request.body) return null;
-
-  const reader = request.body.getReader();
-  const chunks: Uint8Array[] = [];
-  let length = 0;
-  try {
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-      length += value.length;
-      if (length > maximumSubmissionBodyBytes) {
-        await reader.cancel();
-        return null;
-      }
-      chunks.push(value);
-    }
-  } catch {
-    return null;
-  } finally {
-    reader.releaseLock();
-  }
-
-  const bytes = new Uint8Array(length);
-  let offset = 0;
-  for (const chunk of chunks) {
-    bytes.set(chunk, offset);
-    offset += chunk.length;
-  }
-  try {
-    return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
   } catch {
     return null;
   }
@@ -696,7 +652,9 @@ export async function submitScoreRevisionHandler(
   if (request.method !== "POST") {
     return error(405, "method_not_allowed", "Method not allowed");
   }
-  const parsed = parseSubmission(await readBoundedJson(request));
+  const parsed = parseSubmission(
+    await readBoundedJson(request, maximumSubmissionBodyBytes),
+  );
   if (!parsed) return error(400, "invalid_request", "Invalid score revision");
 
   let authenticated: Awaited<ReturnType<typeof authenticatedContext>>;
@@ -807,7 +765,14 @@ export async function submitScoreRevisionHandler(
         return temporarilyUnavailable();
       }
       if (!samePolicyMetadata(verified, registeredKey)) {
-        return proofRejected();
+        // A changed value (an app update's new bundle version) means the
+        // registration is stale, not the key: 409 makes the app re-attest, as
+        // authorize_app_attest_proof would. A null/non-null format change
+        // stays a rejection.
+        return registeredKey.bundleVersion !== null &&
+            verified.bundleVersion !== null
+          ? proofConflict()
+          : proofRejected();
       }
       verifiedEnvironment = registeredKey.environment;
       verifiedCategory = verified.validationCategory;

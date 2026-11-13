@@ -9,8 +9,9 @@ enum Theme {
     static let exercise = Color(uiColor: UIColor(hex: 0x009A4E))
     static let stand = Color(uiColor: UIColor(hex: 0x0072BC))
 
-    /// Your score, name and wins. Light mode darkens amber so text keeps 4.5:1.
-    static let you = dynamic(light: 0x9C6500, dark: 0xF2A100)
+    /// Your score, name and wins. Light mode darkens amber so text keeps 4.5:1
+    /// on ground, panel and control.
+    static let you = dynamic(light: 0x8F5C00, dark: 0xF2A100)
     /// Amber fills stay bright in both modes; put `onYouFill` content on them.
     static let youFill = Color(uiColor: UIColor(hex: 0xF2A100))
     static let onYouFill = Color(uiColor: UIColor(hex: 0x111111))
@@ -20,21 +21,27 @@ enum Theme {
     /// Primary text, the opponent, and neutral primary buttons.
     static let ink = Color(uiColor: inkUI)
     static let onInk = dynamic(light: 0xFAFAF7, dark: 0x0F0F10)
-    static let secondary = dynamic(light: 0x5E5E62, dark: 0xA3A3A8)
-    static let tertiary = dynamic(light: 0x6E6E73, dark: 0x8E8E93)
-    static let faint = dynamic(light: 0xB8B8B2, dark: 0x48484D)
+    // Increase Contrast steps the greys and strokes to stronger values
+    // already in this palette; the default look is unchanged.
+    static let secondary = dynamic(light: 0x5E5E62, dark: 0xA3A3A8, highContrast: (0x3A3A40, 0xCFCFC9))
+    static let tertiary = dynamic(light: 0x66666B, dark: 0x8E8E93, highContrast: (0x5E5E62, 0xA3A3A8))
+    static let faint = dynamic(light: 0xB8B8B2, dark: 0x48484D, highContrast: (0x8E8E93, 0x6E6E73))
     static let ground = Color(uiColor: groundUI)
     static let panel = dynamic(light: 0xEFEFEA, dark: 0x19191B)
     static let control = dynamic(light: 0xE6E6E0, dark: 0x222225)
-    static let hairline = dynamic(light: 0xDEDED8, dark: 0x2C2C30)
-    static let track = dynamic(light: 0xE2E2DC, dark: 0x26262A)
-    static let outline = dynamic(light: 0xCFCFC9, dark: 0x3A3A40)
+    static let hairline = dynamic(light: 0xDEDED8, dark: 0x2C2C30, highContrast: (0xB8B8B2, 0x48484D))
+    static let track = dynamic(light: 0xE2E2DC, dark: 0x26262A, highContrast: (0xCFCFC9, 0x3A3A40))
+    static let outline = dynamic(light: 0xCFCFC9, dark: 0x3A3A40, highContrast: (0x8E8E93, 0x6E6E73))
     /// Behind the belt art: the dark ground in light mode, the panel in dark,
     /// where the ground would erase the card's top edge.
     static let beltWell = dynamic(light: 0x0F0F10, dark: 0x19191B)
 
-    private static func dynamic(light: UInt32, dark: UInt32) -> Color {
-        Color(uiColor: UIColor(light: light, dark: dark))
+    private static func dynamic(
+        light: UInt32,
+        dark: UInt32,
+        highContrast: (light: UInt32, dark: UInt32)? = nil
+    ) -> Color {
+        Color(uiColor: UIColor(light: light, dark: dark, highContrast: highContrast))
     }
 
 #if !os(watchOS)
@@ -64,13 +71,21 @@ extension UIColor {
         )
     }
 
-    convenience init(light: UInt32, dark: UInt32) {
+    /// `highContrast` replaces both values under Increase Contrast.
+    convenience init(
+        light: UInt32,
+        dark: UInt32,
+        highContrast: (light: UInt32, dark: UInt32)? = nil
+    ) {
 #if os(watchOS)
         // watchOS is always dark and has no dynamic colors.
         self.init(hex: dark)
 #else
         self.init { traits in
-            UIColor(hex: traits.userInterfaceStyle == .dark ? dark : light)
+            let standard: (light: UInt32, dark: UInt32) = (light: light, dark: dark)
+            let values = traits.accessibilityContrast == .high
+                ? highContrast ?? standard : standard
+            return UIColor(hex: traits.userInterfaceStyle == .dark ? values.dark : values.light)
         }
 #endif
     }
@@ -89,7 +104,8 @@ extension Font {
 #endif
     }
 
-    /// Section and status labels: SF Pro Condensed, bold. Pair with `.tracking(1.2)`.
+    /// Section and status labels: SF Pro Condensed, bold. Use the
+    /// `.themeLabel()` view modifier, which adds the 1.2 tracking.
     static let themeLabel = Font.footnote.weight(.bold).width(.condensed)
 }
 
@@ -252,6 +268,7 @@ struct SlantedBar: Shape {
 /// Primary actions are neutral; color is reserved for you and your rings.
 struct PrimaryButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
@@ -266,14 +283,13 @@ struct PrimaryButtonStyle: ButtonStyle {
                 Theme.ink,
                 in: RoundedRectangle(cornerRadius: 14, style: .continuous)
             )
-            .opacity(isEnabled ? (configuration.isPressed ? 0.8 : 1) : 0.45)
-            .animation(Motion.press, value: configuration.isPressed)
-            .animation(Motion.press, value: isEnabled)
+            .pressFeel(configuration.isPressed, isEnabled: isEnabled, reduceMotion: reduceMotion)
     }
 }
 
 struct SecondaryButtonStyle: ButtonStyle {
     @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
@@ -287,9 +303,7 @@ struct SecondaryButtonStyle: ButtonStyle {
                 Theme.control,
                 in: RoundedRectangle(cornerRadius: 14, style: .continuous)
             )
-            .opacity(isEnabled ? (configuration.isPressed ? 0.8 : 1) : 0.45)
-            .animation(Motion.press, value: configuration.isPressed)
-            .animation(Motion.press, value: isEnabled)
+            .pressFeel(configuration.isPressed, isEnabled: isEnabled, reduceMotion: reduceMotion)
     }
 }
 
@@ -297,6 +311,7 @@ struct SecondaryButtonStyle: ButtonStyle {
 struct QuietButtonStyle: ButtonStyle {
     var color = Theme.secondary
     @Environment(\.isEnabled) private var isEnabled
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
@@ -305,8 +320,18 @@ struct QuietButtonStyle: ButtonStyle {
             .foregroundStyle(color)
             .frame(maxWidth: .infinity, minHeight: 44)
             .contentShape(Rectangle())
-            .opacity(isEnabled ? (configuration.isPressed ? 0.8 : 1) : 0.45)
-            .animation(Motion.press, value: configuration.isPressed)
+            .pressFeel(configuration.isPressed, isEnabled: isEnabled, reduceMotion: reduceMotion)
+    }
+}
+
+private extension View {
+    /// The shared buttons' press: the opacity dip, a small scale (skipped
+    /// under Reduce Motion) and a light tap as the finger lands.
+    func pressFeel(_ isPressed: Bool, isEnabled: Bool, reduceMotion: Bool) -> some View {
+        scaleEffect(isPressed && !reduceMotion ? 0.97 : 1)
+            .opacity(isEnabled ? (isPressed ? 0.8 : 1) : 0.45)
+            .sensoryFeedback(.impact(weight: .light), trigger: isPressed) { _, pressed in pressed }
+            .animation(Motion.press, value: isPressed)
             .animation(Motion.press, value: isEnabled)
     }
 }
@@ -350,14 +375,28 @@ struct SectionLabel: View {
 
     var body: some View {
         Text(title)
-            .font(.themeLabel)
-            .tracking(1.2)
+            .themeLabel()
             .foregroundStyle(Theme.ink)
             .accessibilityAddTraits(.isHeader)
     }
 }
 
+/// The chevron on a row that opens something. Decoration: the row says what it opens.
+struct DisclosureChevron: View {
+    var body: some View {
+        Image(systemName: "chevron.right")
+            .font(.caption.weight(.bold))
+            .foregroundStyle(Theme.tertiary)
+            .accessibilityHidden(true)
+    }
+}
+
 extension View {
+    /// The label font with its tracking, so the two can't drift apart.
+    func themeLabel(tracking: CGFloat = 1.2) -> some View {
+        font(.themeLabel).tracking(tracking)
+    }
+
     /// The raised surface used for cards and grouped rows.
     func themePanel(cornerRadius: CGFloat = 20) -> some View {
         background(

@@ -1,6 +1,7 @@
 import CoreGraphics
 import Foundation
 
+#if DEBUG
 /// The Test Lab's stand-in for the photo server: in memory, with the same
 /// rules the app relies on (a hidden or missing photo is simply absent, a
 /// report hides that person's photo, a new photo is a new version). Pass its
@@ -92,7 +93,6 @@ final class ProfilePhotoTestLabServer: @unchecked Sendable {
     }
 }
 
-#if DEBUG
 import SwiftUI
 import UIKit
 

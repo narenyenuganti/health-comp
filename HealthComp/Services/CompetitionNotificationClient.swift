@@ -587,6 +587,12 @@ extension CompetitionNotificationClient: DependencyKey {
         )
     }
 
+    /// Communication alerts donate opponents' names, photos and alert text
+    /// to the system; sign-out forgets them with everything else.
+    static func deleteDonatedInteractions() async {
+        try? await INInteraction.deleteAll()
+    }
+
     private static func makeContent(
         _ notification: CompetitionNotificationContent,
         route: CompetitionRoute?,
@@ -621,6 +627,7 @@ extension CompetitionNotificationClient: DependencyKey {
         communicationContent.body = "\(notification.title)\n\(notification.body)"
         let interaction = INInteraction(intent: intent, response: nil)
         interaction.direction = .incoming
+        interaction.groupIdentifier = content.threadIdentifier
         do {
             try await interaction.donate()
             return try communicationContent.updating(from: intent)

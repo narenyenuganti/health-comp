@@ -41,7 +41,9 @@ final class CompetitionWatchSync: NSObject, WCSessionDelegate, @unchecked Sendab
            session.remainingComplicationUserInfoTransfers > 0,
            Self.spendsComplicationTransfer(isClear: snapshot == nil, last: lastComplicationTransfer, now: now) {
             session.transferCurrentComplicationUserInfo(payload)
-            lastComplicationTransfer = now
+            // A clear (every signed-out launch) must not hold back the first
+            // real snapshot after sign-in.
+            lastComplicationTransfer = snapshot == nil ? nil : now
         }
     }
 

@@ -344,7 +344,7 @@ final class LocalCompetitionLifecycleUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Alex"].waitForExistence(timeout: 5))
         XCTAssertTrue(
             app.staticTexts[
-                "Finalized from the best available accepted Activity data after the reconciliation deadline."
+                "Someone didn’t sync in time, so this result uses the scores that were in."
             ].exists
         )
         XCTAssertTrue(app.otherElements["competition.result"].exists)

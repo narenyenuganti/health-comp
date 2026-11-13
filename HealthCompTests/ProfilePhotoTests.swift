@@ -275,6 +275,43 @@ final class ProfilePhotoFeatureTests: XCTestCase {
         await store.finish()
     }
 
+    func testACachedCurrentPhotoIsReadAndDecodedOnce() async throws {
+        let (sam, jpeg) = (self.sam, self.jpeg)
+        let samPhoto = ProfilePhotoReference(ownerProfileID: sam, version: UUID())
+        let downloads = LockIsolated(0)
+        var client = CompetitionClient.testValue
+        client.cachedProfilePhotoData = { _ in (data: jpeg, version: samPhoto.version) }
+        client.loadProfilePhotos = { _ in [samPhoto] }
+        client.isProfilePhotoReported = { _ in false }
+        client.profilePhotoData = { _ in
+            downloads.withValue { $0 += 1 }
+            return jpeg
+        }
+        let store = TestStore(initialState: CompetitionFeature.State(ownProfile: you)) { CompetitionFeature() }
+            withDependencies: { $0.competitionClient = client }
+        store.exhaustivity = .off
+
+        await store.send(.profilePhotosNeeded([sam]))
+        await store.receive(\.profilePhotoLoaded)
+        await store.receive(\.profilePhotosListed)
+        await store.finish()
+        XCTAssertEqual(store.state.profilePhotos[sam]?.version, samPhoto.version)
+        XCTAssertEqual(downloads.value, 0)
+    }
+
+    func testAPhotoNoLongerOnScreenIsLetGoEvenOffline() async throws {
+        var client = CompetitionClient.testValue
+        client.cachedProfilePhotoData = { _ in nil }
+        client.loadProfilePhotos = { _ in throw CompetitionRemoteFailure.retryableTransport }
+        var initial = CompetitionFeature.State(ownProfile: you)
+        initial.profilePhotos[jo] = try XCTUnwrap(ProfilePhoto(jpeg: jpeg, version: UUID()))
+        let store = TestStore(initialState: initial) { CompetitionFeature() }
+            withDependencies: { $0.competitionClient = client }
+
+        await store.send(.profilePhotosNeeded([sam])) { $0.profilePhotos = [:] }
+        await store.finish()
+    }
+
     func testReportHidesThePhotoAndALateDownloadStaysHidden() async throws {
         let sam = self.sam
         let reported = LockIsolated<[UUID]>([])

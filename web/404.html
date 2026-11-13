@@ -16,8 +16,10 @@
     h1 { font-size: 28px; font-weight: 800; font-stretch: condensed; line-height: 1.15; margin: 16px 0 8px; }
     p { margin: 0 0 28px; color: var(--secondary); }
     h1, p { text-wrap: balance; }
-    a { display: block; padding: 16px; border-radius: 14px; background: var(--ink); color: var(--ground);
+    main > a { display: block; padding: 16px; border-radius: 14px; background: var(--ink); color: var(--ground);
         font-weight: 600; text-decoration: none; }
+    footer { margin-top: 16px; }
+    footer a { display: inline-block; padding: 12px; color: var(--secondary); text-underline-offset: 3px; }
   </style>
 </head>
 <body>
@@ -31,6 +33,7 @@
     <h1>Page not found</h1>
     <p>There’s no page at this address. Check it for typos.</p>
     <a href="/">Go to the home page</a>
+    <footer><a href="/privacy">Privacy</a> <a href="/support">Support</a></footer>
   </main>
 </body>
 </html>

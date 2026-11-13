@@ -21,6 +21,16 @@ fi
 cd "$(git rev-parse --show-toplevel)"
 test_file=supabase/tests/900_released_api.test.sql
 
+# Save only from HealthComp with exactly this checkout's migrations applied.
+applied="$(psql -XqAt "$HEALTHCOMP_TEST_DATABASE_URL" --command="
+  select string_agg(version, ' ' order by version)
+  from supabase_migrations.schema_migrations" 2>/dev/null || true)"
+expected="$(ls supabase/migrations/*.sql | sed -E 's#.*/([0-9]+)_.*#\1#' | sort | paste -sd ' ' -)"
+if [[ "$applied" != "$expected" ]]; then
+  echo "The database is not HealthComp at this checkout's migrations; run supabase db reset first." >&2
+  exit 1
+fi
+
 # One row per function the signed-in or signed-out app can call.
 # ponytail: results compare as text, so adding a column to a function that
 # returns a table reads as a change. No function returns a table today; compare
@@ -81,6 +91,14 @@ $released
     where c.fn = r.fn and c.returns = r.returns
       and r.args <@ c.args and c.required <@ r.required
   )
+  -- PostgREST picks an overload by argument names alone and fails the call
+  -- (PGRST203) when two of them accept the names the build sends.
+  or (select count(*) from callable c
+      where c.fn = r.fn
+        and array(select split_part(x, ' ', 1) from unnest(r.args) x)
+          <@ array(select split_part(x, ' ', 1) from unnest(c.args) x)
+        and array(select split_part(x, ' ', 1) from unnest(c.required) x)
+          <@ array(select split_part(x, ' ', 1) from unnest(r.args) x)) <> 1
 \$released\$,
   'builds up to $build can still call every function they shipped with; if not, keep the old function and add the change as optional arguments or a new overload');
 

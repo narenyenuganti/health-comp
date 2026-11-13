@@ -127,6 +127,7 @@ actor CompetitionSyncCoordinator {
     private var retryTask: Task<Void, Never>?
     private var scheduledRetryAt: Date?
     private var isStopped = false
+    private var backoffWaived = false
     private var deletedCompetitionIDs: Set<UUID> = []
     private var shouldRecoverPersistedLegacyAppAttestFailure = true
 
@@ -181,7 +182,10 @@ actor CompetitionSyncCoordinator {
         }
     }
 
-    func wake() {
+    /// `ignoringBackoff` is for a caller that has just reached the server:
+    /// waiting out a backoff earned while offline would only delay uploads.
+    func wake(ignoringBackoff: Bool = false) {
+        if ignoringBackoff { backoffWaived = true }
         requestDrain()
     }
 
@@ -240,10 +244,13 @@ actor CompetitionSyncCoordinator {
             } catch is CancellationError {
                 return
             } catch {
-                if let durableRetryAt = try? await earliestDurableRetryAt() {
+                let durableRetryAt = try? await earliestDurableRetryAt()
+                if let durableRetryAt {
                     replaceRetrySchedule(with: durableRetryAt)
                 }
-                return
+                // A request made while this pass failed still gets its pass.
+                guard drainRequested else { return }
+                nextRetryAt = durableRetryAt
             }
         }
         replaceRetrySchedule(with: nextRetryAt)
@@ -255,10 +262,17 @@ actor CompetitionSyncCoordinator {
             drainRequested = true
             return nil
         }
+        let ignoreBackoff = backoffWaived
+        backoffWaived = false
         var nextRetryAt: Date?
+        // The server refuses a revision below one it already holds, so a
+        // match's uploads go in queue order: once one is held back, the
+        // match's later ones wait for it.
+        var heldCompetitionIDs: Set<UUID> = []
         for entry in entries {
             try Task.checkCancellation()
-            guard !deletedCompetitionIDs.contains(entry.payload.competitionID) else {
+            let competitionID = entry.payload.competitionID
+            guard !deletedCompetitionIDs.contains(competitionID) else {
                 continue
             }
             switch (entry.payload, entry.state) {
@@ -266,48 +280,51 @@ actor CompetitionSyncCoordinator {
                 .scoreRevision(request),
                 .pending(attemptCount, retryAt)
             ):
+                guard !heldCompetitionIDs.contains(competitionID) else { continue }
                 if let retryAt = try await processScoreRevision(
                     entry,
                     request: request,
                     attemptCount: attemptCount,
                     retryAt: retryAt,
-                    isAppAttestRejectionRecovery: false
+                    isAppAttestRejectionRecovery: false,
+                    ignoreBackoff: ignoreBackoff
                 ) {
                     nextRetryAt = earlier(retryAt, than: nextRetryAt)
+                    heldCompetitionIDs.insert(competitionID)
                 }
             case let (
                 .scoreRevision(request),
                 .appAttestRejectionRecovery(attemptCount, retryAt)
             ):
+                guard !heldCompetitionIDs.contains(competitionID) else { continue }
                 if let retryAt = try await processScoreRevision(
                     entry,
                     request: request,
                     attemptCount: attemptCount,
                     retryAt: retryAt,
-                    isAppAttestRejectionRecovery: true
+                    isAppAttestRejectionRecovery: true,
+                    ignoreBackoff: ignoreBackoff
                 ) {
                     nextRetryAt = earlier(retryAt, than: nextRetryAt)
+                    heldCompetitionIDs.insert(competitionID)
                 }
             case let (
                 .scoreRevision(request),
                 .scoreAccepted(response, receivedAt)
             ):
-                try await acceptedScorePersistence.persist(
-                    profileID,
-                    request,
-                    response,
-                    receivedAt
-                )
-                try await outboxStore.remove(
-                    entry.semanticEventID,
-                    expectedGeneration: entry.generation
+                try await persistAccepted(
+                    entry,
+                    request: request,
+                    response: response,
+                    receivedAt: receivedAt
                 )
             case let (
                 .finalWindowAttestation(request),
                 .pending(attemptCount, retryAt)
             ):
+                guard !heldCompetitionIDs.contains(competitionID) else { continue }
                 let requestedAt = now()
-                if let retryAt, retryAt > requestedAt {
+                if !ignoreBackoff, let retryAt, retryAt > requestedAt {
                     nextRetryAt = earlier(retryAt, than: nextRetryAt)
                     continue
                 }
@@ -352,13 +369,21 @@ actor CompetitionSyncCoordinator {
                     )
                     continue
                 }
+                // A receipt for another window can't be stored as this
+                // one's; park it rather than stall the queue behind it.
                 _ = try await outboxStore.update(
                     entry.semanticEventID,
                     expectedGeneration: entry.generation,
-                    state: .attestationAcknowledged(
-                        receipt,
-                        receivedAt: now()
-                    )
+                    state: receipt.windowCommitmentSHA256
+                        == request.windowCommitmentSHA256
+                        ? .attestationAcknowledged(
+                            receipt,
+                            receivedAt: now()
+                        )
+                        : .permanentFailure(
+                            .serverContractMismatch,
+                            failedAt: requestedAt
+                        )
                 )
             case (.finalWindowAttestation, .attestationAcknowledged):
                 // Task 13 removes this only after the authoritative change
@@ -382,10 +407,11 @@ actor CompetitionSyncCoordinator {
         request: CompetitionScoreRevisionRequest,
         attemptCount: Int,
         retryAt: Date?,
-        isAppAttestRejectionRecovery: Bool
+        isAppAttestRejectionRecovery: Bool,
+        ignoreBackoff: Bool
     ) async throws -> Date? {
         let requestedAt = now()
-        if let retryAt, retryAt > requestedAt {
+        if !ignoreBackoff, let retryAt, retryAt > requestedAt {
             return retryAt
         }
         guard isOnline() else { return nil }
@@ -441,18 +467,26 @@ actor CompetitionSyncCoordinator {
             )
             return nil
         }
-        let receivedAt = now()
+        // Whole seconds survive the outbox's millisecond dates exactly, so a
+        // replay after a crash journals the same receipt as this run would.
+        let receivedAt = Date(
+            timeIntervalSince1970: now().timeIntervalSince1970.rounded(.down)
+        )
+        let rejection: CompetitionOutboxPermanentFailure?
         if response.disposition == .rejected {
-            guard let rejectionCode = response.rejectionCode else {
-                throw CompetitionRemoteFailure.serverContractMismatch
-            }
+            rejection = response.rejectionCode.map { permanentFailure(for: $0) }
+                ?? .serverContractMismatch
+        } else if response.wireContentSHA256 != request.wireContentSHA256 {
+            // An answer for other content: never stored as this upload's.
+            rejection = .serverContractMismatch
+        } else {
+            rejection = nil
+        }
+        if let rejection {
             _ = try await outboxStore.update(
                 entry.semanticEventID,
                 expectedGeneration: entry.generation,
-                state: .permanentFailure(
-                    permanentFailure(for: rejectionCode),
-                    failedAt: receivedAt
-                )
+                state: .permanentFailure(rejection, failedAt: receivedAt)
             )
             return nil
         }
@@ -464,17 +498,61 @@ actor CompetitionSyncCoordinator {
                 receivedAt: receivedAt
             )
         )
-        try await acceptedScorePersistence.persist(
-            profileID,
-            request,
-            response,
-            receivedAt
-        )
-        try await outboxStore.remove(
-            accepted.semanticEventID,
-            expectedGeneration: accepted.generation
+        try await persistAccepted(
+            accepted,
+            request: request,
+            response: response,
+            receivedAt: receivedAt
         )
         return nil
+    }
+
+    /// Journals an accepted score, then drops its entry. An answer the
+    /// journal can never take parks only this entry, so the uploads queued
+    /// behind it still go out.
+    private func persistAccepted(
+        _ entry: CompetitionOutboxEntry,
+        request: CompetitionScoreRevisionRequest,
+        response: CompetitionScoreRevisionResponse,
+        receivedAt: Date
+    ) async throws {
+        do {
+            try await acceptedScorePersistence.persist(
+                profileID,
+                request,
+                response,
+                receivedAt
+            )
+        } catch let error where Self.isUnrecordable(error) {
+            _ = try await outboxStore.update(
+                entry.semanticEventID,
+                expectedGeneration: entry.generation,
+                state: .permanentFailure(
+                    .serverContractMismatch,
+                    failedAt: now()
+                )
+            )
+            return
+        }
+        try await outboxStore.remove(
+            entry.semanticEventID,
+            expectedGeneration: entry.generation
+        )
+    }
+
+    /// Failures a retry can't change: the answer contradicts the upload, or
+    /// the journal refuses the row. Storage and cursor races stay retryable.
+    private static func isUnrecordable(_ error: any Error) -> Bool {
+        if let failure = error as? CompetitionRemoteFailure {
+            return failure == .serverContractMismatch
+        }
+        if let storeError = error as? CompetitionEventStoreError {
+            if case .cursorConflict = storeError { return false }
+            return true
+        }
+        return error is CompetitionJournalError
+            || error is RemoteScoreLedger.ValidationError
+            || error is RemoteAcceptedScoreRow.ValidationError
     }
 
     private func recoverPersistedLegacyAppAttestFailures(

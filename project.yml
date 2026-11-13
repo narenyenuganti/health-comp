@@ -55,6 +55,8 @@ targets:
         NSUserActivityTypes:
           - INSendMessageIntent
         NSSupportsLiveActivities: true
+        # HTTPS and Apple's system crypto only: exempt, so uploads skip the manual answer.
+        ITSAppUsesNonExemptEncryption: false
         SUPABASE_URL: "$(SUPABASE_URL)"
         SUPABASE_PUBLISHABLE_KEY: "$(SUPABASE_PUBLISHABLE_KEY)"
         HEALTHCOMP_APNS_ENVIRONMENT: "$(HEALTHCOMP_APNS_ENVIRONMENT)"

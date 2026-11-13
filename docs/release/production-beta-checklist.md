@@ -102,15 +102,14 @@ This is a scope decision, not a runtime receipt or production-readiness claim.
 
 iOS CI no longer runs on every push to main. It runs on pull requests that
 change anything outside docs/, web/, supabase/ (except shared test fixtures)
-and top-level Markdown, nightly on main at 09:17 UTC, and on demand. The
+and README.md, nightly on main at 09:17 UTC, and on demand. The
 merged-main and exact-main iOS runs cited in earlier checkpoints
 came from the old push trigger. For new exact-main iOS evidence, start a run
 after the merge with `gh workflow run ci.yml --ref main` and cite that run, or a
-nightly run, only when its head commit is the cited commit. Each run still
-covers project generation, Core in Debug and Release, the app tests and selected
-UI tests, release-style Staging tests, all three unsigned device configurations
-(Debug, Staging and Release), dedicated CI Simulator cleanup and the clean-tree
-check, now split across three parallel jobs. Backend CI still runs on every
+nightly run, only when its head commit is the cited commit. Pull requests run two jobs: core
+with the unsigned Release device build, and the Debug app tests with one UI test
+per main flow. The Staging job, the Debug and Staging device builds and the full
+UI test list run only nightly or via `gh workflow run`. Backend CI still runs on every
 push to main.
 
 ## Current qualification checkpoint — October 23, 2026 UTC
@@ -912,8 +911,9 @@ Status meanings:
   lifecycle on the same physical iPhone: retire the old installation, remove
   and reinstall the exact build, enroll a new installation/App Attest key, and
   prove the retired installation remains unusable.
-- **DEFERRED:** Universal-link evidence is outside this private-beta boundary
-  because no HTTPS invitation domain will be provided. The controlled custom-
+- **DEFERRED (historical, superseded):** Universal-link evidence was outside
+  this private-beta boundary because no HTTPS invitation domain was provided
+  then. The app now uses healthcomp.app (staging.healthcomp.app for staging). The controlled custom-
   scheme staging fallback remains in scope and must not be described as a
   universal link.
 

@@ -190,12 +190,16 @@ func competitionBadgeBook(_ competitions: [LocalCompetitionPresentation]) -> Com
     return CompetitionBadgeBook(badges: all.filter(\.isEarned) + all.filter { !$0.isEarned }, byWeek: byWeek)
 }
 
-/// A week's seven days as you saw them, in order; nil where either side has
-/// no score.
+/// A week's seven days as you saw them, in order, by the same rule as the
+/// strip and the result (`competitionDayOutcome`); nil where a day has no data.
 func competitionDayOutcomes(_ week: LocalCompetitionPresentation) -> [CompetitionOutcome?] {
     week.days.sorted { $0.ordinal < $1.ordinal }.map { day in
-        guard let you = day.ownerAcceptedPoints, let them = day.opponentRevealedPoints else { return nil }
-        return you > them ? .win : you < them ? .loss : .tie
+        switch competitionDayOutcome(day, currentDayOrdinal: nil) {
+        case .won: .win
+        case .lost: .loss
+        case .tied: .tie
+        case .today, .upcoming, .noData: nil
+        }
     }
 }
 
@@ -401,8 +405,7 @@ struct CompetitionBadgeTag: View {
 
     var body: some View {
         Text(name.uppercased(with: locale))
-            .font(.themeLabel)
-            .tracking(1)
+            .themeLabel(tracking: 1)
             .foregroundStyle(Theme.onYouFill)
             .padding(.horizontal, 7)
             .padding(.vertical, 3)
@@ -410,8 +413,8 @@ struct CompetitionBadgeTag: View {
     }
 }
 
-/// Seven marks, one per day: amber a day you won, ink one you lost, an
-/// outline for a tie or a day without both scores.
+/// Seven marks, one per day, as the week strip draws them: amber a day you
+/// won, ink one you lost, grey a tie, the stripe for a day without data.
 struct CompetitionDayMarks: View {
     let outcomes: [CompetitionOutcome?]
 
@@ -421,7 +424,8 @@ struct CompetitionDayMarks: View {
                 switch outcomes[index] {
                 case .win: SlantedBar().fill(Theme.youFill)
                 case .loss: SlantedBar().fill(Theme.ink)
-                case .tie, nil: SlantedBar().stroke(Theme.faint, lineWidth: 1.5)
+                case .tie: SlantedBar().fill(Theme.tertiary)
+                case nil: HatchBar()
                 }
             }
             .frame(width: 7, height: 10)
@@ -487,8 +491,7 @@ struct CompetitionAllLabel: View {
     var body: some View {
         HStack(spacing: 4) {
             Text("ALL")
-                .font(.themeLabel)
-                .tracking(1.2)
+                .themeLabel()
             Image(systemName: "chevron.right")
                 .font(.caption2.weight(.bold))
         }
@@ -522,8 +525,7 @@ struct CompetitionBadgesView: View {
                     SectionLabel("EARNED")
                     Spacer(minLength: 8)
                     Text("\(book.badges.filter(\.isEarned).count) OF \(book.badges.count)")
-                        .font(.themeLabel)
-                        .tracking(1.2)
+                        .themeLabel()
                         .foregroundStyle(Theme.secondary)
                         .accessibilityIdentifier("competition.badges.count")
                 }
@@ -638,9 +640,7 @@ struct CompetitionBadgeSheet: View {
                                     .multilineTextAlignment(.leading)
                             }
                             Spacer(minLength: 8)
-                            Image(systemName: "chevron.right")
-                                .font(.caption.weight(.bold))
-                                .foregroundStyle(Theme.tertiary)
+                            DisclosureChevron()
                         }
                         .padding(16)
                         .frame(maxWidth: .infinity, minHeight: 56, alignment: .leading)
@@ -690,11 +690,11 @@ struct CompetitionOwnRecordsView: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 24) {
                 if let thisYear {
-                    Picker("Records from", selection: $showsAllTime) {
-                        Text(String(thisYear.year)).tag(false)
-                        Text("All time").tag(true)
-                    }
-                    .pickerStyle(.segmented)
+                    CompetitionSegments(
+                        selection: $showsAllTime, options: [(false, String(thisYear.year)), (true, "All time")]
+                    )
+                    .accessibilityElement(children: .contain)
+                    .accessibilityLabel("Records from")
                     .accessibilityIdentifier("competition.ownRecords.year")
                 }
                 if sections.isEmpty {
@@ -770,9 +770,7 @@ struct CompetitionOwnRecordsView: View {
                 .font(.score(size: valueSize).monospacedDigit())
                 .foregroundStyle(Theme.ink)
                 .lineLimit(1)
-            Image(systemName: "chevron.right")
-                .font(.caption.weight(.bold))
-                .foregroundStyle(Theme.tertiary)
+            DisclosureChevron()
                 .opacity(opens ? 1 : 0)
         }
         .padding(.horizontal, 16)

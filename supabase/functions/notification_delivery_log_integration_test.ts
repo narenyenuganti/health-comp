@@ -2,9 +2,9 @@ import { assertEquals } from "@std/assert";
 import postgres from "postgres";
 
 Deno.test("development correlation never waits on a concurrently locked installation", async () => {
-  const databaseURL = Deno.env.get("HEALTHCOMP_TEST_DATABASE_URL") ??
-    "postgresql://postgres:postgres@127.0.0.1:54322/postgres";
+  const databaseURL = Deno.env.get("HEALTHCOMP_TEST_DATABASE_URL") ?? "";
   if (
+    !databaseURL ||
     !["127.0.0.1", "localhost", "::1"].includes(new URL(databaseURL).hostname)
   ) {
     throw new Error(
@@ -40,15 +40,18 @@ Deno.test("development correlation never waits on a concurrently locked installa
       await tx`select set_config('request.jwt.claims','{"role":"service_role"}',true)`;
       await tx`select public.finalize_competition(${competitionID}::uuid)`;
     });
-    const leased = await sql.begin(async (tx) => {
+    // Earlier tests leave pending work behind, so find this test's item by
+    // identity rather than assume it is the oldest in the queue.
+    const leased = (await sql.begin(async (tx) => {
       await tx`select set_config('request.jwt.claims','{"role":"service_role"}',true)`;
-      return (await tx`select public.lease_competition_notification_work(1,60) payload`)[
+      return (await tx`select public.lease_competition_notification_work(100,60) payload`)[
         0
       ]
         .payload.items;
-    });
+    })).filter((item: { competitionId: string }) =>
+      item.competitionId === competitionID
+    );
     assertEquals(leased.length, 1);
-    assertEquals(leased[0].competitionId, competitionID);
 
     const installationLocker = await sql.reserve();
     try {

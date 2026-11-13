@@ -762,7 +762,16 @@ private struct CompetitionEventStoreSynchronousStorage {
                 try cleanupDeletedIdentity(id)
                 continue
             }
-            if try resolve(id) != nil {
+            let resolved: ResolvedJournal?
+            do {
+                resolved = try resolve(id)
+            } catch {
+                // One unreadable journal must not hide every other match:
+                // list it, and load(id) reports the failure for it alone.
+                resolvedIDs.append(id)
+                continue
+            }
+            if resolved != nil {
                 try reapStaleTemporaryFiles(for: id)
                 resolvedIDs.append(id)
             } else {

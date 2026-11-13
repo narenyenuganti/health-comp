@@ -116,7 +116,7 @@ Deno.test("preview requires a verified bearer user", async () => {
           getUser: () =>
             Promise.resolve({
               data: { user: null },
-              error: { message: "bad jwt" },
+              error: { message: "bad jwt", status: 401 },
             }),
         },
         rpc: () => {

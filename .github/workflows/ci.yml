@@ -9,6 +9,7 @@ on:
       - "**"
       - "!docs/**"
       - "!web/**"
+      - "!functions/**"
       - "!supabase/**"
       - "!README.md"
       - "supabase/tests/fixtures/**"
@@ -65,7 +66,15 @@ jobs:
             printf 'Expected Xcode 16.4, got: %s\n' "${xcode_version%%$'\n'*}" >&2
             exit 1
           fi
-          brew install xcodegen ripgrep
+          brew install ripgrep
+          # Pinned by hash: an unpinned formula would fail every PR the day
+          # the runner image ships a newer XcodeGen.
+          curl -fsSL -o "$RUNNER_TEMP/xcodegen.zip" \
+            https://github.com/yonaskolb/XcodeGen/releases/download/2.46.0/xcodegen.zip
+          echo "4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806  $RUNNER_TEMP/xcodegen.zip" | shasum -a 256 -c -
+          unzip -q "$RUNNER_TEMP/xcodegen.zip" -d "$RUNNER_TEMP"
+          export PATH="$RUNNER_TEMP/xcodegen/bin:$PATH"
+          echo "$RUNNER_TEMP/xcodegen/bin" >> "$GITHUB_PATH"
           xcodegen_version="$(xcodegen --version)"
           if [[ "$xcodegen_version" != "Version: 2.46.0" ]]; then
             printf 'Expected XcodeGen 2.46.0, got: %s\n' "$xcodegen_version" >&2
@@ -275,12 +284,18 @@ jobs:
               GroupMatchResultUITests/testFreeForAllResultShowsSharedPlacesAndRematch
               GroupMatchResultUITests/testDoublesResultShowsTeamsTiesAndWhoCarried
               GroupMatchResultUITests/testJudgesRevealPlaysOnceBeforeAFourWayResult
+              JudgesDecisionUITests/testSkipReplayAndSeenOnNextVisit
+              JudgesDecisionUITests/testDraw
+              BeltCeremonyUITests/testTapSkipsAndTheBannerReplays
               GroupMatchVersusUITests/testReplaysFromTheMenuOnALaterDay
               GroupMatchHistoryUITests/testGroupMatchesSitBelowTheDuelRecordOnlyWhenThereAreSome
               VersusIntroUITests/testEveryMatchupEndsByItself
               VersusIntroUITests/testMenuReplaysRepeatedlyWithoutReenablingAutoplay
               VersusIntroUITests/testMenuReplaysAfterDayOne
               VersusIntroUITests/testReduceMotionShowsTheComposedScreenAndATapEndsIt
+              VersusIntroUITests/testReduceMotionEndsByItself
+              VersusIntroUITests/testPlaysForTheAccepterOverTheMatchThenNeverAgain
+              MultiUserCompetitionUITests/testColdWarmAndSignedOutClaimConfirmationFlows
             )
           fi
           xcodebuild test \
@@ -304,6 +319,21 @@ jobs:
             COMPILER_INDEX_STORE_ENABLE=NO \
             SUPABASE_URL="$SUPABASE_URL" \
             SUPABASE_PUBLISHABLE_KEY="$SUPABASE_PUBLISHABLE_KEY"
+
+      - name: List tests that needed a retry
+        if: ${{ always() && steps.app_tests.outcome != 'skipped' }}
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          retried="$(xcrun xcresulttool get test-results tests \
+            --path "$RUNNER_TEMP/HealthComp-AppTests.xcresult" |
+            jq -r '.. | objects | select(.nodeType == "Test Case")
+              | select([.children[]? | select(.nodeType == "Repetition")] | length > 1)
+              | "- \(.nodeIdentifier // .name): \(.result)"')"
+          {
+            echo "### Tests that needed a retry"
+            echo "${retried:-None.}"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Retain synthetic app-test failure evidence
         if: ${{ failure() && steps.app_tests.outcome == 'failure' }}

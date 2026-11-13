@@ -370,6 +370,22 @@ final class RemoteCompetitionReplayTests: XCTestCase {
         XCTAssertNil(projection.sharedResult?.winner)
     }
 
+    func testAllZeroBestAvailableAttestationReplaysWithNoOwnerScoreHistory() throws {
+        var journal = try remoteJournalPrefix()
+        let missing = try (1...7).map {
+            try RemoteFinalizationDayV1(ordinal: $0, status: .unavailable, source: .deadlineMissing, points: nil, reason: "missing", wireContentSHA256: nil, clientRevision: nil, serverSequence: nil)
+        }
+        let commitment = try RemoteFinalizationWireV1.windowCommitment(competitionID: fixtureCompetitionID.rawValue, participantID: fixtureOwner.profileID, days: missing)
+        func attestation(_ basis: RemoteFinalizationBasis) throws -> RemoteFinalWindowAttestation {
+            try RemoteFinalWindowAttestation(competitionID: fixtureCompetitionID, participant: fixtureOwner, windowCommitment: commitment, basis: basis, acceptedRevisions: Array(repeating: 0, count: 7), attestationVersion: 1, serverSequence: 1, attestedAt: fixtureDeadline)
+        }
+        let before = journal.cursor
+        XCTAssertThrowsError(try journal.append([.remoteFinalWindowAttested(try attestation(.stable))], expectedCursor: before))
+        _ = try journal.append([.remoteFinalWindowAttested(try attestation(.bestAvailable))], expectedCursor: before)
+        XCTAssertNotEqual(journal.cursor, before)
+        XCTAssertNil(try CompetitionReplayer.replay(journal).remoteScoreLedgers[fixtureOwner.profileID])
+    }
+
     func testMissingOwnerLedgerDoesNotAcceptUncachedOwnerResultRows() throws {
         var journal = try remoteJournalPrefix()
         let before = journal.cursor

@@ -37,8 +37,11 @@ export async function appleDeletionWebBeginHandler(
   try {
     authUserID = await dependencies.authenticate(authorization);
     if (!authUserID) return reject(401);
-  } catch {
-    return reject(401);
+  } catch (error) {
+    // Auth could not answer (see verifiedUserId): retryable, not signed out.
+    return reject(
+      (error as { status?: unknown } | null)?.status === 503 ? 503 : 401,
+    );
   }
   let clientID: string;
   let redirectURI: string;

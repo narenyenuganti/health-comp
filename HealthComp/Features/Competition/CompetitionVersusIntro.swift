@@ -112,9 +112,13 @@ enum CompetitionVersusIntroGate {
     /// `--versus-hold` keeps the composed screen up until a tap: XCUITest
     /// only looks once the app idles, and by then the intro is gone.
     static let holds = ProcessInfo.processInfo.arguments.contains("--versus-hold")
+    /// A launch argument can't switch Reduce Motion on in a simulator:
+    /// `--versus-reduce-motion` takes its path for the UI tests.
+    static let assumesReduceMotion = ProcessInfo.processInfo.arguments.contains("--versus-reduce-motion")
 #else
     static let assumesVoiceOver = false
     static let holds = false
+    static let assumesReduceMotion = false
 #endif
 }
 
@@ -377,7 +381,8 @@ private struct CompetitionVersusIntroView: View {
     let photos: VersusPhotos
     let finished: () -> Void
 
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
+    private var reduceMotion: Bool { systemReduceMotion || CompetitionVersusIntroGate.assumesReduceMotion }
     @ScaledMetric(relativeTo: .subheadline) private var labelLine: CGFloat = 20
     @State private var start = Date()
     @State private var isSkipped = false
@@ -475,18 +480,23 @@ private struct CompetitionVersusIntroView: View {
         isSkipped = true
     }
 
-    /// Each half holds the same scene, cut on the slash.
+    /// Each half holds the same scene, cut on the slash. Until the split the
+    /// halves meet, so one whole scene draws the same picture at half the work.
     private func frame(_ stage: VersusStage, at t: Double) -> some View {
         let open = VersusClock.openCurve.value(
             at: VersusClock.ramp(t, VersusClock.split, VersusClock.end - VersusClock.split)
         ) * (stage.size.width + 40)
         return ZStack {
-            scene(stage, at: t)
-                .clipShape(VersusSlashSide(isYours: true, centerY: stage.center.y, inset: -1))
-                .offset(x: -open)
-            scene(stage, at: t)
-                .clipShape(VersusSlashSide(isYours: false, centerY: stage.center.y, inset: -1))
-                .offset(x: open)
+            if t < VersusClock.split {
+                scene(stage, at: t)
+            } else {
+                scene(stage, at: t)
+                    .clipShape(VersusSlashSide(isYours: true, centerY: stage.center.y, inset: -1))
+                    .offset(x: -open)
+                scene(stage, at: t)
+                    .clipShape(VersusSlashSide(isYours: false, centerY: stage.center.y, inset: -1))
+                    .offset(x: open)
+            }
             Color.white.opacity(VersusClock.flash(t))
             Path { path in
                 path.move(to: CGPoint(x: stage.slashX(0), y: 0))

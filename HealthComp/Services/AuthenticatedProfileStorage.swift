@@ -23,6 +23,9 @@ struct AuthenticatedProfileStoragePaths: Equatable, Sendable {
     let practiceEventsDirectory: URL
     /// Downloaded profile photos (`ProfilePhotoCache`).
     let profilePhotosDirectory: URL
+    /// This mount created the profile root, so a failed mount may remove it
+    /// without losing anything saved earlier.
+    var isNewlyCreated = false
 
     var fixedDirectories: [URL] {
         [
@@ -203,15 +206,22 @@ private actor AuthenticatedProfileStorageCoordinator {
             profileID.uuidString.lowercased(),
             isDirectory: true
         )
-        let paths = AuthenticatedProfileStoragePaths(
+        var paths = AuthenticatedProfileStoragePaths(
             profileID: profileID,
             rootDirectory: root
         )
         do {
+            paths.isNewlyCreated = try entryKind(at: root) == .absent
             try ensurePrivateDirectory(root)
             for directory in paths.fixedDirectories {
                 try ensurePrivateDirectory(directory)
             }
+            // Exact Health values stay on this phone, out of iCloud and
+            // computer backups.
+            var values = URLResourceValues()
+            values.isExcludedFromBackup = true
+            var practice = paths.practiceEventsDirectory
+            try practice.setResourceValues(values)
             return paths
         } catch let failure as AuthenticatedProfileStorageFailure {
             throw failure

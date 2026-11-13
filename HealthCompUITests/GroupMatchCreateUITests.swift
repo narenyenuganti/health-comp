@@ -50,6 +50,11 @@ final class GroupMatchCreateUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Three-Way"].waitForExistence(timeout: 4))
         XCTAssertTrue(create.isEnabled)
         create.tap()
+        // The lab's server accepts at once: no error line, and the app is still up.
+        let failure = app.descendants(matching: .any)
+            .matching(NSPredicate(format: "label CONTAINS %@", "create the match")).firstMatch
+        XCTAssertFalse(failure.waitForExistence(timeout: 3), "Create showed its error line.")
+        XCTAssertEqual(app.state, .runningForeground)
     }
 
     func testPastedChallengeLinkAddsThatPerson() {

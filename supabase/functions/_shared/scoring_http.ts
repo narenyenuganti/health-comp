@@ -10,7 +10,7 @@ export interface ScoringRpcClient {
     getUser(): Promise<
       {
         data: { user: { id: string } | null };
-        error: { message: string } | null;
+        error: { message: string; status?: number } | null;
       }
     >;
   };
@@ -77,10 +77,73 @@ export async function authenticatedContext(
   const authorization = request.headers.get("authorization");
   if (!authorization || !/^Bearer\s+\S+$/i.test(authorization)) return null;
   const client = deps.createUserClient(authorization);
-  const result = await client.auth.getUser();
-  return result.error || !result.data.user
-    ? null
-    : { client, userId: result.data.user.id };
+  const userId = await verifiedUserId(client);
+  return userId ? { client, userId } : null;
+}
+// null only when Auth answered and rejected the token (4xx other than 408 and
+// 429). auth-js returns outages (network, 408, 429, 5xx) as errors instead of
+// throwing; those throw here so every caller answers 503 and the app retries.
+export async function verifiedUserId(
+  client: Pick<ScoringRpcClient, "auth">,
+): Promise<string | null> {
+  const { data, error } = await client.auth.getUser();
+  if (error) {
+    const status = error.status;
+    if (
+      typeof status === "number" && status >= 400 && status < 500 &&
+      status !== 408 && status !== 429
+    ) return null;
+    throw new Error("auth_unavailable");
+  }
+  return data.user?.id ?? null;
+}
+// Streams at most maximumBytes, so a chunked body without Content-Length
+// cannot make the worker buffer it all. null for any invalid body.
+export async function readBoundedJson(
+  request: Request,
+  maximumBytes: number,
+): Promise<unknown | null> {
+  const contentType = request.headers.get("content-type")?.split(";", 1)[0]
+    .trim().toLowerCase();
+  if (contentType !== "application/json") return null;
+  const contentLength = request.headers.get("content-length");
+  if (
+    contentLength !== null &&
+    (!/^[0-9]+$/.test(contentLength) || Number(contentLength) > maximumBytes)
+  ) return null;
+  if (!request.body) return null;
+
+  const reader = request.body.getReader();
+  const chunks: Uint8Array[] = [];
+  let length = 0;
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      length += value.length;
+      if (length > maximumBytes) {
+        await reader.cancel();
+        return null;
+      }
+      chunks.push(value);
+    }
+  } catch {
+    return null;
+  } finally {
+    reader.releaseLock();
+  }
+
+  const bytes = new Uint8Array(length);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.length;
+  }
+  try {
+    return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+  } catch {
+    return null;
+  }
 }
 export function isUuid(value: unknown): value is string {
   return typeof value === "string" &&
@@ -101,7 +164,10 @@ const forbiddenPrefixes = [
   "accepted-activity-score:",
   "live-day-score:",
 ];
-export function containsFingerprint(value: unknown): boolean {
+// Real payloads nest at most a few levels; anything deeper is rejected as if it
+// carried a fingerprint, so hostile nesting cannot overflow the stack.
+export function containsFingerprint(value: unknown, depth = 0): boolean {
+  if (depth > 16) return true;
   if (typeof value === "string") {
     if (forbiddenPrefixes.some((p) => value.startsWith(p))) return true;
     try {
@@ -112,10 +178,12 @@ export function containsFingerprint(value: unknown): boolean {
     } catch { /* not base64 */ }
     return false;
   }
-  if (Array.isArray(value)) return value.some(containsFingerprint);
+  if (Array.isArray(value)) {
+    return value.some((v) => containsFingerprint(v, depth + 1));
+  }
   if (value && typeof value === "object") {
     return Object.entries(value as Record<string, unknown>).some(([k, v]) =>
-      /fingerprint/i.test(k) || containsFingerprint(v)
+      /fingerprint/i.test(k) || containsFingerprint(v, depth + 1)
     );
   }
   return false;

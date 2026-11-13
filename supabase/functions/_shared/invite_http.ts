@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { verifiedUserId } from "./scoring_http.ts";
 
 export interface InviteRpcError {
   message: string;
@@ -10,7 +11,7 @@ export interface InviteRpcClient {
   auth: {
     getUser(): Promise<{
       data: { user: { id: string } | null };
-      error: { message: string } | null;
+      error: { message: string; status?: number } | null;
     }>;
   };
   rpc(
@@ -94,8 +95,8 @@ export async function authenticatedContext(
   const authorization = bearerAuthorization(request);
   if (!authorization) return null;
   const client = dependencies.createUserClient(authorization);
-  const { data, error } = await client.auth.getUser();
-  return error || !data.user ? null : { client, userId: data.user.id };
+  const userId = await verifiedUserId(client);
+  return userId ? { client, userId } : null;
 }
 
 export async function sha256Hex(value: Uint8Array): Promise<string> {

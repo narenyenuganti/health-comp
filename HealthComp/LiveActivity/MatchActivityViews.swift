@@ -68,8 +68,7 @@ struct MatchActivityHeader: View {
                 title.minimumScaleFactor(0.8)
             }
         }
-        .font(.themeLabel)
-        .tracking(1.2)
+        .themeLabel()
         .textCase(.uppercase)
         .lineLimit(1)
     }
@@ -127,8 +126,7 @@ struct MatchActivityScoreColumn: View {
     // Shrinks a little, then truncates, like the header.
     private var name: some View {
         Text(side.name(state).uppercased(with: .current))
-            .font(.themeLabel)
-            .tracking(1.4)
+            .themeLabel(tracking: 1.4)
             .minimumScaleFactor(0.8)
     }
 
@@ -245,8 +243,7 @@ struct MatchActivitySmallView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(state.title)
-                .font(.themeLabel)
-                .tracking(1.2)
+                .themeLabel()
                 .textCase(.uppercase)
                 .foregroundStyle(Theme.ink)
                 .lineLimit(1)

@@ -95,6 +95,15 @@ select pg_temp.as_user(1);
 select throws_ok($$select public.leave_group_match(pg_temp.gid('prestart'))$$,'P0001','leave_not_allowed','leave before day one refused');
 select pg_temp.as_user(8);
 select throws_ok($$select public.accept_group_match(pg_temp.gid('prestart'))$$,'P0001','group_match_unavailable','nonparticipant accept refused before lineup locks');
+-- An outsider can neither read nor change someone else's group.
+select throws_ok($$select public.preview_group_match(pg_temp.gid('prestart'))$$,'P0001','group_match_unavailable','nonparticipant preview refused');
+select throws_ok($$select public.leave_group_match(pg_temp.gid('prestart'))$$,'P0001','group_match_unavailable','nonparticipant leave refused');
+select throws_ok($$select public.decline_group_match(pg_temp.gid('prestart'))$$,'P0001','group_match_unavailable','nonparticipant decline refused');
+select throws_ok($$select public.cancel_group_match(pg_temp.gid('prestart'))$$,'P0001','group_match_unavailable','nonparticipant cancel refused');
+select throws_ok($$select public.set_competition_reaction(pg_temp.gid('prestart'),1,'clap',pg_temp.pid(2))$$,'P0001','reaction_not_allowed','nonparticipant reaction refused');
+select throws_ok($$select public.nudge_competition_participant(pg_temp.gid('prestart'),pg_temp.pid(2))$$,'P0002','competition_not_found','nonparticipant nudge refused');
+select pg_temp.as_user(2);
+select throws_ok($$select public.cancel_group_match(pg_temp.gid('prestart'))$$,'P0001','group_match_unavailable','only the creator can cancel');
 select pg_temp.as_user(1); select public.cancel_group_match(pg_temp.gid('prestart'));
 select pg_temp.make_match('live'); select pg_temp.make_live(pg_temp.gid('live'));
 select pg_temp.as_user(1);

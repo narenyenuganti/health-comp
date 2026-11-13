@@ -132,8 +132,7 @@ private struct GroupMatchHomeCard: View {
                 Text(trailing).foregroundStyle(Theme.secondary)
             }
         }
-        .font(.themeLabel)
-        .tracking(1.2)
+        .themeLabel()
         .textCase(.uppercase)
     }
 
@@ -225,11 +224,16 @@ private struct GroupMatchHomeCard: View {
                 .font(.score(size: rowScore))
                 .foregroundStyle(color)
                 .frame(minWidth: 14, alignment: .leading)
-            PersonAvatar(name: seat.name, photo: seat.profileID, size: avatarSize, isYou: isYou, isBot: seat.isBot)
+            // At accessibility sizes the name takes the avatar's width and wraps
+            // instead of truncating to a letter; the lineup avatars are decoration here.
+            if !dynamicTypeSize.isAccessibilitySize {
+                PersonAvatar(name: seat.name, photo: seat.profileID, size: avatarSize, isYou: isYou, isBot: seat.isBot)
+            }
             Text(isYou ? "You" : seat.name)
                 .fontWeight(isYou ? .bold : .regular)
                 .foregroundStyle(color)
-                .lineLimit(1)
+                .lineLimit(dynamicTypeSize.isAccessibilitySize ? nil : 1)
+                .fixedSize(horizontal: false, vertical: dynamicTypeSize.isAccessibilitySize)
                 .frame(maxWidth: .infinity, alignment: .leading)
             Text(GroupMatchPresentation.pointsText(row.centipoints))
                 .font(.score(size: rowScore).monospacedDigit())
@@ -257,8 +261,7 @@ private struct GroupMatchHomeCard: View {
     private func team(_ row: GroupMatchStandingRow, isYours: Bool, alignment: HorizontalAlignment) -> some View {
         VStack(alignment: alignment, spacing: 6) {
             Text(match.name(of: row.subject))
-                .font(.themeLabel)
-                .tracking(1.2)
+                .themeLabel()
                 .textCase(.uppercase)
             Text(GroupMatchPresentation.pointsText(row.centipoints))
                 .font(.score(size: teamScore).monospacedDigit())

@@ -151,12 +151,8 @@ struct CompetitionInviteView: View {
                 showsCancelConfirmation = true
             } label: {
                 Text("Cancel Challenge")
-                    .font(.headline.width(.condensed))
-                    .foregroundStyle(Theme.secondary)
-                    .frame(maxWidth: .infinity, minHeight: 44)
-                    .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
+            .buttonStyle(QuietButtonStyle())
             .disabled(isCommandInFlight)
             .accessibilityIdentifier("competition.invite.cancel")
             if commandFailed {
@@ -194,8 +190,7 @@ struct CompetitionInviteView: View {
     private var invitationCopy: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(direction == .incoming ? "CHALLENGE RECEIVED" : "CHALLENGE SENT")
-                .font(.themeLabel)
-                .tracking(1.4)
+                .themeLabel(tracking: 1.4)
                 .foregroundStyle(Theme.secondary)
             Text(directionTitle)
                 .font(.largeTitle.weight(.heavy).width(.condensed))
@@ -286,12 +281,8 @@ struct CompetitionInviteView: View {
             showsDeclineConfirmation = true
         } label: {
             Text("Decline")
-                .font(.headline.width(.condensed))
-                .foregroundStyle(Theme.secondary)
-                .frame(maxWidth: .infinity, minHeight: 44)
-                .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(QuietButtonStyle())
         .disabled(isCommandInFlight)
         .accessibilityLabel(
             "Decline challenge from \(competition.opponentDisplayName)"
@@ -450,8 +441,7 @@ struct CompetitionInvitationFaceOff: View {
                 }
                 .frame(maxWidth: .infinity)
             }
-            .font(.themeLabel)
-            .tracking(1.4)
+            .themeLabel(tracking: 1.4)
             .multilineTextAlignment(.center)
             .frame(maxWidth: 360)
         }

@@ -42,7 +42,7 @@ struct GroupMatchResultView: View {
                 if dynamicTypeSize.isAccessibilitySize { rematchButton }
             }
             .frame(maxWidth: 560, alignment: .leading)
-            .padding(.horizontal, 20)
+            .padding(.horizontal, 16)
             .padding(.vertical, 12)
             .frame(maxWidth: .infinity)
         }
@@ -51,7 +51,7 @@ struct GroupMatchResultView: View {
             if !dynamicTypeSize.isAccessibilitySize {
                 rematchButton
                     .frame(maxWidth: 560)
-                    .padding(.horizontal, 20)
+                    .padding(.horizontal, 16)
                     .padding(.top, 12)
                     .padding(.bottom, 8)
                     .frame(maxWidth: .infinity)
@@ -95,8 +95,7 @@ struct GroupMatchResultView: View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Final · \(match.format.title)")
                 .textCase(.uppercase)
-                .font(.themeLabel)
-                .tracking(1.2)
+                .themeLabel()
                 .foregroundStyle(Theme.secondary)
                 .padding(.bottom, 10)
             Text(title)
@@ -231,8 +230,10 @@ struct GroupMatchResultView: View {
                 .padding(.top, 4)
         }
         .frame(maxWidth: .infinity)
+        .modifier(CompetitionProfileTap(route: match.profileRoute(seat)))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(placeLabel(row, seat: seat))
+        .modifier(CompetitionProfileAction(route: match.profileRoute(seat), name: seat.name))
         .accessibilityIdentifier("competition.group.result.row.\(index + 1)")
     }
 
@@ -269,8 +270,10 @@ struct GroupMatchResultView: View {
         }
         .padding(.vertical, 10)
         .frame(minHeight: 56)
+        .modifier(CompetitionProfileTap(route: match.profileRoute(seat)))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(placeLabel(row, seat: seat))
+        .modifier(CompetitionProfileAction(route: match.profileRoute(seat), name: seat.name))
         .accessibilityIdentifier("competition.group.result.row.\(index + 1)")
     }
 
@@ -317,8 +320,7 @@ struct GroupMatchResultView: View {
         return VStack(alignment: alignment, spacing: 6) {
             Text(match.name(of: .team(team)))
                 .textCase(.uppercase)
-                .font(.themeLabel)
-                .tracking(1.2)
+                .themeLabel()
             Text(points(row?.centipoints ?? 0))
                 .font(.score(size: teamScoreSize).monospacedDigit())
         }
@@ -422,7 +424,8 @@ struct GroupMatchResultView: View {
         if seat.id == match.viewerSeatID {
             shape.fill(Theme.youFill)
         } else if isYours {
-            shape.strokeBorder(seat.isBot ? Theme.ink : Theme.youFill, lineWidth: 2)
+            // A thin stroke: amber as text, which holds contrast.
+            shape.strokeBorder(seat.isBot ? Theme.ink : Theme.you, lineWidth: 2)
         } else {
             shape.fill(isLead ? Theme.ink : Theme.tertiary)
         }

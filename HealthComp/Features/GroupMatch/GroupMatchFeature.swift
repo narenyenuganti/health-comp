@@ -46,6 +46,8 @@ enum GroupMatchFailure: Hashable, Sendable {
     case creationLimit
     /// Closed, expired or no longer yours to answer.
     case closed
+    /// The server refused a nudge: your partner updated recently, or the result no longer waits on them.
+    case nudgeNotNeeded
 
     init?(_ error: Error) {
         switch error as? CompetitionRemoteFailure {
@@ -66,6 +68,7 @@ enum GroupMatchFailure: Hashable, Sendable {
             "\(name ?? displayName ?? "Someone in this lineup") needs to update HealthComp first."
         case .creationLimit: "You already have 5 group matches waiting or live. Finish or cancel one first."
         case .closed: "This match is no longer open."
+        case .nudgeNotNeeded: "Your partner doesn’t need a nudge right now."
         }
     }
 }
@@ -121,7 +124,10 @@ struct GroupMatchFeature {
                         let published = try await competitionClient.groupMatchCommand(command)
                         await send(.commandFinished(command, published))
                     } catch {
-                        await send(.commandFinished(command, nil, GroupMatchFailure(error)))
+                        // A refused nudge isn't a connection problem; retrying won't help.
+                        var reason = GroupMatchFailure(error)
+                        if case .nudge = command, error as? CompetitionRemoteFailure == .forbidden { reason = .nudgeNotNeeded }
+                        await send(.commandFinished(command, nil, reason))
                     }
                 }
                 .cancellable(id: CancelID.commands)

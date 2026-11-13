@@ -11,18 +11,19 @@ struct GroupMatchDayView: View {
     let store: StoreOf<GroupMatchFeature>
 
     @State private var reactingTo: UUID?
-    /// What you sent from here; the read model doesn't carry reactions yet.
-    @State private var sent: [UUID: CompetitionReactionKind] = [:]
+    /// What you sent from here, shown until the match catches up; nil
+    /// while removing. The match's own reactions are the rest.
+    @State private var sent: [UUID: CompetitionReactionKind?] = [:]
     @ScaledMetric(relativeTo: .title) private var pointsSize: CGFloat = 28
     @ScaledMetric(relativeTo: .headline) private var avatarSize: CGFloat = 32
     @Environment(\.locale) private var locale
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 Text("Day \(ordinal) · \(stateText)")
-                    .font(.themeLabel)
-                    .tracking(1.2)
+                    .themeLabel()
                     .textCase(.uppercase)
                     .foregroundStyle(Theme.secondary)
                     .accessibilityLabel("Day \(ordinal) · \(stateText)")
@@ -35,7 +36,7 @@ struct GroupMatchDayView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            .padding(.horizontal, 20)
+            .padding(.horizontal, 16)
             .padding(.top, 12)
             .padding(.bottom, 24)
         }
@@ -88,13 +89,18 @@ struct GroupMatchDayView: View {
         let name = match.name(of: standing.subject)
         let points = Double(standing.centipoints) / 100
         let won = winners.contains(standing.subject)
-        return HStack(spacing: 8) {
-            Text(name.uppercased(with: locale))
-                .font(.themeLabel)
-                .tracking(1.2)
-                .foregroundStyle(isYours ? Theme.you : Theme.ink)
-            if won { wonChip }
-            Spacer(minLength: 8)
+        // The chip goes under the name, and at accessibility sizes the points too.
+        let layout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 6)) : AnyLayout(HStackLayout(spacing: 8))
+        return layout {
+            VStack(alignment: .leading, spacing: 6) {
+                Text(name.uppercased(with: locale))
+                    .themeLabel()
+                    .foregroundStyle(isYours ? Theme.you : Theme.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+                if won { wonChip }
+            }
+            if !dynamicTypeSize.isAccessibilitySize { Spacer(minLength: 8) }
             Text(competitionPointsText(points, locale: locale))
                 .font(.title3.weight(.heavy).width(.condensed).monospacedDigit())
                 .foregroundStyle(isYours ? Theme.you : Theme.ink)
@@ -131,11 +137,12 @@ struct GroupMatchDayView: View {
                 } label: {
                     panel
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(CompetitionPressButtonStyle())
                 .accessibilityElement(children: .ignore)
                 .accessibilityLabel(playerLabel(seat, won: won))
                 .accessibilityHint("Shows reactions")
                 .accessibilityAddTraits(.isButton)
+                .modifier(CompetitionProfileAction(route: match.profileRoute(seat), name: seat.name))
                 .accessibilityIdentifier("competition.group.day.player.\(seat.number)")
                 if reactingTo == seat.id {
                     picker(seat)
@@ -144,6 +151,7 @@ struct GroupMatchDayView: View {
                 panel
                     .accessibilityElement(children: .ignore)
                     .accessibilityLabel(playerLabel(seat, won: won))
+                    .modifier(CompetitionProfileAction(route: match.profileRoute(seat), name: seat.name))
                     .accessibilityIdentifier("competition.group.day.player.\(seat.number)")
             }
         }
@@ -153,52 +161,166 @@ struct GroupMatchDayView: View {
         let isYou = seat.id == match.viewerSeatID
         let points = match.dayCentipoints(seat, ordinal: ordinal).map { Double($0) / 100 }
         let rings = match.rings.first { $0.seatID == seat.id && $0.ordinal == ordinal }
+        let isLarge = dynamicTypeSize.isAccessibilitySize
+        let name = Text(isYou ? "You" : seat.name)
+            .fontWeight(isYou ? .bold : .regular)
+            .foregroundStyle(isYou ? Theme.you : Theme.ink)
+            .fixedSize(horizontal: false, vertical: true)
+        let pointsText = Text(competitionPointsText(points, locale: locale).replacingOccurrences(of: "--", with: "–"))
+            .font(.score(size: pointsSize).monospacedDigit())
+            .foregroundStyle(isYou ? Theme.you : Theme.ink)
+            .fixedSize()
         return VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 12) {
-                PersonAvatar(name: seat.name, photo: seat.profileID, size: avatarSize, isYou: isYou, isBot: seat.isBot)
-                Text(isYou ? "You" : seat.name)
-                    .fontWeight(isYou ? .bold : .regular)
-                    .foregroundStyle(isYou ? Theme.you : Theme.ink)
+            if isLarge {
+                // Stacked so the name keeps the line: avatar and name, then
+                // the tags and chip, then the points.
+                HStack(spacing: 12) {
+                    PersonAvatar(name: seat.name, photo: seat.profileID, size: min(avatarSize, 56), isYou: isYou, isBot: seat.isBot)
+                    name
+                }
+                // Another person opens their profile; the rest of the panel reacts.
+                .modifier(CompetitionProfileTap(route: match.profileRoute(seat)))
                 if seat.isBot { GroupMatchTag("BOT") }
                 if match.hasLeft(seat) { GroupMatchTag("LEFT") }
                 if won { wonChip }
-                Spacer(minLength: 8)
-                Text(competitionPointsText(points, locale: locale).replacingOccurrences(of: "--", with: "–"))
-                    .font(.score(size: pointsSize).monospacedDigit())
-                    .foregroundStyle(isYou ? Theme.you : Theme.ink)
-                    .fixedSize()
+                pointsText
+            } else {
+                HStack(spacing: 12) {
+                    PersonAvatar(name: seat.name, photo: seat.profileID, size: avatarSize, isYou: isYou, isBot: seat.isBot)
+                        .modifier(CompetitionProfileTap(route: match.profileRoute(seat)))
+                    let tags = Group {
+                        if seat.isBot { GroupMatchTag("BOT") }
+                        if match.hasLeft(seat) { GroupMatchTag("LEFT") }
+                    }
+                    // One line beside the name when it fits; the chip drops under it otherwise.
+                    ViewThatFits(in: .horizontal) {
+                        HStack(spacing: 8) {
+                            name
+                            tags
+                            if won { wonChip }
+                        }
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack(spacing: 8) {
+                                name
+                                tags
+                            }
+                            if won { wonChip }
+                        }
+                    }
+                    Spacer(minLength: 8)
+                    pointsText
+                }
             }
             // Bots have points, never rings.
             if let rings, !seat.isBot {
                 ringRows(rings.centipoints, isYou: isYou)
             }
+            let shown = reactions(on: seat)
+            if !shown.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(shown, id: \.authorSeatID) { reaction in
+                        let layout = isLarge
+                            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 4)) : AnyLayout(HStackLayout(spacing: 8))
+                        layout {
+                            CompetitionReactionEmoji(kind: reaction.kind)
+                            Text("\(authorName(reaction)) reacted")
+                                .font(.subheadline)
+                                .foregroundStyle(Theme.secondary)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }
+                .padding(.top, 2)
+            }
         }
+    }
+
+    /// Everyone's reactions to this seat's day, yours first.
+    private func reactions(on seat: GroupMatchSeat) -> [GroupMatchReaction] {
+        let others = match.reactions.filter {
+            $0.targetSeatID == seat.id && $0.ordinal == ordinal && $0.authorSeatID != match.viewerSeatID
+        }
+        guard let own = ownReaction(seat) else { return others }
+        return [GroupMatchReaction(authorSeatID: match.viewerSeatID, targetSeatID: seat.id, ordinal: ordinal, kind: own)] + others
+    }
+
+    /// What you sent from here unless it failed, otherwise what the match has.
+    private func ownReaction(_ seat: GroupMatchSeat) -> CompetitionReactionKind? {
+        if !isFailed(seat), let local = sent[seat.id] { return local }
+        return match.reactions.first {
+            $0.authorSeatID == match.viewerSeatID && $0.targetSeatID == seat.id && $0.ordinal == ordinal
+        }?.kind
+    }
+
+    private func authorName(_ reaction: GroupMatchReaction) -> String {
+        reaction.authorSeatID == match.viewerSeatID
+            ? "You" : match.seats.first { $0.id == reaction.authorSeatID }?.name ?? "Former competitor"
+    }
+
+    private func isTarget(_ seat: GroupMatchSeat) -> (GroupMatchCommand) -> Bool {
+        { command in
+            guard case let .react(id, seatID, day, _) = command else { return false }
+            return id == match.id && seatID == seat.id && day == ordinal
+        }
+    }
+
+    private func isFailed(_ seat: GroupMatchSeat) -> Bool {
+        store.failed.contains(where: isTarget(seat))
     }
 
     private func ringRows(_ centipoints: [Int], isYou: Bool) -> some View {
         let colors = isYou ? [Theme.move, Theme.exercise, Theme.stand] : [Theme.ink, Theme.ink, Theme.ink]
-        return Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 4) {
-            ForEach(Array(["Move", "Exercise", "Stand"].enumerated()), id: \.offset) { index, title in
-                let percent = Self.percent(centipoints[index])
-                GridRow {
-                    Text(title)
-                        .foregroundStyle(Theme.secondary)
-                    Capsule()
-                        .fill(Theme.hairline)
-                        .frame(height: 8)
-                        .overlay(alignment: .leading) {
-                            Capsule()
-                                .fill(colors[index])
-                                .scaleEffect(x: min(Double(percent), 200) / 200, anchor: .leading)
+        let rings = Array(["Move", "Exercise", "Stand"].enumerated())
+        return Group {
+            if dynamicTypeSize.isAccessibilitySize {
+                // Label and value on one line, never broken; the bar under them.
+                VStack(alignment: .leading, spacing: 10) {
+                    ForEach(rings, id: \.offset) { index, title in
+                        let percent = Self.percent(centipoints[index])
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack(alignment: .firstTextBaseline) {
+                                Text(title)
+                                    .foregroundStyle(Theme.secondary)
+                                    .fixedSize()
+                                Spacer(minLength: 8)
+                                Text("\(percent)%")
+                                    .fontWeight(.bold)
+                                    .foregroundStyle(Theme.ink)
+                                    .fixedSize()
+                            }
+                            ringBar(colors[index], percent)
                         }
-                    Text("\(percent)%")
-                        .fontWeight(.bold)
-                        .foregroundStyle(Theme.ink)
-                        .gridColumnAlignment(.trailing)
+                    }
+                }
+            } else {
+                Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 4) {
+                    ForEach(rings, id: \.offset) { index, title in
+                        let percent = Self.percent(centipoints[index])
+                        GridRow {
+                            Text(title)
+                                .foregroundStyle(Theme.secondary)
+                            ringBar(colors[index], percent)
+                            Text("\(percent)%")
+                                .fontWeight(.bold)
+                                .foregroundStyle(Theme.ink)
+                                .gridColumnAlignment(.trailing)
+                        }
+                    }
                 }
             }
         }
         .font(.caption)
+    }
+
+    private func ringBar(_ color: Color, _ percent: Int) -> some View {
+        Capsule()
+            .fill(Theme.hairline)
+            .frame(height: 8)
+            .overlay(alignment: .leading) {
+                Capsule()
+                    .fill(color)
+                    .scaleEffect(x: min(Double(percent), 200) / 200, anchor: .leading)
+            }
     }
 
     /// A ring's points are its percent: 1 point per 1%.
@@ -214,23 +336,21 @@ struct GroupMatchDayView: View {
         if !seat.isBot, let rings = match.rings.first(where: { $0.seatID == seat.id && $0.ordinal == ordinal }) {
             parts += zip(["Move", "Exercise", "Stand"], rings.centipoints).map { "\($0) \(Self.percent($1)) percent" }
         }
+        parts += reactions(on: seat).map { "\(authorName($0)) reacted \($0.kind.spokenName)" }
         return parts.joined(separator: ", ")
     }
 
     private func picker(_ seat: GroupMatchSeat) -> some View {
-        let isTarget = { (command: GroupMatchCommand) -> Bool in
-            guard case let .react(id, seatID, day, _) = command else { return false }
-            return id == match.id && seatID == seat.id && day == ordinal
-        }
         // A failed send isn't selected, so tapping it again retries it.
-        let failed = store.failed.contains(where: isTarget)
+        let failed = isFailed(seat)
+        let selection = failed ? nil : ownReaction(seat)
         return CompetitionReactionPicker(
-            selection: failed ? nil : sent[seat.id],
-            isPending: store.inFlight.contains(where: isTarget),
+            selection: selection,
+            isPending: store.inFlight.contains(where: isTarget(seat)),
             failed: failed,
             select: { kind in
-                let next = !failed && sent[seat.id] == kind ? nil : kind
-                sent[seat.id] = next
+                let next = selection == kind ? nil : kind
+                sent.updateValue(next, forKey: seat.id)
                 store.send(.commandTapped(.react(match.id, seatID: seat.id, ordinal: ordinal, next)))
             }
         )

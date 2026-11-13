@@ -10,9 +10,9 @@ Deno.test({
   fn: async () => {
     // Repeat without resetting: retained synthetic history must not collide.
     for (let attempt = 0; attempt < 2; attempt++) {
-      const databaseURL = Deno.env.get("HEALTHCOMP_TEST_DATABASE_URL") ??
-        "postgresql://postgres:postgres@127.0.0.1:54322/postgres";
+      const databaseURL = Deno.env.get("HEALTHCOMP_TEST_DATABASE_URL") ?? "";
       if (
+        !databaseURL ||
         !["127.0.0.1", "localhost", "::1"].includes(
           new URL(databaseURL).hostname,
         )
@@ -20,7 +20,7 @@ Deno.test({
         throw new Error("invitation race requires disposable local database");
       }
       const sql = postgres(databaseURL, { max: 8 });
-      const users = Array.from({ length: 5 }, () => ({
+      const users = Array.from({ length: 8 }, () => ({
         user: crypto.randomUUID(),
         profile: crypto.randomUUID(),
       }));
@@ -158,16 +158,18 @@ Deno.test({
 
         // Accept and cancel of one challenge never deadlock: the creator's
         // cancel writes closed_by (a key-share check on profiles) while the
-        // recipient's accept holds both profile rows.
+        // recipient's accept holds both profile rows. Recipients rotate so
+        // the 10-a-day cap per pair (invite_rate_limited) is never reached.
         for (let round = 0; round < 20; round++) {
+          const recipient = users[4 + round % 4];
           const challenge = await create(
             crypto.randomUUID(),
             randomBytes(32).toString("hex"),
-            users[4].profile,
+            recipient.profile,
             users[3].user,
           );
           const outcomes = await Promise.allSettled([
-            acceptById(users[4].user, challenge),
+            acceptById(recipient.user, challenge),
             cancel(users[3].user, challenge),
           ]);
           assertEquals(outcomes[1].status, "fulfilled");

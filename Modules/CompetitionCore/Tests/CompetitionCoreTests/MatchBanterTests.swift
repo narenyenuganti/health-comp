@@ -150,6 +150,9 @@ final class MatchBanterTests: XCTestCase {
         XCTAssertEqual(trailing?.templateIndex, 6)
         XCTAssertEqual(MatchBanter.render(try XCTUnwrap(trailing), names: names, viewerSeatID: ids[0]),
                        "Leo is 500 off the lead. You cannot hear Leo.")
+        XCTAssertEqual(MatchBanter.render(try XCTUnwrap(trailing), names: names, viewerSeatID: ids[0],
+                                          formatPoints: { "<\($0)>" }),
+                       "Leo is <500> off the lead. You cannot hear Leo.")
     }
 
     func testViewerNeverSeesTheirOwnName() {
@@ -161,7 +164,7 @@ final class MatchBanterTests: XCTestCase {
         XCTAssertEqual(templates.count, 41)
         XCTAssertEqual(MatchBanter.templates(for: .botAhead("chill"))[0].secondPerson, "You're losing to Chill. Chill.")
         XCTAssertEqual(MatchBanter.templates(for: .farOffLead)[0].thirdPerson,
-                       "{subject} is {points} off the lead. Thoughts and prayers.")
+                       "{subject} is {points} off the lead. Pack a lunch.")
         let viewers = [ids[0], ids[1], ids[2], ids[3]]
         var seen = ""
         for kind in kinds {
