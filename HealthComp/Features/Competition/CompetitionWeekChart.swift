@@ -187,6 +187,9 @@ private struct DayClapButton: View {
         }
         .buttonStyle(.plain)
         .disabled(isPending)
+        .onChange(of: isPending) { _, pending in
+            if !pending, isSent { Sounds.play(.sent) }
+        }
         .accessibilityLabel(sent.map { "You sent \($0.spokenName)" } ?? label)
         .accessibilityHint(isSent ? "Opens this day’s breakdown" : "")
     }

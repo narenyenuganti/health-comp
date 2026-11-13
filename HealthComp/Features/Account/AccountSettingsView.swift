@@ -172,6 +172,7 @@ struct AccountSettingsView: View {
 
     @AppStorage(AppAppearance.storageKey)
     private var appearance = AppAppearance.system
+    @AppStorage(Sounds.enabledKey) private var soundsAreOn = true
     @State private var showsChallengeCode = false
     @State private var hasLoaded = false
     @FocusState private var isNameFocused: Bool
@@ -728,6 +729,17 @@ struct AccountSettingsView: View {
             .accessibilityIdentifier("account.appearance")
 
             NavigationLink {
+                AccountSoundsPage()
+            } label: {
+                LabeledContent {
+                    Text(soundsAreOn ? "On" : "Off")
+                } label: {
+                    Label("Sounds", systemImage: "speaker.wave.2")
+                }
+            }
+            .accessibilityIdentifier("account.sounds")
+
+            NavigationLink {
                 AccountPrivacyPage(friends: friendSettings)
             } label: {
                 Label("Privacy", systemImage: "lock")
@@ -847,6 +859,43 @@ private struct AccountAppearancePage: View {
             .listRowBackground(Theme.panel)
         }
         .accountPageStyle(title: "Appearance")
+    }
+}
+
+private struct AccountSoundsPage: View {
+    @AppStorage(Sounds.enabledKey) private var isOn = true
+    @AppStorage(Sounds.volumeKey) private var volume = 1.0
+
+    var body: some View {
+        List {
+            Section {
+                Toggle("Sound Effects", isOn: $isOn)
+                    // Amber, as the notification switches.
+                    .tint(Theme.youFill)
+                    .accessibilityIdentifier("account.sounds.enabled")
+                HStack(spacing: 12) {
+                    Image(systemName: "speaker.fill")
+                    // Letting go plays the "you move ahead" sound at the new volume.
+                    Slider(value: $volume, in: 0...1, step: 0.05) { isDragging in
+                        if !isDragging { Sounds.play(.ahead) }
+                    }
+                    .tint(Theme.youFill)
+                    .accessibilityLabel("Volume")
+                    .accessibilityIdentifier("account.sounds.volume")
+                    Image(systemName: "speaker.wave.3.fill")
+                }
+                .foregroundStyle(Theme.secondary)
+                .frame(minHeight: 44)
+                .disabled(!isOn)
+                .opacity(isOn ? 1 : 0.4)
+                .accessibilityElement(children: .contain)
+            } footer: {
+                Text("Short sounds at big moments in a match. Let go of the slider to hear one. Silent mode turns them off too.")
+                    .foregroundStyle(Theme.secondary)
+            }
+            .listRowBackground(Theme.panel)
+        }
+        .accountPageStyle(title: "Sounds")
     }
 }
 

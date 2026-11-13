@@ -334,7 +334,9 @@ final class FriendsAccountUITests: XCTestCase {
     }
 
     private func scrollTo(_ element: XCUIElement) {
-        for _ in 0..<12 where !(element.exists && element.isHittable) {
+        // Fully on screen: a row cut by the bottom edge reports hittable,
+        // but a tap there lands on the home indicator.
+        for _ in 0..<12 where !(element.exists && element.isHittable && app.frame.contains(element.frame)) {
             app.collectionViews.firstMatch.swipeUp()
         }
         XCTAssertTrue(element.isHittable, "\(element)")

@@ -339,14 +339,17 @@ private struct CompetitionBeltCeremonyPlayer: View {
         .statusBarHidden()
         .opacity(isLeaving ? 0 : 1)
         .contentShape(Rectangle())
-        .onTapGesture { leave() }
+        .onTapGesture { skip() }
         .accessibilityElement(children: .contain)
         .accessibilityAddTraits(.isButton)
-        .accessibilityAction { leave() }
+        .accessibilityAction { skip() }
         .accessibilityIdentifier("competition.belt.ceremony")
         .sensoryFeedback(.impact(weight: .heavy), trigger: thuds)
         .onChange(of: scenePhase) { _, phase in
-            if phase == .background { leave(animated: false) }
+            if phase == .background {
+                Sounds.stop()
+                leave(animated: false)
+            }
         }
         .task {
             if reduceMotion {
@@ -371,6 +374,10 @@ private struct CompetitionBeltCeremonyPlayer: View {
     private func showPoster() async {
         guard let image = UIImage(named: "\(script.clip)-final.jpg") else { return }
         thuds += 1
+        if script.isYours {
+            Sounds.play(.slam)
+            Sounds.play(.crowd, in: 0.2)
+        }
         withAnimation(Motion.fade) {
             poster = image
             showsWords = true
@@ -402,8 +409,23 @@ private struct CompetitionBeltCeremonyPlayer: View {
             if remaining > 0 { try? await Task.sleep(for: .seconds(remaining)) }
             return !Task.isCancelled && !isLeaving && item.status != .failed
         }
+        // Yours only: a slash as the belt is torn away, a slam on the clip's
+        // big hit and the crowd on the words. Losing the belt is silent.
+        var sounds: [TimeInterval: SoundEffect] = [:]
+        if script.isYours {
+            if script.clip == "taken", let tear = clip.impacts.first { sounds[tear] = .slash }
+            // The plate forging, the stud's hit, the belt slamming home.
+            let slam = ["earned": 2, "defended": 0, "taken": 1][script.clip] ?? 0
+            if clip.impacts.indices.contains(slam) { sounds[clip.impacts[slam]] = .slam }
+            sounds[clip.settle] = .crowd
+        }
         let beats = clip.impacts.map { ($0, false) } + [(clip.settle, true)]
         for (time, isSettle) in beats.sorted(by: { $0.0 < $1.0 }) {
+            if let sound = sounds[time] {
+                // Timed off the player just ahead of the beat, as the waits are.
+                guard await wait(until: time - 0.3) else { return }
+                Sounds.play(sound, in: time - player.currentTime().seconds)
+            }
             guard await wait(until: time) else { return }
             if isSettle {
                 withAnimation(Motion.fade) { showsWords = true }
@@ -413,6 +435,11 @@ private struct CompetitionBeltCeremonyPlayer: View {
         }
         guard await wait(until: item.duration.seconds) else { return }
         try? await Task.sleep(for: Self.hold)
+    }
+
+    private func skip() {
+        Sounds.stop()
+        leave()
     }
 
     /// Skip, the end of the hold, or backgrounding, whichever comes first.

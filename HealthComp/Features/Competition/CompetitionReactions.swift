@@ -329,6 +329,9 @@ struct CompetitionReactionPicker: View {
             }
         }
         .sensoryFeedback(.selection, trigger: isPending) { _, new in new }
+        .onChange(of: isPending) { _, pending in
+            if !pending, !failed, selection != nil { Sounds.play(.sent) }
+        }
         .sensoryFeedback(.error, trigger: failed) { _, new in new }
     }
 

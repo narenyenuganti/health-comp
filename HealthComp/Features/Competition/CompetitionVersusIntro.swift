@@ -444,12 +444,14 @@ private struct CompetitionVersusIntroView: View {
                     withAnimation(Motion.fade) { isShown = true }
                     try await Task.sleep(for: .seconds(0.2))
                     stamps += 1
+                    Sounds.play(.versus)
                     try await Task.sleep(for: .seconds(VersusClock.reducedHold))
                 }
                 withAnimation(Motion.fade) { isShown = false }
                 try await Task.sleep(for: .seconds(0.2))
             } else {
                 if !isSkipped {
+                    Sounds.play(.versus, in: VersusClock.contact - Date().timeIntervalSince(start))
                     try await sleep(until: VersusClock.contact)
                     hits += 1
                     try await sleep(until: VersusClock.stamp)
@@ -460,6 +462,7 @@ private struct CompetitionVersusIntroView: View {
             finished()
         } catch {
             // A skip restarted the clock, or the screen went away.
+            Sounds.stop()
         }
     }
 

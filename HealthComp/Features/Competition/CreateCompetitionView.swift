@@ -93,6 +93,7 @@ struct CreateCompetitionView: View {
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("competition.create.card")
         .sensoryFeedback(.success, trigger: isSent) { !$0 && $1 }
+        .onChange(of: isSent) { _, sent in if sent { Sounds.play(.sent) } }
         .sensoryFeedback(.error, trigger: status.controlPhase == .failed) { _, new in new }
         .sensoryFeedback(.error, trigger: recipientStatus) { _, new in
             competitionRecipientErrorText(new) != nil

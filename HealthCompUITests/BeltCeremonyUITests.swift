@@ -7,7 +7,7 @@ final class BeltCeremonyUITests: XCTestCase {
 
     private static let ceremonies: [(byte: UInt8, name: String, clip: String, words: [String])] = [
         (0x61, "Avery", "earned", ["AND NEW", "You took the belt"]),
-        (0x75, "Sam", "taken", ["AND NEW", "You took the belt from Sam", "SAM'S REIGN: 4 WEEKS · 2 DEFENSES"]),
+        (0x75, "Sam", "taken", ["AND NEW", "You took the belt from Sam", "SAM’S REIGN: 4 WEEKS · 2 DEFENSES"]),
         (0x85, "Riley", "lost", ["AND NEW", "Riley took the belt", "YOUR REIGN: 4 WEEKS · 2 DEFENSES"]),
         (0x94, "Jordan", "defended", ["AND STILL", "3rd title defense"]),
     ]
