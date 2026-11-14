@@ -342,7 +342,7 @@ final class NudgeUITests: XCTestCase {
     private func open(_ state: String, _ name: String) {
         let match = card(state, name)
         scrollToElement(match)
-        match.tap()
+        match.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.45)).tap()
         let title = app.navigationBars.matching(
             NSPredicate(format: "identifier BEGINSWITH %@", String(name.prefix(8)))
         ).firstMatch
