@@ -14,5 +14,5 @@ HEALTHCOMP_APP_GROUP = group.com.narenyenuganti.HealthComp
 // to APP_ATTEST_ALLOWED_VALIDATION_CATEGORIES before the first App Store
 // build), or the server refuses its score uploads. See "App Attest policy" in
 // docs/runbooks/supabase-environments.md.
-MARKETING_VERSION = 1.0.4
-CURRENT_PROJECT_VERSION = 4
+MARKETING_VERSION = 1.0.6
+CURRENT_PROJECT_VERSION = 6

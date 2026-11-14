@@ -192,7 +192,9 @@ jobs:
   ios:
     name: Debug tests
     runs-on: macos-15
-    timeout-minutes: 120
+    # The expanded nightly/manual UI list reached the two-hour job limit
+    # during its final widget test. Leave room for that full list and retries.
+    timeout-minutes: 180
 
     steps:
       - name: Check out repository
