@@ -217,11 +217,7 @@ struct CompetitionWeekStrip: View {
                     // Seven columns can't hold larger weekday text; the bars
                     // still read in order.
                     if dynamicTypeSize < .xxLarge {
-                        Text(
-                            day.ordinal == currentDayOrdinal
-                                ? "TODAY"
-                                : weekdayText(day.day)
-                        )
+                        Text(weekdayText(day.day))
                         .textCase(.uppercase)
                         .font(.caption2.weight(.bold).width(.condensed))
                         .tracking(1)
@@ -262,7 +258,7 @@ struct CompetitionWeekStrip: View {
 }
 
 /// Your bar (Move, Exercise and Stand or Roll when the days carry a ring
-/// split), the other person's single bar, and the stripe for no data.
+/// split) and the other person's single bar.
 /// From xxLarge text, named rows replace the bars, so the legend steps
 /// aside.
 struct CompetitionRingLegend: View {
@@ -295,12 +291,6 @@ struct CompetitionRingLegend: View {
     @ViewBuilder
     private var others: some View {
         swatch(Theme.ink, opponentName.uppercased())
-        if showsNoData {
-            HStack(spacing: 5) {
-                HatchBar().frame(width: 10, height: 10)
-                Text("NO DATA").themeLabel(tracking: 1.1)
-            }
-        }
     }
 
     private var showsRings: Bool {
@@ -311,20 +301,12 @@ struct CompetitionRingLegend: View {
         competitionStandTitle(days)
     }
 
-    private var showsNoData: Bool {
-        days.contains {
-            $0.ownerLatestAvailability != .notYetOccurred
-                && ($0.ownerAcceptedPoints == nil || $0.opponentRevealedPoints == nil)
-        }
-    }
-
     private var accessibilityText: String {
         [
             showsRings
                 ? "Move, Exercise and \(standTitle.capitalized) are your rings."
                 : "The left bar is yours.",
             "The single bar is \(opponentName).",
-            showsNoData ? "Striped bars mean no data." : nil,
         ].compactMap { $0 }.joined(separator: " ")
     }
 
@@ -499,12 +481,6 @@ struct CompetitionLeadLineView: View {
             if dynamicTypeSize < .xxLarge {
                 weekdays
             }
-            if let throughText {
-                Text(throughText)
-                    .font(.caption)
-                    .foregroundStyle(Theme.secondary)
-                    .accessibilityHidden(true)
-            }
             if !moments.isEmpty {
                 VStack(alignment: .leading, spacing: 10) {
                     ForEach(moments.indices, id: \.self) { index in
@@ -658,7 +634,7 @@ struct CompetitionLeadLineView: View {
     private var weekdays: some View {
         HStack(spacing: 0) {
             ForEach(days, id: \.ordinal) { day in
-                Text(day.ordinal == currentDayOrdinal ? "TODAY" : weekdayText(day.day))
+                Text(weekdayText(day.day))
                     .textCase(.uppercase)
                     .font(.caption2.weight(.bold).width(.condensed))
                     .tracking(1)
@@ -669,17 +645,6 @@ struct CompetitionLeadLineView: View {
         }
         .padding(.trailing, endLabelWidth)
         .accessibilityHidden(true)
-    }
-
-    /// The line stops at the last finished day; the score above includes today.
-    private var throughText: String? {
-        guard sideLabels == nil,
-              let currentDayOrdinal,
-              lastDay > 0,
-              lastDay == currentDayOrdinal - 1,
-              let day = days.first(where: { $0.ordinal == lastDay })
-        else { return nil }
-        return "Through \(weekdayText(day.day)), before today’s points."
     }
 
     private var changedText: String {
@@ -734,11 +699,7 @@ private struct HeadToHeadDayRow: View {
             HStack(spacing: 6) {
                 Color.clear.frame(maxWidth: .infinity, maxHeight: 1)
                 DayLabel(day: day, isToday: false, showsDates: showsDates, now: now)
-                Text("Upcoming")
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(Theme.tertiary)
-                    .fixedSize()
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                Color.clear.frame(maxWidth: .infinity, maxHeight: 1)
             }
             .frame(minHeight: showsDates ? 38 : 30)
         } else {
@@ -757,7 +718,7 @@ private struct HeadToHeadDayRow: View {
             OwnerDayBar(state: ownerState, segments: ringSegments(day), isGrown: isGrown)
                 .moving(Motion.grow(day.ordinal - 1, of: 7), value: isGrown)
             DayLabel(day: day, isToday: isToday, showsDates: showsDates, now: now)
-            OpponentDayBar(state: opponentState, started: started)
+            OpponentDayBar(state: opponentState)
             cell(
                 opponentText,
                 points: day.opponentRevealedPoints,
@@ -774,10 +735,6 @@ private struct HeadToHeadDayRow: View {
 
     private var opponentState: CompetitionChartState {
         day.opponentRevealedPoints.map(CompetitionChartState.score) ?? .future
-    }
-
-    private var started: Bool {
-        day.ownerLatestAvailability != .notYetOccurred
     }
 
     private var opponentText: String {
@@ -843,11 +800,7 @@ private struct StackedDayRow: View {
             Text(competitionDayText(day.day, now: now))
                 .font(.subheadline.monospacedDigit())
                 .foregroundStyle(Theme.secondary)
-            if ownerState == .future, !isToday {
-                Text("Upcoming")
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(Theme.tertiary)
-            } else {
+            if ownerState != .future || isToday {
                 score("You", chartCellText(ownerState), Theme.you)
                 score(opponentName, competitionOpponentCellText(day), Theme.ink)
             }
@@ -925,10 +878,8 @@ private struct OwnerDayBar: View {
                         SlantedBar()
                             .stroke(Theme.you, style: StrokeStyle(lineWidth: 1.5, dash: [3, 2]))
                             .frame(width: max(4, points * unit) * growth)
-                    case .future:
+                    case .future, .missing, .unavailable, .unscored:
                         Rectangle().fill(Theme.track).frame(height: 2)
-                    case .missing, .unavailable, .unscored:
-                        HatchBar().frame(width: 24, height: 10)
                     }
                 }
                 .transition(Motion.appear)
@@ -942,7 +893,6 @@ private struct OwnerDayBar: View {
 
 private struct OpponentDayBar: View {
     let state: CompetitionChartState
-    let started: Bool
 
     var body: some View {
         GeometryReader { proxy in
@@ -958,8 +908,6 @@ private struct OpponentDayBar: View {
                                         * proxy.size.width
                                 )
                             )
-                    } else if started {
-                        HatchBar().frame(width: 24, height: 10)
                     } else {
                         Rectangle().fill(Theme.track).frame(height: 2)
                     }

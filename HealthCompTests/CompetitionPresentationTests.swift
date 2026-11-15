@@ -567,7 +567,6 @@ final class CompetitionPresentationTests: XCTestCase {
         XCTAssertEqual(panel.rows.map(\.points), [84, 120, 75])
         XCTAssertNil(panel.note)
         XCTAssertFalse(panel.isPaused)
-        XCTAssertEqual(panel.footer, "1 point per 1% of each ring. Your ring values stay on this iPhone.")
         XCTAssertEqual(
             panel.accessibilityLabel,
             "Your rings. Move, 420 of 500 kilocalories, 84 points. Exercise, 36 of 30 minutes, 120 points. Stand, 9 of 12 hours, 75 points."
@@ -583,7 +582,6 @@ final class CompetitionPresentationTests: XCTestCase {
         XCTAssertEqual(points.count, 3)
         XCTAssertEqual(points.reduce(0, +), 600)
         for part in points { XCTAssertEqual(part, part.rounded(), "\(part) is not whole") }
-        XCTAssertTrue(panel.footer.hasPrefix("Capped at 600 points a day."), panel.footer)
     }
 
     func testRealMatchRingPanelCapsEachRingAt200() throws {
@@ -591,10 +589,6 @@ final class CompetitionPresentationTests: XCTestCase {
         let accepted = ringDay(accepted: snapshot, latest: snapshot, points: 400, policy: .remoteWireV1)
         let panel = try XCTUnwrap(competitionRingPanel(accepted))
         XCTAssertEqual(panel.rows.map(\.points), [200, 100, 100])
-        XCTAssertEqual(
-            panel.footer,
-            "1 point per 1% of each ring, up to 200% per ring. Your ring values stay on this iPhone."
-        )
         XCTAssertEqual(ringSegments(accepted).map(\.points), [200, 100, 100])
 
         let unsynced = try XCTUnwrap(competitionRingPanel(
@@ -824,10 +818,10 @@ final class CompetitionPresentationTests: XCTestCase {
         XCTAssertEqual(takes.points, 39)
         XCTAssertEqual(takes.dayOrdinal, 5)
         XCTAssertEqual(takes.suggestion, "About 240 kcal of Move or 12 min of Exercise.")
-        XCTAssertEqual(takes.detail, "About 240 kcal of Move or 12 min of Exercise. Sam can still add points today.")
+        XCTAssertEqual(takes.suggestion, "About 240 kcal of Move or 12 min of Exercise.")
         XCTAssertEqual(
             takes.accessibilityLabel,
-            "39 points to take the lead. About 240 kilocalories of Move or 12 minutes of Exercise. Sam can still add points today."
+            "39 points to take the lead. About 240 kilocalories of Move or 12 minutes of Exercise."
         )
     }
 
@@ -862,8 +856,7 @@ final class CompetitionPresentationTests: XCTestCase {
         XCTAssertEqual(room.headline, "Out of reach today")
         XCTAssertNil(room.points)
         XCTAssertEqual(room.dayOrdinal, 7)
-        XCTAssertEqual(room.detail, "Sam is 380 ahead and you have 110 points left in Move and Exercise today.")
-        XCTAssertEqual(room.suggestion, room.detail)
+        XCTAssertEqual(room.suggestion, "Sam is 380 ahead and you have 110 points left in Move and Exercise today.")
         XCTAssertEqual(
             room.accessibilityLabel,
             "Out of reach today. Sam is 380 points ahead and you have 110 points left in Move and Exercise today."
@@ -871,11 +864,11 @@ final class CompetitionPresentationTests: XCTestCase {
 
         let full = try takesRings(move: (1_200, 600), exercise: (60, 30), stand: (24, 12))
         XCTAssertEqual(
-            try takes(2_010, 2_390, today: 600, full).detail,
+            try takes(2_010, 2_390, today: 600, full).suggestion,
             "Sam is 380 ahead and you’ve reached today’s cap."
         )
         XCTAssertEqual(
-            try takes(2_390, 2_390, today: 600, full).detail,
+            try takes(2_390, 2_390, today: 600, full).suggestion,
             "All square, and you’ve reached today’s cap."
         )
     }
@@ -886,11 +879,11 @@ final class CompetitionPresentationTests: XCTestCase {
             takesCompetition(user: 1_000, opponent: 1_038, today: 450, accepted: snapshot), locale: en
         ))
         XCTAssertEqual(behind.headline, "Out of reach today")
-        XCTAssertEqual(behind.detail, "Sam is 38 ahead and Move and Exercise are at the 200% cap.")
+        XCTAssertEqual(behind.suggestion, "Sam is 38 ahead and Move and Exercise are at the 200% cap.")
         let level = try XCTUnwrap(competitionWhatItTakes(
             takesCompetition(user: 1_000, opponent: 1_000, today: 450, accepted: snapshot), locale: en
         ))
-        XCTAssertEqual(level.detail, "All square, and Move and Exercise are at the 200% cap.")
+        XCTAssertEqual(level.suggestion, "All square, and Move and Exercise are at the 200% cap.")
     }
 
     func testWhatItTakesUsesOneWholeNumberForReachAndCopy() throws {
@@ -899,14 +892,14 @@ final class CompetitionPresentationTests: XCTestCase {
             takesCompetition(user: 1_000, opponent: 1_209, today: 390.4, accepted: snapshot), locale: en
         ))
         XCTAssertEqual(out.headline, "Out of reach today")
-        XCTAssertEqual(out.detail, "Sam is 209 ahead and you have 209 points left in Move and Exercise today.")
+        XCTAssertEqual(out.suggestion, "Sam is 209 ahead and you have 209 points left in Move and Exercise today.")
         let reachable = try XCTUnwrap(competitionWhatItTakes(
             takesCompetition(user: 1_000, opponent: 1_208, today: 390.4, accepted: snapshot), locale: en
         ))
         XCTAssertEqual(reachable.headline, "209 to take the lead")
         XCTAssertEqual(
-            reachable.detail,
-            "About 900 kcal of Move and 18 min of Exercise. Sam can still add points today."
+            reachable.suggestion,
+            "About 900 kcal of Move and 18 min of Exercise."
         )
     }
 
@@ -957,18 +950,6 @@ final class CompetitionPresentationTests: XCTestCase {
         XCTAssertNotNil(competitionWhatItTakes(takesCompetition(accepted: a, latest: .some(nil))))
     }
 
-    func testWhatItTakesDropsTheMovingTargetWhenTheyAreAtTodaysCap() throws {
-        let snapshot = try takesRings(move: (410, 600), exercise: (24, 30))
-        XCTAssertEqual(
-            competitionWhatItTakes(takesCompetition(accepted: snapshot, opponentToday: 600), locale: en)?.detail,
-            "About 240 kcal of Move or 12 min of Exercise."
-        )
-        XCTAssertEqual(
-            competitionWhatItTakes(takesCompetition(accepted: snapshot, opponentToday: nil), locale: en)?.detail,
-            "About 240 kcal of Move or 12 min of Exercise. Sam can still add points today."
-        )
-    }
-
     func testWhatItTakesRoundsAmountsUpGroupsByLocaleAndSpeaksSingularUnits() throws {
         let exact = try XCTUnwrap(competitionWhatItTakes(
             takesCompetition(user: 1_000, opponent: 1_029, accepted: try takesRings(move: (0, 600), exercise: (0, 30))),
@@ -996,7 +977,7 @@ final class CompetitionPresentationTests: XCTestCase {
         ))
         XCTAssertEqual(
             one.accessibilityLabel,
-            "1 point to take the lead. About 10 kilocalories of Move or 1 minute of Exercise. Sam can still add points today."
+            "1 point to take the lead. About 10 kilocalories of Move or 1 minute of Exercise."
         )
     }
 
