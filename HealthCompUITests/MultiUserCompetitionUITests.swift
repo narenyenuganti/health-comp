@@ -856,11 +856,6 @@ final class MultiUserCompetitionUITests: XCTestCase {
         XCTAssertTrue(rings.exists)
         XCTAssertTrue(rings.label.contains("Move, 1,000 of 500 kilocalories, 200 points"), rings.label)
         XCTAssertTrue(rings.label.contains("Stand, 12 of 12 hours, 100 points"), rings.label)
-        XCTAssertTrue(
-            app.staticTexts[
-                "1 point per 1% of each ring, up to 200% per ring. Your ring values stay on this iPhone."
-            ].exists
-        )
     }
 
     func testColdWarmAndSignedOutClaimConfirmationFlows() {

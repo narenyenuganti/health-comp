@@ -440,7 +440,7 @@ final class LocalCompetitionLifecycleUITests: XCTestCase {
         XCTAssertTrue(takes.waitForExistence(timeout: 3))
         XCTAssertEqual(
             takes.label,
-            "1 point to take the lead. About 10 kilocalories of Move or 1 minute of Exercise. Alex can still add points today."
+            "1 point to take the lead. About 10 kilocalories of Move or 1 minute of Exercise."
         )
         let rings = app.otherElements["competition.ownerRings"]
         XCTAssertTrue(rings.exists)

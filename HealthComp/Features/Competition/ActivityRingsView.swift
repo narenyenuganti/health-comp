@@ -17,7 +17,6 @@ struct CompetitionRingPanel: Equatable, Sendable {
     let rows: [CompetitionRingRow]
     let isPaused: Bool
     let note: String?
-    let footer: String
     let accessibilityLabel: String
 }
 
@@ -77,14 +76,6 @@ func competitionRingPanel(
         nil
     }
 
-    let rule: String = if let cap = day.scoringPolicy.perRingCap {
-        "1 point per 1% of each ring, up to \(Int(cap))% per ring."
-    } else if sum * 100 > ActivityScore.maximumDailyPoints {
-        "Capped at 600 points a day."
-    } else {
-        "1 point per 1% of each ring."
-    }
-
     let spokenRows = rows.map { row in
         "\(row.title), \(row.spokenDetail)"
             + (row.points.map { ", \(competitionPointsAccessibilityText($0, locale: locale))" } ?? "")
@@ -98,7 +89,6 @@ func competitionRingPanel(
         rows: rows,
         isPaused: isPaused,
         note: note,
-        footer: "\(rule) Your ring values stay on this iPhone.",
         accessibilityLabel: spoken
     )
 }
@@ -152,11 +142,6 @@ struct ActivityRingsView: View {
             .accessibilityElement(children: .ignore)
             .accessibilityIdentifier("competition.ownerRings")
             .accessibilityLabel(panel.accessibilityLabel)
-
-            Text(panel.footer)
-                .font(.caption)
-                .foregroundStyle(Theme.secondary)
-                .fixedSize(horizontal: false, vertical: true)
         }
     }
 }
@@ -173,8 +158,6 @@ struct CompetitionWhatItTakes: Equatable, Sendable {
     let headline: String
     /// "About 240 kcal of Move or 12 min of Exercise." | the out-of-reach sentence
     let suggestion: String
-    /// The suggestion, plus " Sam can still add points today." while that's true.
-    let detail: String
     let accessibilityLabel: String
 }
 
@@ -255,7 +238,6 @@ func competitionWhatItTakes(
             points: nil,
             headline: "Out of reach today",
             suggestion: text,
-            detail: text,
             accessibilityLabel: "Out of reach today. \(sentence(spokenGap))"
         )
     }
@@ -281,16 +263,12 @@ func competitionWhatItTakes(
     let joiner = singles.isEmpty ? " and " : " or "
     let suggestion = "About \(parts.map(\.text).joined(separator: joiner))."
     let spokenSuggestion = "About \(parts.map(\.spoken).joined(separator: joiner))."
-    let moving = day.opponentRevealedPoints.map { $0 < ActivityScore.maximumDailyPoints } ?? true
-        ? " \(name) can still add points today."
-        : ""
     return CompetitionWhatItTakes(
         dayOrdinal: ordinal,
         points: need,
         headline: "\(competitionPointsText(need, locale: locale)) to take the lead",
         suggestion: suggestion,
-        detail: suggestion + moving,
-        accessibilityLabel: "\(competitionPointsAccessibilityText(need, locale: locale)) to take the lead. \(spokenSuggestion)\(moving)"
+        accessibilityLabel: "\(competitionPointsAccessibilityText(need, locale: locale)) to take the lead. \(spokenSuggestion)"
     )
 }
 
@@ -310,7 +288,7 @@ struct CompetitionWhatItTakesPanel: View {
                     .scoreRoll(takes.points, id: headlineID)
             }
             .animation(Motion.fade, value: headlineID)
-            Text(takes.detail)
+            Text(takes.suggestion)
                 .font(.subheadline)
                 .foregroundStyle(Theme.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -484,8 +462,7 @@ struct CompetitionTodayRingsSheet: View {
     private static let dailyMaximum = Int(ActivityScore.maximumDailyPoints)
 }
 
-/// Two slanted segments, one per 100% of the ring: the first full means the
-/// ring is closed, both full means it has earned all a ring can.
+/// One slanted bar out of the 200 points a ring can earn.
 private struct TodayRingBar: View {
     let closes: Double
     let color: Color
@@ -497,9 +474,9 @@ private struct TodayRingBar: View {
     }
 }
 
-/// One shape, so a growing bar fills its first segment before its second.
+/// The filled share of the bar; animatable so it grows in.
 private struct TodayRingSegments: Shape {
-    /// 0...2: how much of the two segments to draw.
+    /// 0...2: rings closed, out of the two a ring can earn.
     var closes: Double
 
     var animatableData: Double {
@@ -508,19 +485,8 @@ private struct TodayRingSegments: Shape {
     }
 
     func path(in rect: CGRect) -> Path {
-        let gap: CGFloat = 4
-        let width = (rect.width - gap) / 2
-        var path = Path()
-        for segment in 0..<2 {
-            let fill = min(1, max(0, closes - Double(segment)))
-            guard fill > 0 else { continue }
-            path.addPath(SlantedBar().path(in: CGRect(
-                x: rect.minX + CGFloat(segment) * (width + gap),
-                y: rect.minY,
-                width: width * fill,
-                height: rect.height
-            )))
-        }
-        return path
+        let fill = min(1, max(0, closes / 2))
+        guard fill > 0 else { return Path() }
+        return SlantedBar().path(in: CGRect(x: rect.minX, y: rect.minY, width: rect.width * fill, height: rect.height))
     }
 }

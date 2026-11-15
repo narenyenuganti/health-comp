@@ -29,11 +29,11 @@ final class WhatItTakesUITests: XCTestCase {
 
         let shown: [(name: String, status: String, label: String)] = [
             ("Sam", "Day 5 of 7",
-             "39 points to take the lead. About 240 kilocalories of Move or 12 minutes of Exercise. Sam can still add points today."),
+             "39 points to take the lead. About 240 kilocalories of Move or 12 minutes of Exercise."),
             ("Bartholomew", "Day 3 of 7",
-             "50 points to take the lead. About 180 kilocalories of Move and 6 minutes of Exercise. Bartholomew Alexander Christopherson-Montgomery of Westminster can still add points today."),
+             "50 points to take the lead. About 180 kilocalories of Move and 6 minutes of Exercise."),
             ("Morgan", "Day 4 of 7",
-             "39 points to take the lead. About 12 minutes of Move Time or 12 minutes of Exercise. Morgan can still add points today."),
+             "39 points to take the lead. About 12 minutes of Move Time or 12 minutes of Exercise."),
             // Level by a fraction; Move is at 200%; they're at today's 600.
             ("Devon", "Day 6 of 7", "1 point to take the lead. About 1 minute of Exercise."),
             ("Priya", "Last day",
@@ -111,7 +111,7 @@ final class WhatItTakesUITests: XCTestCase {
         XCTAssertTrue(takes.waitForExistence(timeout: 3))
         XCTAssertEqual(
             takes.label,
-            "1 point to take the lead. About 10 kilocalories of Move or 1 minute of Exercise. Alex can still add points today."
+            "1 point to take the lead. About 10 kilocalories of Move or 1 minute of Exercise."
         )
         XCTAssertEqual(allTakes.count, 1)
 
@@ -227,7 +227,7 @@ final class WhatItTakesUITests: XCTestCase {
             return "Out of reach today. Alex is \(spokenPoints(gap)) ahead and you have 600 points left in Move and Exercise today."
         }
         let kcal = (need + 9) / 10 * 10
-        return "\(spokenPoints(need)) to take the lead. About \(kcal) kilocalories of Move or \(need) \(need == 1 ? "minute" : "minutes") of Exercise. Alex can still add points today."
+        return "\(spokenPoints(need)) to take the lead. About \(kcal) kilocalories of Move or \(need) \(need == 1 ? "minute" : "minutes") of Exercise."
     }
 
     private func spokenPoints(_ value: Int) -> String {
