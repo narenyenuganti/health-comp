@@ -698,17 +698,9 @@ private struct CompetitionHeroCard: View {
     }
 
     private var statusLeading: some View {
-        HStack(spacing: 8) {
-            if isLive {
-                Circle()
-                    .fill(Theme.ink)
-                    .frame(width: 8, height: 8)
-                Text("LIVE")
-                    .foregroundStyle(Theme.ink)
-            }
-            Text(status.title)
-                .foregroundStyle(Theme.secondary)
-        }
+        // A live match needs no badge: today's bar in the strip below is live.
+        Text(status.title)
+            .foregroundStyle(isLive ? Theme.ink : Theme.secondary)
     }
 
     @ViewBuilder
