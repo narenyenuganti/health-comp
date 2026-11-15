@@ -216,7 +216,9 @@ struct CompetitionWeekStrip: View {
                 VStack(spacing: 6) {
                     // At launch the bars grow left to right behind the scores.
                     bar(day)
-                        .frame(height: 10)
+                        .frame(height: isSplit(day) ? 14 : 10)
+                        // Taller today stays centred on the other bars.
+                        .padding(.vertical, isSplit(day) ? -2 : 0)
                         .scaleEffect(x: launchStage == .waiting ? 0 : 1, anchor: .leading)
                         .moving(Motion.grow(index, of: days.count), value: launchStage)
                     // Seven columns can't hold larger weekday text; the bars
@@ -250,11 +252,10 @@ struct CompetitionWeekStrip: View {
     private func label(_ day: LocalCompetitionDayPresentation) -> some View {
         let weekday = Text(weekdayText(day.day)).textCase(.uppercase)
         if isSplit(day) {
-            HStack(spacing: 2) {
+            // Held together under the bar, so no number reads as a neighbour's.
+            HStack(spacing: 5) {
                 Text(competitionPointsText(day.ownerAcceptedPoints)).foregroundStyle(Theme.you)
-                Spacer(minLength: 0)
                 weekday.foregroundStyle(Theme.ink)
-                Spacer(minLength: 0)
                 Text(competitionPointsText(day.opponentRevealedPoints)).foregroundStyle(Theme.ink)
             }
         } else {
@@ -282,8 +283,9 @@ struct CompetitionWeekStrip: View {
     }
 }
 
-/// Today's points as one bar split at a slash gap: yours in amber, theirs in
-/// ink. The split settles across when either side syncs.
+/// Today's points inside today's dashed frame, split at a slash: yours in
+/// amber, theirs in ink. The frame keeps it one day, not two bars. The split
+/// settles across when either side syncs.
 private struct TodaySplitBar: View {
     let you: Double
     let them: Double
@@ -291,14 +293,20 @@ private struct TodaySplitBar: View {
     var body: some View {
         let share = you + them > 0 ? you / (you + them) : 0.5
         GeometryReader { proxy in
-            let gap: CGFloat = 3
+            let inset: CGFloat = 2.5
+            let gap: CGFloat = 2
+            let width = proxy.size.width - inset * 2 - gap
             HStack(spacing: gap) {
                 SlantedBar()
                     .fill(Theme.youFill)
-                    .frame(width: max(0, (proxy.size.width - gap) * share))
+                    .frame(width: max(0, width * share))
                 SlantedBar()
                     .fill(Theme.ink)
             }
+            .padding(inset)
+        }
+        .overlay {
+            SlantedBar().stroke(Theme.secondary, style: StrokeStyle(lineWidth: 1, dash: [3, 2]))
         }
         .moving(Motion.settle, value: share)
     }
