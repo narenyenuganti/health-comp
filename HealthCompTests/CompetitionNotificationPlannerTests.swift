@@ -1655,7 +1655,6 @@ final class CompetitionNotificationPlannerTests: XCTestCase {
             points: points,
             headline: points.map { "\(Int($0)) to take the lead" } ?? "Out of reach today",
             suggestion: suggestion,
-            detail: suggestion,
             accessibilityLabel: suggestion
         )
     }

@@ -957,7 +957,6 @@ final class CompetitionNotificationCoordinatorTests: XCTestCase {
             points: 39,
             headline: "39 to take the lead",
             suggestion: "About 12 min of Exercise.",
-            detail: "About 12 min of Exercise.",
             accessibilityLabel: "39 points to take the lead. About 12 minutes of Exercise."
         )
         func snapshot(
