@@ -197,7 +197,9 @@ private struct DayClapButton: View {
 
 /// The week at a glance: one bar per day in the color of whoever won it,
 /// amber for you, ink for them and grey for a tie. A day with no data is
-/// striped, an upcoming day is an outline, and today stays dashed.
+/// striped and an upcoming day is an outline. Today, once either side has
+/// points, is wider and split at the slash: your share in amber, theirs in
+/// ink, with both numbers under it. Before that it stays dashed.
 struct CompetitionWeekStrip: View {
     let days: [LocalCompetitionDayPresentation]
     let currentDayOrdinal: Int?
@@ -205,28 +207,27 @@ struct CompetitionWeekStrip: View {
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.launchStage) private var launchStage
 
+    /// Today's column, as wide as this many other days.
+    private static let todayWeight: CGFloat = 2.6
+
     var body: some View {
-        HStack(alignment: .top, spacing: 6) {
+        WeightedRow(weights: days.map { isSplit($0) ? Self.todayWeight : 1 }, spacing: 6) {
             ForEach(Array(days.enumerated()), id: \.element.ordinal) { index, day in
                 VStack(spacing: 6) {
                     // At launch the bars grow left to right behind the scores.
                     bar(day)
-                        .frame(height: 10)
+                        .frame(height: isSplit(day) ? 14 : 10)
+                        // Taller today stays centred on the other bars.
+                        .padding(.vertical, isSplit(day) ? -2 : 0)
                         .scaleEffect(x: launchStage == .waiting ? 0 : 1, anchor: .leading)
                         .moving(Motion.grow(index, of: days.count), value: launchStage)
                     // Seven columns can't hold larger weekday text; the bars
                     // still read in order.
                     if dynamicTypeSize < .xxLarge {
-                        Text(weekdayText(day.day))
-                        .textCase(.uppercase)
-                        .font(.caption2.weight(.bold).width(.condensed))
-                        .tracking(1)
-                        .foregroundStyle(
-                            day.ordinal == currentDayOrdinal
-                                ? Theme.ink
-                                : Theme.secondary
-                        )
-                        .lineLimit(1)
+                        label(day)
+                            .font(.caption2.weight(.bold).width(.condensed).monospacedDigit())
+                            .tracking(1)
+                            .lineLimit(1)
                     }
                 }
                 .frame(maxWidth: .infinity)
@@ -238,8 +239,33 @@ struct CompetitionWeekStrip: View {
         .accessibilityHidden(true)
     }
 
+    @ViewBuilder
     private func bar(_ day: LocalCompetitionDayPresentation) -> some View {
-        CompetitionDayBar(outcome: outcome(day), todayColor: leaderColor(day))
+        if isSplit(day) {
+            TodaySplitBar(you: day.ownerAcceptedPoints ?? 0, them: day.opponentRevealedPoints ?? 0)
+        } else {
+            CompetitionDayBar(outcome: outcome(day), todayColor: leaderColor(day))
+        }
+    }
+
+    @ViewBuilder
+    private func label(_ day: LocalCompetitionDayPresentation) -> some View {
+        let weekday = Text(weekdayText(day.day)).textCase(.uppercase)
+        if isSplit(day) {
+            // Held together under the bar, so no number reads as a neighbour's.
+            HStack(spacing: 5) {
+                Text(competitionPointsText(day.ownerAcceptedPoints)).foregroundStyle(Theme.you)
+                weekday.foregroundStyle(Theme.ink)
+                Text(competitionPointsText(day.opponentRevealedPoints)).foregroundStyle(Theme.ink)
+            }
+        } else {
+            weekday.foregroundStyle(day.ordinal == currentDayOrdinal ? Theme.ink : Theme.secondary)
+        }
+    }
+
+    private func isSplit(_ day: LocalCompetitionDayPresentation) -> Bool {
+        day.ordinal == currentDayOrdinal
+            && (day.ownerAcceptedPoints ?? 0) + (day.opponentRevealedPoints ?? 0) > 0
     }
 
     private func outcome(_ day: LocalCompetitionDayPresentation) -> CompetitionDayOutcome {
@@ -254,6 +280,71 @@ struct CompetitionWeekStrip: View {
         }
         return competitionDisplayedMargin(userPoints: owner, opponentPoints: opponent) >= 0
             ? Theme.you : Theme.ink
+    }
+}
+
+/// Today's points inside today's dashed frame, split at a slash: yours in
+/// amber, theirs in ink. The frame keeps it one day, not two bars. The split
+/// settles across when either side syncs.
+private struct TodaySplitBar: View {
+    let you: Double
+    let them: Double
+
+    var body: some View {
+        let share = you + them > 0 ? you / (you + them) : 0.5
+        GeometryReader { proxy in
+            let inset: CGFloat = 2.5
+            let gap: CGFloat = 2
+            let width = proxy.size.width - inset * 2 - gap
+            HStack(spacing: gap) {
+                SlantedBar()
+                    .fill(Theme.youFill)
+                    .frame(width: max(0, width * share))
+                SlantedBar()
+                    .fill(Theme.ink)
+            }
+            .padding(inset)
+        }
+        .overlay {
+            SlantedBar().stroke(Theme.secondary, style: StrokeStyle(lineWidth: 1, dash: [3, 2]))
+        }
+        .moving(Motion.settle, value: share)
+    }
+}
+
+/// Children side by side, each as wide as its share of `weights`.
+private struct WeightedRow: Layout {
+    let weights: [CGFloat]
+    let spacing: CGFloat
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let width = proposal.width ?? 320
+        let widths = columnWidths(width, count: subviews.count)
+        let height = subviews.indices.map {
+            subviews[$0].sizeThatFits(ProposedViewSize(width: widths[$0], height: nil)).height
+        }.max() ?? 0
+        return CGSize(width: width, height: height)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let widths = columnWidths(bounds.width, count: subviews.count)
+        var x = bounds.minX
+        for index in subviews.indices {
+            subviews[index].place(
+                at: CGPoint(x: x, y: bounds.minY),
+                anchor: .topLeading,
+                proposal: ProposedViewSize(width: widths[index], height: bounds.height)
+            )
+            x += widths[index] + spacing
+        }
+    }
+
+    private func columnWidths(_ width: CGFloat, count: Int) -> [CGFloat] {
+        let shares = (0..<count).map { $0 < weights.count ? weights[$0] : 1 }
+        let total = shares.reduce(0, +)
+        guard total > 0 else { return Array(repeating: 0, count: count) }
+        let room = max(0, width - spacing * CGFloat(max(0, count - 1)))
+        return shares.map { room * $0 / total }
     }
 }
 
