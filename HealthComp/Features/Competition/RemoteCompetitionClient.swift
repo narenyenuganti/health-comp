@@ -439,6 +439,9 @@ actor RemoteInviteRequestStore {
 }
 
 private actor RemoteCompetitionClientCoordinator {
+    /// How long a failed sync waits before its one retry.
+    static let refreshRetryDelay: Duration = .seconds(1)
+
     private struct OperationWaiter {
         let id: UUID
         let continuation: CheckedContinuation<Bool, Never>
@@ -925,7 +928,16 @@ private actor RemoteCompetitionClientCoordinator {
             latestGroupMatches = await runtime.cachedGroupMatches()
         }
         startGroupSync(runtime)
-        let outcome = await runtime.synchronizeAll()
+        var outcome = await runtime.synchronizeAll()
+        // The first requests after the app comes back often fail once while
+        // the network wakes, and the next refresh succeeds a moment later.
+        // Sync once more before publishing, so "Couldn't update scores" only
+        // shows for a failure that holds, never as a flash. A cancelled
+        // refresh skips the retry.
+        if outcome.hasRetryableFailure,
+           (try? await Task.sleep(for: Self.refreshRetryDelay)) != nil {
+            outcome = await runtime.synchronizeAll()
+        }
         await refreshPractice(.reconciliationProbe)
         if let challenges = try? await remoteAPI.listChallenges() {
             latestChallenges = challenges
@@ -2409,6 +2421,14 @@ private actor RemoteCompetitionClientCoordinator {
 }
 
 extension RemoteCompetitionRuntimeOutcome {
+    /// A network failure (where URL errors land), worth one more try before
+    /// it is shown. Storage, contract and permission failures won't clear a
+    /// second later, so they show at once.
+    var hasRetryableFailure: Bool {
+        failures.contains { $0.failure == .discoveryUnavailable }
+            || discoveryFailure == .discoveryUnavailable
+    }
+
     /// A match whose sync was only cancelled (the person left the screen
     /// mid-refresh) is not a failure: it keeps its last good materialization
     /// and raises no issue. A failed match stays on screen with its last

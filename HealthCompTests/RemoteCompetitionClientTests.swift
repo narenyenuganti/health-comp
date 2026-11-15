@@ -4286,6 +4286,63 @@ final class RemoteCompetitionClientTests: XCTestCase {
         XCTAssertTrue(exited, "stop must cancel and join the group pass")
     }
 
+    /// A sync that fails once and works on the next try never reaches the
+    /// screen: "Couldn't update scores" used to flash for a moment when the
+    /// app came back to the foreground.
+    func testOneTransientSyncFailureIsRetriedAndRaisesNoIssue()
+        async throws
+    {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let profile = AuthenticatedProfile(
+            id: UUID(uuidString: "81000000-0000-4000-8000-000000000001")!,
+            displayName: "Beta Alice"
+        )
+        let paths = AuthenticatedProfileStoragePaths(profileID: profile.id, rootDirectory: root)
+        for directory in paths.fixedDirectories {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        }
+        let competitionID = UUID(uuidString: "82000000-0000-4000-8000-00000000000B")!
+        let createdAt = Date(timeIntervalSince1970: 1_786_540_000)
+        let descriptor = try pendingDescriptor(
+            competitionID: competitionID,
+            profile: profile,
+            expiresAt: createdAt.addingTimeInterval(48 * 60 * 60)
+        )
+        let page = try pendingHistoryPage(descriptor: descriptor, profileID: profile.id, createdAt: createdAt)
+        let fetches = RemoteCompetitionFetchSequenceProbe(page: page)
+        // A newer listed change, so the pass sends the fetch that fails.
+        let moved = try pendingDescriptor(
+            competitionID: competitionID,
+            profile: profile,
+            expiresAt: createdAt.addingTimeInterval(48 * 60 * 60),
+            nextServerSequence: 3
+        )
+        let client = CompetitionClient.remote(
+            remoteAPI: remoteAPI(
+                listCompetitions: { await fetches.isFailing ? [moved] : [descriptor] },
+                fetchChanges: { _, _ in try await fetches.fetch() }
+            ),
+            environment: try environment(),
+            notificationClient: RemoteCompetitionNotificationProbe().client,
+            notificationPreferencesFactory: { _ in .constant(mutedOpponentIdentities: []) }
+        )
+
+        try await client.mountAuthenticatedProfile(profile, paths)
+        var iterator = client.start().makeAsyncIterator()
+        let optionalFirst = await iterator.next()
+        let shown = try XCTUnwrap(XCTUnwrap(optionalFirst).dashboard.competitions.first)
+        await fetches.failNextFetchOnly()
+
+        let refreshed = await client.reconcileAll(.foreground)
+
+        XCTAssertEqual(refreshed.dashboard.issues, [])
+        XCTAssertEqual(refreshed.dashboard.competitions.map(\.id), [shown.id])
+        await client.stop()
+    }
+
     func testFailedRefreshKeepsTheLastPresentationWithItsIssue()
         async throws
     {
@@ -5702,10 +5759,22 @@ private actor RemoteCompetitionFetchSequenceProbe {
         shouldFail = true
     }
 
+    /// Fails the next fetch only, like the first request after the app
+    /// comes back to the foreground.
+    func failNextFetchOnly() {
+        shouldFail = true
+        failsOnce = true
+    }
+
+    private var failsOnce = false
+
     var isFailing: Bool { shouldFail }
 
     func fetch() throws -> CompetitionChangePage {
-        if shouldFail { throw CompetitionRemoteFailure.operationFailed }
+        if shouldFail {
+            if failsOnce { shouldFail = false; failsOnce = false }
+            throw CompetitionRemoteFailure.operationFailed
+        }
         return page
     }
 }
