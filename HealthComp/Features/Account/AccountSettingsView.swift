@@ -912,9 +912,6 @@ private struct AccountSoundsPage: View {
                 .disabled(!isOn)
                 .opacity(isOn ? 1 : 0.4)
                 .accessibilityElement(children: .contain)
-            } footer: {
-                Text("Short sounds at big moments in a match. Let go of the slider to hear one. Silent mode turns them off too.")
-                    .foregroundStyle(Theme.secondary)
             }
             .listRowBackground(Theme.panel)
         }
