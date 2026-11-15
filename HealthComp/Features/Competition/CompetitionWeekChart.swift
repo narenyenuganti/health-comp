@@ -1,8 +1,8 @@
 import CompetitionCore
 import SwiftUI
 
-/// The week drawn like the mark: your bar on the left, split into Move,
-/// Exercise and Stand; the opponent's single neutral bar on the right.
+/// The week as paired bars: yours on top, split into Move, Exercise and
+/// Stand, over the opponent's single neutral bar, both on a full-day track.
 /// Accessibility sizes switch to stacked rows instead of shrinking text.
 struct CompetitionWeekChart: View {
     let days: [LocalCompetitionDayPresentation]
@@ -102,7 +102,8 @@ struct CompetitionWeekChart: View {
                 isToday: day.ordinal == currentDayOrdinal,
                 showsDates: showsDates,
                 isGrown: isGrown,
-                now: now
+                now: now,
+                opponentName: opponentName
             )
         }
     }
@@ -396,8 +397,8 @@ struct CompetitionRingLegend: View {
         [
             showsRings
                 ? "Move, Exercise and \(standTitle.capitalized) are your rings."
-                : "The left bar is yours.",
-            "The single bar is \(opponentName).",
+                : "The top bar is yours.",
+            "The bottom bar is \(opponentName).",
         ].compactMap { $0 }.joined(separator: " ")
     }
 
@@ -778,82 +779,94 @@ func competitionStandTitle(_ days: [LocalCompetitionDayPresentation]) -> String 
     days.contains { $0.ownerAcceptedSnapshot?.standMode == .rollHours } ? "ROLL" : "STAND"
 }
 
+/// The day at the left, then your bar over theirs. Both bars fill the same
+/// track from the same edge, so who took the day reads from length alone.
 private struct HeadToHeadDayRow: View {
     let day: LocalCompetitionDayPresentation
     let isToday: Bool
     let showsDates: Bool
     let isGrown: Bool
     let now: Date
+    let opponentName: String
+
+    @ScaledMetric(relativeTo: .subheadline) private var numberWidth: CGFloat = 32
 
     var body: some View {
-        if ownerState == .future, !isToday {
-            HStack(spacing: 6) {
-                Color.clear.frame(maxWidth: .infinity, maxHeight: 1)
-                DayLabel(day: day, isToday: false, showsDates: showsDates, now: now)
-                Color.clear.frame(maxWidth: .infinity, maxHeight: 1)
-            }
-            .frame(minHeight: showsDates ? 38 : 30)
-        } else {
-            scoredRow
-        }
-    }
-
-    private var scoredRow: some View {
-        HStack(spacing: 6) {
-            cell(
-                chartCellText(ownerState),
-                points: day.ownerAcceptedPoints,
-                color: ownerColor,
-                alignment: .leading
-            )
-            OwnerDayBar(state: ownerState, segments: ringSegments(day), isGrown: isGrown)
-                .moving(Motion.grow(day.ordinal - 1, of: 7), value: isGrown)
+        HStack(spacing: 10) {
             DayLabel(day: day, isToday: isToday, showsDates: showsDates, now: now)
-            OpponentDayBar(state: opponentState)
-            cell(
-                opponentText,
-                points: day.opponentRevealedPoints,
-                color: opponentColor,
-                alignment: .trailing
-            )
+            if ownerState == .future, !isToday {
+                word("Upcoming", color: Theme.faint)
+            } else {
+                VStack(spacing: 3) {
+                    line(chartCellText(ownerState), points: day.ownerAcceptedPoints, color: ownerColor) {
+                        ownerTrack
+                            .moving(Motion.grow(day.ordinal - 1, of: 7), value: isGrown)
+                    }
+                    line(opponentText, points: day.opponentRevealedPoints, color: opponentColor) {
+                        DayTrack(
+                            segments: day.opponentRevealedPoints.map { [(color: Theme.ink, points: $0)] } ?? []
+                        )
+                    }
+                }
+            }
         }
         .frame(minHeight: showsDates ? 38 : 30)
+    }
+
+    @ViewBuilder
+    private var ownerTrack: some View {
+        switch ownerState {
+        case let .missingWithScore(points), let .unavailableWithScore(points):
+            DayTrack(segments: [(color: Theme.you, points: points)], isDashed: true, isGrown: isGrown)
+        default:
+            DayTrack(segments: ringSegments(day), isGrown: isGrown)
+        }
     }
 
     private var ownerState: CompetitionChartState {
         competitionOwnerChartState(day)
     }
 
-    private var opponentState: CompetitionChartState {
-        day.opponentRevealedPoints.map(CompetitionChartState.score) ?? .future
-    }
-
+    /// Their words carry their name, since the line alone doesn't say whose it is.
     private var opponentText: String {
-        competitionOpponentCellText(day)
+        day.opponentRevealedPoints.map { competitionPointsText($0) }
+            ?? (day.opponentReportedNoData
+                ? "No data from \(opponentName)" : "\(opponentName) not synced")
     }
 
-    // Numbers keep the score font; words step back.
-    private func cell(
+    /// A track and its number, or a word in the track's place. The number
+    /// column has one width, so every track ends at the same x.
+    private func line<Track: View>(
         _ text: String,
         points: Double?,
         color: Color,
-        alignment: Alignment
+        @ViewBuilder track: () -> Track
     ) -> some View {
         let isNumber = text.first?.isNumber == true
-        // Words never roll: a word and a number are different ids.
-        return ZStack {
-            Text(text)
-                .font(
-                    isNumber
-                        ? .headline.weight(.bold).width(.condensed).monospacedDigit()
-                        : .footnote.weight(.semibold)
-                )
-                .foregroundStyle(isNumber ? color : Theme.secondary)
-                .fixedSize()
+        return HStack(spacing: 7) {
+            if isNumber {
+                track()
+            } else {
+                word(text, color: Theme.secondary)
+            }
+            Text(isNumber ? text : "")
+                .font(.subheadline.weight(.bold).width(.condensed).monospacedDigit())
+                .foregroundStyle(color)
+                .lineLimit(1)
+                .minimumScaleFactor(0.7)
                 .scoreRoll(points, id: isNumber)
+                .frame(width: numberWidth, alignment: .trailing)
         }
         .animation(Motion.fade, value: isNumber)
-        .frame(minWidth: 36, alignment: alignment)
+    }
+
+    private func word(_ text: String, color: Color) -> some View {
+        Text(text)
+            .font(.footnote.weight(.semibold))
+            .foregroundStyle(color)
+            .lineLimit(1)
+            .minimumScaleFactor(0.8)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     // Day winners stay bright; the other number steps back.
@@ -920,35 +933,38 @@ private struct StackedDayRow: View {
     }
 }
 
+/// The weekday (or "Today") over the date, or over "Day 4" where the list
+/// leaves dates out.
 private struct DayLabel: View {
     let day: LocalCompetitionDayPresentation
     let isToday: Bool
     let showsDates: Bool
     let now: Date
 
-    @ScaledMetric(relativeTo: .footnote) private var width: CGFloat = 96
+    @ScaledMetric(relativeTo: .footnote) private var width: CGFloat = 48
 
     var body: some View {
-        VStack(spacing: 0) {
-            Text(isToday ? "Day \(day.ordinal) · Today" : "Day \(day.ordinal) · \(weekdayText(day.day))")
+        VStack(alignment: .leading, spacing: 1) {
+            Text(isToday ? "Today" : weekdayText(day.day))
                 .textCase(.uppercase)
                 .themeLabel(tracking: 1.0)
                 .foregroundStyle(isToday ? Theme.ink : Theme.secondary)
-            if showsDates {
-                Text(competitionDayText(day.day, weekday: false, now: now))
-                    .font(.caption2.weight(.semibold).monospacedDigit())
-                    .foregroundStyle(Theme.tertiary)
-            }
+            Text(showsDates ? competitionDayText(day.day, weekday: false, now: now) : "Day \(day.ordinal)")
+                .font(.caption2.weight(.semibold).monospacedDigit())
+                .foregroundStyle(Theme.tertiary)
         }
-        .fixedSize()
-        .frame(width: width)
+        .lineLimit(1)
+        .minimumScaleFactor(0.8)
+        .frame(width: width, alignment: .leading)
     }
 }
 
-private struct OwnerDayBar: View {
-    let state: CompetitionChartState
+/// A whole day's track, 0 to the daily maximum, filled from the left: your
+/// rings in order, or their one ink bar. Dashed is a score with a gap in it.
+private struct DayTrack: View {
     let segments: [(color: Color, points: Double)]
-    let isGrown: Bool
+    var isDashed = false
+    var isGrown = true
 
     var body: some View {
         GeometryReader { proxy in
@@ -956,60 +972,24 @@ private struct OwnerDayBar: View {
             // Width, not scale, so the 12 degree edge holds.
             let growth: CGFloat = isGrown ? 1 : 0
             HStack(spacing: 1.5) {
-                Spacer(minLength: 0)
-                Group {
-                    switch state {
-                    case .score:
-                        ForEach(segments.indices.reversed(), id: \.self) { index in
+                ForEach(segments.indices, id: \.self) { index in
+                    Group {
+                        if isDashed {
                             SlantedBar()
-                                .fill(segments[index].color)
-                                .frame(width: max(2, segments[index].points * unit) * growth)
+                                .stroke(Theme.you, style: StrokeStyle(lineWidth: 1.5, dash: [3, 2]))
+                        } else {
+                            SlantedBar().fill(segments[index].color)
                         }
-                    case let .missingWithScore(points), let .unavailableWithScore(points):
-                        SlantedBar()
-                            .stroke(Theme.you, style: StrokeStyle(lineWidth: 1.5, dash: [3, 2]))
-                            .frame(width: max(4, points * unit) * growth)
-                    case .future, .missing, .unavailable, .unscored:
-                        Rectangle().fill(Theme.track).frame(height: 2)
                     }
+                    .frame(width: max(2, segments[index].points * unit) * growth)
                 }
                 .transition(Motion.appear)
+                Spacer(minLength: 0)
             }
             .moving(Motion.settle, value: segments.map(\.points))
-            .frame(height: proxy.size.height)
         }
-        .frame(height: 20)
-    }
-}
-
-private struct OpponentDayBar: View {
-    let state: CompetitionChartState
-
-    var body: some View {
-        GeometryReader { proxy in
-            HStack(spacing: 0) {
-                Group {
-                    if case let .score(points) = state {
-                        SlantedBar()
-                            .fill(Theme.ink)
-                            .frame(
-                                width: max(
-                                    2,
-                                    points / ActivityScore.maximumDailyPoints
-                                        * proxy.size.width
-                                )
-                            )
-                    } else {
-                        Rectangle().fill(Theme.track).frame(height: 2)
-                    }
-                }
-                .transition(Motion.appear)
-                Spacer(minLength: 0)
-            }
-            .moving(Motion.settle, value: state)
-            .frame(height: proxy.size.height)
-        }
-        .frame(height: 20)
+        .frame(height: 10)
+        .background(SlantedBar().fill(Theme.track))
     }
 }
 
