@@ -1,5 +1,6 @@
--- Callable catalogue for build 1.0.7 (7), verified on staging and production
--- on 2026-11-16 after migration 20261115200000. All 64 signatures match both
+-- Callable catalogue for build 1.0.7 (7).
+-- Verified on staging and production on 2026-11-16 after migration
+-- 20261115200000. All 64 signatures match both
 -- hosted catalogues exactly; the read-only compatibility guard passed on both.
 -- Run the script again at each release. Delete a line by hand only to retire
 -- a function that no installed build calls any more.
