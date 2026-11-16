@@ -99,6 +99,9 @@ enum MultiUserCompetitionTestLabScenario:
     case month
     /// Group match screens; `-groupLab <setup>` picks one (see `GroupMatchLabSetup`).
     case groupMatches = "group-matches"
+    /// The reactions matches with Jordan's (live) and Riley's (finished) as
+    /// Rings + Sleep, and the Sleep Beta on.
+    case sleep
 }
 
 struct MultiUserCompetitionTestLabConfiguration: Equatable, Sendable {
@@ -237,6 +240,8 @@ struct MultiUserCompetitionTestLabRootView: View {
             MultiUserCompetitionReactionsTestLabView(source: .remoteParticipants)
         case .reactionsSimulated:
             MultiUserCompetitionReactionsTestLabView(source: .simulatedFixture)
+        case .sleep:
+            MultiUserCompetitionReactionsTestLabView(source: .remoteParticipants, sleep: true)
         case .liveActivity:
             LiveActivityPreviewView()
         case .practice:
@@ -673,7 +678,7 @@ private struct MultiUserCompetitionClaimTestLabView: View {
              .friends, .friendsEmpty, .friendsNoUsername, .challengeFriend,
              .nudge, .nudgeSimulated, .whatItTakes, .reactions, .reactionsSimulated,
              .liveActivity, .practice, .notificationChoices, .belt, .beltHero, .beltCeremony, .featureRound,
-             .versus, .rivalry, .rivalryFive, .rivalryYears, .month, .groupMatches:
+             .versus, .rivalry, .rivalryFive, .rivalryYears, .month, .groupMatches, .sleep:
             .ready
         }
         _status = State(initialValue: initialStatus)
@@ -1772,11 +1777,12 @@ private struct MultiUserCompetitionReactionsTestLabView: View {
         UserDefaults.standard.removeObject(forKey: CompetitionMotionSeen.storageKey)
     }()
 
-    init(source: CompetitionPublicationSource) {
+    init(source: CompetitionPublicationSource, sleep: Bool = false) {
         _ = Self.resetReactionsSeen
+        if sleep { UserDefaults.standard.set(true, forKey: SleepBeta.enabledKey) }
         typealias Fixtures = MultiUserCompetitionTestLabFixtures
         let hub = LocalCompetitionPublicationHub()
-        let server = MultiUserCompetitionReactionsTestLabServer(hub: hub, source: source)
+        let server = MultiUserCompetitionReactionsTestLabServer(hub: hub, source: source, sleep: sleep)
         _store = State(initialValue: Store(initialState: MainTabFeature.State()) {
             MainTabFeature()
         } withDependencies: {
@@ -1830,10 +1836,12 @@ private final class MultiUserCompetitionReactionsTestLabServer: @unchecked Senda
         ): .huffing,
     ]
     private var jordanReactedAgain = false
+    private let sleep: Bool
 
-    init(hub: LocalCompetitionPublicationHub, source: CompetitionPublicationSource) {
+    init(hub: LocalCompetitionPublicationHub, source: CompetitionPublicationSource, sleep: Bool = false) {
         self.hub = hub
         self.source = source
+        self.sleep = sleep
     }
 
     @discardableResult
@@ -1849,8 +1857,9 @@ private final class MultiUserCompetitionReactionsTestLabServer: @unchecked Senda
             ownReactions: own,
             jordanReactedAgain: again
         )
-        hub.publish(publication)
-        return publication
+        let published = sleep ? MultiUserCompetitionTestLabFixtures.addingSleep(publication) : publication
+        hub.publish(published)
+        return published
     }
 
     func jordanReactsAgain() {
@@ -2351,6 +2360,78 @@ enum MultiUserCompetitionTestLabFixtures {
     static let nudgePriyaID = nudgeID(8)
     static let nudgeLongNameID = nudgeID(9)
     static let nudgeKenjiID = nudgeID(10)
+    /// The sleep scenario: Jordan's live match (Day 3, the third night not
+    /// synced on their side) and Riley's finished one, as Rings + Sleep.
+    static func addingSleep(_ publication: LocalCompetitionPublication) -> LocalCompetitionPublication {
+        let opponentID = UUID(uuidString: "00000000-0000-4000-8000-00000000BEEF")!
+        func match(_ id: CompetitionID, own: [Int], theirs: [Int]) -> CompetitionSleepMatch {
+            CompetitionSleepMatch(
+                competitionID: id.rawValue,
+                nights: own.enumerated().map {
+                    CompetitionSleepNight(profileID: ownProfileID, dayOrdinal: $0.offset + 1, basisPoints: $0.element)
+                } + theirs.enumerated().map {
+                    CompetitionSleepNight(profileID: opponentID, dayOrdinal: $0.offset + 1, basisPoints: $0.element)
+                }
+            )
+        }
+        // Jordan's Day 3 is today (Sun Aug 16, 1 AM in Los Angeles): night 3
+        // began 6 pm Saturday, 7 hours before now.
+        func reading(_ night: Int, asleep: Double, awake: Double, onset: Double, source: SleepSource) -> CompetitionSleepReading {
+            let usual = 310.0 // 11:10 PM
+            let duration = SleepScore.durationPoints(minutesAsleep: asleep)
+            let bedtime = SleepScore.bedtimePoints(onsetMinutes: onset, usualOnsetMinutes: usual)
+            let interruptions = SleepScore.interruptionPoints(awakeMinutes: awake)
+            return CompetitionSleepReading(
+                night: SleepNight(
+                    minutesAsleep: asleep, awakeMinutes: awake, onsetMinutes: onset, source: source,
+                    durationPoints: duration, bedtimePoints: bedtime, interruptionPoints: interruptions,
+                    basisPoints: Int(((duration + bedtime + interruptions) * 100).rounded())
+                ),
+                windowStart: evaluatedAt.addingTimeInterval(-7 * 3_600 - Double(3 - night) * 86_400),
+                usualOnsetMinutes: usual,
+                readAt: evaluatedAt
+            )
+        }
+        let readings: [Int: CompetitionSleepReading] = [
+            1: reading(1, asleep: 438, awake: 12, onset: 305, source: .oura),
+            2: reading(2, asleep: 492, awake: 8, onset: 320, source: .oura),
+            3: reading(3, asleep: 365, awake: 34, onset: 400, source: .watch),
+        ]
+        let own = (1...3).map { readings[$0]!.night.basisPoints }
+        let competitions = publication.dashboard.competitions.map { item -> LocalCompetitionPresentation in
+            switch item.id {
+            case reactionJordanID:
+                item.addingSleep(
+                    match(item.id, own: own, theirs: [8_500, 9_200]),
+                    viewer: ownProfileID, readings: readings
+                )
+            case reactionRileyID:
+                item.addingSleep(
+                    match(item.id, own: [9_000, 8_800, 10_000, 7_500, 9_400, 8_000, 9_600],
+                          theirs: [10_000, 9_500, 9_000, 9_800, 10_000, 9_100, 9_900]),
+                    viewer: ownProfileID
+                )
+            default:
+                item
+            }
+        }
+        let dashboard = publication.dashboard
+        var next = LocalCompetitionDashboard(
+            competitions: competitions,
+            awards: dashboard.awards,
+            issues: dashboard.issues,
+            hiddenTerminalCompetitionCount: dashboard.hiddenTerminalCompetitionCount
+        )
+        next.groupMatches = dashboard.groupMatches
+        return LocalCompetitionPublication(
+            publicationRevision: publication.publicationRevision,
+            dashboard: next,
+            evaluatedAt: publication.evaluatedAt,
+            timeZoneIdentifier: publication.timeZoneIdentifier,
+            source: publication.source
+        )
+    }
+
     static let reactionJordanID = reactionID(1)
     static let reactionSamID = reactionID(2)
     static let reactionMorganID = reactionID(3)

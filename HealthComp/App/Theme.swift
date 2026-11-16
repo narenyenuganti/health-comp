@@ -8,6 +8,9 @@ enum Theme {
     static let move = Color(uiColor: UIColor(hex: 0xE4003A))
     static let exercise = Color(uiColor: UIColor(hex: 0x009A4E))
     static let stand = Color(uiColor: UIColor(hex: 0x0072BC))
+    /// Sleep beta: your night, beside the three rings. The one colour added
+    /// since the rings (owner, 2026-11-15).
+    static let sleep = dynamic(light: 0x5856D6, dark: 0x7D7AFF)
 
     /// Your score, name and wins. Light mode darkens amber so text keeps 4.5:1
     /// on ground, panel and control.

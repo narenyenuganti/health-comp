@@ -73,7 +73,8 @@ Binding rules (confirmed by the owner, 2026-11-12):
   and ••• menus.
 - **Colour means you.** Ring colours and amber are only ever the viewer's own;
   the opponent and all structure stay neutral. The existing Theme tokens are
-  kept and no new colours are added.
+  kept and no new colours are added, except indigo `sleep` for the Sleep beta
+  (owner, 2026-11-15).
 
 Earlier owner decisions that still stand:
 

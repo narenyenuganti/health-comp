@@ -1,4 +1,5 @@
 import ActivityKit
+import CompetitionCore
 import ComposableArchitecture
 import CoreImage.CIFilterBuiltins
 import PhotosUI
@@ -162,6 +163,8 @@ struct AccountSettingsView: View {
     /// Real accounts only: set, change or remove your photo.
     var profilePhoto: AccountProfilePhoto?
     var friendSettings: AccountFriendSettings?
+    /// Sleep beta: Health's sleep sheet.
+    var requestSleepAccess: () -> Void = {}
 #if HEALTHCOMP_STAGING
     var refreshCompetition: (() -> Void)?
 #endif
@@ -177,6 +180,7 @@ struct AccountSettingsView: View {
     @AppStorage(AppAppearance.storageKey)
     private var appearance = AppAppearance.system
     @AppStorage(Sounds.enabledKey) private var soundsAreOn = true
+    @AppStorage(SleepBeta.enabledKey) private var sleepBeta = false
     @State private var showsChallengeCode = false
     @State private var hasLoaded = false
     @FocusState private var isNameFocused: Bool
@@ -761,6 +765,17 @@ struct AccountSettingsView: View {
             .accessibilityIdentifier("account.sounds")
 
             NavigationLink {
+                AccountSleepBetaPage(requestSleepAccess: requestSleepAccess)
+            } label: {
+                LabeledContent {
+                    Text(sleepBeta ? "On" : "Off")
+                } label: {
+                    Label("Sleep Beta", systemImage: "bed.double")
+                }
+            }
+            .accessibilityIdentifier("account.sleep")
+
+            NavigationLink {
                 AccountPrivacyPage(friends: friendSettings)
             } label: {
                 Label("Privacy", systemImage: "lock")
@@ -880,6 +895,97 @@ private struct AccountAppearancePage: View {
             .listRowBackground(Theme.panel)
         }
         .accountPageStyle(title: "Appearance")
+    }
+}
+
+/// Sleep beta: Rings + Sleep challenges, and which tracker your nights come from.
+private struct AccountSleepBetaPage: View {
+    let requestSleepAccess: () -> Void
+
+    @AppStorage(SleepBeta.enabledKey) private var isOn = false
+    @AppStorage(SleepBeta.sourceKey) private var source = SleepSourcePreference.automatic.rawValue
+    @State private var isPrimingPresented = false
+
+    var body: some View {
+        List {
+            Section {
+                Toggle("Rings + Sleep", isOn: Binding(
+                    get: { isOn },
+                    set: { turnOn in
+                        if turnOn { isPrimingPresented = true } else { isOn = false }
+                    }
+                ))
+                .tint(Theme.youFill)
+                .accessibilityIdentifier("account.sleep.enabled")
+            } footer: {
+                Text("Challenge someone to rings and sleep. Each night is worth up to 100 points on top of the rings’ 600: time asleep against 8 hours (50), a steady bedtime (30) and few wake-ups (20).")
+                    .foregroundStyle(Theme.secondary)
+            }
+            .listRowBackground(Theme.panel)
+
+            if isOn {
+                Section {
+                    Picker("Sleep Source", selection: $source) {
+                        ForEach(SleepSourcePreference.allCases, id: \.rawValue) {
+                            Text($0.title).tag($0.rawValue)
+                        }
+                    }
+                    .pickerStyle(.inline)
+                    .labelsHidden()
+                    .accessibilityIdentifier("account.sleep.source")
+                } header: {
+                    Text("Sleep Source")
+                } footer: {
+                    Text("Automatic uses Oura Ring when it has your night, otherwise Apple Watch. One tracker a night, never both added.")
+                        .foregroundStyle(Theme.secondary)
+                }
+                .listRowBackground(Theme.panel)
+            }
+        }
+        .accountPageStyle(title: "Sleep Beta")
+        .sheet(isPresented: $isPrimingPresented) {
+            SleepPrimingSheet {
+                isOn = true
+                isPrimingPresented = false
+                requestSleepAccess()
+            } notNow: {
+                isPrimingPresented = false
+            }
+        }
+    }
+}
+
+/// Before Health's own sheet: what's read and what leaves the phone.
+private struct SleepPrimingSheet: View {
+    let proceed: () -> Void
+    let notNow: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Image(systemName: "bed.double.fill")
+                .font(.largeTitle)
+                .foregroundStyle(Theme.sleep)
+                .accessibilityHidden(true)
+            Text("Your sleep, scored")
+                .font(.title2.weight(.heavy).width(.condensed))
+                .foregroundStyle(Theme.ink)
+                .accessibilityAddTraits(.isHeader)
+            Text("HealthComp reads when and how long you slept from Apple Health, from an Apple Watch or Oura Ring. Only each night’s points leave your iPhone.")
+                .font(.body)
+                .foregroundStyle(Theme.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+            Button("Continue", action: proceed)
+                .buttonStyle(PrimaryButtonStyle())
+                .accessibilityIdentifier("account.sleep.continue")
+            Button("Not Now", action: notNow)
+                .font(.body.weight(.semibold))
+                .foregroundStyle(Theme.ink)
+                .frame(maxWidth: .infinity, minHeight: 44)
+        }
+        .padding(24)
+        .background(Theme.ground)
+        .presentationDetents([.medium])
     }
 }
 

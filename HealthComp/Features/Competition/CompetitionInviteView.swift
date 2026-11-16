@@ -29,7 +29,8 @@ struct CompetitionInviteView: View {
                 }
                 CompetitionRulesCard(
                     source: source,
-                    opponentName: competition.opponentDisplayName
+                    opponentName: competition.opponentDisplayName,
+                    withSleep: competition.isSleepMatch
                 )
                 actionControls
                 if isRemoteOutgoing, dynamicTypeSize.isAccessibilitySize {
@@ -516,6 +517,8 @@ struct CompetitionRulesCard: View {
     let source: CompetitionPublicationSource
     var opponentName: String? = nil
     var weekText: String? = nil
+    /// Rings + Sleep: a night is worth up to 100 more.
+    var withSleep = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -528,9 +531,17 @@ struct CompetitionRulesCard: View {
             CompetitionRuleRow(
                 icon: .rings,
                 title: "1 point per 1% of each ring",
-                detail: "Up to 600 points a day"
+                detail: withSleep ? "Up to 600 points a day from rings" : "Up to 600 points a day"
             )
             CompetitionRuleDivider()
+            if withSleep {
+                CompetitionRuleRow(
+                    icon: .symbol("bed.double"),
+                    title: "Up to 100 points a night",
+                    detail: "Time asleep 50, steady bedtime 30, few wake-ups 20. So 700 a day. Beta."
+                )
+                CompetitionRuleDivider()
+            }
             CompetitionRuleRow(
                 icon: .symbol("trophy"),
                 title: "Most points after 7 days wins",

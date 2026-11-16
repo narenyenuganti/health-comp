@@ -97,10 +97,10 @@ enum LocalCompetitionOwnerAvailability: Equatable, Sendable {
 struct LocalCompetitionDayPresentation: Equatable, Sendable {
     let day: CompetitionDay
     let ordinal: Int
-    let ownerAcceptedPoints: Double?
+    var ownerAcceptedPoints: Double?
     let ownerLatestAvailability: LocalCompetitionOwnerAvailability
     /// Revealed opponent points; `nil` can mean future or unavailable remote data.
-    let opponentRevealedPoints: Double?
+    var opponentRevealedPoints: Double?
     /// The other person sent this day with no score (for example tracking
     /// paused). Remote only.
     let opponentReportedNoData: Bool
@@ -117,6 +117,14 @@ struct LocalCompetitionDayPresentation: Equatable, Sendable {
     /// to each side's score. Remote only; nil when not kept for this day.
     var ownerRingPoints: [Double]? = nil
     var opponentRingPoints: [Double]? = nil
+    /// Rings + Sleep only: each night's points, already inside the accepted
+    /// and revealed points above. Nil is no night saved yet.
+    var ownerSleepPoints: Double? = nil
+    var opponentSleepPoints: Double? = nil
+    /// What this phone read for your night, when it has read it.
+    var ownerSleepReading: CompetitionSleepReading? = nil
+    /// 600, or 700 in a Rings + Sleep match.
+    var dailyMaximum: Double = ActivityScore.maximumDailyPoints
 
     init(
         day: CompetitionDay,
@@ -183,15 +191,15 @@ struct LocalCompetitionPresentation: Equatable, Identifiable, Sendable {
     let ownerDisplayName: String
     let opponentDisplayName: String
     let opponentIdentity: String
-    let lifecycle: LocalCompetitionLifecyclePresentation
+    var lifecycle: LocalCompetitionLifecyclePresentation
     let acceptedConfiguration: LocalCompetitionAcceptedPresentation?
-    let userPoints: Double
-    let opponentPoints: Double
-    let days: [LocalCompetitionDayPresentation]
+    var userPoints: Double
+    var opponentPoints: Double
+    var days: [LocalCompetitionDayPresentation]
     let currentDayOrdinal: Int?
     let lastRefresh: LocalCompetitionRefreshPresentation?
     let tally: LocalCompetitionTallyPresentation?
-    let terminalResult: LocalCompetitionTerminalPresentation?
+    var terminalResult: LocalCompetitionTerminalPresentation?
     /// The injected environment time used to build this projection.
     let evaluatedAt: Date
     /// The immutable competition environment time zone used for day labels.
@@ -203,6 +211,8 @@ struct LocalCompetitionPresentation: Equatable, Identifiable, Sendable {
     var rematchParentID: CompetitionID?
     /// Both people's reactions, newest first (real matches only).
     var reactions: [CompetitionReaction] = []
+    /// Rings + Sleep matches only: both players' nights (`addingSleep`).
+    var sleep: CompetitionSleepPresentation? = nil
 
     init(
         id: CompetitionID,

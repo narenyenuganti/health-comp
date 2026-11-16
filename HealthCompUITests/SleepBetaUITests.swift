@@ -1,0 +1,168 @@
+import XCTest
+
+/// Sleep beta, through Home's own reducer: the `sleep` Test Lab scenario has
+/// Jordan's live match (Day 3) and Riley's finished one as Rings + Sleep.
+/// Now is Sun Aug 16, 1:00 AM in Los Angeles.
+final class SleepBetaUITests: XCTestCase {
+    private var app: XCUIApplication!
+
+    override func setUpWithError() throws {
+        continueAfterFailure = false
+        app = XCUIApplication()
+    }
+
+    override func tearDownWithError() throws {
+        XCUIDevice.shared.appearance = .light
+        app = nil
+    }
+
+    func testLiveMatchShowsSleepRowAndNight() {
+        run(dark: false)
+    }
+
+    func testLiveMatchInDark() {
+        run(dark: true)
+    }
+
+    func testCreateSheetOffersRingsAndSleep() {
+        app.launchEnvironment["TZ"] = "America/Los_Angeles"
+        app.launchArguments = [
+            "--multi-user-competition-test-lab",
+            "--multi-user-competition-scenario", "challenge-friend",
+            "-healthcomp.colorHintSeen", "YES",
+            "-healthcomp.sleepBeta.enabled", "YES",
+            "-AppleLanguages", "(en)",
+            "-AppleLocale", "en_US",
+        ]
+        app.launch()
+        XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 10))
+        let open = app.buttons["competition.create.open"]
+        XCTAssertTrue(open.waitForExistence(timeout: 5))
+        sleep(2) // friends load
+        open.tap()
+        let players = app.buttons["competition.group.choose-players"]
+        XCTAssertTrue(players.waitForExistence(timeout: 3))
+        players.tap()
+        let friend = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "competition.create.friend.", "Dev Patel")).firstMatch
+        XCTAssertTrue(friend.waitForExistence(timeout: 5))
+        friend.tap()
+        let sleepFormat = app.buttons["Rings + Sleep"]
+        XCTAssertTrue(sleepFormat.waitForExistence(timeout: 3))
+        sleepFormat.tap()
+        XCTAssertTrue(app.staticTexts["Up to 100 points a night"].waitForExistence(timeout: 3))
+        sleep(1)
+        shot("sleep-create")
+    }
+
+    func testSettingsPrimesBeforeHealthAndPicksASource() {
+        app.launchEnvironment["TZ"] = "America/Los_Angeles"
+        app.launchArguments = [
+            "--multi-user-competition-test-lab",
+            "--multi-user-competition-scenario", "account",
+            "-healthcomp.colorHintSeen", "YES",
+            "-AppleLanguages", "(en)",
+            "-AppleLocale", "en_US",
+        ]
+        app.launch()
+        XCTAssertTrue(app.navigationBars["Account"].waitForExistence(timeout: 8))
+        let row = element("account.sleep")
+        scrollToElement(row)
+        row.tap()
+        XCTAssertTrue(app.navigationBars["Sleep Beta"].waitForExistence(timeout: 3))
+        let toggle = app.switches["account.sleep.enabled"]
+        XCTAssertTrue(toggle.waitForExistence(timeout: 3))
+        // An earlier run may have left it on.
+        if toggle.value as? String == "1" { toggle.switches.firstMatch.tap() }
+        shot("sleep-settings-off")
+        toggle.switches.firstMatch.tap()
+        let proceed = app.buttons["account.sleep.continue"]
+        XCTAssertTrue(proceed.waitForExistence(timeout: 3))
+        sleep(1)
+        shot("sleep-priming")
+        proceed.tap()
+        XCTAssertTrue(proceed.waitForNonExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["Oura Ring"].waitForExistence(timeout: 3))
+        sleep(1)
+        shot("sleep-settings")
+    }
+
+    private func run(dark: Bool) {
+        launch(dark: dark)
+        let suffix = dark ? "-dark" : ""
+        let jordan = card("active", "Jordan")
+        scrollToElement(jordan)
+        sleep(3) // reactions rain settles
+        shot("sleep-home\(suffix)")
+        jordan.tap()
+        XCTAssertTrue(app.navigationBars["Jordan"].waitForExistence(timeout: 3))
+
+        let rings = element("competition.ownerRings")
+        XCTAssertTrue(rings.waitForExistence(timeout: 3))
+        XCTAssertTrue(rings.label.contains("Sleep, 6 hours 5 minutes asleep, 60 points"), rings.label)
+        scrollToElement(rings)
+        shot("sleep-today\(suffix)")
+
+        let row = app.buttons["competition.sleep.row"]
+        XCTAssertTrue(row.waitForExistence(timeout: 3))
+        row.tap()
+        XCTAssertTrue(app.staticTexts["Night before Day 3"].waitForExistence(timeout: 3))
+        for part in ["Time asleep, 6h 05m of 8h, 38/50", "Bedtime, Fell asleep 12:40\u{202F}AM, usual 11:10\u{202F}PM, 10/30", "Wake-ups, 34 min awake, 12/20"] {
+            XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", part)).firstMatch.exists, part)
+        }
+        XCTAssertTrue(app.staticTexts["Waiting to sync"].exists, "Jordan's third night isn't in")
+        shot("sleep-night\(suffix)")
+        app.buttons["Close"].firstMatch.tap()
+
+        let week = app.buttons["Week"]
+        if week.waitForExistence(timeout: 2) {
+            week.tap()
+            sleep(2)
+            app.swipeUp()
+            sleep(1)
+            shot("sleep-week\(suffix)")
+        }
+    }
+
+    private func launch(dark: Bool = false) {
+        XCUIDevice.shared.appearance = dark ? .dark : .light
+        app.launchEnvironment["TZ"] = "America/Los_Angeles"
+        app.launchArguments = [
+            "--multi-user-competition-test-lab",
+            "--multi-user-competition-scenario", "sleep",
+            "-healthcomp.colorHintSeen", "YES",
+            "-AppleLanguages", "(en)",
+            "-AppleLocale", "en_US",
+        ]
+        app.launch()
+        XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 10))
+    }
+
+    private func shot(_ name: String) {
+        let attachment = XCTAttachment(screenshot: app.screenshot())
+        attachment.name = name
+        attachment.lifetime = .keepAlways
+        add(attachment)
+    }
+
+    private func element(_ identifier: String) -> XCUIElement {
+        app.descendants(matching: .any).matching(identifier: identifier).firstMatch
+    }
+
+    private func card(_ state: String, _ name: String) -> XCUIElement {
+        app.buttons.matching(
+            NSPredicate(
+                format: "identifier BEGINSWITH %@ AND label CONTAINS %@",
+                "competition.sharing.\(state).",
+                name
+            )
+        ).firstMatch
+    }
+
+    private func scrollToElement(_ element: XCUIElement) {
+        for _ in 0..<12 {
+            if element.exists, element.isHittable,
+               app.frame.insetBy(dx: 0, dy: 60).contains(element.frame) { return }
+            app.swipeUp()
+        }
+    }
+}

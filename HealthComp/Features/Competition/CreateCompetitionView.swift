@@ -11,6 +11,8 @@ struct CreateCompetitionView: View {
     @Binding var recipientCode: String
     let recipient: CompetitionFeature.InviteRecipient?
     let recipientStatus: CompetitionFeature.InviteRecipientStatus
+    /// Sleep beta: shown only while the beta is on.
+    var withSleep: Binding<Bool>? = nil
     let senderName: String?
     /// Your own challenge link; Share Your Link shows once it has loaded.
     var ownChallengeLink: URL? = nil
@@ -25,6 +27,7 @@ struct CreateCompetitionView: View {
     let create: () -> Void
     let openChallenge: (CompetitionID) -> Void
 
+    @AppStorage(SleepBeta.enabledKey) private var sleepBeta = false
     @Environment(\.dismiss) private var dismiss
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.locale) private var locale
@@ -47,7 +50,13 @@ struct CreateCompetitionView: View {
                     picker
                 } else {
                     recipientSelection
-                    CompetitionRulesCard(source: .remoteParticipants)
+                    if sleepBeta, let withSleep {
+                        formatPicker(withSleep)
+                    }
+                    CompetitionRulesCard(
+                        source: .remoteParticipants,
+                        withSleep: sleepBeta && withSleep?.wrappedValue == true
+                    )
                     Text(competitionTimeZoneText(timeZoneIdentifier, locale: locale))
                         .font(.caption)
                         .foregroundStyle(Theme.secondary)
@@ -398,6 +407,25 @@ struct CreateCompetitionView: View {
     }
 
     /// Their challenge link, Find, and your own to share: as before friends.
+    /// Rings | Rings + Sleep, and what sleep changes.
+    private func formatPicker(_ selection: Binding<Bool>) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            CompetitionSegments(
+                selection: selection,
+                options: [(false, "Rings"), (true, "Rings + Sleep")]
+            )
+            .accessibilityIdentifier("competition.create.format")
+            if selection.wrappedValue {
+                Text("Beta. You both need sleep in Apple Health, from an Apple Watch or Oura Ring. A night with nothing there scores 0.")
+                    .font(.caption)
+                    .foregroundStyle(Theme.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .transition(Motion.appear)
+            }
+        }
+        .moving(Motion.settle, value: selection.wrappedValue)
+    }
+
     @ViewBuilder
     private var linkEntry: some View {
         Text("THEIR CHALLENGE LINK")

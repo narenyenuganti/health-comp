@@ -13,7 +13,7 @@ struct CompetitionRingRow: Equatable, Sendable {
 }
 
 struct CompetitionRingPanel: Equatable, Sendable {
-    /// Always Move, Exercise, Stand.
+    /// Move, Exercise, Stand, and Sleep in a Rings + Sleep match.
     let rows: [CompetitionRingRow]
     let isPaused: Bool
     let note: String?
@@ -31,8 +31,9 @@ func competitionRingPanel(
         return nil
     }
     let isAccepted = day.ownerAcceptedSnapshot != nil
+    // The rings' share only: a night's points get their own row.
     let total = isAccepted
-        ? day.ownerAcceptedPoints
+        ? day.ownerAcceptedPoints.map { max(0, $0 - (day.ownerSleepPoints ?? 0)) }
         : ActivityScoreCalculator.score(snapshot, policy: day.scoringPolicy).availableScore?.points
     let shares = competitionRingShares(snapshot, perRingCap: day.scoringPolicy.perRingCap)
     let sum = shares.reduce(0, +)
@@ -65,7 +66,7 @@ func competitionRingPanel(
         row(0, minutes ? "Move Time" : "Move", snapshot.move, minutes ? "min" : "kcal", minutes ? "minutes" : "kilocalories"),
         row(1, "Exercise", snapshot.exercise, "min", "minutes"),
         row(2, standTitle, snapshot.standOrRoll, "hr", "hours"),
-    ]
+    ] + (day.dailyMaximum > ActivityScore.maximumDailyPoints ? [competitionSleepRow(day, locale: locale)] : [])
     let isPaused = snapshot.pauseState == .paused
 
     let note: String? = if isAccepted, day.ownerLatestSnapshot != snapshot {
@@ -97,31 +98,23 @@ func competitionRingPanel(
 /// the scoring rule. Ring colors appear only here, on your own rows.
 struct ActivityRingsView: View {
     let panel: CompetitionRingPanel
+    /// Sleep beta: the Sleep row opens last night's sheet.
+    var openNight: (() -> Void)? = nil
 
     @Environment(\.locale) private var locale
 
-    private let colors = [Theme.move, Theme.exercise, Theme.stand]
+    private let colors = [Theme.move, Theme.exercise, Theme.stand, Theme.sleep]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             VStack(alignment: .leading, spacing: 12) {
                 ForEach(Array(panel.rows.enumerated()), id: \.offset) { index, row in
-                    HStack(alignment: .firstTextBaseline, spacing: 10) {
-                        SlantedBar()
-                            .fill(colors[index])
-                            .frame(width: 10, height: 10)
-                        (Text(row.title).fontWeight(.semibold).foregroundStyle(Theme.ink)
-                            + Text(" · \(row.detail)").foregroundStyle(Theme.secondary))
-                            .font(.subheadline)
-                            .fixedSize(horizontal: false, vertical: true)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                        if let points = row.points {
-                            Text(competitionPointsText(points, locale: locale))
-                                .font(.headline.weight(.heavy).width(.condensed).monospacedDigit())
-                                .foregroundStyle(Theme.ink)
-                                .fixedSize()
-                                .scoreRoll(points, id: row.title)
-                        }
+                    if index == 3, let openNight {
+                        Button(action: openNight) { rowView(index, row, opens: true) }
+                            .buttonStyle(.plain)
+                            .accessibilityIdentifier("competition.sleep.row")
+                    } else {
+                        rowView(index, row, opens: false)
                     }
                 }
                 if panel.isPaused {
@@ -142,7 +135,34 @@ struct ActivityRingsView: View {
             .accessibilityElement(children: .ignore)
             .accessibilityIdentifier("competition.ownerRings")
             .accessibilityLabel(panel.accessibilityLabel)
+            .accessibilityAction(named: "Last night") { openNight?() }
         }
+    }
+
+    private func rowView(_ index: Int, _ row: CompetitionRingRow, opens: Bool) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            SlantedBar()
+                .fill(colors[min(index, colors.count - 1)])
+                .frame(width: 10, height: 10)
+            (Text(row.title).fontWeight(.semibold).foregroundStyle(Theme.ink)
+                + Text(" · \(row.detail)").foregroundStyle(Theme.secondary))
+                .font(.subheadline)
+                .fixedSize(horizontal: false, vertical: true)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            if let points = row.points {
+                Text(competitionPointsText(points, locale: locale))
+                    .font(.headline.weight(.heavy).width(.condensed).monospacedDigit())
+                    .foregroundStyle(Theme.ink)
+                    .fixedSize()
+                    .scoreRoll(points, id: row.title)
+            }
+            if opens {
+                Image(systemName: "chevron.right")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Theme.tertiary)
+            }
+        }
+        .contentShape(Rectangle())
     }
 }
 
@@ -183,7 +203,8 @@ func competitionWhatItTakes(
     )
     guard margin <= 0 else { return nil }
     let need = 1 - margin
-    let left = max(0, ActivityScore.maximumDailyPoints - today)
+    // Only rings can still move today; last night's points are banked.
+    let left = max(0, ActivityScore.maximumDailyPoints - (today - (day.ownerSleepPoints ?? 0)))
     let cap = day.scoringPolicy.perRingCap
     let shares = competitionRingShares(snapshot, perRingCap: cap)
 

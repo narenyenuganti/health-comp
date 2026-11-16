@@ -120,6 +120,17 @@ struct CompetitionRemoteAPI: Sendable {
     var setReaction: @Sendable (CompetitionReactionRequest) async throws -> Void = { _ in
         throw CompetitionRemoteFailure.operationFailed
     }
+    /// Sleep beta: your Rings + Sleep duels and both players' nights.
+    var listSleepScoring: @Sendable () async throws -> [CompetitionSleepMatch] = {
+        throw CompetitionRemoteFailure.operationFailed
+    }
+    /// Turns sleep on for a challenge you just created, before anyone accepts.
+    var enableSleepScoring: @Sendable (UUID) async throws -> Void = { _ in
+        throw CompetitionRemoteFailure.operationFailed
+    }
+    var submitSleepNight: @Sendable (CompetitionSleepNight, _ competitionID: UUID) async throws -> Void = { _, _ in
+        throw CompetitionRemoteFailure.operationFailed
+    }
     var previewInvite: @Sendable (
         CompetitionInviteClaimRequest
     ) async throws -> CompetitionInvitePreview = { _ in
@@ -298,6 +309,18 @@ struct CompetitionReactionRecord: Equatable, Sendable {
     let authorProfileID: UUID
     let kind: CompetitionReactionKind
     let updatedAt: Date
+}
+
+/// One player's night in a sleep duel: points only, never times or stages.
+struct CompetitionSleepNight: Equatable, Sendable {
+    let profileID: UUID
+    let dayOrdinal: Int
+    let basisPoints: Int
+}
+
+struct CompetitionSleepMatch: Equatable, Sendable {
+    let competitionID: UUID
+    let nights: [CompetitionSleepNight]
 }
 
 struct CompetitionReactionRequest: Equatable, Sendable {

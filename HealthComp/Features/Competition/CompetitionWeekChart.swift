@@ -804,7 +804,8 @@ private struct HeadToHeadDayRow: View {
                     }
                     line(opponentText, points: day.opponentRevealedPoints, color: opponentColor) {
                         DayTrack(
-                            segments: day.opponentRevealedPoints.map { [(color: Theme.ink, points: $0)] } ?? []
+                            segments: day.opponentRevealedPoints.map { [(color: Theme.ink, points: $0)] } ?? [],
+                            maximum: day.dailyMaximum
                         )
                     }
                 }
@@ -817,9 +818,9 @@ private struct HeadToHeadDayRow: View {
     private var ownerTrack: some View {
         switch ownerState {
         case let .missingWithScore(points), let .unavailableWithScore(points):
-            DayTrack(segments: [(color: Theme.you, points: points)], isDashed: true, isGrown: isGrown)
+            DayTrack(segments: [(color: Theme.you, points: points)], isDashed: true, isGrown: isGrown, maximum: day.dailyMaximum)
         default:
-            DayTrack(segments: ringSegments(day), isGrown: isGrown)
+            DayTrack(segments: ringSegments(day), isGrown: isGrown, maximum: day.dailyMaximum)
         }
     }
 
@@ -965,10 +966,12 @@ private struct DayTrack: View {
     let segments: [(color: Color, points: Double)]
     var isDashed = false
     var isGrown = true
+    /// 600, or 700 in a Rings + Sleep match.
+    var maximum = ActivityScore.maximumDailyPoints
 
     var body: some View {
         GeometryReader { proxy in
-            let unit = proxy.size.width / ActivityScore.maximumDailyPoints
+            let unit = proxy.size.width / maximum
             // Width, not scale, so the 12 degree edge holds.
             let growth: CGFloat = isGrown ? 1 : 0
             HStack(spacing: 1.5) {
@@ -1018,17 +1021,21 @@ func ringSegments(
     guard case let .score(points) = competitionOwnerChartState(day) else {
         return []
     }
+    // Sleep is its own segment, after the rings.
+    let sleep = day.ownerSleepPoints ?? 0
+    let night: [(color: Color, points: Double)] = sleep > 0 ? [(Theme.sleep, sleep)] : []
+    let rings = max(0, points - sleep)
     guard let snapshot = day.ownerAcceptedSnapshot else {
-        return [(Theme.youFill, points)]
+        return (rings > 0 ? [(Theme.youFill, rings)] : []) + night
     }
     let shares = competitionRingShares(
         snapshot, perRingCap: day.scoringPolicy.perRingCap
     )
     let total = shares.reduce(0, +)
-    guard total > 0 else { return [(Theme.youFill, points)] }
+    guard total > 0 else { return (rings > 0 ? [(Theme.youFill, rings)] : []) + night }
     return zip([Theme.move, Theme.exercise, Theme.stand], shares).map {
-        ($0, points * $1 / total)
-    }
+        ($0, rings * $1 / total)
+    } + night
 }
 
 /// A day is no data when either score is missing, or when both read 0.
