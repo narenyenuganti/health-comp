@@ -150,6 +150,13 @@ struct CompetitionClient: Sendable {
     /// Whether you reported this person's photo on this iPhone.
     var isProfilePhotoReported: @Sendable (UUID) async -> Bool
     var groupMatchCommand: @Sendable (GroupMatchCommand) async throws -> CompetitionPublication
+    /// Sleep beta: turns sleep on for a challenge you just created and
+    /// returns the republished dashboard.
+    var enableSleep: @Sendable (CompetitionID) async throws -> CompetitionPublication = { _ in
+        throw CompetitionRemoteFailure.operationFailed
+    }
+    /// Sleep beta: Health's sleep sheet (its own permission).
+    var requestSleepAuthorization: @Sendable () async throws -> Void = {}
 
     init(
         start: @escaping @Sendable () -> AsyncStream<CompetitionPublication>,

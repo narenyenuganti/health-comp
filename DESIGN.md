@@ -5,6 +5,8 @@ colors:
   move: "#E4003A"
   exercise: "#009A4E"
   stand: "#0072BC"
+  sleep: "#5856D6"
+  sleep-dark: "#7D7AFF"
   you: "#8F5C00"
   you-dark: "#F2A100"
   you-fill: "#F2A100"
@@ -154,7 +156,9 @@ A neutral warm-grey board with one amber voice and Apple's three ring hues.
 
 ### Named Rules
 **The Colour Means You Rule.** Ring hues and amber are only ever the viewer's
-own. The opponent and all structure stay neutral. No new colours are added.
+own. The opponent and all structure stay neutral. No new colours are added;
+the one exception is indigo `sleep`, your night in a Rings + Sleep match, used
+like a fourth ring (owner, 2026-11-15).
 
 **The Neutral Action Rule.** Primary buttons are ink, not amber. Colour is not
 spent on calls to action.

@@ -13,6 +13,8 @@ struct CompetitionSharingView: View {
     @Binding var recipientCode: String
     let recipient: CompetitionFeature.InviteRecipient?
     let recipientStatus: CompetitionFeature.InviteRecipientStatus
+    /// Sleep beta: the challenge's Rings / Rings + Sleep choice.
+    var withSleep: Binding<Bool>? = nil
     let findRecipient: () -> Void
     let createInvite: () -> Void
     /// Set by the host's + button and by the empty state.
@@ -241,6 +243,7 @@ struct CompetitionSharingView: View {
                 recipientCode: $recipientCode,
                 recipient: recipient,
                 recipientStatus: recipientStatus,
+                withSleep: withSleep,
                 senderName: senderName,
                 ownChallengeLink: ownChallengeLink,
                 friends: friends,

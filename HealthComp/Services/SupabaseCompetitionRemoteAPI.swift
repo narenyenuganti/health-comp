@@ -1,4 +1,5 @@
 import Foundation
+import CompetitionCore
 import Supabase
 
 enum SupabaseCompetitionRemoteAPI {
@@ -380,6 +381,41 @@ enum SupabaseCompetitionRemoteAPI {
                       object["reaction"] is NSNull
                         ? request.kind == nil
                         : (object["reaction"] as? String).map { $0 == request.kind?.rawValue } == true
+                else {
+                    throw CompetitionRemoteFailure.serverContractMismatch
+                }
+            },
+            listSleepScoring: {
+                let response = try await sendReadOnly(
+                    .rpc(name: "list_sleep_scoring", parameters: try encode(EmptyParameters())),
+                    transport: transport
+                )
+                return try decodeSleepScoring(response.data)
+            },
+            enableSleepScoring: { id in
+                try await sendCompetitionCommand("enable_sleep_scoring", id, transport)
+            },
+            submitSleepNight: { night, competitionID in
+                try validateUUID(competitionID)
+                guard (1...7).contains(night.dayOrdinal),
+                      (0...SleepScore.maximumBasisPoints).contains(night.basisPoints)
+                else { throw CompetitionRemoteFailure.serverContractMismatch }
+                let response = try await send(
+                    .rpc(name: "submit_sleep_night", parameters: try encode(
+                        SubmitSleepNightParameters(
+                            competitionID: competitionID.uuidString.lowercased(),
+                            dayOrdinal: night.dayOrdinal,
+                            sleepBasisPoints: night.basisPoints
+                        )
+                    )),
+                    transport: transport
+                )
+                guard let object = try? JSONSerialization.jsonObject(with: response.data)
+                    as? [String: Any],
+                      Set(object.keys) == ["competition_id", "day_ordinal", "sleep_basis_points"],
+                      (object["competition_id"] as? String).flatMap(wireUUID) == competitionID,
+                      sleepInteger(object["day_ordinal"]) == night.dayOrdinal,
+                      sleepInteger(object["sleep_basis_points"]) == night.basisPoints
                 else {
                     throw CompetitionRemoteFailure.serverContractMismatch
                 }
@@ -1336,6 +1372,41 @@ enum SupabaseCompetitionRemoteAPI {
         }
     }
 
+    /// Exactly `{matches}`; an unreadable match or night is skipped.
+    private static func decodeSleepScoring(_ data: Data) throws -> [CompetitionSleepMatch] {
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              Set(object.keys) == ["matches"],
+              let rows = object["matches"] as? [Any],
+              rows.count <= 500
+        else {
+            throw CompetitionRemoteFailure.serverContractMismatch
+        }
+        return rows.compactMap { value in
+            guard let row = value as? [String: Any],
+                  Set(row.keys) == ["competition_id", "nights"],
+                  let id = (row["competition_id"] as? String).flatMap(wireUUID),
+                  let nights = row["nights"] as? [Any]
+            else { return nil }
+            return CompetitionSleepMatch(competitionID: id, nights: nights.compactMap { value in
+                guard let night = value as? [String: Any],
+                      Set(night.keys) == ["profile_id", "day_ordinal", "sleep_basis_points", "updated_at"],
+                      let profile = (night["profile_id"] as? String).flatMap(wireUUID),
+                      let ordinal = sleepInteger(night["day_ordinal"]), (1...7).contains(ordinal),
+                      let points = sleepInteger(night["sleep_basis_points"]),
+                      (0...SleepScore.maximumBasisPoints).contains(points)
+                else { return nil }
+                return CompetitionSleepNight(profileID: profile, dayOrdinal: ordinal, basisPoints: points)
+            })
+        }
+    }
+
+    private static func sleepInteger(_ value: Any?) -> Int? {
+        guard let number = value as? NSNumber,
+              CFGetTypeID(number) != CFBooleanGetTypeID()
+        else { return nil }
+        return Int(exactly: number.doubleValue)
+    }
+
     /// `.some(nil)` for JSON null (the result), `.some(n)` for a day 1...7,
     /// nil for anything else.
     private static func reactionDayOrdinal(_ value: Any?) -> Int?? {
@@ -1745,6 +1816,18 @@ private struct ReactionInstallationParameters: Encodable {
 }
 
 /// `{competition_id, day_ordinal, reaction}` with explicit JSON nulls.
+private struct SubmitSleepNightParameters: Encodable {
+    let competitionID: String
+    let dayOrdinal: Int
+    let sleepBasisPoints: Int
+
+    private enum CodingKeys: String, CodingKey {
+        case competitionID = "competition_id"
+        case dayOrdinal = "day_ordinal"
+        case sleepBasisPoints = "sleep_basis_points"
+    }
+}
+
 private struct SetReactionParameters: Encodable {
     let request: CompetitionReactionRequest
 

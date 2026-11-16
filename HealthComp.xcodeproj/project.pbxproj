@@ -259,10 +259,13 @@
 		E52A6FF60DEBF090A7A2143C /* AccountFeature.swift in Sources */ = {isa = PBXBuildFile; fileRef = B78FA5A4670AECA86AA95557 /* AccountFeature.swift */; };
 		E9506E6681E789B509DFF95C /* CompetitionWidgetSnapshot.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9ABC029BB6B7504EA3CF39D9 /* CompetitionWidgetSnapshot.swift */; };
 		EC77962BCC702A17BC4E91F9 /* GroupMatchUITestSupport.swift in Sources */ = {isa = PBXBuildFile; fileRef = D831216FE74950268FCDAD23 /* GroupMatchUITestSupport.swift */; };
+		EDB6B541C162AE5BF625F794 /* CompetitionSleep.swift in Sources */ = {isa = PBXBuildFile; fileRef = 37BD80279AB2EE75B539C1F2 /* CompetitionSleep.swift */; };
+		EDDCA289D4D3AB5C5650AB9B /* CompetitionSleepTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08CA5D4B766F981C534F7B70 /* CompetitionSleepTests.swift */; };
 		EED527BF649694CA81F225B3 /* GroupMatchHomeUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 792780CD863853354C5E25E3 /* GroupMatchHomeUITests.swift */; };
 		F080E9F86D147A223B2AD0C3 /* JSONCompetitionOutboxStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D9D6378727AB26B2A45AE28 /* JSONCompetitionOutboxStoreTests.swift */; };
 		F1927C81415BCF5009F8B628 /* SharedClientLifetimeTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = DC1082ED31F47789C75550D1 /* SharedClientLifetimeTests.swift */; };
 		F2FA27C0E9734D6DE366E199 /* audience_cheer_l.wav in Resources */ = {isa = PBXBuildFile; fileRef = 861D7651E7054127FFC1E061 /* audience_cheer_l.wav */; };
+		F3569CEB6D98DC152F0BC282 /* SleepBetaUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2266D93F315EF169E44D8E84 /* SleepBetaUITests.swift */; };
 		F3EAD9609CA950CEC8D1EF92 /* tie.json in Resources */ = {isa = PBXBuildFile; fileRef = 0118EA02318F4382081CC94F /* tie.json */; };
 		F4984D3354FDE00AC64A0D59 /* CompetitionReactions.swift in Sources */ = {isa = PBXBuildFile; fileRef = 946DF4B5A3E42EC0930E315D /* CompetitionReactions.swift */; };
 		F50D48DD2D9F3C5D903FE335 /* HealthCompWatchWidgets.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD6830589F01217DB40A004C /* HealthCompWatchWidgets.swift */; };
@@ -378,6 +381,7 @@
 		04C60166004CE3323879D75F /* GroupMatchVersusUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupMatchVersusUITests.swift; sourceTree = "<group>"; };
 		05C1BF82CA22E9CBDCA974CF /* PrivacyInfo.xcprivacy */ = {isa = PBXFileReference; path = PrivacyInfo.xcprivacy; sourceTree = "<group>"; };
 		08AF91992EAFD7DD2DD29C21 /* CompetitionRealtimeClient.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionRealtimeClient.swift; sourceTree = "<group>"; };
+		08CA5D4B766F981C534F7B70 /* CompetitionSleepTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionSleepTests.swift; sourceTree = "<group>"; };
 		08FD38E0DFA9C471D75A4322 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
 		091448CE772C0EE35F3C5B74 /* AccountDeletionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountDeletionTests.swift; sourceTree = "<group>"; };
 		0A326EB5826710C985D17686 /* CompetitionTestLabTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionTestLabTests.swift; sourceTree = "<group>"; };
@@ -406,6 +410,7 @@
 		1E33126E38DB95E0D418831B /* ChallengeFriendUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChallengeFriendUITests.swift; sourceTree = "<group>"; };
 		1FEF4EE70421B685B8C576F0 /* FriendsUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FriendsUITests.swift; sourceTree = "<group>"; };
 		225974742689A63371700688 /* ClaimCompetitionView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaimCompetitionView.swift; sourceTree = "<group>"; };
+		2266D93F315EF169E44D8E84 /* SleepBetaUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SleepBetaUITests.swift; sourceTree = "<group>"; };
 		226BA4E27B1F6F1804DEE79E /* StagingScoringResponseCapture.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StagingScoringResponseCapture.swift; sourceTree = "<group>"; };
 		22857327F74BD547DAA46137 /* CompetitionJudgesReveal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionJudgesReveal.swift; sourceTree = "<group>"; };
 		2295F1DBB4FBEB22B8B25FA5 /* WatchBoardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WatchBoardView.swift; sourceTree = "<group>"; };
@@ -428,6 +433,7 @@
 		353AF1DFB7EB73A6289AF8C7 /* FriendsFeature.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FriendsFeature.swift; sourceTree = "<group>"; };
 		367629019F65C3FCD66B409F /* CompetitionRouting.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionRouting.swift; sourceTree = "<group>"; };
 		3745BBB08EB5390E26CDDA2C /* RecordsAndBadgesUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordsAndBadgesUITests.swift; sourceTree = "<group>"; };
+		37BD80279AB2EE75B539C1F2 /* CompetitionSleep.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionSleep.swift; sourceTree = "<group>"; };
 		392CF800AE82C57458B8B9C0 /* CompetitionWatchBoardTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionWatchBoardTests.swift; sourceTree = "<group>"; };
 		39AE399E36B3A5A5F3619501 /* WhatItTakesUITests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WhatItTakesUITests.swift; sourceTree = "<group>"; };
 		3A1357F6B637C237208EE106 /* CompetitionRecapTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CompetitionRecapTests.swift; sourceTree = "<group>"; };
@@ -855,6 +861,7 @@
 				3A1357F6B637C237208EE106 /* CompetitionRecapTests.swift */,
 				6ECF7288C43AD9434BDDBD6C /* CompetitionRivalryTests.swift */,
 				E8D842D51C03C651E67B1405 /* CompetitionRoutingTests.swift */,
+				08CA5D4B766F981C534F7B70 /* CompetitionSleepTests.swift */,
 				B9DF77F4B53514428AD771C0 /* CompetitionSyncCoordinatorTests.swift */,
 				3D3A86214F2EA7EB552733D5 /* CompetitionSyncModelsTests.swift */,
 				0A326EB5826710C985D17686 /* CompetitionTestLabTests.swift */,
@@ -979,6 +986,7 @@
 				FCDBD0348C760C1907099902 /* CompetitionResultView.swift */,
 				3503AF4F43ED8CF1AA561E47 /* CompetitionRivalry.swift */,
 				A050B4C0326B86FA4332142F /* CompetitionSharingView.swift */,
+				37BD80279AB2EE75B539C1F2 /* CompetitionSleep.swift */,
 				3BE3EF97EDDB31A7DA80B856 /* CompetitionTestLabView.swift */,
 				29296464BFD3A13ABC948760 /* CompetitionVersusIntro.swift */,
 				017114B95D382E56A88C9F3A /* CompetitionWeekChart.swift */,
@@ -1049,6 +1057,7 @@
 				C9CF6023F728B9C7AED6DE3B /* ReactionsUITests.swift */,
 				A260A0BE8484CFDCCC19C011 /* RecapCardUITests.swift */,
 				3745BBB08EB5390E26CDDA2C /* RecordsAndBadgesUITests.swift */,
+				2266D93F315EF169E44D8E84 /* SleepBetaUITests.swift */,
 				9CD7EEE62E6FFF181721AF8D /* VersusIntroUITests.swift */,
 				39AE399E36B3A5A5F3619501 /* WhatItTakesUITests.swift */,
 				3D899D441D791785E0E73B72 /* WidgetUITests.swift */,
@@ -1434,6 +1443,7 @@
 				1B5FCCE1484029A378D91E34 /* ReactionsUITests.swift in Sources */,
 				5034718BA65CD8D5F4AE2F0F /* RecapCardUITests.swift in Sources */,
 				43BEDFB4813C9FE2A4023DBE /* RecordsAndBadgesUITests.swift in Sources */,
+				F3569CEB6D98DC152F0BC282 /* SleepBetaUITests.swift in Sources */,
 				70E6203396E94ED12EEFA3A9 /* VersusIntroUITests.swift in Sources */,
 				BB8A276F99410E904AD6CF81 /* WhatItTakesUITests.swift in Sources */,
 				67F48B210B6A70F6BDDB5D41 /* WidgetUITests.swift in Sources */,
@@ -1534,6 +1544,7 @@
 				C38EF7DE4473C4E06F5201E9 /* CompetitionRivalry.swift in Sources */,
 				DD502924E9311DD9A99C81B2 /* CompetitionRouting.swift in Sources */,
 				9DD3D5044A619666D0DEFE03 /* CompetitionSharingView.swift in Sources */,
+				EDB6B541C162AE5BF625F794 /* CompetitionSleep.swift in Sources */,
 				C2B712658476B597C91211F5 /* CompetitionSyncCoordinator.swift in Sources */,
 				5DE7A5CF81E44A3B575C571A /* CompetitionSyncModels.swift in Sources */,
 				306D88343452CE12051ED31D /* CompetitionTestLabView.swift in Sources */,
@@ -1634,6 +1645,7 @@
 				81109F66782CF21B1A77F052 /* CompetitionRecapTests.swift in Sources */,
 				FF78BAD1863479A396AB60D6 /* CompetitionRivalryTests.swift in Sources */,
 				12640A6EFC6346166F8015CF /* CompetitionRoutingTests.swift in Sources */,
+				EDDCA289D4D3AB5C5650AB9B /* CompetitionSleepTests.swift in Sources */,
 				DC35549E42F6B1FA2A07BA25 /* CompetitionSyncCoordinatorTests.swift in Sources */,
 				6149987E19B2247AFDA3396D /* CompetitionSyncModelsTests.swift in Sources */,
 				7A3A884CEF7A982535C0BD1D /* CompetitionTestLabTests.swift in Sources */,

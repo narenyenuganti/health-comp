@@ -470,6 +470,7 @@ private struct AccountSheet: View {
             blockedPeople: blockedPeople,
             profilePhoto: profilePhoto,
             friendSettings: friendSettings,
+            requestSleepAccess: { mainStore.send(.competition(.sleepAccessRequested)) },
             refreshCompetition: { mainStore.send(.competition(.pullToRefresh)) }
         )
 #else
@@ -481,7 +482,8 @@ private struct AccountSheet: View {
             challengeLink: challengeLink,
             blockedPeople: blockedPeople,
             profilePhoto: profilePhoto,
-            friendSettings: friendSettings
+            friendSettings: friendSettings,
+            requestSleepAccess: { mainStore.send(.competition(.sleepAccessRequested)) }
         )
 #endif
     }

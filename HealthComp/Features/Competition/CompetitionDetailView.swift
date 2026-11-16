@@ -96,6 +96,7 @@ struct CompetitionDetailView: View {
         case day(Int)
         case activitySync
         case rules
+        case night(Int)
 
         var id: Self { self }
     }
@@ -272,6 +273,11 @@ struct CompetitionDetailView: View {
                     .competitionReactionRain()
             case .activitySync:
                 activitySyncDrawer
+            case let .night(ordinal):
+                CompetitionNightDrawer(
+                    competition: competition,
+                    ordinal: ordinal
+                )
             case .rules:
                 CompetitionDrawer(title: "How scoring works") {
                     CompetitionRulesCard(
@@ -281,7 +287,8 @@ struct CompetitionDetailView: View {
                             competitionScheduleDateRangeText(
                                 $0.schedule, now: competition.evaluatedAt, locale: locale
                             )
-                        }
+                        },
+                        withSleep: competition.isSleepMatch
                     )
                 }
             }
@@ -582,7 +589,10 @@ struct CompetitionDetailView: View {
     ) -> some View {
         if let panel = competitionRingPanel(day, locale: locale) {
             // A new day is a new panel: 420 never rolls down to 0 at midnight.
-            ActivityRingsView(panel: panel)
+            ActivityRingsView(
+                panel: panel,
+                openNight: competition.isSleepMatch ? { drawer = .night(day.ordinal) } : nil
+            )
                 .id(day.ordinal)
         } else if day.ownerLatestAvailability == .notSyncedYet {
             VStack(alignment: .leading, spacing: 4) {

@@ -127,6 +127,8 @@ struct CompetitionFeature {
         var inviteRecipient: InviteRecipient?
         var inviteRecipientCode = ""
         var inviteRecipientStatus: InviteRecipientStatus = .idle
+        /// Sleep beta: the + sheet's format is Rings + Sleep.
+        var inviteWithSleep = false
         /// The signed-in profile, so Home can draw its initial.
         var ownProfile: AuthenticatedProfile?
         /// Your reusable challenge link, once loaded.
@@ -286,6 +288,10 @@ struct CompetitionFeature {
         case challengeLinkResetConfirmed
         case challengeLinkResetResponse(URL?)
         case createInviteTapped
+        /// Sleep beta: the + sheet's Rings / Rings + Sleep picker.
+        case inviteSleepToggled(Bool)
+        /// Sleep beta: Continue on the screen before Health's sleep sheet.
+        case sleepAccessRequested
         case createInviteResponse(
             InviteSlot,
             idempotencyKey: UUID,
@@ -739,7 +745,15 @@ struct CompetitionFeature {
                 pruneInviteLinks(state: &state)
                 return effect
 
+            case let .inviteSleepToggled(isOn):
+                state.inviteWithSleep = isOn
+                return .none
+
+            case .sleepAccessRequested:
+                return .run { _ in try? await competitionClient.requestSleepAuthorization() }
+
             case .challengeSheetDismissed:
+                state.inviteWithSleep = false
                 state.inviteCreations[.sheet] = nil
                 state.inviteRecipientCode = ""
                 state.inviteRecipient = nil
@@ -793,7 +807,13 @@ struct CompetitionFeature {
                 guard state.commandIDsInFlight.insert(id).inserted else {
                     return .none
                 }
+                let isSleepMatch = state.publication?.dashboard.competitions
+                    .first { $0.id == id }?.isSleepMatch == true
                 return .run { send in
+                    // A Rings + Sleep challenge asks for sleep as you take it.
+                    if isSleepMatch {
+                        try? await competitionClient.requestSleepAuthorization()
+                    }
                     let returned = await competitionClient.accept(id)
                     await send(
                         .commandFinished(
@@ -1490,6 +1510,7 @@ struct CompetitionFeature {
         )
         var rematchParentID: CompetitionID?
         if case let .rematch(of: parentID) = slot { rematchParentID = parentID }
+        let withSleep = slot == .sheet && state.inviteWithSleep
         let timeZoneIdentifier = competitionInviteLinkClient
             .currentTimeZoneIdentifier()
         return .run { send in
@@ -1500,9 +1521,20 @@ struct CompetitionFeature {
                     rematchParentID: rematchParentID?.rawValue,
                     idempotencyKey: idempotencyKey
                 )
-                let outcome = try await competitionClient.createInvite(
+                var outcome = try await competitionClient.createInvite(
                     request
                 )
+                // ponytail: if this fails the challenge stays rings-only and
+                // nothing says so; retry or surface it if that ever happens.
+                if withSleep,
+                   let published = try? await competitionClient.enableSleep(
+                       CompetitionID(outcome.invite.competitionID)
+                   ) {
+                    outcome = CompetitionInviteCreationOutcome(
+                        invite: outcome.invite,
+                        expectedPublicationRevision: published.publicationRevision
+                    )
+                }
                 guard let link = competitionInviteLinkClient
                     .makeShareLink(outcome.invite.token)
                 else {

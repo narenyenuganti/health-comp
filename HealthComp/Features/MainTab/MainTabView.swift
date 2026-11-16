@@ -214,6 +214,10 @@ struct MainTabView: View {
                         ),
                         recipient: store.competition.inviteRecipient,
                         recipientStatus: store.competition.inviteRecipientStatus,
+                        withSleep: Binding(
+                            get: { store.competition.inviteWithSleep },
+                            set: { store.send(.competition(.inviteSleepToggled($0))) }
+                        ),
                         findRecipient: { store.send(.competition(.findInviteRecipientTapped)) },
                         createInvite: {
                             store.send(.competition(.createInviteTapped))

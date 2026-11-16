@@ -157,6 +157,14 @@ protocol CompetitionActivitySource: Sendable {
     ) async
     func signals() async -> AsyncStream<EnvironmentSignal>
     func completeSignal(_ id: String) async -> Bool
+    func requestSleepReadAuthorization() async throws
+    func readSleepSamples(_ interval: DateInterval) async throws -> [SleepSample]
+}
+
+extension CompetitionActivitySource {
+    // Sources without sleep (fixtures) have none and ask for nothing.
+    func requestSleepReadAuthorization() async throws {}
+    func readSleepSamples(_ interval: DateInterval) async throws -> [SleepSample] { [] }
 }
 
 struct CompetitionEnvironmentClient: Sendable {
@@ -287,6 +295,14 @@ struct CompetitionEnvironmentClient: Sendable {
 
     func requestHealthAuthorization() async throws {
         try await source.requestReadAuthorization()
+    }
+
+    func requestSleepAuthorization() async throws {
+        try await source.requestSleepReadAuthorization()
+    }
+
+    func readSleepSamples(_ interval: DateInterval) async throws -> [SleepSample] {
+        try await source.readSleepSamples(interval)
     }
 
     func read(

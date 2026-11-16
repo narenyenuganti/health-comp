@@ -27,6 +27,9 @@ struct HealthKitCompetitionDependencies: @unchecked Sendable {
     let observerUpdates: @Sendable () -> AsyncStream<HealthKitObserverWakeup>
     let stopObserverUpdates: @Sendable () async -> Void
     let enableBackgroundDelivery: @Sendable (HKSampleType) async throws -> Void
+    /// Sleep beta: its own permission, asked only when someone plays Rings + Sleep.
+    let requestSleepAuthorization: @Sendable () async throws -> Void
+    let readSleepSamples: @Sendable (DateInterval) async throws -> [SleepSample]
 
     init(
         isHealthDataAvailable: @escaping @Sendable () -> Bool,
@@ -36,7 +39,9 @@ struct HealthKitCompetitionDependencies: @unchecked Sendable {
         summaryUpdates: @escaping @Sendable (CompetitionActivityWindow) -> AsyncStream<[HKActivitySummary]>,
         observerUpdates: @escaping @Sendable () -> AsyncStream<HealthKitObserverWakeup>,
         stopObserverUpdates: @escaping @Sendable () async -> Void,
-        enableBackgroundDelivery: @escaping @Sendable (HKSampleType) async throws -> Void = { _ in }
+        enableBackgroundDelivery: @escaping @Sendable (HKSampleType) async throws -> Void = { _ in },
+        requestSleepAuthorization: @escaping @Sendable () async throws -> Void = {},
+        readSleepSamples: @escaping @Sendable (DateInterval) async throws -> [SleepSample] = { _ in [] }
     ) {
         self.isHealthDataAvailable = isHealthDataAvailable
         self.requestAuthorization = requestAuthorization
@@ -46,6 +51,8 @@ struct HealthKitCompetitionDependencies: @unchecked Sendable {
         self.observerUpdates = observerUpdates
         self.stopObserverUpdates = stopObserverUpdates
         self.enableBackgroundDelivery = enableBackgroundDelivery
+        self.requestSleepAuthorization = requestSleepAuthorization
+        self.readSleepSamples = readSleepSamples
     }
 
     static func test(
@@ -106,6 +113,50 @@ final class HealthKitProvider: @unchecked Sendable {
             Self.competitionReadTypes()
         )
         await ensureBackgroundDelivery()
+    }
+
+    func requestSleepReadAuthorization() async throws {
+        guard competitionDependencies.isHealthDataAvailable() else {
+            throw CompetitionActivitySourceError.healthDataUnavailable
+        }
+        try await competitionDependencies.requestSleepAuthorization()
+    }
+
+    /// Asleep intervals from trusted trackers. Empty when sleep access was
+    /// denied: HealthKit never says which.
+    // ponytail: no observer or background delivery for sleep; it is read on every refresh, add HKObserverQuery if overnight pushes matter.
+    func readSleepSamples(_ interval: DateInterval) async throws -> [SleepSample] {
+        guard competitionDependencies.isHealthDataAvailable() else {
+            throw CompetitionActivitySourceError.healthDataUnavailable
+        }
+        do {
+            return try await competitionDependencies.readSleepSamples(interval)
+        } catch {
+            if error is CancellationError { throw CancellationError() }
+            throw Self.sourceError(from: error)
+        }
+    }
+
+    /// The asleep stages from Apple Watch or Oura. Hand-entered sleep and
+    /// every other app are left out.
+    static func sleepSample(from sample: HKCategorySample) -> SleepSample? {
+        guard let value = HKCategoryValueSleepAnalysis(rawValue: sample.value),
+              HKCategoryValueSleepAnalysis.allAsleepValues.contains(value),
+              (sample.metadata?[HKMetadataKeyWasUserEntered] as? Bool) != true,
+              sample.endDate > sample.startDate
+        else { return nil }
+        let source: SleepSource
+        if sample.sourceRevision.productType?.hasPrefix("Watch") == true {
+            source = .watch
+        } else if sample.sourceRevision.source.bundleIdentifier.hasPrefix("com.ouraring") {
+            source = .oura
+        } else {
+            return nil
+        }
+        return SleepSample(
+            interval: DateInterval(start: sample.startDate, end: sample.endDate),
+            source: source
+        )
     }
 
     func read(
@@ -513,6 +564,26 @@ final class HealthKitProvider: @unchecked Sendable {
                     for: type,
                     frequency: .immediate
                 )
+            },
+            requestSleepAuthorization: {
+                try await healthStore.requestAuthorization(
+                    toShare: [],
+                    read: [HKCategoryType(.sleepAnalysis)]
+                )
+            },
+            readSleepSamples: { interval in
+                let descriptor = HKSampleQueryDescriptor(
+                    predicates: [.categorySample(
+                        type: HKCategoryType(.sleepAnalysis),
+                        predicate: HKQuery.predicateForSamples(
+                            withStart: interval.start,
+                            end: interval.end
+                        )
+                    )],
+                    sortDescriptors: [SortDescriptor(\.startDate)]
+                )
+                return try await descriptor.result(for: healthStore)
+                    .compactMap(sleepSample(from:))
             }
         )
     }
