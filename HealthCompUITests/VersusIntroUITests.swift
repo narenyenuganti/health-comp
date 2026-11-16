@@ -211,7 +211,7 @@ final class VersusIntroUITests: XCTestCase {
 
     private func open(_ element: XCUIElement) {
         scrollToElement(element)
-        element.tap()
+        element.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.45)).tap()
     }
 
     private func skip(file: StaticString = #filePath, line: UInt = #line) {
