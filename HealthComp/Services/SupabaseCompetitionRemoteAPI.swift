@@ -2042,6 +2042,12 @@ private actor SupabaseCompetitionClientBox {
         do {
             try Task.checkCancellation()
             let client = try client()
+            // `SupabaseClient`'s request adapter resolves `try? await auth.session`,
+            // which swallows a wake-up network error on an expired JWT and sends
+            // an unauthenticated request that fails 401 instead of retrying.
+            if let current = client.auth.currentSession, current.isExpired {
+                _ = try await client.auth.session
+            }
             switch request {
             case let .rpc(name, parameters):
                 let body = try JSONDecoder().decode(
@@ -2161,6 +2167,18 @@ private actor SupabaseCompetitionClientBox {
                 detail: error.details,
                 hint: error.hint
             )
+        } catch let error as AuthError {
+            switch error.errorCode {
+            case .sessionNotFound, .refreshTokenNotFound, .refreshTokenAlreadyUsed,
+                 .userNotFound, .invalidJWT:
+                throw CompetitionRemoteTransportFailure.server(
+                    statusCode: 401,
+                    code: "unauthorized",
+                    message: "authentication_required"
+                )
+            default:
+                throw CompetitionRemoteTransportFailure.network
+            }
         } catch let error as URLError {
             if error.code == .cancelled {
                 throw CompetitionRemoteTransportFailure.cancelled

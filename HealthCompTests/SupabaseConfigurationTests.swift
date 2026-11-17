@@ -1132,6 +1132,59 @@ final class SupabaseConfigurationTests: XCTestCase {
     }
 #endif
 
+    /// SupabaseClient's request adapter uses `try? await auth.session`, so an
+    /// expired JWT whose refresh hits a wake-up network blip would otherwise go
+    /// out without a user Bearer token and come back 401 `.unauthenticated`.
+    func testExpiredSessionRefreshBlipInRemoteAPIRetriesInsteadOfSendingAnonymousRequest()
+        async throws
+    {
+        SupabaseExpiredRefreshBlipURLProtocol.reset()
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [SupabaseExpiredRefreshBlipURLProtocol.self]
+        let session = URLSession(configuration: configuration)
+        defer {
+            session.invalidateAndCancel()
+            SupabaseExpiredRefreshBlipURLProtocol.reset()
+        }
+        let key = try SupabaseConfiguration.parse(dictionary()).authStorageKey
+        let backing = FailClosedAuthLocalStorage(underlying: AuthStorageStub(), sessionKey: { key })
+        let expiredPayload = try base64URL(["exp": "99", "sub": "12000000-0000-4000-8000-000000000001"])
+        let freshExp = Int(Date().addingTimeInterval(3600).timeIntervalSince1970)
+        let freshPayload = try base64URL(["exp": "\(freshExp)", "sub": "12000000-0000-4000-8000-000000000001"])
+        SupabaseExpiredRefreshBlipURLProtocol.freshAccessToken = "header.\(freshPayload).sig"
+        let stored = try JSONSerialization.data(withJSONObject: [
+            "access_token": "header.\(expiredPayload).sig",
+            "refresh_token": "synthetic-refresh-token",
+            "token_type": "bearer",
+            "expires_in": 3600,
+            "expires_at": 99,
+            "user": [
+                "id": "12000000-0000-4000-8000-000000000001",
+                "app_metadata": [:],
+                "user_metadata": [:],
+                "aud": "authenticated",
+                "created_at": "2026-09-01T00:00:00Z",
+                "updated_at": "2026-09-01T00:00:00Z",
+            ] as [String: Any],
+        ])
+        try backing.store(key: key, value: stored)
+        let provider = SupabaseClientProvider.live(
+            infoDictionary: { self.dictionary() },
+            urlSession: session,
+            authStorage: backing
+        )
+        _ = try provider.client()
+        // Wait for SupabaseClient's initial listenForAuthEvents refresh attempt to settle,
+        // then arm a single refresh failure for the explicit listCompetitions() call.
+        try await Task.sleep(for: .milliseconds(100))
+        SupabaseExpiredRefreshBlipURLProtocol.armSingleTokenFailure()
+        let api = SupabaseCompetitionRemoteAPI.live(provider: provider)
+
+        let listed = try await api.listCompetitions()
+        XCTAssertEqual(listed, [])
+        XCTAssertEqual(SupabaseExpiredRefreshBlipURLProtocol.anonymousRestCalls, 0)
+    }
+
     private func dictionary(
         url: String? = "https://project-ref.supabase.co",
         key: String? = "sb_publishable_test-fixture"
@@ -1324,6 +1377,98 @@ private final class SupabaseSignOutStubURLProtocol: URLProtocol {
             didReceive: response,
             cacheStoragePolicy: .notAllowed
         )
+        client?.urlProtocolDidFinishLoading(self)
+    }
+
+    override func stopLoading() {}
+}
+
+private final class SupabaseExpiredRefreshBlipURLProtocol: URLProtocol {
+    private static let lock = NSLock()
+    private static var failAllUntilArmed = true
+    private static var failNextTokenAttempt = false
+    private static var anonCalls = 0
+    private static var token = "fresh-token"
+
+    static var freshAccessToken: String {
+        get { lock.withLock { token } }
+        set { lock.withLock { token = newValue } }
+    }
+
+    static var anonymousRestCalls: Int {
+        lock.withLock { anonCalls }
+    }
+
+    static func reset() {
+        lock.withLock {
+            failAllUntilArmed = true
+            failNextTokenAttempt = false
+            anonCalls = 0
+            token = "fresh-token"
+        }
+    }
+
+    static func armSingleTokenFailure() {
+        lock.withLock {
+            failAllUntilArmed = false
+            failNextTokenAttempt = true
+            anonCalls = 0
+        }
+    }
+
+    override class func canInit(with request: URLRequest) -> Bool { true }
+    override class func canonicalRequest(for request: URLRequest) -> URLRequest { request }
+
+    override func startLoading() {
+        let path = request.url?.path ?? ""
+        if path.contains("/auth/v1/token") {
+            let shouldFail = Self.lock.withLock { () -> Bool in
+                if Self.failAllUntilArmed { return true }
+                if Self.failNextTokenAttempt {
+                    Self.failNextTokenAttempt = false
+                    return true
+                }
+                return false
+            }
+            if shouldFail {
+                client?.urlProtocol(self, didFailWithError: URLError(.networkConnectionLost))
+                return
+            }
+            let fresh = Self.freshAccessToken
+            let expiresAt = Int(Date().addingTimeInterval(3600).timeIntervalSince1970)
+            let body = """
+            {"access_token":"\(fresh)","token_type":"bearer","expires_in":3600,"expires_at":\(expiresAt),"refresh_token":"synthetic-refresh-token-2","user":{"id":"12000000-0000-4000-8000-000000000001","app_metadata":{},"user_metadata":{},"aud":"authenticated","created_at":"2026-09-01T00:00:00Z","updated_at":"2026-09-01T00:00:00Z"}}
+            """
+            let response = HTTPURLResponse(
+                url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: Data(body.utf8))
+            client?.urlProtocolDidFinishLoading(self)
+            return
+        }
+
+        let authHeader = request.value(forHTTPHeaderField: "Authorization") ?? ""
+        let expectedBearer = "Bearer \(Self.freshAccessToken)"
+        if authHeader != expectedBearer {
+            Self.lock.withLock { Self.anonCalls += 1 }
+            let response = HTTPURLResponse(
+                url: request.url!, statusCode: 401, httpVersion: "HTTP/1.1",
+                headerFields: ["Content-Type": "application/json"]
+            )!
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: Data(#"{"code":"PGRST301","message":"unauthorized"}"#.utf8))
+            client?.urlProtocolDidFinishLoading(self)
+            return
+        }
+
+        let response = HTTPURLResponse(
+            url: request.url!, statusCode: 200, httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": "application/json"]
+        )!
+        client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+        client?.urlProtocol(self, didLoad: Data("[]".utf8))
         client?.urlProtocolDidFinishLoading(self)
     }
 

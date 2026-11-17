@@ -102,6 +102,10 @@ enum MultiUserCompetitionTestLabScenario:
     /// The reactions matches with Jordan's (live) and Riley's (finished) as
     /// Rings + Sleep, and the Sleep Beta on.
     case sleep
+    /// Home mounted on the real `CompetitionClient.remote` coordinator: the
+    /// first pull-to-refresh hits a transient sync failure + realtime wake-up
+    /// recovery, and the second hits a persistent failure that stays.
+    case transientRefresh = "transient-refresh"
 }
 
 struct MultiUserCompetitionTestLabConfiguration: Equatable, Sendable {
@@ -254,6 +258,8 @@ struct MultiUserCompetitionTestLabRootView: View {
             MultiUserCompetitionVersusTestLabView()
         case .groupMatches:
             GroupMatchTestLabView()
+        case .transientRefresh:
+            MultiUserCompetitionTransientRefreshTestLabView()
         }
     }
 }
@@ -678,7 +684,7 @@ private struct MultiUserCompetitionClaimTestLabView: View {
              .friends, .friendsEmpty, .friendsNoUsername, .challengeFriend,
              .nudge, .nudgeSimulated, .whatItTakes, .reactions, .reactionsSimulated,
              .liveActivity, .practice, .notificationChoices, .belt, .beltHero, .beltCeremony, .featureRound,
-             .versus, .rivalry, .rivalryFive, .rivalryYears, .month, .groupMatches, .sleep:
+             .versus, .rivalry, .rivalryFive, .rivalryYears, .month, .groupMatches, .sleep, .transientRefresh:
             .ready
         }
         _status = State(initialValue: initialStatus)
@@ -4463,6 +4469,306 @@ enum CompetitionMonthFixture {
             timeZoneIdentifier: zone,
             source: .remoteParticipants
         )
+    }
+}
+
+/// Home mounted on the real `CompetitionClient.remote` coordinator against an
+/// in-memory stand-in server:
+/// - Pull-to-refresh #1 reproduces the video's transient failure + realtime
+///   wake-up recovery (must never flash "Couldn’t update scores").
+/// - Pull-to-refresh #2 fails persistently (must show "Couldn’t update scores"
+///   and keep it on screen).
+private struct MultiUserCompetitionTransientRefreshTestLabView: View {
+    @State private var store: StoreOf<MainTabFeature>?
+
+    private static let competitionUUID = UUID(uuidString: "82000000-0000-4000-8000-00000000000E")!
+
+    var body: some View {
+        Group {
+            if let store {
+                MainTabView(store: store)
+            } else {
+                ProgressView()
+            }
+        }
+        .task {
+            guard store == nil else { return }
+            store = try? await Self.makeStore()
+        }
+        .accessibilityIdentifier("multiuser.transient-refresh.root")
+    }
+
+    @MainActor
+    private static func makeStore() async throws -> StoreOf<MainTabFeature> {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("transient-refresh-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let profile = AuthenticatedProfile(
+            id: UUID(uuidString: "81000000-0000-4000-8000-000000000001")!,
+            displayName: "Beta Alice"
+        )
+        let opponentID = UUID(uuidString: "81000000-0000-4000-8000-000000000002")!
+        let paths = AuthenticatedProfileStoragePaths(profileID: profile.id, rootDirectory: root)
+        for directory in paths.fixedDirectories {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        }
+        let calendar = try CompetitionCalendar(timeZoneIdentifier: "America/Los_Angeles")
+        // Compute a live Day 4 schedule from wall clock `Date()`, since
+        // `RemoteCompetitionRuntime` advances its clock against `Date()`.
+        let realNow = Date()
+        let startInstant = realNow.addingTimeInterval(-3 * 86_400)
+        var laCalendar = Calendar(identifier: .gregorian)
+        laCalendar.timeZone = TimeZone(identifier: "America/Los_Angeles")!
+        let comps = laCalendar.dateComponents([.era, .year, .month, .day], from: startInstant)
+        let startDay = try CompetitionDay(
+            era: comps.era ?? 1,
+            year: comps.year!,
+            month: comps.month!,
+            day: comps.day!,
+            timeZoneIdentifier: calendar.timeZoneIdentifier
+        )
+        let startDayString = String(format: "%04d-%02d-%02d", startDay.year, startDay.month, startDay.day)
+        let days = try calendar.sevenDayWindow(startingOn: startDay)
+        let createdAt = try calendar.startOfDay(startDay).addingTimeInterval(-86_400)
+        let acceptedAt = createdAt.addingTimeInterval(3_600)
+        let deadline = try calendar.startOfDay(days[6]).addingTimeInterval(36 * 3_600)
+
+        let server = TransientRefreshLabServer(
+            competitionID: competitionUUID,
+            ownerID: profile.id,
+            opponentID: opponentID,
+            startDayString: startDayString,
+            createdAt: createdAt,
+            acceptedAt: acceptedAt,
+            deadline: deadline
+        )
+        let env = CompetitionEnvironmentClient.accelerated(
+            fixture: try ActivityFixture(
+                initialInstant: EnvironmentInstant(
+                    wallDate: realNow,
+                    monotonic: MonotonicInstant(epochID: "transient-refresh-lab", nanoseconds: 1)
+                ),
+                timeZoneIdentifier: calendar.timeZoneIdentifier,
+                initialDays: days.map { .missing(day: $0) },
+                changes: []
+            )
+        )
+        let client = CompetitionClient.remote(
+            remoteAPI: server.api,
+            environment: env,
+            realtimeClient: server.realtimeClient,
+            notificationPreferencesFactory: { _ in .constant(mutedOpponentIdentities: []) }
+        )
+        try await client.mountAuthenticatedProfile(profile, paths)
+        var initial = MainTabFeature.State()
+        initial.competition.ownProfile = profile
+        return Store(initialState: initial) {
+            MainTabFeature()
+        } withDependencies: {
+            $0.competitionClient = client
+            $0.competitionRoutingClient = CompetitionRoutingClient(
+                routes: { AsyncStream { _ in } },
+                enqueue: { _ in },
+                consume: { _ in }
+            )
+            $0.permissionOnboardingClient = .inert
+            $0.date = .constant(realNow)
+        }
+    }
+}
+
+private actor TransientRefreshLabServer {
+    private let competitionID: UUID
+    private let ownerID: UUID
+    private let opponentID: UUID
+    private let startDayString: String
+    private let createdAt: Date
+    private let acceptedAt: Date
+    private let deadline: Date
+    private let wakeStream: AsyncStream<CompetitionRealtimeWakeUp>
+    private let wakeContinuation: AsyncStream<CompetitionRealtimeWakeUp>.Continuation
+    private var listCount = 0
+    private var transientFailuresRemaining = 2
+    private var scheduledWakeup = false
+    private var completedTransientRecovery = false
+
+    init(
+        competitionID: UUID,
+        ownerID: UUID,
+        opponentID: UUID,
+        startDayString: String,
+        createdAt: Date,
+        acceptedAt: Date,
+        deadline: Date
+    ) {
+        self.competitionID = competitionID
+        self.ownerID = ownerID
+        self.opponentID = opponentID
+        self.startDayString = startDayString
+        self.createdAt = createdAt
+        self.acceptedAt = acceptedAt
+        self.deadline = deadline
+        let (stream, continuation) = AsyncStream<CompetitionRealtimeWakeUp>.makeStream()
+        self.wakeStream = stream
+        self.wakeContinuation = continuation
+    }
+
+    nonisolated var realtimeClient: CompetitionRealtimeClient {
+        CompetitionRealtimeClient(
+            wakeUps: { [wakeStream] _ in wakeStream },
+            stop: { [wakeContinuation] in wakeContinuation.finish() }
+        )
+    }
+
+    nonisolated var api: CompetitionRemoteAPI {
+        let unused: @Sendable () throws -> Never = {
+            throw CompetitionRemoteFailure.operationFailed
+        }
+        return CompetitionRemoteAPI(
+            bootstrapProfile: { _ in try unused() },
+            updateProfile: { _ in try unused() },
+            listCompetitions: { [self] in try await self.listCompetitions() },
+            fetchCompetition: { _ in try unused() },
+            createInvite: { _ in try unused() },
+            claimInvite: { _ in try unused() },
+            appendScoreRevision: { _ in try unused() },
+            submitAttestation: { _ in try unused() },
+            fetchChanges: { [self] cursor, _ in try await self.fetchChanges(cursor: cursor) },
+            registerInstallation: { _ in try unused() },
+            removeInstallation: { _ in try unused() },
+            requestAccountDeletion: { try unused() }
+        )
+    }
+
+    private func descriptor(nextServerSequence: Int64) throws -> CompetitionDescriptor {
+        try CompetitionDescriptor(
+            competitionID: competitionID,
+            creatorProfileID: ownerID,
+            timeZoneIdentifier: "America/Los_Angeles",
+            startDay: startDayString,
+            scoringPolicyIdentity: RemoteScoringWireV1.policyIdentity,
+            lifecycle: .active,
+            invitationExpiresAt: createdAt.addingTimeInterval(48 * 3_600),
+            bestAvailableDeadline: deadline,
+            rematchParentID: nil,
+            nextServerSequence: nextServerSequence,
+            participants: [
+                try CompetitionParticipantDescriptor(
+                    profileID: ownerID,
+                    role: .creator,
+                    state: .accepted,
+                    profile: try CompetitionProfilePresentation(id: ownerID, displayName: "Beta Alice")
+                ),
+                try CompetitionParticipantDescriptor(
+                    profileID: opponentID,
+                    role: .invitee,
+                    state: .accepted,
+                    profile: try CompetitionProfilePresentation(id: opponentID, displayName: "Andy")
+                ),
+            ]
+        )
+    }
+
+    private func listCompetitions() throws -> [CompetitionDescriptor] {
+        listCount += 1
+        // listCount == 1: initial start() bootstrap (cursor 3).
+        if listCount == 1 {
+            return [try descriptor(nextServerSequence: 4)]
+        }
+        // Pull-to-refresh #1 (both initial attempt and retry/wakeup): cursor 4.
+        if !completedTransientRecovery {
+            return [try descriptor(nextServerSequence: 5)]
+        }
+        // Pull-to-refresh #2+: cursor 5 (persistent failure).
+        return [try descriptor(nextServerSequence: 6)]
+    }
+
+    private func fetchChanges(cursor: CompetitionSynchronizationCursor) async throws -> CompetitionChangePage {
+        if cursor.lastSeenServerSequence == 0 {
+            return try CompetitionChangePage(
+                competitionID: competitionID,
+                afterServerSequence: 0,
+                snapshotServerSequence: 3,
+                nextServerSequence: 3,
+                hasMore: false,
+                changes: [
+                    try CompetitionChange(
+                        serverSequence: 1,
+                        kind: .participantAdded,
+                        entityID: ownerID,
+                        occurredAt: createdAt,
+                        payload: .participant(
+                            try CompetitionParticipantChange(profileID: ownerID, role: .creator, state: .accepted)
+                        )
+                    ),
+                    try CompetitionChange(
+                        serverSequence: 2,
+                        kind: .participantAdded,
+                        entityID: opponentID,
+                        occurredAt: acceptedAt,
+                        payload: .participant(
+                            try CompetitionParticipantChange(profileID: opponentID, role: .invitee, state: .accepted)
+                        )
+                    ),
+                    try CompetitionChange(
+                        serverSequence: 3,
+                        kind: .competitionLifecycleChanged,
+                        entityID: competitionID,
+                        occurredAt: acceptedAt,
+                        payload: .lifecycle(
+                            try CompetitionLifecycleChange(
+                                lifecycle: .scheduled,
+                                timeZoneIdentifier: "America/Los_Angeles",
+                                startDay: startDayString,
+                                bestAvailableDeadline: deadline,
+                                scoringPolicyIdentity: RemoteScoringWireV1.policyIdentity
+                            )
+                        )
+                    ),
+                ]
+            )
+        }
+
+        if cursor.lastSeenServerSequence == 3 && transientFailuresRemaining > 0 {
+            // Fail across both attempts of the initial pass (exceeding a single
+            // 1 s retry) while scheduling a realtime wakeup mid-pass whose
+            // follow-up sync succeeds — matching the recording's 4.4s -> 5.2s flash.
+            transientFailuresRemaining -= 1
+            if !scheduledWakeup {
+                scheduledWakeup = true
+                let wakeContinuation = self.wakeContinuation
+                Task {
+                    try? await Task.sleep(for: .milliseconds(400))
+                    wakeContinuation.yield(CompetitionRealtimeWakeUp(reason: .subscribed, serverCursorHint: 4))
+                }
+            }
+            throw CompetitionRemoteFailure.unauthenticated
+        }
+
+        if cursor.lastSeenServerSequence == 3 && !completedTransientRecovery {
+            completedTransientRecovery = true
+            return try CompetitionChangePage(
+                competitionID: competitionID,
+                afterServerSequence: 3,
+                snapshotServerSequence: 4,
+                nextServerSequence: 4,
+                hasMore: false,
+                changes: [
+                    try CompetitionChange(
+                        serverSequence: 4,
+                        kind: .profilePresentationChanged,
+                        entityID: opponentID,
+                        occurredAt: acceptedAt.addingTimeInterval(60),
+                        payload: .profilePresentation(
+                            try CompetitionProfilePresentationChange(profileID: opponentID, displayName: "Andy")
+                        )
+                    ),
+                ]
+            )
+        }
+
+        // Persistent outage on subsequent pull-to-refresh.
+        throw CompetitionRemoteFailure.operationFailed
     }
 }
 
