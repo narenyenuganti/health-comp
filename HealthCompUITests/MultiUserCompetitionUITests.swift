@@ -802,6 +802,53 @@ final class MultiUserCompetitionUITests: XCTestCase {
         add(screenshot)
     }
 
+    func testPullToRefreshDoesNotFlashScoreUpdateErrorOnTransientFailure() {
+        launch(.transientRefresh)
+        defer { app.terminate() }
+        XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 8))
+        let hero = sharingCard(state: "active", name: "Andy")
+        XCTAssertTrue(hero.waitForExistence(timeout: 5))
+
+        let andyID = "82000000-0000-4000-8000-00000000000e"
+        let issue = app.descendants(matching: .any)["competition.issue.\(andyID)"]
+        let retry = app.buttons["competition.issue.retry.\(andyID)"]
+        XCTAssertFalse(issue.exists)
+
+        // Pull-to-refresh #1: transient failure + recovery must never flash the issue line.
+        let scrollView = app.scrollViews.firstMatch
+        XCTAssertTrue(scrollView.exists)
+        scrollView.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.25))
+            .press(forDuration: 0.05, thenDragTo: scrollView.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.85)))
+
+        var flashedDuringTransientRefresh = false
+        let deadline = Date().addingTimeInterval(2.5)
+        while Date() < deadline {
+            if issue.exists {
+                flashedDuringTransientRefresh = true
+                let flashShot = XCTAttachment(screenshot: app.screenshot())
+                flashShot.name = "transient-refresh-flashed-error"
+                flashShot.lifetime = .keepAlways
+                add(flashShot)
+                break
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.05))
+        }
+        XCTAssertFalse(
+            flashedDuringTransientRefresh,
+            "Couldn’t update scores flashed during a transient refresh"
+        )
+
+        // Pull-to-refresh #2: a persistent failure shows the issue line and keeps it there.
+        scrollView.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.25))
+            .press(forDuration: 0.05, thenDragTo: scrollView.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.85)))
+
+        XCTAssertTrue(issue.waitForExistence(timeout: 5))
+        XCTAssertEqual(issue.label, "Couldn’t update scores")
+        XCTAssertTrue(retry.exists)
+        RunLoop.current.run(until: Date().addingTimeInterval(1.2))
+        XCTAssertTrue(issue.exists, "A real refresh error must stay on screen instead of disappearing")
+    }
+
     func testClosedChallengeRowChallengesAgainAndDismisses() {
         launch(.sharing)
         XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 8))
@@ -2188,6 +2235,7 @@ final class MultiUserCompetitionUITests: XCTestCase {
         case incomingChallenge = "incoming-challenge"
         case liveActivity = "live-activity"
         case practice
+        case transientRefresh = "transient-refresh"
     }
 
     private func launch(

@@ -509,6 +509,8 @@ private actor RemoteCompetitionClientCoordinator {
     /// wake-ups; `reconcileRequested` asks it for one more pass.
     private var reconcileDrainTask: Task<Void, Never>?
     private var reconcileRequested = false
+    /// `reconcileAll` calls currently waiting on `withOperationGate`.
+    private var pendingExplicitReconciliations = 0
     /// Republishes the last inputs when Home's grouping changes on its own.
     private var boundaryTask: Task<Void, Never>?
     private var lastPublishInputs: (
@@ -910,7 +912,9 @@ private actor RemoteCompetitionClientCoordinator {
     func reconcileAll(
         trigger: ActivityRefreshTrigger
     ) async -> CompetitionPublication {
-        await withOperationGate {
+        pendingExplicitReconciliations += 1
+        return await withOperationGate {
+            pendingExplicitReconciliations -= 1
             guard terminalTeardown == nil else {
                 return terminalBlockedPublication()
             }
@@ -923,6 +927,22 @@ private actor RemoteCompetitionClientCoordinator {
 #endif
             return await performReconciliation()
         }
+    }
+
+    private func synchronizeWithRetry(
+        _ runtime: RemoteCompetitionRuntime
+    ) async -> RemoteCompetitionRuntimeOutcome {
+        var outcome = await runtime.synchronizeAll()
+        // The first requests after the app comes back often fail once while
+        // the network wakes or an expired token refreshes, and the next
+        // refresh succeeds a moment later. Sync once more before publishing,
+        // so "Couldn't update scores" only shows for a failure that holds,
+        // never as a flash. A cancelled refresh skips the retry.
+        if outcome.hasRetryableFailure,
+           (try? await Task.sleep(for: Self.refreshRetryDelay)) != nil {
+            outcome = await runtime.synchronizeAll()
+        }
+        return outcome
     }
 
     private func performReconciliation() async -> CompetitionPublication {
@@ -943,15 +963,13 @@ private actor RemoteCompetitionClientCoordinator {
             latestGroupMatches = await runtime.cachedGroupMatches()
         }
         startGroupSync(runtime)
-        var outcome = await runtime.synchronizeAll()
-        // The first requests after the app comes back often fail once while
-        // the network wakes, and the next refresh succeeds a moment later.
-        // Sync once more before publishing, so "Couldn't update scores" only
-        // shows for a failure that holds, never as a flash. A cancelled
-        // refresh skips the retry.
-        if outcome.hasRetryableFailure,
-           (try? await Task.sleep(for: Self.refreshRetryDelay)) != nil {
-            outcome = await runtime.synchronizeAll()
+        var outcome = await synchronizeWithRetry(runtime)
+        // A callback or realtime wake-up that landed while this pass was
+        // failing asks for another pass anyway; run it before publishing so a
+        // recovery right behind this failure never flashes an error line.
+        if outcome.hasSyncFailure, reconcileRequested, !Task.isCancelled {
+            reconcileRequested = false
+            outcome = await synchronizeWithRetry(runtime)
         }
         await refreshPractice(.reconciliationProbe)
         if let challenges = try? await remoteAPI.listChallenges() {
@@ -963,8 +981,15 @@ private actor RemoteCompetitionClientCoordinator {
         for failure in outcome.failures {
             failure.failure.recordRefreshDiagnostic()
         }
+        let suppressesTransientIssues =
+            (pendingExplicitReconciliations > 0 || reconcileRequested)
+            && latestPublication != nil
         if let issue = outcome.discoveryFailure?.competitionClientIssue {
-            issues.append(issue)
+            if !suppressesTransientIssues
+                || issue == .storageUnavailable
+                || latestPublication?.dashboard.issues.contains(issue) == true {
+                issues.append(issue)
+            }
         }
         let reconciled = outcome.reconciled(previous: lastMaterializations)
         lastMaterializations = reconciled.lastGood
@@ -973,8 +998,18 @@ private actor RemoteCompetitionClientCoordinator {
             await syncOwnSleep(materializations: reconciled.materializations, profile: profile)
         }
         let failedIDs = reconciled.failedIDs
-        if !failedIDs.isEmpty {
-            issues.append(.competitionFailures(failedIDs))
+        let reportedFailedIDs: [CompetitionID]
+        if suppressesTransientIssues, let latest = latestPublication {
+            let priorFailed = Set(latest.dashboard.issues.flatMap { issue -> [CompetitionID] in
+                if case let .competitionFailures(ids) = issue { return ids }
+                return []
+            })
+            reportedFailedIDs = failedIDs.filter(priorFailed.contains)
+        } else {
+            reportedFailedIDs = failedIDs
+        }
+        if !reportedFailedIDs.isEmpty {
+            issues.append(.competitionFailures(reportedFailedIDs))
         }
         let activityFailedIDs = outcome.activityFailures.map(\.competitionID)
             .sorted {
@@ -2159,14 +2194,16 @@ private actor RemoteCompetitionClientCoordinator {
     }
 
     private func drainReconciliation(generation: UInt64) async {
-        while reconcileRequested, !Task.isCancelled {
-            reconcileRequested = false
+        while generation == runtimeGeneration, reconcileRequested, !Task.isCancelled {
             await withOperationGate {
-                guard terminalTeardown == nil,
-                      generation == runtimeGeneration,
+                guard generation == runtimeGeneration else { return }
+                guard reconcileRequested,
+                      terminalTeardown == nil,
                       !Task.isCancelled else {
+                    reconcileRequested = false
                     return
                 }
+                reconcileRequested = false
                 _ = await performReconciliation()
             }
         }
@@ -2527,12 +2564,21 @@ private actor RemoteCompetitionClientCoordinator {
 }
 
 extension RemoteCompetitionRuntimeOutcome {
-    /// A network failure (where URL errors land), worth one more try before
+    /// A network or mid-refresh token failure, worth one more try before
     /// it is shown. Storage, contract and permission failures won't clear a
     /// second later, so they show at once.
     var hasRetryableFailure: Bool {
-        failures.contains { $0.failure == .discoveryUnavailable }
+        failures.contains {
+            $0.failure == .discoveryUnavailable || $0.failure == .unauthenticated
+        }
             || discoveryFailure == .discoveryUnavailable
+            || discoveryFailure == .unauthenticated
+    }
+
+    /// Any non-cancelled discovery or per-match sync failure.
+    var hasSyncFailure: Bool {
+        discoveryFailure != nil
+            || failures.contains { $0.failure != .cancelled }
     }
 
     /// A match whose sync was only cancelled (the person left the screen

@@ -301,6 +301,7 @@ jobs:
               VersusIntroUITests/testReduceMotionEndsByItself
               VersusIntroUITests/testPlaysForTheAccepterOverTheMatchThenNeverAgain
               MultiUserCompetitionUITests/testColdWarmAndSignedOutClaimConfirmationFlows
+              MultiUserCompetitionUITests/testPullToRefreshDoesNotFlashScoreUpdateErrorOnTransientFailure
             )
           fi
           xcodebuild test \

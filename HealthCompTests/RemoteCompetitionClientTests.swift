@@ -4343,6 +4343,211 @@ final class RemoteCompetitionClientTests: XCTestCase {
         await client.stop()
     }
 
+    /// A one-off 401/PGRST301 while Supabase refreshes an expired token is
+    /// retried before publishing, so it never flashes "Couldn't update scores".
+    func testTransientUnauthenticatedSyncFailureIsRetriedAndRaisesNoIssue()
+        async throws
+    {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let profile = AuthenticatedProfile(
+            id: UUID(uuidString: "81000000-0000-4000-8000-000000000001")!,
+            displayName: "Beta Alice"
+        )
+        let paths = AuthenticatedProfileStoragePaths(profileID: profile.id, rootDirectory: root)
+        for directory in paths.fixedDirectories {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        }
+        let competitionID = UUID(uuidString: "82000000-0000-4000-8000-00000000000C")!
+        let createdAt = Date(timeIntervalSince1970: 1_786_540_000)
+        let descriptor = try pendingDescriptor(
+            competitionID: competitionID,
+            profile: profile,
+            expiresAt: createdAt.addingTimeInterval(48 * 60 * 60)
+        )
+        let page = try pendingHistoryPage(descriptor: descriptor, profileID: profile.id, createdAt: createdAt)
+        let fetches = RemoteCompetitionFetchSequenceProbe(page: page)
+        let moved = try pendingDescriptor(
+            competitionID: competitionID,
+            profile: profile,
+            expiresAt: createdAt.addingTimeInterval(48 * 60 * 60),
+            nextServerSequence: 3
+        )
+        let client = CompetitionClient.remote(
+            remoteAPI: remoteAPI(
+                listCompetitions: { await fetches.isFailing ? [moved] : [descriptor] },
+                fetchChanges: { _, _ in try await fetches.fetch() }
+            ),
+            environment: try environment(),
+            notificationClient: RemoteCompetitionNotificationProbe().client,
+            notificationPreferencesFactory: { _ in .constant(mutedOpponentIdentities: []) }
+        )
+
+        try await client.mountAuthenticatedProfile(profile, paths)
+        var iterator = client.start().makeAsyncIterator()
+        let optionalFirst = await iterator.next()
+        let shown = try XCTUnwrap(XCTUnwrap(optionalFirst).dashboard.competitions.first)
+        await fetches.failNextFetches(count: 1, failure: .unauthenticated)
+
+        let refreshed = await client.reconcileAll(.pullToRefresh)
+
+        XCTAssertEqual(refreshed.dashboard.issues, [])
+        XCTAssertEqual(refreshed.dashboard.competitions.map(\.id), [shown.id])
+        await client.stop()
+    }
+
+    /// Reopening the app (.foreground) and immediately pulling to refresh must
+    /// not flash "Couldn't update scores" when the foreground pass still fails
+    /// its retry but the queued pull-to-refresh pass succeeds.
+    func testOverlappingForegroundAndPullToRefreshDoNotFlashScoreUpdateIssue()
+        async throws
+    {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let profile = AuthenticatedProfile(
+            id: UUID(uuidString: "81000000-0000-4000-8000-000000000001")!,
+            displayName: "Beta Alice"
+        )
+        let paths = AuthenticatedProfileStoragePaths(profileID: profile.id, rootDirectory: root)
+        for directory in paths.fixedDirectories {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        }
+        let competitionID = UUID(uuidString: "82000000-0000-4000-8000-00000000000D")!
+        let createdAt = Date(timeIntervalSince1970: 1_786_540_000)
+        let descriptor = try pendingDescriptor(
+            competitionID: competitionID,
+            profile: profile,
+            expiresAt: createdAt.addingTimeInterval(48 * 60 * 60)
+        )
+        let page = try pendingHistoryPage(descriptor: descriptor, profileID: profile.id, createdAt: createdAt)
+        let fetches = RemoteCompetitionFetchSequenceProbe(page: page)
+        let moved = try pendingDescriptor(
+            competitionID: competitionID,
+            profile: profile,
+            expiresAt: createdAt.addingTimeInterval(48 * 60 * 60),
+            nextServerSequence: 3
+        )
+        let client = CompetitionClient.remote(
+            remoteAPI: remoteAPI(
+                listCompetitions: { await fetches.isFailing ? [moved] : [descriptor] },
+                fetchChanges: { _, _ in try await fetches.fetch() }
+            ),
+            environment: try environment(),
+            notificationClient: RemoteCompetitionNotificationProbe().client,
+            notificationPreferencesFactory: { _ in .constant(mutedOpponentIdentities: []) }
+        )
+
+        try await client.mountAuthenticatedProfile(profile, paths)
+        let stream = client.start()
+        var iterator = stream.makeAsyncIterator()
+        let optionalFirst = await iterator.next()
+        let first = try XCTUnwrap(optionalFirst)
+        XCTAssertEqual(first.dashboard.issues, [])
+
+        // Both attempts of .foreground fail while .pullToRefresh waits on the
+        // gate; .pullToRefresh then succeeds.
+        await fetches.failNextFetches(count: 2, pauseFirstFetch: true)
+        let foreground = Task { await client.reconcileAll(.foreground) }
+        await fetches.waitUntilPausedFetchEntered()
+        let pullToRefresh = Task { await client.reconcileAll(.pullToRefresh) }
+        try await Task.sleep(for: .milliseconds(30))
+        await fetches.releasePausedFetch()
+
+        let foregroundPub = await foreground.value
+        let pullPub = await pullToRefresh.value
+        let optionalPub1 = await iterator.next()
+        let optionalPub2 = await iterator.next()
+        let pub1 = try XCTUnwrap(optionalPub1)
+        let pub2 = try XCTUnwrap(optionalPub2)
+
+        XCTAssertEqual(foregroundPub.dashboard.issues, [], "Queued pull-to-refresh must suppress mid-burst failure flash")
+        XCTAssertEqual(pullPub.dashboard.issues, [])
+        XCTAssertEqual(pub1.dashboard.issues, [])
+        XCTAssertEqual(pub2.dashboard.issues, [])
+
+        // A real persistent failure with nothing queued behind it still shows and stays.
+        await fetches.failSubsequentFetches()
+        let persistent = await client.reconcileAll(.pullToRefresh)
+        let optionalPersistentStreamed = await iterator.next()
+        let persistentStreamed = try XCTUnwrap(optionalPersistentStreamed)
+        XCTAssertEqual(persistent.dashboard.issues, [.competitionFailures([CompetitionID(competitionID)])])
+        XCTAssertEqual(persistentStreamed.dashboard.issues, [.competitionFailures([CompetitionID(competitionID)])])
+        await client.stop()
+    }
+
+    /// A realtime wake-up landing during a failing pull-to-refresh runs before
+    /// publishing, so a recovery right after the failure never flashes an error.
+    func testRealtimeWakeUpDuringFailingPullToRefreshDoesNotFlashScoreUpdateIssue()
+        async throws
+    {
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent(UUID().uuidString, isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let profile = AuthenticatedProfile(
+            id: UUID(uuidString: "81000000-0000-4000-8000-000000000001")!,
+            displayName: "Beta Alice"
+        )
+        let paths = AuthenticatedProfileStoragePaths(profileID: profile.id, rootDirectory: root)
+        for directory in paths.fixedDirectories {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        }
+        let competitionID = UUID(uuidString: "82000000-0000-4000-8000-00000000000F")!
+        let createdAt = Date(timeIntervalSince1970: 1_786_540_000)
+        let descriptor = try pendingDescriptor(
+            competitionID: competitionID,
+            profile: profile,
+            expiresAt: createdAt.addingTimeInterval(48 * 60 * 60)
+        )
+        let page = try pendingHistoryPage(descriptor: descriptor, profileID: profile.id, createdAt: createdAt)
+        let fetches = RemoteCompetitionFetchSequenceProbe(page: page)
+        let moved = try pendingDescriptor(
+            competitionID: competitionID,
+            profile: profile,
+            expiresAt: createdAt.addingTimeInterval(48 * 60 * 60),
+            nextServerSequence: 3
+        )
+        let (wakeStream, wakeContinuation) = AsyncStream<CompetitionRealtimeWakeUp>.makeStream()
+        let client = CompetitionClient.remote(
+            remoteAPI: remoteAPI(
+                listCompetitions: { await fetches.isFailing ? [moved] : [descriptor] },
+                fetchChanges: { _, _ in try await fetches.fetch() }
+            ),
+            environment: try environment(),
+            realtimeClient: CompetitionRealtimeClient(
+                wakeUps: { _ in wakeStream },
+                stop: { wakeContinuation.finish() }
+            ),
+            notificationClient: RemoteCompetitionNotificationProbe().client,
+            notificationPreferencesFactory: { _ in .constant(mutedOpponentIdentities: []) }
+        )
+
+        try await client.mountAuthenticatedProfile(profile, paths)
+        let stream = client.start()
+        var iterator = stream.makeAsyncIterator()
+        let optionalFirst = await iterator.next()
+        let first = try XCTUnwrap(optionalFirst)
+        XCTAssertEqual(first.dashboard.issues, [])
+
+        await fetches.failNextFetches(count: 2, pauseFirstFetch: true)
+        let pull = Task { await client.reconcileAll(.pullToRefresh) }
+        await fetches.waitUntilPausedFetchEntered()
+        wakeContinuation.yield(CompetitionRealtimeWakeUp(reason: .subscribed, serverCursorHint: nil))
+        try await Task.sleep(for: .milliseconds(30))
+        await fetches.releasePausedFetch()
+
+        let pullPub = await pull.value
+        let optionalStreamed = await iterator.next()
+        let streamed = try XCTUnwrap(optionalStreamed)
+        XCTAssertEqual(pullPub.dashboard.issues, [], "Realtime wake-up mid-refresh must recover before publishing failure")
+        XCTAssertEqual(streamed.dashboard.issues, [])
+        await client.stop()
+    }
+
     func testFailedRefreshKeepsTheLastPresentationWithItsIssue()
         async throws
     {
@@ -5750,6 +5955,12 @@ private actor RemoteCompetitionNotificationProbe {
 private actor RemoteCompetitionFetchSequenceProbe {
     private let page: CompetitionChangePage
     private var shouldFail = false
+    private var remainingFailures = 0
+    private var nextFailure: CompetitionRemoteFailure = .operationFailed
+    private var pauseFirstFetch = false
+    private var enteredPausedFetch = false
+    private var pausedFetchWaiters: [CheckedContinuation<Void, Never>] = []
+    private var releaseContinuation: CheckedContinuation<Void, Never>?
 
     init(page: CompetitionChangePage) {
         self.page = page
@@ -5757,23 +5968,57 @@ private actor RemoteCompetitionFetchSequenceProbe {
 
     func failSubsequentFetches() {
         shouldFail = true
+        remainingFailures = 0
+        nextFailure = .operationFailed
     }
 
     /// Fails the next fetch only, like the first request after the app
     /// comes back to the foreground.
     func failNextFetchOnly() {
-        shouldFail = true
-        failsOnce = true
+        failNextFetches(count: 1)
     }
 
-    private var failsOnce = false
+    func failNextFetches(
+        count: Int,
+        failure: CompetitionRemoteFailure = .operationFailed,
+        pauseFirstFetch: Bool = false
+    ) {
+        shouldFail = count > 0
+        remainingFailures = count
+        nextFailure = failure
+        self.pauseFirstFetch = pauseFirstFetch
+        enteredPausedFetch = false
+    }
+
+    func waitUntilPausedFetchEntered() async {
+        if enteredPausedFetch { return }
+        await withCheckedContinuation { pausedFetchWaiters.append($0) }
+    }
+
+    func releasePausedFetch() {
+        pauseFirstFetch = false
+        releaseContinuation?.resume()
+        releaseContinuation = nil
+    }
 
     var isFailing: Bool { shouldFail }
 
-    func fetch() throws -> CompetitionChangePage {
+    func fetch() async throws -> CompetitionChangePage {
+        if pauseFirstFetch {
+            pauseFirstFetch = false
+            enteredPausedFetch = true
+            let waiters = pausedFetchWaiters
+            pausedFetchWaiters.removeAll()
+            waiters.forEach { $0.resume() }
+            await withCheckedContinuation { releaseContinuation = $0 }
+        }
         if shouldFail {
-            if failsOnce { shouldFail = false; failsOnce = false }
-            throw CompetitionRemoteFailure.operationFailed
+            let failure = nextFailure
+            if remainingFailures > 0 {
+                remainingFailures -= 1
+                if remainingFailures == 0 { shouldFail = false }
+            }
+            throw failure
         }
         return page
     }
