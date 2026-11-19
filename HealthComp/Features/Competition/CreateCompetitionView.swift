@@ -37,9 +37,10 @@ struct CreateCompetitionView: View {
     @FocusState private var recipientCodeIsFocused: Bool
     /// Paste Their Challenge Link was tapped: the link field and Find show.
     @State private var entersLink = false
-    /// Play a Bot was tapped: the four bot paces and Start Tomorrow show.
+    /// Play a Bot was tapped: the bot paces (and rival Shadow) and Start Tomorrow show.
     @State private var picksBot = false
     @State private var botSelection: OpponentDifficulty = .pacer
+    @State private var shadowRivalID: String?
     @State private var hasAttemptedPractice = false
 
     /// Nobody chosen yet and no link or bot being picked: the groups.
@@ -111,6 +112,7 @@ struct CreateCompetitionView: View {
         .moving(Motion.settle, value: recipient?.displayName)
         .moving(Motion.settle, value: competitionRecipientErrorText(recipientStatus))
         .moving(Motion.settle, value: showsPracticeError)
+        .moving(Motion.settle, value: botSelection == .shadow)
         .moving(Motion.settle, value: ownChallengeLink)
         .moving(Motion.settle, value: isPicking)
         .background(Theme.ground)
@@ -339,9 +341,20 @@ struct CreateCompetitionView: View {
         }
     }
 
+    private var shadowRivals: [PracticeShadowRival] {
+        practice?.shadowRivals ?? []
+    }
+
+    private var selectedShadowRival: PracticeShadowRival? {
+        if let shadowRivalID, let found = shadowRivals.first(where: { $0.id == shadowRivalID }) {
+            return found
+        }
+        return shadowRivals.first
+    }
+
     private var botPickerRow: some View {
         let blocker = PracticeMatch.startBlocker(in: competitions)
-        let detail = blocker ?? "Practice · Pacer, Chill, Erratic or Beast"
+        let detail = blocker ?? "Practice · Pacer, Chill, Erratic, Beast or Shadow"
         let isDimmed = blocker != nil
         let stacks = dynamicTypeSize.isAccessibilitySize
         let layout = stacks
@@ -349,6 +362,7 @@ struct CreateCompetitionView: View {
             : AnyLayout(HStackLayout(spacing: 12))
         return Button {
             botSelection = .pacer
+            shadowRivalID = shadowRivals.first?.id
             hasAttemptedPractice = false
             picksBot = true
         } label: {
@@ -384,19 +398,37 @@ struct CreateCompetitionView: View {
     }
 
     private var botPicker: some View {
-        VStack(spacing: 10) {
-            ForEach(PracticeMatchSheet.bots, id: \.0) { bot in
-                PracticeBotOptionCard(
-                    difficulty: bot.0,
-                    detail: bot.1,
-                    bars: bot.2,
-                    isSelected: botSelection == bot.0
+        VStack(alignment: .leading, spacing: 18) {
+            VStack(spacing: 10) {
+                ForEach(PracticeMatchSheet.bots, id: \.0) { bot in
+                    PracticeBotOptionCard(
+                        difficulty: bot.0,
+                        detail: bot.1,
+                        bars: bot.2,
+                        isSelected: botSelection == bot.0
+                    ) {
+                        botSelection = bot.0
+                    }
+                }
+                PracticeShadowOptionCard(
+                    activeRival: selectedShadowRival,
+                    hasRivals: !shadowRivals.isEmpty,
+                    isSelected: botSelection == .shadow
                 ) {
-                    botSelection = bot.0
+                    if shadowRivalID == nil { shadowRivalID = shadowRivals.first?.id }
+                    botSelection = .shadow
                 }
             }
+            .sensoryFeedback(.selection, trigger: botSelection)
+
+            if botSelection == .shadow, !shadowRivals.isEmpty {
+                PracticeShadowRivalPicker(
+                    rivals: shadowRivals,
+                    selectedID: $shadowRivalID
+                )
+                .transition(Motion.appear)
+            }
         }
-        .sensoryFeedback(.selection, trigger: botSelection)
     }
 
     private var practiceControlSlot: some View {
@@ -412,12 +444,17 @@ struct CreateCompetitionView: View {
             Button {
                 guard let practice else { return }
                 hasAttemptedPractice = true
-                practice.start(botSelection)
+                if botSelection == .shadow {
+                    guard let rival = selectedShadowRival else { return }
+                    practice.start(.shadow(rival))
+                } else {
+                    practice.start(.bot(botSelection))
+                }
             } label: {
                 BusyLabel("Start Tomorrow", isBusy: isPracticeBusy)
             }
             .buttonStyle(PrimaryButtonStyle())
-            .disabled(isPracticeBusy || practice == nil)
+            .disabled(isPracticeBusy || practice == nil || (botSelection == .shadow && selectedShadowRival == nil))
             .accessibilityLabel("Start Tomorrow")
             .accessibilityValue(isPracticeBusy ? "Action in progress" : "")
             .accessibilityIdentifier("competition.practice.start")

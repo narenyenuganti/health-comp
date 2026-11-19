@@ -240,6 +240,7 @@ jobs:
             ChallengeFriendUITests/testPickAFriendConfirmAndSend
             ChallengeFriendUITests/testDuelOffersPlayingABotAndBackReturnsToThePicker
             ChallengeFriendUITests/testSearchPeopleBackReturnsOneStepToChallengeSheet
+            ChallengeFriendUITests/testDuelShadowPresetPicksAPastRivalAndStartsShadowMatch
             GroupMatchCreateUITests/testFormatPickerOffersEveryFormat
             GroupMatchJoinUITests/testInviteShowsTheLineupAndAnswers
             GroupMatchHomeUITests/testHomeCardsCarryTheirState

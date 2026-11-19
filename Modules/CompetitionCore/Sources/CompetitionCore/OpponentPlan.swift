@@ -6,6 +6,8 @@ public struct OpponentGeneratorVersion: Codable, Hashable, Sendable {
     public static let v2 = Self(rawValue: 2)
     /// Whole-point BotWeek totals and reveal steps. Requires a bot-mode difficulty.
     public static let v3 = Self(rawValue: 3)
+    /// Samples a week and intraday reveal from a past rival's day/weekday distribution.
+    public static let v4 = Self(rawValue: 4)
 
     public let rawValue: UInt32
 
@@ -22,6 +24,7 @@ public enum OpponentDifficulty: String, Codable, CaseIterable, Sendable {
     case chill
     case erratic
     case beast
+    case shadow
 }
 
 public enum OpponentPlanError: Error, Equatable, Sendable {
@@ -39,6 +42,109 @@ public enum OpponentPlanError: Error, Equatable, Sendable {
     case invalidRevealDayOrdinal(Int)
     case invalidRevealProgress(Int)
     case invalidBaseline(Int?)
+    case insufficientRivalHistory(Int)
+}
+
+/// One scored calendar day from a past rival: Gregorian weekday `1...7`
+/// (Sunday = 1 ... Saturday = 7) and whole Activity ring points in `0...600`.
+public struct OpponentRivalSample: Codable, Equatable, Sendable {
+    public let weekday: Int
+    public let points: Int
+
+    public init(weekday: Int, points: Int) throws {
+        guard (1...7).contains(weekday) else {
+            throw OpponentPlanError.invalidDayOrdinal(weekday)
+        }
+        guard (0...600).contains(points) else {
+            throw OpponentPlanError.invalidFinalPoints(points)
+        }
+        self.weekday = weekday
+        self.points = points
+    }
+}
+
+/// Empirical score distribution and weekday pattern of a past rival.
+public struct OpponentShadowProfile: Codable, Equatable, Sendable {
+    public static let minimumSampleCount = 3
+
+    public let samples: [OpponentRivalSample]
+    public let opponentName: String?
+    public let mean: Int
+    public let spread: Int
+    public let minPoints: Int
+    public let maxPoints: Int
+
+    public var bounds: ClosedRange<Int> {
+        if maxPoints - minPoints >= 36 {
+            return minPoints...maxPoints
+        }
+        let low = max(0, min(minPoints, mean - 24))
+        let high = min(600, max(maxPoints, mean + 24))
+        return low...high
+    }
+
+    public init(samples: [OpponentRivalSample], opponentName: String? = nil) throws {
+        guard samples.count >= Self.minimumSampleCount else {
+            throw OpponentPlanError.insufficientRivalHistory(samples.count)
+        }
+        self.samples = samples
+        let trimmed = opponentName?.trimmingCharacters(in: .whitespacesAndNewlines)
+        self.opponentName = (trimmed?.isEmpty == false) ? trimmed : nil
+
+        let n = samples.count
+        let sum = samples.reduce(0) { $0 + $1.points }
+        let mu = (sum + n / 2) / n
+        self.mean = min(600, max(0, mu))
+
+        let sqSum = samples.reduce(0) { acc, sample in
+            let diff = sample.points - mu
+            return acc + diff * diff
+        }
+        let rawSigma = Self.integerSqrt(sqSum / n)
+        let floorSigma = max(20, (mu * 7 + 50) / 100)
+        self.spread = min(160, max(floorSigma, rawSigma))
+        self.minPoints = samples.map(\.points).min() ?? mu
+        self.maxPoints = samples.map(\.points).max() ?? mu
+    }
+
+    /// Shrunk mean and spread for Gregorian `weekday` (`1...7`, Sun...Sat).
+    public func weekdayTarget(for weekday: Int) -> (mean: Int, spread: Int) {
+        let matching = samples.filter { $0.weekday == weekday }
+        let count = matching.count
+        guard count > 0 else { return (mean, spread) }
+
+        let groupSum = matching.reduce(0) { $0 + $1.points }
+        let groupMean = (groupSum + count / 2) / count
+        let groupSq = matching.reduce(0) { acc, sample in
+            let diff = sample.points - groupMean
+            return acc + diff * diff
+        }
+        let groupSpread = max(16, Self.integerSqrt(groupSq / count))
+        let denom = count + 1
+        let blendedMean = (count * groupMean + mean + denom / 2) / denom
+        let blendedSpread = max(16, (count * groupSpread + spread + denom / 2) / denom)
+        return (blendedMean, blendedSpread)
+    }
+
+    /// Seven bar heights (Monday through Sunday) scaled to `6...maxHeight`.
+    public func weekdayBarHeights(maxHeight: Int = 28) -> [Int] {
+        [2, 3, 4, 5, 6, 7, 1].map { weekday in
+            let expected = weekdayTarget(for: weekday).mean
+            let scaled = (expected * maxHeight + 300) / 600
+            return min(maxHeight, max(6, scaled))
+        }
+    }
+
+    private static func integerSqrt(_ value: Int) -> Int {
+        guard value > 0 else { return 0 }
+        var x = value
+        var y = (x + 1) / 2
+        while y < x {
+            x = y
+            y = (x + value / x) / 2
+        }
+        return x
+    }
 }
 
 public struct OpponentCheckpoint: Codable, Equatable, Sendable {
@@ -208,6 +314,7 @@ public struct OpponentPlan: Codable, Equatable, Sendable {
     public let difficulty: OpponentDifficulty
     public let schedule: CompetitionSchedule
     public let days: [OpponentDayPlan]
+    public let opponentName: String?
     public let commitmentHex: String
 
     public var canonicalBytes: Data {
@@ -217,7 +324,8 @@ public struct OpponentPlan: Codable, Equatable, Sendable {
             seed: seed,
             difficulty: difficulty,
             schedule: schedule,
-            days: days
+            days: days,
+            opponentName: opponentName
         )
     }
 
@@ -256,7 +364,8 @@ public struct OpponentPlan: Codable, Equatable, Sendable {
         seed: UInt64,
         difficulty: OpponentDifficulty,
         schedule: CompetitionSchedule,
-        days: [OpponentDayPlan]
+        days: [OpponentDayPlan],
+        opponentName: String? = nil
     ) throws {
         guard schemaVersion == Self.currentSchemaVersion else {
             throw OpponentPlanError.unsupportedSchemaVersion(schemaVersion)
@@ -282,12 +391,16 @@ public struct OpponentPlan: Codable, Equatable, Sendable {
             }
         }
 
+        let trimmedName = opponentName?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let normalizedName = (trimmedName?.isEmpty == false) ? trimmedName : nil
+
         self.schemaVersion = schemaVersion
         self.generatorVersion = generatorVersion
         self.seed = seed
         self.difficulty = difficulty
         self.schedule = schedule
         self.days = days
+        self.opponentName = normalizedName
         self.commitmentHex = SHA256Digest.hexDigest(
             Self.canonicalBytes(
                 schemaVersion: schemaVersion,
@@ -295,7 +408,8 @@ public struct OpponentPlan: Codable, Equatable, Sendable {
                 seed: seed,
                 difficulty: difficulty,
                 schedule: schedule,
-                days: days
+                days: days,
+                opponentName: normalizedName
             )
         )
     }
@@ -322,6 +436,7 @@ public struct OpponentPlan: Codable, Equatable, Sendable {
         case difficulty
         case schedule
         case days
+        case opponentName
         case commitmentHex
     }
 
@@ -342,6 +457,7 @@ public struct OpponentPlan: Codable, Equatable, Sendable {
             forKey: .schedule
         )
         let days = try container.decode([OpponentDayPlan].self, forKey: .days)
+        let opponentName = try container.decodeIfPresent(String.self, forKey: .opponentName)
         let persistedCommitment = try container.decode(
             String.self,
             forKey: .commitmentHex
@@ -367,7 +483,8 @@ public struct OpponentPlan: Codable, Equatable, Sendable {
                 seed: seed,
                 difficulty: difficulty,
                 schedule: schedule,
-                days: days
+                days: days,
+                opponentName: opponentName
             )
         } catch {
             throw DecodingError.dataCorruptedError(
@@ -394,6 +511,7 @@ public struct OpponentPlan: Codable, Equatable, Sendable {
         try container.encode(difficulty, forKey: .difficulty)
         try container.encode(schedule, forKey: .schedule)
         try container.encode(days, forKey: .days)
+        try container.encodeIfPresent(opponentName, forKey: .opponentName)
         try container.encode(commitmentHex, forKey: .commitmentHex)
     }
 
@@ -403,12 +521,14 @@ public struct OpponentPlan: Codable, Equatable, Sendable {
         seed: UInt64,
         difficulty: OpponentDifficulty,
         schedule: CompetitionSchedule,
-        days: [OpponentDayPlan]
+        days: [OpponentDayPlan],
+        opponentName: String? = nil
     ) -> Data {
         // Commitment format v1, in order: domain, schema, generator, seed,
         // difficulty, explicit schedule, then all days/checkpoints. Every
         // integer is fixed-width big-endian, strings are UInt32-length-prefixed,
-        // and the commitment itself is deliberately excluded.
+        // and the commitment itself is deliberately excluded. Optional
+        // opponentName appends only when present so v1–v3 commitments are unchanged.
         var encoder = CanonicalBinaryEncoder()
         encoder.append(string: "healthcomp.opponent-plan")
         encoder.append(schemaVersion)
@@ -426,6 +546,9 @@ public struct OpponentPlan: Codable, Equatable, Sendable {
                 encoder.append(UInt16(checkpoint.cumulativePoints))
             }
         }
+        if let opponentName {
+            encoder.append(string: opponentName)
+        }
         return encoder.data
     }
 }
@@ -434,20 +557,24 @@ public struct OpponentPlanGenerationRequest: Codable, Equatable, Sendable {
     public let seed: UInt64
     public let generatorVersion: OpponentGeneratorVersion
     public let difficulty: OpponentDifficulty
-    /// Required by `.v2` and `.v3`, rejected by `.v1`. Never persisted: the plan
-    /// keeps every day's points, and its commitment covers them.
+    /// Required by `.v2` and `.v3`, rejected by `.v1` and `.v4`. Never persisted:
+    /// the plan keeps every day's points, and its commitment covers them.
     public let baselineDailyPoints: Int?
+    /// Required by `.v4` (`.shadow`), rejected by `.v1`–`.v3`.
+    public let shadowProfile: OpponentShadowProfile?
 
     public init(
         seed: UInt64,
         generatorVersion: OpponentGeneratorVersion,
         difficulty: OpponentDifficulty,
-        baselineDailyPoints: Int? = nil
+        baselineDailyPoints: Int? = nil,
+        shadowProfile: OpponentShadowProfile? = nil
     ) {
         self.seed = seed
         self.generatorVersion = generatorVersion
         self.difficulty = difficulty
         self.baselineDailyPoints = baselineDailyPoints
+        self.shadowProfile = shadowProfile
     }
 }
 
@@ -457,31 +584,46 @@ public enum OpponentPlanGenerator {
         generatorVersion: OpponentGeneratorVersion,
         difficulty: OpponentDifficulty,
         schedule: CompetitionSchedule,
-        baselineDailyPoints: Int? = nil
+        baselineDailyPoints: Int? = nil,
+        shadowProfile: OpponentShadowProfile? = nil
     ) throws -> OpponentPlan {
         let policy: OpponentDifficultyV1Policy
         switch generatorVersion {
         case .v1:
-            guard baselineDailyPoints == nil else {
+            guard baselineDailyPoints == nil, shadowProfile == nil else {
                 throw OpponentPlanError.invalidBaseline(baselineDailyPoints)
             }
             policy = difficulty.versionOnePolicy
         case .v2:
+            guard shadowProfile == nil else {
+                throw OpponentPlanError.invalidDifficultyPolicy(dayOrdinal: 1)
+            }
             guard let baseline = baselineDailyPoints,
                   (100...600).contains(baseline)
             else {
                 throw OpponentPlanError.invalidBaseline(baselineDailyPoints)
             }
-            guard difficulty.botMode == nil else {
+            guard difficulty.botMode == nil && difficulty != .shadow else {
                 throw OpponentPlanError.invalidDifficultyPolicy(dayOrdinal: 1)
             }
             policy = difficulty.versionTwoPolicy(baseline: baseline)
         case .v3:
+            guard shadowProfile == nil else {
+                throw OpponentPlanError.invalidDifficultyPolicy(dayOrdinal: 1)
+            }
             return try botWeekPlan(
                 seed: seed,
                 difficulty: difficulty,
                 schedule: schedule,
                 baselineDailyPoints: baselineDailyPoints
+            )
+        case .v4:
+            return try shadowWeekPlan(
+                seed: seed,
+                difficulty: difficulty,
+                schedule: schedule,
+                baselineDailyPoints: baselineDailyPoints,
+                shadowProfile: shadowProfile
             )
         default:
             throw OpponentPlanError.unsupportedGeneratorVersion(
@@ -621,6 +763,151 @@ public enum OpponentPlanGenerator {
         )
     }
 
+    private static func shadowWeekPlan(
+        seed: UInt64,
+        difficulty: OpponentDifficulty,
+        schedule: CompetitionSchedule,
+        baselineDailyPoints: Int?,
+        shadowProfile: OpponentShadowProfile?
+    ) throws -> OpponentPlan {
+        guard difficulty == .shadow else {
+            throw OpponentPlanError.invalidDifficultyPolicy(dayOrdinal: 1)
+        }
+        guard baselineDailyPoints == nil else {
+            throw OpponentPlanError.invalidBaseline(baselineDailyPoints)
+        }
+        guard let profile = shadowProfile else {
+            throw OpponentPlanError.insufficientRivalHistory(0)
+        }
+        guard let windowDays = try? schedule.calendar.sevenDayWindow(
+            startingOn: schedule.startDay
+        ), windowDays.count == 7 else {
+            throw OpponentPlanError.invalidSchedule
+        }
+
+        let bounds = profile.bounds
+        let weekdays = windowDays.map {
+            gregorianWeekday(year: $0.year, month: $0.month, day: $0.day)
+        }
+        var rng = SplitMix64(seed: seed)
+        let driftSpan = max(1, profile.spread / 3)
+        let weekDrift = Int(rng.next(upperBound: UInt64(driftSpan * 2 + 1))) - driftSpan
+
+        var totals: [Int] = []
+        totals.reserveCapacity(7)
+        for weekday in weekdays {
+            let target = profile.weekdayTarget(for: weekday)
+            let u1 = Int(rng.next(upperBound: 2_001)) - 1_000
+            let u2 = Int(rng.next(upperBound: 2_001)) - 1_000
+            let u3 = Int(rng.next(upperBound: 2_001)) - 1_000
+            let bell = (u1 + u2 + u3) / 2
+            let raw = target.mean + (weekDrift / 2) + (bell * target.spread) / 600
+            totals.append(min(bounds.upperBound, max(bounds.lowerBound, raw)))
+        }
+
+        // Never match any contiguous 7-day slice or exact weekday tuple 100%.
+        let samplePoints = profile.samples.map(\.points)
+        var forbiddenSlices: [[Int]] = []
+        if samplePoints.count >= 7 {
+            for start in 0...(samplePoints.count - 7) {
+                forbiddenSlices.append(Array(samplePoints[start..<(start + 7)]))
+            }
+        }
+        let weekdayLatest = weekdays.map { w in
+            profile.samples.last(where: { $0.weekday == w })?.points ?? -1
+        }
+        if !weekdayLatest.contains(-1) {
+            forbiddenSlices.append(weekdayLatest)
+        }
+        if forbiddenSlices.contains(totals) || (Set(totals).count < 2 && bounds.count >= 20) {
+            for idx in [0, 3] {
+                let step = min(13, max(4, bounds.count / 4))
+                if totals[idx] + step <= bounds.upperBound {
+                    totals[idx] += step
+                } else if totals[idx] - step >= bounds.lowerBound {
+                    totals[idx] -= step
+                }
+            }
+        }
+
+        var days: [OpponentDayPlan] = []
+        days.reserveCapacity(7)
+        for (offset, finalPoints) in totals.enumerated() {
+            let ordinal = offset + 1
+            let checkpoints = try shadowCheckpoints(
+                seed: seed,
+                ordinal: ordinal,
+                finalPoints: finalPoints
+            )
+            days.append(
+                try OpponentDayPlan(
+                    ordinal: ordinal,
+                    finalPoints: finalPoints,
+                    checkpoints: checkpoints
+                )
+            )
+        }
+        return try OpponentPlan(
+            generatorVersion: .v4,
+            seed: seed,
+            difficulty: .shadow,
+            schedule: schedule,
+            days: days,
+            opponentName: profile.opponentName
+        )
+    }
+
+    private static func shadowCheckpoints(
+        seed: UInt64,
+        ordinal: Int,
+        finalPoints: Int
+    ) throws -> [OpponentCheckpoint] {
+        var dayRng = SplitMix64(seed: seed &+ (UInt64(ordinal) &* 0x9E3779B97F4A7C15))
+        let workoutSlot = 2 + Int(dayRng.next(upperBound: 5)) // 2...6 (~10 AM to ~8 PM)
+        let workoutPermille = 350 + Int(dayRng.next(upperBound: 251)) // 35%...60%
+        let steadyPermille = 1_000 - workoutPermille
+
+        var checkpoints: [OpponentCheckpoint] = []
+        checkpoints.reserveCapacity(8)
+        var previous = 0
+        for step in 0...7 {
+            let progress = step * 10_000 / 7
+            let cumulative: Int
+            if step == 0 {
+                cumulative = 0
+            } else if step == 7 {
+                cumulative = finalPoints
+            } else {
+                let steady = (finalPoints * steadyPermille * step) / (1_000 * 7)
+                let burstFull = (finalPoints * workoutPermille) / 1_000
+                let burst: Int
+                if step < workoutSlot - 1 {
+                    burst = 0
+                } else if step == workoutSlot - 1 {
+                    burst = burstFull / 3
+                } else {
+                    burst = burstFull
+                }
+                cumulative = min(finalPoints, max(previous, steady + burst))
+            }
+            previous = cumulative
+            checkpoints.append(
+                try OpponentCheckpoint(
+                    progressBasisPoints: progress,
+                    cumulativePoints: cumulative
+                )
+            )
+        }
+        return checkpoints
+    }
+
+    private static func gregorianWeekday(year y0: Int, month m: Int, day d: Int) -> Int {
+        let offsets = [0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4]
+        let y = m < 3 ? y0 - 1 : y0
+        let zeroBased = (y + y / 4 - y / 100 + y / 400 + offsets[m - 1] + d) % 7
+        return ((zeroBased + 7) % 7) + 1
+    }
+
     private static func streamSeed(
         seed: UInt64,
         generatorVersion: OpponentGeneratorVersion,
@@ -724,6 +1011,12 @@ private extension OpponentDifficulty {
                 checkpointCount: 6...10,
                 curve: .linear
             )
+        case .shadow:
+            return OpponentDifficultyV1Policy(
+                finalPoints: 200...520,
+                checkpointCount: 7...9,
+                curve: .linear
+            )
         }
     }
 
@@ -736,8 +1029,8 @@ private extension OpponentDifficulty {
         case .relaxed: percents = 45...60
         case .balanced: percents = 90...110
         case .challenging: percents = 110...130
-        case .pacer, .chill, .erratic, .beast:
-            preconditionFailure("Bot modes use generator v3")
+        case .pacer, .chill, .erratic, .beast, .shadow:
+            preconditionFailure("Bot and shadow modes use generator v3/v4")
         }
         func scaled(_ percent: Int) -> Int {
             min(600, (baseline * percent + 50) / 100)

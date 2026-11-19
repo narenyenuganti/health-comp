@@ -44,7 +44,8 @@ public struct CompetitionEngine: Sendable {
             generatorVersion: request.generatorVersion,
             difficulty: request.difficulty,
             schedule: schedule,
-            baselineDailyPoints: request.baselineDailyPoints
+            baselineDailyPoints: request.baselineDailyPoints,
+            shadowProfile: request.shadowProfile
         )
         return event(
             for: competition,

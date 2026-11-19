@@ -229,7 +229,7 @@ final class ChallengeFriendUITests: XCTestCase {
         reveal(botRow)
         XCTAssertTrue(botRow.isEnabled)
         XCTAssertTrue(botRow.label.contains("Play a Bot"), botRow.label)
-        XCTAssertTrue(botRow.label.contains("Practice · Pacer, Chill, Erratic or Beast"), botRow.label)
+        XCTAssertTrue(botRow.label.contains("Practice · Pacer, Chill, Erratic, Beast or Shadow"), botRow.label)
 
         botRow.tap()
         let backButton = app.buttons["competition.create.back"]
@@ -238,7 +238,7 @@ final class ChallengeFriendUITests: XCTestCase {
         XCTAssertTrue(
             app.staticTexts["Seven days against a bot, scaled to your last two weeks. It doesn’t count toward your record."].exists
         )
-        for mode in ["pacer", "chill", "erratic", "beast"] {
+        for mode in ["pacer", "chill", "erratic", "beast", "shadow"] {
             XCTAssertTrue(app.buttons["competition.practice.pace.\(mode)"].exists, mode)
         }
         XCTAssertTrue(app.buttons["competition.practice.pace.pacer"].isSelected)
@@ -288,6 +288,43 @@ final class ChallengeFriendUITests: XCTestCase {
         dialog.buttons["End Practice"].tap()
         XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 5))
         XCTAssertFalse(practiceCard.exists)
+    }
+
+    func testDuelShadowPresetPicksAPastRivalAndStartsShadowMatch() throws {
+        launch(.challengeFriend, arguments: ["-UIAccessibilityReduceMotionEnabled", "YES"])
+        openSheet()
+        let botRow = app.buttons["competition.create.bot"]
+        reveal(botRow)
+        botRow.tap()
+
+        let shadow = app.buttons["competition.practice.pace.shadow"]
+        XCTAssertTrue(shadow.waitForExistence(timeout: 3))
+        reveal(shadow)
+        XCTAssertTrue(shadow.isEnabled)
+        XCTAssertTrue(shadow.label.contains("Shadow"), shadow.label)
+        shadow.tap()
+        XCTAssertTrue(shadow.isSelected)
+
+        let rivalsGroup = element("competition.practice.shadow.rivals")
+        XCTAssertTrue(rivalsGroup.waitForExistence(timeout: 3))
+        let devRival = app.buttons["competition.practice.shadow.rival.\(Person.dev)"]
+        reveal(devRival)
+        XCTAssertTrue(devRival.isSelected)
+        XCTAssertTrue(devRival.label.contains("Dev Patel"), devRival.label)
+        XCTAssertTrue(devRival.label.contains("340–520 pts"), devRival.label)
+        try audit("pick-bot-shadow")
+
+        app.buttons["competition.practice.start"].tap()
+        XCTAssertTrue(element("competition.create.card").waitForNonExistence(timeout: 5))
+
+        let practiceCard = app.buttons["competition.sharing.scheduled.a1000000-0000-4000-8000-00000000000c"]
+        XCTAssertTrue(practiceCard.waitForExistence(timeout: 5))
+        XCTAssertEqual(practiceCard.label, "Dev Patel’s Shadow. Practice · Starts Mon, Aug 17")
+
+        openSheet(waitForFriends: false)
+        reveal(botRow, requireHittable: false)
+        XCTAssertFalse(botRow.isEnabled)
+        XCTAssertTrue(botRow.label.contains("In a practice match with Dev Patel’s Shadow"), botRow.label)
     }
 
     func testBotPickerFitsTheLargestTextInDark() throws {
@@ -650,7 +687,7 @@ final class ChallengeFriendUITests: XCTestCase {
         for _ in 0..<6 {
             let inBounds = target.exists
                 && target.frame.minY >= 80
-                && target.frame.maxY <= app.frame.maxY - 34
+                && target.frame.maxY <= app.frame.maxY - 110
             if inBounds, !requireHittable || target.isHittable { return }
             surface.swipeUp()
         }

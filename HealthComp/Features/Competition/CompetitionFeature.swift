@@ -318,7 +318,7 @@ struct CompetitionFeature {
         case rematchTapped(CompetitionID)
         case challengeAgainTapped(CompetitionID)
         case reinviteTapped
-        case practiceStartTapped(OpponentDifficulty)
+        case practiceStartTapped(PracticeStartTarget)
         case deleteTapped(CompetitionID)
         case commandFinished(CompetitionID, expectedRevision: UInt64)
         case mutePreferencesLoaded(Set<String>?)
@@ -1017,13 +1017,13 @@ struct CompetitionFeature {
                     )
                 }
 
-            case let .practiceStartTapped(difficulty):
+            case let .practiceStartTapped(target):
                 let id = PracticeMatch.startCommandID
                 guard state.commandIDsInFlight.insert(id).inserted else {
                     return .none
                 }
                 return .run { send in
-                    let returned = await competitionClient.startPractice(difficulty)
+                    let returned = await competitionClient.startPractice(target)
                     await send(
                         .commandFinished(
                             id,
