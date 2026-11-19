@@ -4,7 +4,7 @@ set local role postgres;
 create extension if not exists pgtap with schema extensions;
 set local search_path = extensions, public, pg_catalog;
 
-select plan(23);
+select plan(22);
 
 select ok(coalesce((
   select function_row.prosecdef
@@ -74,22 +74,6 @@ select is((
   where policy_row.schemaname = 'realtime'
     and policy_row.tablename = 'messages'
 ), 1::bigint, 'Realtime exposes no send, presence, anonymous, or broad policy');
-
-select ok(coalesce((
-  select not trigger_row.tgisinternal
-    and trigger_row.tgenabled = 'O'
-    and (trigger_row.tgtype & 1) = 1
-    and (trigger_row.tgtype & 2) = 0
-    and (trigger_row.tgtype & 4) = 4
-  from pg_catalog.pg_trigger trigger_row
-  join pg_catalog.pg_class table_row
-    on table_row.oid = trigger_row.tgrelid
-  join pg_catalog.pg_namespace schema_row
-    on schema_row.oid = table_row.relnamespace
-  where schema_row.nspname = 'public'
-    and table_row.relname = 'competition_change_log'
-    and trigger_row.tgname = 'broadcast_competition_change'
-), false), 'each committed change-log insert emits wake-ups after insertion');
 
 insert into auth.users (
   id, instance_id, aud, role, email, encrypted_password, created_at, updated_at

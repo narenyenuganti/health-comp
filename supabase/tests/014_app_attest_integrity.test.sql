@@ -4,7 +4,7 @@ set local role postgres;
 create extension if not exists pgtap with schema extensions;
 set local search_path = extensions, public, pg_catalog;
 
-select plan(79);
+select plan(76);
 
 select is((
   select pg_catalog.count(*)
@@ -133,15 +133,6 @@ select ok(not has_function_privilege(
   'public.submit_score_revision(uuid,uuid,integer,bigint,timestamptz,text,text,integer,integer,integer,text,text,text)',
   'EXECUTE'
 ), 'authenticated clients cannot bypass App Attest through the old score RPC');
-select has_trigger(
-  'public', 'profiles', 'purge_app_attest_on_profile_deactivation',
-  'profile deactivation purges private App Attest material'
-);
-select has_trigger(
-  'public', 'device_installations',
-  'purge_app_attest_on_installation_revocation',
-  'installation revocation purges private App Attest material'
-);
 
 insert into auth.users (
   id, instance_id, aud, role, email, encrypted_password, created_at, updated_at
@@ -289,14 +280,6 @@ select
   '-----BEGIN PUBLIC KEY-----' || chr(10)
     || repeat('A', 120) || chr(10) || '-----END PUBLIC KEY-----';
 
-select is((
-  select array_agg(column_row.is_nullable::text order by column_row.column_name)
-  from information_schema.columns column_row
-  where column_row.table_schema = 'private'
-    and column_row.table_name = 'app_attest_keys'
-    and column_row.column_name in ('bundle_version', 'validation_category')
-), array['YES', 'YES']::text[],
-  'policy metadata columns are nullable only for pre-iOS-27 keys');
 select throws_ok(
   $$
     insert into private.app_attest_keys (

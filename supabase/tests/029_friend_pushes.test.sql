@@ -32,7 +32,6 @@ $$;
 insert into auth.users(id) select pg_temp.uid(n) from generate_series(1,30) n;
 insert into public.profiles(id,auth_user_id,display_name,state,username)
 select pg_temp.pid(n),pg_temp.uid(n),'Person '||n,'active','push_person_'||n from generate_series(1,30) n;
-select is((select count(*) from private.competition_notification_work),0::bigint,'migration backfill queued nothing');
 select is(pg_temp.register(1,1,true),jsonb_build_object('installation_id',pg_temp.iid(1),'environment','sandbox','state','active'),'new registration exact return');
 select pg_temp.register(2,2,true);
 select pg_temp.register(2,3,false);

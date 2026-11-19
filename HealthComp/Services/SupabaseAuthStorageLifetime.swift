@@ -67,17 +67,6 @@ final class SupabaseAuthStorageLifetime: AuthLocalStorage, @unchecked Sendable {
         lock.withLock { isRetired = true }
     }
 
-    func verifyRemovalAndRetire() throws {
-        try lock.withLock {
-            // Repeated retirement must not inspect the next owner's storage.
-            guard !isRetired else { return }
-            writesClosed = true
-            try verifyRemoval()
-            // No old callback can write between verification and closure.
-            isRetired = true
-        }
-    }
-
     func removeSessionAndRetire(removing: () throws -> Void) throws {
         try lock.withLock {
             // A repeated old-owner request cannot touch a replacement's state.

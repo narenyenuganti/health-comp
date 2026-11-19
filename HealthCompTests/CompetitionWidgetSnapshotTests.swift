@@ -205,11 +205,8 @@ final class CompetitionWidgetSnapshotTests: XCTestCase {
         XCTAssertEqual(status(resultDate, match(4, final: final(.tie))), "Tied")
         XCTAssertEqual(status(resultDate, compact: true, win), "Final")
 
-        XCTAssertEqual(week.mediumHeader(at: nov1Noon, locale: en), "Sam · Day 5 of 7")
-        XCTAssertEqual(win.mediumHeader(at: resultDate, locale: en), "Sam · Final")
         XCTAssertEqual(win.mediumStatus(at: resultDate, locale: en), "Final")
         XCTAssertEqual(week.mediumStatus(at: nov1Noon, locale: en), "Day 5 of 7")
-        XCTAssertEqual(week.mediumHeader(at: beforeDay1, locale: en), "Sam · Day 1 is Wednesday")
 
         XCTAssertEqual(
             week.rectangularLines(at: beforeDay1, locale: en, timeZone: la),

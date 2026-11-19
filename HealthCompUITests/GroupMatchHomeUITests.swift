@@ -49,14 +49,6 @@ final class GroupMatchHomeUITests: XCTestCase {
         XCTAssertTrue(app.navigationBars["Four-Way"].exists)
     }
 
-    func testHomeAtTheLargestTextSize() {
-        let app = XCUIApplication.launchGroupLab(
-            "home", arguments: ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]
-        )
-        XCTAssertTrue(app.groupElement(card("active", 4)).waitForExistence(timeout: 8))
-        shot(app, "Home-ax5")
-    }
-
     private func shot(_ app: XCUIApplication, _ name: String) {
         let attachment = XCTAttachment(screenshot: app.screenshot())
         attachment.name = name

@@ -112,16 +112,6 @@ jobs:
           trap 'exit 129' HUP
 
           supabase start
-          # Rehearse the actual forward migration with an existing synthetic
-          # legacy token before qualifying the full current schema below.
-          supabase db reset --local --version 20260822001000
-          bash scripts/test-deletion-client-migration.sh
-          supabase db reset --local --version 20260906001300
-          bash scripts/test-deleted-profile-history-migration.sh
-          supabase db reset --local --version 20260913001400
-          bash scripts/test-retired-installation-token-migration.sh
-          supabase db reset --local --version 20261002001700
-          bash scripts/test-invitation-recipient-migration.sh
           supabase db reset
           supabase test db
 

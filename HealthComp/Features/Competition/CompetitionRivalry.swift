@@ -132,27 +132,6 @@ func competitionRingRecords(_ weeks: [LocalCompetitionPresentation]) -> [Competi
     }
 }
 
-/// "Your edge: Stand, +7 a day. Sam’s edge: Exercise, +9 a day.", each half
-/// only where that side averages at least a point more.
-func competitionRingEdgeText(
-    _ records: [CompetitionRingRecord],
-    opponentName: String,
-    locale: Locale = .current
-) -> String? {
-    let names = ["Move", "Exercise", "Stand"]
-    guard records.count == names.count else { return nil }
-    let leads = records.map { ($0.averageYou - $0.averageThem).rounded() }
-    func line(_ who: String, _ lead: Double?, _ sign: Double) -> String? {
-        guard let lead, lead * sign >= 1, let ring = leads.firstIndex(of: lead) else { return nil }
-        return "\(who) edge: \(names[ring]), +\(competitionPointsText(lead * sign, locale: locale)) a day."
-    }
-    let parts = [
-        line("Your", leads.max(), 1),
-        line("\(opponentName)’s", leads.min(), -1),
-    ].compactMap { $0 }
-    return parts.isEmpty ? nil : parts.joined(separator: " ")
-}
-
 /// The decided week with the smallest margin; the later one on a tie.
 func competitionClosestFinish(_ weeks: [LocalCompetitionPresentation]) -> LocalCompetitionPresentation? {
     weeks.filter { $0.terminalResult.map { $0.outcome != .tie } ?? false }

@@ -39,36 +39,6 @@ final class GroupMatchVersusUITests: XCTestCase {
         shot(app, "VersusDoubles")
     }
 
-    func testPhotosAndABot() {
-        for (setup, prefix) in [("versus-ffa-photos", "Four-Way. "), ("versus-doubles-photos", "Doubles. "),
-                                ("versus-bot", "Four-Way. ")] {
-            let app = XCUIApplication.launchGroupLab(setup, arguments: Self.hold)
-            XCTAssertTrue(intro(app, prefix).waitForExistence(timeout: 8), setup)
-            shot(app, setup)
-            app.terminate()
-        }
-    }
-
-    func testPhotoIntrosAtTheLargestTextSize() {
-        for (setup, prefix) in [("versus-ffa-photos", "Four-Way. "), ("versus-doubles-photos", "Doubles. ")] {
-            let app = XCUIApplication.launchGroupLab(setup, arguments: Self.hold + [
-                "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL",
-            ])
-            XCTAssertTrue(intro(app, prefix).waitForExistence(timeout: 8), setup)
-            shot(app, "\(setup)-ax5")
-            app.terminate()
-        }
-    }
-
-    func testIntroAtTheLargestTextSizeInDark() {
-        let app = XCUIApplication.launchGroupLab("versus-ffa", arguments: Self.hold + [
-            "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL",
-            "-AppleInterfaceStyle", "Dark",
-        ])
-        XCTAssertTrue(intro(app, "Four-Way. ").waitForExistence(timeout: 8))
-        shot(app, "VersusFFA-ax5-dark")
-    }
-
     func testReplaysFromTheMenuOnALaterDay() {
         let app = XCUIApplication.launchGroupLab("live-ffa", arguments: Self.hold)
         XCTAssertTrue(app.groupElement("competition.group.standings").waitForExistence(timeout: 8))

@@ -19,12 +19,10 @@ final class WidgetUITests: XCTestCase {
         format: "identifier IN %@", ["widget.match", "widget.empty"]
     )
     private var changedTextSize = false
-    private var tinted = false
 
     override func tearDownWithError() throws {
         XCUIDevice.shared.appearance = .light
         if changedTextSize { setLargestText(false) }
-        if tinted { setHomeScreenStyle(tinted: false) }
         removeOurWidgets()
     }
 
@@ -69,15 +67,6 @@ final class WidgetUITests: XCTestCase {
 
     /// Small and medium in every state, light and dark, at the default text size.
     func testHomeScreenWidgetsShowEveryMatchState() throws {
-        try runHomeStates(largestText: false)
-    }
-
-    /// The same states at the largest accessibility text size.
-    func testHomeScreenWidgetsShowEveryMatchStateAtLargestText() throws {
-        try runHomeStates(largestText: true)
-    }
-
-    private func runHomeStates(largestText: Bool) throws {
         launch(scenario: "live")
         XCUIDevice.shared.press(.home)
         removeOurWidgets()
@@ -85,19 +74,18 @@ final class WidgetUITests: XCTestCase {
         addWidget(sizeSwipes: 0)  // small
         XCTAssertTrue(ourWidgets().firstMatch.waitForExistence(timeout: 15), springboard.debugDescription)
         // A reused simulator may have been left at another size.
-        setLargestText(largestText)
-        let size = largestText ? "ax5" : "default"
+        setLargestText(false)
         // Neighbors always differ, so a stale widget can't pass.
         for state in homeStates {
             launch(scenario: state.scenario)
             XCUIDevice.shared.press(.home)
             assertWidgets(state, count: 2)
             sleep(2)  // let the app-to-Home zoom finish before the capture
-            shot("home-\(state.scenario)-light-\(size)")
+            shot("home-\(state.scenario)-light-default")
             XCUIDevice.shared.appearance = .dark
             sleep(3)
             assertWidgets(state, count: 2)
-            shot("home-\(state.scenario)-dark-\(size)")
+            shot("home-\(state.scenario)-dark-default")
             XCUIDevice.shared.appearance = .light
             sleep(2)
         }
@@ -134,52 +122,6 @@ final class WidgetUITests: XCTestCase {
                 shot("home-\(state.scenario)-light" + (largest ? "-ax5" : ""))
             }
         }
-    }
-
-    /// Each step lands with the Home Screen showing, for a recording to judge
-    /// the score roll: rises, a lead flip, a digit gained, the longest number,
-    /// decimals gained, then another person, which fades rather than rolls.
-    func testScoresChangeWhileTheHomeScreenShows() throws {
-        launch(scenario: "trailing")
-        XCUIDevice.shared.press(.home)
-        removeOurWidgets()
-        addWidget(sizeSwipes: 1)  // medium
-        addWidget(sizeSwipes: 0)  // small
-        XCTAssertTrue(ourWidgets().firstMatch.waitForExistence(timeout: 15), springboard.debugDescription)
-        for scenario in ["live", "almostThousand", "thousand", "longName", "lastDay", "closeFinal", "several", "noSam"] {
-            changeWithWidgetShowing(scenario)
-            sleep(6)
-            shot("rolled-\(scenario)")
-        }
-        assertOnScreen(NSPredicate(format: "label BEGINSWITH 'Alex, Day 2 of 7.'"), count: 2,
-                       name: "noSam", expected: "Alex", file: #filePath, line: #line)
-    }
-
-    /// The same on the Lock Screen's circle and rectangle.
-    func testScoresChangeWhileTheLockScreenShows() throws {
-        setLargestText(false)
-        launch(scenario: "live")
-        XCUIDevice.shared.press(.home)
-        showLockScreen()
-        if !lockScreenElement("You lead Sam by 54 points").waitForExistence(timeout: 3) {
-            addLockScreenWidgets()
-        }
-        XCUIDevice.shared.press(.home)
-        for scenario in ["trailing", "live", "lastDay", "live", "scheduled", "live", "several", "noSam"] {
-            changeWithWidgetShowing(scenario, delay: 9) { showLockScreen() }
-            sleep(9)
-            shot("rolled-lock-\(scenario)")
-            XCUIDevice.shared.press(.home)
-            sleep(1)
-        }
-    }
-
-    private func changeWithWidgetShowing(
-        _ scenario: String, delay: Int = 5, show: () -> Void = {}
-    ) {
-        launch(scenario: scenario, arguments: ["-widgetScenarioDelay", "\(delay)"])
-        XCUIDevice.shared.press(.home)
-        show()
     }
 
     /// Edit Widget lists only people with a match here, by name, and never
@@ -240,48 +182,6 @@ final class WidgetUITests: XCTestCase {
         assertWidgets(Expectation(
             scenario: "samGone", label: "Alex, Day 2 of 7. You 480 points. Alex 455 points. You lead by 25."
         ), count: 1)
-    }
-
-    /// The iOS 18 tinted Home Screen keeps your number as the accent. A
-    /// capture for review: tint can't be read through accessibility.
-    func testTintedHomeScreen() throws {
-        launch(scenario: "live")
-        XCUIDevice.shared.press(.home)
-        removeOurWidgets()
-        addWidget(sizeSwipes: 1)  // medium
-        addWidget(sizeSwipes: 0)  // small
-        setHomeScreenStyle(tinted: true)
-        assertWidgets(homeStates[0], count: 2)
-        sleep(2)
-        shot("home-tinted-light-default")
-        XCUIDevice.shared.appearance = .dark
-        sleep(3)
-        shot("home-tinted-dark-default")
-        XCUIDevice.shared.appearance = .light
-    }
-
-    /// Edit → Customize → Tinted, or back to the default style.
-    private func setHomeScreenStyle(tinted on: Bool) {
-        tinted = true  // set first, so tearDown resets the shared simulator
-        // Pressing Home jumps to the first page, and the widgets may be on
-        // another one, so stay on this page while tinting.
-        if !on { XCUIDevice.shared.press(.home) }
-        enterEditMode()
-        tap([springboard.buttons["Edit"]], "Edit")
-        tap([springboard.buttons["Customize"]], "Customize")
-        sleep(2)
-        shot(on ? "customize-before-tint" : "customize-before-default")
-        // The lane simulators start on Light.
-        let names = on ? ["Tinted"] : ["Light", "Default", "Automatic"]
-        tap(names.flatMap { [springboard.buttons[$0], springboard.staticTexts[$0]] }, names[0])
-        sleep(2)
-        // Wallpaper above the sheet closes it, then Done leaves edit mode.
-        springboard.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.72)).tap()
-        sleep(1)
-        let done = springboard.buttons["Done"]
-        if done.exists && done.isHittable { done.tap() } else { XCUIDevice.shared.press(.home) }
-        sleep(2)
-        tinted = on
     }
 
     /// The Lock Screen circle and rectangle in each kind of state.

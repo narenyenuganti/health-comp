@@ -2,7 +2,6 @@
 import CompetitionCore
 import ComposableArchitecture
 import SwiftUI
-import UIKit
 
 /// `-groupLab <setup>` in the `group-matches` Test Lab scenario.
 enum GroupMatchLabSetup: String, CaseIterable, Sendable {
@@ -21,8 +20,6 @@ enum GroupMatchLabSetup: String, CaseIterable, Sendable {
     case inviteFFA = "invite-ffa"
     case versusFFA = "versus-ffa"
     case versusDoubles = "versus-doubles"
-    case versusFFAPhotos = "versus-ffa-photos"
-    case versusDoublesPhotos = "versus-doubles-photos"
     case versusBot = "versus-bot"
     case home
     case liveFFA = "live-ffa"
@@ -43,7 +40,7 @@ enum GroupMatchLabSetup: String, CaseIterable, Sendable {
 
 extension GroupMatchLabSetup {
     var isVersus: Bool {
-        [.versusFFA, .versusDoubles, .versusFFAPhotos, .versusDoublesPhotos, .versusBot].contains(self)
+        [.versusFFA, .versusDoubles, .versusBot].contains(self)
     }
 }
 
@@ -204,8 +201,8 @@ enum GroupMatchFixtures {
                 scores: week.merging([.leo: [380, 400, 380, 400, 380, 360, 348]]) { $1 },
                 isFrozen: true
             )
-        case .versusFFA, .versusFFAPhotos: match(11, .fourWay, .scheduled, ffaLineup)
-        case .versusDoubles, .versusDoublesPhotos: doubles(12, .scheduled)
+        case .versusFFA: match(11, .fourWay, .scheduled, ffaLineup)
+        case .versusDoubles: doubles(12, .scheduled)
         case .versusBot: match(27, .fourWay, .scheduled, [.you, .sam, .erratic, .leo])
         case .formatPicker, .lineupFFA, .lineupDoubles, .botPicker, .home, .day, .history, .historyDuels:
             nil
@@ -258,23 +255,6 @@ enum GroupMatchFixtures {
             timeZoneIdentifier: duels.timeZoneIdentifier,
             source: duels.source
         )
-    }
-
-    /// Placeholder portraits for the photo intros: you, Sam and Priya; Leo
-    /// keeps his initial, as in the mockup.
-    static func photoData(_ setup: GroupMatchLabSetup) -> [UUID: Data] {
-        guard setup == .versusFFAPhotos || setup == .versusDoublesPhotos else { return [:] }
-        let tones: [(Player, UIColor)] = [(.you, .systemTeal), (.sam, .systemPurple), (.priya, .systemPink)]
-        return Dictionary(uniqueKeysWithValues: tones.map { player, tone in
-            let image = UIGraphicsImageRenderer(size: CGSize(width: 400, height: 400)).image { context in
-                tone.setFill()
-                context.fill(CGRect(x: 0, y: 0, width: 400, height: 400))
-                UIColor.white.withAlphaComponent(0.85).setFill()
-                context.cgContext.fillEllipse(in: CGRect(x: 130, y: 70, width: 140, height: 160))
-                context.cgContext.fillEllipse(in: CGRect(x: 60, y: 250, width: 280, height: 260))
-            }
-            return (player.profileID, image.jpegData(compressionQuality: 0.8)!)
-        })
     }
 
     /// Home's cards: every state once, in the order Home lists them.
@@ -395,7 +375,6 @@ struct GroupMatchTestLabView: View {
         let first = GroupMatchFixtures.publication(revision: 1, setup: setup)
         let answer = GroupMatchFixtures.publication(revision: 2, setup: setup)
         let left = GroupMatchFixtures.publication(revision: 2, setup: setup, youLeft: true)
-        let photos = GroupMatchFixtures.photoData(setup)
         let state = MainTabFeature.State(
             competition: CompetitionFeature.State(
                 publication: first,
@@ -418,7 +397,7 @@ struct GroupMatchTestLabView: View {
                 waitUntil: { _ in },
                 stop: {},
                 loadProfilePhotos: { _ in throw CompetitionRemoteFailure.notFound },
-                cachedProfilePhotoData: { photos[$0].map { (data: $0, version: UUID()) } },
+                cachedProfilePhotoData: { _ in nil },
                 groupMatchCommand: { command in
                     if case .leave = command { return left }
                     return answer
@@ -481,8 +460,7 @@ struct GroupMatchTestLabView: View {
             NavigationStack {
                 CompetitionHistoryView(publication: GroupMatchFixtures.historyPublication(duelsOnly: setup == .historyDuels))
             }
-        case .versusFFA, .versusDoubles, .versusFFAPhotos, .versusDoublesPhotos, .versusBot:
-            // Opened a beat after launch, so the photos are in when the intro decides.
+        case .versusFFA, .versusDoubles, .versusBot:
             MainTabView(store: store)
                 .task {
                     try? await Task.sleep(for: .seconds(1))

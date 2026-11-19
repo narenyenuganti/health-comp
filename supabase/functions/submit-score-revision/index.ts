@@ -296,11 +296,6 @@ function canonicalScoreJSON(score: ScoreRequest): string {
   });
 }
 
-export function canonicalScoreRevisionJSON(value: unknown): string | null {
-  const parsed = parseScore(value);
-  return parsed ? canonicalScoreJSON(parsed) : null;
-}
-
 function parseProof(value: unknown): AppAttestProof | null {
   if (!value || typeof value !== "object" || Array.isArray(value)) return null;
   const proof = value as Record<string, unknown>;

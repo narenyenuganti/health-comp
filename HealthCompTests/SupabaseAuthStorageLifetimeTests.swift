@@ -84,58 +84,6 @@ final class SupabaseAuthStorageLifetimeTests: XCTestCase {
         XCTAssertThrowsError(try storage.retrieve(key: key))
     }
 
-    func testMissingVerifierCannotConfirmStorageRetirement() throws {
-        let underlying = SupabaseAuthKeychainStorage(service: "HealthCompTests.Lifetime.\(UUID())")
-        let key = "synthetic-session"
-        defer { try? underlying.remove(key: key) }
-        let storage = SupabaseAuthStorageLifetime(underlying: underlying)
-        let value = Data("synthetic-existing-value".utf8)
-        try storage.store(key: key, value: value)
-        XCTAssertThrowsError(try storage.verifyRemovalAndRetire())
-        XCTAssertEqual(try storage.retrieve(key: key), value)
-        XCTAssertEqual(try underlying.retrieve(key: key), value)
-    }
-
-    func testVerifiedRetirementClosesOldStorageWithoutTouchingNewOwner() throws {
-        let underlying = SupabaseAuthKeychainStorage(service: "HealthCompTests.Lifetime.\(UUID())")
-        let key = "synthetic-session"
-        defer { try? underlying.remove(key: key) }
-        let backing = FailClosedAuthLocalStorage(underlying: underlying, sessionKey: { key })
-        let old = SupabaseAuthStorageLifetime(
-            underlying: backing,
-            prepareRemoval: { backing.prepareForRemovalVerification() },
-            verifyRemoval: { try backing.verifyLastRemoval() }
-        )
-        try old.prepareForRemovalVerification()
-        try old.remove(key: key)
-        try old.verifyRemovalAndRetire()
-        let fresh = SupabaseAuthStorageLifetime(underlying: underlying)
-        let value = Data("synthetic-new-owner".utf8)
-        try fresh.store(key: key, value: value)
-        XCTAssertThrowsError(try old.store(key: key, value: Data()))
-        XCTAssertThrowsError(try old.remove(key: key))
-        XCTAssertThrowsError(try old.retrieve(key: key))
-        XCTAssertNoThrow(try old.verifyRemovalAndRetire())
-        XCTAssertEqual(try fresh.retrieve(key: key), value)
-    }
-
-    func testFailedVerificationAllowsCleanupRetryButDoesNotConfirmRetirement() throws {
-        let underlying = SupabaseAuthKeychainStorage(service: "HealthCompTests.Lifetime.\(UUID())")
-        let key = "synthetic-session"
-        defer { try? underlying.remove(key: key) }
-        let backing = FailClosedAuthLocalStorage(underlying: underlying, sessionKey: { key })
-        let storage = SupabaseAuthStorageLifetime(
-            underlying: backing,
-            prepareRemoval: { backing.prepareForRemovalVerification() },
-            verifyRemoval: { try backing.verifyLastRemoval() }
-        )
-        XCTAssertThrowsError(try storage.verifyRemovalAndRetire())
-        try storage.prepareForRemovalVerification()
-        try storage.remove(key: key)
-        XCTAssertNoThrow(try storage.verifyRemovalAndRetire())
-        XCTAssertThrowsError(try storage.store(key: key, value: Data()))
-    }
-
     func testRetiredCleanupCannotResetOrVerifyBackingRemovalState() throws {
         let underlying = SupabaseAuthKeychainStorage(service: "HealthCompTests.Lifetime.\(UUID())")
         let key = "synthetic-session"
