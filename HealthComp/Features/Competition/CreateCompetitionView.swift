@@ -21,7 +21,7 @@ struct CreateCompetitionView: View {
     /// Your matches, to dim a friend you can't challenge now.
     var competitions: [LocalCompetitionPresentation] = []
     var chooseFriend: ((FriendPerson) -> Void)? = nil
-    /// Closes the sheet on Friends' search; nil omits the row.
+    /// Opens people search; nil omits the row.
     var searchPeople: (() -> Void)? = nil
     /// Practice against a bot in Duel; nil omits the section.
     var practice: CompetitionPracticeStart? = nil
@@ -237,19 +237,8 @@ struct CreateCompetitionView: View {
             if canGoBack {
                 // Back to the friend list: a wrong pick or a stray tap on
                 // Paste Their Challenge Link isn't a dead end.
-                Button(action: goBack) {
-                    Image(systemName: "chevron.left")
-                        .font(.footnote.weight(.bold))
-                        .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
-                        .foregroundStyle(Theme.secondary)
-                        .frame(width: 30, height: 30)
-                        .background(Theme.control, in: Circle())
-                        .frame(width: 44, height: 44)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel("Back")
-                .accessibilityIdentifier("competition.create.back")
+                CompetitionDrawerBackButton(action: goBack)
+                    .accessibilityIdentifier("competition.create.back")
             } else {
             // The opponent's slot: empty, then filled in neutral ink once
             // the challenge is sent.

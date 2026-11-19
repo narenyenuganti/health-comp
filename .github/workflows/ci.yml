@@ -239,6 +239,7 @@ jobs:
             FriendsUITests/testAcceptAndDeclineARequest
             ChallengeFriendUITests/testPickAFriendConfirmAndSend
             ChallengeFriendUITests/testDuelOffersPlayingABotAndBackReturnsToThePicker
+            ChallengeFriendUITests/testSearchPeopleBackReturnsOneStepToChallengeSheet
             GroupMatchCreateUITests/testFormatPickerOffersEveryFormat
             GroupMatchJoinUITests/testInviteShowsTheLineupAndAnswers
             GroupMatchHomeUITests/testHomeCardsCarryTheirState

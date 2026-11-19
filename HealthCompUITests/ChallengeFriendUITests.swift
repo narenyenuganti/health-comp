@@ -107,12 +107,78 @@ final class ChallengeFriendUITests: XCTestCase {
         launch(.challengeFriend)
         openSheet()
         app.buttons["competition.create.search-people"].tap()
-        XCTAssertTrue(app.navigationBars["Friends"].waitForExistence(timeout: 5))
+        XCTAssertTrue(element("friends.screen").waitForExistence(timeout: 5))
+        XCTAssertFalse(app.navigationBars["Friends"].exists)
+        XCTAssertTrue(app.buttons["competition.create.back"].exists)
+        XCTAssertTrue(app.buttons["competition.create.done"].exists)
         XCTAssertFalse(element("competition.create.card").exists)
         XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
         let search = app.textFields["friends.search.field"]
         type("marc", into: search)
         expect(app.buttons["friends.result.d1000000-0000-4000-8000-0000000000c1"], field: search)
+    }
+
+    func testSearchPeopleBackReturnsOneStepToChallengeSheet() {
+        launch(.challengeFriend)
+        openSheet()
+
+        // Paste Their Challenge Link -> Back returns one step to the Challenge sheet.
+        app.buttons["competition.create.paste-link"].tap()
+        XCTAssertTrue(recipientCodeField.waitForExistence(timeout: 3))
+        let drawerBack = app.buttons["competition.create.back"]
+        let pasteLinkBackFrame = drawerBack.frame
+        drawerBack.tap()
+        XCTAssertTrue(app.buttons["competition.create.search-people"].waitForExistence(timeout: 3))
+        XCTAssertTrue(element("competition.create.friends").exists)
+
+        // Search People -> Friends -> person profile -> Back -> Friends -> Back returns one step to the Challenge sheet,
+        // using the exact same drawer Back button geometry at every step.
+        app.buttons["competition.create.search-people"].tap()
+        XCTAssertTrue(element("friends.screen").waitForExistence(timeout: 5))
+        XCTAssertFalse(app.navigationBars["Friends"].exists)
+        XCTAssertTrue(drawerBack.waitForExistence(timeout: 3))
+        XCTAssertEqual(drawerBack.frame.minX, pasteLinkBackFrame.minX, accuracy: 1)
+        XCTAssertEqual(drawerBack.frame.minY, pasteLinkBackFrame.minY, accuracy: 1)
+        XCTAssertEqual(drawerBack.frame.width, pasteLinkBackFrame.width, accuracy: 1)
+        XCTAssertEqual(drawerBack.frame.height, pasteLinkBackFrame.height, accuracy: 1)
+
+        let search = app.textFields["friends.search.field"]
+        type("marc", into: search)
+        let marcus = app.buttons["friends.result.d1000000-0000-4000-8000-0000000000c1"]
+        expect(marcus, field: search)
+        marcus.tap()
+        XCTAssertTrue(element("friends.person").waitForExistence(timeout: 5))
+        XCTAssertTrue(drawerBack.exists)
+        XCTAssertEqual(drawerBack.frame.minX, pasteLinkBackFrame.minX, accuracy: 1)
+        XCTAssertEqual(drawerBack.frame.minY, pasteLinkBackFrame.minY, accuracy: 1)
+        drawerBack.tap()
+        XCTAssertTrue(element("friends.screen").waitForExistence(timeout: 5))
+        drawerBack.tap()
+
+        XCTAssertTrue(element("competition.create.card").waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["competition.create.search-people"].exists)
+        XCTAssertTrue(element("competition.create.friends").exists)
+
+        // Re-opening Search People starts with a clean search field, and challenging from a profile lands in the sheet.
+        app.buttons["competition.create.search-people"].tap()
+        XCTAssertTrue(element("friends.screen").waitForExistence(timeout: 5))
+        XCTAssertEqual(fieldText(search), "")
+        app.keyboards.buttons.matching(NSPredicate(format: "label ==[c] 'search'")).firstMatch.tap()
+        XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 3))
+        let kai = app.buttons["friends.friend.\(Person.kai)"]
+        XCTAssertTrue(kai.waitForExistence(timeout: 5))
+        scrollTo(kai)
+        kai.tap()
+        let challengeKai = app.buttons["friends.person.challenge"]
+        XCTAssertTrue(challengeKai.waitForExistence(timeout: 5))
+        challengeKai.tap()
+        let recipientName = app.staticTexts["competition.create.recipient-name"]
+        XCTAssertTrue(recipientName.waitForExistence(timeout: 3))
+        XCTAssertEqual(recipientName.label, "Challenge Kai Ito")
+        drawerBack.tap()
+        XCTAssertTrue(app.buttons["competition.create.search-people"].waitForExistence(timeout: 3))
+        app.buttons["competition.create.done"].tap()
+        XCTAssertTrue(app.buttons["competition.create.done"].waitForNonExistence(timeout: 3))
     }
 
     func testPasteTheirLinkStillFindsThemFromItsRow() {
@@ -559,7 +625,7 @@ final class ChallengeFriendUITests: XCTestCase {
     }
 
     private func back() {
-        app.navigationBars.buttons.element(boundBy: 0).tap()
+        app.navigationBars.element(boundBy: app.navigationBars.count - 1).buttons.element(boundBy: 0).tap()
     }
 
     private func scrollTo(_ target: XCUIElement) {

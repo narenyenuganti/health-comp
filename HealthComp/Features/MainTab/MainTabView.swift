@@ -2,6 +2,7 @@ import CompetitionCore
 import ComposableArchitecture
 import Foundation
 import SwiftUI
+import UIKit
 
 struct MainTabView: View {
     let store: StoreOf<MainTabFeature>
@@ -10,6 +11,7 @@ struct MainTabView: View {
 
     @Environment(\.scenePhase) private var scenePhase
     @State private var isChallengePresented = false
+    @State private var challengeSheetRoutes: [CompetitionHomeRoute] = []
     @AppStorage(CompetitionMotionSeen.storageKey)
     private var motionSeen = CompetitionMotionSeen()
     @AppStorage(CompetitionDismissedChallenges.storageKey)
@@ -133,6 +135,7 @@ struct MainTabView: View {
         }
         // A Friends push opens Friends in front of everything.
         .onChange(of: store.friendsRouteCount) { _, _ in
+            challengeSheetRoutes = []
             isChallengePresented = false
             isNewMatchPresented = false
             isPracticePresented = false
@@ -225,16 +228,12 @@ struct MainTabView: View {
                             store.send(.competition(.createInviteTapped))
                         },
                         isChallengePresented: $isChallengePresented,
+                        presentsChallengeSheet: false,
                         friends: store.competition.friends.list?.friends ?? [],
                         chooseFriend: { friend in
                             store.send(.competition(.challengeRecipientChosen(.init(
                                 AuthenticatedProfile(id: friend.id, displayName: friend.displayName)
                             ))))
-                        },
-                        searchPeople: {
-                            isChallengePresented = false
-                            store.send(.competition(.friends(.searchFocusRequested(true))))
-                            store.send(.friendsPresentationChanged(true))
                         },
                         selectCompetition: {
                             store.send(.pathChanged([$0]))
@@ -260,6 +259,9 @@ struct MainTabView: View {
                         openRecap: { recapPeriod = $0 },
                         isUpdating: isLogoUpdating
                     )
+                    .sheet(isPresented: $isChallengePresented, onDismiss: dismissChallengeSheet) {
+                        challengeSheet(publication: publication)
+                    }
                     .transition(.identity)
                 }
             }
@@ -391,19 +393,148 @@ struct MainTabView: View {
         )
     }
 
+    private var challengeSheetStack: Binding<[CompetitionHomeRoute]> {
+        CompetitionHomeRoute.challengeSheetStack(
+            routes: $challengeSheetRoutes,
+            isPresented: $isChallengePresented,
+            closeFriends: { store.send(.competition(.friends(.closed))) },
+            openCompetition: { store.send(.pathChanged([$0])) }
+        )
+    }
+
+    private func dismissChallengeSheet() {
+        let hadFriends = challengeSheetRoutes.contains(.friends)
+        challengeSheetRoutes = []
+        if hadFriends {
+            store.send(.competition(.friends(.closed)))
+        }
+        store.send(.competition(.challengeSheetDismissed))
+    }
+
+    private func popChallengeSheet() {
+        guard !challengeSheetStack.wrappedValue.isEmpty else { return }
+        challengeSheetStack.wrappedValue.removeLast()
+    }
+
+    private func challengeSheet(publication: LocalCompetitionPublication) -> some View {
+        NavigationStack(path: challengeSheetStack) {
+            CreateCompetitionView(
+                status: store.competition.challengeSheetStatus,
+                timeZoneIdentifier: publication.timeZoneIdentifier,
+                evaluatedAt: publication.evaluatedAt,
+                recipientCode: Binding(
+                    get: { store.competition.inviteRecipientCode },
+                    set: { store.send(.competition(.inviteRecipientCodeChanged($0))) }
+                ),
+                recipient: store.competition.inviteRecipient,
+                recipientStatus: store.competition.inviteRecipientStatus,
+                withSleep: Binding(
+                    get: { store.competition.inviteWithSleep },
+                    set: { store.send(.competition(.inviteSleepToggled($0))) }
+                ),
+                senderName: store.competition.ownProfile?.displayName,
+                ownChallengeLink: store.competition.challengeLink,
+                friends: store.competition.friends.list?.friends ?? [],
+                competitions: publication.dashboard.competitions,
+                chooseFriend: { friend in
+                    store.send(.competition(.challengeRecipientChosen(.init(
+                        AuthenticatedProfile(id: friend.id, displayName: friend.displayName)
+                    ))))
+                },
+                searchPeople: {
+                    store.send(.competition(.friends(.searchFocusRequested(true))))
+                    challengeSheetRoutes = [.friends]
+                },
+                practice: practiceStart(publication),
+                findRecipient: { store.send(.competition(.findInviteRecipientTapped)) },
+                create: { store.send(.competition(.createInviteTapped)) },
+                openChallenge: { id in
+                    let hadFriends = challengeSheetRoutes.contains(.friends)
+                    challengeSheetRoutes = []
+                    isChallengePresented = false
+                    if hadFriends { store.send(.competition(.friends(.closed))) }
+                    store.send(.pathChanged([id]))
+                }
+            )
+            .background {
+                DrawerInteractivePop(isEnabled: !challengeSheetRoutes.isEmpty)
+            }
+            .toolbar(.hidden, for: .navigationBar)
+            .navigationDestination(for: CompetitionHomeRoute.self) { route in
+                switch route {
+                case .friends:
+                    VStack(spacing: 0) {
+                        CompetitionDrawerHeader(title: "Friends", back: popChallengeSheet) {
+                            CompetitionDrawerCloseButton { isChallengePresented = false }
+                                .accessibilityIdentifier("competition.create.done")
+                        }
+                        FriendsView(store: store)
+                    }
+                    .background(Theme.ground)
+                    .toolbar(.hidden, for: .navigationBar)
+                case let .person(identity):
+                    personScreen(
+                        identity,
+                        publication: publication,
+                        inChallengeSheet: true,
+                        drawerBack: popChallengeSheet
+                    )
+                    .toolbar(.hidden, for: .navigationBar)
+                case let .profile(identity):
+                    profileScreen(
+                        identity,
+                        publication: publication,
+                        inChallengeSheet: true,
+                        drawerBack: popChallengeSheet
+                    )
+                    .toolbar(.hidden, for: .navigationBar)
+                case let .records(identity):
+                    VStack(spacing: 0) {
+                        CompetitionDrawerHeader(title: "Records", back: popChallengeSheet) {
+                            CompetitionDrawerCloseButton { isChallengePresented = false }
+                                .accessibilityIdentifier("competition.create.done")
+                        }
+                        CompetitionRecordsView(publication: publication, opponentIdentity: identity)
+                    }
+                    .background(Theme.ground)
+                    .toolbar(.hidden, for: .navigationBar)
+                case .history, .ownProfile, .ownBadges, .ownRecords, .competition:
+                    EmptyView()
+                }
+            }
+        }
+        .tint(Theme.ink)
+        .presentationDetents([.large])
+        .presentationDragIndicator(.visible)
+        .presentationBackground(Theme.ground)
+        .environment(\.openCompetitionProfile, nil)
+    }
+
     /// Their weeks with you. Someone with no finished week gets their
     /// profile, when search or Friends has told us who they are.
     @ViewBuilder
     private func personScreen(
         _ identity: String,
-        publication: LocalCompetitionPublication
+        publication: LocalCompetitionPublication,
+        inChallengeSheet: Bool = false,
+        drawerBack: (() -> Void)? = nil
     ) -> some View {
         if let id = RemoteCompetitionOpponentIdentity.profileID(identity),
            store.competition.friends.people[id] != nil,
            competitionRivalryWeeks(publication.dashboard.competitions, opponentIdentity: identity).isEmpty {
-            profileScreen(identity, publication: publication)
+            profileScreen(
+                identity,
+                publication: publication,
+                inChallengeSheet: inChallengeSheet,
+                drawerBack: drawerBack
+            )
         } else {
-            matchedPersonScreen(identity, publication: publication)
+            matchedPersonScreen(
+                identity,
+                publication: publication,
+                inChallengeSheet: inChallengeSheet,
+                drawerBack: drawerBack
+            )
         }
     }
 
@@ -412,7 +543,9 @@ struct MainTabView: View {
     @ViewBuilder
     private func profileScreen(
         _ identity: String,
-        publication: LocalCompetitionPublication
+        publication: LocalCompetitionPublication,
+        inChallengeSheet: Bool = false,
+        drawerBack: (() -> Void)? = nil
     ) -> some View {
         let competitions = publication.dashboard.competitions
         let theirs = competitions.filter { $0.opponentIdentity == identity }
@@ -443,6 +576,11 @@ struct MainTabView: View {
                 isBlocked: isBlocked,
                 unblock: { store.send(.competition(.unblockTapped(id))) },
                 challenge: {
+                    if inChallengeSheet {
+                        let hadFriends = challengeSheetRoutes.contains(.friends)
+                        challengeSheetRoutes = []
+                        if hadFriends { store.send(.competition(.friends(.closed))) }
+                    }
                     if let latest = rivalry.record?.latest {
                         challengeAgain(latest.id)
                     } else {
@@ -456,7 +594,8 @@ struct MainTabView: View {
                 rivalry: rivalry,
                 career: store.competition.careers[id],
                 ownCareer: competitionOwnCareer(competitions).career,
-                muteButton: theirs.first.flatMap(muteButton(for:))
+                muteButton: theirs.first.flatMap(muteButton(for:)),
+                drawerBack: drawerBack
             )
             .task(id: identity) {
                 guard publication.source == .remoteParticipants else { return }
@@ -464,13 +603,20 @@ struct MainTabView: View {
                 store.send(.competition(.careerRequested(id)))
             }
         } else {
-            matchedPersonScreen(identity, publication: publication)
+            matchedPersonScreen(
+                identity,
+                publication: publication,
+                inChallengeSheet: inChallengeSheet,
+                drawerBack: drawerBack
+            )
         }
     }
 
     private func matchedPersonScreen(
         _ identity: String,
-        publication: LocalCompetitionPublication
+        publication: LocalCompetitionPublication,
+        inChallengeSheet: Bool = false,
+        drawerBack: (() -> Void)? = nil
     ) -> some View {
         let depth = store.personPlace.depth
         let profileID = RemoteCompetitionOpponentIdentity.profileID(identity)
@@ -484,20 +630,30 @@ struct MainTabView: View {
         return CompetitionPersonView(
             publication: publication,
             opponentIdentity: identity,
-            cameFrom: depth > 0 && depth <= store.path.count ? store.path[depth - 1] : nil,
+            cameFrom: !inChallengeSheet && depth > 0 && depth <= store.path.count
+                ? store.path[depth - 1]
+                : nil,
             isBlocked: isBlocked,
             unblock: profileID.map { id in { store.send(.competition(.unblockTapped(id))) } },
             muteButton: publication.dashboard.competitions
                 .first { $0.opponentIdentity == identity }
                 .flatMap(muteButton(for:)),
-            challenge: challengeAgain,
+            challenge: { id in
+                if inChallengeSheet {
+                    let hadFriends = challengeSheetRoutes.contains(.friends)
+                    challengeSheetRoutes = []
+                    if hadFriends { store.send(.competition(.friends(.closed))) }
+                }
+                challengeAgain(id)
+            },
             friend: profileID.flatMap { id in
                 guard publication.source == .remoteParticipants,
                       let name = publication.dashboard.competitions
                         .first(where: { $0.opponentIdentity == identity })?.opponentDisplayName
                 else { return nil }
                 return friendControls(id, displayName: name)
-            }
+            },
+            drawerBack: drawerBack
         )
         // Your own blocks only; the phone never learns who blocked you.
         .task(id: identity) {
@@ -980,5 +1136,37 @@ private struct CompetitionClosedChallengeView: View {
         .navigationBarTitleDisplayMode(.inline)
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("competition.closed")
+    }
+}
+
+/// Keeps the left-edge swipe-back gesture active while the Challenge drawer's
+/// pushed screens hide the system navigation bar in favour of the drawer bar.
+private struct DrawerInteractivePop: UIViewControllerRepresentable {
+    let isEnabled: Bool
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    func makeUIViewController(context: Context) -> UIViewController {
+        UIViewController()
+    }
+
+    func updateUIViewController(_ controller: UIViewController, context: Context) {
+        context.coordinator.isEnabled = isEnabled
+        DispatchQueue.main.async {
+            guard let nav = controller.navigationController,
+                  let pop = nav.interactivePopGestureRecognizer else { return }
+            if pop.delegate !== context.coordinator {
+                pop.delegate = context.coordinator
+            }
+            pop.isEnabled = isEnabled
+        }
+    }
+
+    final class Coordinator: NSObject, UIGestureRecognizerDelegate {
+        var isEnabled = false
+
+        func gestureRecognizerShouldBegin(_ gestureRecognizer: UIGestureRecognizer) -> Bool {
+            isEnabled
+        }
     }
 }
