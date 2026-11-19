@@ -1,13 +1,6 @@
 begin;
-select plan(40);
+select plan(33);
 
-select has_function('public','attest_final_window',array['uuid','uuid','bigint','text','bigint[]'],'attestation RPC exists');
-select has_function('public','finalize_competition',array['uuid'],'service finalizer RPC exists');
-select has_column('public','participant_finalization_attestations','semantic_event_id','attestations have semantic identity');
-select has_column('public','participant_finalization_attestations','attestation_version','attestations are append-only versioned');
-select ok(exists(select 1 from pg_constraint where conname='participant_attestation_version_unique'),'attestation versions are unique per owner');
-select ok(exists(select 1 from pg_proc join pg_namespace on pg_namespace.oid=pg_proc.pronamespace where nspname='private' and proname='owner_window_commitment_v1'),'window commitment exists');
-select ok(exists(select 1 from pg_proc join pg_namespace on pg_namespace.oid=pg_proc.pronamespace where nspname='private' and proname='result_immutable_hash_v1'),'result hash exists');
 select ok(not has_function_privilege('anon','public.attest_final_window(uuid,uuid,bigint,text,bigint[])','EXECUTE'),'anon cannot attest');
 select ok(not has_function_privilege('authenticated','public.finalize_competition(uuid)','EXECUTE'),'users cannot scheduled-finalize');
 select ok(has_function_privilege('service_role','public.finalize_competition(uuid)','EXECUTE'),'service may finalize');

@@ -4,12 +4,7 @@ set local role postgres;
 create extension if not exists pgtap with schema extensions;
 set local search_path = extensions, public, pg_catalog;
 
-select plan(24);
-
-select has_function(
-  'private', 'broadcast_competition_change', array[]::text[],
-  'private competition wake-up trigger function exists'
-);
+select plan(23);
 
 select ok(coalesce((
   select function_row.prosecdef

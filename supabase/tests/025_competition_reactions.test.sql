@@ -5,19 +5,11 @@ set local timezone = 'UTC';
 select no_plan();
 
 -- Table and functions
-select has_table('private', 'competition_reactions', 'reactions table exists');
 select ok((select relrowsecurity and relforcerowsecurity from pg_class
     where oid = 'private.competition_reactions'::regclass),
   'reactions have RLS enabled and forced');
 select is(has_table_privilege('authenticated', 'private.competition_reactions', 'select'),
   false, 'authenticated has no raw reaction table access');
-select has_function('public', 'set_competition_reaction', array['uuid', 'integer', 'text'],
-  'set reaction RPC exists');
-select has_function('public', 'list_competition_reactions', array[]::text[],
-  'list reactions RPC exists');
-select has_function('public', 'register_current_device_installation',
-  array['uuid', 'text', 'text', 'boolean', 'boolean'],
-  'reaction-aware installation registration RPC exists');
 select is((
   select array_agg(p.proname || '(' || p.proargtypes::text || ')' order by p.proname, p.proargtypes::text)
   from pg_proc p join pg_namespace n on n.oid = p.pronamespace

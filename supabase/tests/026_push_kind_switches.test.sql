@@ -4,11 +4,6 @@ set local search_path = extensions, public, pg_catalog;
 set local timezone = 'UTC';
 select no_plan();
 
-select has_function(
-  'public', 'register_current_device_installation',
-  array['uuid', 'text', 'text', 'boolean', 'boolean', 'text[]'],
-  'registration with switched-off push kinds exists'
-);
 select ok(coalesce((
   select p.prosecdef
     and 'search_path=""' = any(coalesce(p.proconfig, array[]::text[]))

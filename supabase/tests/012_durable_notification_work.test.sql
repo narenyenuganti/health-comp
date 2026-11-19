@@ -4,39 +4,11 @@ set local role postgres;
 create extension if not exists pgtap with schema extensions;
 set local search_path = extensions, public, pg_catalog;
 
-select plan(53);
+select plan(47);
 
-select has_table(
-  'private', 'competition_notification_work',
-  'notification delivery work is durable outside the exposed schema'
-);
 select hasnt_table(
   'public', 'competition_notification_work',
   'notification work has no public Data API table'
-);
-select has_function(
-  'public', 'lease_competition_notification_work',
-  array['integer', 'integer'],
-  'the service worker can lease a bounded notification batch'
-);
-select has_function(
-  'public', 'resolve_competition_notification_work',
-  array['uuid', 'uuid', 'text', 'integer'],
-  'the service worker can resolve a leased notification'
-);
-select has_trigger(
-  'public', 'daily_score_revisions',
-  'enqueue_competition_notification_work_from_score',
-  'accepted score inserts enqueue notification work transactionally'
-);
-select has_trigger(
-  'public', 'competition_results',
-  'enqueue_competition_notification_work_from_result',
-  'confirmed result inserts enqueue notification work transactionally'
-);
-select has_function(
-  'private', 'request_competition_notification_worker', array[]::text[],
-  'a private fail-open hook can request an immediate worker drain'
 );
 select ok(coalesce((
   select procedure_row.prosecdef

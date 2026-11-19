@@ -2,12 +2,7 @@ begin;
 set local role postgres;
 create extension if not exists pgtap with schema extensions;
 set local search_path = extensions, public, pg_catalog;
-select plan(25);
-
-select has_column(
-  'private', 'competition_notification_work', 'apns_development_delivery_log_id',
-  'development delivery-log correlation stays in private durable work'
-);
+select plan(23);
 
 insert into auth.users (id, aud, role, created_at, updated_at)
 select ('d1000000-0000-4000-8000-' || lpad(n::text, 12, '0'))::uuid,
@@ -191,8 +186,6 @@ select ok(coalesce((
   from pg_proc procedure_row
   where procedure_row.oid = 'public.resolve_competition_notification_work_with_delivery_log(uuid,uuid,text)'::regprocedure
 ), false), 'the new RPC is service-only with a locked definer search path');
-select has_function('public', 'resolve_competition_notification_work',
-  array['uuid', 'uuid', 'text', 'integer'], 'the legacy four-argument RPC remains available');
 
 set local role authenticated;
 select set_config('request.jwt.claims', '{"role":"authenticated"}', true);

@@ -422,120 +422,6 @@ final class PracticeMatchUITests: XCTestCase {
         XCTAssertEqual(card.label, "Pacer. Practice · Starts Mon, Aug 17 PDT")
     }
 
-    // MARK: Screenshot matrix (not in CI)
-
-    func testScreenshotMatrix() {
-        let configurations: [(name: String, arguments: [String])] = [
-            ("light-default", []),
-            ("dark-default", ["-AppleInterfaceStyle", "Dark"]),
-            ("light-ax5", Self.ax5),
-            ("dark-ax5", Self.darkAX5),
-        ]
-        for config in configurations {
-            let suffix = config.name
-            let ax = suffix.hasSuffix("ax5")
-            launchLab(setup: "starts-scheduled", arguments: config.arguments + ["-practiceLabFailStarts", "1"])
-            XCTAssertTrue(text("No matches yet").waitForExistence(timeout: 8))
-            attachScreenshot("empty-home-\(suffix)")
-            let open = app.buttons["competition.practice.open"]
-            scrollToElement(open)
-            if ax {
-                scrollToElement(app.buttons["competition.create.empty"])
-                attachScreenshot("empty-home-bottom-\(suffix)")
-            }
-            open.tap()
-            XCTAssertTrue(element("competition.practice.sheet").waitForExistence(timeout: 3))
-            sleep(1)
-            attachScreenshot("sheet-\(suffix)")
-            let start = app.buttons["competition.practice.start"]
-            if ax {
-                scrollToElement(start, in: sheetScroll)
-                attachScreenshot("sheet-bottom-\(suffix)")
-            }
-            start.tap()
-            XCTAssertTrue(element("competition.practice.error").waitForExistence(timeout: 5))
-            if ax { scrollToElement(start, in: sheetScroll) }
-            attachScreenshot("sheet-error-\(suffix)")
-            start.tap()
-            XCTAssertTrue(element("competition.practice.sheet").waitForNonExistence(timeout: 5))
-            let scheduled = sharingCard(state: "scheduled")
-            XCTAssertTrue(scheduled.waitForExistence(timeout: 5))
-            // Home keeps the offset that reached Practice Match at AX sizes.
-            scrollHomeToTop()
-            attachScreenshot("home-scheduled-\(suffix)")
-            scrollToElement(scheduled)
-            scheduled.tap()
-            XCTAssertTrue(app.navigationBars["Pacer"].waitForExistence(timeout: 3))
-            attachScreenshot("match-scheduled-\(suffix)")
-
-            launchLab(arguments: config.arguments)
-            let openLive = app.buttons["competition.practice.open"]
-            scrollToElement(openLive)
-            openLive.tap()
-            app.buttons["competition.practice.start"].tap()
-            let card = sharingCard(state: "active")
-            XCTAssertTrue(card.waitForExistence(timeout: 5))
-            scrollHomeToTop()
-            attachScreenshot("home-live-\(suffix)")
-            if ax {
-                scrollToElement(app.buttons["competition.practice.challenge"])
-                attachScreenshot("home-live-bottom-\(suffix)")
-            }
-            scrollToElement(card)
-            card.tap()
-            XCTAssertTrue(app.navigationBars["Pacer"].waitForExistence(timeout: 3))
-            attachScreenshot("match-live-\(suffix)")
-            openMenu()
-            attachScreenshot("match-menu-\(suffix)")
-            app.buttons["competition.practice.end"].tap()
-            XCTAssertTrue(app.sheets["End this practice match?"].waitForExistence(timeout: 3))
-            sleep(1)
-            attachScreenshot("end-confirmation-\(suffix)")
-            dialogCancel(app.sheets["End this practice match?"], "Keep Going")
-            openMenu()
-            app.buttons["How scoring works"].tap()
-            XCTAssertTrue(text("Nothing leaves this iPhone").waitForExistence(timeout: 3))
-            sleep(1)
-            attachScreenshot("rules-\(suffix)")
-
-            launchLab(setup: "tallying", arguments: config.arguments)
-            XCTAssertTrue(sharingCard(state: "tallying").waitForExistence(timeout: 8))
-            attachScreenshot("home-tallying-\(suffix)")
-
-            launchLab(setup: "with-scheduled-match", arguments: config.arguments)
-            XCTAssertTrue(sharingCard(state: "active").waitForExistence(timeout: 8))
-            attachScreenshot("home-with-real-\(suffix)")
-
-            launchLab(setup: "with-live-match", arguments: config.arguments)
-            XCTAssertTrue(anyText(containing: "LIVE · 2").waitForExistence(timeout: 8))
-            attachScreenshot("home-with-live-\(suffix)")
-
-            launchLab(setup: "after-records", arguments: config.arguments)
-            XCTAssertTrue(text("Nothing live right now").waitForExistence(timeout: 8))
-            attachScreenshot("home-after-records-\(suffix)")
-
-            launchLab(setup: "challenge-arrives", arguments: config.arguments)
-            XCTAssertTrue(sharingCard(name: "Sam").waitForExistence(timeout: 12))
-            attachScreenshot("home-challenge-arrived-\(suffix)")
-
-            for outcome in ["won", "lost", "tied"] {
-                launchLab(setup: outcome, arguments: config.arguments)
-                let row = sharingCard(state: "completed")
-                XCTAssertTrue(row.waitForExistence(timeout: 8))
-                if outcome == "won" { attachScreenshot("home-result-\(suffix)") }
-                scrollToElement(row)
-                row.tap()
-                XCTAssertTrue(app.navigationBars["Pacer"].waitForExistence(timeout: 3))
-                sleep(1)
-                attachScreenshot("result-\(outcome)-\(suffix)")
-                if ax {
-                    scrollToElement(app.buttons["competition.practice.challenge"])
-                    attachScreenshot("result-\(outcome)-bottom-\(suffix)")
-                }
-            }
-        }
-    }
-
     // MARK: Helpers
 
     private func launchLab(
@@ -570,11 +456,6 @@ final class PracticeMatchUITests: XCTestCase {
         let sheet = element("competition.practice.sheet")
         app.buttons["competition.practice.cancel"].tap()
         XCTAssertTrue(sheet.waitForNonExistence(timeout: 3))
-    }
-
-    private func scrollHomeToTop() {
-        for _ in 0..<3 { app.scrollViews.firstMatch.swipeDown(velocity: .fast) }
-        sleep(2)
     }
 
     private func openMenu() {
@@ -646,13 +527,6 @@ final class PracticeMatchUITests: XCTestCase {
         app.buttons.matching(NSPredicate(
             format: "identifier BEGINSWITH %@ AND label CONTAINS %@", "competition.sharing.", name
         )).firstMatch
-    }
-
-    private func attachScreenshot(_ name: String) {
-        let attachment = XCTAttachment(screenshot: app.screenshot())
-        attachment.name = name
-        attachment.lifetime = .keepAlways
-        add(attachment)
     }
 
     /// The pace sheet's own scroll view, not Home behind it.

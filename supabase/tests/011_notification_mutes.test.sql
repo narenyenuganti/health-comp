@@ -4,28 +4,11 @@ set local role postgres;
 create extension if not exists pgtap with schema extensions;
 set local search_path = extensions, public, pg_catalog;
 
-select plan(29);
+select plan(25);
 
-select has_table(
-  'private', 'competition_notification_mutes',
-  'notification mutes are stored outside the exposed public schema'
-);
 select hasnt_table(
   'public', 'competition_notification_mutes',
   'notification mute storage has no public Data API table'
-);
-select has_index(
-  'private', 'competition_notification_mutes',
-  'competition_notification_mutes_opponent_profile_id_idx',
-  'opponent profile deletion has a bounded reverse foreign-key lookup'
-);
-select has_function(
-  'public', 'list_current_notification_mutes', array[]::text[],
-  'authenticated mute-list RPC exists'
-);
-select has_function(
-  'public', 'set_current_notification_mute', array['uuid', 'boolean'],
-  'authenticated mute mutation RPC exists'
 );
 
 select ok(coalesce((

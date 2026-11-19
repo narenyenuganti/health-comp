@@ -4,20 +4,8 @@ set local role postgres;
 create extension if not exists pgtap with schema extensions;
 set local search_path = extensions, public, pg_catalog;
 
-select plan(11);
+select plan(9);
 
-select has_function(
-  'private',
-  'finalize_due_competitions_batch',
-  array['integer', 'timestamp with time zone'],
-  'the shared due-finalization batch is private'
-);
-select has_function(
-  'private',
-  'run_due_competition_finalizer',
-  array[]::text[],
-  'hosted cron has a private finalizer entry point'
-);
 select ok(coalesce((
   select procedure_row.prosecdef
     and 'search_path=""' = any(

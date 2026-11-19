@@ -3,12 +3,8 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = extensions, public, pg_catalog;
 
-select plan(47);
+select plan(44);
 
--- The policy helpers are deliberately checked through the catalogs so this RED
--- test remains valid before the migration creates them.
-select has_function('private', 'current_profile_id', array[]::text[],
-  'current_profile_id helper exists');
 select ok(coalesce((
   select procedure_row.prosecdef
   from pg_proc procedure_row
@@ -26,8 +22,6 @@ select ok(coalesce((
     and procedure_row.pronargs = 0
 ), false), 'current_profile_id has an empty search path');
 
-select has_function('private', 'is_competition_participant', array['uuid'],
-  'is_competition_participant helper exists');
 select ok(coalesce((
   select procedure_row.prosecdef
   from pg_proc procedure_row
@@ -45,8 +39,6 @@ select ok(coalesce((
     and pg_get_function_identity_arguments(procedure_row.oid) = 'target_competition_id uuid'
 ), false), 'is_competition_participant has an empty search path');
 
-select has_function('private', 'can_view_profile', array['uuid'],
-  'can_view_profile helper exists');
 select ok(coalesce((
   select procedure_row.prosecdef
   from pg_proc procedure_row

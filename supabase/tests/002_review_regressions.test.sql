@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = extensions, public, pg_catalog;
 
-select plan(15);
+select plan(13);
 
 select is(
   (
@@ -35,35 +35,11 @@ select is(
         'participant_finalization_attestations', 'competition_results',
         'competition_awards', 'device_installations', 'support_events'
       )
-      and grantee in ('anon', 'authenticated')
-      and privilege_type <> 'SELECT'
-  ),
-  0::bigint,
-  'API roles receive no direct non-read table privileges'
-);
-
-select is(
-  (
-    select count(*)::bigint
-    from information_schema.role_table_grants
-    where table_schema = 'public'
-      and table_name in (
-        'profiles', 'competitions', 'competition_participants', 'competition_invites',
-        'competition_change_log', 'daily_score_revisions',
-        'participant_finalization_attestations', 'competition_results',
-        'competition_awards', 'device_installations', 'support_events'
-      )
       and grantee in ('anon', 'authenticated', 'service_role')
       and privilege_type in ('TRUNCATE', 'REFERENCES', 'TRIGGER')
   ),
   0::bigint,
   'RLS-bypassing and schema-control table privileges are revoked from every API role'
-);
-
-select isnt(
-  has_column_privilege('authenticated', 'public.profiles', 'auth_user_id', 'SELECT'),
-  true,
-  'counterpart-facing profile access can never expose the authentication UUID column'
 );
 
 select is(

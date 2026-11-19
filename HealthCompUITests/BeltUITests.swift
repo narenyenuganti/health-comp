@@ -326,85 +326,6 @@ final class BeltUITests: XCTestCase {
         try audit()
     }
 
-    // MARK: Screenshot matrix (not in CI)
-
-    func testScreenshotMatrix() {
-        let configurations: [(appearance: String, size: String, arguments: [String])] = [
-            ("light", "default", []),
-            ("dark", "default", ["-AppleInterfaceStyle", "Dark"]),
-            ("light", "ax5", ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]),
-            ("dark", "ax5", Self.darkAX5),
-        ]
-        for config in configurations {
-            let suffix = "\(config.appearance)-\(config.size)"
-            let arguments = config.arguments + ["-UIAccessibilityReduceMotionEnabled", "YES"]
-
-            launchLab(arguments, scenario: "belt-hero")
-            shot("home-hero", suffix)
-
-            launchLab(arguments)
-            showAtTop(card("active", 0x17))
-            shot("home-live", suffix)
-            showAtTop(card("active", 0x24))
-            shot("home-long-name", suffix)
-            showAtTop(card("tallying", 0x32))
-            shot("home-waiting", suffix)
-            showAtTop(card("active", 0x52))
-            shot("home-former", suffix)
-
-            openHistory()
-            shot("history", suffix)
-            showAtTop(record(0x51))
-            shot("history-more", suffix)
-
-            for (byte, title, screen) in [
-                (UInt8(0x16), "Sam", "person-you"),
-                (0x23, Self.longName, "person-long-name"),
-                (0x42, "Morgan", "person-vacant"),
-                (0x51, "Former competitor", "person-retired"),
-            ] {
-                openPerson(byte, title: title)
-                shot(screen, suffix)
-                if config.size == "ax5" {
-                    showAtTop(element("competition.person.belt"))
-                    shot("\(screen)-belt", suffix)
-                }
-                if byte == 0x16 {
-                    // The sixth week is behind "All 6 weeks".
-                    let allWeeks = element("competition.person.allWeeks")
-                    scrollToElement(allWeeks)
-                    allWeeks.tap()
-                    scrollToElement(element(weekID("archived", 0x11)))
-                    shot("person-you-weeks", suffix)
-                    for (state, week, name) in [
-                        ("archived", UInt8(0x11), "result-first-take"),
-                        ("archived", 0x14, "result-took-back"),
-                        ("archived", 0x12, "result-they-took"),
-                        ("completed", 0x16, "result-kept"),
-                    ] {
-                        openWeek(weekID(state, week), title: title)
-                        showBanner()
-                        shot(name, suffix)
-                        goBack(to: title)
-                    }
-                }
-                if byte == 0x23 {
-                    openWeek(weekID("archived", 0x23), title: title)
-                    showBanner()
-                    shot("result-long-name-kept", suffix)
-                    goBack(to: title)
-                }
-                if byte == 0x51 {
-                    openWeek(weekID("archived", 0x51), title: title)
-                    showBanner()
-                    shot("result-retired", suffix)
-                    goBack(to: title)
-                }
-                goBack(to: "History")
-            }
-        }
-    }
-
     // MARK: Helpers
 
     private func launchLab(_ arguments: [String] = [], scenario: String = "belt") {
@@ -503,12 +424,6 @@ final class BeltUITests: XCTestCase {
         let banner = element("competition.result.belt")
         XCTAssertTrue(banner.waitForExistence(timeout: 3), file: file, line: line)
         XCTAssertEqual(banner.label, label, file: file, line: line)
-    }
-
-    private func showBanner() {
-        let banner = element("competition.result.belt")
-        XCTAssertTrue(banner.waitForExistence(timeout: 3))
-        showAtTop(banner)
     }
 
     private func labels(containing text: String) -> XCUIElementQuery {

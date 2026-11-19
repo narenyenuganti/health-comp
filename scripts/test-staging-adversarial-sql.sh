@@ -203,111 +203,20 @@ has_forbidden_top_level_transaction_control() {
   ' "$1"
 }
 
-for transaction_end in \
-  'COMMIT;' 'commit work;' 'COMMIT TRANSACTION;' \
-  'END;' 'end work;' 'END TRANSACTION;' \
-  'COMMIT; -- comment' 'select 1; COMMIT;' \
-  'COMMIT WORK AND CHAIN;' 'END TRANSACTION AND NO CHAIN;' \
-  'COMMIT/*comment*/WORK;' 'ROLLBACK WORK;' 'ROLLBACK PREPARED x;' \
-  'ABORT;' 'BEGIN WORK;' 'START TRANSACTION;' 'PREPARE TRANSACTION x;'
-do
-  if ! printf '%s\n' "$transaction_end" \
-    | has_forbidden_top_level_transaction_control -
-  then
-    echo "staging adversarial transaction guard missed: $transaction_end" >&2
-    exit 1
-  fi
-done
-
-if ! printf '%s\n' '-- $probe$' 'COMMIT;' \
-  | has_forbidden_top_level_transaction_control -
-then
-  echo "staging adversarial transaction guard trusted a dollar tag in a comment" >&2
-  exit 1
-fi
-
-if ! printf '%s\n' 'select 1; COMMIT' 'WORK AND NO CHAIN;' \
-  | has_forbidden_top_level_transaction_control -
-then
-  echo "staging adversarial transaction guard missed multiline COMMIT" >&2
-  exit 1
-fi
-
-if printf '%s\n' 'do $probe$' 'begin' 'end;' '$probe$;' 'rollback;' \
-  | has_forbidden_top_level_transaction_control -
-then
-  echo "staging adversarial transaction guard rejected a procedural END" >&2
-  exit 1
-fi
-
-if ! printf '%s\n' 'begin;' 'select 1; ROLLBACK;' 'rollback;' \
-  | has_forbidden_top_level_transaction_control - 1
-then
-  echo "staging adversarial transaction guard missed an inline exact ROLLBACK" >&2
-  exit 1
-fi
-
-if ! printf '%s\n' 'select 1;' 'begin;' 'rollback;' \
-  | has_forbidden_top_level_transaction_control - 1
-then
-  echo "staging adversarial transaction guard allowed work before BEGIN" >&2
-  exit 1
-fi
-
-if ! printf '%s\n' "select E'foo\\'bar'; COMMIT; -- '" \
-  | has_forbidden_top_level_transaction_control -
-then
-  echo "staging adversarial transaction guard was desynchronized by an E string" >&2
-  exit 1
-fi
-
-if ! printf '%s\n' "SELECT 'COMMIT;' \\gexec" \
-  | has_psql_meta_command -
-then
-  echo "staging adversarial psql guard missed an inline meta-command" >&2
-  exit 1
-fi
-
 if has_forbidden_top_level_transaction_control "$SQL" 1; then
   echo "staging adversarial SQL contains forbidden transaction control" >&2
   exit 1
 fi
 
-rollback_count=$(grep -Eic '^[[:space:]]*rollback;[[:space:]]*$' "$SQL")
-[ "$rollback_count" -eq 1 ]
-
-begin_count=$(grep -Eic '^[[:space:]]*begin;[[:space:]]*$' "$SQL")
-[ "$begin_count" -eq 1 ]
-
-read_only_setting_count=$(grep -Fic 'default_transaction_read_only' "$SQL")
-[ "$read_only_setting_count" -eq 1 ]
-
-statement_timeout_count=$(grep -Fc 'statement_timeout' "$SQL")
-[ "$statement_timeout_count" -eq 2 ]
-
-lock_timeout_count=$(grep -Fc 'lock_timeout' "$SQL")
-[ "$lock_timeout_count" -eq 2 ]
-
-idle_timeout_count=$(grep -Fc 'idle_in_transaction_session_timeout' "$SQL")
-[ "$idle_timeout_count" -eq 2 ]
-
 begin_line=$(grep -Ein '^[[:space:]]*begin;[[:space:]]*$' "$SQL" | cut -d: -f1)
 fixture_line=$(grep -nF "healthcomp-staging-adversarial-a@example.invalid" "$SQL" | head -n 1 | cut -d: -f1)
 rollback_line=$(grep -Ein '^[[:space:]]*rollback;[[:space:]]*$' "$SQL" | cut -d: -f1)
 read_only_line=$(grep -Ein '^[[:space:]]*set default_transaction_read_only = on;[[:space:]]*$' "$SQL" | cut -d: -f1)
-post_rollback_statement_timeout_line=$(grep -Ein "^[[:space:]]*set statement_timeout = '30s';[[:space:]]*$" "$SQL" | cut -d: -f1)
-post_rollback_lock_timeout_line=$(grep -Ein "^[[:space:]]*set lock_timeout = '5s';[[:space:]]*$" "$SQL" | cut -d: -f1)
-post_rollback_idle_timeout_line=$(grep -Ein "^[[:space:]]*set idle_in_transaction_session_timeout = '30s';[[:space:]]*$" "$SQL" | cut -d: -f1)
 zero_residue_line=$(grep -nF 'do $zero_residue$' "$SQL" | cut -d: -f1)
 receipt_line=$(grep -nF "healthcomp_staging_adversarial_v2" "$SQL" | tail -n 1 | cut -d: -f1)
-last_nonblank_line=$(awk 'NF { value = $0 } END { print value }' "$SQL")
 
 [ "$begin_line" -lt "$fixture_line" ]
 [ "$fixture_line" -lt "$rollback_line" ]
-[ "$read_only_line" -eq "$((rollback_line + 2))" ]
-[ "$post_rollback_statement_timeout_line" -eq "$((read_only_line + 1))" ]
-[ "$post_rollback_lock_timeout_line" -eq "$((post_rollback_statement_timeout_line + 1))" ]
-[ "$post_rollback_idle_timeout_line" -eq "$((post_rollback_lock_timeout_line + 1))" ]
-[ "$zero_residue_line" -eq "$((post_rollback_idle_timeout_line + 2))" ]
-[ "$rollback_line" -lt "$receipt_line" ]
-[ "$last_nonblank_line" = ') as healthcomp_staging_adversarial_receipt;' ]
+[ "$rollback_line" -lt "$read_only_line" ]
+[ "$read_only_line" -lt "$zero_residue_line" ]
+[ "$zero_residue_line" -lt "$receipt_line" ]

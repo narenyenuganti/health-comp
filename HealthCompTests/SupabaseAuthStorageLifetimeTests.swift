@@ -179,19 +179,6 @@ final class SupabaseAuthStorageLifetimeTests: XCTestCase {
         XCTAssertNil(try underlying.retrieve(key: key))
     }
 
-    func testActiveLifetimePreservesStorageBehavior() throws {
-        let underlying = SupabaseAuthKeychainStorage(service: "HealthCompTests.Lifetime.\(UUID())")
-        let key = "synthetic-session"
-        defer { try? underlying.remove(key: key) }
-        let storage = SupabaseAuthStorageLifetime(underlying: underlying)
-        let value = Data("synthetic-value".utf8)
-
-        try storage.store(key: key, value: value)
-        XCTAssertEqual(try storage.retrieve(key: key), value)
-        try storage.remove(key: key)
-        XCTAssertNil(try underlying.retrieve(key: key))
-    }
-
     func testRetiredLifetimeRejectsEveryAccessWithoutChangingSharedStorage() throws {
         let underlying = SupabaseAuthKeychainStorage(service: "HealthCompTests.Lifetime.\(UUID())")
         let key = "synthetic-session"

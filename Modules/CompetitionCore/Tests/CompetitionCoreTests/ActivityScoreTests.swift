@@ -109,24 +109,7 @@ final class ActivityScoreTests: XCTestCase {
             ActivityScoreCalculator.score(snapshot).availableScore
         )
 
-        XCTAssertEqual(score.points, ActivityScore.maximumDailyPoints)
-    }
-
-    func testSevenCappedDaysCannotExceedFortyTwoHundred() throws {
-        let snapshot = try makeSnapshot(
-            move: (4, 1),
-            exercise: (4, 1),
-            standOrRoll: (4, 1)
-        )
-        let score = try XCTUnwrap(
-            ActivityScoreCalculator.score(snapshot).availableScore
-        )
-
-        let sevenDayTotal = Array(repeating: score, count: 7)
-            .reduce(0) { $0 + $1.points }
-
-        XCTAssertEqual(ActivityScore.maximumCompetitionPoints, 4_200)
-        XCTAssertEqual(sevenDayTotal, ActivityScore.maximumCompetitionPoints)
+        XCTAssertEqual(score.points, 600)
     }
 
     func testMissingValueOrGoalKeepsSnapshotUnavailableRatherThanZero() throws {

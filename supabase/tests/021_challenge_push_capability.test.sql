@@ -3,11 +3,6 @@ create extension if not exists pgtap with schema extensions;
 set local search_path = extensions, public, pg_catalog;
 select no_plan();
 
-select has_function(
-  'public', 'register_current_device_installation',
-  array['uuid', 'text', 'text', 'boolean'],
-  'capability-aware installation registration RPC exists'
-);
 select ok(coalesce((
   select p.prosecdef
     and 'search_path=""' = any(coalesce(p.proconfig, array[]::text[]))

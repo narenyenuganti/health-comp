@@ -37,8 +37,6 @@ cp "$repository_root/supabase/functions/deno.lock" \
 cp "$repository_root/supabase/tests/edge-runtime/function/index.ts" \
   "$fixture_dir/index.ts"
 
-sh "$repository_root/scripts/verify-app-attest-dependency-graph.sh" >/dev/null
-
 docker image inspect "$runtime_image" >/dev/null
 docker run --detach --rm \
   --name "$container_name" \

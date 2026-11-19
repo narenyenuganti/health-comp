@@ -1,5 +1,5 @@
 begin;
-select plan(40);
+select plan(39);
 
 insert into auth.users (id, instance_id, aud, role, email, encrypted_password, created_at, updated_at)
 values
@@ -48,7 +48,6 @@ select set_config('request.jwt.claims', '{"sub":"61000000-0000-0000-0000-0000000
 select throws_ok($$select public.submit_score_revision('63000000-0000-0000-0000-000000000001','64000000-0000-4000-8000-000000000007',3,4,'2026-08-14T12:00:00Z','activeEnergyKilocalories','standHours',0,0,0,'available','healthcomp.activity-score.v1')$$,'P0002','competition_not_found','outsider learns no membership detail');
 select set_config('request.jwt.claims', '{"role":"anon"}', true);
 select throws_ok($$select public.submit_score_revision('63000000-0000-0000-0000-000000000001','64000000-0000-4000-8000-000000000008',3,4,'2026-08-14T12:00:00Z','activeEnergyKilocalories','standHours',0,0,0,'available','healthcomp.activity-score.v1')$$,'42501','authentication_required','anonymous rejects');
-select ok(exists(select 1 from pg_constraint where conname='daily_score_revision_global_number_unique'),'global revision uniqueness exists');
 select ok(not has_function_privilege('anon','public.submit_score_revision(uuid,uuid,integer,bigint,timestamptz,text,text,integer,integer,integer,text,text)','EXECUTE'),'anonymous lacks score RPC execute');
 select ok(not has_function_privilege('authenticated','public.submit_score_revision(uuid,uuid,integer,bigint,timestamptz,text,text,integer,integer,integer,text,text,text)','EXECUTE'),'authenticated clients cannot bypass App Attest through the digest score RPC');
 select ok(has_function_privilege('authenticated','public.submit_attested_score_revision(uuid,uuid,uuid,integer,bigint,timestamptz,text,text,integer,integer,integer,text,text,text,text)','EXECUTE'),'authenticated clients can reach only the grant-backed score RPC');

@@ -10,7 +10,7 @@ final class GroupMatchResultTests: XCTestCase {
         let won = try XCTUnwrap(CompetitionJudgesBout(GroupMatchFixtures.routed(.resultFFAWon)!))
         XCTAssertEqual(won.sides.map(\.label), ["YOU", "SAM", "PRIYA", "LEO"])
         XCTAssertEqual(won.sides.map(\.place), [1, 2, 3, 4])
-        XCTAssertEqual(won.sides[0].cardTotal(0) ?? 0, 2941 * 0.4, accuracy: 0.001)
+        XCTAssertEqual(won.sides[0].cardTotal(0) ?? 0, 1176.4, accuracy: 0.001)
         XCTAssertEqual(won.label, "UNANIMOUS DECISION")
         XCTAssertEqual(won.title, "YOUR WINNER")
         XCTAssertEqual(won.heading, "YOU VS SAM VS PRIYA VS LEO · FINAL BELL")

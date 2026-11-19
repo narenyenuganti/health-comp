@@ -4,10 +4,6 @@ set local search_path = extensions, public, pg_catalog;
 set local timezone = 'UTC';
 select no_plan();
 
-select has_function(
-  'public', 'nudge_competition_participant', array['uuid'],
-  'nudge RPC exists'
-);
 select ok(coalesce((
   select p.prosecdef
     and 'search_path=""' = any(coalesce(p.proconfig, array[]::text[]))

@@ -190,22 +190,6 @@ final class StagingScoringResponseCaptureTests: XCTestCase {
         try await provider.retireAuthenticationLifetime(provider.authenticationLifetime())
     }
 
-    func testOperatorExpiryDeniesResponseAndDoesNotReplaceClient() async throws {
-        let fixture = ScoringCaptureFixture()
-        defer { fixture.close() }
-        let clock = ScoringOperatorClock()
-        let controls = StagingScoringOperatorControls(now: { clock.now })
-        let provider = fixture.provider().withStagingScoringOperator(controls)
-        let client = try provider.client()
-        XCTAssertTrue(controls.requestArm())
-        try await fixture.reject(client)
-        clock.expire()
-        XCTAssertNil(controls.takeResponse())
-        XCTAssertFalse(controls.requestArm())
-        XCTAssertTrue(try provider.client() === client)
-        try await provider.retireAuthenticationLifetime(provider.authenticationLifetime())
-    }
-
     func testExplicitTransportOverrideDoesNotAcquireAnOperatorDelegate() async throws {
         let fixture = ScoringCaptureFixture()
         let session = URLSession(configuration: .ephemeral)

@@ -685,8 +685,8 @@ final class CompetitionPresentationTests: XCTestCase {
         XCTAssertEqual(today.panel.rows.map(\.points), [84, 120, 75])
         XCTAssertEqual(today.points, 279)
         XCTAssertEqual(
-            today.updated,
-            "Updated " + competitionUpdatedText(readAt, now: now, locale: en, timeZone: utc)
+            normalized(try XCTUnwrap(today.updated)),
+            "Updated 6:30 AM"
         )
 
         // Synced rings that can't be scored still show, with no total.
@@ -2462,7 +2462,6 @@ final class CompetitionPresentationTests: XCTestCase {
         XCTAssertFalse(snapshot.hasIncomingChallenge)
         let result = try XCTUnwrap(snapshot.matches.first)
         XCTAssertEqual(result.final?.outcome, .win)
-        XCTAssertEqual(result.final?.leavesAt, competitionResultLeavesHome(completed)?.at)
         XCTAssertEqual(result.final?.leavesAt, homeInstant("2026-11-03T08:00:00Z"))
         // The tally finished on the 3rd day after Day 7: two days after that.
         XCTAssertEqual(snapshot.matches[1].final?.leavesAt, homeInstant("2026-11-04T08:00:00Z"))
@@ -2470,10 +2469,6 @@ final class CompetitionPresentationTests: XCTestCase {
         XCTAssertNil(week.final)
         XCTAssertEqual(week.dayStarts.count, 7)
         XCTAssertEqual(week.dayStarts.first, homeInstant("2026-10-28T07:00:00Z"))
-        XCTAssertEqual(
-            week.endsAt,
-            competitionScheduleBoundaries(try XCTUnwrap(live.acceptedConfiguration?.schedule))?.end
-        )
         XCTAssertEqual(week.endsAt, homeInstant("2026-11-04T08:00:00Z"))
         XCTAssertEqual(week.personID, live.opponentIdentity)
         XCTAssertEqual(week.userDayPoints, Array(repeating: nil, count: 7))

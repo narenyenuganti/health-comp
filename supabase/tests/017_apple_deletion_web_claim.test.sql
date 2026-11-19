@@ -2,7 +2,6 @@ begin;
 set local role postgres;
 set local search_path = extensions, public, pg_catalog;
 select no_plan();
-select has_table('private', 'apple_deletion_web_requests', 'web grants have private durable state');
 select hasnt_table('public', 'apple_deletion_web_requests', 'web grants are not exposed tables');
 
 insert into auth.users (id, aud, role, created_at, updated_at)

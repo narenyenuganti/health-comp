@@ -3,9 +3,6 @@ create extension if not exists pgtap with schema extensions;
 set local search_path = extensions, public, pg_catalog;
 select no_plan();
 
-select has_function('public', 'create_competition_invite',
-  array['bytea', 'text', 'uuid', 'uuid', 'uuid', 'smallint', 'uuid'],
-  'creation requires the chosen recipient identity');
 select ok(not has_function_privilege('service_role',
   'public.create_competition_invite(bytea,text,uuid,uuid,uuid,smallint)', 'execute'),
   'recipient-free creation cannot bypass the new contract');

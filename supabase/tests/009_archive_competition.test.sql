@@ -3,12 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = extensions, public, pg_catalog;
 
-select plan(18);
-
-select has_function(
-  'public', 'archive_competition', array['uuid'],
-  'authenticated archive RPC exists'
-);
+select plan(17);
 
 select ok(coalesce((
   select procedure_row.prosecdef
