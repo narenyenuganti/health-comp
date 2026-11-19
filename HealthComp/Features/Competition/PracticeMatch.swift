@@ -152,6 +152,21 @@ enum PracticeMatch {
             return competition.id
         }
     }
+
+    /// Why a new practice match can't be started right now, matching `start`'s
+    /// underway check; nil when one can.
+    static func startBlocker(
+        in competitions: [LocalCompetitionPresentation]
+    ) -> String? {
+        guard let underway = competitions.first(where: { competition in
+            guard competition.isPractice else { return false }
+            switch competition.lifecycle {
+            case .scheduled, .active, .endsToday, .tallying: return true
+            default: return false
+            }
+        }) else { return nil }
+        return "In a practice match with \(underway.opponentDisplayName)"
+    }
 }
 
 enum PracticeMatchError: Error, Equatable {

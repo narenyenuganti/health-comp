@@ -20,12 +20,14 @@ struct PracticeMatchSheet: View {
     @State private var hasAttempted = false
 
     /// Each bot's week as seven bars, tallest 28 pt.
-    private static let bots: [(OpponentDifficulty, String, [CGFloat])] = [
+    static let bots: [(OpponentDifficulty, String, [CGFloat])] = [
         (.pacer, "Your usual week, steady every day.", [18, 19, 18, 19, 18, 19, 18]),
         (.chill, "A little under your usual. Starts slow.", [8, 9, 10, 11, 12, 13, 14]),
         (.erratic, "Huge days and off days. Hard to read.", [26, 6, 24, 10, 28, 5, 20]),
         (.beast, "Well above your usual, every day.", [24, 25, 26, 26, 27, 28, 28]),
     ]
+    static let subtitle = "Seven days against a bot, scaled to your last two weeks. It doesn’t count toward your record."
+    static let startError = "Couldn’t start the practice match. Try again."
 
     var body: some View {
         ScrollView {
@@ -41,14 +43,21 @@ struct PracticeMatchSheet: View {
                         .textCase(.uppercase)
                         .foregroundStyle(Theme.ink)
                         .accessibilityAddTraits(.isHeader)
-                    Text("Seven days against a bot, scaled to your last two weeks. It doesn’t count toward your record.")
+                    Text(Self.subtitle)
                         .foregroundStyle(Theme.secondary)
                         .fixedSize(horizontal: false, vertical: true)
                 }
 
                 VStack(spacing: 10) {
                     ForEach(Self.bots, id: \.0) { bot in
-                        botRow(bot.0, detail: bot.1, bars: bot.2)
+                        PracticeBotOptionCard(
+                            difficulty: bot.0,
+                            detail: bot.1,
+                            bars: bot.2,
+                            isSelected: selection == bot.0
+                        ) {
+                            selection = bot.0
+                        }
                     }
                 }
                 .sensoryFeedback(.selection, trigger: selection)
@@ -91,34 +100,10 @@ struct PracticeMatchSheet: View {
         practice.isStarting || (hasAttempted && !practice.failed)
     }
 
-    private func botRow(
-        _ difficulty: OpponentDifficulty,
-        detail: String,
-        bars: [CGFloat]
-    ) -> some View {
-        GroupMatchOptionCard(
-            title: PracticeMatch.opponentDisplayName(for: difficulty),
-            detail: detail,
-            isSelected: selection == difficulty,
-            identifier: "competition.practice.pace.\(difficulty.rawValue)"
-        ) {
-            HStack(alignment: .bottom, spacing: 3) {
-                ForEach(Array(bars.enumerated()), id: \.offset) { _, height in
-                    RoundedRectangle(cornerRadius: 1)
-                        .fill(Theme.ink)
-                        .frame(width: 5, height: height)
-                }
-            }
-            .frame(height: 28, alignment: .bottom)
-        } action: {
-            selection = difficulty
-        }
-    }
-
     private var startControl: some View {
         VStack(alignment: .leading, spacing: 10) {
             if showsError {
-                Text("Couldn’t start the practice match. Try again.")
+                Text(Self.startError)
                     .font(.callout)
                     .foregroundStyle(Theme.secondary)
                     .fixedSize(horizontal: false, vertical: true)
@@ -136,6 +121,35 @@ struct PracticeMatchSheet: View {
             .accessibilityLabel("Start Tomorrow")
             .accessibilityValue(isBusy ? "Action in progress" : "")
             .accessibilityIdentifier("competition.practice.start")
+        }
+    }
+}
+
+/// One selectable bot card with its seven-day bar profile.
+struct PracticeBotOptionCard: View {
+    let difficulty: OpponentDifficulty
+    let detail: String
+    let bars: [CGFloat]
+    let isSelected: Bool
+    let action: () -> Void
+
+    var body: some View {
+        GroupMatchOptionCard(
+            title: PracticeMatch.opponentDisplayName(for: difficulty),
+            detail: detail,
+            isSelected: isSelected,
+            identifier: "competition.practice.pace.\(difficulty.rawValue)"
+        ) {
+            HStack(alignment: .bottom, spacing: 3) {
+                ForEach(Array(bars.enumerated()), id: \.offset) { _, height in
+                    RoundedRectangle(cornerRadius: 1)
+                        .fill(Theme.ink)
+                        .frame(width: 5, height: height)
+                }
+            }
+            .frame(height: 28, alignment: .bottom)
+        } action: {
+            action()
         }
     }
 }

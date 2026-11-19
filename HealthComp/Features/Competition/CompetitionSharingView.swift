@@ -250,6 +250,7 @@ struct CompetitionSharingView: View {
                 competitions: publication.dashboard.competitions,
                 chooseFriend: chooseFriend,
                 searchPeople: searchPeople,
+                practice: practice,
                 findRecipient: findRecipient,
                 create: createInvite,
                 openChallenge: {

@@ -23,6 +23,8 @@ struct CreateCompetitionView: View {
     var chooseFriend: ((FriendPerson) -> Void)? = nil
     /// Closes the sheet on Friends' search; nil omits the row.
     var searchPeople: (() -> Void)? = nil
+    /// Practice against a bot in Duel; nil omits the section.
+    var practice: CompetitionPracticeStart? = nil
     let findRecipient: () -> Void
     let create: () -> Void
     let openChallenge: (CompetitionID) -> Void
@@ -35,9 +37,13 @@ struct CreateCompetitionView: View {
     @FocusState private var recipientCodeIsFocused: Bool
     /// Paste Their Challenge Link was tapped: the link field and Find show.
     @State private var entersLink = false
+    /// Play a Bot was tapped: the four bot paces and Start Tomorrow show.
+    @State private var picksBot = false
+    @State private var botSelection: OpponentDifficulty = .pacer
+    @State private var hasAttemptedPractice = false
 
-    /// Nobody chosen yet and no link being entered: the two groups.
-    private var isPicking: Bool { recipient == nil && !entersLink }
+    /// Nobody chosen yet and no link or bot being picked: the groups.
+    private var isPicking: Bool { recipient == nil && !entersLink && !picksBot }
 
     var body: some View {
         // Accessibility sizes scroll the control with the text; pinned, they
@@ -48,6 +54,11 @@ struct CreateCompetitionView: View {
                 header
                 if isPicking {
                     picker
+                } else if picksBot {
+                    botPicker
+                    if dynamicTypeSize.isAccessibilitySize {
+                        practiceControlSlot
+                    }
                 } else {
                     recipientSelection
                     if sleepBeta, let withSleep {
@@ -82,17 +93,24 @@ struct CreateCompetitionView: View {
                     .padding(.vertical, 8)
                     .background(Theme.ground)
             } else if pinsControl {
-                controlSlot
-                    .padding(.horizontal, 20)
-                    .padding(.top, 12)
-                    .padding(.bottom, 8)
-                    .background(Theme.ground)
+                Group {
+                    if picksBot {
+                        practiceControlSlot
+                    } else {
+                        controlSlot
+                    }
+                }
+                .padding(.horizontal, 20)
+                .padding(.top, 12)
+                .padding(.bottom, 8)
+                .background(Theme.ground)
             }
         }
         // Here, so the inset and the rows under a new line move together.
         .moving(Motion.settle, value: status.controlPhase)
         .moving(Motion.settle, value: recipient?.displayName)
         .moving(Motion.settle, value: competitionRecipientErrorText(recipientStatus))
+        .moving(Motion.settle, value: showsPracticeError)
         .moving(Motion.settle, value: ownChallengeLink)
         .moving(Motion.settle, value: isPicking)
         .background(Theme.ground)
@@ -104,6 +122,12 @@ struct CreateCompetitionView: View {
         .sensoryFeedback(.success, trigger: isSent) { !$0 && $1 }
         .onChange(of: isSent) { _, sent in if sent { Sounds.play(.sent) } }
         .sensoryFeedback(.error, trigger: status.controlPhase == .failed) { _, new in new }
+        .sensoryFeedback(.error, trigger: showsPracticeError) { _, new in new }
+        .onChange(of: practice?.isStarting) { wasStarting, isStarting in
+            if hasAttemptedPractice, wasStarting == true, isStarting == false, practice?.failed == false {
+                dismiss()
+            }
+        }
         .sensoryFeedback(.error, trigger: recipientStatus) { _, new in
             competitionRecipientErrorText(new) != nil
         }
@@ -144,8 +168,17 @@ struct CreateCompetitionView: View {
         status.controlPhase == .sent || status.controlPhase == .accepted
     }
 
+    private var showsPracticeError: Bool {
+        hasAttemptedPractice && practice?.failed == true && practice?.isStarting == false
+    }
+
+    private var isPracticeBusy: Bool {
+        practice?.isStarting == true || (hasAttemptedPractice && practice?.failed == false)
+    }
+
     private var isLocked: Bool {
-        switch status {
+        if picksBot { return isPracticeBusy }
+        return switch status {
         case .creating, .sent: true
         case .ready, .alreadyChallenged, .challengedYou, .inMatch, .failed: false
         }
@@ -186,6 +219,8 @@ struct CreateCompetitionView: View {
     private func goBack() {
         recipientCodeIsFocused = false
         entersLink = false
+        picksBot = false
+        hasAttemptedPractice = false
         recipientCode = ""
     }
 
@@ -249,6 +284,11 @@ struct CreateCompetitionView: View {
                     )
                     .font(.subheadline)
                     .foregroundStyle(Theme.secondary)
+                } else if picksBot {
+                    Text(PracticeMatchSheet.subtitle)
+                        .font(.subheadline)
+                        .foregroundStyle(Theme.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -302,6 +342,96 @@ struct CreateCompetitionView: View {
                     .accessibilityIdentifier("competition.create.share-own-link")
                 }
             }
+            if practice != nil {
+                pickerGroup("A BOT", id: "competition.create.bot-group") {
+                    botPickerRow
+                }
+            }
+        }
+    }
+
+    private var botPickerRow: some View {
+        let blocker = PracticeMatch.startBlocker(in: competitions)
+        let detail = blocker ?? "Practice · Pacer, Chill, Erratic or Beast"
+        let isDimmed = blocker != nil
+        let stacks = dynamicTypeSize.isAccessibilitySize
+        let layout = stacks
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
+            : AnyLayout(HStackLayout(spacing: 12))
+        return Button {
+            botSelection = .pacer
+            hasAttemptedPractice = false
+            picksBot = true
+        } label: {
+            HStack(spacing: 12) {
+                layout {
+                    BotGlyph()
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("Play a Bot")
+                            .font(.body.weight(.semibold))
+                            .foregroundStyle(Theme.ink)
+                            .fixedSize(horizontal: false, vertical: true)
+                        Text(detail)
+                            .font(.subheadline)
+                            .foregroundStyle(isDimmed ? Theme.ink : Theme.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                if !isDimmed {
+                    DisclosureChevron()
+                }
+            }
+            .padding(.vertical, 12)
+            .padding(.horizontal, 14)
+            .frame(minHeight: 56)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(CompetitionRowButtonStyle())
+        .disabled(isDimmed)
+        .compositingGroup()
+        .opacity(isDimmed ? 0.55 : 1)
+        .accessibilityIdentifier("competition.create.bot")
+    }
+
+    private var botPicker: some View {
+        VStack(spacing: 10) {
+            ForEach(PracticeMatchSheet.bots, id: \.0) { bot in
+                PracticeBotOptionCard(
+                    difficulty: bot.0,
+                    detail: bot.1,
+                    bars: bot.2,
+                    isSelected: botSelection == bot.0
+                ) {
+                    botSelection = bot.0
+                }
+            }
+        }
+        .sensoryFeedback(.selection, trigger: botSelection)
+    }
+
+    private var practiceControlSlot: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            if showsPracticeError {
+                Text(PracticeMatchSheet.startError)
+                    .font(.callout)
+                    .foregroundStyle(Theme.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .transition(Motion.appear)
+                    .accessibilityIdentifier("competition.practice.error")
+            }
+            Button {
+                guard let practice else { return }
+                hasAttemptedPractice = true
+                practice.start(botSelection)
+            } label: {
+                BusyLabel("Start Tomorrow", isBusy: isPracticeBusy)
+            }
+            .buttonStyle(PrimaryButtonStyle())
+            .disabled(isPracticeBusy || practice == nil)
+            .accessibilityLabel("Start Tomorrow")
+            .accessibilityValue(isPracticeBusy ? "Action in progress" : "")
+            .accessibilityIdentifier("competition.practice.start")
         }
     }
 
@@ -478,6 +608,7 @@ struct CreateCompetitionView: View {
     }
 
     private var title: String {
+        if picksBot { return "Pick a bot" }
         if case .sent = status { return "Challenge sent" }
         return "Challenge someone"
     }
