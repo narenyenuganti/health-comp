@@ -1032,36 +1032,47 @@ struct FriendProfileView: View {
         }
         let defenses = belt.holder == nil ? 0 : belt.current?.defenses ?? 0
         let title = competitionBeltTitle(belt, name: person.displayName)
-        return HStack(spacing: 12) {
+        let holdLayout = dynamicTypeSize.isAccessibilitySize
+            ? AnyLayout(VStackLayout(alignment: .leading, spacing: 8))
+            : AnyLayout(HStackLayout(alignment: .bottom, spacing: 12))
+        return VStack(alignment: .leading, spacing: 12) {
             if let holder = belt.holder {
-                CompetitionBeltMark(holder: holder, width: 44)
+                CompetitionBeltHeroArt(holder: holder)
             }
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.headline)
-                    .foregroundStyle(belt.holder == .you ? Theme.you : Theme.ink)
-                if let since {
-                    Text(since)
-                        .font(.subheadline)
-                        .foregroundStyle(Theme.secondary)
+            holdLayout {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title)
+                        .font(.headline)
+                        .foregroundStyle(belt.holder == .you ? Theme.you : Theme.ink)
+                    if let since {
+                        Text(since)
+                            .font(.subheadline)
+                            .foregroundStyle(Theme.secondary)
+                    }
                 }
-                if defenses > 0, dynamicTypeSize.isAccessibilitySize {
-                    Text(competitionDefensesText(defenses).uppercased(with: locale))
-                        .themeLabel()
-                        .foregroundStyle(Theme.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+                if defenses > 0 {
+                    if !dynamicTypeSize.isAccessibilitySize {
+                        Spacer(minLength: 0)
+                    }
+                    VStack(alignment: dynamicTypeSize.isAccessibilitySize ? .leading : .trailing, spacing: 4) {
+                        CompetitionDefensePips(
+                            count: defenses,
+                            color: belt.holder == .you ? Theme.youFill : Theme.ink
+                        )
+                        Text(competitionDefensesText(defenses).uppercased(with: locale))
+                            .themeLabel()
+                            .foregroundStyle(Theme.secondary)
+                    }
                 }
             }
-            .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 8)
-            if defenses > 0, !dynamicTypeSize.isAccessibilitySize {
-                Text(competitionDefensesText(defenses).uppercased(with: locale))
-                    .themeLabel()
-                    .foregroundStyle(Theme.secondary)
-            }
+            .padding(.horizontal, 16)
         }
-        .padding(16)
+        .padding(.top, belt.holder == nil ? 16 : 0)
+        .padding(.bottom, 16)
         .frame(maxWidth: .infinity, alignment: .leading)
         .themePanel()
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(
             [title, since, defenses > 0 ? competitionDefensesText(defenses) : nil]
@@ -1074,14 +1085,7 @@ struct FriendProfileView: View {
     /// The gold belt on offer. Gold here is the owner's call: it's the prize.
     private func beltPrize(_ label: String, line: String) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            Image("BeltHeroGold")
-                .resizable()
-                .scaledToFit()
-                .padding(.horizontal, 8)
-                .padding(.vertical, 16)
-                .frame(maxWidth: .infinity)
-                .background { Theme.beltWell }
-                .accessibilityHidden(true)
+            CompetitionBeltHeroArt(holder: .you)
             VStack(alignment: .leading, spacing: 4) {
                 SectionLabel(label)
                 Text("No one holds the belt yet")

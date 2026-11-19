@@ -362,8 +362,8 @@ struct CompetitionRecapCard: View {
                 ? text.range(of: " took the belt") ?? text.range(of: "’s ", options: .backwards)
                 : nil
             HStack(spacing: 8) {
-                if line.isBelt, line.holder == .you {
-                    CompetitionBeltMark(holder: .you, width: 22)
+                if line.isBelt, let holder = line.holder {
+                    CompetitionBeltMark(holder: holder)
                 }
                 HStack(spacing: 0) {
                     if fits || verb == nil {
@@ -454,8 +454,8 @@ struct CompetitionRecapSticker: View {
             }
             if let text = competitionRecapStickerLine(recap) {
                 HStack(spacing: 8) {
-                    if let line = recap.line, line.isBelt, line.holder == .you {
-                        CompetitionBeltMark(holder: .you, width: 22)
+                    if let line = recap.line, line.isBelt, let holder = line.holder {
+                        CompetitionBeltMark(holder: holder)
                     }
                     Text(text)
                         .font(.system(size: 15, weight: .bold))

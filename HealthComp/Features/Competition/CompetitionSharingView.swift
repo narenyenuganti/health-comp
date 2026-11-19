@@ -831,25 +831,23 @@ private struct HeroScoreboard: View {
         trailing: Bool
     ) -> some View {
         VStack(alignment: trailing ? .trailing : .leading, spacing: 2) {
-            HStack(spacing: 8) {
-                // The photo, not the whole name row: at accessibility sizes the sides
-                // stack and a name reaches the card's centre, where activating it touches.
-                avatar
-                    .modifier(CompetitionProfileTap(route: route))
-                Text(name.uppercased(with: .current))
-                    .themeLabel(tracking: 1.4)
-                if belt?.holder == holder {
-                    HStack(spacing: 4) {
-                        CompetitionBeltMark(holder: holder)
-                        let defenses = belt?.current?.defenses ?? 0
-                        if defenses > 0 {
-                            Text("×\(defenses)")
-                                .font(.themeLabel.monospacedDigit())
-                                .accessibilityHidden(true)
-                        }
+            if belt?.holder == holder {
+                ViewThatFits(in: .horizontal) {
+                    HStack(spacing: 8) {
+                        avatar
+                            .modifier(CompetitionProfileTap(route: route))
+                        Text(name.uppercased(with: .current))
+                            .themeLabel(tracking: 1.4)
+                            .lineLimit(1)
+                        beltCount(holder)
                     }
-                    .transition(Motion.appear)
+                    VStack(alignment: trailing ? .trailing : .leading, spacing: 4) {
+                        nameRow(name: name, avatar: avatar, route: route)
+                        beltCount(holder)
+                    }
                 }
+            } else {
+                nameRow(name: name, avatar: avatar, route: route)
             }
             // At launch both scores roll up from zero.
             let shown = launchStage == .waiting ? 0 : points
@@ -859,6 +857,35 @@ private struct HeroScoreboard: View {
         }
         .foregroundStyle(color)
         .frame(maxWidth: .infinity, alignment: trailing ? .trailing : .leading)
+    }
+
+    private func nameRow(
+        name: String,
+        avatar: PersonAvatar,
+        route: CompetitionHomeRoute?
+    ) -> some View {
+        HStack(spacing: 8) {
+            // The photo, not the whole name row: at accessibility sizes the sides
+            // stack and a name reaches the card's centre, where activating it touches.
+            avatar
+                .modifier(CompetitionProfileTap(route: route))
+            Text(name.uppercased(with: .current))
+                .themeLabel(tracking: 1.4)
+        }
+    }
+
+    private func beltCount(_ holder: CompetitionBeltHolder) -> some View {
+        HStack(spacing: 4) {
+            CompetitionBeltMark(holder: holder)
+            let defenses = belt?.current?.defenses ?? 0
+            if defenses > 0 {
+                Text("×\(defenses)")
+                    .font(.themeLabel.monospacedDigit())
+                    .accessibilityHidden(true)
+            }
+        }
+        .fixedSize()
+        .transition(Motion.appear)
     }
 }
 
@@ -1078,27 +1105,37 @@ private struct CompetitionOutcomeChip: View {
     }
 }
 
-/// The belt: a strap with a plate, in the playbook's 44×24 geometry. The
-/// plate is amber when you hold it, ink when they do. Words carry the meaning.
-struct CompetitionBeltMark: View {
+/// The belt across the top of a card, on its dark stage in both modes.
+struct CompetitionBeltHeroArt: View {
     let holder: CompetitionBeltHolder
-    var width: CGFloat = 22
 
     var body: some View {
-        let unit = width / 44
-        ZStack {
-            RoundedRectangle(cornerRadius: 3 * unit, style: .continuous)
-                .fill(Theme.ink)
-                .frame(width: width, height: 10 * unit)
-            RoundedRectangle(cornerRadius: 5 * unit, style: .continuous)
-                .fill(holder == .you ? Theme.youFill : Theme.ink)
-                .frame(width: 20 * unit, height: 20 * unit)
-            RoundedRectangle(cornerRadius: 2 * unit, style: .continuous)
-                .fill(Theme.ground)
-                .frame(width: 10 * unit, height: 10 * unit)
-        }
-        .frame(width: width, height: width * 24 / 44)
-        .accessibilityHidden(true)
+        Image(decorative: holder == .you ? "BeltHeroGold" : "BeltHeroPewter")
+            .interpolation(.high)
+            .resizable()
+            .scaledToFit()
+            .padding(.horizontal, 8)
+            .padding(.vertical, 16)
+            .frame(maxWidth: .infinity)
+            .background { Theme.beltWell }
+            .accessibilityHidden(true)
+    }
+}
+
+/// The belt at inline size: gold with your ring bars when you hold it,
+/// pewter when they do. Words carry the meaning.
+struct CompetitionBeltMark: View {
+    let holder: CompetitionBeltHolder
+    var width: CGFloat = 34
+
+    var body: some View {
+        Image(decorative: holder == .you ? "BeltHeroGold" : "BeltHeroPewter")
+            .interpolation(.high)
+            .resizable()
+            .scaledToFit()
+            .frame(width: width, height: width * 447 / 1400)
+            .fixedSize()
+            .accessibilityHidden(true)
     }
 }
 
@@ -2117,14 +2154,7 @@ struct CompetitionPersonView: View {
         let defenses = belt.holder == nil ? 0 : belt.current?.defenses ?? 0
         return VStack(alignment: .leading, spacing: 12) {
             if let holder = belt.holder {
-                Image(holder == .you ? "BeltHeroGold" : "BeltHeroPewter")
-                    .resizable()
-                    .scaledToFit()
-                    .padding(.horizontal, 8)
-                    .padding(.vertical, 16)
-                    .frame(maxWidth: .infinity)
-                    .background { Theme.beltWell }
-                    .accessibilityHidden(true)
+                CompetitionBeltHeroArt(holder: holder)
             }
             VStack(alignment: .leading, spacing: 12) {
                 holdLayout {

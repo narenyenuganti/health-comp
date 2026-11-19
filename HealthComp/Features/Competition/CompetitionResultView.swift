@@ -682,21 +682,25 @@ struct CompetitionResultView: View {
     private func beltBannerContent(
         _ text: (holder: CompetitionBeltHolder, title: String, detail: String?)
     ) -> some View {
-        VStack(spacing: 6) {
-            CompetitionBeltMark(holder: text.holder, width: 44)
-            Text(text.title)
-                .font(.title3.weight(.heavy).width(.condensed))
-                .foregroundStyle(text.holder == .you ? Theme.you : Theme.ink)
-            if let detail = text.detail {
-                Text(detail)
-                    .font(.subheadline)
-                    .foregroundStyle(Theme.secondary)
+        VStack(spacing: 0) {
+            CompetitionBeltHeroArt(holder: text.holder)
+            VStack(spacing: 4) {
+                Text(text.title)
+                    .font(.title3.weight(.heavy).width(.condensed))
+                    .foregroundStyle(text.holder == .you ? Theme.you : Theme.ink)
+                if let detail = text.detail {
+                    Text(detail)
+                        .font(.subheadline)
+                        .foregroundStyle(Theme.secondary)
+                }
             }
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: .infinity)
+            .padding(16)
         }
-        .multilineTextAlignment(.center)
         .frame(maxWidth: .infinity)
-        .padding(16)
         .themePanel()
+        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
         .accessibilityElement(children: .combine)
         .accessibilityIdentifier("competition.result.belt")
     }
