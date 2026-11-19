@@ -142,6 +142,107 @@ final class ChallengeFriendUITests: XCTestCase {
         XCTAssertTrue(app.buttons["competition.create.paste-link"].waitForExistence(timeout: 3))
         XCTAssertFalse(element("competition.create.friends").exists)
         XCTAssertTrue(app.buttons["competition.create.search-people"].exists)
+        XCTAssertTrue(app.buttons["competition.create.bot"].exists)
+    }
+
+    func testDuelOffersPlayingABotAndBackReturnsToThePicker() throws {
+        launch(.challengeFriend, arguments: ["-UIAccessibilityReduceMotionEnabled", "YES"])
+        XCTAssertTrue(waitUntil(5) { self.app.buttons["friends.open"].label == "Friends, 1 request" })
+        let plus = app.buttons["competition.create.open"]
+        XCTAssertTrue(plus.waitForExistence(timeout: 5))
+        plus.tap()
+        let duelFormat = app.buttons["competition.group.format.duel"]
+        XCTAssertTrue(duelFormat.waitForExistence(timeout: 3))
+        XCTAssertTrue(duelFormat.isSelected)
+        XCTAssertTrue(duelFormat.label.contains("You against one person or a bot."), duelFormat.label)
+        app.buttons["competition.group.choose-players"].tap()
+        XCTAssertTrue(app.buttons["competition.create.done"].waitForExistence(timeout: 3))
+
+        XCTAssertTrue(element("competition.create.bot-group").exists)
+        let botRow = app.buttons["competition.create.bot"]
+        reveal(botRow)
+        XCTAssertTrue(botRow.isEnabled)
+        XCTAssertTrue(botRow.label.contains("Play a Bot"), botRow.label)
+        XCTAssertTrue(botRow.label.contains("Practice · Pacer, Chill, Erratic or Beast"), botRow.label)
+
+        botRow.tap()
+        let backButton = app.buttons["competition.create.back"]
+        XCTAssertTrue(backButton.waitForExistence(timeout: 3))
+        XCTAssertTrue(app.staticTexts["Pick a bot"].exists)
+        XCTAssertTrue(
+            app.staticTexts["Seven days against a bot, scaled to your last two weeks. It doesn’t count toward your record."].exists
+        )
+        for mode in ["pacer", "chill", "erratic", "beast"] {
+            XCTAssertTrue(app.buttons["competition.practice.pace.\(mode)"].exists, mode)
+        }
+        XCTAssertTrue(app.buttons["competition.practice.pace.pacer"].isSelected)
+        XCTAssertEqual(app.buttons["competition.practice.start"].label, "Start Tomorrow")
+        try audit("pick-bot")
+
+        backButton.tap()
+        XCTAssertTrue(element("competition.create.friends").waitForExistence(timeout: 3))
+    }
+
+    func testStartingABotFromDuelShowsOnHomeDimsTheRowAndCanEndPractice() {
+        launch(.challengeFriend, arguments: ["-UIAccessibilityReduceMotionEnabled", "YES"])
+        openSheet()
+        let botRow = app.buttons["competition.create.bot"]
+        reveal(botRow)
+        botRow.tap()
+
+        let beast = app.buttons["competition.practice.pace.beast"]
+        XCTAssertTrue(beast.waitForExistence(timeout: 3))
+        beast.tap()
+        XCTAssertTrue(beast.isSelected)
+        app.buttons["competition.practice.start"].tap()
+        XCTAssertTrue(element("competition.create.card").waitForNonExistence(timeout: 5))
+
+        let practiceCard = app.buttons["competition.sharing.scheduled.a1000000-0000-4000-8000-00000000000c"]
+        XCTAssertTrue(practiceCard.waitForExistence(timeout: 5))
+        XCTAssertEqual(practiceCard.label, "Beast. Practice · Starts Mon, Aug 17")
+
+        openSheet(waitForFriends: false)
+        reveal(botRow, requireHittable: false)
+        XCTAssertFalse(botRow.isEnabled)
+        XCTAssertTrue(botRow.label.contains("In a practice match with Beast"), botRow.label)
+        app.buttons["competition.create.done"].tap()
+        XCTAssertTrue(element("competition.create.card").waitForNonExistence(timeout: 3))
+
+        reveal(practiceCard)
+        practiceCard.tap()
+        XCTAssertTrue(app.navigationBars["Beast"].waitForExistence(timeout: 3))
+        let more = element("competition.more")
+        XCTAssertTrue(more.waitForExistence(timeout: 3))
+        more.tap()
+        let end = app.buttons["competition.practice.end"]
+        XCTAssertTrue(end.waitForExistence(timeout: 3))
+        end.tap()
+        let dialog = app.sheets["End this practice match?"]
+        XCTAssertTrue(dialog.waitForExistence(timeout: 3))
+        dialog.buttons["End Practice"].tap()
+        XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 5))
+        XCTAssertFalse(practiceCard.exists)
+    }
+
+    func testBotPickerFitsTheLargestTextInDark() throws {
+        let arguments = [
+            "-AppleInterfaceStyle", "Dark",
+            "-healthcomp.appearance", "dark",
+            "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL",
+            "-UIAccessibilityReduceMotionEnabled", "YES",
+        ]
+        launch(.empty, arguments: arguments)
+        openSheet(waitForFriends: false)
+        let botRow = app.buttons["competition.create.bot"]
+        XCTAssertTrue(botRow.waitForExistence(timeout: 5))
+        for _ in 0..<4 where !botRow.isHittable { app.swipeUp() }
+        try audit("sheet bot row dark-ax5")
+        botRow.tap()
+        XCTAssertTrue(app.staticTexts["Pick a bot"].waitForExistence(timeout: 3))
+        try audit("pick-bot top dark-ax5")
+        for _ in 0..<4 { app.swipeUp() }
+        XCTAssertTrue(app.buttons["competition.practice.start"].exists)
+        try audit("pick-bot bottom dark-ax5")
     }
 
     // MARK: Person pages
@@ -467,10 +568,27 @@ final class ChallengeFriendUITests: XCTestCase {
         // but a tap there lands on the home indicator.
         // A swipe, not a press-and-drag: at the largest text size the press
         // lands on a friend row and the sheet takes it as a tap.
-        for _ in 0..<16 where !(target.exists && target.isHittable && app.frame.contains(target.frame)) {
+        for _ in 0..<16 {
+            if target.exists, target.isHittable,
+               target.frame.minY >= app.frame.minY + 60,
+               target.frame.maxY <= app.frame.maxY - 34 {
+                break
+            }
             window.swipeUp(velocity: .slow)
         }
         XCTAssertTrue(target.isHittable, "\(target)")
+    }
+
+    private func reveal(_ target: XCUIElement, requireHittable: Bool = true) {
+        let surface = app.scrollViews.firstMatch
+        for _ in 0..<6 {
+            let inBounds = target.exists
+                && target.frame.minY >= 80
+                && target.frame.maxY <= app.frame.maxY - 34
+            if inBounds, !requireHittable || target.isHittable { return }
+            surface.swipeUp()
+        }
+        if requireHittable { XCTAssertTrue(target.isHittable, "\(target)") }
     }
 
     /// A slow runner can drop keys: type, read the field back, and retype

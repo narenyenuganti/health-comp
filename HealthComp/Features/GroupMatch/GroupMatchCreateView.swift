@@ -237,7 +237,7 @@ struct GroupMatchCreateView: View {
     // MARK: Format
 
     private static let formats: [(GroupMatchFormat?, String, String, [FormatGlyph.Mark])] = [
-        (nil, "Duel", "You against one person. The belt is on the line.", [.you, .gap(11), .them]),
+        (nil, "Duel", "You against one person or a bot.", [.you, .gap(11), .them]),
         (.threeWay, "Three-Way", "Three players, every one for themselves.", [.you, .gap(8), .them, .gap(8), .them]),
         (.fourWay, "Four-Way", "Four players, every one for themselves.",
          [.you, .gap(5), .them, .gap(5), .them, .gap(5), .them]),
@@ -661,8 +661,8 @@ private struct FormatGlyph: View {
     }
 }
 
-/// A bot's square with three bars, for "Add a bot".
-private struct BotGlyph: View {
+/// A bot's square with three bars, for "Add a bot" and Duel's "Play a Bot".
+struct BotGlyph: View {
     var body: some View {
         HStack(alignment: .bottom, spacing: 2) {
             ForEach([14, 5, 11] as [CGFloat], id: \.self) { height in

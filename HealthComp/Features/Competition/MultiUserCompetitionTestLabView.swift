@@ -1064,9 +1064,10 @@ private struct MultiUserCompetitionFriendsTestLabView: View {
             seeded: scenario != .friendsEmpty,
             priyaIsAFriend: scenario == .challengeFriend
         )
-        let publication = scenario == .challengeFriend
+        let basePublication = scenario == .challengeFriend
             ? Fixtures.challengeFriendPublication
             : Fixtures.friendsPublication
+        let practiceLab = FriendsPracticeLabState(base: basePublication, hub: hub)
         let settings = FriendSettingsTestLabServer(
             username: scenario == .friendsNoUsername ? nil : "beta_alice"
         )
@@ -1092,19 +1093,17 @@ private struct MultiUserCompetitionFriendsTestLabView: View {
             $0.competitionClient = CompetitionClient(
                 start: {
                     let stream = hub.stream()
-                    hub.publish(publication)
+                    practiceLab.publish()
                     return stream
                 },
                 updates: { hub.stream() },
-                reconcileAll: { _ in
-                    hub.publish(publication)
-                    return publication
-                },
-                accept: { _ in publication },
-                decline: { _ in publication },
-                archive: { _ in publication },
-                rematch: { _ in publication },
-                reinvite: { publication },
+                reconcileAll: { _ in practiceLab.publish() },
+                accept: { _ in practiceLab.current() },
+                decline: { _ in practiceLab.current() },
+                archive: { _ in practiceLab.current() },
+                rematch: { _ in practiceLab.current() },
+                reinvite: { practiceLab.current() },
+                delete: { await practiceLab.delete($0) },
                 waitUntil: { _ in },
                 stop: { hub.finish() },
                 createInvite: { try await server.challenge($0) },
@@ -1133,6 +1132,7 @@ private struct MultiUserCompetitionFriendsTestLabView: View {
                     }
                     return "Sam Okafor"
                 },
+                startPractice: { await practiceLab.start($0) },
                 loadProfilePhotos: photos.load,
                 loadOwnProfilePhoto: photos.own,
                 profilePhotoData: photos.data
@@ -1286,7 +1286,7 @@ private actor FriendsTestLabServer {
             ),
             // Past the lab's publication, which never shows the new
             // challenge: the link is kept until it would.
-            expectedPublicationRevision: 2
+            expectedPublicationRevision: 100
         )
     }
 
@@ -1316,6 +1316,63 @@ private actor FriendsTestLabServer {
     func unblock(_ id: UUID) async throws {
         try await wait()
         blocked.removeAll { $0.id == id }
+    }
+}
+
+private final class FriendsPracticeLabState: @unchecked Sendable {
+    private let base: LocalCompetitionPublication
+    private let hub: LocalCompetitionPublicationHub
+    private let lock = NSLock()
+    private var revision: UInt64
+    private var practice: LocalCompetitionPresentation?
+
+    init(base: LocalCompetitionPublication, hub: LocalCompetitionPublicationHub) {
+        self.base = base
+        self.hub = hub
+        self.revision = base.publicationRevision
+    }
+
+    func current() -> LocalCompetitionPublication {
+        lock.withLock { snapshot() }
+    }
+
+    @discardableResult
+    func publish() -> LocalCompetitionPublication {
+        let next = lock.withLock {
+            revision += 1
+            return snapshot()
+        }
+        hub.publish(next)
+        return next
+    }
+
+    func start(_ difficulty: OpponentDifficulty) async -> LocalCompetitionPublication {
+        try? await Task.sleep(for: .milliseconds(80))
+        lock.withLock {
+            practice = MultiUserCompetitionTestLabFixtures.practiceScheduledPresentation(
+                difficulty: difficulty
+            )
+        }
+        return publish()
+    }
+
+    func delete(_ id: CompetitionID) async -> LocalCompetitionPublication {
+        try? await Task.sleep(for: .milliseconds(80))
+        lock.withLock {
+            if practice?.id == id { practice = nil }
+        }
+        return publish()
+    }
+
+    private func snapshot() -> LocalCompetitionPublication {
+        let dashboard = practice.map { base.dashboard.addingPractice([$0]) } ?? base.dashboard
+        return LocalCompetitionPublication(
+            publicationRevision: revision,
+            dashboard: dashboard,
+            evaluatedAt: base.evaluatedAt,
+            timeZoneIdentifier: base.timeZoneIdentifier,
+            source: base.source
+        )
     }
 }
 
@@ -3252,10 +3309,12 @@ enum MultiUserCompetitionTestLabFixtures {
     }
 
     /// Tomorrow's practice, Mon Aug 17 to Sun Aug 23, as Start Tomorrow makes it.
-    static func practiceScheduledPresentation() -> LocalCompetitionPresentation {
+    static func practiceScheduledPresentation(
+        difficulty: OpponentDifficulty = .pacer
+    ) -> LocalCompetitionPresentation {
         presentation(
             id: practiceID,
-            opponentName: PracticeMatch.opponentDisplayName,
+            opponentName: PracticeMatch.opponentDisplayName(for: difficulty),
             lifecycle: .scheduled,
             userPoints: 0,
             opponentPoints: 0,

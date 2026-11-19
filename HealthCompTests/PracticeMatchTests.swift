@@ -187,6 +187,24 @@ final class PracticeMatchTests: XCTestCase {
         XCTAssertEqual(PracticeMatch.expiredResults(journals: journals, now: leaves), [id])
     }
 
+    func testStartBlockerBlocksOnlyWhenAPracticeIsUnderway() async throws {
+        XCTAssertNil(PracticeMatch.startBlocker(in: []))
+        let realLive = MultiUserCompetitionTestLabFixtures.challengeFriendPublication.dashboard.competitions
+        XCTAssertNil(PracticeMatch.startBlocker(in: realLive))
+
+        let (runtime, environment, source) = try makeRuntime(dailyPoints: 300)
+        _ = try await PracticeMatch.start(.beast, runtime: runtime, environment: environment)
+        let scheduled = try await presentation(runtime, environment)
+        XCTAssertEqual(
+            PracticeMatch.startBlocker(in: realLive + [scheduled]),
+            "In a practice match with Beast"
+        )
+
+        try await finish(runtime: runtime, source: source)
+        let completed = try await presentation(runtime, environment)
+        XCTAssertNil(PracticeMatch.startBlocker(in: realLive + [completed]))
+    }
+
     // MARK: Helpers
 
     private func presentation(
