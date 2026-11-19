@@ -33,11 +33,6 @@ struct GroupMatchResultView: View {
                     podium
                     if rows.count > 3 { places(Array(rows.dropFirst(3))) }
                 }
-                Text("No belt on the line. Belts change hands in duels.")
-                    .font(.subheadline)
-                    .foregroundStyle(Theme.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityIdentifier("competition.group.result.no-belt")
                 // At accessibility sizes a pinned control would cover the screen.
                 if dynamicTypeSize.isAccessibilitySize { rematchButton }
             }

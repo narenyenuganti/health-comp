@@ -245,7 +245,7 @@ jobs:
             GroupMatchLiveUITests/testLiveFreeForAllShowsStandingsAndTheWeek
             GroupMatchLiveDoublesUITests/testLiveDoublesShowsBothTeams
             GroupMatchVersusUITests/testFreeForAllIntroShowsTheLineupThenTheMatch
-            GroupMatchResultUITests/testTiedResultSaysNoBelt
+            GroupMatchResultUITests/testTiedResultOmitsNoBeltFootnote
             GroupMatchHistoryUITests/testRecordShowsEachKindOfMatch
             SleepBetaUITests/testCreateSheetOffersRingsAndSleep
             SleepBetaUITests/testSettingsPrimesBeforeHealthAndPicksASource

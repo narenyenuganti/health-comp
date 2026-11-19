@@ -117,7 +117,7 @@ final class FeatureRoundIntegrationUITests: XCTestCase {
         let result = button(Self.samResult)
         scrollToElement(result)
         let label = result.label
-        XCTAssertTrue(label.contains("Moves to History"), label)
+        XCTAssertFalse(label.contains("Moves to History"), label)
         XCTAssertTrue(label.hasSuffix(". Clap. Sam reacted to the result"), label)
         XCTAssertFalse(label.contains("belt"), label)
 

@@ -296,11 +296,8 @@ final class MultiUserCompetitionUITests: XCTestCase {
         )
 
         tapMoreMenuItem("Archive")
-        XCTAssertTrue(
-            app.descendants(matching: .any)["competition.history.preserved"]
-                .waitForExistence(timeout: 3)
-        )
-        XCTAssertFalse(moreMenu.exists)
+        XCTAssertTrue(moreMenu.waitForNonExistence(timeout: 3))
+        XCTAssertFalse(app.descendants(matching: .any)["competition.history.preserved"].exists)
         XCTAssertFalse(app.buttons["Delete Local Data"].exists)
     }
 
@@ -505,7 +502,7 @@ final class MultiUserCompetitionUITests: XCTestCase {
         let fire = app.buttons["competition.react.fire"]
         XCTAssertTrue(fire.waitForExistence(timeout: 3))
         XCTAssertTrue(text("REACT TO JORDAN’S DAY").exists)
-        XCTAssertTrue(text("Jordan sees your reaction on this day.").exists)
+        XCTAssertFalse(text("Jordan sees your reaction on this day.").exists)
         XCTAssertFalse(fire.isSelected)
         fire.tap()
         XCTAssertTrue(
@@ -795,7 +792,7 @@ final class MultiUserCompetitionUITests: XCTestCase {
             )
         ).firstMatch
         scrollToElement(former)
-        XCTAssertTrue(former.label.contains("Moves to History"))
+        XCTAssertFalse(former.label.contains("Moves to History"))
         let screenshot = XCTAttachment(screenshot: app.screenshot())
         screenshot.name = "remote-home-groups"
         screenshot.lifetime = .keepAlways

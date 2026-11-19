@@ -691,16 +691,11 @@ struct CompetitionDetailView: View {
             } else if reactions.selection(.day(ordinal), in: competition) == .clap {
                 HStack(spacing: 10) {
                     CompetitionReactionEmoji(kind: .clap)
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(text)
-                            .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(Theme.ink)
-                        Text("Open a day for all four reactions.")
-                            .font(.footnote)
-                            .foregroundStyle(Theme.secondary)
-                    }
-                    .fixedSize(horizontal: false, vertical: true)
-                    .frame(maxWidth: .infinity, alignment: .leading)
+                    Text(text)
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Theme.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 .padding(.horizontal, 14)
                 .padding(.vertical, 12)
@@ -741,10 +736,6 @@ struct CompetitionDetailView: View {
                 if canReact {
                     CompetitionReactionLabel("REACT TO \(name.uppercased(with: locale))’S DAY")
                     control.picker(.day(ordinal), in: competition)
-                    Text("\(name) sees your reaction on this day.")
-                        .font(.caption)
-                        .foregroundStyle(Theme.secondary)
-                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)

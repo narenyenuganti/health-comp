@@ -435,24 +435,16 @@ struct CompetitionFormStrip: View {
 
     var body: some View {
         let shown = Array(outcomes.suffix(isLive ? 9 : 10))
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 4) {
-                ForEach(shown.indices, id: \.self) { index in
-                    SlantedBar()
-                        .fill(color(shown[index]))
-                        .frame(height: barHeight)
-                }
-                if isLive {
-                    SlantedBar()
-                        .stroke(Theme.faint, style: StrokeStyle(lineWidth: 1.5, dash: [3, 3]))
-                        .frame(height: barHeight)
-                }
+        HStack(spacing: 4) {
+            ForEach(shown.indices, id: \.self) { index in
+                SlantedBar()
+                    .fill(color(shown[index]))
+                    .frame(height: barHeight)
             }
-            if let line = competitionFormLine(outcomes, opponentName: opponentName) {
-                Text(line + (isLive ? " · this week isn’t counted yet" : ""))
-                    .font(.subheadline)
-                    .foregroundStyle(Theme.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+            if isLive {
+                SlantedBar()
+                    .stroke(Theme.faint, style: StrokeStyle(lineWidth: 1.5, dash: [3, 3]))
+                    .frame(height: barHeight)
             }
         }
         .padding(.horizontal, 4)
@@ -515,13 +507,6 @@ struct CompetitionRingRecordPanel: View {
                         + "Best day \(points(record.bestYou)) to \(points(record.bestThem))"
                 )
                 .accessibilityIdentifier("competition.person.rings.\(rings[index].name.lowercased())")
-            }
-            if let edge = competitionRingEdgeText(records, opponentName: opponentName, locale: locale) {
-                Text(edge)
-                    .font(.footnote)
-                    .foregroundStyle(Theme.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .accessibilityIdentifier("competition.person.rings.edge")
             }
         }
         .padding(16)
