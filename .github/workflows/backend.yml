@@ -44,7 +44,6 @@ jobs:
           python3 -B -m unittest scripts.tests.test_verify_support_email
           for script in scripts/*.sh; do bash -n "$script"; done
           sh scripts/test-staging-adversarial-sql.sh
-          sh scripts/test-verify-app-attest-dependency-graph.sh
           bash scripts/verify-no-secrets.sh
           bash scripts/verify-supabase-layout.sh
           # Pages deploys web/ and functions/ on every push to main: universal

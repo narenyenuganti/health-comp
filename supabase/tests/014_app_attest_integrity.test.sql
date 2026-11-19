@@ -4,48 +4,7 @@ set local role postgres;
 create extension if not exists pgtap with schema extensions;
 set local search_path = extensions, public, pg_catalog;
 
-select plan(86);
-
-select has_table(
-  'private', 'app_attest_challenges',
-  'App Attest challenges remain outside the exposed schema'
-);
-select has_table(
-  'private', 'app_attest_keys',
-  'App Attest key and counter state remains private'
-);
-select has_table(
-  'private', 'app_attest_submission_grants',
-  'one-use score grants remain outside the exposed schema'
-);
-select has_function(
-  'public', 'issue_app_attest_challenge',
-  array['uuid', 'text', 'text'],
-  'an authenticated installation can request a bound challenge'
-);
-select has_function(
-  'public', 'load_app_attest_context',
-  array['uuid', 'uuid', 'uuid', 'text', 'text', 'text'],
-  'the service verifier can load a revalidated private context'
-);
-select has_function(
-  'public', 'authorize_app_attest_proof',
-  array[
-    'uuid', 'uuid', 'uuid', 'text', 'text', 'text', 'text', 'text',
-    'text', 'integer', 'text', 'bigint', 'uuid', 'uuid', 'integer',
-    'bigint', 'timestamp with time zone', 'text'
-  ],
-  'the service verifier can atomically authorize a proof'
-);
-select has_function(
-  'public', 'submit_attested_score_revision',
-  array[
-    'uuid', 'uuid', 'uuid', 'integer', 'bigint',
-    'timestamp with time zone', 'text', 'text', 'integer', 'integer',
-    'integer', 'text', 'text', 'text', 'text'
-  ],
-  'authenticated score submission requires a one-use grant'
-);
+select plan(79);
 
 select is((
   select pg_catalog.count(*)

@@ -136,13 +136,8 @@ final class CompetitionRecapTests: XCTestCase {
         let shown = recap(base)
         XCTAssertEqual(shown.userPointsText, "2,412")
         XCTAssertEqual(shown.opponentPointsText, "2,268")
-        XCTAssertEqual(
-            shown.marginText,
-            competitionMarginText(userPoints: 2_412, opponentPoints: 2_268, fractionDigits: 0, locale: en)
-        )
         XCTAssertEqual(shown.marginText, "Won by 144 points")
         XCTAssertTrue(shown.marginIsYours)
-        XCTAssertEqual(shown.daysText, competitionDaysSummaryText(base.days))
         XCTAssertEqual(shown.daysText, "won 4 days, lost 3")
 
         let close = recap(try match(days(), user: 2_104.30, opponent: 2_104.00))

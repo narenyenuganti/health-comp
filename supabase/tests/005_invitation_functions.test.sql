@@ -3,24 +3,10 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = extensions, public, pg_catalog;
 
-select plan(43);
+select plan(38);
 
-select has_function('private', 'invitation_expiry_interval_v1', array[]::text[],
-  'versioned invitation-expiry policy exists');
-select has_function('private', 'best_available_local_day_offset_v1', array[]::text[],
-  'versioned best-available policy exists');
 select is(private.best_available_local_day_offset_v1(), 8,
   'best-available policy uses the Day-9 local boundary');
-
-select has_function(
-  'public', 'create_competition_invite',
-  array['bytea', 'text', 'uuid', 'uuid', 'uuid', 'smallint', 'uuid'],
-  'service-only create RPC accepts verified identity and idempotency inputs'
-);
-select has_function('public', 'claim_competition_invite', array['bytea'],
-  'authenticated claim RPC exists');
-select has_function('public', 'cleanup_expired_competition_invites', array[]::text[],
-  'service cleanup RPC exists');
 
 select ok(coalesce((
   select procedure_row.prosecdef

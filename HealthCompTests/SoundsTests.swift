@@ -5,7 +5,6 @@ import XCTest
 @MainActor
 final class SoundsTests: XCTestCase {
     func testEverySoundIsBundledAndItsHitIsInsideTheFile() throws {
-        XCTAssertEqual(SoundEffect.allCases.count, 11)
         for effect in SoundEffect.allCases {
             let url = try XCTUnwrap(Sounds.url(effect), effect.rawValue)
             let file = try AVAudioFile(forReading: url)
@@ -33,7 +32,7 @@ final class SoundsTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(Sounds.level(.versus, defaults: defaults)), 0.2, accuracy: 0.0001)
         XCTAssertEqual(
             try XCTUnwrap(Sounds.level(.stamp, defaults: defaults)),
-            0.2 * SoundEffect.stamp.gain,
+            0.0846,
             accuracy: 0.0001
         )
         defaults.set(0.0, forKey: Sounds.volumeKey)

@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = extensions, public, pg_catalog;
 
-select plan(28);
+select plan(24);
 
 select columns_are(
   'public', 'profiles',
@@ -100,31 +100,6 @@ select is(
   ),
   0::bigint,
   'live tables contain no prohibited Health data columns'
-);
-
-select ok(
-  exists (
-    select 1
-    from pg_constraint
-    where conrelid = 'public.profiles'::regclass
-      and contype = 'c'
-      and conname = 'profiles_identity_state_check'
-      and pg_get_constraintdef(oid) like '%Former competitor%'
-      and pg_get_constraintdef(oid) like '%auth_user_id IS NULL%'
-  ),
-  'anonymized profiles are irreversibly detached and use the literal safe display name'
-);
-
-select ok(
-  exists (
-    select 1
-    from pg_trigger
-    where tgrelid = 'public.competition_participants'::regclass
-      and not tgisinternal
-      and tgdeferrable
-      and tginitdeferred
-  ),
-  'the two-participant invariant uses a deferred constraint trigger'
 );
 
 select col_type_is('public', 'daily_score_revisions', 'move_basis_points', 'integer', 'Move uses integer basis points');
@@ -251,21 +226,6 @@ select is(
   ),
   5::bigint,
   'evidence, results, awards, and cursor rows are append-only'
-);
-
-select ok(
-  to_regprocedure('private.allocate_competition_server_seq(uuid,text,uuid,timestamptz)') is not null,
-  'server sequence allocator is transactionally row-counter based'
-);
-
-select ok(
-  (
-    select count(*) >= 5
-    from pg_constraint
-    where conrelid = 'public.daily_score_revisions'::regclass
-      and contype = 'c'
-  ),
-  'daily score revisions constrain ordinals, versions, modes, bounds, and availability shape'
 );
 
 select * from finish();

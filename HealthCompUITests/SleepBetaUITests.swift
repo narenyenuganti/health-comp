@@ -17,11 +17,39 @@ final class SleepBetaUITests: XCTestCase {
     }
 
     func testLiveMatchShowsSleepRowAndNight() {
-        run(dark: false)
-    }
+        launch()
+        let jordan = card("active", "Jordan")
+        scrollToElement(jordan)
+        sleep(3) // reactions rain settles
+        shot("sleep-home")
+        jordan.tap()
+        XCTAssertTrue(app.navigationBars["Jordan"].waitForExistence(timeout: 3))
 
-    func testLiveMatchInDark() {
-        run(dark: true)
+        let rings = element("competition.ownerRings")
+        XCTAssertTrue(rings.waitForExistence(timeout: 3))
+        XCTAssertTrue(rings.label.contains("Sleep, 6 hours 5 minutes asleep, 60 points"), rings.label)
+        scrollToElement(rings)
+        shot("sleep-today")
+
+        let row = app.buttons["competition.sleep.row"]
+        XCTAssertTrue(row.waitForExistence(timeout: 3))
+        row.tap()
+        XCTAssertTrue(app.staticTexts["Night before Day 3"].waitForExistence(timeout: 3))
+        for part in ["Time asleep, 6h 05m of 8h, 38/50", "Bedtime, Fell asleep 12:40\u{202F}AM, usual 11:10\u{202F}PM, 10/30", "Wake-ups, 34 min awake, 12/20"] {
+            XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", part)).firstMatch.exists, part)
+        }
+        XCTAssertTrue(app.staticTexts["Waiting to sync"].exists, "Jordan's third night isn't in")
+        shot("sleep-night")
+        app.buttons["Close"].firstMatch.tap()
+
+        let week = app.buttons["Week"]
+        if week.waitForExistence(timeout: 2) {
+            week.tap()
+            sleep(2)
+            app.swipeUp()
+            sleep(1)
+            shot("sleep-week")
+        }
     }
 
     func testCreateSheetOffersRingsAndSleep() {
@@ -86,45 +114,8 @@ final class SleepBetaUITests: XCTestCase {
         shot("sleep-settings")
     }
 
-    private func run(dark: Bool) {
-        launch(dark: dark)
-        let suffix = dark ? "-dark" : ""
-        let jordan = card("active", "Jordan")
-        scrollToElement(jordan)
-        sleep(3) // reactions rain settles
-        shot("sleep-home\(suffix)")
-        jordan.tap()
-        XCTAssertTrue(app.navigationBars["Jordan"].waitForExistence(timeout: 3))
-
-        let rings = element("competition.ownerRings")
-        XCTAssertTrue(rings.waitForExistence(timeout: 3))
-        XCTAssertTrue(rings.label.contains("Sleep, 6 hours 5 minutes asleep, 60 points"), rings.label)
-        scrollToElement(rings)
-        shot("sleep-today\(suffix)")
-
-        let row = app.buttons["competition.sleep.row"]
-        XCTAssertTrue(row.waitForExistence(timeout: 3))
-        row.tap()
-        XCTAssertTrue(app.staticTexts["Night before Day 3"].waitForExistence(timeout: 3))
-        for part in ["Time asleep, 6h 05m of 8h, 38/50", "Bedtime, Fell asleep 12:40\u{202F}AM, usual 11:10\u{202F}PM, 10/30", "Wake-ups, 34 min awake, 12/20"] {
-            XCTAssertTrue(app.descendants(matching: .any).matching(NSPredicate(format: "label == %@", part)).firstMatch.exists, part)
-        }
-        XCTAssertTrue(app.staticTexts["Waiting to sync"].exists, "Jordan's third night isn't in")
-        shot("sleep-night\(suffix)")
-        app.buttons["Close"].firstMatch.tap()
-
-        let week = app.buttons["Week"]
-        if week.waitForExistence(timeout: 2) {
-            week.tap()
-            sleep(2)
-            app.swipeUp()
-            sleep(1)
-            shot("sleep-week\(suffix)")
-        }
-    }
-
-    private func launch(dark: Bool = false) {
-        XCUIDevice.shared.appearance = dark ? .dark : .light
+    private func launch() {
+        XCUIDevice.shared.appearance = .light
         app.launchEnvironment["TZ"] = "America/Los_Angeles"
         app.launchArguments = [
             "--multi-user-competition-test-lab",

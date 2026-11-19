@@ -282,84 +282,6 @@ final class FeatureRoundIntegrationUITests: XCTestCase {
         }
     }
 
-    // MARK: Screenshot matrix (not in CI)
-
-    func testScreenshotMatrix() {
-        let configurations: [(name: String, arguments: [String])] = [
-            ("light-default", ["-AppleInterfaceStyle", "Light"]),
-            ("dark-default", ["-AppleInterfaceStyle", "Dark"]),
-            ("light-ax5", ["-AppleInterfaceStyle", "Light"] + Self.ax5),
-            ("dark-ax5", ["-AppleInterfaceStyle", "Dark"] + Self.ax5),
-        ]
-        for config in configurations {
-            let suffix = config.name
-            let arguments = config.arguments + ["-UIAccessibilityReduceMotionEnabled", "YES"]
-            launch(arguments)
-            shot("home-top", suffix)
-            showAtTop(button(Self.samLive))
-            shot("home-sam", suffix)
-            showAtTop(button(Self.practice))
-            shot("home-practice", suffix)
-            showAtTop(button(Self.samResult))
-            shot("home-results", suffix)
-
-            open(Self.samLive, title: "Sam")
-            shot("match-sam", suffix)
-            let latest = app.buttons["competition.reaction.latest"]
-            scrollToElement(latest)
-            shot("match-sam-reaction", suffix)
-            app.buttons["competition.nudge"].tap()
-            XCTAssertTrue(element("competition.nudge.sent").waitForExistence(timeout: 5))
-            shot("match-sam-nudged", suffix)
-            latest.tap()
-            XCTAssertTrue(app.staticTexts["Day 1"].waitForExistence(timeout: 3))
-            shot("day-drawer-sam", suffix)
-            closeDrawer()
-            goBack()
-
-            open(Self.jordan, title: "Jordan")
-            shot("match-jordan-tally", suffix)
-            scrollToElement(app.buttons["competition.nudge"])
-            shot("match-jordan-tally-nudge", suffix)
-            goBack()
-
-            open(Self.practice, title: "Pacer")
-            shot("match-practice", suffix)
-            goBack()
-
-            open(Self.samResult, title: "Sam")
-            shot("result-sam", suffix)
-            showAtTop(element("competition.result.belt"))
-            shot("result-sam-banner", suffix)
-            showAtTop(element("competition.result.react"))
-            shot("result-sam-reactions", suffix)
-            let share = app.buttons["competition.result.share"]
-            scrollToElement(share)
-            shot("result-sam-share", suffix)
-            share.tap()
-            XCTAssertTrue(element("competition.recap.card").waitForExistence(timeout: 5))
-            shot("share-sheet-sam", suffix)
-            app.buttons["Close"].tap()
-            goBack()
-
-            let history = app.buttons["competition.history.open"]
-            scrollToElement(history)
-            history.tap()
-            XCTAssertTrue(app.navigationBars["History"].waitForExistence(timeout: 3))
-            shot("history", suffix)
-
-            launchNotificationChoices(arguments)
-            openNotifications()
-            shot("notifications-top", suffix)
-            scrollToElement(choice("nudge"))
-            shot("notifications-bottom", suffix)
-
-            launchLiveActivity(sample: "lead", arguments: arguments)
-            XCTAssertTrue(element("liveActivity.preview.live").waitForExistence(timeout: 10))
-            shot("live-activity-preview", suffix)
-        }
-    }
-
     // MARK: Helpers
 
     private func launch(_ arguments: [String] = []) {
@@ -498,24 +420,6 @@ final class FeatureRoundIntegrationUITests: XCTestCase {
         } while Date() < deadline
         XCTFail("Server shows \"\(serverLabel())\", expected \"\(expected)\"")
         return false
-    }
-
-    private func shot(_ screen: String, _ suffix: String) {
-        let attachment = XCTAttachment(screenshot: app.screenshot())
-        attachment.name = "integration-\(screen)-\(suffix)"
-        attachment.lifetime = .keepAlways
-        add(attachment)
-    }
-
-    /// Scrolls until the element is on screen, then nudges it toward the top.
-    private func showAtTop(_ element: XCUIElement) {
-        scrollToElement(element)
-        let scroll = app.scrollViews.firstMatch
-        for _ in 0..<6 where element.frame.minY > scroll.frame.minY + 140 {
-            let start = scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
-            let end = scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.45))
-            start.press(forDuration: 0.05, thenDragTo: end)
-        }
     }
 
     private func scrollToElement(_ element: XCUIElement) {

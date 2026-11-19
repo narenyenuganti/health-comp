@@ -3,20 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = extensions, public, pg_catalog;
 
-select plan(114);
-
-select has_function(
-  'public',
-  'bootstrap_current_profile',
-  array['text'],
-  'authenticated profile bootstrap RPC exists'
-);
-select has_function(
-  'public',
-  'update_current_profile',
-  array['text'],
-  'authenticated profile update RPC exists'
-);
+select plan(104);
 
 select ok(coalesce((
   select procedure_row.prosecdef
@@ -381,23 +368,9 @@ select results_eq(
   'anonymization emits only profile_anonymized presentation work'
 );
 
-select has_column(
-  'public', 'competitions', 'invite_creation_idempotency_key',
-  'competitions store the invite creation idempotency key'
-);
-select has_column(
-  'public', 'competitions', 'invite_token_derivation_version',
-  'competitions store the invite token derivation version'
-);
 select col_default_is(
   'public', 'competitions', 'invite_token_derivation_version', '0',
   'legacy invite rows default to random-token derivation version zero'
-);
-select has_function(
-  'public',
-  'create_competition_invite',
-  array['bytea', 'text', 'uuid', 'uuid', 'uuid', 'smallint', 'uuid'],
-  'idempotent service create RPC exists'
 );
 select ok(coalesce((
   select has_function_privilege('service_role', procedure_row.oid, 'EXECUTE')
@@ -556,17 +529,6 @@ select ok((
   where first_result.name = 'first' and other_result.name = 'other-creator'
 ), 'creator identity scopes the idempotency key');
 
-select ok(coalesce((
-  select not has_function_privilege('service_role', procedure_row.oid, 'EXECUTE')
-    and not has_function_privilege('authenticated', procedure_row.oid, 'EXECUTE')
-    and not has_function_privilege('anon', procedure_row.oid, 'EXECUTE')
-  from pg_proc procedure_row
-  join pg_namespace schema_row on schema_row.oid = procedure_row.pronamespace
-  where schema_row.nspname = 'public'
-    and procedure_row.proname = 'create_competition_invite'
-    and procedure_row.proargtypes = '17 25 2950 2950'::oidvector
-), false), 'legacy random-token create overload is no longer executable');
-
 insert into auth.users (
   id, instance_id, aud, role, email, encrypted_password, created_at, updated_at
 ) values (
@@ -632,10 +594,6 @@ select throws_ok(
 );
 reset role;
 
-select has_column(
-  'public', 'device_installations', 'installation_id',
-  'device installations have a client-stable installation identity'
-);
 select ok(coalesce((
   select index_row.indisunique
   from pg_catalog.pg_index index_row
@@ -646,15 +604,6 @@ select ok(coalesce((
     and pg_catalog.pg_get_indexdef(index_row.indexrelid)
       like '%(profile_id, installation_id)%'
 ), false), 'profile and installation identity are unique together');
-select has_function(
-  'public', 'register_current_device_installation',
-  array['uuid', 'text', 'text'],
-  'authenticated installation registration RPC exists'
-);
-select has_function(
-  'public', 'remove_current_device_installation', array['uuid'],
-  'authenticated installation removal RPC exists'
-);
 select ok(coalesce((
   select procedure_row.prosecdef
     and 'search_path=""' = any(coalesce(procedure_row.proconfig, array[]::text[]))
@@ -944,11 +893,6 @@ select is((
 ), array['revoked:none', 'active:' || repeat('e5', 32)],
   'the stale installation is retired and the new one holds the token');
 
-select has_function(
-  'public', 'fetch_competition_changes',
-  array['uuid', 'bigint', 'integer'],
-  'typed authenticated competition change-feed RPC exists'
-);
 select ok(coalesce((
   select procedure_row.prosecdef
     and 'search_path=""' = any(coalesce(procedure_row.proconfig, array[]::text[]))

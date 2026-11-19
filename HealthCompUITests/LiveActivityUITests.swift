@@ -296,29 +296,6 @@ final class LiveActivityUITests: XCTestCase {
 
     // MARK: Screenshot matrix
 
-    /// The in-app preview for the lead and the long-name samples, light and
-    /// dark, at the default size and AX5.
-    func testPreviewScreenshotMatrix() throws {
-        for appearance in ["Light", "Dark"] {
-            for (size, category) in [("default", "UICTContentSizeCategoryL"),
-                                     ("ax5", "UICTContentSizeCategoryAccessibilityXXXL")] {
-                for key in ["lead", "long"] {
-                    XCUIDevice.shared.appearance = appearance == "Dark" ? .dark : .light
-                    let app = launch(sample: key, arguments: ["-AppleInterfaceStyle", appearance,
-                                                              "-UIPreferredContentSizeCategoryName", category])
-                    XCTAssertTrue(previewElement(app, "live").waitForExistence(timeout: 10))
-                    let name = "\(appearance.lowercased())-\(size)"
-                    shot("preview-\(key)-\(name)")
-                    let start = app.buttons["liveActivity.preview.start"]
-                    for _ in 0..<6 where !start.isHittable { app.swipeUp() }
-                    XCTAssertTrue(start.isHittable, "\(key) \(name): Start reachable")
-                    shot("preview-\(key)-bottom-\(name)")
-                    app.terminate()
-                }
-            }
-        }
-    }
-
     /// The real island and Lock Screen, light and dark, at the default size
     /// and with the system at AX5, live and then pending.
     func testSystemScreenshotMatrix() throws {

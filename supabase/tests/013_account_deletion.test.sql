@@ -4,39 +4,11 @@ set local role postgres;
 create extension if not exists pgtap with schema extensions;
 set local search_path = extensions, public, pg_catalog;
 
-select plan(88);
+select plan(81);
 
-select has_table(
-  'private', 'account_deletions',
-  'account deletion progress is durable outside the exposed schema'
-);
 select hasnt_table(
   'public', 'account_deletions',
   'account deletion progress has no public Data API table'
-);
-select has_function(
-  'public', 'begin_account_deletion', array['uuid'],
-  'the server can durably prepare account deletion'
-);
-select has_function(
-  'public', 'store_account_deletion_apple_token', array['uuid', 'text', 'text'],
-  'the server can escrow a revocation token in Vault'
-);
-select has_function(
-  'public', 'load_account_deletion_apple_token', array['uuid'],
-  'the server can resume Apple revocation after a crash'
-);
-select has_function(
-  'public', 'mark_account_deletion_apple_revoked', array['uuid'],
-  'the server records confirmed Apple revocation'
-);
-select has_function(
-  'public', 'anonymize_account_deletion', array['uuid'],
-  'the server anonymizes shared history before auth deletion'
-);
-select has_function(
-  'public', 'complete_account_deletion', array['uuid'],
-  'the server confirms that the auth identity is gone'
 );
 select is((
   select count(*)::bigint

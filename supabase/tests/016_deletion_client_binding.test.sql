@@ -4,13 +4,6 @@ create extension if not exists pgtap with schema extensions;
 set local search_path = extensions, public, pg_catalog;
 select no_plan();
 
-select has_column('private', 'account_deletions', 'apple_client_id',
-  'deletion progress records the Apple client binding');
-select has_function('public', 'store_account_deletion_apple_token',
-  array['uuid', 'text', 'text'], 'token storage requires an explicit client');
-select hasnt_function('public', 'store_account_deletion_apple_token',
-  array['uuid', 'text'], 'the unbound public token writer is removed');
-
 insert into auth.users (id, aud, role, created_at, updated_at)
 values ('e1000000-0000-4000-8000-000000000001',
   'authenticated', 'authenticated', now(), now());

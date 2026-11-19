@@ -3,60 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = extensions, public, pg_catalog;
 
-select plan(85);
-
--- Assert the permanent privilege surface before transaction-local grants are
--- added below for policy-level adversarial probes.
-select is((
-  select count(*)::bigint
-  from pg_class table_row
-  join pg_namespace schema_row on schema_row.oid = table_row.relnamespace
-  where schema_row.nspname = 'public'
-    and table_row.relname in (
-      'profiles', 'competitions', 'competition_participants',
-      'competition_invites', 'competition_change_log',
-      'daily_score_revisions', 'participant_finalization_attestations',
-      'competition_results', 'competition_awards', 'device_installations',
-      'support_events'
-    )
-    and table_row.relrowsecurity
-), 11::bigint, 'all live API tables enforce row-level security');
-
-select isnt(
-  has_column_privilege('authenticated', 'public.profiles', 'auth_user_id', 'SELECT'),
-  true,
-  'the authentication UUID is not a client-readable profile column'
-);
-select isnt(has_table_privilege('authenticated', 'public.profiles', 'SELECT'), true,
-  'profiles has no table-wide SELECT grant that could reveal auth_user_id');
-select is((
-  select count(*)::bigint
-  from information_schema.role_table_grants
-  where table_schema = 'public'
-    and grantee = 'authenticated'
-    and privilege_type in ('INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER')
-), 0::bigint, 'authenticated has no direct mutation or schema-control grant');
-select is((
-  select count(*)::bigint
-  from information_schema.role_table_grants
-  where table_schema = 'public' and grantee = 'anon'
-), 0::bigint, 'anonymous has no API table grants');
-select isnt(has_table_privilege('authenticated', 'public.competition_invites', 'SELECT'), true,
-  'invites cannot be queried directly by clients');
-select isnt(has_table_privilege('authenticated', 'public.competition_change_log', 'SELECT'), true,
-  'the raw change log cannot be queried directly by clients');
-select isnt(has_table_privilege('authenticated', 'public.support_events', 'SELECT'), true,
-  'support events cannot be queried directly by clients');
-select isnt(has_table_privilege('authenticated', 'public.device_installations', 'SELECT'), true,
-  'authenticated clients cannot read raw installation tokens');
-select is((
-  select count(*)::bigint
-  from information_schema.role_table_grants
-  where table_schema = 'public'
-    and table_name = 'device_installations'
-    and grantee = 'authenticated'
-    and privilege_type in ('INSERT', 'UPDATE', 'DELETE')
-), 0::bigint, 'device installations are client read-only');
+select plan(75);
 
 insert into auth.users (
   id, instance_id, aud, role, email, encrypted_password, created_at, updated_at

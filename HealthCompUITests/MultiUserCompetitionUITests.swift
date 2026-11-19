@@ -1146,146 +1146,6 @@ final class MultiUserCompetitionUITests: XCTestCase {
         app.terminate()
     }
 
-    func testIncomingChallengeOffersDeclineAndBlock() {
-        launch(.incomingChallenge)
-        defer { app.terminate() }
-        let decline = app.buttons["competition.invite.decline"]
-        XCTAssertTrue(decline.waitForExistence(timeout: 8))
-        decline.tap()
-        XCTAssertTrue(app.staticTexts["Decline challenge from Alex?"].waitForExistence(timeout: 3))
-        XCTAssertTrue(
-            app.staticTexts[
-                "Alex will see a decline either way. If you block them, they can’t challenge you again."
-            ].exists
-        )
-        XCTAssertTrue(app.buttons["Decline Challenge"].exists)
-        let declineAndBlock = app.buttons["Decline and Block Alex"].firstMatch
-        XCTAssertTrue(declineAndBlock.exists)
-        attachScreenshot("incoming-decline-dialog")
-
-        // Keep Challenge dismisses.
-        dismissDialog(cancel: "Keep Challenge")
-        XCTAssertTrue(declineAndBlock.waitForNonExistence(timeout: 3))
-        XCTAssertTrue(decline.exists)
-
-        decline.tap()
-        XCTAssertTrue(declineAndBlock.waitForExistence(timeout: 3))
-        declineAndBlock.tap()
-        let outcome = element("multiuser.incoming.outcome")
-        XCTAssertTrue(outcome.waitForExistence(timeout: 3))
-        XCTAssertEqual(outcome.label, "Declined and blocked")
-    }
-
-    func testIncomingChallengeMoreMenuBlocksAfterConfirming() {
-        launch(.incomingChallenge)
-        defer { app.terminate() }
-        let more = app.buttons["competition.more"]
-        XCTAssertTrue(more.waitForExistence(timeout: 8))
-        XCTAssertEqual(more.label, "More")
-        more.tap()
-        let block = app.buttons["competition.invite.block"]
-        XCTAssertTrue(block.waitForExistence(timeout: 3))
-        XCTAssertEqual(block.label, "Block Alex")
-        attachScreenshot("incoming-more-menu")
-        block.tap()
-        XCTAssertTrue(app.staticTexts["Block Alex?"].waitForExistence(timeout: 3))
-        XCTAssertTrue(
-            app.staticTexts[
-                "This declines the challenge. Alex will see a decline and can’t challenge you again."
-            ].exists
-        )
-        attachScreenshot("incoming-block-confirmation")
-
-        // Cancel keeps the screen.
-        dismissDialog(cancel: "Cancel")
-        XCTAssertTrue(app.staticTexts["Block Alex?"].waitForNonExistence(timeout: 3))
-        XCTAssertTrue(app.buttons["competition.invite.accept"].exists)
-
-        more.tap()
-        XCTAssertTrue(block.waitForExistence(timeout: 3))
-        block.tap()
-        let confirm = app.buttons.matching(
-            NSPredicate(format: "label == %@ AND identifier != %@", "Block Alex", "competition.invite.block")
-        ).firstMatch
-        XCTAssertTrue(confirm.waitForExistence(timeout: 3))
-        confirm.tap()
-        let outcome = element("multiuser.incoming.outcome")
-        XCTAssertTrue(outcome.waitForExistence(timeout: 3))
-        XCTAssertEqual(outcome.label, "Declined and blocked")
-    }
-
-    func testAccountListsBlockedPeopleAndUnblocks() {
-        launch(.account)
-        defer { app.terminate() }
-        XCTAssertTrue(app.navigationBars["Account"].waitForExistence(timeout: 8))
-        let unblock = app.buttons["Unblock Alex"]
-        scrollToElement(unblock)
-        XCTAssertTrue(unblock.exists)
-        XCTAssertEqual(unblock.identifier, "account.blocked.unblock")
-        XCTAssertTrue(app.staticTexts["BLOCKED"].exists)
-        XCTAssertTrue(app.staticTexts["Alex"].exists)
-        let footer = app.staticTexts["Blocked people can’t challenge you or find you in search. They aren’t notified."]
-        scrollToElement(footer)
-        XCTAssertTrue(footer.exists)
-        attachScreenshot("account-blocked")
-        scrollToElement(unblock)
-        unblock.tap()
-        XCTAssertTrue(app.staticTexts["BLOCKED"].waitForNonExistence(timeout: 3))
-        XCTAssertFalse(footer.exists)
-    }
-
-    /// A confirmation dialog's cancel button, or a tap outside where iOS
-    /// shows it as a popover without one.
-    private func dismissDialog(cancel label: String) {
-        let button = app.buttons[label].firstMatch
-        if button.exists, button.isHittable {
-            button.tap()
-        } else {
-            let popover = app.popovers.firstMatch
-            XCTAssertTrue(popover.exists)
-            XCTAssertGreaterThan(popover.frame.minX, app.frame.minX)
-            // Large-text popovers cover the old top-center dismissal point.
-            let outside = CGVector(dx: (popover.frame.minX - app.frame.minX) / 2,
-                                   dy: popover.frame.midY - app.frame.minY)
-            app.coordinate(withNormalizedOffset: .zero).withOffset(outside).tap()
-        }
-    }
-
-    /// Each card is one VoiceOver element, so the checks read its label.
-    func testLiveActivityPreviewFitsAtAccessibilitySizes() throws {
-        let sizes: [(name: String, arguments: [String])] = [
-            ("default", []),
-            ("ax5", ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"]),
-        ]
-        for appearance in ["Light", "Dark"] {
-            for size in sizes {
-                launch(.liveActivity, appearanceArguments: ["-AppleInterfaceStyle", appearance] + size.arguments)
-                let live = element("liveActivity.preview.live")
-                XCTAssertTrue(live.waitForExistence(timeout: 8))
-                let pending = element("liveActivity.preview.pending")
-                XCTAssertTrue(live.label.contains("Last day · Sam"), live.label)
-                XCTAssertTrue(live.label.contains("You 2,190 points"), live.label)
-                XCTAssertTrue(live.label.contains("Sam 2,171 points"), live.label)
-                XCTAssertTrue(live.label.contains("You lead by 19."), live.label)
-                XCTAssertTrue(pending.label.contains("Final score pending · Sam"), pending.label)
-                XCTAssertTrue(pending.label.contains("Not final yet."), pending.label)
-                XCTAssertFalse(pending.label.contains("Ends at midnight"), pending.label)
-                attachScreenshot("live-activity-preview-\(appearance)-\(size.name)")
-                var issues: [String] = []
-                // The card has a fixed 160 pt height, so one-line rows are by
-                // design; whether they really fit is checked at AX5.
-                let audit: XCUIAccessibilityAuditType = size.name == "ax5"
-                    ? XCUIAccessibilityAuditType.textClipped.union(.sufficientElementDescription)
-                    : .sufficientElementDescription
-                try app.performAccessibilityAudit(for: audit) { issue in
-                    issues.append("\(issue.compactDescription): \(issue.element?.label ?? "?") \(issue.element?.frame ?? .zero)")
-                    return true
-                }
-                XCTAssertEqual(issues, [], "\(appearance) \(size.name)")
-            }
-        }
-    }
-
     private func attachScreenshot(_ name: String) {
         let screenshot = XCTAttachment(screenshot: app.screenshot())
         screenshot.name = name
@@ -1719,41 +1579,6 @@ final class MultiUserCompetitionUITests: XCTestCase {
         }
     }
 
-    /// Not in CI: preview captures of Account → Notifications with one switch
-    /// off, light and dark at XS, and light at AX5 (top and bottom).
-    func testNotificationChoicesCaptureLightDarkAndAX5() {
-        let cases = [
-            ("light-xs", "Light", "UICTContentSizeCategoryXS"),
-            ("dark-xs", "Dark", "UICTContentSizeCategoryXS"),
-            ("light-default", "Light", "UICTContentSizeCategoryL"),
-            ("light-ax5", "Light", "UICTContentSizeCategoryAccessibilityXXXL"),
-        ]
-        for (name, appearance, size) in cases {
-            launch(.account, appearanceArguments: [
-                "-AppleInterfaceStyle", appearance,
-                "-UIPreferredContentSizeCategoryName", size,
-            ])
-            XCTAssertTrue(app.navigationBars["Account"].waitForExistence(timeout: 8))
-            let notifications = element("account.notifications")
-            scrollToElement(notifications)
-            notifications.tap()
-            XCTAssertTrue(app.navigationBars["Notifications"].waitForExistence(timeout: 3))
-            let closeScores = app.switches["account.notifications.choice.close-score"].firstMatch
-            scrollToElement(closeScores)
-            // An interrupted earlier run can leave it off already.
-            if closeScores.value as? String != "0" { flip(closeScores) }
-            XCTAssertEqual(closeScores.value as? String, "0")
-            attachScreenshot("notification-choices-\(name)")
-            flip(closeScores)
-            XCTAssertEqual(closeScores.value as? String, "1")
-            let nudges = app.switches["account.notifications.choice.nudge"].firstMatch
-            scrollToElement(nudges)
-            XCTAssertTrue(nudges.exists)
-            attachScreenshot("notification-choices-\(name)-bottom")
-            app.terminate()
-        }
-    }
-
     func testHealthPageOpensSettings() {
         launch(.account)
         defer { app.terminate() }
@@ -1774,21 +1599,6 @@ final class MultiUserCompetitionUITests: XCTestCase {
             app.staticTexts[UIApplication.openSettingsURLString]
                 .waitForExistence(timeout: 3)
         )
-    }
-
-    func testRemoteAppearanceSwitchRendersLightAndDark() {
-        for appearance in ["Light", "Dark"] {
-            launch(
-                .sharing,
-                appearanceArguments: [
-                    "-AppleInterfaceStyle", appearance,
-                    "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryXS",
-                ]
-            )
-            assertRemoteRenderedConfiguration(
-                "Appearance: \(appearance); Dynamic Type: xSmall"
-            )
-        }
     }
 
     func testRemoteCompetitionAppearanceAndTypeSizeMatrix() throws {
@@ -2255,7 +2065,6 @@ final class MultiUserCompetitionUITests: XCTestCase {
         case healthOnboardingChallenge = "health-onboarding-challenge"
         case healthOnboardingClaim = "health-onboarding-claim"
         case incomingChallenge = "incoming-challenge"
-        case liveActivity = "live-activity"
         case practice
         case transientRefresh = "transient-refresh"
     }

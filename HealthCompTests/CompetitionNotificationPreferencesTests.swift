@@ -97,6 +97,7 @@ final class CompetitionNotificationPreferencesTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: suite) }
 
         XCTAssertEqual(CompetitionNotificationChoice.switchedOff(in: defaults), [])
+        XCTAssertEqual(CompetitionNotificationChoice.mutedPushKinds(in: defaults), [])
         defaults.set(false, forKey: CompetitionNotificationChoice.leadChange.storageKey)
         XCTAssertEqual(CompetitionNotificationChoice.switchedOff(in: defaults), [.leadChange])
         defaults.set(true, forKey: CompetitionNotificationChoice.leadChange.storageKey)
@@ -119,15 +120,6 @@ final class CompetitionNotificationPreferencesTests: XCTestCase {
             CompetitionNotificationChoice.mutedPushKinds(in: defaults),
             ["friend_accepted", "friend_request", "nudge", "reaction"]
         )
-    }
-
-    func testFriendChoicesDefaultToOn() throws {
-        let suite = "choices-\(UUID())"
-        let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
-        defer { defaults.removePersistentDomain(forName: suite) }
-
-        XCTAssertEqual(CompetitionNotificationChoice.switchedOff(in: defaults), [])
-        XCTAssertEqual(CompetitionNotificationChoice.mutedPushKinds(in: defaults), [])
     }
 
     func testNotificationChoiceKeysAndTitlesNeverChange() {
