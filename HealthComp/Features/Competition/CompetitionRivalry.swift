@@ -1149,24 +1149,32 @@ struct CompetitionOwnProfileView: View {
 
     private func beltRow(_ record: CompetitionOpponentRecord, competitions: [LocalCompetitionPresentation]) -> some View {
         let weeks = competitionRivalryWeeks(competitions, opponentIdentity: record.opponentIdentity)
+        let since = record.belt.current.flatMap {
+            competitionBeltSinceText($0, weeks: weeks, now: publication.evaluatedAt, locale: locale, timeZone: timeZone)
+        }
         return NavigationLink(value: CompetitionHomeRoute.profile(record.opponentIdentity)) {
             HStack(spacing: 12) {
                 PersonAvatar(name: record.opponentDisplayName, photo: record.latest.opponentProfileID, size: 32)
-                Text(record.opponentDisplayName)
-                    .font(.headline)
-                    .foregroundStyle(Theme.ink)
-                    .fixedSize(horizontal: false, vertical: true)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(record.opponentDisplayName)
+                        .font(.headline)
+                        .foregroundStyle(Theme.ink)
+                    if let since {
+                        Text(since)
+                            .font(.subheadline)
+                            .foregroundStyle(Theme.secondary)
+                    }
+                }
+                .fixedSize(horizontal: false, vertical: true)
+                .multilineTextAlignment(.leading)
                 Spacer(minLength: 8)
-                if !dynamicTypeSize.isAccessibilitySize, let since = record.belt.current.flatMap({
-                    competitionBeltSinceText($0, weeks: weeks, now: publication.evaluatedAt, locale: locale, timeZone: timeZone)
-                }) {
-                    Text(since)
-                        .font(.subheadline)
-                        .foregroundStyle(Theme.secondary)
+                if !dynamicTypeSize.isAccessibilitySize {
+                    CompetitionBeltMark(holder: .you)
                 }
                 DisclosureChevron()
             }
             .padding(.horizontal, 16)
+            .padding(.vertical, 10)
             .frame(minHeight: 56)
             .contentShape(Rectangle())
         }
