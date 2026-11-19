@@ -45,8 +45,8 @@ struct CompetitionSharingView: View {
     /// The logo's update is running: live matches say so where they say when they end.
     var isUpdating = false
 
-    // ponytail: in-memory, a dismissed row returns after relaunch within its 24 h; persist per profile if that annoys
-    @State private var dismissedChallengeIDs: Set<CompetitionID> = []
+    @AppStorage(CompetitionDismissedChallenges.storageKey)
+    private var dismissedChallenges = CompetitionDismissedChallenges()
     @AppStorage(CompetitionReactionsSeen.storageKey)
     private var reactionsSeen = CompetitionReactionsSeen()
     @AppStorage(CompetitionMotionSeen.storageKey)
@@ -153,7 +153,7 @@ struct CompetitionSharingView: View {
                                     isInFlight: publication.source == .simulatedFixture
                                         && isReinviteInFlight,
                                     challengeAgain: { challengeAgain(competition.id) },
-                                    dismiss: { dismissedChallengeIDs.insert(competition.id) }
+                                    dismiss: { dismissedChallenges = dismissedChallenges.dismissing(competition.id) }
                                 )
                             } else {
                                 rowButton(competition)
@@ -269,7 +269,7 @@ struct CompetitionSharingView: View {
         competitionHomeLayout(
             publication.dashboard,
             now: publication.evaluatedAt,
-            dismissedChallengeIDs: dismissedChallengeIDs
+            dismissedChallengeIDs: dismissedChallenges.ids
         )
     }
 
@@ -1745,11 +1745,12 @@ struct CompetitionPersonView: View {
 
     @AppStorage(CompetitionMotionSeen.storageKey)
     private var motionSeen = CompetitionMotionSeen()
+    @AppStorage(CompetitionDismissedChallenges.storageKey)
+    private var dismissedChallenges = CompetitionDismissedChallenges()
     @State private var showsAllWeeks = false
     @State private var friendDialog: PersonFriendDialog?
     @State private var isBlocking = false
     @Environment(\.dismiss) private var dismiss
-    @State private var dismissedChallengeIDs: Set<CompetitionID> = []
     @Environment(\.locale) private var locale
     @Environment(\.timeZone) private var timeZone
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
@@ -1768,7 +1769,7 @@ struct CompetitionPersonView: View {
         let button = isLedger(record) || isFromChallenge
             ? nil
             : competitionPersonButtonTitle(
-                theirs.filter { !dismissedChallengeIDs.contains($0.id) },
+                theirs.filter { !dismissedChallenges.contains($0.id) },
                 opponentName: name,
                 now: publication.evaluatedAt,
                 unseenResult: unseen
@@ -1851,7 +1852,7 @@ struct CompetitionPersonView: View {
         let now = isFromChallenge || isLedger(record)
             ? nil
             : competitionPersonNow(
-                theirs.filter { !dismissedChallengeIDs.contains($0.id) },
+                theirs.filter { !dismissedChallenges.contains($0.id) },
                 now: publication.evaluatedAt,
                 unseenResult: unseen
             )
@@ -1975,7 +1976,7 @@ struct CompetitionPersonView: View {
                         canChallengeAgain: false,
                         isInFlight: false,
                         challengeAgain: {},
-                        dismiss: { dismissedChallengeIDs.insert(competition.id) }
+                        dismiss: { dismissedChallenges = dismissedChallenges.dismissing(competition.id) }
                     )
                 } else if section == "THIS WEEK" {
                     // Tallying: the match screen's reason beside PROVISIONAL.
@@ -2897,6 +2898,46 @@ struct CompetitionHomeLayout: Equatable {
     var shape: [[String]] {
         [[hero].compactMap { $0 }, needsYou, live, upNext, recentResults]
             .map { $0.map(competitionSharingIdentifier) }
+    }
+}
+
+/// Outgoing challenges dismissed from Home or a person's page during their 24 h
+/// closed window. Device-local; cleared with the profile on sign-out/teardown.
+struct CompetitionDismissedChallenges: RawRepresentable, Equatable {
+    static let storageKey = "healthcomp.dismissedChallenges"
+
+    var ids: Set<CompetitionID>
+
+    init(ids: Set<CompetitionID> = []) {
+        self.ids = ids
+    }
+
+    init?(rawValue: String) {
+        guard let data = rawValue.data(using: .utf8),
+              let rawIDs = try? JSONDecoder().decode([String].self, from: data)
+        else { return nil }
+        var decoded = Set<CompetitionID>()
+        for rawID in rawIDs {
+            guard let uuid = UUID(uuidString: rawID) else { return nil }
+            decoded.insert(CompetitionID(uuid))
+        }
+        self.ids = decoded
+    }
+
+    var rawValue: String {
+        let sorted = ids.map { $0.rawValue.uuidString.lowercased() }.sorted()
+        guard let data = try? JSONEncoder().encode(sorted) else { return "[]" }
+        return String(decoding: data, as: UTF8.self)
+    }
+
+    func contains(_ id: CompetitionID) -> Bool {
+        ids.contains(id)
+    }
+
+    func dismissing(_ id: CompetitionID) -> Self {
+        var next = self
+        next.ids.insert(id)
+        return next
     }
 }
 

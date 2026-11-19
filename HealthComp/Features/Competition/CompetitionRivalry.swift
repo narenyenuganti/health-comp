@@ -935,7 +935,8 @@ struct CompetitionProfileRivalry {
         identity: String,
         name: String,
         now: Date,
-        seen: CompetitionMotionSeen
+        seen: CompetitionMotionSeen,
+        dismissedChallengeIDs: Set<CompetitionID> = []
     ) {
         let theirs = competitions.filter { $0.opponentIdentity == identity }
         let record = competitionOpponentRecords(competitions).first { $0.opponentIdentity == identity }
@@ -952,7 +953,7 @@ struct CompetitionProfileRivalry {
             }
         }
         challengeTitle = competitionPersonButtonTitle(
-            theirs,
+            theirs.filter { !dismissedChallengeIDs.contains($0.id) },
             opponentName: name,
             now: now,
             unseenResult: unseen

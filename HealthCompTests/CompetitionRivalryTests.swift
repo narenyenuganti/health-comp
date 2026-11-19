@@ -268,6 +268,32 @@ final class CompetitionRivalryTests: XCTestCase {
         )
     }
 
+    func testProfileRivalryHonorsDismissedClosedChallenges() {
+        let now = CompetitionRivalryFixture.now(weeks: 10)
+        let seen = CompetitionMotionSeen().marking(.verdict, ten[9].id)
+        let declined = match(id: 0x23, lifecycle: .declined(at: now, direction: .outgoing), now: now)
+        let identity = ten[0].opponentIdentity
+
+        let beforeDismiss = CompetitionProfileRivalry(
+            ten + [declined],
+            identity: identity,
+            name: "Sam",
+            now: now,
+            seen: seen
+        )
+        XCTAssertEqual(beforeDismiss.challengeTitle, "Challenge Sam Again")
+
+        let afterDismiss = CompetitionProfileRivalry(
+            ten + [declined],
+            identity: identity,
+            name: "Sam",
+            now: now,
+            seen: seen,
+            dismissedChallengeIDs: [declined.id]
+        )
+        XCTAssertEqual(afterDismiss.challengeTitle, "Challenge Sam")
+    }
+
     func testRecordLinkNeedsAFinishedWeekAndALiveAccount() {
         let now = CompetitionRivalryFixture.now(weeks: 10)
         let live = match(id: 0x21, lifecycle: .active(dayOrdinal: 5), now: now)

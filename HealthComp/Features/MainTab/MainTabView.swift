@@ -12,6 +12,8 @@ struct MainTabView: View {
     @State private var isChallengePresented = false
     @AppStorage(CompetitionMotionSeen.storageKey)
     private var motionSeen = CompetitionMotionSeen()
+    @AppStorage(CompetitionDismissedChallenges.storageKey)
+    private var dismissedChallenges = CompetitionDismissedChallenges()
     /// New Match: the format picker, whose Duel opens the Challenge sheet.
     @State private var isNewMatchPresented = false
     @State private var newMatchLineup: GroupMatchLineup?
@@ -422,7 +424,12 @@ struct MainTabView: View {
                 publication.dashboard.groupMatches.flatMap(\.seats).first { $0.profileID == id }?.name
             }
         let rivalry = CompetitionProfileRivalry(
-            competitions, identity: identity, name: name ?? "", now: publication.evaluatedAt, seen: motionSeen
+            competitions,
+            identity: identity,
+            name: name ?? "",
+            now: publication.evaluatedAt,
+            seen: motionSeen,
+            dismissedChallengeIDs: dismissedChallenges.ids
         )
         let isBlocked: Bool? = if let id, publication.source == .remoteParticipants {
             store.competition.blockedPeople.map { $0.contains { $0.id == id } }

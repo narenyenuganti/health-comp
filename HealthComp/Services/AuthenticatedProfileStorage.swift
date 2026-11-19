@@ -239,6 +239,7 @@ private actor AuthenticatedProfileStorageCoordinator {
         // Device-local reaction seen marks belong to this profile's matches.
         UserDefaults.standard.removeObject(forKey: CompetitionReactionsSeen.storageKey)
         UserDefaults.standard.removeObject(forKey: CompetitionMotionSeen.storageKey)
+        UserDefaults.standard.removeObject(forKey: CompetitionDismissedChallenges.storageKey)
         let profilesRoot = try prepareProfilesRoot()
         let root = profilesRoot.appendingPathComponent(
             profileID.uuidString.lowercased(),
