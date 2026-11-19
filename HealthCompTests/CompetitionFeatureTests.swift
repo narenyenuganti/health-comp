@@ -1506,10 +1506,10 @@ extension CompetitionFeatureTests {
     @MainActor
     func testPracticeStartTracksTheCommandUntilItsPublication() async {
         let returned = publication(revision: 5)
-        let difficulties = LockIsolated<[OpponentDifficulty]>([])
+        let targets = LockIsolated<[PracticeStartTarget]>([])
         var client = CompetitionReducerClientRecorder().client(returning: returned)
-        client.startPractice = { difficulty in
-            difficulties.withValue { $0.append(difficulty) }
+        client.startPractice = { target in
+            targets.withValue { $0.append(target) }
             return returned
         }
         let store = TestStore(initialState: CompetitionFeature.State()) {
@@ -1519,20 +1519,20 @@ extension CompetitionFeatureTests {
         }
         let id = PracticeMatch.startCommandID
 
-        await store.send(.practiceStartTapped(.challenging)) {
+        await store.send(.practiceStartTapped(.bot(.challenging))) {
             $0.commandIDsInFlight.insert(id)
         }
         await store.receive(.commandFinished(id, expectedRevision: 5)) {
             $0.commandExpectedPublicationRevisions[id] = 5
         }
         // A second tap while it waits for its publication does nothing.
-        await store.send(.practiceStartTapped(.relaxed))
+        await store.send(.practiceStartTapped(.bot(.relaxed)))
         await store.send(.publication(returned)) {
             $0.publication = returned
             $0.commandIDsInFlight.remove(id)
             $0.commandExpectedPublicationRevisions[id] = nil
         }
         await store.finish()
-        XCTAssertEqual(difficulties.value, [.challenging])
+        XCTAssertEqual(targets.value, [.bot(.challenging)])
     }
 }

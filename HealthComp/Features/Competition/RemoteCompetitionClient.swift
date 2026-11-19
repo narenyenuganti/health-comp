@@ -1218,14 +1218,14 @@ private actor RemoteCompetitionClientCoordinator {
         practiceIssues = failedIDs.isEmpty ? [] : [.competitionFailures(failedIDs)]
     }
 
-    func startPractice(_ difficulty: OpponentDifficulty) async -> CompetitionPublication {
+    func startPractice(_ target: PracticeStartTarget) async -> CompetitionPublication {
         await withOperationGate {
             guard terminalTeardown == nil else {
                 return terminalBlockedPublication()
             }
             guard hasStarted, let practiceRuntime,
                   (try? await PracticeMatch.start(
-                      difficulty,
+                      target,
                       runtime: practiceRuntime,
                       environment: environment
                   )) != nil

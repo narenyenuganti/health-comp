@@ -131,7 +131,11 @@ struct CompetitionClient: Sendable {
     ) async throws -> CompetitionPublication
     /// Starts a practice match on this iPhone; a failure is
     /// `commandRejected(PracticeMatch.startCommandID)`.
-    var startPractice: @Sendable (OpponentDifficulty) async -> CompetitionPublication
+    var startPractice: @Sendable (PracticeStartTarget) async -> CompetitionPublication
+
+    func startPractice(_ difficulty: OpponentDifficulty) async -> CompetitionPublication {
+        await startPractice(.bot(difficulty))
+    }
     /// The current photo of each of these people (yours included) that you
     /// may see; anyone missing shows initials. Drops their stale cached files.
     var loadProfilePhotos: @Sendable ([UUID]) async throws -> [ProfilePhotoReference]
@@ -303,7 +307,7 @@ struct CompetitionClient: Sendable {
             throw CompetitionRemoteFailure.operationFailed
         },
         startPractice: @escaping @Sendable (
-            OpponentDifficulty
+            PracticeStartTarget
         ) async -> CompetitionPublication = { _ in .inert },
         loadProfilePhotos: @escaping @Sendable ([UUID]) async throws ->
             [ProfilePhotoReference] = { _ in [] },

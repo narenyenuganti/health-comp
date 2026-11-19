@@ -1332,7 +1332,7 @@ enum LocalCompetitionProjector {
                     configuration: configuration,
                     ownerDisplayName: ownerDisplayName,
                     opponentDisplayName: PracticeMatch.opponentDisplayName(
-                        for: loaded.projection.competition.opponentPlan?.difficulty
+                        for: loaded.projection.competition.opponentPlan
                     ),
                     opponentIdentity: PracticeMatch.opponentIdentity
                 )

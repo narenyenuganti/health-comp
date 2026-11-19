@@ -1017,11 +1017,17 @@ struct MainTabView: View {
         _ publication: LocalCompetitionPublication
     ) -> CompetitionPracticeStart? {
         guard publication.source == .remoteParticipants else { return nil }
+        let shadowRivals = PracticeMatch.shadowRivals(
+            competitions: publication.dashboard.competitions,
+            groupMatches: publication.dashboard.groupMatches,
+            blocked: store.competition.blockedPeople ?? []
+        )
         return CompetitionPracticeStart(
             isStarting: store.competition.isCommandInFlight(PracticeMatch.startCommandID),
             failed: publication.dashboard.issues.contains(
                 .commandRejected(PracticeMatch.startCommandID)
             ),
+            shadowRivals: shadowRivals,
             start: { store.send(.competition(.practiceStartTapped($0))) }
         )
     }

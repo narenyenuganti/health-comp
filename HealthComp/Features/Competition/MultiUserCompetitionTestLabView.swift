@@ -1353,12 +1353,20 @@ private final class FriendsPracticeLabState: @unchecked Sendable {
         return next
     }
 
-    func start(_ difficulty: OpponentDifficulty) async -> LocalCompetitionPublication {
+    func start(_ target: PracticeStartTarget) async -> LocalCompetitionPublication {
         try? await Task.sleep(for: .milliseconds(80))
         lock.withLock {
-            practice = MultiUserCompetitionTestLabFixtures.practiceScheduledPresentation(
-                difficulty: difficulty
-            )
+            switch target {
+            case let .bot(difficulty):
+                practice = MultiUserCompetitionTestLabFixtures.practiceScheduledPresentation(
+                    difficulty: difficulty
+                )
+            case let .shadow(rival):
+                practice = MultiUserCompetitionTestLabFixtures.practiceScheduledPresentation(
+                    difficulty: .shadow,
+                    opponentName: rival.shadowDisplayName
+                )
+            }
         }
         return publish()
     }
@@ -2699,7 +2707,11 @@ enum MultiUserCompetitionTestLabFixtures {
                 ),
                 userPoints: 3_050,
                 opponentPoints: 2_900,
-                days: [],
+                days: completedDays(
+                    startDay: 3,
+                    owner: [440, 430, 410, 460, 420, 450, 440],
+                    opponent: [370, 415, 340, 445, 390, 520, 420]
+                ),
                 currentDayOrdinal: nil,
                 terminal: LocalCompetitionTerminalPresentation(
                     userPoints: 3_050,
@@ -3317,11 +3329,12 @@ enum MultiUserCompetitionTestLabFixtures {
 
     /// Tomorrow's practice, Mon Aug 17 to Sun Aug 23, as Start Tomorrow makes it.
     static func practiceScheduledPresentation(
-        difficulty: OpponentDifficulty = .pacer
+        difficulty: OpponentDifficulty = .pacer,
+        opponentName: String? = nil
     ) -> LocalCompetitionPresentation {
         presentation(
             id: practiceID,
-            opponentName: PracticeMatch.opponentDisplayName(for: difficulty),
+            opponentName: opponentName ?? PracticeMatch.opponentDisplayName(for: difficulty),
             lifecycle: .scheduled,
             userPoints: 0,
             opponentPoints: 0,

@@ -205,6 +205,146 @@ final class PracticeMatchTests: XCTestCase {
         XCTAssertNil(PracticeMatch.startBlocker(in: realLive + [completed]))
     }
 
+    // MARK: Shadow rival
+
+    func testShadowRivalsExtractsEligibleRivalsExcludesBlockedAndFormerAndSubtractsSleepPoints() throws {
+        let startDay = try CompetitionDay(era: 1, year: 2026, month: 8, day: 3, timeZoneIdentifier: "UTC")
+        let window = try calendar.sevenDayWindow(startingOn: startDay)
+        let schedule = CompetitionSchedule(calendar: calendar, startDay: startDay)
+        let accepted = LocalCompetitionAcceptedPresentation(
+            schedule: schedule,
+            difficulty: .balanced
+        )
+
+        func makeMatch(
+            profileID: UUID,
+            name: String,
+            lifecycle: LocalCompetitionLifecyclePresentation,
+            currentDayOrdinal: Int?,
+            points: [Double?],
+            sleep: [Double?] = Array(repeating: nil, count: 7)
+        ) -> LocalCompetitionPresentation {
+            let days = zip(window.enumerated(), zip(points, sleep)).map { item, pair -> LocalCompetitionDayPresentation in
+                let (offset, day) = item
+                var row = LocalCompetitionDayPresentation(
+                    day: day,
+                    ordinal: offset + 1,
+                    ownerAcceptedPoints: 400,
+                    ownerLatestAvailability: .observed,
+                    opponentRevealedPoints: pair.0
+                )
+                row.opponentSleepPoints = pair.1
+                return row
+            }
+            return LocalCompetitionPresentation(
+                id: CompetitionID(UUID()),
+                ownerDisplayName: "Beta Alice",
+                opponentDisplayName: name,
+                opponentIdentity: RemoteCompetitionOpponentIdentity.identity(for: profileID),
+                lifecycle: lifecycle,
+                acceptedConfiguration: accepted,
+                userPoints: 2_800,
+                opponentPoints: 2_900,
+                days: days,
+                currentDayOrdinal: currentDayOrdinal,
+                lastRefresh: nil,
+                tally: nil,
+                terminalResult: nil,
+                evaluatedAt: startedAt,
+                timeZoneIdentifier: "UTC",
+                lastSuccessfulFullWindowRefreshAt: nil,
+                opponentUpdatedAt: nil
+            )
+        }
+
+        let devID = UUID(uuidString: "d1000000-0000-4000-8000-0000000000b3")!
+        let mayaID = UUID(uuidString: "d1000000-0000-4000-8000-0000000000b1")!
+        let blockedID = UUID(uuidString: "d1000000-0000-4000-8000-0000000000c9")!
+        let sparseID = UUID(uuidString: "d1000000-0000-4000-8000-0000000000c8")!
+
+        // Dev: Day 1 has 450 total including 80 sleep -> 370 ring points.
+        let devMatch = makeMatch(
+            profileID: devID,
+            name: "Dev Patel",
+            lifecycle: .completed(outcome: .win, basis: .stableAcrossPostBoundaryReads, completedAt: startedAt),
+            currentDayOrdinal: nil,
+            points: [450, 415, 340, 445, 390, 520, 420],
+            sleep: [80, nil, nil, nil, nil, nil, nil]
+        )
+        // Maya: Active on Day 5 -> closed days 1..4 count, Day 5 (120) does not.
+        let mayaMatch = makeMatch(
+            profileID: mayaID,
+            name: "Maya Chen",
+            lifecycle: .active(dayOrdinal: 5),
+            currentDayOrdinal: 5,
+            points: [310, 480, 405, 530, 120, nil, nil]
+        )
+        let blockedMatch = makeMatch(
+            profileID: blockedID,
+            name: "Blocked Rival",
+            lifecycle: .completed(outcome: .loss, basis: .stableAcrossPostBoundaryReads, completedAt: startedAt),
+            currentDayOrdinal: nil,
+            points: [400, 410, 420, 430, 440, 450, 460]
+        )
+        let formerMatch = makeMatch(
+            profileID: UUID(),
+            name: competitionFormerCompetitorName,
+            lifecycle: .completed(outcome: .win, basis: .stableAcrossPostBoundaryReads, completedAt: startedAt),
+            currentDayOrdinal: nil,
+            points: [300, 310, 320, 330, 340, 350, 360]
+        )
+        let sparseMatch = makeMatch(
+            profileID: sparseID,
+            name: "Sparse Rival",
+            lifecycle: .active(dayOrdinal: 3),
+            currentDayOrdinal: 3,
+            points: [350, 420, 100, nil, nil, nil, nil]
+        )
+
+        let rivals = PracticeMatch.shadowRivals(
+            competitions: [devMatch, mayaMatch, blockedMatch, formerMatch, sparseMatch],
+            blocked: [AuthenticatedProfile(id: blockedID, displayName: "Blocked Rival")]
+        )
+
+        XCTAssertEqual(rivals.map(\.displayName), ["Dev Patel", "Maya Chen"])
+        let dev = try XCTUnwrap(rivals.first)
+        XCTAssertEqual(dev.shadowDisplayName, "Dev Patel’s Shadow")
+        XCTAssertEqual(dev.profile.bounds, 340...520)
+        XCTAssertEqual(dev.samples.count, 7)
+
+        let maya = try XCTUnwrap(rivals.last)
+        XCTAssertEqual(maya.samples.count, 4)
+        XCTAssertEqual(maya.profile.bounds, 310...530)
+    }
+
+    func testStartShadowCreatesV4PracticeNamedAfterRivalWithScoresInTheirDistribution() async throws {
+        let samples = try [
+            (2, 370), (3, 415), (4, 340), (5, 445), (6, 390), (7, 520), (1, 420),
+        ].map { try OpponentRivalSample(weekday: $0.0, points: $0.1) }
+        let rival = try PracticeShadowRival(
+            id: "remote-profile:v1:d1000000-0000-4000-8000-0000000000b3",
+            profileID: UUID(uuidString: "d1000000-0000-4000-8000-0000000000b3"),
+            displayName: "Dev Patel",
+            samples: samples
+        )
+
+        let (runtime, environment, _) = try makeRuntime(dailyPoints: 300)
+        _ = try await PracticeMatch.start(.shadow(rival), runtime: runtime, environment: environment)
+
+        let journals = await runtime.loadAll().successfulJournals
+        let plan = try XCTUnwrap(journals.first?.projection.competition.opponentPlan)
+        XCTAssertEqual(plan.generatorVersion, .v4)
+        XCTAssertEqual(plan.difficulty, .shadow)
+        XCTAssertEqual(plan.opponentName, "Dev Patel’s Shadow")
+        for day in plan.days {
+            XCTAssertTrue((340...520).contains(day.finalPoints), "\(day.finalPoints)")
+        }
+
+        let shown = try await presentation(runtime, environment)
+        XCTAssertEqual(shown.opponentDisplayName, "Dev Patel’s Shadow")
+        XCTAssertTrue(shown.isPractice)
+    }
+
     // MARK: Helpers
 
     private func presentation(
