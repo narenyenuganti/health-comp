@@ -19,6 +19,8 @@ struct CompetitionSharingView: View {
     let createInvite: () -> Void
     /// Set by the host's + button and by the empty state.
     @Binding var isChallengePresented: Bool
+    /// False when the host presents its own Challenge sheet stack.
+    var presentsChallengeSheet = true
     /// The Challenge sheet's A FRIEND group; empty omits it.
     var friends: [FriendPerson] = []
     var chooseFriend: ((FriendPerson) -> Void)? = nil
@@ -235,7 +237,13 @@ struct CompetitionSharingView: View {
                     .accessibilityHidden(true)
             }
         }
-        .sheet(isPresented: $isChallengePresented, onDismiss: dismissChallenge) {
+        .sheet(
+            isPresented: Binding(
+                get: { presentsChallengeSheet && isChallengePresented },
+                set: { if presentsChallengeSheet { isChallengePresented = $0 } }
+            ),
+            onDismiss: dismissChallenge
+        ) {
             CreateCompetitionView(
                 status: challengeStatus,
                 timeZoneIdentifier: publication.timeZoneIdentifier,
@@ -1700,6 +1708,8 @@ struct CompetitionPersonView: View {
     var challenge: ((CompetitionID) -> Void)? = nil
     /// Real people only: their username, friending, Block and Report.
     var friend: PersonFriendControls? = nil
+    /// Non-nil inside the Challenge drawer: renders the drawer's own Back and ••• bar.
+    var drawerBack: (() -> Void)? = nil
 
     @AppStorage(CompetitionMotionSeen.storageKey)
     private var motionSeen = CompetitionMotionSeen()
@@ -1732,28 +1742,39 @@ struct CompetitionPersonView: View {
                 now: publication.evaluatedAt,
                 unseenResult: unseen
             )
-        ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                PersonFriendNotes(failure: friend?.failure, isReported: friend?.isReported == true)
-                    .padding(.horizontal, 4)
-                if let record, !oldestFirst.isEmpty {
-                    content(record, oldestFirst: oldestFirst, theirs: theirs, unseen: unseen)
-                    if let button, dynamicTypeSize.isAccessibilitySize {
-                        footButton(button, record: record)
+        let showsMore = !isDeleted(record)
+            && (muteButton != nil || friend != nil || (isBlocked == true && unblock != nil))
+        VStack(spacing: 0) {
+            if let drawerBack {
+                CompetitionDrawerHeader(title: name, back: drawerBack) {
+                    if showsMore {
+                        personMoreMenu(name: name, usesDrawerStyle: true)
                     }
-                } else {
-                    Text("Finished matches appear here.")
-                        .font(.subheadline)
-                        .foregroundStyle(Theme.secondary)
-                        .frame(maxWidth: .infinity, alignment: .leading)
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
-            .accessibilityElement(children: .contain)
-            .accessibilityIdentifier("competition.person")
-            // A card here is already about this person.
-            .environment(\.openCompetitionProfile, nil)
+            ScrollView {
+                VStack(alignment: .leading, spacing: 24) {
+                    PersonFriendNotes(failure: friend?.failure, isReported: friend?.isReported == true)
+                        .padding(.horizontal, 4)
+                    if let record, !oldestFirst.isEmpty {
+                        content(record, oldestFirst: oldestFirst, theirs: theirs, unseen: unseen)
+                        if let button, dynamicTypeSize.isAccessibilitySize {
+                            footButton(button, record: record)
+                        }
+                    } else {
+                        Text("Finished matches appear here.")
+                            .font(.subheadline)
+                            .foregroundStyle(Theme.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("competition.person")
+                // A card here is already about this person.
+                .environment(\.openCompetitionProfile, nil)
+            }
         }
         .background(Theme.ground)
         // The next step stays in reach, as on the Verdict.
@@ -1769,23 +1790,9 @@ struct CompetitionPersonView: View {
         .navigationTitle(name)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            if !isDeleted(record), muteButton != nil || friend != nil || (isBlocked == true && unblock != nil) {
+            if drawerBack == nil, showsMore {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Menu {
-                        if let muteButton {
-                            muteButton
-                        }
-                        PersonFriendMenuItems(
-                            name: name,
-                            controls: friend,
-                            isBlocked: isBlocked,
-                            unblock: unblock,
-                            dialog: $friendDialog
-                        )
-                    } label: {
-                        CompetitionMoreLabel()
-                    }
-                    .accessibilityIdentifier("competition.more")
+                    personMoreMenu(name: name, usesDrawerStyle: false)
                 }
             }
         }
@@ -1796,6 +1803,28 @@ struct CompetitionPersonView: View {
         .onChange(of: isBlocked) { _, blocked in
             if isBlocking, blocked == true { dismiss() }
         }
+    }
+
+    private func personMoreMenu(name: String, usesDrawerStyle: Bool) -> some View {
+        Menu {
+            if let muteButton {
+                muteButton
+            }
+            PersonFriendMenuItems(
+                name: name,
+                controls: friend,
+                isBlocked: isBlocked,
+                unblock: unblock,
+                dialog: $friendDialog
+            )
+        } label: {
+            if usesDrawerStyle {
+                CompetitionDrawerMoreLabel()
+            } else {
+                CompetitionMoreLabel()
+            }
+        }
+        .accessibilityIdentifier("competition.more")
     }
 
     @ViewBuilder
@@ -2409,6 +2438,42 @@ enum CompetitionHomeRoute: Hashable {
                     }
                     return id
                 }
+            }
+        )
+    }
+
+    /// The Challenge sheet's stack: Search People pushes Friends over the
+    /// picker so Back returns one step to the sheet instead of Home.
+    static func challengeSheetStack(
+        routes: Binding<[CompetitionHomeRoute]>,
+        isPresented: Binding<Bool>,
+        closeFriends: @escaping () -> Void,
+        openCompetition: @escaping (CompetitionID) -> Void
+    ) -> Binding<[CompetitionHomeRoute]> {
+        Binding(
+            get: { routes.wrappedValue },
+            set: { newRoutes in
+                if let matchID = newRoutes.lazy.compactMap({
+                    if case let .competition(id) = $0 { return id }
+                    return nil
+                }).first {
+                    let hadFriends = routes.wrappedValue.contains(.friends)
+                    routes.wrappedValue = []
+                    isPresented.wrappedValue = false
+                    if hadFriends { closeFriends() }
+                    openCompetition(matchID)
+                    return
+                }
+                var updated = newRoutes
+                if let repeated = updated.indices.first(where: {
+                    updated[$0].isPersonPage && updated[($0 + 1)...].contains(updated[$0])
+                }) {
+                    updated = Array(updated[...repeated])
+                }
+                let hadFriends = routes.wrappedValue.contains(.friends)
+                let hasFriends = updated.contains(.friends)
+                routes.wrappedValue = updated
+                if hadFriends, !hasFriends { closeFriends() }
             }
         )
     }

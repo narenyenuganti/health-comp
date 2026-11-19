@@ -935,6 +935,26 @@ struct CompetitionDrawer<Content: View>: View {
     }
 }
 
+struct CompetitionDrawerBackButton: View {
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            Image(systemName: "chevron.left")
+                .font(.footnote.weight(.bold))
+                // Past xxxLarge the glyph outgrows its 30 pt circle.
+                .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+                .foregroundStyle(Theme.secondary)
+                .frame(width: 30, height: 30)
+                .background(Theme.control, in: Circle())
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Back")
+    }
+}
+
 struct CompetitionDrawerCloseButton: View {
     let action: () -> Void
 
@@ -952,6 +972,47 @@ struct CompetitionDrawerCloseButton: View {
         }
         .buttonStyle(.plain)
         .accessibilityLabel("Close")
+    }
+}
+
+struct CompetitionDrawerMoreLabel: View {
+    var body: some View {
+        Image(systemName: "ellipsis")
+            .font(.footnote.weight(.bold))
+            .dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+            .foregroundStyle(Theme.secondary)
+            .frame(width: 30, height: 30)
+            .background(Theme.control, in: Circle())
+            .frame(width: 44, height: 44)
+            .contentShape(Rectangle())
+            .accessibilityLabel("More")
+    }
+}
+
+struct CompetitionDrawerHeader<Trailing: View>: View {
+    var title: String? = nil
+    let back: () -> Void
+    @ViewBuilder let trailing: Trailing
+
+    var body: some View {
+        HStack(alignment: .top, spacing: 14) {
+            CompetitionDrawerBackButton(action: back)
+                .accessibilityIdentifier("competition.create.back")
+            if let title {
+                Text(title)
+                    .font(.title3.weight(.heavy).width(.condensed))
+                    .foregroundStyle(Theme.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
+                    .accessibilityAddTraits(.isHeader)
+            } else {
+                Spacer(minLength: 0)
+            }
+            trailing
+        }
+        .padding(.horizontal, 20)
+        .padding(.top, 24)
+        .padding(.bottom, 4)
     }
 }
 

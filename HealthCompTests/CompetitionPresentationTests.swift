@@ -2172,6 +2172,52 @@ final class CompetitionPresentationTests: XCTestCase {
         XCTAssertFalse(showsFriends)
     }
 
+    func testChallengeSheetStackPopsFriendsBackToSheetInsteadOfClosingIt() {
+        let id = CompetitionID(UUID(uuidString: "00000000-0000-0000-0000-00000000000B")!)
+        var routes: [CompetitionHomeRoute] = []
+        var isPresented = true
+        var closedFriendsCount = 0
+        var openedCompetitions: [CompetitionID] = []
+        let stack = CompetitionHomeRoute.challengeSheetStack(
+            routes: Binding(get: { routes }, set: { routes = $0 }),
+            isPresented: Binding(get: { isPresented }, set: { isPresented = $0 }),
+            closeFriends: { closedFriendsCount += 1 },
+            openCompetition: { openedCompetitions.append($0) }
+        )
+
+        // Search People pushes Friends over the Challenge sheet.
+        stack.wrappedValue = [.friends]
+        XCTAssertEqual(stack.wrappedValue, [.friends])
+        XCTAssertTrue(isPresented)
+        XCTAssertEqual(closedFriendsCount, 0)
+
+        // Opening a profile from search keeps Friends underneath without clearing search.
+        stack.wrappedValue = [.friends, .profile("p")]
+        XCTAssertEqual(stack.wrappedValue, [.friends, .profile("p")])
+        XCTAssertTrue(isPresented)
+        XCTAssertEqual(closedFriendsCount, 0)
+
+        // Back from the profile returns one step to Friends.
+        stack.wrappedValue = [.friends]
+        XCTAssertEqual(stack.wrappedValue, [.friends])
+        XCTAssertTrue(isPresented)
+        XCTAssertEqual(closedFriendsCount, 0)
+
+        // Back from Friends returns one step to the Challenge sheet (still presented) and closes Friends.
+        stack.wrappedValue = []
+        XCTAssertEqual(stack.wrappedValue, [])
+        XCTAssertTrue(isPresented)
+        XCTAssertEqual(closedFriendsCount, 1)
+
+        // Tapping a match from a person's rivalry weeks closes the sheet, cleans up Friends, and opens the match.
+        stack.wrappedValue = [.friends, .profile("p"), .person("p")]
+        stack.wrappedValue = [.friends, .profile("p"), .person("p"), .competition(id)]
+        XCTAssertEqual(stack.wrappedValue, [])
+        XCTAssertFalse(isPresented)
+        XCTAssertEqual(closedFriendsCount, 2)
+        XCTAssertEqual(openedCompetitions, [id])
+    }
+
     func testFriendStatusLineSaysLiveThenStartsThenRecord() {
         let evaluatedAt = Date(timeIntervalSince1970: 1_793_000_000)
         func finished(_ id: Int, _ outcome: CompetitionOutcome) -> LocalCompetitionPresentation {

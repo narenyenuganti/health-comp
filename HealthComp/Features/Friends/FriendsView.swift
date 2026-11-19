@@ -822,6 +822,8 @@ struct FriendProfileView: View {
     var career: CompetitionCareer? = nil
     var ownCareer: CompetitionCareer? = nil
     var muteButton: CompetitionMuteButton? = nil
+    /// Non-nil inside the Challenge drawer: renders the drawer's own Back and ••• bar.
+    var drawerBack: (() -> Void)? = nil
 
     @State private var dialog: PersonFriendDialog?
     @State private var isBlocking = false
@@ -845,34 +847,41 @@ struct FriendProfileView: View {
         // Accessibility sizes scroll the button with the text; pinned, it
         // would squeeze both.
         let pinsButton = !dynamicTypeSize.isAccessibilitySize
-        ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                header
-                if isBlocked == true {
-                    quietLine("\(person.displayName) can’t challenge you.")
-                } else if let rivalry, let record = rivalry.record, hasWeeks {
-                    recordSection(record, rivalry: rivalry)
-                } else if isFirstMatch {
-                    beltPrize("FIRST MATCH", line: "Win this week to take it.")
-                } else if person.relationship == .friend {
-                    beltPrize("NOT PLAYED YET", line: "Win your first week with \(person.displayName) to take it.")
-                } else {
-                    quietLine("Friends can challenge each other without a link.")
-                }
-                if isBlocked == false, let career, let ownCareer {
-                    tape(you: ownCareer, them: career)
-                }
-                PersonFriendNotes(failure: nil, isReported: controls.isReported)
-                if !pinsButton {
-                    footer
+        VStack(spacing: 0) {
+            if let drawerBack {
+                CompetitionDrawerHeader(back: drawerBack) {
+                    moreMenu(usesDrawerStyle: true)
                 }
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 12)
-            .padding(.bottom, 16)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .accessibilityElement(children: .contain)
-            .accessibilityIdentifier("friends.person")
+            ScrollView {
+                VStack(alignment: .leading, spacing: 18) {
+                    header
+                    if isBlocked == true {
+                        quietLine("\(person.displayName) can’t challenge you.")
+                    } else if let rivalry, let record = rivalry.record, hasWeeks {
+                        recordSection(record, rivalry: rivalry)
+                    } else if isFirstMatch {
+                        beltPrize("FIRST MATCH", line: "Win this week to take it.")
+                    } else if person.relationship == .friend {
+                        beltPrize("NOT PLAYED YET", line: "Win your first week with \(person.displayName) to take it.")
+                    } else {
+                        quietLine("Friends can challenge each other without a link.")
+                    }
+                    if isBlocked == false, let career, let ownCareer {
+                        tape(you: ownCareer, them: career)
+                    }
+                    PersonFriendNotes(failure: nil, isReported: controls.isReported)
+                    if !pinsButton {
+                        footer
+                    }
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 12)
+                .padding(.bottom, 16)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("friends.person")
+            }
         }
         .background(Theme.ground)
         .safeAreaInset(edge: .bottom) {
@@ -896,23 +905,10 @@ struct FriendProfileView: View {
         }
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Menu {
-                    if let muteButton {
-                        muteButton
-                    }
-                    PersonFriendMenuItems(
-                        name: person.displayName,
-                        controls: controls,
-                        isBlocked: isBlocked,
-                        unblock: unblock,
-                        hasPlayed: hasPlayed,
-                        dialog: $dialog
-                    )
-                } label: {
-                    CompetitionMoreLabel()
+            if drawerBack == nil {
+                ToolbarItem(placement: .topBarTrailing) {
+                    moreMenu(usesDrawerStyle: false)
                 }
-                .accessibilityIdentifier("competition.more")
             }
         }
         .personFriendDialogs($dialog, name: person.displayName, controls: controls) { isBlocking = true }
@@ -920,6 +916,29 @@ struct FriendProfileView: View {
         .onChange(of: isBlocked) { _, blocked in
             if isBlocking, blocked == true { dismiss() }
         }
+    }
+
+    private func moreMenu(usesDrawerStyle: Bool) -> some View {
+        Menu {
+            if let muteButton {
+                muteButton
+            }
+            PersonFriendMenuItems(
+                name: person.displayName,
+                controls: controls,
+                isBlocked: isBlocked,
+                unblock: unblock,
+                hasPlayed: hasPlayed,
+                dialog: $dialog
+            )
+        } label: {
+            if usesDrawerStyle {
+                CompetitionDrawerMoreLabel()
+            } else {
+                CompetitionMoreLabel()
+            }
+        }
+        .accessibilityIdentifier("competition.more")
     }
 
     /// Side by side, stacking at accessibility sizes where the name needs the width.
