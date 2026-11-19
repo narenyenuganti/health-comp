@@ -392,33 +392,16 @@ struct CompetitionSharingView: View {
 
     @ViewBuilder
     private func archivableResultRow(_ competition: LocalCompetitionPresentation) -> some View {
-        let caption = competitionResultLeavesHome(competition).map {
-            "Moves to History \(weekdayText($0.day, locale: locale))"
-        }
-        let competitions = publication.dashboard.competitions
-        let highlight = competitionHeadline(
-            belt: competitionRecapBelt(
-                competitionBeltEvent(for: competition, in: competitions),
-                outcome: competitionResultOutcome(competition),
-                isRetired: !competitionRecapAllowsNameChoice(competition)
-            ),
-            personalBest: competitionPersonalBestText(for: competition, in: competitions, locale: locale),
-            days: competition.days,
-            opponentName: competition.opponentDisplayName
-        )
-        let spoken = [highlight?.text, caption].compactMap { $0 }.joined(separator: ". ")
         CompetitionArchiveSwipeRow(
             id: competition.id,
             isInFlight: commandIDsInFlight.contains(competition.id),
             label: "Archive. \(competition.opponentDisplayName). \(competitionHomeStatusLine(competition, locale: locale, timeZone: timeZone))",
             archive: { archive(competition.id) }
         ) {
-            competitionButton(competition, caption: homeCaption(spoken.isEmpty ? nil : spoken, competition)) {
+            competitionButton(competition, caption: homeCaption(nil, competition)) {
                 CompetitionSharingRow(
                     competition: competition,
                     source: publication.source,
-                    caption: caption,
-                    highlight: highlight,
                     reaction: unseen(competition)
                 )
             }
@@ -758,17 +741,12 @@ private struct CompetitionHeroCard: View {
     }
 
     private var scheduledHeadline: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            (Text("YOU")
-                .foregroundStyle(Theme.you)
-                + Text("  VS  ").foregroundStyle(Theme.tertiary)
-                + Text(competition.opponentDisplayName.uppercased(with: .current))
-                .foregroundStyle(Theme.ink))
-                .font(.title2.weight(.heavy).width(.condensed))
-            Text("Scores begin Day 1.")
-                .font(.body)
-                .foregroundStyle(Theme.secondary)
-        }
+        (Text("YOU")
+            .foregroundStyle(Theme.you)
+            + Text("  VS  ").foregroundStyle(Theme.tertiary)
+            + Text(competition.opponentDisplayName.uppercased(with: .current))
+            .foregroundStyle(Theme.ink))
+            .font(.title2.weight(.heavy).width(.condensed))
     }
 }
 
@@ -880,9 +858,6 @@ private struct HeroScoreboard: View {
 private struct CompetitionSharingRow: View {
     let competition: LocalCompetitionPresentation
     let source: CompetitionPublicationSource
-    var caption: String? = nil
-    /// Recent results: the card's one highlight line.
-    var highlight: CompetitionHeadline? = nil
     /// The person page lists one person's weeks, so it drops the name.
     var showsName = true
     /// The person page marks the weeks the belt changed hands.
@@ -996,14 +971,6 @@ private struct CompetitionSharingRow: View {
             Text(statusText)
                 .font(showsName ? .subheadline.weight(.medium) : .headline)
                 .foregroundStyle(statusColor)
-            if let highlight {
-                highlightLine(highlight)
-            }
-            if let caption {
-                Text(caption)
-                    .font(.caption)
-                    .foregroundStyle(Theme.secondary)
-            }
             if let disclosure = competitionFixtureDisclosure(
                 source: source,
                 opponentDisplayName: competition.opponentDisplayName
@@ -1016,31 +983,17 @@ private struct CompetitionSharingRow: View {
         .multilineTextAlignment(.leading)
     }
 
-    /// The belt mark for a belt line, an amber slash for your personal best.
-    private func highlightLine(_ line: CompetitionHeadline) -> some View {
-        HStack(spacing: 6) {
-            if line.isBelt, let holder = line.holder {
-                CompetitionBeltMark(holder: holder, width: 22)
-            } else if line.kind == .personalBest {
-                SlantedBar().fill(Theme.youFill).frame(width: 6, height: 12)
-            }
-            Text(line.text)
-                .font(.subheadline)
-                .foregroundStyle(line.kind == .personalBest ? Theme.you : Theme.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .accessibilityElement(children: .combine)
-    }
-
-    // A finished week carries its dates, so repeat opponents stay apart.
+    // A finished week carries its dates; the outcome chip and score already say who won.
     private var statusText: String {
-        competitionHomeStatusLine(competition, locale: locale, timeZone: timeZone)
+        if sharingOutcome(competition.lifecycle) != nil,
+           let timing = competitionStatusText(competition, style: .row, locale: locale, timeZone: timeZone).timing {
+            return competition.isPractice ? "Practice · \(timing)" : timing
+        }
+        return competitionHomeStatusLine(competition, locale: locale, timeZone: timeZone)
     }
 
-    // Your wins read in your color; everything else stays neutral.
     private var statusColor: Color {
-        if sharingOutcome(competition.lifecycle) == .win { return Theme.you }
-        return showsName ? Theme.secondary : Theme.ink
+        showsName ? Theme.secondary : Theme.ink
     }
 
     private var trailingScore: some View {
@@ -1432,7 +1385,7 @@ private struct CompetitionRecordRow: View {
         .frame(maxWidth: .infinity, minHeight: 76, alignment: .leading)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(
-            [record.accessibilityText, beltAccessibilityText, "Latest: \(line)"]
+            [record.accessibilityText, beltAccessibilityText, "Latest: \(spokenLine)"]
                 .compactMap { $0 }
                 .joined(separator: ". ")
         )
@@ -1490,6 +1443,10 @@ private struct CompetitionRecordRow: View {
     }
 
     private var line: String {
+        competitionStatusText(record.latest, style: .row, locale: locale, timeZone: timeZone).timing ?? spokenLine
+    }
+
+    private var spokenLine: String {
         competitionHomeStatusLine(record.latest, locale: locale, timeZone: timeZone)
     }
 }
@@ -2015,7 +1972,6 @@ struct CompetitionPersonView: View {
                         CompetitionSharingRow(
                             competition: competition,
                             source: publication.source,
-                            caption: section == "JUST FINISHED" ? "See the result" : nil,
                             showsName: false,
                             opensMatch: opens
                         )

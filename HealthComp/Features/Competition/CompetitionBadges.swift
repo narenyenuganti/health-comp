@@ -542,11 +542,6 @@ struct CompetitionBadgesView: View {
                         }
                     }
                 }
-                Text("Badges come from your finished 1v1 weeks. Only you see them.")
-                    .font(.footnote)
-                    .foregroundStyle(Theme.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .padding(.horizontal, 4)
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 12)

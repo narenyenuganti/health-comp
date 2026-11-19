@@ -198,7 +198,7 @@ final class RecapCardUITests: XCTestCase {
         XCTAssertEqual(element("competition.result.belt").label, "You took the belt")
         let share = app.buttons["competition.result.share"]
         scrollToElement(share)
-        XCTAssertLessThanOrEqual(element("competition.history.preserved").frame.maxY, share.frame.minY)
+        XCTAssertFalse(element("competition.history.preserved").exists)
 
         openSheet(showing: Self.longName)
         let card = element("competition.recap.card")

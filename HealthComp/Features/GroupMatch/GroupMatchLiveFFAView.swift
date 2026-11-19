@@ -47,18 +47,18 @@ struct GroupMatchLiveFFAView: View {
             if competitionShouldShowScores(match.lifecycle) {
                 SectionLabel("THE WEEK")
                 GroupWeekGrid(match: match, openDay: openDay)
-                Text(footer)
-                    .font(.subheadline)
-                    .foregroundStyle(Theme.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
+                if let botNote {
+                    Text(botNote)
+                        .font(.subheadline)
+                        .foregroundStyle(Theme.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
         }
     }
 
-    private var footer: String {
-        guard let bot = match.seats.first(where: \.isBot) else {
-            return "A filled square won that day. Tap a day for everyone’s rings."
-        }
+    private var botNote: String? {
+        guard let bot = match.seats.first(where: \.isBot) else { return nil }
         return "\(bot.name)’s week was set before Day 1. Bots can’t be nudged and don’t get reactions."
     }
 

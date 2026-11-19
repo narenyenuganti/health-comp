@@ -48,7 +48,7 @@ final class ReactionsUITests: XCTestCase {
         )
         let heading = app.staticTexts["REACT TO JORDAN’S DAY"]
         XCTAssertTrue(heading.exists)
-        XCTAssertTrue(app.staticTexts["Jordan sees your reaction on this day."].exists)
+        XCTAssertFalse(app.staticTexts["Jordan sees your reaction on this day."].exists)
         XCTAssertLessThan(received.frame.maxY, heading.frame.minY + 1)
         assertChips(selected: nil)
         XCTAssertGreaterThan(chip("clap").frame.minY, heading.frame.maxY - 1)
@@ -163,16 +163,9 @@ final class ReactionsUITests: XCTestCase {
         launch()
         let riley = card("completed", "Riley")
         scrollToElement(riley)
-        // VoiceOver: the visible caption first, then the reaction.
         let label = riley.label
-        let caption = label.range(of: "Moves to History")
-        let reaction = label.range(of: ". Clap. Riley reacted to the result")
-        XCTAssertNotNil(caption, label)
-        XCTAssertNotNil(reaction, label)
-        if let caption, let reaction {
-            XCTAssertLessThan(caption.lowerBound, reaction.lowerBound, label)
-        }
-        XCTAssertTrue(label.hasSuffix("Riley reacted to the result"), label)
+        XCTAssertFalse(label.contains("Moves to History"), label)
+        XCTAssertTrue(label.hasSuffix(". Clap. Riley reacted to the result"), label)
 
         riley.tap()
         XCTAssertTrue(app.navigationBars["Riley"].waitForExistence(timeout: 3))
@@ -223,7 +216,7 @@ final class ReactionsUITests: XCTestCase {
         let after = card("completed", "Riley")
         scrollToElement(after)
         XCTAssertFalse(after.label.contains("reacted"), after.label)
-        XCTAssertTrue(after.label.contains("Moves to History"), after.label)
+        XCTAssertFalse(after.label.contains("Moves to History"), after.label)
     }
 
     func testTallyingAndTheLastDayStillTakeDayReactions() {
@@ -325,7 +318,7 @@ final class ReactionsUITests: XCTestCase {
         latest.tap()
         XCTAssertTrue(app.staticTexts["Day 1"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.staticTexts["REACT TO ALEXANDRIA MONTGOMERY-FEATHERSTONEHAUGH’S DAY"].exists)
-        XCTAssertTrue(app.staticTexts["\(name) sees your reaction on this day."].exists)
+        XCTAssertFalse(app.staticTexts["\(name) sees your reaction on this day."].exists)
         assertChips(selected: nil)
         try audit("long-name-drawer")
     }

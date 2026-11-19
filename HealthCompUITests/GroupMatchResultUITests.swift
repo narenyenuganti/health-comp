@@ -5,9 +5,10 @@ final class GroupMatchResultUITests: XCTestCase {
         continueAfterFailure = false
     }
 
-    func testTiedResultSaysNoBelt() {
+    func testTiedResultOmitsNoBeltFootnote() {
         let app = XCUIApplication.launchGroupLab("result-ffa-tied")
-        XCTAssertTrue(app.groupElement("competition.group.result.no-belt").waitForExistence(timeout: 8))
+        XCTAssertTrue(app.groupElement("competition.group.result.title").waitForExistence(timeout: 8))
+        XCTAssertFalse(app.groupElement("competition.group.result.no-belt").exists)
     }
 
     func testJudgesRevealPlaysOnceBeforeAFourWayResult() {
@@ -73,7 +74,7 @@ final class GroupMatchResultUITests: XCTestCase {
         XCTAssertTrue(app.groupElement("competition.group.result.team.yours").label.contains("You and Priya"))
         XCTAssertTrue(app.groupElement("competition.group.result.carry.yours").label.contains("53 percent"))
         XCTAssertTrue(app.groupElement("competition.group.result.carry.theirs").label.hasPrefix("Sam"))
-        XCTAssertTrue(app.groupElement("competition.group.result.no-belt").exists)
+        XCTAssertFalse(app.groupElement("competition.group.result.no-belt").exists)
 
         app.terminate()
         app = XCUIApplication.launchGroupLab("result-doubles-tied")

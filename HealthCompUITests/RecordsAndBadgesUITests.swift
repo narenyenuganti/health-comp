@@ -53,22 +53,26 @@ final class RecordsAndBadgesUITests: XCTestCase {
 
     func testHistoryFiltersWeeksAndThePersonPageCountsEachRing() {
         launch()
+        XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 8))
         let history = app.buttons["competition.history.open"]
         scrollTo(history)
         history.tap()
-        XCTAssertTrue(app.navigationBars["History"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.navigationBars["History"].waitForExistence(timeout: 5))
 
-        element("competition.record.a5000000-0000-4000-8000-00000000000a").tap()
-        let unit = element("competition.person.rings.unit")
+        let sam = app.buttons["competition.record.a5000000-0000-4000-8000-00000000000a"]
+        XCTAssertTrue(sam.waitForExistence(timeout: 5))
+        sam.tap()
+        XCTAssertTrue(app.navigationBars["Sam"].waitForExistence(timeout: 5))
+        let daysWon = element("competition.person.rings.unit").buttons["Days won"]
         // Clear of the Challenge button pinned to the foot of the page.
-        scrollTo(unit, within: 0.6)
+        scrollTo(daysWon, within: 0.6)
         let move = element("competition.person.rings.move")
         XCTAssertTrue(move.label.hasPrefix("Move: you won 0 weeks, Sam 10."), move.label)
         shot("rings-weeks")
-        unit.buttons["Days won"].tap()
+        daysWon.tap()
         expectation(for: NSPredicate(format: "label BEGINSWITH 'Move: you won 19 days, Sam 50.'"), evaluatedWith: move)
         waitForExpectations(timeout: 3)
-        XCTAssertTrue(element("competition.person.rings.edge").exists)
+        XCTAssertFalse(element("competition.person.rings.edge").exists)
         shot("rings-days")
         back(to: "competition.record.a5000000-0000-4000-8000-00000000000a")
 
@@ -126,10 +130,25 @@ final class RecordsAndBadgesUITests: XCTestCase {
     /// that far up the screen.
     private func scrollTo(_ element: XCUIElement, within fraction: CGFloat = 1) {
         let scroll = app.scrollViews.firstMatch
-        for _ in 0..<40
-        where !(element.exists && element.isHittable && element.frame.maxY <= app.frame.height * fraction) {
-            scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
-                .press(forDuration: 0.05, thenDragTo: scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.45)))
+        var lastMinY: CGFloat?
+        for _ in 0..<40 {
+            if element.exists, element.isHittable {
+                let frame = element.frame
+                if frame.minY >= scroll.frame.minY, frame.maxY <= app.frame.height * fraction {
+                    return
+                }
+                if let lastMinY, abs(frame.minY - lastMinY) < 1 {
+                    return
+                }
+                lastMinY = frame.minY
+                let pastTop = frame.minY < scroll.frame.minY + 12
+                scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: pastTop ? 0.35 : 0.7))
+                    .press(forDuration: 0.05, thenDragTo: scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: pastTop ? 0.55 : 0.45)))
+            } else {
+                lastMinY = nil
+                scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.7))
+                    .press(forDuration: 0.05, thenDragTo: scroll.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.45)))
+            }
         }
         XCTAssertTrue(element.isHittable)
     }

@@ -183,12 +183,7 @@ private struct GroupMatchHomeCard: View {
 
     @ViewBuilder
     private var lead: some View {
-        if let text = finalLine {
-            Text(text)
-                .font(.title2.weight(.semibold))
-                .foregroundStyle(Theme.ink)
-                .fixedSize(horizontal: false, vertical: true)
-        } else {
+        if match.frozenStandings == nil {
             GroupMatchLeadLine(match: match)
         }
     }

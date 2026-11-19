@@ -18,8 +18,6 @@ struct CompetitionResultView: View {
     var challengeSomeone: (() -> Void)? = nil
     /// Real matches only: your own win in a loss or a tie.
     var personalBest: String? = nil
-    /// Real matches only: how the week was decided, in one sentence.
-    var howItWasWon: String? = nil
     /// "Your record with Sam", counting this week.
     var recordLink: CompetitionRecordLink? = nil
 
@@ -40,7 +38,6 @@ struct CompetitionResultView: View {
     private var reactionsSeen = CompetitionReactionsSeen()
     @AppStorage(CompetitionMotionSeen.storageKey)
     private var motionSeen = CompetitionMotionSeen()
-    @AppStorage("healthcomp.verdictHidesHowItWasWon") private var hidesHowItWasWon = false
 
     var body: some View {
         ScrollView {
@@ -62,30 +59,14 @@ struct CompetitionResultView: View {
                 }
                 .verdictBeat(1, shown: isShown)
 
-                if let sentence = shownHowItWasWon {
-                    howItWasWonLine(sentence)
-                        .verdictBeat(2, shown: isShown)
-                        .transition(Motion.appear)
-                }
-
-                // The card's one line first; the rest of these follow it.
-                if headline?.isBelt == true, let text = beltText {
+                if let text = beltText {
                     beltBanner(text)
                         .verdictBeat(2, shown: isShown)
                         .transition(Motion.appear)
-                } else if let headline, headline.kind != .personalBest,
-                          headline.kind != .lead || shownHowItWasWon == nil {
-                    headlineLine(headline.text, holder: headline.holder, id: "competition.result.headline")
                 }
 
                 if let personalBest {
                     headlineLine(personalBest, holder: .you, id: "competition.result.personal-best")
-                }
-
-                if headline?.isBelt != true, let text = beltText {
-                    beltBanner(text)
-                        .verdictBeat(2, shown: isShown)
-                        .transition(Motion.appear)
                 }
 
                 if let recordLink {
@@ -118,18 +99,6 @@ struct CompetitionResultView: View {
                 if !competition.days.isEmpty {
                     weekCard
                         .verdictBeat(2, shown: isShown)
-                }
-
-                if dataControl == .preservedHistory {
-                    Label(
-                        "This match stays in History.",
-                        systemImage: "archivebox.fill"
-                    )
-                    .font(.footnote)
-                    .foregroundStyle(Theme.secondary)
-                    .frame(maxWidth: .infinity, minHeight: 44)
-                    .accessibilityIdentifier("competition.history.preserved")
-                    .transition(Motion.appear)
                 }
 
                 Button {
@@ -296,17 +265,7 @@ struct CompetitionResultView: View {
             reactions?.failed.contains(.result) == true,
             competition.receivedReaction(.result) != nil,
             isArchived,
-            hidesHowItWasWon,
         ]
-    }
-
-    private var headline: CompetitionHeadline? {
-        competitionHeadline(
-            belt: recapBelt,
-            personalBest: personalBest,
-            days: competition.days,
-            opponentName: opponentName
-        )
     }
 
     private var recapBelt: CompetitionRecapBelt? {
@@ -315,29 +274,6 @@ struct CompetitionResultView: View {
             outcome: outcome,
             isRetired: !competitionRecapAllowsNameChoice(competition)
         )
-    }
-
-    private var shownHowItWasWon: String? {
-        hidesHowItWasWon ? nil : howItWasWon
-    }
-
-    /// The Verdict's one story: amber slash for your win, ink for theirs.
-    private func howItWasWonLine(_ sentence: String) -> some View {
-        HStack(alignment: .top, spacing: 12) {
-            SlantedBar()
-                .fill(outcome == .win ? Theme.youFill : Theme.ink)
-                .frame(width: 4)
-                .accessibilityHidden(true)
-            Text(sentence)
-                .font(.body.weight(.medium))
-                .foregroundStyle(Theme.ink)
-                .fixedSize(horizontal: false, vertical: true)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .fixedSize(horizontal: false, vertical: true)
-        .padding(.horizontal, 6)
-        .accessibilityElement(children: .combine)
-        .accessibilityIdentifier("competition.result.howItWasWon")
     }
 
     private func headlineLine(_ text: String, holder: CompetitionBeltHolder?, id: String) -> some View {
@@ -677,25 +613,8 @@ struct CompetitionResultView: View {
     /// they did, so a loss can still hold a ring.
     private func ringSplitPanel(_ split: (you: [Double], them: [Double])) -> some View {
         let names = ["Move", "Exercise", competitionStandTitle(competition.days).capitalized]
-        let took = names.indices.filter { split.you[$0] > split.them[$0] }.map { names[$0] }
-        let tookText: String? = switch took.count {
-        case 0: nil
-        // Already the Verdict's headline.
-        case 3 where headline?.kind == .allThreeRings: nil
-        case 3: "You took all three"
-        default: "You took " + took.joined(separator: " and ")
-        }
         return VStack(alignment: .leading, spacing: 14) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                SectionLabel("EACH RING")
-                Spacer(minLength: 8)
-                if let tookText {
-                    Text(tookText)
-                        .font(.themeLabel)
-                        .foregroundStyle(Theme.you)
-                        .multilineTextAlignment(.trailing)
-                }
-            }
+            SectionLabel("EACH RING")
             ForEach(names.indices, id: \.self) { index in
                 ringSplitRow(names[index], you: split.you[index], them: split.them[index])
             }
@@ -705,10 +624,9 @@ struct CompetitionResultView: View {
         .themePanel()
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(
-            (["Each ring", tookText] + names.indices.map {
+            (["Each ring"] + names.indices.map {
                 "\(names[$0]): you \(competitionPointsText(split.you[$0], locale: locale)), \(opponentName) \(competitionPointsText(split.them[$0], locale: locale))"
             })
-            .compactMap { $0 }
             .joined(separator: ". ")
         )
         .accessibilityIdentifier("competition.result.rings")
@@ -1087,8 +1005,7 @@ struct CompetitionResultView: View {
     }
 
     private var hasMenuActions: Bool {
-        !competition.isPractice
-            && (dataControl != .preservedHistory || muteButton != nil || howItWasWon != nil)
+        !competition.isPractice && (dataControl != .preservedHistory || muteButton != nil)
     }
 
     @ViewBuilder
@@ -1116,18 +1033,6 @@ struct CompetitionResultView: View {
 
         if let muteButton {
             muteButton
-        }
-
-        if howItWasWon != nil {
-            Button {
-                hidesHowItWasWon.toggle()
-            } label: {
-                Label(
-                    hidesHowItWasWon ? "Show How It Was Won" : "Hide How It Was Won",
-                    systemImage: hidesHowItWasWon ? "eye" : "eye.slash"
-                )
-            }
-            .accessibilityIdentifier("competition.result.howItWasWon.toggle")
         }
     }
 
