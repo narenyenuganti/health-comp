@@ -878,6 +878,31 @@ final class MultiUserCompetitionUITests: XCTestCase {
         scrollToElement(dismiss)
         dismiss.tap()
         XCTAssertTrue(row.waitForNonExistence(timeout: 3))
+
+        XCUIDevice.shared.press(.home)
+        XCTAssertTrue(
+            app.wait(for: .runningBackground, timeout: 5)
+                || app.state == .runningBackgroundSuspended
+        )
+        app.activate()
+        XCTAssertTrue(app.wait(for: .runningForeground, timeout: 5))
+        XCTAssertFalse(row.exists)
+
+        launch(.sharing, appearanceArguments: ["--keep-dismissed-challenges"])
+        XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 8))
+        let upNext = app.descendants(matching: .any)["competition.home.upNext"]
+        scrollToElement(upNext)
+        XCTAssertTrue(upNext.exists)
+        XCTAssertFalse(
+            row.exists,
+            "A dismissed closed challenge must stay dismissed after leaving and relaunching the app"
+        )
+
+        // Positive control: a fresh profile state without persisted dismissals shows the row again.
+        launch(.sharing)
+        XCTAssertTrue(app.navigationBars["Home"].waitForExistence(timeout: 8))
+        scrollToElement(again)
+        XCTAssertTrue(row.exists)
     }
 
     func testRemoteDayDrawerShowsRingsThatAddUpToTheDayScore() {

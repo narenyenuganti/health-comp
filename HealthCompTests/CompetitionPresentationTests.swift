@@ -3206,6 +3206,28 @@ final class CompetitionPresentationTests: XCTestCase {
         XCTAssertNil(CompetitionReactionsSeen(rawValue: "not json"))
     }
 
+    func testDismissedChallengesRawValueRoundTripsAndSortsDeterministically() {
+        let first = CompetitionID(UUID(uuidString: "A1000000-0000-4000-8000-000000000002")!)
+        let second = CompetitionID(UUID(uuidString: "A1000000-0000-4000-8000-000000000001")!)
+        let other = CompetitionID(UUID(uuidString: "A1000000-0000-4000-8000-000000000003")!)
+
+        let forward = CompetitionDismissedChallenges()
+            .dismissing(first)
+            .dismissing(second)
+        let reverse = CompetitionDismissedChallenges()
+            .dismissing(second)
+            .dismissing(first)
+
+        XCTAssertTrue(forward.contains(first))
+        XCTAssertTrue(forward.contains(second))
+        XCTAssertFalse(forward.contains(other))
+        XCTAssertEqual(forward.rawValue, reverse.rawValue)
+        XCTAssertEqual(CompetitionDismissedChallenges(rawValue: forward.rawValue), forward)
+        XCTAssertEqual(CompetitionDismissedChallenges(rawValue: CompetitionDismissedChallenges().rawValue), .init())
+        XCTAssertNil(CompetitionDismissedChallenges(rawValue: "not json"))
+        XCTAssertNil(CompetitionDismissedChallenges(rawValue: "[\"not-a-uuid\"]"))
+    }
+
     func testWeekGrowsOnlyWhenTheNewestScoredDayIsNew() {
         func match(_ points: [Double?]) -> LocalCompetitionPresentation {
             reactionPresentation(days: points.enumerated().map { index, points in

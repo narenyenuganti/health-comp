@@ -1066,6 +1066,7 @@ struct AppFeature {
                             // Device-local seen marks belong to the old profile's matches.
                             UserDefaults.standard.removeObject(forKey: CompetitionReactionsSeen.storageKey)
                             UserDefaults.standard.removeObject(forKey: CompetitionMotionSeen.storageKey)
+                            UserDefaults.standard.removeObject(forKey: CompetitionDismissedChallenges.storageKey)
                             if let profileID = pendingTeardown.profileID {
                                 try await authenticatedProfileStorage.teardown(
                                     profileID

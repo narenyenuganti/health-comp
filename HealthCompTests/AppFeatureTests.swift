@@ -1587,6 +1587,7 @@ final class AppFeatureTests: XCTestCase {
             $0.competitionWidgetSnapshotClient = widgetSnapshots(calls)
         }
         store.exhaustivity = .off(showSkippedAssertions: false)
+        UserDefaults.standard.set("[]", forKey: CompetitionDismissedChallenges.storageKey)
 
         await store.send(.restoreSessionResponse(epoch: 0, .success(nil)))
         await store.finish()
@@ -1594,6 +1595,7 @@ final class AppFeatureTests: XCTestCase {
 
         XCTAssertEqual(store.state.phase, .signedOut)
         XCTAssertEqual(calls.calls, ["widget-clear", "retire"])
+        XCTAssertNil(UserDefaults.standard.object(forKey: CompetitionDismissedChallenges.storageKey))
     }
 
     @MainActor

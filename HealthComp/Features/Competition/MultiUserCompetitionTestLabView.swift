@@ -159,6 +159,17 @@ struct MultiUserCompetitionTestLabRootView: View {
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
+    private static let resetDismissedChallenges: Void = {
+        if !ProcessInfo.processInfo.arguments.contains("--keep-dismissed-challenges") {
+            UserDefaults.standard.removeObject(forKey: CompetitionDismissedChallenges.storageKey)
+        }
+    }()
+
+    init(configuration: MultiUserCompetitionTestLabConfiguration) {
+        self.configuration = configuration
+        _ = Self.resetDismissedChallenges
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             // Filmed, and the intro runs edge to edge.

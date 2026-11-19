@@ -303,6 +303,7 @@ jobs:
               VersusIntroUITests/testPlaysForTheAccepterOverTheMatchThenNeverAgain
               MultiUserCompetitionUITests/testColdWarmAndSignedOutClaimConfirmationFlows
               MultiUserCompetitionUITests/testPullToRefreshDoesNotFlashScoreUpdateErrorOnTransientFailure
+              MultiUserCompetitionUITests/testClosedChallengeRowChallengesAgainAndDismisses
             )
           fi
           xcodebuild test \

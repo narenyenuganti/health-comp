@@ -983,7 +983,14 @@ final class CompetitionTestLabController: ObservableObject {
 struct CompetitionTestLabRootView: View {
     @StateObject var controller: CompetitionTestLabController
 
+    private static let resetDismissedChallenges: Void = {
+        if !ProcessInfo.processInfo.arguments.contains("--keep-dismissed-challenges") {
+            UserDefaults.standard.removeObject(forKey: CompetitionDismissedChallenges.storageKey)
+        }
+    }()
+
     init(configuration: CompetitionTestLabConfiguration) {
+        _ = Self.resetDismissedChallenges
         _controller = StateObject(
             wrappedValue: CompetitionTestLabController(
                 configuration: configuration,
