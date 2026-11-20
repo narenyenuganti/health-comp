@@ -1,7 +1,6 @@
 import { assert, assertEquals } from "@std/assert";
 import postgres from "postgres";
 import {
-  canonicalScoreRevisionJSON,
   type ScoringRpcClient,
   submitScoreRevisionHandler,
 } from "./submit-score-revision/index.ts";
@@ -203,8 +202,11 @@ Deno.test({
           wireContentSHA256: wire.digest,
         };
         const edge = async (selected = value) => {
-          const canonical = canonicalScoreRevisionJSON(selected);
-          assert(canonical);
+          const canonical = JSON.stringify(
+            Object.fromEntries(
+              Object.entries(selected).sort(([a], [b]) => a.localeCompare(b)),
+            ),
+          );
           const payload = Array.from(
             new Uint8Array(
               await crypto.subtle.digest(

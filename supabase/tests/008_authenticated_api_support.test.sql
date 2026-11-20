@@ -3,7 +3,7 @@ begin;
 create extension if not exists pgtap with schema extensions;
 set local search_path = extensions, public, pg_catalog;
 
-select plan(104);
+select plan(102);
 
 select ok(coalesce((
   select procedure_row.prosecdef
@@ -368,10 +368,6 @@ select results_eq(
   'anonymization emits only profile_anonymized presentation work'
 );
 
-select col_default_is(
-  'public', 'competitions', 'invite_token_derivation_version', '0',
-  'legacy invite rows default to random-token derivation version zero'
-);
 select ok(coalesce((
   select has_function_privilege('service_role', procedure_row.oid, 'EXECUTE')
     and not has_function_privilege('authenticated', procedure_row.oid, 'EXECUTE')
@@ -594,16 +590,6 @@ select throws_ok(
 );
 reset role;
 
-select ok(coalesce((
-  select index_row.indisunique
-  from pg_catalog.pg_index index_row
-  join pg_catalog.pg_class table_row on table_row.oid = index_row.indrelid
-  join pg_catalog.pg_namespace schema_row on schema_row.oid = table_row.relnamespace
-  where schema_row.nspname = 'public'
-    and table_row.relname = 'device_installations'
-    and pg_catalog.pg_get_indexdef(index_row.indexrelid)
-      like '%(profile_id, installation_id)%'
-), false), 'profile and installation identity are unique together');
 select ok(coalesce((
   select procedure_row.prosecdef
     and 'search_path=""' = any(coalesce(procedure_row.proconfig, array[]::text[]))

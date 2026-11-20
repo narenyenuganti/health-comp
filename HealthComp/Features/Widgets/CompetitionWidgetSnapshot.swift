@@ -253,11 +253,6 @@ extension CompetitionWidgetSnapshot.Match {
         }
     }
 
-    /// The medium header: "Sam · Day 5 of 7", "Sam · Final".
-    func mediumHeader(at date: Date, locale: Locale = .current) -> String {
-        groupHeader(at: date, locale: locale) ?? "\(name) · \(mediumStatus(at: date, locale: locale))"
-    }
-
     /// The header after the name, kept whole when a long name truncates.
     func mediumStatus(at date: Date, locale: Locale = .current) -> String {
         if case .final = state(at: date) { return "Final" }
@@ -733,11 +728,6 @@ extension CompetitionWidgetSnapshot {
                 .init(place: 2, name: "Sam + Leo", points: 2_915, isYou: false),
             ], lead: "Your team up 247")
             matches = [doubles]
-        // A digit gained, for the score roll.
-        case "almostThousand":
-            matches = [match(5, "Sam", currentDay: 5, you: 999, them: 980, youDays: week, themDays: theirs)]
-        case "thousand":
-            matches = [match(5, "Sam", currentDay: 5, you: 1_000, them: 980, youDays: week, themDays: theirs)]
         case "stale":
             matches = [match(5, "Sam", currentDay: 5, you: 1_204, them: 1_150,
                              youDays: week, themDays: theirs, updatedAgo: 3 * 3_600)]

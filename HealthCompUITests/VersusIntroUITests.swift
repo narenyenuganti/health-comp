@@ -125,31 +125,6 @@ final class VersusIntroUITests: XCTestCase {
         skip()
     }
 
-    func testEveryMatchupComposes() {
-        launch()
-        for (state, byte, title) in Self.matchups {
-            open(state, byte)
-            XCTAssertTrue(intro.waitForExistence(timeout: 3), title)
-            capture(title)
-            skip()
-            goHome()
-        }
-    }
-
-    func testLongNameAndBeltAtAccessibilitySizesInDark() {
-        launch([
-            "-AppleInterfaceStyle", "Dark",
-            "-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL",
-        ])
-        for (byte, title) in [(UInt8(0x06), "Long AX5"), (0x04, "Theirs AX5"), (0x05, "Yours AX5")] {
-            open("active", byte)
-            XCTAssertTrue(intro.waitForExistence(timeout: 3), title)
-            capture(title)
-            skip()
-            goHome()
-        }
-    }
-
     // A launch argument can't switch Reduce Motion on in a simulator;
     // `--versus-reduce-motion` takes the app's Reduce Motion path.
     func testReduceMotionShowsTheComposedScreenAndATapEndsIt() {

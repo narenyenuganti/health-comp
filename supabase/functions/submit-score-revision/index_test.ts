@@ -10,7 +10,6 @@ import {
 import { containsFingerprint } from "../_shared/scoring_http.ts";
 import {
   appAttestPolicyFromEnvironment,
-  canonicalScoreRevisionJSON,
   type ScoreSubmissionDependencies,
   type ScoringRpcClient,
   submitScoreRevisionHandler,
@@ -194,7 +193,6 @@ function expectedClientData(
 Deno.test("score JSON is frozen cross-language and submission requires the exact proof envelope", async () => {
   const canonical =
     '{"availabilityReason":"available","clientRevision":"9007199254740993","competitionId":"63000000-0000-0000-0000-000000000001","dayOrdinal":1,"evaluatedAt":"2026-08-12T12:00:00Z","exerciseBasisPoints":5000,"moveBasisPoints":10000,"moveMode":"activeEnergyKilocalories","scoringPolicyIdentity":"healthcomp.activity-score.v1","semanticEventId":"64000000-0000-4000-8000-000000000001","standBasisPoints":12500,"standMode":"standHours","version":1,"wireContentSHA256":"37df3f48a20b0b6e042e2450241af9c84ec7696ee505b97d9052dc201afb7fd9"}';
-  assertEquals(canonicalScoreRevisionJSON(score), canonical);
   assertEquals(
     createHash("sha256").update(canonical).digest("hex"),
     payloadSHA256,

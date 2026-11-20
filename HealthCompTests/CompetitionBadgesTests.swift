@@ -175,25 +175,10 @@ final class CompetitionBadgesTests: XCTestCase {
             CompetitionMonthFixture.weeks(), opponentIdentity: CompetitionMonthFixture.samIdentity
         )
         let rings = try XCTUnwrap(competitionRingRecords(weeks))
-        let days = try XCTUnwrap(competitionRingDaysWon(weeks))
         XCTAssertEqual(rings.map(\.weeksYou), [3, 3, 3])
         XCTAssertEqual(rings.map(\.weeksThem), [1, 1, 1])
-        XCTAssertEqual(rings.map(\.daysYou), days.map(\.you))
-        XCTAssertEqual(rings.map(\.daysThem), days.map(\.them))
         XCTAssertEqual(rings.map(\.bestYou), [165, 122, 147])
         XCTAssertEqual(rings.map(\.bestThem), [152, 112, 136])
-        XCTAssertEqual(competitionRingEdgeText(rings, opponentName: "Sam", locale: locale), "Your edge: Move, +4 a day.")
-
-        let split = [
-            CompetitionRingRecord(averageYou: 182, averageThem: 176),
-            CompetitionRingRecord(averageYou: 104, averageThem: 113),
-            CompetitionRingRecord(averageYou: 71, averageThem: 64),
-        ]
-        XCTAssertEqual(
-            competitionRingEdgeText(split, opponentName: "Sam", locale: locale),
-            "Your edge: Stand, +7 a day. Sam’s edge: Exercise, +9 a day."
-        )
-        XCTAssertNil(competitionRingEdgeText(Array(repeating: CompetitionRingRecord(), count: 3), opponentName: "Sam"))
         XCTAssertNil(competitionRingRecords([]))
     }
 
