@@ -104,6 +104,11 @@ struct MainTabView: View {
             ChallengeFromLinkView(
                 link: link,
                 status: store.competition.challengeSheetStatus,
+                metrics: Binding(
+                    get: { store.competition.inviteMetrics },
+                    set: { store.send(.competition(.inviteMetricsChanged($0))) }
+                ),
+                requestSleepAccess: { store.send(.competition(.sleepAccessRequested)) },
                 send: { store.send(.sendChallengeFromLinkTapped) },
                 retry: { store.send(.retryChallengeFromLinkTapped) },
                 openCompetition: { id in
@@ -121,6 +126,7 @@ struct MainTabView: View {
                 store: store.scope(state: \.competition.group, action: \.competition.group),
                 people: newMatchPeople,
                 lineup: newMatchLineup,
+                requestSleepAccess: { store.send(.competition(.sleepAccessRequested)) },
                 onDuel: { opensDuel = true; isNewMatchPresented = false }
             )
         }
@@ -202,10 +208,11 @@ struct MainTabView: View {
                         ),
                         recipient: store.competition.inviteRecipient,
                         recipientStatus: store.competition.inviteRecipientStatus,
-                        withSleep: Binding(
-                            get: { store.competition.inviteWithSleep },
-                            set: { store.send(.competition(.inviteSleepToggled($0))) }
+                        metrics: Binding(
+                            get: { store.competition.inviteMetrics },
+                            set: { store.send(.competition(.inviteMetricsChanged($0))) }
                         ),
+                        requestSleepAccess: { store.send(.competition(.sleepAccessRequested)) },
                         findRecipient: { store.send(.competition(.findInviteRecipientTapped)) },
                         createInvite: {
                             store.send(.competition(.createInviteTapped))
@@ -256,7 +263,10 @@ struct MainTabView: View {
             .sheet(isPresented: $isPracticePresented) {
                 if let publication = store.competition.publication,
                    let practice = practiceStart(publication) {
-                    PracticeMatchSheet(practice: practice)
+                    PracticeMatchSheet(
+                        practice: practice,
+                        requestSleepAccess: { store.send(.competition(.sleepAccessRequested)) }
+                    )
                 }
             }
             .sheet(isPresented: $isTodayRingsPresented) {
@@ -405,10 +415,11 @@ struct MainTabView: View {
                 ),
                 recipient: store.competition.inviteRecipient,
                 recipientStatus: store.competition.inviteRecipientStatus,
-                withSleep: Binding(
-                    get: { store.competition.inviteWithSleep },
-                    set: { store.send(.competition(.inviteSleepToggled($0))) }
+                metrics: Binding(
+                    get: { store.competition.inviteMetrics },
+                    set: { store.send(.competition(.inviteMetricsChanged($0))) }
                 ),
+                requestSleepAccess: { store.send(.competition(.sleepAccessRequested)) },
                 senderName: store.competition.ownProfile?.displayName,
                 ownChallengeLink: store.competition.challengeLink,
                 friends: store.competition.friends.list?.friends ?? [],

@@ -24,10 +24,11 @@ struct CompetitionInviteView: View {
                 if direction == .incoming, let recordLink {
                     CompetitionRecordLinkRow(link: recordLink)
                 }
+                CompetitionMetricTagStrip(metrics: competition.metrics)
                 CompetitionRulesCard(
                     source: source,
                     opponentName: competition.opponentDisplayName,
-                    withSleep: competition.isSleepMatch
+                    metrics: competition.metrics
                 )
                 actionControls
                 if isRemoteOutgoing, dynamicTypeSize.isAccessibilitySize {
@@ -442,6 +443,7 @@ struct CompetitionRuleRow: View {
     enum Icon {
         case symbol(String)
         case rings
+        case metrics([CompetitionMetric])
     }
 
     let icon: Icon
@@ -479,11 +481,20 @@ struct CompetitionRuleRow: View {
                 .font(.body.weight(.semibold))
                 .foregroundStyle(Theme.ink)
         case .rings:
-            VStack(alignment: .leading, spacing: 2) {
-                SlantedBar().fill(Theme.move).frame(width: 18, height: 4)
-                SlantedBar().fill(Theme.exercise).frame(width: 13, height: 4)
-                    .padding(.leading, 3)
-                SlantedBar().fill(Theme.stand).frame(width: 16, height: 4)
+            metricBars([.move, .exercise, .stand])
+        case let .metrics(items):
+            metricBars(items)
+        }
+    }
+
+    private func metricBars(_ items: [CompetitionMetric]) -> some View {
+        let widths: [CGFloat] = [18, 13, 16]
+        return VStack(alignment: .leading, spacing: 2) {
+            ForEach(Array(items.enumerated()), id: \.offset) { index, metric in
+                SlantedBar()
+                    .fill(metric.color)
+                    .frame(width: widths[index % widths.count], height: 4)
+                    .padding(.leading, index == 1 ? 3 : 0)
             }
         }
     }
@@ -499,9 +510,54 @@ struct CompetitionRulesCard: View {
     let source: CompetitionPublicationSource
     var opponentName: String? = nil
     var weekText: String? = nil
-    var withSleep = false
+    var metrics: CompetitionMetrics = .threeRings
+
+    init(
+        source: CompetitionPublicationSource,
+        opponentName: String? = nil,
+        weekText: String? = nil,
+        metrics: CompetitionMetrics = .threeRings
+    ) {
+        self.source = source
+        self.opponentName = opponentName
+        self.weekText = weekText
+        self.metrics = metrics.isEmpty ? .threeRings : metrics
+    }
+
+    init(
+        source: CompetitionPublicationSource,
+        opponentName: String? = nil,
+        weekText: String? = nil,
+        withSleep: Bool
+    ) {
+        self.init(
+            source: source,
+            opponentName: opponentName,
+            weekText: weekText,
+            metrics: withSleep ? .all : .threeRings
+        )
+    }
+
+    private var activeRings: [CompetitionMetric] {
+        metrics.orderedMetrics.filter(\.isActivityRing)
+    }
+
+    private var ringRuleTitle: String {
+        if activeRings.count == 3 {
+            return "1 point per 1% of each ring"
+        }
+        let ringSet = CompetitionMetrics(
+            move: metrics.contains(.move),
+            exercise: metrics.contains(.exercise),
+            stand: metrics.contains(.stand),
+            sleep: false
+        )
+        return "1 point per 1% of \(ringSet.listText)"
+    }
 
     var body: some View {
+        let ringMax = Int(metrics.activityDailyMaximum)
+        let dailyMax = Int(metrics.dailyMaximum)
         VStack(spacing: 0) {
             CompetitionRuleRow(
                 icon: .symbol("calendar"),
@@ -509,17 +565,23 @@ struct CompetitionRulesCard: View {
                 detail: weekText ?? "Day 1 is the day after the challenge is accepted."
             )
             CompetitionRuleDivider()
-            CompetitionRuleRow(
-                icon: .rings,
-                title: "1 point per 1% of each ring",
-                detail: withSleep ? "Up to 600 points a day from rings" : "Up to 600 points a day"
-            )
-            CompetitionRuleDivider()
-            if withSleep {
+            if !activeRings.isEmpty {
+                CompetitionRuleRow(
+                    icon: .metrics(activeRings),
+                    title: ringRuleTitle,
+                    detail: metrics.includesSleep
+                        ? "Up to \(ringMax) points a day from rings"
+                        : "Up to \(ringMax) points a day"
+                )
+                CompetitionRuleDivider()
+            }
+            if metrics.includesSleep {
                 CompetitionRuleRow(
                     icon: .symbol("bed.double"),
                     title: "Up to 100 points a night",
-                    detail: "Time asleep 50, steady bedtime 30, few wake-ups 20. So 700 a day. Beta."
+                    detail: activeRings.isEmpty
+                        ? "Time asleep 50, steady bedtime 30, few wake-ups 20. Beta."
+                        : "Time asleep 50, steady bedtime 30, few wake-ups 20. So \(dailyMax) a day. Beta."
                 )
                 CompetitionRuleDivider()
             }
@@ -538,8 +600,12 @@ struct CompetitionRulesCard: View {
             } else {
                 CompetitionRuleRow(
                     icon: .symbol("lock.iphone"),
-                    title: "\(opponentName ?? "The other person") sees your daily points and rounded ring percentages",
-                    detail: "Also whether you use Move Time or Roll, why a day has no data, and when your iPhone last updated your scores. Your Health data stays on your iPhone."
+                    title: activeRings.isEmpty
+                        ? "\(opponentName ?? "The other person") sees only your nightly Sleep points"
+                        : "\(opponentName ?? "The other person") sees your daily points and rounded ring percentages",
+                    detail: activeRings.isEmpty
+                        ? "Your Sleep data stays on your iPhone."
+                        : "Also whether you use Move Time or Roll, why a day has no data, and when your iPhone last updated your scores. Your Health data stays on your iPhone."
                 )
             }
         }

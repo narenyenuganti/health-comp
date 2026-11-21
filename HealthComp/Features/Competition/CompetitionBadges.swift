@@ -265,18 +265,22 @@ func competitionOwnRecordSections(
             held.map { value(item) >= value($0) ? item : $0 } ?? item
         }
     }
+    let standardWeeks = weeks.filter(\.metrics.isDefaultRings)
+    let standardDays = standardWeeks.flatMap { week in
+        week.days.sorted { $0.ordinal < $1.ordinal }.map { (week: week, day: $0) }
+    }
     let days = weeks.flatMap { week in
         week.days.sorted { $0.ordinal < $1.ordinal }.map { (week: week, day: $0) }
     }
 
     var scoring: [CompetitionOwnRecord] = []
-    if let week = best(weeks, \.userPoints) {
+    if let week = best(standardWeeks, \.userPoints) {
         scoring.append(.init(
             label: "Best week", value: points(week.userPoints),
             detail: "\(range(week)) · \(competitionWeekVersusText(week))", weekID: week.id
         ))
     }
-    if let top = best(days.filter { $0.day.ownerAcceptedPoints != nil }, { $0.day.ownerAcceptedPoints ?? 0 }) {
+    if let top = best(standardDays.filter { $0.day.ownerAcceptedPoints != nil }, { $0.day.ownerAcceptedPoints ?? 0 }) {
         scoring.append(.init(
             label: "Best day", value: points(top.day.ownerAcceptedPoints ?? 0),
             detail: date(top.day), weekID: top.week.id

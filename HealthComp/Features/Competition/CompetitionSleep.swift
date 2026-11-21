@@ -46,47 +46,134 @@ struct CompetitionSleepPresentation: Equatable, Sendable {
 }
 
 extension LocalCompetitionPresentation {
-    var isSleepMatch: Bool { sleep != nil }
+    var isSleepMatch: Bool { metrics.includesSleep || sleep != nil }
 
     func addingSleep(
         _ match: CompetitionSleepMatch,
         viewer: UUID,
         readings: [Int: CompetitionSleepReading] = [:]
     ) -> Self {
-        var sleep = CompetitionSleepPresentation(ownerReadings: readings)
-        for night in match.nights {
-            let points = Double(night.basisPoints) / 100
-            if night.profileID == viewer {
-                sleep.owner[night.dayOrdinal] = points
+        applyingMetrics(.all, sleep: match, viewer: viewer, readings: readings)
+    }
+
+    func applyingMetrics(
+        _ metrics: CompetitionMetrics,
+        sleep match: CompetitionSleepMatch? = nil,
+        viewer: UUID? = nil,
+        readings: [Int: CompetitionSleepReading] = [:],
+        practiceBotSleepNights: [Int: Double]? = nil
+    ) -> Self {
+        let effective = metrics.isEmpty ? .threeRings : metrics
+        var sleepPresentation: CompetitionSleepPresentation?
+        if effective.includesSleep {
+            var built = CompetitionSleepPresentation(ownerReadings: readings)
+            if let match, let viewer {
+                for night in match.nights {
+                    let points = Double(night.basisPoints) / 100
+                    if night.profileID == viewer {
+                        built.owner[night.dayOrdinal] = points
+                    } else {
+                        built.opponent[night.dayOrdinal] = points
+                    }
+                }
             } else {
-                sleep.opponent[night.dayOrdinal] = points
+                for (ordinal, reading) in readings where reading.minutesAsleep > 0 {
+                    built.owner[ordinal] = reading.points
+                }
+                if let botNights = practiceBotSleepNights {
+                    built.opponent = botNights
+                }
             }
+            sleepPresentation = built
         }
+
         var copy = self
-        copy.sleep = sleep
+        copy.metrics = effective
+        copy.sleep = sleepPresentation
+
+        let needsRescore = !effective.isDefaultRings
+        guard needsRescore else { return copy }
+
+        var newUserTotal = 0.0
+        var newOpponentTotal = 0.0
         copy.days = days.map { day in
             var day = day
-            day.dailyMaximum = SleepScore.maximumDailyPoints
+            day.metrics = effective
+            day.dailyMaximum = effective.dailyMaximum
             day.ownerSleepReading = readings[day.ordinal]
-            if let points = sleep.owner[day.ordinal] {
-                day.ownerSleepPoints = points
-                day.ownerAcceptedPoints = (day.ownerAcceptedPoints ?? 0) + points
+
+            let ownerSleep = sleepPresentation?.owner[day.ordinal]
+            let opponentSleep = sleepPresentation?.opponent[day.ordinal]
+            day.ownerSleepPoints = ownerSleep
+            day.opponentSleepPoints = opponentSleep
+
+            let ownerActivity: Double?
+            if !effective.includesActivityRings {
+                ownerActivity = nil
+            } else if let ringPoints = day.ownerRingPoints, ringPoints.count == 3 {
+                ownerActivity = effective.activeActivityIndices.reduce(0.0) { $0 + ringPoints[$1] }
+            } else if let snapshot = day.ownerAcceptedSnapshot {
+                ownerActivity = ActivityScoreCalculator.score(
+                    snapshot, policy: day.scoringPolicy, metrics: effective
+                ).availableScore?.points
+            } else if effective.intersection(.threeRings) == .threeRings {
+                ownerActivity = day.ownerAcceptedPoints
+            } else {
+                ownerActivity = nil
             }
-            if let points = sleep.opponent[day.ordinal] {
-                day.opponentSleepPoints = points
-                day.opponentRevealedPoints = (day.opponentRevealedPoints ?? 0) + points
+
+            if let ownerActivity, let ownerSleep {
+                day.ownerAcceptedPoints = ownerActivity + ownerSleep
+            } else if let ownerActivity {
+                day.ownerAcceptedPoints = ownerActivity
+            } else if let ownerSleep {
+                day.ownerAcceptedPoints = ownerSleep
+            } else if !effective.includesActivityRings {
+                day.ownerAcceptedPoints = nil
+            } else if day.ownerAcceptedPoints != nil {
+                day.ownerAcceptedPoints = 0
             }
+
+            let opponentActivity: Double?
+            if !effective.includesActivityRings {
+                opponentActivity = nil
+            } else if let ringPoints = day.opponentRingPoints, ringPoints.count == 3 {
+                opponentActivity = effective.activeActivityIndices.reduce(0.0) { $0 + ringPoints[$1] }
+            } else if let revealed = day.opponentRevealedPoints {
+                if effective.intersection(.threeRings) == .threeRings {
+                    opponentActivity = revealed
+                } else {
+                    opponentActivity = Double(effective.scaleBotActivityPoints(Int(revealed.rounded())))
+                }
+            } else {
+                opponentActivity = nil
+            }
+
+            if let opponentActivity, let opponentSleep {
+                day.opponentRevealedPoints = opponentActivity + opponentSleep
+            } else if let opponentActivity {
+                day.opponentRevealedPoints = opponentActivity
+            } else if let opponentSleep {
+                day.opponentRevealedPoints = opponentSleep
+            } else if !effective.includesActivityRings {
+                day.opponentRevealedPoints = nil
+            } else if day.opponentRevealedPoints != nil {
+                day.opponentRevealedPoints = 0
+            }
+
+            if let points = day.ownerAcceptedPoints { newUserTotal += points }
+            if let points = day.opponentRevealedPoints { newOpponentTotal += points }
             return day
         }
-        copy.userPoints += sleep.ownerTotal
-        copy.opponentPoints += sleep.opponentTotal
+
+        copy.userPoints = newUserTotal
+        copy.opponentPoints = newOpponentTotal
+
         if let result = terminalResult {
-            let user = result.userPoints + sleep.ownerTotal
-            let opponent = result.opponentPoints + sleep.opponentTotal
-            let outcome = Self.outcome(user, opponent)
+            let outcome = Self.outcome(newUserTotal, newOpponentTotal)
             copy.terminalResult = LocalCompetitionTerminalPresentation(
-                userPoints: user,
-                opponentPoints: opponent,
+                userPoints: newUserTotal,
+                opponentPoints: newOpponentTotal,
                 outcome: outcome,
                 basis: result.basis,
                 completedAt: result.completedAt
@@ -153,6 +240,7 @@ func competitionSleepRow(
     guard let minutes = day.ownerSleepReading?.minutesAsleep, minutes > 0 else {
         let synced = day.ownerSleepPoints != nil
         return CompetitionRingRow(
+            metric: .sleep,
             title: "Sleep",
             detail: synced ? "Synced" : "No night yet",
             spokenDetail: synced ? "synced" : "no night yet",
@@ -161,6 +249,7 @@ func competitionSleepRow(
     }
     let hours = Int(minutes.rounded()) / 60, rest = Int(minutes.rounded()) % 60
     return CompetitionRingRow(
+        metric: .sleep,
         title: "Sleep",
         detail: "\(competitionSleepDurationText(minutes)) asleep",
         spokenDetail: "\(hours) hours \(rest) minutes asleep",

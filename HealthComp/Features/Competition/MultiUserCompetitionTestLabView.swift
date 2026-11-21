@@ -1273,15 +1273,19 @@ private final class FriendsPracticeLabState: @unchecked Sendable {
         try? await Task.sleep(for: .milliseconds(80))
         lock.withLock {
             switch target {
-            case let .bot(difficulty):
-                practice = MultiUserCompetitionTestLabFixtures.practiceScheduledPresentation(
+            case let .bot(difficulty, metrics):
+                var created = MultiUserCompetitionTestLabFixtures.practiceScheduledPresentation(
                     difficulty: difficulty
                 )
-            case let .shadow(rival):
-                practice = MultiUserCompetitionTestLabFixtures.practiceScheduledPresentation(
+                created.metrics = metrics
+                practice = created
+            case let .shadow(rival, metrics):
+                var created = MultiUserCompetitionTestLabFixtures.practiceScheduledPresentation(
                     difficulty: .shadow,
                     opponentName: rival.shadowDisplayName
                 )
+                created.metrics = metrics
+                practice = created
             }
         }
         return publish()

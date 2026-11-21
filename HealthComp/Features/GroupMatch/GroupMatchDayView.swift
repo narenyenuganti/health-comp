@@ -199,8 +199,11 @@ struct GroupMatchDayView: View {
                     pointsText
                 }
             }
-            if let rings, !seat.isBot {
-                ringRows(rings.centipoints, isYou: isYou)
+            if !seat.isBot {
+                let sleepCP = match.metrics.includesSleep ? match.sleepNights[seat.id]?[ordinal] : nil
+                if rings != nil || sleepCP != nil {
+                    ringRows(rings?.centipoints, sleepCentipoints: sleepCP, isYou: isYou)
+                }
             }
             let shown = reactions(on: seat)
             if !shown.isEmpty {
@@ -253,38 +256,55 @@ struct GroupMatchDayView: View {
         store.failed.contains(where: isTarget(seat))
     }
 
-    private func ringRows(_ centipoints: [Int], isYou: Bool) -> some View {
-        let colors = isYou ? [Theme.move, Theme.exercise, Theme.stand] : [Theme.ink, Theme.ink, Theme.ink]
-        let rings = Array(["Move", "Exercise", "Stand"].enumerated())
+    private func ringRows(_ centipoints: [Int]?, sleepCentipoints: Int?, isYou: Bool) -> some View {
+        let items: [(title: String, color: Color, percent: Int, maxPercent: Double, valueText: String)] =
+            match.metrics.orderedMetrics.compactMap { metric in
+                switch metric {
+                case .move:
+                    guard let centipoints, centipoints.count == 3 else { return nil }
+                    let pct = Self.percent(centipoints[0])
+                    return ("Move", isYou ? Theme.move : Theme.ink, pct, 200, "\(pct)%")
+                case .exercise:
+                    guard let centipoints, centipoints.count == 3 else { return nil }
+                    let pct = Self.percent(centipoints[1])
+                    return ("Exercise", isYou ? Theme.exercise : Theme.ink, pct, 200, "\(pct)%")
+                case .stand:
+                    guard let centipoints, centipoints.count == 3 else { return nil }
+                    let pct = Self.percent(centipoints[2])
+                    return ("Stand", isYou ? Theme.stand : Theme.ink, pct, 200, "\(pct)%")
+                case .sleep:
+                    guard let sleepCentipoints else { return nil }
+                    let pts = Self.percent(sleepCentipoints)
+                    return ("Sleep", isYou ? Theme.sleep : Theme.ink, pts, 100, "\(pts) pts")
+                }
+            }
         return Group {
             if dynamicTypeSize.isAccessibilitySize {
                 VStack(alignment: .leading, spacing: 10) {
-                    ForEach(rings, id: \.offset) { index, title in
-                        let percent = Self.percent(centipoints[index])
+                    ForEach(Array(items.enumerated()), id: \.offset) { _, item in
                         VStack(alignment: .leading, spacing: 4) {
                             HStack(alignment: .firstTextBaseline) {
-                                Text(title)
+                                Text(item.title)
                                     .foregroundStyle(Theme.secondary)
                                     .fixedSize()
                                 Spacer(minLength: 8)
-                                Text("\(percent)%")
+                                Text(item.valueText)
                                     .fontWeight(.bold)
                                     .foregroundStyle(Theme.ink)
                                     .fixedSize()
                             }
-                            ringBar(colors[index], percent)
+                            ringBar(item.color, item.percent, maxPercent: item.maxPercent)
                         }
                     }
                 }
             } else {
                 Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 4) {
-                    ForEach(rings, id: \.offset) { index, title in
-                        let percent = Self.percent(centipoints[index])
+                    ForEach(Array(items.enumerated()), id: \.offset) { _, item in
                         GridRow {
-                            Text(title)
+                            Text(item.title)
                                 .foregroundStyle(Theme.secondary)
-                            ringBar(colors[index], percent)
-                            Text("\(percent)%")
+                            ringBar(item.color, item.percent, maxPercent: item.maxPercent)
+                            Text(item.valueText)
                                 .fontWeight(.bold)
                                 .foregroundStyle(Theme.ink)
                                 .gridColumnAlignment(.trailing)
@@ -296,14 +316,14 @@ struct GroupMatchDayView: View {
         .font(.caption)
     }
 
-    private func ringBar(_ color: Color, _ percent: Int) -> some View {
+    private func ringBar(_ color: Color, _ percent: Int, maxPercent: Double = 200) -> some View {
         Capsule()
             .fill(Theme.hairline)
             .frame(height: 8)
             .overlay(alignment: .leading) {
                 Capsule()
                     .fill(color)
-                    .scaleEffect(x: min(Double(percent), 200) / 200, anchor: .leading)
+                    .scaleEffect(x: min(Double(percent), maxPercent) / maxPercent, anchor: .leading)
             }
     }
 

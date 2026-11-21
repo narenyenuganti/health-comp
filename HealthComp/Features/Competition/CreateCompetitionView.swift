@@ -8,7 +8,8 @@ struct CreateCompetitionView: View {
     @Binding var recipientCode: String
     let recipient: CompetitionFeature.InviteRecipient?
     let recipientStatus: CompetitionFeature.InviteRecipientStatus
-    var withSleep: Binding<Bool>? = nil
+    var metrics: Binding<CompetitionMetrics>? = nil
+    var requestSleepAccess: (() -> Void)? = nil
     let senderName: String?
     var ownChallengeLink: URL? = nil
     var friends: [FriendPerson] = []
@@ -20,7 +21,6 @@ struct CreateCompetitionView: View {
     let create: () -> Void
     let openChallenge: (CompetitionID) -> Void
 
-    @AppStorage(SleepBeta.enabledKey) private var sleepBeta = false
     @Environment(\.dismiss) private var dismiss
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.locale) private var locale
@@ -29,6 +29,7 @@ struct CreateCompetitionView: View {
     @State private var entersLink = false
     @State private var picksBot = false
     @State private var botSelection: OpponentDifficulty = .pacer
+    @State private var botMetrics: CompetitionMetrics = .threeRings
     @State private var shadowRivalID: String?
     @State private var hasAttemptedPractice = false
 
@@ -48,12 +49,15 @@ struct CreateCompetitionView: View {
                     }
                 } else {
                     recipientSelection
-                    if sleepBeta, let withSleep {
-                        formatPicker(withSleep)
+                    if let metrics {
+                        CompetitionMetricPicker(
+                            selection: metrics,
+                            requestSleepAccess: requestSleepAccess
+                        )
                     }
                     CompetitionRulesCard(
                         source: .remoteParticipants,
-                        withSleep: sleepBeta && withSleep?.wrappedValue == true
+                        metrics: metrics?.wrappedValue ?? .threeRings
                     )
                     Text(competitionTimeZoneText(timeZoneIdentifier, locale: locale))
                         .font(.caption)
@@ -404,6 +408,11 @@ struct CreateCompetitionView: View {
                 )
                 .transition(Motion.appear)
             }
+
+            CompetitionMetricPicker(
+                selection: $botMetrics,
+                requestSleepAccess: requestSleepAccess
+            )
         }
     }
 
@@ -422,9 +431,9 @@ struct CreateCompetitionView: View {
                 hasAttemptedPractice = true
                 if botSelection == .shadow {
                     guard let rival = selectedShadowRival else { return }
-                    practice.start(.shadow(rival))
+                    practice.start(.shadow(rival, metrics: botMetrics))
                 } else {
-                    practice.start(.bot(botSelection))
+                    practice.start(.bot(botSelection, metrics: botMetrics))
                 }
             } label: {
                 BusyLabel("Start Tomorrow", isBusy: isPracticeBusy)
@@ -529,24 +538,6 @@ struct CreateCompetitionView: View {
             }
         }
         .foregroundStyle(Theme.ink)
-    }
-
-    private func formatPicker(_ selection: Binding<Bool>) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            CompetitionSegments(
-                selection: selection,
-                options: [(false, "Rings"), (true, "Rings + Sleep")]
-            )
-            .accessibilityIdentifier("competition.create.format")
-            if selection.wrappedValue {
-                Text("Beta. You both need sleep in Apple Health, from an Apple Watch or Oura Ring. A night with nothing there scores 0.")
-                    .font(.caption)
-                    .foregroundStyle(Theme.secondary)
-                    .fixedSize(horizontal: false, vertical: true)
-                    .transition(Motion.appear)
-            }
-        }
-        .moving(Motion.settle, value: selection.wrappedValue)
     }
 
     @ViewBuilder
@@ -842,6 +833,8 @@ func competitionInviteFailureText(
 struct ChallengeFromLinkView: View {
     let link: MainTabFeature.ChallengeFromLink
     let status: CompetitionFeature.ChallengeSheetStatus
+    var metrics: Binding<CompetitionMetrics>? = nil
+    var requestSleepAccess: (() -> Void)? = nil
     let send: () -> Void
     let retry: () -> Void
     let openCompetition: (CompetitionID) -> Void
@@ -964,7 +957,17 @@ struct ChallengeFromLinkView: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            CompetitionRulesCard(source: .remoteParticipants, opponentName: name)
+            if let metrics {
+                CompetitionMetricPicker(
+                    selection: metrics,
+                    requestSleepAccess: requestSleepAccess
+                )
+            }
+            CompetitionRulesCard(
+                source: .remoteParticipants,
+                opponentName: name,
+                metrics: metrics?.wrappedValue ?? .threeRings
+            )
         case .ownLink:
             message("That’s your link", "Share it with someone so they can challenge you.")
         case .unavailable:

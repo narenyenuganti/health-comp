@@ -937,8 +937,10 @@ func ringSegments(
     guard case let .score(points) = competitionOwnerChartState(day) else {
         return []
     }
+    let metrics = day.metrics.isEmpty ? .threeRings : day.metrics
     let sleep = day.ownerSleepPoints ?? 0
     let night: [(color: Color, points: Double)] = sleep > 0 ? [(Theme.sleep, sleep)] : []
+    guard metrics.includesActivityRings else { return night }
     let rings = max(0, points - sleep)
     guard let snapshot = day.ownerAcceptedSnapshot else {
         return (rings > 0 ? [(Theme.youFill, rings)] : []) + night
@@ -946,10 +948,13 @@ func ringSegments(
     let shares = competitionRingShares(
         snapshot, perRingCap: day.scoringPolicy.perRingCap
     )
-    let total = shares.reduce(0, +)
+    let allColors = [Theme.move, Theme.exercise, Theme.stand]
+    let activeIndices = metrics.activeActivityIndices
+    let activeShares = activeIndices.map { shares[$0] }
+    let total = activeShares.reduce(0, +)
     guard total > 0 else { return (rings > 0 ? [(Theme.youFill, rings)] : []) + night }
-    return zip([Theme.move, Theme.exercise, Theme.stand], shares).map {
-        ($0, rings * $1 / total)
+    return activeIndices.map { index in
+        (allColors[index], rings * shares[index] / total)
     } + night
 }
 

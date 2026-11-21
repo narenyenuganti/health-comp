@@ -90,6 +90,8 @@ struct GroupMatchPresentation: Identifiable, Equatable, Sendable {
     let days: [MatchDayScore]
     let rings: [GroupMatchDayRings]
     let reactions: [GroupMatchReaction]
+    let metrics: CompetitionMetrics
+    let sleepNights: [UUID: [Int: Int]]
     let canNudgePartner: Bool
     let frozenStandings: [GroupMatchStandingRow]?
     let frozenSeatTotals: [UUID: Int]?
@@ -107,6 +109,8 @@ struct GroupMatchPresentation: Identifiable, Equatable, Sendable {
         days: [MatchDayScore] = [],
         rings: [GroupMatchDayRings] = [],
         reactions: [GroupMatchReaction] = [],
+        metrics: CompetitionMetrics = .threeRings,
+        sleepNights: [UUID: [Int: Int]] = [:],
         canNudgePartner: Bool? = nil,
         leaveCutoffs: [UUID: Int] = [:],
         frozenStandings: [GroupMatchStandingRow]? = nil,
@@ -131,6 +135,8 @@ struct GroupMatchPresentation: Identifiable, Equatable, Sendable {
         self.days = days
         self.rings = rings
         self.reactions = reactions
+        self.metrics = metrics.isEmpty ? .threeRings : metrics
+        self.sleepNights = sleepNights
         switch lifecycle {
         case .active, .endsToday: self.canNudgePartner = canNudgePartner ?? true
         default: self.canNudgePartner = canNudgePartner ?? false

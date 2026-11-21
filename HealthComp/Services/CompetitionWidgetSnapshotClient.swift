@@ -214,12 +214,19 @@ extension CompetitionWidgetSnapshot.TodayRings {
         let shares = snapshot.map {
             competitionRingShares($0, perRingCap: day.scoringPolicy.perRingCap)
         } ?? [0, 0, 0]
-        let kinds: [RingKind] = [.move, .exercise, .stand, .sleep]
-        let rows = panel.rows.enumerated().map { index, row in
-            let kind = kinds[min(index, kinds.count - 1)]
-            let progress = index < shares.count
-                ? max(0, shares[index])
-                : max(0, (row.points ?? 0) / 100)
+        let rows = panel.rows.map { row in
+            let kind: RingKind = switch row.metric {
+            case .move: .move
+            case .exercise: .exercise
+            case .stand: .stand
+            case .sleep: .sleep
+            }
+            let progress: Double = switch row.metric {
+            case .move: max(0, shares[0])
+            case .exercise: max(0, shares[1])
+            case .stand: max(0, shares[2])
+            case .sleep: max(0, (row.points ?? 0) / 100)
+            }
             return Row(
                 kind: kind,
                 title: row.title,

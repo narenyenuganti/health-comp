@@ -152,7 +152,7 @@ struct AccountSettingsView: View {
     @AppStorage(AppAppearance.storageKey)
     private var appearance = AppAppearance.system
     @AppStorage(Sounds.enabledKey) private var soundsAreOn = true
-    @AppStorage(SleepBeta.enabledKey) private var sleepBeta = false
+    @AppStorage(SleepBeta.sourceKey) private var sleepSource = SleepSourcePreference.automatic.rawValue
     @State private var showsChallengeCode = false
     @State private var hasLoaded = false
     @FocusState private var isNameFocused: Bool
@@ -712,9 +712,9 @@ struct AccountSettingsView: View {
                 AccountSleepBetaPage(requestSleepAccess: requestSleepAccess)
             } label: {
                 LabeledContent {
-                    Text(sleepBeta ? "On" : "Off")
+                    Text((SleepSourcePreference(rawValue: sleepSource) ?? .automatic).title)
                 } label: {
-                    Label("Sleep Beta", systemImage: "bed.double")
+                    Label("Sleep", systemImage: "bed.double")
                 }
             }
             .accessibilityIdentifier("account.sleep")
@@ -840,89 +840,49 @@ private struct AccountAppearancePage: View {
 private struct AccountSleepBetaPage: View {
     let requestSleepAccess: () -> Void
 
-    @AppStorage(SleepBeta.enabledKey) private var isOn = false
     @AppStorage(SleepBeta.sourceKey) private var source = SleepSourcePreference.automatic.rawValue
+    @AppStorage(SleepBeta.introSeenKey) private var introSeen = false
     @State private var isPrimingPresented = false
 
     var body: some View {
         List {
             Section {
-                Toggle("Rings + Sleep", isOn: Binding(
-                    get: { isOn },
-                    set: { turnOn in
-                        if turnOn { isPrimingPresented = true } else { isOn = false }
+                Picker("Sleep Source", selection: $source) {
+                    ForEach(SleepSourcePreference.allCases, id: \.rawValue) {
+                        Text($0.title).tag($0.rawValue)
                     }
-                ))
-                .tint(Theme.youFill)
-                .accessibilityIdentifier("account.sleep.enabled")
+                }
+                .pickerStyle(.inline)
+                .labelsHidden()
+                .accessibilityIdentifier("account.sleep.source")
+            } header: {
+                Text("Sleep Source")
             } footer: {
-                Text("Challenge someone to rings and sleep. Each night is worth up to 100 points on top of the rings’ 600: time asleep against 8 hours (50), a steady bedtime (30) and few wake-ups (20).")
+                Text("Sleep (Beta) can be picked when starting any match. Each night is worth up to 100 points: time asleep against 8 hours (50), a steady bedtime (30) and few wake-ups (20). Automatic uses Oura Ring when it has your night, otherwise Apple Watch.")
                     .foregroundStyle(Theme.secondary)
             }
             .listRowBackground(Theme.panel)
 
-            if isOn {
-                Section {
-                    Picker("Sleep Source", selection: $source) {
-                        ForEach(SleepSourcePreference.allCases, id: \.rawValue) {
-                            Text($0.title).tag($0.rawValue)
-                        }
-                    }
-                    .pickerStyle(.inline)
-                    .labelsHidden()
-                    .accessibilityIdentifier("account.sleep.source")
-                } header: {
-                    Text("Sleep Source")
-                } footer: {
-                    Text("Automatic uses Oura Ring when it has your night, otherwise Apple Watch. One tracker a night, never both added.")
-                        .foregroundStyle(Theme.secondary)
+            Section {
+                Button("Connect Sleep Access") {
+                    isPrimingPresented = true
                 }
-                .listRowBackground(Theme.panel)
+                .frame(minHeight: 44)
+                .accountAction()
+                .accessibilityIdentifier("account.sleep.connect")
             }
+            .listRowBackground(Theme.panel)
         }
-        .accountPageStyle(title: "Sleep Beta")
+        .accountPageStyle(title: "Sleep")
         .sheet(isPresented: $isPrimingPresented) {
             SleepPrimingSheet {
-                isOn = true
+                introSeen = true
                 isPrimingPresented = false
                 requestSleepAccess()
             } notNow: {
                 isPrimingPresented = false
             }
         }
-    }
-}
-
-private struct SleepPrimingSheet: View {
-    let proceed: () -> Void
-    let notNow: () -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 16) {
-            Image(systemName: "bed.double.fill")
-                .font(.largeTitle)
-                .foregroundStyle(Theme.sleep)
-                .accessibilityHidden(true)
-            Text("Your sleep, scored")
-                .font(.title2.weight(.heavy).width(.condensed))
-                .foregroundStyle(Theme.ink)
-                .accessibilityAddTraits(.isHeader)
-            Text("HealthComp reads when and how long you slept from Apple Health, from an Apple Watch or Oura Ring. Only each night’s points leave your iPhone.")
-                .font(.body)
-                .foregroundStyle(Theme.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 0)
-            Button("Continue", action: proceed)
-                .buttonStyle(PrimaryButtonStyle())
-                .accessibilityIdentifier("account.sleep.continue")
-            Button("Not Now", action: notNow)
-                .font(.body.weight(.semibold))
-                .foregroundStyle(Theme.ink)
-                .frame(maxWidth: .infinity, minHeight: 44)
-        }
-        .padding(24)
-        .background(Theme.ground)
-        .presentationDetents([.medium])
     }
 }
 

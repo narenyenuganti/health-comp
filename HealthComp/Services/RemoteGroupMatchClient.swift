@@ -1035,8 +1035,15 @@ extension GroupMatchReadModel {
         )
     }
 
-    func presentation(viewer: UUID, now: Date) -> GroupMatchPresentation? {
+    func presentation(
+        viewer: UUID,
+        now: Date,
+        metrics: CompetitionMetrics = .threeRings,
+        sleep: CompetitionSleepMatch? = nil
+    ) -> GroupMatchPresentation? {
         guard let viewerSeat = seats.first(where: { $0.profileID == viewer }) else { return nil }
+        let effectiveMetrics = metrics.isEmpty ? .threeRings : metrics
+        let maxCentipoints = effectiveMetrics.dailyMaximumCentipoints
         let schedule = try? schedule()
         let direction: InvitationDirection = creatorProfileID == viewer ? .outgoing : .incoming
         var dayOrdinal = 0
@@ -1054,7 +1061,7 @@ extension GroupMatchReadModel {
                 dayOrdinal = 8
             }
         }
-        let lifecycle: LocalCompetitionLifecyclePresentation
+        var lifecycle: LocalCompetitionLifecyclePresentation
         switch self.lifecycle {
         case "pending":
             lifecycle = .pending(direction: direction, createdAt: now, expiresAt: invitationExpiresAt)
@@ -1084,29 +1091,101 @@ extension GroupMatchReadModel {
             }
         }
         let isFinished = result != nil
+        var sleepBySeat: [UUID: [Int: Int]] = [:]
+        if effectiveMetrics.includesSleep {
+            let profileToSeat = Dictionary(
+                seats.compactMap { seat in seat.profileID.map { ($0, seat.id) } },
+                uniquingKeysWith: { first, _ in first }
+            )
+            for night in sleep?.nights ?? [] {
+                guard let seatID = profileToSeat[night.profileID] else { continue }
+                sleepBySeat[seatID, default: [:]][night.dayOrdinal] = night.basisPoints
+            }
+        }
         var days: [MatchDayScore] = []
         var rings: [GroupMatchDayRings] = []
         var leaveCutoffs: [UUID: Int] = [:]
         for seat in seats {
             if let cutoff = seat.frozenThroughDay, cutoff > 0 { leaveCutoffs[seat.id] = cutoff }
-            for day in seat.days where seat.frozenThroughDay.map({ day.ordinal <= $0 }) ?? true {
-                if let value = try? MatchDayScore(
-                    seatID: seat.id, ordinal: day.ordinal,
-                    value: day.centipoints.map(MatchDayValue.centipoints) ?? .unavailable
-                ) { days.append(value) }
-                if let ring = day.ringBasisPoints {
-                    rings.append(GroupMatchDayRings(seatID: seat.id, ordinal: day.ordinal, centipoints: ring))
+            let cutoffLimit = seat.frozenThroughDay
+            if effectiveMetrics.isDefaultRings {
+                for day in seat.days where cutoffLimit.map({ day.ordinal <= $0 }) ?? true {
+                    if let value = try? MatchDayScore(
+                        seatID: seat.id, ordinal: day.ordinal,
+                        value: day.centipoints.map(MatchDayValue.centipoints) ?? .unavailable
+                    ) { days.append(value) }
+                    if let ring = day.ringBasisPoints {
+                        rings.append(GroupMatchDayRings(seatID: seat.id, ordinal: day.ordinal, centipoints: ring))
+                    }
                 }
-            }
-            if let mode = seat.botMode, let seed = seat.botSeed, let totals = seat.botDailyTotals {
+                if let mode = seat.botMode, let seed = seat.botSeed, let totals = seat.botDailyTotals {
+                    let shown = isFinished ? 7 : min(dayOrdinal, 7)
+                    guard shown > 0 else { continue }
+                    for ordinal in 1...shown {
+                        let points = ordinal < dayOrdinal || isFinished
+                            ? totals[ordinal - 1]
+                            : BotWeek.revealed(seed: seed, mode: mode, dayOrdinal: ordinal,
+                                               finalPoints: totals[ordinal - 1], progressBasisPoints: dayProgress)
+                        if let value = try? MatchDayScore(seatID: seat.id, ordinal: ordinal, value: .centipoints(points * 100)) {
+                            days.append(value)
+                        }
+                    }
+                }
+            } else if seat.profileID != nil {
+                var dayMap = Dictionary(uniqueKeysWithValues: seat.days.map { ($0.ordinal, $0) })
+                let ordinals = Set(dayMap.keys).union(sleepBySeat[seat.id]?.keys ?? Dictionary<Int, Int>().keys)
+                for ordinal in ordinals.sorted() where cutoffLimit.map({ ordinal <= $0 }) ?? true {
+                    let day = dayMap.removeValue(forKey: ordinal)
+                    if let ring = day?.ringBasisPoints {
+                        rings.append(GroupMatchDayRings(seatID: seat.id, ordinal: ordinal, centipoints: ring))
+                    }
+                    let activityPoints: Int?
+                    if !effectiveMetrics.includesActivityRings {
+                        activityPoints = nil
+                    } else if let ring = day?.ringBasisPoints {
+                        activityPoints = effectiveMetrics.scoreActivityCentipoints(ringCentipoints: ring)
+                    } else if effectiveMetrics.intersection(.threeRings) == .threeRings, let cp = day?.centipoints {
+                        activityPoints = cp
+                    } else {
+                        activityPoints = nil
+                    }
+                    let sleepPoints = effectiveMetrics.includesSleep ? sleepBySeat[seat.id]?[ordinal] : nil
+                    let value: MatchDayValue
+                    if let activityPoints, let sleepPoints {
+                        value = .centipoints(min(maxCentipoints, activityPoints + sleepPoints))
+                    } else if let activityPoints {
+                        value = .centipoints(min(maxCentipoints, activityPoints))
+                    } else if let sleepPoints {
+                        value = .centipoints(min(maxCentipoints, sleepPoints))
+                    } else {
+                        value = .unavailable
+                    }
+                    if let score = try? MatchDayScore(
+                        seatID: seat.id, ordinal: ordinal, value: value, maximumCentipoints: maxCentipoints
+                    ) {
+                        days.append(score)
+                    }
+                }
+            } else if let mode = seat.botMode, let seed = seat.botSeed, let totals = seat.botDailyTotals {
                 let shown = isFinished ? 7 : min(dayOrdinal, 7)
                 guard shown > 0 else { continue }
+                let botSleep = effectiveMetrics.includesSleep
+                    ? CompetitionMetrics.groupBotSleepBasisPoints(competitionID: id, seatID: seat.id, mode: mode)
+                    : []
                 for ordinal in 1...shown {
-                    let points = ordinal < dayOrdinal || isFinished
+                    let rawPoints = ordinal < dayOrdinal || isFinished
                         ? totals[ordinal - 1]
                         : BotWeek.revealed(seed: seed, mode: mode, dayOrdinal: ordinal,
                                            finalPoints: totals[ordinal - 1], progressBasisPoints: dayProgress)
-                    if let value = try? MatchDayScore(seatID: seat.id, ordinal: ordinal, value: .centipoints(points * 100)) {
+                    let activityCP = effectiveMetrics.scaleBotActivityCentipoints(rawPoints * 100)
+                    let sleepCP = effectiveMetrics.includesSleep ? botSleep[ordinal - 1] : 0
+                    if effectiveMetrics.includesSleep {
+                        sleepBySeat[seat.id, default: [:]][ordinal] = sleepCP
+                    }
+                    let totalCP = min(maxCentipoints, activityCP + sleepCP)
+                    if let value = try? MatchDayScore(
+                        seatID: seat.id, ordinal: ordinal, value: .centipoints(totalCP), maximumCentipoints: maxCentipoints
+                    ) {
                         days.append(value)
                     }
                 }
@@ -1129,7 +1208,7 @@ extension GroupMatchReadModel {
                 team: seat.team
             )
         }
-        let frozen = result.map { result in
+        var frozen = result.map { result in
             result.standings.compactMap { standing -> GroupMatchStandingRow? in
                 let subject: MatchStandingSubject? = format == .doubles
                     ? Int(standing.subject).map(MatchStandingSubject.team)
@@ -1140,10 +1219,10 @@ extension GroupMatchReadModel {
         let frozenSeats = result?.seats?.compactMap { frozen in
             seats.first { $0.index == frozen.seatIndex }.map { (seat: $0, frozen: frozen) }
         }
-        let frozenSeatTotals = frozenSeats.map {
+        var frozenSeatTotals = frozenSeats.map {
             Dictionary(uniqueKeysWithValues: $0.map { ($0.seat.id, $0.frozen.totalCentipoints) })
         }
-        let frozenDays = frozenSeats.map {
+        var frozenDays = frozenSeats.map {
             $0.flatMap { seat, frozen in
                 frozen.days.compactMap { day in
                     let value: MatchDayValue = switch day.status {
@@ -1152,6 +1231,49 @@ extension GroupMatchReadModel {
                     default: .centipoints(0)
                     }
                     return try? MatchDayScore(seatID: seat.id, ordinal: day.ordinal, value: value)
+                }
+            }
+        }
+        if isFinished, !effectiveMetrics.isDefaultRings,
+           let config = try? MatchConfiguration(
+               format: format.matchFormat,
+               seats: presentationSeats.map {
+                   try MatchSeat(id: $0.id, kind: $0.profileID.map(MatchSeat.Kind.human) ?? .bot, team: $0.team)
+               },
+               leaveCutoffs: leaveCutoffs
+           ) {
+            let resolvedDays: [MatchDayScore] = presentationSeats.flatMap { seat in
+                (1...7).compactMap { ordinal -> MatchDayScore? in
+                    let afterLeave = leaveCutoffs[seat.id].map { ordinal > $0 } ?? false
+                    if afterLeave {
+                        return try? MatchDayScore(
+                            seatID: seat.id, ordinal: ordinal, value: .afterLeave, maximumCentipoints: maxCentipoints
+                        )
+                    }
+                    if let existing = days.first(where: { $0.seatID == seat.id && $0.ordinal == ordinal }),
+                       case .centipoints = existing.value {
+                        return existing
+                    }
+                    return try? MatchDayScore(
+                        seatID: seat.id, ordinal: ordinal, value: .centipoints(0), maximumCentipoints: maxCentipoints
+                    )
+                }
+            }
+            if let recomputed = try? MatchScoring.standings(configuration: config, days: resolvedDays, throughDay: 7) {
+                frozen = recomputed.standings.map {
+                    GroupMatchStandingRow(subject: $0.subject, place: $0.place, centipoints: $0.centipoints)
+                }
+                frozenSeatTotals = recomputed.seatTotals
+                frozenDays = resolvedDays
+                let viewerSubject: MatchStandingSubject = format == .doubles ? .team(viewerSeat.team!) : .seat(viewerSeat.id)
+                let viewerStanding = recomputed.standings.first { $0.subject == viewerSubject }
+                let tiedFirst = recomputed.standings.filter { $0.place == 1 }.count > 1
+                if let result {
+                    lifecycle = .completed(
+                        outcome: viewerStanding?.place == 1 ? (tiedFirst ? .tie : .win) : .loss,
+                        basis: result.basis == .stable ? .stableAcrossPostBoundaryReads : .bestAvailable,
+                        completedAt: result.completedAt
+                    )
                 }
             }
         }
@@ -1170,6 +1292,8 @@ extension GroupMatchReadModel {
             days: days,
             rings: rings,
             reactions: reactions,
+            metrics: effectiveMetrics,
+            sleepNights: sleepBySeat,
             canNudgePartner: canNudgePartner(viewerSeat: viewerSeat, lifecycle: lifecycle, schedule: schedule, now: now),
             leaveCutoffs: leaveCutoffs,
             frozenStandings: frozen,

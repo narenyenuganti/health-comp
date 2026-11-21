@@ -1,3 +1,4 @@
+import CompetitionCore
 import Foundation
 
 enum CompetitionRemoteFailure: Error, Equatable, Sendable {
@@ -113,6 +114,12 @@ struct CompetitionRemoteAPI: Sendable {
         throw CompetitionRemoteFailure.operationFailed
     }
     var enableSleepScoring: @Sendable (UUID) async throws -> Void = { _ in
+        throw CompetitionRemoteFailure.operationFailed
+    }
+    var listCompetitionMetrics: @Sendable () async throws -> [CompetitionMetricsRecord] = {
+        []
+    }
+    var setCompetitionMetrics: @Sendable (UUID, CompetitionMetrics) async throws -> Void = { _, _ in
         throw CompetitionRemoteFailure.operationFailed
     }
     var submitSleepNight: @Sendable (CompetitionSleepNight, _ competitionID: UUID) async throws -> Void = { _, _ in
@@ -284,6 +291,11 @@ struct CompetitionSleepNight: Equatable, Sendable {
 struct CompetitionSleepMatch: Equatable, Sendable {
     let competitionID: UUID
     let nights: [CompetitionSleepNight]
+}
+
+struct CompetitionMetricsRecord: Equatable, Sendable {
+    let competitionID: UUID
+    let metrics: CompetitionMetrics
 }
 
 struct CompetitionReactionRequest: Equatable, Sendable {

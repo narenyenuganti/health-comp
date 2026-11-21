@@ -11,6 +11,7 @@ struct GroupMatchDraft: Hashable, Sendable {
 
     let format: GroupMatchFormat
     let seats: [Seat]
+    var metrics: CompetitionMetrics = .threeRings
 }
 
 extension CompetitionChallengeLinkCode: Hashable {

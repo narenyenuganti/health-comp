@@ -574,24 +574,44 @@ struct CompetitionResultView: View {
     }
 
     private func ringSplitPanel(_ split: (you: [Double], them: [Double])) -> some View {
-        let names = ["Move", "Exercise", competitionStandTitle(competition.days).capitalized]
-        return VStack(alignment: .leading, spacing: 14) {
-            SectionLabel("EACH RING")
-            ForEach(names.indices, id: \.self) { index in
-                ringSplitRow(names[index], you: split.you[index], them: split.them[index])
+        let metrics = competition.metrics
+        let standTitle = competitionStandTitle(competition.days).capitalized
+        let rows: [(metric: CompetitionMetric, title: String, you: Double, them: Double)] =
+            metrics.orderedMetrics.compactMap { metric in
+                switch metric {
+                case .move:
+                    return (.move, "Move", split.you[0], split.them[0])
+                case .exercise:
+                    return (.exercise, "Exercise", split.you[1], split.them[1])
+                case .stand:
+                    return (.stand, standTitle, split.you[2], split.them[2])
+                case .sleep:
+                    guard let sleep = competition.sleep else { return nil }
+                    return (.sleep, "Sleep", sleep.ownerTotal, sleep.opponentTotal)
+                }
+            }
+        let headerTitle = metrics.includesSleep ? "EACH METRIC" : "EACH RING"
+        return Group {
+            if rows.count > 1 {
+                VStack(alignment: .leading, spacing: 14) {
+                    SectionLabel(headerTitle)
+                    ForEach(rows, id: \.metric) { row in
+                        ringSplitRow(row.title, you: row.you, them: row.them)
+                    }
+                }
+                .padding(16)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .themePanel()
+                .accessibilityElement(children: .ignore)
+                .accessibilityLabel(
+                    ([metrics.includesSleep ? "Each metric" : "Each ring"] + rows.map {
+                        "\($0.title): you \(competitionPointsText($0.you, locale: locale)), \(opponentName) \(competitionPointsText($0.them, locale: locale))"
+                    })
+                    .joined(separator: ". ")
+                )
+                .accessibilityIdentifier("competition.result.rings")
             }
         }
-        .padding(16)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .themePanel()
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(
-            (["Each ring"] + names.indices.map {
-                "\(names[$0]): you \(competitionPointsText(split.you[$0], locale: locale)), \(opponentName) \(competitionPointsText(split.them[$0], locale: locale))"
-            })
-            .joined(separator: ". ")
-        )
-        .accessibilityIdentifier("competition.result.rings")
     }
 
     private func ringSplitRow(_ name: String, you: Double, them: Double) -> some View {
@@ -1073,11 +1093,13 @@ func competitionPersonalBestText(
     in competitions: [LocalCompetitionPresentation],
     locale: Locale = .current
 ) -> String? {
-    guard let result = competition.terminalResult, result.outcome != .win else { return nil }
+    guard competition.metrics.isDefaultRings,
+          let result = competition.terminalResult, result.outcome != .win
+    else { return nil }
     func bounds(_ week: LocalCompetitionPresentation) -> (start: Date, end: Date)? {
         week.acceptedConfiguration.flatMap { competitionScheduleBoundaries($0.schedule) }
     }
-    let weeks = competitionHistoryWeeks(competitions)
+    let weeks = competitionHistoryWeeks(competitions).filter(\.metrics.isDefaultRings)
     guard let index = weeks.firstIndex(where: { $0.id == competition.id }),
           let start = bounds(competition)?.start
     else { return nil }
@@ -1125,7 +1147,9 @@ func competitionHeadline(
     if let personalBest {
         return CompetitionHeadline(kind: .personalBest, text: personalBest, holder: .you)
     }
-    if let split = competitionRingSplit(days), (0..<3).allSatisfy({ split.you[$0] > split.them[$0] }) {
+    if let split = competitionRingSplit(days),
+       days.first?.metrics.isDefaultRings ?? true,
+       (0..<3).allSatisfy({ split.you[$0] > split.them[$0] }) {
         return CompetitionHeadline(kind: .allThreeRings, text: "Took all three rings", holder: .you)
     }
     if let beltLine { return beltLine }

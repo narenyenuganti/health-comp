@@ -385,6 +385,38 @@ enum SupabaseCompetitionRemoteAPI {
             enableSleepScoring: { id in
                 try await sendCompetitionCommand("enable_sleep_scoring", id, transport)
             },
+            listCompetitionMetrics: {
+                let response = try await sendReadOnly(
+                    .rpc(name: "list_competition_metrics", parameters: try encode(EmptyParameters())),
+                    transport: transport
+                )
+                return try decodeCompetitionMetrics(response.data)
+            },
+            setCompetitionMetrics: { id, metrics in
+                try validateUUID(id)
+                guard !metrics.isEmpty else {
+                    throw CompetitionRemoteFailure.serverContractMismatch
+                }
+                let response = try await send(
+                    .rpc(name: "set_competition_metrics", parameters: try encode(
+                        SetCompetitionMetricsParameters(
+                            competitionID: id.uuidString.lowercased(),
+                            move: metrics.contains(.move),
+                            exercise: metrics.contains(.exercise),
+                            stand: metrics.contains(.stand),
+                            sleep: metrics.contains(.sleep)
+                        )
+                    )),
+                    transport: transport
+                )
+                guard let object = try? JSONSerialization.jsonObject(with: response.data)
+                    as? [String: Any],
+                      Set(object.keys) == ["competition_id", "move", "exercise", "stand", "sleep"],
+                      (object["competition_id"] as? String).flatMap(wireUUID) == id
+                else {
+                    throw CompetitionRemoteFailure.serverContractMismatch
+                }
+            },
             submitSleepNight: { night, competitionID in
                 try validateUUID(competitionID)
                 guard (1...7).contains(night.dayOrdinal),
@@ -1363,6 +1395,30 @@ enum SupabaseCompetitionRemoteAPI {
         }
     }
 
+    private static func decodeCompetitionMetrics(_ data: Data) throws -> [CompetitionMetricsRecord] {
+        guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              Set(object.keys) == ["matches"],
+              let rows = object["matches"] as? [Any],
+              rows.count <= 500
+        else {
+            throw CompetitionRemoteFailure.serverContractMismatch
+        }
+        return rows.compactMap { value in
+            guard let row = value as? [String: Any],
+                  Set(row.keys) == ["competition_id", "move", "exercise", "stand", "sleep"],
+                  let id = (row["competition_id"] as? String).flatMap(wireUUID),
+                  let move = strictBool(row["move"]),
+                  let exercise = strictBool(row["exercise"]),
+                  let stand = strictBool(row["stand"]),
+                  let sleep = strictBool(row["sleep"]),
+                  let metrics = CompetitionMetrics(
+                      validatingMove: move, exercise: exercise, stand: stand, sleep: sleep
+                  )
+            else { return nil }
+            return CompetitionMetricsRecord(competitionID: id, metrics: metrics)
+        }
+    }
+
     private static func sleepInteger(_ value: Any?) -> Int? {
         guard let number = value as? NSNumber,
               CFGetTypeID(number) != CFBooleanGetTypeID()
@@ -1771,6 +1827,22 @@ private struct SubmitSleepNightParameters: Encodable {
         case competitionID = "competition_id"
         case dayOrdinal = "day_ordinal"
         case sleepBasisPoints = "sleep_basis_points"
+    }
+}
+
+private struct SetCompetitionMetricsParameters: Encodable {
+    let competitionID: String
+    let move: Bool
+    let exercise: Bool
+    let stand: Bool
+    let sleep: Bool
+
+    private enum CodingKeys: String, CodingKey {
+        case competitionID = "competition_id"
+        case move
+        case exercise
+        case stand
+        case sleep
     }
 }
 
