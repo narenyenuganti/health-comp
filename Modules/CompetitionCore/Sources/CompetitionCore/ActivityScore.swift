@@ -314,6 +314,26 @@ public enum ActivityScoreCalculator {
         _ snapshot: ActivitySnapshot,
         policy: ActivityScoringPolicy = .appleCompatibility
     ) -> ActivityScoreResult {
+        score(snapshot, policy: policy, metrics: .threeRings)
+    }
+
+    public static func score(
+        _ snapshot: ActivitySnapshot,
+        policy: ActivityScoringPolicy = .appleCompatibility,
+        metrics: CompetitionMetrics
+    ) -> ActivityScoreResult {
+        if !metrics.includesActivityRings {
+            guard let zero = try? ActivityScore(
+                movePercentage: 0,
+                exercisePercentage: 0,
+                standOrRollPercentage: 0,
+                points: 0
+            ) else {
+                return .unavailable([.invalidNumericCalculation])
+            }
+            return .available(zero)
+        }
+
         switch policy.pausedSummaryPolicy {
         case .unavailable:
             switch snapshot.pauseState {
@@ -333,24 +353,28 @@ public enum ActivityScoreCalculator {
         }
 
         let readings: [(
+            CompetitionMetric,
             ActivityRingReading,
             ActivityScoreUnavailableReason,
             ActivityScoreUnavailableReason,
             ActivityScoreUnavailableReason
         )] = [
             (
+                .move,
                 snapshot.move,
                 .missingMoveValue,
                 .missingMoveGoal,
                 .nonPositiveMoveGoal
             ),
             (
+                .exercise,
                 snapshot.exercise,
                 .missingExerciseValue,
                 .missingExerciseGoal,
                 .nonPositiveExerciseGoal
             ),
             (
+                .stand,
                 snapshot.standOrRoll,
                 .missingStandOrRollValue,
                 .missingStandOrRollGoal,
@@ -359,7 +383,8 @@ public enum ActivityScoreCalculator {
         ]
 
         var unavailableReasons: Set<ActivityScoreUnavailableReason> = []
-        for (reading, missingValue, missingGoal, nonPositiveGoal) in readings {
+        for (metric, reading, missingValue, missingGoal, nonPositiveGoal) in readings {
+            guard metrics.contains(metric) else { continue }
             if reading.value == nil {
                 unavailableReasons.insert(missingValue)
             }
@@ -377,7 +402,15 @@ public enum ActivityScoreCalculator {
 
         var percentages: [Double] = []
         percentages.reserveCapacity(3)
-        for (reading, _, _, _) in readings {
+        for (metric, reading, _, _, _) in readings {
+            guard metrics.contains(metric) else {
+                if let value = reading.value, let goal = reading.goal, goal > 0 {
+                    percentages.append(boundedPercentage(value: value, goal: goal))
+                } else {
+                    percentages.append(0)
+                }
+                continue
+            }
             guard let value = reading.value,
                   let goal = reading.goal
             else {
@@ -397,11 +430,11 @@ public enum ActivityScoreCalculator {
             }
         }
 
-        var points = percentages.reduce(0, +)
+        var points = metrics.activeActivityIndices.reduce(0.0) { $0 + percentages[$1] }
         if policy.quantization.stage == .aggregate {
             points = quantize(points, with: policy.quantization)
         }
-        points = min(ActivityScore.maximumDailyPoints, points)
+        points = min(metrics.activityDailyMaximum, points)
 
         guard let score = try? ActivityScore(
                 movePercentage: percentages[0],
