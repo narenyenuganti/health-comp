@@ -518,5 +518,41 @@ final class CompetitionWatchBoardTests: XCTestCase {
         XCTAssertEqual(built.rivalry?.losses, 0)
         XCTAssertEqual(built.rivalry?.edgeRing, .exercise)
         XCTAssertEqual(built.rivalry?.edgeRecord, "7–0 days")
+        XCTAssertNil(built.customMetrics)
+    }
+
+    func testWeekHeaderTitleAdaptsToMatchFormatAndStanding() {
+        XCTAssertEqual(match("live").weekHeaderTitle(at: now), "Week rounds")
+        XCTAssertEqual(match("groupDoubles").weekHeaderTitle(at: now), "Week rounds")
+        XCTAssertEqual(match("groupFFA").weekHeaderTitle(at: now), "Week vs 1st")
+
+        var ffaLeading = match("groupFFA")
+        ffaLeading.group?.rows = [
+            .init(place: 1, name: "You", points: 1_800, isYou: true),
+            .init(place: 2, name: "Sam", points: 1_712, isYou: false),
+            .init(place: 3, name: "Priya", points: 1_498, isYou: false),
+        ]
+        XCTAssertEqual(ffaLeading.weekHeaderTitle(at: now), "Week vs 2nd")
+    }
+
+    func testCustomMetricsRoundTripAndSpokenSummary() throws {
+        let sleep = match("sleepMatch")
+        XCTAssertEqual(sleep.customMetrics, [.move, .exercise, .stand, .sleep])
+        XCTAssertEqual(sleep.customMetricsAccessibilityText, "Metrics: Move, Exercise, Stand, Sleep.")
+        XCTAssertNil(match("live").customMetricsAccessibilityText)
+
+        let payload = CompetitionWatchPayload(snapshot: fixture("sleepMatch"), sentAt: 300)
+        guard case let .store(decoded) = payload.action(after: 100) else {
+            return XCTFail("expected sleepMatch snapshot")
+        }
+        XCTAssertEqual(decoded.matches[0].customMetrics, [.move, .exercise, .stand, .sleep])
+        XCTAssertEqual(
+            CompetitionWidgetSnapshot.TodayRings.RingKind.customMetrics(for: .threeRings),
+            nil
+        )
+        XCTAssertEqual(
+            CompetitionWidgetSnapshot.TodayRings.RingKind.customMetrics(for: [.move, .sleep]),
+            [.move, .sleep]
+        )
     }
 }

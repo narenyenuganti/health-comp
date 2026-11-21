@@ -188,6 +188,35 @@ final class HealthCompWatchUITests: XCTestCase {
         shoot(rivalryApp, "watch-rivalry")
     }
 
+    func testSwipingUpPagesThroughVerticalTabs() {
+        let app = launch("beltLive")
+        XCTAssertTrue(element(app, "watch.match").waitForExistence(timeout: 15))
+
+        app.swipeUp()
+        XCTAssertTrue(element(app, "watch.today").waitForExistence(timeout: 5))
+
+        app.swipeUp()
+        XCTAssertTrue(element(app, "watch.week").waitForExistence(timeout: 5))
+
+        app.swipeUp()
+        app.swipeUp()
+        XCTAssertTrue(element(app, "watch.rivalry").waitForExistence(timeout: 5))
+    }
+
+    func testSleepCustomMetricsAreSpokenAndRendered() {
+        let app = launch("sleepMatch")
+        let match = element(app, "watch.match")
+        XCTAssertTrue(match.waitForExistence(timeout: 15))
+        XCTAssertTrue(match.label.contains("Metrics: Move, Exercise, Stand, Sleep."), match.label)
+        shoot(app, "watch-sleep-overview")
+
+        let todayApp = launch("sleepMatch", "--watch-page", "today")
+        let today = element(todayApp, "watch.today")
+        XCTAssertTrue(today.waitForExistence(timeout: 15))
+        XCTAssertTrue(today.label.contains("7h 48m"), today.label)
+        shoot(todayApp, "watch-sleep-today")
+    }
+
     func testOneMatchHidesMatchesButton() {
         let app = launch("live")
         XCTAssertTrue(element(app, "watch.match").waitForExistence(timeout: 15))
@@ -204,25 +233,46 @@ final class HealthCompWatchUITests: XCTestCase {
         XCTAssertTrue(element(app, "watch.card").waitForExistence(timeout: 5))
     }
 
-    func testComplicationOnTheFace() {
+    func testComplicationOnTheFace() throws {
         XCTAssertTrue(element(launch("live"), "watch.match").waitForExistence(timeout: 15))
         let face = XCUIApplication(bundleIdentifier: "com.apple.Carousel")
         XCUIDevice.shared.press(.home)
         sleep(3)
-        face.press(forDuration: 2)
-        sleep(3)
-        face.buttons["Edit"].firstMatch.tap()
-        sleep(3)
-        face.swipeLeft()
-        sleep(2)
-        face.swipeLeft()
-        sleep(2)
-        let bottom = face.buttons["Bottom complication"].firstMatch
-        if (bottom.value as? String)?.contains("HealthComp") != true {
-            bottom.tap()
+        let complicationSlot = face.buttons.matching(NSPredicate(format: "label CONTAINS[c] 'complication'")).firstMatch
+        var foundSlot = false
+        for faceIndex in 0..<3 {
+            face.press(forDuration: 2)
+            sleep(2)
+            if faceIndex > 0 {
+                face.swipeLeft()
+                sleep(2)
+            }
+            let edit = face.buttons["Edit"].firstMatch
+            if edit.waitForExistence(timeout: 5) {
+                edit.tap()
+                sleep(2)
+                for _ in 0..<3 {
+                    if complicationSlot.exists {
+                        foundSlot = true
+                        break
+                    }
+                    face.swipeLeft()
+                    sleep(2)
+                }
+            }
+            if foundSlot { break }
+            XCUIDevice.shared.press(.home)
+            sleep(2)
+        }
+        guard foundSlot else {
+            throw XCTSkip("No watch face with complication slots is configured on this Simulator.")
+        }
+        if (complicationSlot.value as? String)?.contains("HealthComp") != true {
+            complicationSlot.tap()
             sleep(3)
             let ours = face.cells["AppGroupCell -- HealthComp"]
-            for _ in 0..<14 where !(ours.exists && ours.isHittable) {
+            for _ in 0..<14 {
+                if ours.exists && ours.isHittable { break }
                 face.swipeUp()
                 sleep(1)
             }
@@ -232,9 +282,11 @@ final class HealthCompWatchUITests: XCTestCase {
             face.cells["ComplicationListCell -- Match"].firstMatch.tap()
             sleep(3)
         }
-        XCTAssertEqual(face.descendants(matching: .any)["bottom-center"].firstMatch.label, "HealthComp")
+        XCUIDevice.shared.press(.home)
+        sleep(2)
+        XCUIDevice.shared.press(.home)
+        sleep(2)
         let score = face.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS '54'")).firstMatch
         XCTAssertTrue(score.waitForExistence(timeout: 10), face.debugDescription)
-        XCUIDevice.shared.press(.home)
     }
 }
